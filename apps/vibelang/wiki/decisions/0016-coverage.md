@@ -2097,11 +2097,16 @@ when busy, and drives its default admission to a recorded receipt.
 
 The three model writers also run on the real Cloudflare SQLite runtime.
 Each healthy control calls the local scripted model once and records its
-actual seven-token charge. An accounting-read outage during the writer
-answers budget, makes no model call and writes no charge. The faulty read
-service heals after the writer's answer so the engine can persist that
-answer; an unavailable outcome journal is a different boundary. No request
-is intercepted, and no new dependency or protocol double was added.
+actual seven-token charge. The initial receipt below predates main's
+c5bbf81b reserved-ceiling policy: then an accounting-read outage answered
+budget, made no model call and wrote no charge. On fresh main, these tests
+forward the complete reservation/settlement arguments and retain that
+lane's policy: an unreadable usage journal refuses the draft/review, charges
+the full reserved ceiling rather than zero, and releases the reservation.
+Healthy controls still charge exactly seven tokens. The faulty read service
+heals after the writer's answer so the engine can persist that answer;
+an unavailable outcome journal is a different boundary. No request is
+intercepted, and no new dependency or protocol double was added.
 
 Five deliberately incorrect mappings made five new assertions fail, while
 four healthy controls passed. Restoring the sources passes all nine new
@@ -2182,3 +2187,23 @@ permission alias makes three fail, with the ownerless control still passing.
 After restoring the source, the five-file group passes 36 tests and
 worker/ActionDirectory.vibe is 100%: 40/40 lines, 22/22 functions,
 55/55 statements and 30/30 branches. No production code changed.
+
+## Recovered action and tour hosts (lane vl-coverage2, 2026-11-10)
+
+The real tour flow pauses, resumes, seeks to the final stop and finishes at
+its reading deadline. Idle controls refuse without changing the conversation;
+an invalid wiki path opens nothing and a valid one opens the pane.
+A failed narration closes the active answer and fails the registered run.
+A failed alarm preserves its own cause and settles nothing; retrying the
+healthy host keeps the question once. A host resumed after reply-start
+refuses a demoted person and closes the unfinished answer while retaining
+the already accepted Post's passed receipt.
+
+All five new cases pass; five deliberately incorrect source mappings make
+all five fail. Restoring both sources passes the current 45-file worker
+group: 329 tests / one skipped, and all eight measured worker files reach
+100% on every metric: ActionRuns, Objects, Sequencer, HistoryObject,
+HistoryActions, WikiDraft, VipDraft and SpecificationReviewers.
+Combined: 550/550 lines, 207/207 functions, 693/693 statements,
+359/359 branches. Production code was unchanged by these tests.
+The writer controls above also pass under main's reserved-ceiling policy.

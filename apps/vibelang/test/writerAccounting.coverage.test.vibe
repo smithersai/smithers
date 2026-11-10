@@ -55,10 +55,10 @@ for (const kind of ["wiki", "vip", "specification"] as const) {
       // can persist that answer. This tests accounting recovery, not an unavailable outcome journal.
       const concluded = <A, R>(program: A!{ readonly reason: string }!R) =>
         reasonOf(program).pipe(Effect.ensuring(sync(() => store.fail())))
-      const day = try budget(store.storage, 1000)
+      const day = try budget(store.storage, 1_000_000)
       const spend: Spend.Shape = {
-        admit: () => day.admit().pipe(Effect.tap(() => down ? sync(() => store.fail(ENTRY_READ)) : Effect.void)),
-        spend: (_day, reply, tokens) => day.spend(reply, tokens),
+        admit: (_day, reply, ceiling) => day.admit(reply, ceiling).pipe(Effect.tap(() => down ? sync(() => store.fail(ENTRY_READ)) : Effect.void)),
+        spend: (_day, reply, tokens, reported, ceiling) => day.spend(reply, tokens, reported, ceiling),
       }
       const output = kind === "wiki" ? { page: "roadmap", text: "# Shorter\n" }
         : kind === "vip" ? { title: "T", summary: "S", example: "E", prior: "P" }
