@@ -136,28 +136,28 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         if (request.text.trim() === "") throw new WikiFailure({ reason: "empty" })
         if (request.text === current.text) throw new WikiFailure({ reason: "empty" })
         const contents = try Effect.try(() => Base64.encode(request.text))
-        if (request.op === "propose" || request.op === "save") {
-          // The person's fork owns the change, derived and verified by smithers.sh; the review is theirs. People merge; the agent never does.
-          const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
-          const base = repo.branch ?? upstream.default_branch
-          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, base)
-          if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
-          // Compare against the exact commit the new branch will use, even if main advanced after the first read.
-          const pinned = try authorized(readSource(path, head.value.sha))
-          if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
-          const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
-          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
-          const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
-          // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
-          const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
-          const authored = actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))
-          const changed = observedReview.pipe(Option.exists((review) => review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"))
-          if (!authored || !changed) throw new WikiFailure({ reason: "unavailable", code: "unavailable" })
-          const retained = try loadDraft(actor.id, request.page)
-          if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
-          return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
-        }
-        throw new WikiFailure({ reason: "invalid", unwritten: true })
+        // WikiOperation is read, save, propose or draft (wikiSchemas.vibe); read and draft returned above, and every
+        // caller's request is a decoded WikiRequest. A fifth operation fails to compile here.
+        request.op satisfies "propose" | "save"
+        // The person's fork owns the change, derived and verified by smithers.sh; the review is theirs. People merge; the agent never does.
+        const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
+        const base = repo.branch ?? upstream.default_branch
+        const head = try GitHub.Refs.getBranch(repo.owner, repo.name, base)
+        if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
+        // Compare against the exact commit the new branch will use, even if main advanced after the first read.
+        const pinned = try authorized(readSource(path, head.value.sha))
+        if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
+        const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
+        try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+        const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
+        // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
+        const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
+        const authored = actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))
+        const changed = observedReview.pipe(Option.exists((review) => review.files.length === 1 && review.files[0]!.filename === path && review.files[0]!.status === "modified"))
+        if (!authored || !changed) throw new WikiFailure({ reason: "unavailable", code: "unavailable" })
+        const retained = try loadDraft(actor.id, request.page)
+        if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
+        return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
       }
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)

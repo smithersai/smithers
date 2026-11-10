@@ -47,7 +47,7 @@ export effect function verifiedVip(repo: Repository, body: string, author: numbe
   if (!/^[1-9][0-9]*$/.test(tail) || !Number.isSafeInteger(number)) return undefined
   const observed = try GitHub.Proposals.documentReview(repo.owner, repo.name, number)
   if (Option.isNone(observed) || !Number.isSafeInteger(observed.value.author) || !vipDocumentMatches(author, observed.value.author, match[1]!, observed.value.files)) return undefined
-  return { raw: match[0], at: match.index ?? 0, path: match[1]!, review, number }
+  return { raw: match[0], at: match.index, path: match[1]!, review, number }
 }
 
 /** No raw provider error, request content or credential crosses this boundary. */
@@ -90,14 +90,11 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const parent = parentUrl.startsWith(prefix) ? Number(parentUrl.slice(prefix.length)) : 0
       const body = try Effect.try(() => GitHub.Issues.withoutWriteMarker(i.body ?? ""))
       const vip = try verifiedVip(repo, body, i.user?.id ?? 0)
-      const reviewPrefix = `https://github.com/${repo.owner}/${repo.name}/pull/`
-      if (number === i.number && vip !== undefined && vip.review.startsWith(reviewPrefix)) {
-        const reviewNumber = vip.number
-        if (Number.isSafeInteger(reviewNumber) && reviewNumber > 0) {
-          const reviews = try GitHub.Pulls.listReviews(repo.owner, repo.name, reviewNumber)
-          if (reviews.truncated) throw new IssueFailure({ reason: "partial" })
-          for (const review of reviews.items) if (review.user !== null && !reviewers.includes(review.user.login)) reviewers.push(review.user.login)
-        }
+      // verifiedVip admits only this repository's pull URL with a positive safe-integer number.
+      if (number === i.number && vip !== undefined) {
+        const reviews = try GitHub.Pulls.listReviews(repo.owner, repo.name, vip.number)
+        if (reviews.truncated) throw new IssueFailure({ reason: "partial" })
+        for (const review of reviews.items) if (review.user !== null && !reviewers.includes(review.user.login)) reviewers.push(review.user.login)
       }
       const notes: Array<{ age: string; author: string; text: string; event: boolean }> = []
       if (number === i.number) {
@@ -307,8 +304,8 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       // Approval fields from an external projection are not receipts. Do not persist them even while downgrading
       // an accepted label: otherwise the next read would trust those same fields as a local approval.
       const { approvedBy: _approvedBy, approvedAt: _approvedAt, ...projection } = item
-      const receipt = saved.items.find(old => old.number === item.number && old.approvedBy !== undefined)
-      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy ?? "", approvedAt: receipt.approvedAt ?? "" }
+      const receipt = saved.items.find((old): old is typeof old & { approvedBy: string } => old.number === item.number && old.approvedBy !== undefined)
+      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, approvedAt: receipt.approvedAt ?? "" }
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()

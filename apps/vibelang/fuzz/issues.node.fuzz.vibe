@@ -133,7 +133,8 @@ it.live("issues/github-host-operations", () => Effect.andThen(run("issues/github
 
 
 const Direct = Schema.Struct({
-  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "accept", "decline", "draft"]),
+  // The specification operations reach githubHost only from a direct caller: executeIssues answers them itself.
+  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "accept", "decline", "draft", "spec-revise", "spec-review"]),
   role: Role,
   signedOut: Schema.Boolean,
   noToken: Schema.Boolean,
@@ -188,7 +189,13 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   )
   // The Worker's host provides these at worker/Objects.vibe; a role demoted mid-call reaches the write key first.
   const hosted = Effect.provide(performed, WebCrypto.layer)
+  const writesBefore = fake.writes
   const result = try Effect.result(input.withWriter ? Effect.provide(hosted, writerLayer(true, true)) : hosted)
+  if (input.op === "spec-revise" || input.op === "spec-review") {
+    // GitHub holds no specification: the host refuses it, after its read, before any write.
+    if (result._tag === "Success" || fake.writes !== writesBefore) throw new Finding({ report: `githubHost answered ${input.op}` })
+    if (proceeds && [1, 2, 3, 4].includes(input.number) && result.failure.reason !== "unsupported") throw new Finding({ report: `${input.op} on an issue answered ${result.failure.reason}` })
+  }
   if (result._tag === "Failure") {
     if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
     if (result.failure.reason === "forbidden" && permitted) return false
@@ -198,7 +205,15 @@ const performBoundary = (input: typeof Direct.Type) => effect {
   if (input.op === "read") return Schema.is(IssuesState)(result.success)
   return ["link", "commit", "uncommit", "accept", "decline"].includes(input.op)
 }
-it.live("issues/host-perform-boundary", () => Effect.andThen(run("issues/host-perform-boundary", Direct, performBoundary), reached("issues/host-perform-boundary", boundary, performBoundary, { op: "commit", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, blank: false, blankKey: false, bogus: false, demote: false, assignee: "fuzz", withWriter: false, authorizeFails: false })))
+const directWitness: typeof Direct.Type = { op: "commit", role: "maintainer", signedOut: false, noToken: false, number: 1, parent: 0, blank: false, blankKey: false, bogus: false, demote: false, assignee: "fuzz", withWriter: false, authorizeFails: false }
+/** Random inputs rarely permit a specification operation on an existing issue; each runs once per execution. */
+const specificationWitnesses = Effect.forEach(["spec-revise", "spec-review"] as const, (op) => effect {
+  if (!(try scoped(performBoundary({ ...directWitness, op })))) throw new Finding({ report: `issues/host-perform-boundary: the ${op} witness failed` })
+})
+it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, performBoundary).pipe(
+  Effect.andThen(reached("issues/host-perform-boundary", boundary, performBoundary, directWitness)),
+  Effect.andThen(specificationWitnesses),
+))
 
 const HttpOp = Schema.Struct({
   method: Schema.Literals(["GET", "POST", "PUT", "DELETE"]),
