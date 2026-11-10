@@ -1,0 +1,74 @@
+// @vitest-environment node
+// History's reader and per-run host over real SQLite, the sequencer and registered flows.
+import { expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { pageOf } from "../src/history/pages.vibe"
+import type { MainLog } from "../src/history/flows.vibe"
+import * as HistoryObject from "../worker/HistoryObject.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { history, request } from "./support/actionObjects.vibe"
+
+const maintainer = { role: "maintainer" as const, name: "Ada", agent: false }
+const emptyMain: MainLog.Shape = { since: () => succeed([]) }
+
+effect function database() {
+  return try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (storage) => sync(() => storage.close()))
+}
+
+it.live("the history reader plans, starts and notes through real writes, then reads the epic and searches it", () => scoped(effect {
+  const storage = (try database()) as unknown as Storage
+  const sequencer = try HistoryObject.history(storage)
+  const act = (name: Parameters<typeof HistoryObject.write>[5], body: unknown, principal: Parameters<typeof HistoryObject.write>[4], operation: string) =>
+    HistoryObject.write("history-reader", storage, sequencer, emptyMain, principal, name, body, operation)
+  const reader = HistoryObject.readerOver(
+    effect (requested) => pageOf(try sequencer.read(), requested),
+    act,
+    maintainer,
+  )
+  const id = try reader.plan({ how: "append", epic: "", newEpic: "Reader", target: "", title: "docs: worker reader", task: "Persist before replying." }, "reader-plan")
+  try reader.start(id, "coverage", "reader-start")
+  try reader.note(id, "tried", "Read it back.", "reader-note")
+  const outline = try reader.outline()
+  const epic = try reader.epic(outline.epics[0]!.id, 0)
+  const matches = try reader.search("worker reader")
+  const commit = try reader.commit(id)
+  try Effect.try(() => {
+    expect(epic.commits.map((item) => item.id)).toEqual([id])
+    expect(matches.commits.map((item) => item.id)).toEqual([id])
+    expect(commit.commit).toMatchObject({ id, state: "working", lane: "coverage" })
+    expect(epic.commits[0]!.notes).toBe(1)
+  })
+}), 60_000)
+
+it.effect("a write that cannot reach history is unavailable and preserves none of the private transport detail", () => effect {
+  const reader = HistoryObject.readerOver(
+    () => fail(new Unreachable({ what: "private transport detail" })),
+    () => fail(new Unreachable({ what: "private transport detail" })),
+  )
+  const result = try Effect.result(reader.note("m1", "tried", "A note.", "reader-unreachable"))
+  try Effect.try(() => {
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "Unavailable", reason: "history unreachable" } })
+    expect(JSON.stringify(result)).not.toContain("private transport detail")
+  })
+})
+
+it.live("the history run host refuses another workflow, preserves a busy intent and settles its default admission", () => scoped(effect {
+  const storage = (try database()) as unknown as Storage
+  const host = HistoryActions.make("history-default", storage)
+  const unsupported = request("wrong-host", "vibelang/Post", { text: "A post." }, "1")
+  const first = request("history-first", "vibelang/history/show", { what: "outline" }, "1")
+  const other = request("history-other", "vibelang/history/show", { what: "outline" }, "1")
+  expect(try host.start(unsupported)).toBe("input")
+  expect(Option.isNone(try host.receipt(unsupported))).toBe(true)
+  expect(try host.start(first)).toBeNull()
+  expect(try host.start(first)).toBeNull()
+  expect(try host.start(other)).toBe("busy")
+  provide history {
+    try host.alarm(try Mythical, { principal: maintainer })
+  }
+  const receipt = try host.receipt(first)
+  try Effect.try(() => expect(receipt).toMatchObject({ _tag: "Some", value: { _tag: "Complete", exit: { _tag: "Success" } } }))
+}), 60_000)

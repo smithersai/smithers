@@ -1,0 +1,99 @@
+// @vitest-environment node
+// Real writers and agents on the durable SQLite engine. The admitted run's journal read fails;
+// unknown spend must never become a successful draft, review or zero-token charge.
+import { expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Digest, SecureRandom } from "effect/crypto"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { agentLayer, writer, VIP_CEILING } from "../worker/VipDraft.vibe"
+import { wikiAgentLayer, wikiWriter, WIKI_CEILING } from "../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers, REVIEW_CEILING } from "../worker/SpecificationReviewers.vibe"
+import { budget, type Storage } from "../worker/Objects.vibe"
+import { faultyStore } from "../fuzz/faulty-store.ts"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+
+const Outcome = Flow.make("test/writer-accounting/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+const EXECUTION = "test/writer-accounting/run"
+const ENTRY_READ = /SELECT run_id, seq, event_id[\s\S]*FROM flows_journal_events[\s\S]*ORDER BY seq ASC/
+
+/** One actual durable execution, registering the writer's program with its real services. */
+effect function execution<S>(storage: Storage, layer: Layer.Layer<S>, program: Effect.Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
+    try engine.register(Outcome, () => Effect.provide(program, services) as never)
+  })
+  const runtime = CloudflareRuntime.layer({ hostId: "writer-accounting", executionId: EXECUTION, flow: Outcome._tag }, registration.pipe(Layer.provide(layer))).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(WebCrypto.layer),
+  )
+  const context = try Layer.build(runtime)
+  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: EXECUTION, payload: {} })
+}
+const within = <S>(storage: Storage, layer: Layer.Layer<S>, program: Effect.Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) =>
+  execution(storage, layer, program) as unknown as Effect.Effect<string, unknown, Scope.Scope>
+
+effect function reasonOf<A, R>(program: A!{ readonly reason: string }!R) {
+  const result = try Effect.result(program)
+  return result._tag === "Success" ? "answered" : result.failure.reason
+}
+
+for (const kind of ["wiki", "vip", "specification"] as const) {
+  for (const down of [false, true]) {
+    it.live(kind + (down ? ": refuses unknown journal accounting instead of answering or charging zero" : ": records the real model usage on the durable engine"), () => scoped(effect {
+      const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (storage) => sync(() => storage.close()))
+      const store = faultyStore(raw as unknown as Storage)
+      // Keep the read outage through the writer's answer, then heal it so the engine
+      // can persist that answer. This tests accounting recovery, not an unavailable outcome journal.
+      const concluded = <A, R>(program: A!{ readonly reason: string }!R) =>
+        reasonOf(program).pipe(Effect.ensuring(sync(() => store.fail())))
+      const day = try budget(store.storage, 1000)
+      const spend: Spend.Shape = {
+        admit: () => day.admit().pipe(Effect.tap(() => down ? sync(() => store.fail(ENTRY_READ)) : Effect.void)),
+        spend: (_day, reply, tokens) => day.spend(reply, tokens),
+      }
+      const output = kind === "wiki" ? { page: "roadmap", text: "# Shorter\n" }
+        : kind === "vip" ? { title: "T", summary: "S", example: "E", prior: "P" }
+        : { verdict: "LGTM", grade: "A", review: "Consistent." }
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(output))], prompt: 3, completion: 4 }])
+      const spending = Layer.succeed(Spend, spend)
+      const chat = Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })
+      const program = match (kind) {
+        when "wiki": effect {
+          const layer = wikiWriter.pipe(Layer.provide(wikiAgentLayer), Layer.provide(chat), Layer.provide(spending))
+          return try within(store.storage, layer, concluded(effect { return try (try WikiWriter).draft({ page: "roadmap", source: "# Roadmap", ask: "Shorter." }) }))
+        };
+        when "vip": effect {
+          const layer = writer.pipe(Layer.provide(agentLayer), Layer.provide(chat), Layer.provide(spending))
+          return try within(store.storage, layer, concluded(effect { return try (try VipWriter).draft({ op: "draft", key: "accounting", number: 0, parent: 0, title: "T", text: "S", example: "E", prior: "P", assignee: "" }) }))
+        };
+        when "specification": effect {
+          const config = { ...scripted.values, SPEC_REVIEW_SOL: JSON.stringify(scripted.record) }
+          const layer = liveSpecificationReviewers.pipe(Layer.provide(spending), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))))
+          return try within(store.storage, layer, concluded(effect {
+            return try (try SpecificationReviewers).review("sol", { revision: 1, text: "# Spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() })
+          }))
+        };
+      }
+      const answer = try program
+      const spent = try promise(() => raw.get("spent"))
+      const charges = try promise(() => raw.list({ prefix: "reply/" }))
+      expect(answer).toBe(down ? (kind === "specification" ? "review" : "draft") : "answered")
+      if (down) expect(store.faults()).toBeGreaterThan(0)
+      else expect(store.faults()).toBe(0)
+      expect(try scripted.calls).toBe(down ? 0 : 1)
+      const ceiling = kind === "wiki" ? WIKI_CEILING : kind === "vip" ? VIP_CEILING : REVIEW_CEILING
+      expect(spent).toBe(down ? ceiling : 7)
+      expect(charges.size).toBe(1)
+      expect(try promise(() => raw.get("reserved"))).toBe(0)
+    }), 60_000)
+  }
+}
