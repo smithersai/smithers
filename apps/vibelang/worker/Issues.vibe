@@ -181,7 +181,9 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const path = `docs/design/vips/proposal-${try key("document")}.md`
           const document = vipDocument(request)
           const contents = try Effect.try(() => Base64.encode(document))
-          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+          // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
+          // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
+          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
           const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base: upstream.default_branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
           const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}`
           const body = `${vipIssueBody(request)}\n<!-- vibelang:vip path=${path} review=${review} -->`
@@ -304,8 +306,9 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       // Approval fields from an external projection are not receipts. Do not persist them even while downgrading
       // an accepted label: otherwise the next read would trust those same fields as a local approval.
       const { approvedBy: _approvedBy, approvedAt: _approvedAt, ...projection } = item
+      // approveVip writes approvedBy and approvedAt together.
       const receipt = saved.items.find((old): old is typeof old & { approvedBy: string } => old.number === item.number && old.approvedBy !== undefined)
-      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, approvedAt: receipt.approvedAt ?? "" }
+      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy, approvedAt: receipt.approvedAt! }
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()
@@ -332,22 +335,23 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     if (!observed.fresh && !failed) {
       // A reused key joins only the exact request it first named; a changed payload is a typed refusal, never an engine conflict.
       const inspection = try RunInspection.RunInspection
-      const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+      const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(IssueRequest)(recorded.payload)
       if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)) throw new IssueFailure({ reason: "invalid" })
     }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
       if (!known) {
-        if (engine.retryFrom === undefined) throw new IssueFailure({ reason: "unavailable" })
+        // CloudflareRuntime's engine store always retries from a step (EngineStore's `retryFrom`).
+        const retryFrom = engine.retryFrom!
         const inspection = try RunInspection.RunInspection
-        const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        const recorded = try inspection.payload(executionId)
         const decoded = Schema.decodeUnknownOption(IssueRequest)(recorded.payload)
         if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)) throw new IssueFailure({ reason: "invalid" })
-        const source = try inspection.inspect(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new IssueFailure({ reason: "unavailable" })
-        try engine.retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target }).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+        try retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target })
       }
     }
     const result = try engine.execute(flow, { executionId: target, payload: original })
@@ -362,9 +366,10 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       const found = try Effect.result(inspection.payload(sourceId))
       const usedId = found._tag === "Failure" && found.failure._tag === "@smthrs/engine-store/RunNotFound" ? rootId : sourceId
       const recorded = found._tag === "Success" ? found.success : try inspection.payload(usedId).pipe(Effect.mapError(() => new IssueFailure({ reason: "missing" })))
-      const request = try Schema.decodeUnknownEffect(IssueRequest)(recorded.payload).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
-      if (recorded.flowName !== sourceFlow._tag || request.op !== original.resumeOp || request.key !== original.resumeKey) throw new IssueFailure({ reason: "protocol" })
-      const receipt = try engine.poll(sourceFlow, usedId).pipe(Effect.mapError(() => new IssueFailure({ reason: "missing" })))
+      // The run id names its op and key's digest, and only this function starts a run there: its payload is that request.
+      const request = try Effect.orDie(Schema.decodeUnknownEffect(IssueRequest)(recorded.payload))
+      // poll answers None for an unknown run; a store failure is unavailable, as everywhere in this execution.
+      const receipt = try engine.poll(sourceFlow, usedId)
       const completed = Option.isSome(receipt) && receipt.value._tag === "Complete" ? receipt.value.exit : undefined
       const failure = completed?._tag === "Failure" ? Cause.findErrorOption(completed.cause) : Option.none<IssueFailure>()
       return { ...result, saved: { request, status: completed?._tag === "Success" ? "completed" as const : completed?._tag === "Failure" ? "failed" as const : "running" as const, unwritten: Option.isSome(failure) && failure.value.unwritten === true, selected: completed?._tag === "Success" ? completed.value.selected ?? request.number : request.number } }

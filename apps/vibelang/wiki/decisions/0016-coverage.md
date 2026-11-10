@@ -734,6 +734,37 @@ retried, and each agent seam asked directly without a model answering `no-model`
 `Budget.make({})` mapping and the decode's `draft` mapping (the agent already refused any output outside the schema).
 Left uncovered, not excluded, for the reviewers' reason: `usageOf` failing (`VipDraft.vibe:55`, `WikiDraft.vibe:57`).
 
+**`worker/Issues.vibe`, `worker/Wiki.vibe` (2026-11-10).** Measured over every unit test that imports either file:
+Issues 60% lines, 53.91% branches, 54.54% functions, 56.67% statements → 100% of all four; Wiki 69.94%, 75%, 60.37%,
+65.43% → 100% of all four. `test/issuesDelegated.coverage.test.vibe` (18 cases) and
+`test/wikiDelegated.coverage.test.vibe` (12 cases) run the GitHub hosts as the site runs them after decision 0165:
+every read and write goes through smithers.sh's real per-person connection host (`fuzz/delegated.vibe`) to the
+in-memory GitHub (`fuzz/issues-node-fake.vibe`), on the durable engine over SQLite. A misbehaving GitHub is a wrapped
+client service and a failing journal is `fuzz/faulty-store.ts`; nothing intercepts a request. The cases cover reads
+(tasks, VIP markers that fail each check, timelines, deleted accounts, short pages, undecodable issues), every write
+and its refusals, a role or credential lost between steps, an ended delegation falling back to public reads, kept wiki
+drafts, retries and resumes, and the HTTP routes' store failures.
+
+- **Bug fixed: a VIP proposal or wiki change could never be retried after its commit.** smithers.sh binds each write
+  key to its operation's digest. On a retry, `branch.create`'s lookup adopts the branch, whose head is now the change's
+  own commit, and the site built `commit.create` with `expectedHeadOid: branch.sha`, a different operation under the
+  same key. smithers.sh refused it (`key_conflict`) and the person saw `invalid`. A flow's own retry of an
+  `unavailable` answer (GitHub not yet showing the review) or an explicit Retry both hit it. The commit now names the
+  commit the branch was cut from (`head.value.sha`), the same on every run. Red first: the one-time-lag cases in both
+  tests answered `invalid`.
+- **Deleted, not covered.** `engine.retryFrom === undefined` (EngineStore always supplies it); the inner
+  `mapError(() => unavailable)` on journal inspection and `retryFrom`, which repeated the execution's outer mapping;
+  the resume's poll mapping a store failure to `missing` (poll answers None for an unknown run, so its failures are
+  the store's, now `unavailable` like every other store failure there); the resume's payload decode refusal and its
+  op, key and flow recheck (the run id names the op and the key's digest, and only `executeIssues` starts a run
+  there); and the receipt's `approvedAt ?? ""` (`approveVip` writes it with `approvedBy`). `72225ac2` deleted the
+  `match.index` default, the review rechecks `verifiedVip` already made and Wiki's final `invalid` branch.
+- **Found, kept:** a journal that cannot record a step's attempt makes the engine interrupt the run
+  (`EngineStore.actionExecute`), so the request ends interrupted rather than answering `unavailable`. That is
+  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe`, the opt-in
+  real-GitHub test, still authenticates with a token on the principal and cannot write since decision 0165; it is
+  skipped without `GITHUB_TEST_TOKEN`.
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one

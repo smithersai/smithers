@@ -148,7 +148,9 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         const pinned = try authorized(readSource(path, head.value.sha))
         if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
         const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
-        try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: branch.sha!, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+        // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
+        // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
+        try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
         const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
         // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
         const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
@@ -227,22 +229,23 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
     const engine = try FlowRuntime.FlowRuntime
     if (!observed.fresh && !failed) {
       const inspection = try RunInspection.RunInspection
-      const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+      const recorded = try inspection.payload(executionId)
       const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
       if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
     }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
       if (!known) {
-        if (engine.retryFrom === undefined) throw new WikiFailure({ reason: "unavailable" })
+        // CloudflareRuntime's engine store always retries from a step (EngineStore's `retryFrom`).
+        const retryFrom = engine.retryFrom!
         const inspection = try RunInspection.RunInspection
-        const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        const recorded = try inspection.payload(executionId)
         const decoded = Schema.decodeUnknownOption(WikiRequest)(recorded.payload)
         if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof WikiRequest] !== value)) throw new WikiFailure({ reason: "invalid" })
-        const source = try inspection.inspect(executionId).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        const source = try inspection.inspect(executionId)
         const step = source.steps.find((item) => item.action === `${flow._tag}/perform`)
         if (step === undefined) throw new WikiFailure({ reason: "unavailable" })
-        try engine.retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target }).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+        try retryFrom(flow, { source: executionId, step: step.nodeId, executionId: target })
       }
     }
     return try engine.execute(flow, { executionId: target, payload: original })
