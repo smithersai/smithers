@@ -1,0 +1,77 @@
+// @vitest-environment node
+// CLI startup: one emitted CLI process per command, to exit. Wall time is observational on this shared server; the
+// regression gate is the number of modules each command loads, against bench/baseline.json (0017).
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { node, run } from "../test/support/processes.vibe"
+import { cliPath } from "../test/surface-host.vibe"
+import { artifact, workload } from "./artifact.vibe"
+
+/**
+ * A preload for the child process, as plain JavaScript for `node --import`: it records each module URL Node resolves
+ * and, at exit, writes the count and the workspace packages among them to stderr. It observes; it changes no answer.
+ * It counts in `resolve`, because vibelang/register's `load` answers a .vibe module without calling the next hook.
+ */
+const COUNTER = `import{registerHooks}from"node:module";const u=new Set();registerHooks({resolve(s,c,x){const r=x(s,c);u.add(r.url);return r}});process.on("exit",()=>{const p=new Set();for(const k of u){const m=/\\/packages\\/(.+?)\\/src\\//.exec(k);if(m)p.add(m[1])}process.stderr.write("bench-modules "+JSON.stringify({modules:u.size,packages:[...p].sort()})+"\\n")})`
+const PRELOAD = "--import=data:text/javascript," + encodeURIComponent(COUNTER)
+
+/** A command, the line its output starts with, and whether it signs in (and so needs the durable host). */
+const COMMANDS: ReadonlyArray<readonly [string, ReadonlyArray<string>, string, boolean]> = [
+  ["help", ["--help"], "DESCRIPTION", false],
+  ["read", ["read"], "No entries. Event: 0", false],
+  ["actions", ["actions"], "vibelang/EndTour", false],
+  ["login", ["login"], "Signed in as will.", true],
+]
+/** The durable SQLite host, which only sign-in loads; and the GitHub integration, which the mock never loads. */
+const HOST = "smithers/flows/platform-node"
+const GITHUB = "smithers/agent/integrations"
+const options = { time: 0, warmup: false, iterations: 5 }
+
+schema error Unmeasured { readonly command: string }
+const Report = Schema.Struct({ modules: Schema.Number, packages: Schema.Array(Schema.String) })
+
+effect function once(args: ReadonlyArray<string>, first: string, preload: boolean) {
+  const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+  const answer = try run(try node(), [...(preload ? [PRELOAD] : []), try cliPath(), "--mock", ...args], { XDG_CONFIG_HOME: settings })
+  try Effect.try(() => {
+    expect(answer.status, `${args.join(" ")}: ${answer.stderr}`).toBe(0)
+    expect(answer.stdout.trimStart().startsWith(first), `${args.join(" ")}: ${answer.stdout.slice(0, 120)}`).toBe(true)
+  })
+  return answer
+}
+
+const runScoped = <A, E>(program: A!E!(FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Experimental.Process.Process | Scope.Scope)) =>
+  runPromise(scoped(Effect.provide(program, Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer))))
+
+it("CLI startup: each command's wall time, and the modules it loads against the baseline", async ({ bench }) => {
+  const modules: Record<string, number> = {}
+  const packages: Record<string, ReadonlyArray<string>> = {}
+  for (const [name, args, first] of COMMANDS) {
+    const answer = await runScoped(once(args, first, true))
+    const line = answer.stderr.split("\n").find(text => text.startsWith("bench-modules "))
+    if (line === undefined) throw new Unmeasured({ command: name })
+    const report = Schema.decodeUnknownSync(Report)(JSON.parse(line.slice("bench-modules ".length)))
+    modules[name] = report.modules
+    packages[name] = report.packages
+  }
+  for (const [name, , , signsIn] of COMMANDS) {
+    expect(packages[name]!.includes(HOST), `${name} loads ${HOST}`).toBe(signsIn)
+    expect(packages[name]!.includes(GITHUB), `${name} loads ${GITHUB}`).toBe(false)
+  }
+  const timings: Record<string, unknown> = {}
+  timings.floor = await workload(bench, "cli-startup-node-floor", "async", () => runScoped(effect {
+    const answer = try run(try node(), ["-e", "0"])
+    try Effect.try(() => expect(answer.status).toBe(0))
+  })).run(options)
+  for (const [name, args, first] of COMMANDS) {
+    timings[name] = await workload(bench, `cli-startup-${name}`, "async", () => runScoped(once(args, first, false))).run(options)
+  }
+  const baseline = await runScoped(effect { return try (try FileSystem.FileSystem).readFileString("bench/baseline.json") })
+  const parsed = JSON.parse(baseline) as { tolerance: number; startupModules: Record<string, number> }
+  expect(Object.keys(modules).sort()).toEqual(Object.keys(parsed.startupModules).sort())
+  for (const [name, value] of Object.entries(modules)) {
+    expect(value, `${name} modules`).toBeLessThanOrEqual(Math.ceil(parsed.startupModules[name]! * (1 + parsed.tolerance)))
+  }
+  await runPromise(artifact("cli-startup", `Vitest built-in bench; ${options.iterations} emitted CLI processes per command, no warmup, each with --mock and fresh private settings, to exit: --help, read, actions and login; and node -e 0 as the process floor. Exit status and the first output line are checked. One more process per command, with a preload that records each module URL Node resolves, counts the modules and names the workspace packages loaded. Gate: modules <= ceil(baseline * (1 + tolerance)) from bench/baseline.json startupModules; help, read and actions must not load ${HOST}, login must, and no command in mock mode loads ${GITHUB}.`, ["Wall time is observational: nyc-01 is shared and its load varies (record uptime alongside); the module count is the gate.", "The build is excluded; the OS file cache is warm after the first process.", "Node's compile cache is off: a .vibe entry cannot enable it (~/vl/vibelang-bugs/compile-cache-from-vibe).", "Counts modules, not their size or evaluation cost."], { modules, packages, timings }))
+}, 600_000)

@@ -4,7 +4,7 @@
 // no network (VL-13). A cookie, device code or token is never logged.
 import { sessionOperation, waitForSignIn, SignInFailed, type Status } from "./sessionFlow.vibe"
 export { SignInFailed } from "./sessionFlow.vibe"
-import { GitHub } from "@smthrs/integrations"
+import type { GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Factory } from "../core/Factory.vibe"
 import { factoryUrl } from "./backend.vibe"
@@ -30,7 +30,9 @@ const DeviceSession = Schema.Struct({ cookie: Schema.String, login: Schema.Strin
 /** `VIBELANG_GITHUB_WEB`: where GitHub's device flow lives, for the integration fixture; default github.com. */
 const githubWeb = Config.String("VIBELANG_GITHUB_WEB").pipe(Config.withDefault("https://github.com"))
 
+/** GitHub's device flow. Imported on first use, so commands other than `login` don't load the integrations package. */
 effect function githubAuth(clientId: string) {
+  const { GitHub } = try promise(() => import("@smthrs/integrations"))
   const layer = GitHub.Auth.layer({ clientId, clientSecret: Redacted.make(""), webBaseUrl: try githubWeb })
   const context = try Layer.build(layer)
   return Context.get(context, GitHub.Auth.GitHubAuth)

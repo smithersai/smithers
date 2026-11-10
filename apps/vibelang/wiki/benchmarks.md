@@ -3308,3 +3308,35 @@ Vitest built-in bench, local. The Accounts object on a real loopback server over
 **accounts-web-refused.** A GitHub code exchange that refuses: the callback answers with the failure redirect, clears the state cookie and sets no session.
 
 Limitations: GitHub is an injected service, so there is no network or GitHub latency; storage is in memory, not Durable Object SQLite. Issue and wiki routes are excluded because their GitHub steps retry an unreachable GitHub (0017).
+
+## CLI startup (2026-11-10, nyc-01)
+
+Vitest built-in bench, local, `bench/cli-startup.bench.vibe`. Five emitted CLI processes per command, no warmup, each
+with `--mock` and fresh private settings, to exit; exit status and the first output line are checked. One more process
+per command runs with a preload that counts the modules Node resolves and names the workspace packages loaded.
+
+| Command | Modules before | Modules now | Median ms before | Median ms now |
+| --- | ---: | ---: | ---: | ---: |
+| `--help` | 1,462 | 864 | 3,082 | 1,810 |
+| `read` | | 865 | 3,330 | 2,083 |
+| `actions` | | 865 | | |
+| `login` | | 1,463 | | |
+
+Medians come from ten interleaved runs of each build at 06:50 UTC (load average 51 on 32 cores); the benchmark
+artifact `2026-11-10T06-45-47.306Z-cli-startup.json` ran at load 88 and is slower for that reason. Node itself
+(`node -e 0`) takes about 40 ms.
+
+**Cause.** Every command loaded the sign-in machinery: `sessionFlow.vibe` imported `@smthrs/platform-node` (the
+durable SQLite host, about 600 modules) and `signin.vibe` imported `@smthrs/integrations` (about 330 modules) at the
+top of the module. Both now load on first use, inside the effect that needs them. `login` and `logout` still load the
+host; no mock command loads the GitHub integration.
+
+**Gate.** The module count, not wall time: each command's count must stay within `ceil(baseline * 1.05)` of
+`bench/baseline.json` `startupModules`, `help`, `read` and `actions` must not load `@smthrs/platform-node`, and
+`login` must. The gate fails on the old imports.
+
+Limitations: wall time is observational on this shared host; the OS file cache is warm after the first process; the
+build is excluded; module counts measure loading, not evaluation cost. What remains per process is mostly module
+loading itself: about 860 modules, about 400 of them TypeScript that Node type-strips on every start. Node's compile
+cache removes that work (about 400 ms) but a `.vibe` entry cannot enable it
+(`~/vl/vibelang-bugs/compile-cache-from-vibe`).
