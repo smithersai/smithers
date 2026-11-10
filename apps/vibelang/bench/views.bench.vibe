@@ -13,6 +13,7 @@ import { registration } from "../src/actions/catalog.vibe"
 import type { Commit } from "../src/history/mythical.vibe"
 import type { CommitPage } from "../src/history/pages.vibe"
 import type { Run } from "../src/actions/Actions.vibe"
+import { docsPage } from "../src/core/flows.vibe"
 import { plannedHistory } from "./fixtures.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
@@ -312,4 +313,20 @@ it("agent issue cards render exact children, closed state and accessible open co
     scene({ update, view }, given(blank), expect(role("button", { name: "Open #42" })).toExist())
   }).run(quick)
   await runPromise(artifact("issue-chat-cards", "Vitest built-in bench; four DOM scenes through the real web view render a settled reply's issue card with one and two children, a closed leaf and a blank link label. Assert child counts, linked identities and accessible open controls every callback; event reduction and fixture creation occur before timing.", ["Happy DOM and Foldkit scene overhead, not Chromium layout or paint. No network/provider writes; issue records are product fixture data. The timed corpus renders fixed small cards."], result))
+})
+
+it("docs pane renders the page the agent opened, maximized and while touring", async ({ bench }) => {
+  const chat = { ...home, surface: "chat" as const }
+  const url = docsPage("/setup")!
+  const opened = update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url } })).model
+  assert(opened.client.conversation.pane).toBe("https://vibelang.sh/setup")
+  const scenes: Array<[Model, Array<SceneStep<Model, Message, undefined>>]> = [
+    [opened, [expect(role("region", { name: "Docs" })).toExist(), expect(text("vibelang.sh/setup")).toExist(), expect(role("button", { name: "Maximize the docs" })).toExist(), expect(role("region", { name: "Wiki" })).toBeAbsent()]],
+    [{ ...opened, docs: "max" as const }, [expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "true"), expect(role("button", { name: "Minimize the docs" })).toExist()]],
+    [{ ...opened, docs: "max" as const, tour: true }, [expect(role("region", { name: "Docs" })).toHaveAttr("data-driving", "true"), expect(role("button", { name: "Minimize the docs" })).toBeAbsent()]],
+  ]
+  const result = await workload(bench, "docs-pane-view", "sync", () => {
+    for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
+  }).run(quick)
+  await runPromise(artifact("docs-pane-view", "Vitest built-in bench; Foldkit scenes over the real update/view. The model is the chat after a PaneOpened event for docsPage('/setup'), the event vibelang/docs/open records. Renders the docs pane, maximized, and maximized during a tour; checks the page label, the toggle's name and the tour's driving mark.", ["Scene rendering without layout, paint or the iframe's network load. Only a live model calls vibelang/docs/open (the mock agent and people do not), so this starts from the recorded event rather than a reply."], result))
 })

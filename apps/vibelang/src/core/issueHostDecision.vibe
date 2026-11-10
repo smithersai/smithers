@@ -1,0 +1,236 @@
+// The issues host's own decisions (wiki/decisions/0022-issues-and-vips.md, 0018 third-lane batch 6): which request
+// keys are admitted, how a GitHub failure is classified and answered over HTTP, which refusals were decided before any
+// write, how a GitHub issue reads as a task and a VIP, what an observed timeline event says, how an outside approval is
+// projected without a local receipt, and how the stored revision advances. `worker/Issues.vibe` and `worker/Wiki.vibe`
+// call these; GitHub calls, schema decoding, dates and sorting stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** Whether a UTF-16 code unit may appear in a request key: an ASCII letter, a digit or `-`. */
+//@ verify
+//@ ensures \result == ((65 <= unit && unit <= 90) || (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit == 45)
+export function keyUnit(unit: number): boolean {
+  return (65 <= unit && unit <= 90) || (97 <= unit && unit <= 122) || (48 <= unit && unit <= 57) || unit === 45
+}
+
+/** Whether `key` names a durable request: 1 to 100 ASCII letters, digits and `-` (`/^[A-Za-z0-9-]{1,100}$/`). */
+//@ verify
+//@ ensures \result == (1 <= key.length && key.length <= 100 && forall(i, 0 <= i && i < key.length ==> keyUnit(key.charCodeAt(i))))
+export function requestKey(key: string): boolean {
+  if (key.length < 1 || key.length > 100) return false
+  for (let i = 0; i < key.length; i++) {
+    //@ invariant 0 <= i && i <= key.length
+    //@ invariant forall(j, 0 <= j && j < i ==> keyUnit(key.charCodeAt(j)))
+    //@ decreases key.length - i
+    if (!keyUnit(key.charCodeAt(i))) return false
+  }
+  return true
+}
+
+/**
+ * The reason a GitHub failure is reported as: an outcome GitHub may have applied is `unknown`, then a truncated answer
+ * is `partial`, then a rate limit, then the HTTP status (401 sign-in, 403 forbidden, 404 missing), else `unavailable`.
+ */
+//@ verify
+//@ ensures outcomeUnknown ==> \result == "unknown"
+//@ ensures !outcomeUnknown && incomplete ==> \result == "partial"
+//@ ensures !outcomeUnknown && !incomplete && rateLimited ==> \result == "rate-limited"
+//@ ensures !outcomeUnknown && !incomplete && !rateLimited && status == 401 ==> \result == "sign-in"
+//@ ensures !outcomeUnknown && !incomplete && !rateLimited && status == 403 ==> \result == "forbidden"
+//@ ensures !outcomeUnknown && !incomplete && !rateLimited && status == 404 ==> \result == "missing"
+//@ ensures !outcomeUnknown && !incomplete && !rateLimited && status != 401 && status != 403 && status != 404 ==> \result == "unavailable"
+export function failureReason(outcomeUnknown: boolean, incomplete: boolean, rateLimited: boolean, status: number): string {
+  if (outcomeUnknown) return "unknown"
+  if (incomplete) return "partial"
+  if (rateLimited) return "rate-limited"
+  if (status === 401) return "sign-in"
+  if (status === 403) return "forbidden"
+  if (status === 404) return "missing"
+  return "unavailable"
+}
+
+/** Whether a failure carries its reason as a retry `code`: exactly the reasons a later attempt may clear. */
+//@ verify
+//@ ensures \result == (reason == "unknown" || reason == "rate-limited" || reason == "unavailable")
+export function carriesCode(reason: string): boolean {
+  return reason === "unknown" || reason === "rate-limited" || reason === "unavailable"
+}
+
+/** Whether a refusal is the request's own fault, answered 400. */
+//@ verify
+//@ ensures \result == (reason == "title" || reason == "incomplete" || reason == "assignee" || reason == "empty" || reason == "tree" || reason == "invalid" || reason == "review" || reason == "closed" || reason == "fork" || reason == "install")
+export function badRequest(reason: string): boolean {
+  return reason === "title" || reason === "incomplete" || reason === "assignee" || reason === "empty" || reason === "tree" || reason === "invalid" || reason === "review" || reason === "closed" || reason === "fork" || reason === "install"
+}
+
+/** The HTTP status an issues refusal is answered with. Anything unnamed is 503: never a success, never a 5xx GitHub sent. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == 403
+//@ ensures (reason == "sign-in" || reason == "connect") ==> \result == 401
+//@ ensures reason == "missing" ==> \result == 404
+//@ ensures reason == "unknown" ==> \result == 409
+//@ ensures badRequest(reason) ==> \result == 400
+//@ ensures reason != "forbidden" && reason != "sign-in" && reason != "connect" && reason != "missing" && reason != "unknown" && !badRequest(reason) ==> \result == 503
+//@ ensures \result == 400 || \result == 401 || \result == 403 || \result == 404 || \result == 409 || \result == 503
+export function refusalStatus(reason: string): number {
+  if (reason === "forbidden") return 403
+  if (reason === "sign-in" || reason === "connect") return 401
+  if (reason === "missing") return 404
+  if (reason === "unknown") return 409
+  if (badRequest(reason)) return 400
+  return 503
+}
+
+/** Whether a refusal comes from a check every write waits for, so it is known before anything is written. */
+//@ verify
+//@ ensures \result == (reason == "title" || reason == "incomplete" || reason == "empty" || reason == "tree" || reason == "assignee" || reason == "closed" || reason == "review")
+export function checkedBeforeWrite(reason: string): boolean {
+  return reason === "title" || reason === "incomplete" || reason === "empty" || reason === "tree" || reason === "assignee" || reason === "closed" || reason === "review"
+}
+
+/**
+ * Whether a failed request is marked `unwritten`, so the browser may drop its saved retry: only a first execution that
+ * wrote nothing and was refused by a check before any write.
+ */
+//@ verify
+//@ ensures \result == (fresh && !touched && checkedBeforeWrite(reason))
+//@ ensures touched ==> !\result
+export function unwritten(fresh: boolean, touched: boolean, reason: string): boolean {
+  return fresh && !touched && checkedBeforeWrite(reason)
+}
+
+/** A device sign-in never accepts or declines a VIP (decision 0028). */
+//@ verify
+//@ ensures \result == ((op == "accept" || op == "decline") && kind == "agent")
+export function agentRefused(op: string, kind: string): boolean {
+  return (op === "accept" || op === "decline") && kind === "agent"
+}
+
+/** What a GitHub issue reads as on the task board. */
+export type IssueTask = "" | "Done" | "Running" | "Queued"
+
+/** A task needs the task label and an assignee; then a closed issue is done, a running label runs, else it waits. */
+//@ verify
+//@ ensures !(labeled && assigned) ==> \result == ""
+//@ ensures labeled && assigned && closed ==> \result == "Done"
+//@ ensures labeled && assigned && !closed && running ==> \result == "Running"
+//@ ensures labeled && assigned && !closed && !running ==> \result == "Queued"
+export function issueTask(labeled: boolean, assigned: boolean, closed: boolean, running: boolean): IssueTask {
+  if (!labeled || !assigned) return ""
+  if (closed) return "Done"
+  return running ? "Running" : "Queued"
+}
+
+/** What a GitHub issue reads as among VIPs. */
+export type VipState = "" | "Accepted" | "Declined" | "In review"
+
+/** Only a verified VIP marker makes a VIP; its accepted label wins over a declined one; with neither it is in review. */
+//@ verify
+//@ ensures !verified ==> \result == ""
+//@ ensures verified && accepted ==> \result == "Accepted"
+//@ ensures verified && !accepted && declined ==> \result == "Declined"
+//@ ensures verified && !accepted && !declined ==> \result == "In review"
+export function vipState(verified: boolean, accepted: boolean, declined: boolean): VipState {
+  if (!verified) return ""
+  if (accepted) return "Accepted"
+  return declined ? "Declined" : "In review"
+}
+
+/**
+ * The VIP state stored for an observed issue: an `Accepted` label without this project's own approval receipt reads as
+ * in review, since public labels cannot invent a person's approval. Any other state is kept.
+ */
+//@ verify
+//@ ensures vip != "Accepted" ==> \result == vip
+//@ ensures vip == "Accepted" && receipt ==> \result == "Accepted"
+//@ ensures vip == "Accepted" && !receipt ==> \result == "In review"
+//@ ensures \result == "Accepted" ==> receipt
+export function projectedVip(vip: VipState, receipt: boolean): VipState {
+  if (vip !== "Accepted") return vip
+  return receipt ? "Accepted" : "In review"
+}
+
+/** Whether a stored revision has room for another observation inside the native safe-integer range. */
+//@ verify
+//@ ensures \result == (0 <= seq && seq < 9007199254740991)
+export function revisionRoom(seq: number): boolean {
+  return 0 <= seq && seq < 9007199254740991
+}
+
+/** Whether an observed integer revision is representable without loss. Native integer validation precedes this. */
+//@ verify
+//@ ensures \result == (0 <= seq && seq <= 9007199254740991)
+export function validRevision(seq: number): boolean {
+  return 0 <= seq && seq <= 9007199254740991
+}
+
+/** The revision after an observation: past the stored one, and never behind GitHub's. */
+//@ verify
+//@ ensures \result == (saved + 1 >= observed ? saved + 1 : observed)
+//@ ensures \result > saved && \result >= observed
+//@ ensures revisionRoom(saved) && validRevision(observed) ==> 1 <= \result && \result <= 9007199254740991
+export function nextRevision(saved: number, observed: number): number {
+  return saved + 1 >= observed ? saved + 1 : observed
+}
+
+/** Whether a read may resume `op`: every durable write, never a read or a draft. */
+//@ verify
+//@ ensures \result == (op == "new" || op == "comment" || op == "link" || op == "split" || op == "commit" || op == "uncommit" || op == "propose" || op == "accept" || op == "decline" || op == "spec-revise" || op == "spec-review")
+//@ ensures op == "read" || op == "draft" ==> !\result
+export function resumable(op: string): boolean {
+  return op === "new" || op === "comment" || op === "link" || op === "split" || op === "commit" || op === "uncommit" || op === "propose" || op === "accept" || op === "decline" || op === "spec-revise" || op === "spec-review"
+}
+
+/** A resumed request's status: completed or failed once its run settled, else still running. */
+export type ResumeStatus = "completed" | "failed" | "running"
+
+//@ verify
+//@ ensures settled && succeeded ==> \result == "completed"
+//@ ensures settled && !succeeded ==> \result == "failed"
+//@ ensures !settled ==> \result == "running"
+export function resumeStatus(settled: boolean, succeeded: boolean): ResumeStatus {
+  if (!settled) return "running"
+  return succeeded ? "completed" : "failed"
+}
+
+/** The label an assignee is offered under: the configured agent reads as `VibeLang agent`. */
+//@ verify
+//@ ensures login == agent ==> \result == "VibeLang agent"
+//@ ensures login != agent ==> \result == login
+export function choiceLabel(login: string, agent: string): string {
+  return login === agent ? "VibeLang agent" : login
+}
+
+/** The login a chosen label names: `VibeLang agent` is the configured agent. */
+//@ verify
+//@ ensures label == "VibeLang agent" ==> \result == agent
+//@ ensures label != "VibeLang agent" ==> \result == label
+//@ ensures label != "VibeLang agent" && label != agent ==> choiceLabel(\result, agent) == label
+export function choiceLogin(label: string, agent: string): string {
+  return label === "VibeLang agent" ? agent : label
+}
+
+/**
+ * What an issue timeline event says, `""` for an event the issue page does not show. A label event names its label
+ * and an assignment its person; without one, it says nothing.
+ */
+//@ verify
+//@ ensures event == "labeled" && hasLabel ==> \result == "added the " + label + " label"
+//@ ensures event == "unlabeled" && hasLabel ==> \result == "removed the " + label + " label"
+//@ ensures event == "assigned" && hasAssignee ==> \result == "assigned " + assignee
+//@ ensures event == "unassigned" && hasAssignee ==> \result == "unassigned " + assignee
+//@ ensures event == "closed" ==> \result == "closed this issue"
+//@ ensures event == "reopened" ==> \result == "reopened this issue"
+//@ ensures (event == "labeled" || event == "unlabeled") && !hasLabel ==> \result == ""
+//@ ensures (event == "assigned" || event == "unassigned") && !hasAssignee ==> \result == ""
+//@ ensures event != "labeled" && event != "unlabeled" && event != "assigned" && event != "unassigned" && event != "closed" && event != "reopened" ==> \result == ""
+export function timelineText(event: string, hasLabel: boolean, label: string, hasAssignee: boolean, assignee: string): string {
+  if (event === "labeled") return hasLabel ? "added the " + label + " label" : ""
+  if (event === "unlabeled") return hasLabel ? "removed the " + label + " label" : ""
+  if (event === "assigned") return hasAssignee ? "assigned " + assignee : ""
+  if (event === "unassigned") return hasAssignee ? "unassigned " + assignee : ""
+  if (event === "closed") return "closed this issue"
+  if (event === "reopened") return "reopened this issue"
+  return ""
+}

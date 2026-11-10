@@ -1,0 +1,61 @@
+import { describe, expect, it } from "@effect/vitest"
+import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
+
+describe("machine admission and receipts", () => {
+  it("fences old generations and permits a higher generation only for start", () => {
+    expect([generationRefused(true, 1, 2), generationRefused(false, 3, 2), generationRefused(true, 3, 2), generationRefused(false, 2, 2)]).toEqual([true, true, false, false])
+  })
+  it("starts a higher generation only after stop and never restarts a stopped generation", () => {
+    expect([startRefused(2, 2, "stopped"), startRefused(3, 2, "running"), startRefused(3, 2, "stopped"), startRefused(2, 2, "starting")]).toEqual([true, true, false, false])
+  })
+  it("admits commands and acknowledgements only at the same running generation", () => {
+    expect([currentRunning(2, 2, "running"), currentRunning(1, 2, "running"), currentRunning(2, 2, "stopping")]).toEqual([true, false, false])
+  })
+  it("replays only a done receipt for exactly the same command", () => {
+    expect([receiptPassed("done", "pwd", "pwd"), receiptPassed("pending", "pwd", "pwd"), receiptPassed("done", "pwd", "ls")]).toEqual([true, false, false])
+  })
+  it("preserves receipt output and makes a SQL null empty", () => {
+    expect([receiptText(null), receiptText("out\nerr"), receiptText("")]).toEqual(["", "out\nerr", ""])
+  })
+  it("refuses command compute at and below the lease boundary", () => {
+    expect([leaseExpired(-1), leaseExpired(0), leaseExpired(1)]).toEqual([true, true, false])
+  })
+  it("skips checkpoint work already in stopping phase", () => {
+    expect([checkpointPhase("stopping"), checkpointPhase("running"), checkpointPhase("starting")]).toEqual([false, true, true])
+  })
+  it("records checkpoint failure explicitly without retaining a cause", () => {
+    expect([checkpointOutput(true), checkpointOutput(false)]).toEqual(["checkpoint-failed", ""])
+  })
+})
+
+describe("machine snapshot restoration", () => {
+  it("replaces the snapshot only when present, retaining the other native option fields", () => {
+    const options: { readonly enableInternet: boolean; readonly instance?: string; readonly label: string; readonly containerSnapshot?: string } = { enableInternet: false, instance: "kept-instance", label: "kept", containerSnapshot: "old" }
+    expect(restoredOptions(options, "new")).toEqual({ enableInternet: false, instance: "kept-instance", label: "kept", containerSnapshot: "new" })
+    expect(restoredOptions(options, undefined)).toEqual({ enableInternet: false, instance: "kept-instance", label: "kept", containerSnapshot: "old" })
+    const fresh: { readonly enableInternet: boolean; readonly instance?: string; readonly label: string; readonly containerSnapshot?: string } = { enableInternet: false, label: "fresh" }
+    expect(restoredOptions(fresh, undefined)).toEqual({ enableInternet: false, label: "fresh" })
+  })
+})
+
+describe("machine derived policies", () => {
+  it("bounds whole-second command time by the remaining lease and ten-minute cap", () => {
+    expect([commandTimeout(1), commandTimeout(999), commandTimeout(1999), commandTimeout(2000), commandTimeout(599999), commandTimeout(600000), commandTimeout(600001)]).toEqual([1, 1, 1, 2, 599, 600, 600])
+  })
+  it("keeps stdout before stderr and includes only the requested public markers", () => {
+    expect(commandOutput("out", "err", false, false, "0")).toBe("outerr")
+    expect(commandOutput("out", "err", true, true, "137")).toBe("outerr\n[truncated]\nExit 137")
+    expect(commandOutput("", "", false, true, "-1")).toBe("\nExit -1")
+  })
+  it("admits lease durations from one second through six hours", () => {
+    expect([leaseDurationRefused(0), leaseDurationRefused(999), leaseDurationRefused(1000), leaseDurationRefused(21600000), leaseDurationRefused(21600001)]).toEqual([true, true, false, false, true])
+  })
+  it("treats only the stopped phase as an already completed stop", () => {
+    expect([stoppedPhase("stopped"), stoppedPhase("stopping"), stoppedPhase("running")]).toEqual([true, false, false])
+  })
+  it("retains the last snapshot on failure and replaces it only on checkpoint success", () => {
+    expect(checkpointed("old", { _tag: "Success", success: "new" })).toEqual({ snapshot: "new", failed: false })
+    expect(checkpointed("old", { _tag: "Failure" })).toEqual({ snapshot: "old", failed: true })
+    expect(checkpointed(undefined, { _tag: "Failure" })).toEqual({ snapshot: undefined, failed: true })
+  })
+})

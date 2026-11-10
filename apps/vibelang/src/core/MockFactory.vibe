@@ -21,6 +21,8 @@ import { type Decision, type Intent } from "./decide.vibe"
 import { recordedConversation, replayLog } from "./replayDecision.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { TourControlBody } from "./wire.vibe"
+import { actorKey, afterCursor, draftOutcome, liveEvent, replyKind, replayedTo, restoredCounter } from "./mockFactoryDecision.vibe"
+import { validTourStep } from "./protocolDecision.vibe"
 import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
   Tours, unanswered, walkRegistration,
@@ -108,10 +110,17 @@ effect function scripted(
   // An explicit wiki request wins over action words inside its page title.
   // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
   const specificationReview = page !== undefined ? undefined : try requestedSpecificationReview(issues, prompt, `${conversation}-${post}-specification`)
-  let text = specificationReview !== undefined ? specificationReview : page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+  const kind = replyKind(
+    specificationReview !== undefined,
+    page !== undefined,
+    prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it.",
+    /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt),
+    matches(prompt.toLowerCase(), HISTORY_WORDS),
+  )
+  let text = kind === "specification" ? specificationReview ?? "" : kind === "wiki" ? `Opened ${page}.` : kind === "issue" ? "" : kind === "sandbox" ? (effect {
     const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
     return `Started ${snapshot.id}.`
-  } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
+  } catch () => "Couldn't start a sandbox") : kind === "history"
     ? try Action.make({
       name: "vibelang/history/show",
       success: Schema.String,
@@ -147,7 +156,8 @@ effect function scripted(
   }
   if (page !== undefined && /\bdraft\b/i.test(prompt)) {
     const result = try Effect.result(wiki.act({ op: "draft", page, base: "", text: prompt, key: `${conversation}-${post}-wiki-draft` }))
-    answer = result._tag === "Failure" ? result.failure.reason === "forbidden" ? "Only contributors can draft wiki edits." : "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)!.label}. [Review it](#wiki-draft-${page})`
+    const outcome = draftOutcome(result._tag === "Failure", result._tag === "Failure" ? result.failure.reason : "")
+    answer = outcome === "forbidden" ? "Only contributors can draft wiki edits." : outcome === "failed" ? "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)!.label}. [Review it](#wiki-draft-${page})`
   }
   const pieces = chunks(answer)
   for (let index = 0; index < pieces.length; index++) {
@@ -285,7 +295,7 @@ return Layer.effect(Factory, effect {
       if (existing !== undefined) return existing
       const retained = try journal.read(conversation)
       const restored = replayLog(empty, retained)
-      try Ref.update(ids, value => Math.max(value, restored.seq))
+      try Ref.update(ids, value => restoredCounter(value, restored.seq))
       const state = try Ref.make<State>({ conversation: restored, log: retained })
       const gate = try Semaphore.make(1)
       const wake = try Scope.provide(scope)(acquireRelease(Queue.sliding<void>(1), Queue.shutdown))
@@ -405,11 +415,11 @@ return Layer.effect(Factory, effect {
   const issueActors = new Map<string, IssuesApi>()
   const issueLock = try Semaphore.make(1)
   const issuesForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(issueLock, 1)(effect {
-    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
-    let api = issueActors.get(actorKey)
+    const key = actorKey(person.id, person.agent === true)
+    let api = issueActors.get(key)
     if (api === undefined) {
       api = try Effect.provideService(makeIssueFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), id => Effect.orDie(accounts.participated(id)), try issueStore), Scope.Scope, scope)
-      issueActors.set(actorKey, api)
+      issueActors.set(key, api)
     }
     return api
   })
@@ -422,11 +432,11 @@ return Layer.effect(Factory, effect {
   const wikiActors = new Map<string, WikiApi>()
   const wikiLock = try Semaphore.make(1)
   const wikiForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(wikiLock, 1)(effect {
-    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
-    let api = wikiActors.get(actorKey)
+    const key = actorKey(person.id, person.agent === true)
+    let api = wikiActors.get(key)
     if (api === undefined) {
       api = try Effect.provideService(makeWikiFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), try wikiStore), Scope.Scope, scope)
-      wikiActors.set(actorKey, api)
+      wikiActors.set(key, api)
     }
     return api
   })
@@ -463,7 +473,7 @@ return Layer.effect(Factory, effect {
     },
     controlTour: effect (conversation, action, step) => {
       // The Worker answers a body outside the protocol with 400, which the live Factory reads as Unavailable.
-      if (!Schema.is(TourControlBody)({ action, step }) || step > 11) throw new Unavailable({ reason: "tour control answered 400" })
+      if (!Schema.is(TourControlBody)({ action, step }) || !validTourStep(step, 11)) throw new Unavailable({ reason: "tour control answered 400" })
       const room = try openRoom(conversation)
       const executionId = `control-tour/${try Ref.updateAndGet(executions, value => value + 1)}`
       const refusal = try Effect.orDie(action === "pause" ? room.engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? room.engine.execute(ResumeTour, { executionId, payload: {} }) : room.engine.execute(SeekTour, { executionId, payload: { step } }))
@@ -481,7 +491,7 @@ return Layer.effect(Factory, effect {
       const room = (try Ref.get(rooms)).get(conversation)
       if (room === undefined) return { seq: 0, entries: [] }
       const state = try Ref.get(room.state)
-      const touched = new Set(state.log.filter((event) => event.seq > after).map((event) => event.id))
+      const touched = new Set(state.log.filter((event) => afterCursor(event.seq, after)).map((event) => event.id))
       return { seq: state.conversation.seq, entries: state.conversation.entries.filter((entry) => touched.has(entry.id)) }
     },
     events: (conversation: string, after: number) =>
@@ -490,12 +500,12 @@ return Layer.effect(Factory, effect {
         // Subscribe before reading the log, so no event falls between the replay and the live tail.
         const live = try PubSub.subscribe(published)
         const state = try Ref.get(room.state)
-        const log = state.log.filter((event) => event.seq > after)
-        const replayedTo = log.length === 0 ? after : log[log.length - 1]!.seq
+        const log = state.log.filter((event) => afterCursor(event.seq, after))
+        const replayed = replayedTo(after, log.length, log.at(-1)?.seq ?? after)
         return Stream.concat(
           Stream.fromIterable(log),
           Stream.fromSubscription(live).pipe(
-            Stream.filter((item) => item.conversation === conversation && item.event.seq > replayedTo),
+            Stream.filter((item) => liveEvent(item.conversation === conversation, item.event.seq, replayed)),
             Stream.map((item) => item.event),
           ),
         )

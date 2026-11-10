@@ -6,6 +6,7 @@ import { SandboxTools } from "@smthrs/sandbox"
 import type { RuntimeContext } from "alchemy/RuntimeContext"
 import type { SandboxImage } from "../infra/SandboxImage.vibe"
 import { observed } from "../src/core/sandboxHost.vibe"
+import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
 
 export type Operation = "start" | "stop" | "command" | "lease"
 export interface MachineShape {
@@ -29,21 +30,20 @@ export function machineObject(box: MachineBox, state: ObjectState) {
     effect function saved() { return (try promise(() => state.raw.storage.get<Saved>("machine"))) ?? { generation: 0, phase: "stopped" as const } }
     effect function apply(kind: Operation, generation: number, operationId: string, command: string) {
       const previous = try saved()
-      if (!Number.isSafeInteger(generation) || generation < previous.generation || (kind !== "start" && generation !== previous.generation)) return { ok: false, output: "" }
+      if (!Number.isSafeInteger(generation) || generationRefused(kind === "start", generation, previous.generation)) return { ok: false, output: "" }
       if (kind === "lease") {
-        if (previous.phase !== "running" || !(try box.running)) return { ok: true, output: "stopped" }
+        if (!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)) return { ok: true, output: "stopped" }
         const duration = Number(command)
-        if (!Number.isSafeInteger(duration) || duration < 1000 || duration > 21600000) return { ok: false, output: "" }
+        if (!Number.isSafeInteger(duration) || leaseDurationRefused(duration)) return { ok: false, output: "" }
         try SandboxObject.rearm(box, duration)
         try promise(() => state.raw.storage.put("machine", { ...previous, leaseUntil: Date.now() + duration }))
         return { ok: true, output: "running" }
       }
       if (kind === "start") {
-        if (generation === previous.generation && previous.phase === "stopped") return { ok: false, output: "" }
-        if (generation > previous.generation && previous.phase !== "stopped") return { ok: false, output: "" }
+        if (startRefused(generation, previous.generation, previous.phase)) return { ok: false, output: "" }
         const starting: Saved = { ...previous, generation, phase: "starting" }
         try promise(() => state.raw.storage.put("machine", starting))
-        try SandboxObject.wake({ ...box, start: (options) => box.start({ ...options, ...(previous.snapshot === undefined ? {} : { containerSnapshot: previous.snapshot }) }) }, { intercepts: [], inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
+        try SandboxObject.wake({ ...box, start: (options) => box.start(restoredOptions(options, previous.snapshot)) }, { intercepts: [], inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
         if (!(try box.running)) return { ok: false, output: "" }
         const setup = try SandboxObject.run(box, ["sh", "-c", "mkdir -p /workspace /var/lib/vibelang/calls && chown 1000:1000 /workspace /var/lib/vibelang/calls"], { user: "0:0" })
         if (setup !== 0) return { ok: false, output: "" }
@@ -51,13 +51,14 @@ export function machineObject(box: MachineBox, state: ObjectState) {
         return { ok: true, output: "" }
       }
       if (kind === "stop") {
-        if (previous.phase === "stopped") return { ok: true, output: "" }
+        if (stoppedPhase(previous.phase)) return { ok: true, output: "" }
         let snapshot = previous.snapshot
         let checkpointFailed = previous.checkpointFailed ?? false
-        if (previous.phase !== "stopping" && (try box.running)) {
+        if (checkpointPhase(previous.phase) && (try box.running)) {
           const checkpoint = try Effect.result(observed("checkpoint", box.snapshotContainer()))
-          if (checkpoint._tag === "Success") { snapshot = checkpoint.success; checkpointFailed = false }
-          else checkpointFailed = true
+          const plan = checkpointed(snapshot, checkpoint)
+          snapshot = plan.snapshot
+          checkpointFailed = plan.failed
         }
         // Store a restorable handle BEFORE destroy. Exhaustion must stop compute even if snapshotting fails;
         // the last acknowledged command's checkpoint remains available and the failure remains observable.
@@ -66,20 +67,20 @@ export function machineObject(box: MachineBox, state: ObjectState) {
         try box.destroy()
         if (try box.running) return { ok: false, output: "" }
         try promise(() => state.raw.storage.put("machine", { ...stopping, phase: "stopped" }))
-        return { ok: true, output: checkpointFailed ? "checkpoint-failed" : "" }
+        return { ok: true, output: checkpointOutput(checkpointFailed) }
       }
       const key = `${generation}/${operationId}`
       const admission = try Semaphore.withPermits(gate, 1)(effect {
         const latest = try saved()
-        if (latest.generation !== generation || latest.phase !== "running" || !(try box.running)) return { admitted: false, output: "", ok: false, timeout: 0 }
+        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return { admitted: false, output: "", ok: false, timeout: 0 }
         const receipts = try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec<{ command: string; phase: string; output: string | null }>("SELECT command, phase, output FROM sandbox_machine_commands WHERE id = ?", key).toArray()))
         const prior = receipts[0]
-        if (prior !== undefined) return { admitted: false, ok: prior.phase === "done" && prior.command === command, output: prior.output ?? "", timeout: 0 }
+        if (prior !== undefined) return { admitted: false, ok: receiptPassed(prior.phase, prior.command, command), output: receiptText(prior.output), timeout: 0 }
         const remaining = (latest.leaseUntil ?? 0) - Date.now()
-        if (remaining <= 0) return { admitted: false, output: "", ok: false, timeout: 0 }
+        if (leaseExpired(remaining)) return { admitted: false, output: "", ok: false, timeout: 0 }
         // The outer SQL fence survives even a guest that deletes its own tool fence. Uncertain commands never rerun.
         try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("INSERT INTO sandbox_machine_commands (id, command, phase) VALUES (?, ?, 'pending')", key, command)))
-        return { admitted: true, output: "", ok: true, timeout: Math.max(1, Math.min(600, Math.floor(remaining / 1000))) }
+        return { admitted: true, output: "", ok: true, timeout: commandTimeout(remaining) }
       })
       if (!admission.admitted) return { ok: admission.ok, output: admission.output }
       const session = try ContainerSession.make(box, { id: "sandbox", workdir: "/workspace", user: "1000:1000", env: { HOME: "/workspace" } })
@@ -88,9 +89,9 @@ export function machineObject(box: MachineBox, state: ObjectState) {
       const snapshot = try box.snapshotContainer()
       return try Semaphore.withPermits(gate, 1)(effect {
         const latest = try saved()
-        if (latest.generation !== generation || latest.phase !== "running" || !(try box.running)) return { ok: false, output: "" }
+        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return { ok: false, output: "" }
         try promise(() => state.raw.storage.put("machine", { ...latest, snapshot }))
-        const output = result.tool === "run" ? `${result.stdout}${result.stderr}${result.truncated ? "\n[truncated]" : ""}${result.exitCode === 0 ? "" : `\nExit ${result.exitCode}`}` : ""
+        const output = result.tool === "run" ? commandOutput(result.stdout, result.stderr, result.truncated, result.exitCode !== 0, String(result.exitCode)) : ""
         try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("UPDATE sandbox_machine_commands SET phase = 'done', output = ? WHERE id = ?", output, key)))
         return { ok: true, output }
       })

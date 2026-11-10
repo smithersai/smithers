@@ -1,25 +1,27 @@
 // GitHub projection and action protocol; no credential, role or actor is accepted in an action payload.
+// Every number is a safe, nonnegative integer (`Seq`): JSON carries NaN and the infinities as null (0015).
 import { DurableText } from "./wire.vibe"
+import { Seq } from "./schemas.vibe"
 export const IssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"])
 export const IssueNote = Schema.Struct({ age: Schema.String.pipe(Schema.withDecodingDefaultKey(succeed(""))), author: Schema.String, text: Schema.String, event: Schema.Boolean })
 export const IssueRecord = Schema.Struct({
-  number: Schema.Number, githubId: Schema.Number, title: Schema.String, body: Schema.String, author: Schema.String,
-  age: Schema.String, state: Schema.Literals(["open", "closed"]), labels: Schema.Array(Schema.String), parent: Schema.Number,
+  number: Seq, githubId: Seq, title: Schema.String, body: Schema.String, author: Schema.String,
+  age: Schema.String, state: Schema.Literals(["open", "closed"]), labels: Schema.Array(Schema.String), parent: Seq,
   task: Schema.Literals(["", "Queued", "Running", "Done"]), assignee: Schema.String,
   approvedBy: Schema.optionalKey(Schema.String), approvedAt: Schema.optionalKey(Schema.String),
   vip: Schema.Literals(["", "In review", "Accepted", "Declined"]), review: Schema.String, path: Schema.String,
-  comments: Schema.Number, notes: Schema.Array(IssueNote),
+  comments: Seq, notes: Schema.Array(IssueNote),
 })
 export const SpecificationReviewer = Schema.Literals(["astra", "sol", "fable", "opus"])
-export const SpecificationReview = Schema.Struct({ review: Schema.optionalKey(Schema.String), verdict: Schema.Literals(["", "LGTM", "Changes requested"]), grade: Schema.String, revision: Schema.Number, link: Schema.String })
-export const Specification = Schema.Struct({ revision: Schema.Number, text: Schema.String, astra: SpecificationReview, sol: SpecificationReview, fable: SpecificationReview, opus: SpecificationReview })
-export const SpecificationEvent = Schema.Struct({ review: Schema.optionalKey(Schema.String), revision: Schema.Number, event: Schema.Literals(["reset", "revision", "review"]), reviewer: Schema.String, verdict: Schema.String, grade: Schema.String, link: Schema.String, at: Schema.String })
+export const SpecificationReview = Schema.Struct({ review: Schema.optionalKey(Schema.String), verdict: Schema.Literals(["", "LGTM", "Changes requested"]), grade: Schema.String, revision: Seq, link: Schema.String })
+export const Specification = Schema.Struct({ revision: Seq, text: Schema.String, astra: SpecificationReview, sol: SpecificationReview, fable: SpecificationReview, opus: SpecificationReview })
+export const SpecificationEvent = Schema.Struct({ review: Schema.optionalKey(Schema.String), revision: Seq, event: Schema.Literals(["reset", "revision", "review"]), reviewer: Schema.String, verdict: Schema.String, grade: Schema.String, link: Schema.String, at: Schema.String })
 export const IssueRequest = Schema.Struct({
-  revision: Schema.optionalKey(Schema.Number), reviewer: Schema.optionalKey(SpecificationReviewer),
-  resumeRecovery: Schema.optionalKey(DurableText), resumeOp: Schema.optionalKey(DurableText), resumeKey: Schema.optionalKey(DurableText), recovery: Schema.optionalKey(DurableText), op: IssueOperation, number: Schema.Number, parent: Schema.Number, title: DurableText, text: DurableText,
+  revision: Schema.optionalKey(Seq), reviewer: Schema.optionalKey(SpecificationReviewer),
+  resumeRecovery: Schema.optionalKey(DurableText), resumeOp: Schema.optionalKey(DurableText), resumeKey: Schema.optionalKey(DurableText), recovery: Schema.optionalKey(DurableText), op: IssueOperation, number: Seq, parent: Seq, title: DurableText, text: DurableText,
   assignee: DurableText, example: DurableText, prior: DurableText, key: DurableText,
 })
-export const IssuesState = Schema.Struct({ specification: Schema.optionalKey(Specification), specificationHistory: Schema.optionalKey(Schema.Array(SpecificationEvent)), saved: Schema.optionalKey(Schema.Struct({ request: IssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Schema.Number })), absoluteDates: Schema.optionalKey(Schema.Boolean), reviewers: Schema.optionalKey(Schema.Array(Schema.String)), seq: Schema.Number, connected: Schema.optionalKey(Schema.Boolean), selected: Schema.optionalKey(Schema.Number), assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.String, label: Schema.String }))), items: Schema.Array(IssueRecord), role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])), stale: Schema.optionalKey(Schema.Number), draft: Schema.optionalKey(Schema.Struct({ title: Schema.String, summary: Schema.String, example: Schema.String, prior: Schema.String })) })
+export const IssuesState = Schema.Struct({ specification: Schema.optionalKey(Specification), specificationHistory: Schema.optionalKey(Schema.Array(SpecificationEvent)), saved: Schema.optionalKey(Schema.Struct({ request: IssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Seq })), absoluteDates: Schema.optionalKey(Schema.Boolean), reviewers: Schema.optionalKey(Schema.Array(Schema.String)), seq: Seq, connected: Schema.optionalKey(Schema.Boolean), selected: Schema.optionalKey(Seq), assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.String, label: Schema.String }))), items: Schema.Array(IssueRecord), role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])), stale: Schema.optionalKey(Seq), draft: Schema.optionalKey(Schema.Struct({ title: Schema.String, summary: Schema.String, example: Schema.String, prior: Schema.String })) })
 
 export type IssueRequest = typeof IssueRequest.Type
 export schema error IssueFailure { reason: string; unwritten?: boolean; code?: string; retryAfterMillis?: number }

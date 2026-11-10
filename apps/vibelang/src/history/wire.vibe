@@ -13,6 +13,7 @@ import { historyStatus } from "./flowMachine.vibe"
 import { DurableText } from "../core/wire.vibe"
 import { MAX_NOTE, MAX_TITLE } from "./mythical.vibe"
 import type { PageRequest } from "./pages.vibe"
+import { digitsFrom, idAfter, pageKind, routeKind, writeOf } from "./wireDecision.vibe"
 
 export const HISTORY_PATH = "/api/history"
 
@@ -26,20 +27,18 @@ export type HistoryRoute =
   | { readonly kind: "history-events" }
   | { readonly kind: "history-write"; readonly write: Write }
 
-const EPIC = /^\/epics\/(e\d{1,9})$/
-const COMMIT = /^\/commits\/(m\d{1,9})$/
-const FROM = /^\d{1,9}$/
-
 /** The page a read asks for, from what follows `HISTORY_PATH` and the query: `undefined` when it names none. */
 export function pageRequestOf(rest: string, params: URLSearchParams): PageRequest | undefined {
-  if (rest === "") return { what: "outline" }
-  if (rest === "/search") return { what: "search", query: params.get("q") ?? "" }
-  const commit = COMMIT.exec(rest)
-  if (commit !== null) return { what: "commit", id: commit[1]! }
-  const epic = EPIC.exec(rest)
+  const commit = idAfter(rest, "/commits/", 109)
+  const epic = idAfter(rest, "/epics/", 101)
   const from = params.get("from") ?? "0"
-  if (epic !== null && FROM.test(from)) return { what: "epic", id: epic[1]!, from: Number(from) }
-  return undefined
+  switch (pageKind(rest, commit, epic, digitsFrom(from, 0))) {
+    case "outline": return { what: "outline" }
+    case "search": return { what: "search", query: params.get("q") ?? "" }
+    case "commit": return { what: "commit", id: commit }
+    case "epic": return { what: "epic", id: epic, from: Number(from) }
+    case "": return undefined
+  }
 }
 
 /** The path and query that ask for `request`. */
@@ -58,10 +57,11 @@ export function pathOf(request: PageRequest): string | undefined {
 
 /** The history route `method`, `pathname` and the query name, or `undefined`. */
 export function historyRouteOf(method: string, pathname: string, params: URLSearchParams = new URLSearchParams()): HistoryRoute | undefined {
-  if (pathname === `${HISTORY_PATH}/events` && method === "GET") return { kind: "history-events" }
-  const write = WRITES.find((each) => pathname === `${HISTORY_PATH}/${each}`)
-  if (write !== undefined) return method === "POST" ? { kind: "history-write", write } : undefined
-  if (method !== "GET" || !(pathname === HISTORY_PATH || pathname.startsWith(`${HISTORY_PATH}/`))) return undefined
+  const kind = routeKind(method, pathname)
+  if (kind === "events") return { kind: "history-events" }
+  const write = writeOf(pathname)
+  if (kind === "write" && write !== "") return { kind: "history-write", write }
+  if (kind !== "read") return undefined
   const page = pageRequestOf(pathname.slice(HISTORY_PATH.length), params)
   return page === undefined ? undefined : { kind: `history-${page.what}`, page }
 }

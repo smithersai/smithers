@@ -98,3 +98,17 @@ test('a function marked //@ verify reads as proved without a hand-written note; 
   const row = inventorySource(decide, fs.readFileSync(decide, 'utf8')).find(entry => entry.label === 'decide');
   assert.match(row.why, /^Proved/);
 });
+
+test('native SQL, storage and clock calls are effect shells while regexp exec and Map membership stay logic', () => {
+  const source = 'function query() { return state.raw.storage.sql.exec("SELECT 1").toArray() }\n' +
+    'function read() { return state.raw.storage.get("key") }\n' +
+    'function write() { return state.raw.storage.put("key", 1) }\n' +
+    'function now() { return Date.now() }\n' +
+    'function pattern(text: string) { return /^a/.exec(text) }\n' +
+    'function member(storage: Map<string, string>) { return storage.has("key") }\n';
+  const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
+  assert.deepEqual(rows.map(row => [row.label, row.category]), [
+    ['query', 'effectful shell'], ['read', 'effectful shell'], ['write', 'effectful shell'],
+    ['now', 'effectful shell'], ['pattern', 'pure logic'], ['member', 'pure logic'],
+  ]);
+});

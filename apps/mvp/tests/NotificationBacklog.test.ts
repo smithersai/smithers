@@ -33,7 +33,7 @@ test("283 unread entries reserve no page space; only three live notices render",
       listHere: (yield* listQuery(entries, "stackHere")).tanstack,
       feed: (yield* feedQuery(entries)).tanstack, unread: (yield* unreadQuery(entries)).tanstack,
       needs: (yield* needsQuery(entries)).tanstack, panel: (yield* panelQuery(panels)).tanstack,
-      detail: (yield* detailQuery(details)).tanstack,
+      detail: (yield* detailQuery(details, entries)).tanstack,
     }, actions: {
       open: unexpected, hide: unexpected, dismiss: unexpected, read: unexpected,
       answer: unexpected, retry: unexpected, openPanel: unexpected, togglePanel: unexpected,

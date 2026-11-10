@@ -81,8 +81,9 @@ explicitly required by this lane. The Cloudflare SDK directly declares the monor
 The contracts prove ordered observations, role gates, commitment identity/content/tree preservation, explicit
 assignment, uncommit, human review state without task commitment, and document/author admission for VIPs. Executable mutations retain unchanged
 contracts and must fail Dafny obligations. Browser and scene suites exercise actual views and commands; workerd
-asserts real persisted run receipts and repeated execution identity. The real GitHub suite targets only
-`roninjin10/smithers-github-tests`, uses `GITHUB_TEST_TOKEN`, and states its skip reason when absent.
+asserts real persisted run receipts and repeated execution identity. The real GitHub suite replays recordings of
+`codeplanesmithers/smithers-vibelang-e2e` through smithers.sh's delegation, and records again only with
+`VIBE_GITHUB=record` and `GITHUB_TEST_TOKEN` ([0032](0032-record-replay.md)).
 
 The bounded tree walk is proved to terminate and reject invalid issue identities. Preservation of acyclicity is
 checked by 500 generated forests and attempted links; it is not claimed as a Dafny theorem.

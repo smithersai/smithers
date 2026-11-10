@@ -82,10 +82,17 @@ export interface Exchange {
  * @since 1.0.0
  */
 export interface Recording {
+  /**
+   * The run's identity, fixed at record time: what a test puts in the names
+   * it creates on the service so that a real run never meets an earlier one's
+   * data, and a replay asks for exactly what was recorded.
+   */
+  readonly label?: string | undefined
   readonly exchanges: ReadonlyArray<Exchange>
 }
 
 const RecordingSchema = Schema.Struct({
+  label: Schema.optional(Schema.String),
   exchanges: Schema.Array(Schema.Struct({
     request: Schema.Struct({ method: Schema.String, url: Schema.String, body: Schema.optional(Schema.Unknown) }),
     response: Schema.Struct({
@@ -121,6 +128,15 @@ export interface Options {
    * finds the same recording. The live service still receives the original.
    */
   readonly normalize?: ((request: RecordedRequest) => RecordedRequest) | undefined
+  /** Written as the recording's {@link Recording.label}. Read it back with {@link load}. */
+  readonly label?: string | undefined
+  /**
+   * Removes what the code never reads from a response body before it is
+   * recorded, such as a REST API's hypermedia links. While recording, the code
+   * under test receives the pruned body too, so a field it needs fails the
+   * recording run rather than a later replay.
+   */
+  readonly prune?: ((body: unknown, request: RecordedRequest) => unknown) | undefined
 }
 
 /**
@@ -185,6 +201,7 @@ const credentialPatterns = defaultRules
  * A placeholder the scrubber wrote does not match. Run it over every committed
  * recording in CI, so a hand-edited or wrongly recorded file fails the build.
  *
+ * @throws {never}
  * @category scanning
  * @since 1.0.0
  */
@@ -196,7 +213,7 @@ export const scan = (text: string): ReadonlyArray<string> =>
 const keptHeaders = new Set(["content-type", "link", "location", "retry-after"])
 
 const sensitiveQuery =
-  /^(?:access_token|token|code|client_secret|state|sig|signature|key|api_key|apikey|auth|password|x-amz-signature|x-amz-credential|x-amz-security-token)$/i
+  /^(?:access_token|token|code|client_secret|sig|signature|key|api_key|apikey|auth|password|x-amz-signature|x-amz-credential|x-amz-security-token)$/i
 
 const secretValues = (secrets: Options["secrets"]): ReadonlyArray<string> =>
   (secrets ?? []).map((secret) => typeof secret === "string" ? secret : Redacted.value(secret))
@@ -370,10 +387,13 @@ export const load = (path: string): Effect.Effect<Recording> =>
  */
 export const encode = (
   path: string,
-  exchanges: ReadonlyArray<Exchange>,
+  recording: Recording,
   secrets: Options["secrets"]
 ): Effect.Effect<string, CredentialInRecordingError> => {
-  const text = `${JSON.stringify({ exchanges }, undefined, 2)}\n`
+  // One exchange per line: a re-recording's diff names the exchanges that changed, at a quarter less than indented.
+  const head = recording.label === undefined ? "" : `"label":${JSON.stringify(recording.label)},`
+  const lines = recording.exchanges.map((exchange) => JSON.stringify(exchange)).join(",\n")
+  const text = `{${head}"exchanges":[\n${lines}\n]}\n`
   const rules = [
     ...scan(text),
     ...(secretValues(secrets).some((secret) => text.includes(secret)) ? ["live-secret"] : [])
@@ -391,7 +411,7 @@ export const encode = (
  */
 export const record = (
   path: string,
-  options: Pick<Options, "live" | "secrets" | "normalize">
+  options: Pick<Options, "live" | "secrets" | "normalize" | "label" | "prune">
 ): Effect.Effect<HttpClient.HttpClient, never, Scope.Scope> =>
   Effect.gen(function*() {
     const live = options.live
@@ -400,7 +420,11 @@ export const record = (
     yield* Effect.addFinalizer((exit) =>
       Exit.isSuccess(exit)
         ? Effect.gen(function*() {
-          const text = yield* encode(path, exchanges, options.secrets)
+          const text = yield* encode(
+            path,
+            options.label === undefined ? { exchanges } : { label: options.label, exchanges },
+            options.secrets
+          )
           yield* Effect.promise(async () => {
             await mkdir(dirname(resolve(path)), { recursive: true })
             await writeFile(resolve(path), text)
@@ -413,13 +437,13 @@ export const record = (
       Effect.gen(function*() {
         const keyed = recordedRequest(request, url)
         const response = yield* live.execute(request)
-        const text = yield* response.text.pipe(Effect.orDie)
+        const liveText = yield* response.text.pipe(Effect.orDie)
         const headers: Record<string, string> = {}
         for (const [name, value] of Object.entries(response.headers)) headers[name] = value
-        exchanges.push(scrubExchange({
-          request: keyed,
-          response: { status: response.status, headers, body: parsed(text) }
-        }, options))
+        // A pruned body is what the code under test sees too, so recording and replay run on the same answer.
+        const body = options.prune === undefined ? parsed(liveText) : options.prune(parsed(liveText), keyed)
+        const text = options.prune === undefined || typeof body === "string" ? liveText : JSON.stringify(body)
+        exchanges.push(scrubExchange({ request: keyed, response: { status: response.status, headers, body } }, options))
         const empty = response.status === 204 || response.status === 205 || response.status === 304
         return HttpClientResponse.fromWeb(
           request,

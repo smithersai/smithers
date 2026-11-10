@@ -1,0 +1,73 @@
+// Route and page decoding of the mythical history's HTTP protocol (0018, third-lane batch 17), for `wire.vibe`.
+// The callers keep URLSearchParams, Number and encodeURIComponent. Each kernel restates a pattern `wire.vibe` used.
+
+/** Whether `code` is an ASCII digit, as `\d` matches without the `u` flag. */
+//@ verify
+//@ ensures \result == (48 <= code && code <= 57)
+export function digitUnit(code: number): boolean {
+  return code >= 48 && code <= 57
+}
+
+/** Whether `text` from `start` on is 1 to 9 ASCII digits: `/^\d{1,9}$/` on that suffix. */
+//@ verify
+//@ requires 0 <= start
+//@ ensures \result == (start < text.length && text.length - start <= 9 && forall(i, start <= i && i < text.length ==> digitUnit(text.charCodeAt(i))))
+export function digitsFrom(text: string, start: number): boolean {
+  if (start >= text.length || text.length - start > 9) return false
+  for (let i = start; i < text.length; i++) {
+    //@ invariant start <= i && i <= text.length
+    //@ invariant forall(j, start <= j && j < i ==> digitUnit(text.charCodeAt(j)))
+    //@ decreases text.length - i
+    if (!digitUnit(text.charCodeAt(i))) return false
+  }
+  return true
+}
+
+/** The id `rest` names after `prefix`: the unit `letter` then 1 to 9 digits, to the end (`/^<prefix>(<letter>\d{1,9})$/`); "" when none. */
+//@ verify
+//@ ensures \result == ((rest.startsWith(prefix) && prefix.length + 1 < rest.length && rest.length - prefix.length - 1 <= 9 && rest.charCodeAt(prefix.length) == letter && forall(i, prefix.length + 1 <= i && i < rest.length ==> digitUnit(rest.charCodeAt(i)))) ? rest.slice(prefix.length) : "")
+export function idAfter(rest: string, prefix: string, letter: number): string {
+  if (!rest.startsWith(prefix) || rest.length <= prefix.length || rest.charCodeAt(prefix.length) !== letter) return ""
+  return digitsFrom(rest, prefix.length + 1) ? rest.slice(prefix.length) : ""
+}
+
+export type PageKind = "outline" | "search" | "commit" | "epic" | ""
+
+/** Which page a read names, from what follows the history path and its matched ids: outline, search, commit, then an epic whose start is digits. */
+//@ verify
+//@ ensures \result == (rest == "" ? "outline" : (rest == "/search" ? "search" : (commit != "" ? "commit" : ((epic != "" && fromDigits) ? "epic" : ""))))
+export function pageKind(rest: string, commit: string, epic: string, fromDigits: boolean): PageKind {
+  if (rest === "") return "outline"
+  if (rest === "/search") return "search"
+  if (commit !== "") return "commit"
+  if (epic !== "" && fromDigits) return "epic"
+  return ""
+}
+
+export type WriteName = "plan" | "start" | "note" | "approve" | "fold" | ""
+
+/** The write a path names: exactly the history path, `/`, and one of the five flows; "" otherwise. */
+//@ verify
+//@ ensures \result == (pathname == "/api/history/plan" ? "plan" : (pathname == "/api/history/start" ? "start" : (pathname == "/api/history/note" ? "note" : (pathname == "/api/history/approve" ? "approve" : (pathname == "/api/history/fold" ? "fold" : "")))))
+export function writeOf(pathname: string): WriteName {
+  if (pathname === "/api/history/plan") return "plan"
+  if (pathname === "/api/history/start") return "start"
+  if (pathname === "/api/history/note") return "note"
+  if (pathname === "/api/history/approve") return "approve"
+  if (pathname === "/api/history/fold") return "fold"
+  return ""
+}
+
+export type RouteKind = "events" | "write" | "read" | ""
+
+/** The kind of history route: GET events; a write path only by POST; else a GET at or under the history path reads. */
+//@ verify
+//@ ensures \result == ((pathname == "/api/history/events" && method == "GET") ? "events" : (writeOf(pathname) != "" ? (method == "POST" ? "write" : "") : ((method == "GET" && (pathname == "/api/history" || pathname.startsWith("/api/history/"))) ? "read" : "")))
+//@ ensures \result == "write" ==> method == "POST"
+//@ ensures \result == "events" || \result == "read" ==> method == "GET"
+export function routeKind(method: string, pathname: string): RouteKind {
+  if (pathname === "/api/history/events" && method === "GET") return "events"
+  if (writeOf(pathname) !== "") return method === "POST" ? "write" : ""
+  if (method === "GET" && (pathname === "/api/history" || pathname.startsWith("/api/history/"))) return "read"
+  return ""
+}

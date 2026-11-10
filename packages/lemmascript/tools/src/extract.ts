@@ -823,8 +823,22 @@ function extractExpr(node: Expression): RawExpr {
         const branches = acc === null ? null : conditionalSpreadBranches(prop.getExpression());
         if (branches) {
           for (const name of branches.names) {
+            // Project a partial literal directly: a field explicitly built so
+            // far retains its value; a genuinely absent field is undefined.
+            // Building an incomplete generic constructor just to project an
+            // absent field leaves unrelated type parameters unconstrained.
+            const prior = acc as RawExpr;
+            const previousField = (): RawExpr => {
+              if (prior.kind === "record") {
+                const known = [...prior.fields].reverse().find(f => f.name === name);
+                if (known) return known.value;
+                if (!prior.spread) return { kind: "var", name: "undefined" };
+                return { kind: "field", obj: prior.spread, field: name };
+              }
+              return { kind: "field", obj: prior, field: name };
+            };
             const fieldOf = (literal: Map<string, RawExpr>): RawExpr =>
-              literal.get(name) ?? { kind: "field", obj: acc as RawExpr, field: name };
+              literal.get(name) ?? previousField();
             update(name, { kind: "conditional", cond: branches.cond, then: fieldOf(branches.then), else: fieldOf(branches.else) });
           }
           continue;
@@ -2819,7 +2833,10 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
         prior = base;
         base = base.replace(/^readonly\s+/, "").replace(/(\[\])+$/, "").replace(/^(?:Readonly)?Array<(.+)>$/, "$1").trim();
       }
-      if (base !== name && /^[A-Za-z_]\w*$/.test(base)) markType(base);
+      // Keep a local generic result declaration itself, without pulling in
+      // any of its type arguments (Omit<X,...> still does not mark X).
+      const outer = base.replace(/<.*>$/, "").trim();
+      if (/^[A-Za-z_]\w*$/.test(outer)) markType(outer);
     }
     typeDecls.splice(0, typeDecls.length, ...typeDecls.filter(d => neededTypes.has(d.name) || declaredNames.has(d.name)));
   }

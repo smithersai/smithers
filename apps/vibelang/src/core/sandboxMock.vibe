@@ -9,6 +9,7 @@ import { SandboxCommand, SandboxHost, SandboxMeter, SandboxStart, SandboxStop, s
 import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "./sandboxHost.vibe"
 import { mockPolicy, type SandboxPolicy } from "./sandboxPolicy.vibe"
 import type { Role } from "./sandboxDecision.vibe"
+import { currentLease, mockCommand } from "./sandboxMockDecision.vibe"
 
 /** `engine` is the flow engine the sandbox flows run on; tests pass a faulty one to drive engine failures. */
 export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role), engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory) {
@@ -56,22 +57,23 @@ export function memoryMachines(): Machines {
   const outputs = new Map<string, string>()
   const machines: Machines = {
     start: (id, generation) => sync(() => { active.set(id, generation); if (!disk.has(id)) disk.set(id, new Map()) }),
-    lease: (id, generation) => succeed(active.get(id) === generation),
-    stop: (id, generation) => sync(() => { if (active.get(id) === generation) active.delete(id) }),
+    lease: (id, generation) => succeed(currentLease(active.has(id), active.get(id) ?? 0, generation)),
+    stop: (id, generation) => sync(() => { if (currentLease(active.has(id), active.get(id) ?? 0, generation)) active.delete(id) }),
     command: effect (id, generation, operationId, command) => {
-      if (active.get(id) !== generation) throw new Unavailable({ reason: "stale-generation" })
+      if (!currentLease(active.has(id), active.get(id) ?? 0, generation)) throw new Unavailable({ reason: "stale-generation" })
       const key = `${id}/${generation}/${operationId}`
       if (outputs.has(key)) return outputs.get(key)!
       const files = disk.get(id)!
       const write = /^echo (.*?)\s*>\s*([a-zA-Z0-9._/-]+)$/.exec(command)
       const read = /^cat ([a-zA-Z0-9._/-]+)$/.exec(command)
       let output = ""
-      if (write) files.set(write[2]!, write[1]!.replace(/^['"]|['"]$/g, "") + "\n")
-      else if (read) output = files.get(read[1]!) ?? "cat: No such file"
-      else if (command === "pwd") output = "/workspace"
-      else if (command === "ls") output = [...files.keys()].join("  ")
-      else if (command.startsWith("echo ")) output = command.slice(5)
-      else if (command.trim() !== "") output = "Command unavailable in mock mode"
+      const kind = mockCommand(write !== null, read !== null, command)
+      if (kind === "write") files.set(write![2]!, write![1]!.replace(/^['"]|['"]$/g, "") + "\n")
+      else if (kind === "read") output = files.get(read![1]!) ?? "cat: No such file"
+      else if (kind === "pwd") output = "/workspace"
+      else if (kind === "ls") output = [...files.keys()].join("  ")
+      else if (kind === "echo") output = command.slice(5)
+      else if (kind === "other") output = "Command unavailable in mock mode"
       outputs.set(key, output)
       return output
     },

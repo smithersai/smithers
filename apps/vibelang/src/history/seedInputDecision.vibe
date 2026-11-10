@@ -1,0 +1,88 @@
+// Input decisions of the real jj/queue seed generator (0018, third-lane batch 13).
+// Native jj execution, JSON codecs and writes remain in scripts/mythical-seed.vibe.
+//@ safe-slice
+
+/** A present receipt owns its list even when empty; only an absent receipt falls back to the revision. */
+//@ verify
+//@ ensures receipt != undefined ==> \result == receipt
+//@ ensures receipt == undefined ==> \result.length == 1 && \result[0] == revision
+export function receiptCommits(receipt: ReadonlyArray<string> | undefined, revision: string): ReadonlyArray<string> {
+  if (receipt === undefined) return [revision]
+  return receipt
+}
+
+/** Missing queue evidence reads as empty text, preserving any present text including the empty string. */
+//@ verify
+//@ ensures text == undefined ==> \result == ""
+//@ ensures text != undefined ==> \result == text
+export function queueText(text: string | undefined): string {
+  return text === undefined ? "" : text
+}
+
+/** An id's prefix, unchanged when shorter than the generator's abbreviation length. */
+//@ verify
+//@ requires length >= 0
+//@ ensures \result.length == (id.length < length ? id.length : length)
+//@ ensures id.startsWith(\result)
+export function shortCommit(id: string, length: number): string {
+  return id.slice(0, length)
+}
+
+/** Every abbreviated id remains in its original position, including duplicates and short ids. */
+//@ verify
+//@ requires length >= 0
+//@ ensures \result.length == ids.length
+//@ ensures forall(i, 0 <= i && i < ids.length ==> \result[i].length == (ids[i].length < length ? ids[i].length : length) && ids[i].startsWith(\result[i]))
+export function shortCommits(ids: ReadonlyArray<string>, length: number): ReadonlyArray<string> {
+  return ids.map(id => shortCommit(id, length))
+}
+
+/** The end of a nonempty fixed-size read, or the same end when already finished. */
+//@ verify
+//@ requires 0 <= start && start <= total && size >= 1
+//@ ensures start <= \result && \result <= total
+//@ ensures \result == (start + size < total ? start + size : total)
+//@ ensures start < total ==> start < \result
+//@ ensures \result - start <= size
+export function batchEnd(start: number, total: number, size: number): number {
+  return start + size < total ? start + size : total
+}
+
+/** Exact revset text for a half-open input interval, specified by its first element and remaining interval. */
+//@ verify
+//@ requires 0 <= start && start <= end && end <= ids.length
+//@ ensures start == end ==> \result == ""
+//@ ensures start < end ==> \result == "present(" + ids[start] + ")" + (start + 1 == end ? "" : "|" + referenceList(ids, start + 1, end))
+//@ decreases end - start
+export function referenceList(ids: ReadonlyArray<string>, start: number, end: number): string {
+  if (start === end) return ""
+  return "present(" + ids[start]! + ")" + (start + 1 === end ? "" : "|" + referenceList(ids, start + 1, end))
+}
+
+/** A batch's actual jj revset keeps order, multiplicity and every input id; it adds no separator to an empty batch. */
+//@ verify
+//@ requires 0 <= start && start <= end && end <= ids.length
+//@ ensures \result == referenceList(ids, start, end)
+//@ decreases end - start
+export function batchRevset(ids: ReadonlyArray<string>, start: number, end: number): string {
+  return ids.slice(start, end).map(id => "present(" + id + ")").join("|")
+}
+
+/** Specification-only selection: retain the known titles in source order and multiplicity. */
+//@ verify
+//@ ensures ids.length == 0 ==> \result.length == 0
+//@ ensures ids.length > 0 ==> \result == (titles.has(ids[0]) ? [titles.get(ids[0]), ...selectedTitles(ids.slice(1), titles)] : selectedTitles(ids.slice(1), titles))
+//@ decreases ids.length
+export function selectedTitles(ids: ReadonlyArray<string>, titles: Map<string, string>): ReadonlyArray<string> {
+  if (ids.length === 0) return []
+  const rest = selectedTitles(ids.slice(1), titles)
+  return titles.has(ids[0]!) ? [titles.get(ids[0]!)!, ...rest] : rest
+}
+
+/** A queue entry retains every known title, including duplicate ids; missing ids add nothing. */
+//@ verify
+//@ ensures \result == selectedTitles(ids, titles)
+//@ decreases ids.length
+export function knownTitles(ids: ReadonlyArray<string>, titles: Map<string, string>): ReadonlyArray<string> {
+  return ids.flatMap(id => titles.has(id) ? [titles.get(id)!] : [])
+}

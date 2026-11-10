@@ -1,0 +1,34 @@
+diff --git a/dist/internal/http.js b/dist/internal/http.js
+index 07202e2c142deca940d149b9be06bb153eedc168..81a04c3f3938df74237eed69f13f56ae6bede033 100644
+--- a/dist/internal/http.js
++++ b/dist/internal/http.js
+@@ -1,8 +1,8 @@
+ import { createRequire } from "node:module";
+ // Importing node:http as ESM evaluates its lazy WebSocket exports, which loads
+-// undici. Load the CommonJS modules instead. `__filename` covers bundlers that
+-// emit CommonJS, where `import.meta.url` is undefined.
+-const require = /*#__PURE__*/createRequire(typeof __filename === "string" ? __filename : import.meta.url);
++// undici. Load the CommonJS modules instead. `import.meta.url` first: `node --eval`
++// sets a global `__filename` of "[eval]"; CommonJS bundles have only `__filename`.
++const require = /*#__PURE__*/createRequire(import.meta.url ?? __filename);
+ export const http = /*#__PURE__*/require("node:http");
+ export const https = /*#__PURE__*/require("node:https");
+ //# sourceMappingURL=http.js.map
+\ No newline at end of file
+diff --git a/src/internal/http.ts b/src/internal/http.ts
+index 145c6dc1ce8ae79cec6a9d825541c1adaede45f9..fadb16944c93eb3fd0e562157fb96f838d4627cc 100644
+--- a/src/internal/http.ts
++++ b/src/internal/http.ts
+@@ -3,9 +3,9 @@ import type * as Https from "node:https"
+ import { createRequire } from "node:module"
+ 
+ // Importing node:http as ESM evaluates its lazy WebSocket exports, which loads
+-// undici. Load the CommonJS modules instead. `__filename` covers bundlers that
+-// emit CommonJS, where `import.meta.url` is undefined.
+-const require = createRequire(typeof __filename === "string" ? __filename : import.meta.url)
++// undici. Load the CommonJS modules instead. `import.meta.url` first: `node --eval`
++// sets a global `__filename` of "[eval]"; CommonJS bundles have only `__filename`.
++const require = createRequire(import.meta.url ?? __filename)
+ 
+ export const http: typeof Http = require("node:http")
+ export const https: typeof Https = require("node:https")

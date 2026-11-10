@@ -1,3 +1,5 @@
+import { agentRefused } from "./issueHostDecision.vibe"
+import { fixtureDraft, fixtureErrorReason, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "./issueFixtureDecision.vibe"
 // Product mock mode (VL-13). The real issue flows and state machine over local fixtures; no backend or model.
 import { fixtureSpecification, fixtureSpecificationHistory, performSpecification } from "./specification.vibe"
 import { WebCrypto } from "@smthrs/crypto"
@@ -9,7 +11,7 @@ import { IssueHost, issueFlow, issueRegistration, authorizeIssue, issueExecution
 import { IssueFailure, IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
 
 function item(number: number, title: string, extra: Partial<IssueRecord> = {}): IssueRecord {
-  return { number, githubId: number + 1000, title, body: "Case branches on tuples should narrow each element without a cast.\n\n```vibe\nmatch (pair) {\n  when [let name, let count]: name\n}\n```", author: "jun", age: "2d", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...extra }
+  return { ...fixtureIdentity(number), title, body: "Case branches on tuples should narrow each element without a cast.\n\n```vibe\nmatch (pair) {\n  when [let name, let count]: name\n}\n```", author: "jun", age: "2d", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...extra }
 }
 export const fixtureIssues: ReadonlyArray<IssueRecord> = [
   item(48, "Formatter can't resolve its shipped binary on Linux", { labels: ["bug", "cli"], task: "Queued", assignee: "VibeLang agent", comments: 4 }),
@@ -65,24 +67,22 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<typ
       if (!instance.executionId.startsWith(`issues/${person.id || "public"}/`) || !issuePermission(person.role, request.op)) throw new IssueFailure({ reason: "forbidden" })
       const before = try Ref.get(state)
       if (request.op === "read") return before
-      if ((request.op === "accept" || request.op === "decline") && person.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
+      if (agentRefused(request.op, person.kind ?? "person")) throw new IssueFailure({ reason: "forbidden" })
       if (request.op === "spec-revise" || request.op === "spec-review") {
         const next = try performSpecification(before, request)
         try Ref.set(state, next)
         return next
       }
       if (request.key === "") throw new IssueFailure({ reason: "invalid", unwritten: true })
-      if (request.op === "draft") return { ...before, draft: { title: request.title.trim() || "Tuple patterns", summary: request.text.trim() || "Bind the elements of a tuple in one pattern.", example: request.example.trim() || "const pair = [1, 2]", prior: request.prior.trim() || "Rust tuple patterns\nTypeScript tuple types" } }
-      const issue = before.items.find((i) => i.number === request.number)
+      if (request.op === "draft") return { ...before, draft: fixtureDraft(request.title.trim(), request.text.trim(), request.example.trim(), request.prior.trim()) }
+      const index = fixtureIssueIndex(before.items, request.number)
+      const issue = index < 0 ? undefined : before.items[index]
       const creating = issueCreates(request.op)
-      if (!creating && issue === undefined) throw new IssueFailure({ reason: "missing", unwritten: true })
-      if (creating && request.title.trim() === "") throw new IssueFailure({ reason: "title", unwritten: true })
-      if (request.op === "propose" && (request.text.trim() === "" || request.example.trim() === "" || request.prior.trim() === "")) throw new IssueFailure({ reason: "incomplete", unwritten: true })
-      if (request.op === "split" && issue === undefined) throw new IssueFailure({ reason: "missing", unwritten: true })
-      if (request.op === "link" && !canLinkIssues(before.items, request.number, request.parent)) throw new IssueFailure({ reason: "tree", unwritten: true })
-      if (request.op === "commit" && (issue?.state !== "open" || request.assignee.trim() === "")) throw new IssueFailure({ reason: "assignee", unwritten: true })
-      if (request.op === "comment" && request.text.trim() === "") throw new IssueFailure({ reason: "empty", unwritten: true })
-      if ((request.op === "accept" || request.op === "decline") && issue?.vip !== "In review") throw new IssueFailure({ reason: "review", unwritten: true })
+      const refused = fixtureFailure(request.op, creating, issue !== undefined, request.title.trim() === "",
+        request.text.trim() === "" || request.example.trim() === "" || request.prior.trim() === "",
+        request.op !== "link" || canLinkIssues(before.items, request.number, request.parent),
+        issue?.state === "open", request.assignee.trim() === "", request.text.trim() === "", issue?.vip === "In review")
+      if (refused !== "") throw new IssueFailure({ reason: refused, unwritten: true })
       const now = try Clock.currentTimeMillis
       const actor = person.login
       // The proved transition (issueGraphDecision.vibe): from a forest, these checked writes keep a forest.
@@ -119,9 +119,9 @@ export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer"
         const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
         return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)
       }),
-      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed", unwritten: true })),
+      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: fixtureErrorReason(error._tag), unwritten: true })),
     )
-    if (participated !== undefined && (request.op === "new" || request.op === "comment")) try participated(person.id)
+    if (participated !== undefined && fixtureParticipation(request.op)) try participated(person.id)
     return { ...result, reviewers: ["Will"], role: (try personOf(identity)).role }
   }
 

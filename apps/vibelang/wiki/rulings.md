@@ -174,6 +174,12 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
 - **VL-37. VibeLang emits no fallback branch after an exhaustive match.** Will, 2026-11-10 13:44 PST: yes (the compiler
   change is the fleet lead's). Source-map fixes for coverage are bug fixes and need no ruling (the fleet lead,
   2026-11-10).
+- **VL-38. Fuzz targets use a fake GitHub.** Will, 2026-11-10 about 15:15 PST (asked through the lead's teammate):
+  "yea fuzz tests have to use fake github". A fuzz target that generates GitHub requests keeps the in-process GitHub
+  (`fuzz/issues-node-fake.vibe`) for its generated happy paths, because a recording can't answer a request it never
+  saw and real GitHub allows 5,000 requests an hour. Every other happy path runs on recordings of real GitHub (VL-36),
+  and fault cases inject a faulty service. The fake is held to GitHub: a test replays every committed recording of
+  real GitHub through the fake and fails when the fake answers differently.
 
 ## Process
 

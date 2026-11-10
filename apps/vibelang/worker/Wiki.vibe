@@ -18,6 +18,8 @@ export const wikiRepository: WikiRepository = { owner: "smithersai", name: "smit
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
+import { carriesCode, failureReason, requestKey } from "../src/core/issueHostDecision.vibe"
+import { editable, wikiRefusalStatus, wikiUnwritten } from "../src/core/wikiPageDecision.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -27,8 +29,7 @@ export service WikiAuthority {
 
 /** A page's repository path, or undefined for the generated decisions index and unknown pages. */
 export function wikiFilePath(page: string, root = wikiRepository.root): string | undefined {
-  if (page === "decisions") return undefined
-  return pages.some((entry) => entry.id === page) ? `${root}/${page}.md` : undefined
+  return editable(pages, page) ? `${root}/${page}.md` : undefined
 }
 
 /** No raw provider error, request content or credential crosses this boundary. */
@@ -37,8 +38,8 @@ export function wikiFailureOf(error: unknown): WikiFailure {
   if (refusal !== undefined) return new WikiFailure({ reason: refusal === "key_conflict" ? "invalid" : refusal, ...(refusal === "unknown" || refusal === "unavailable" ? { code: refusal } : {}) })
   const details = (error as { readonly details?: Readonly<Record<string, unknown>> })?.details
   const status = details?.status
-  const reason = details?.outcomeUnknown === true ? "unknown" : details?.incomplete === true ? "partial" : details?.rateLimited === true ? "rate-limited" : status === 401 ? "sign-in" : status === 403 ? "forbidden" : status === 404 ? "missing" : "unavailable"
-  return new WikiFailure({ reason, ...(["unknown", "rate-limited", "unavailable"].includes(reason) ? { code: reason } : {}), ...(typeof details?.retryAfterMillis === "number" ? { retryAfterMillis: details.retryAfterMillis } : {}) })
+  const reason = failureReason(details?.outcomeUnknown === true, details?.incomplete === true, details?.rateLimited === true, typeof status === "number" ? status : 0)
+  return new WikiFailure({ reason, ...(carriesCode(reason) ? { code: reason } : {}), ...(typeof details?.retryAfterMillis === "number" ? { retryAfterMillis: details.retryAfterMillis } : {}) })
 }
 
 /** Stable across native recovery executions; a changed payload can never adopt another execution's write. */
@@ -167,7 +168,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       }
       const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)
-        return fresh() && !touched && ["conflict", "empty", "connect"].includes(failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
+        return wikiUnwritten(fresh(), touched, failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
       }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
       // A delegation that ended must not hide the public wiki from its owner.
       if (request.op === "read" && actor?.connection !== undefined) {
@@ -194,11 +195,11 @@ export effect function serveWiki(hostId: string, storage: Storage, repo: WikiRep
     ? { op: "read", page: url.searchParams.get("page") ?? "index", base: "", text: "", key: `read-${try effect { return try (try SecureRandom.SecureRandom).uuidV4() }.pipe(Effect.provide(SecureRandom.layerWebCrypto))}` }
     : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(4_194_304)), Effect.timeout("3 seconds")) catch () => undefined)
   const input = Schema.decodeUnknownOption(WikiRequest)(body)
-  if (Option.isNone(input) || !/^[A-Za-z0-9-]{1,100}$/.test(input.value.key)) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 400 })
+  if (Option.isNone(input) || !requestKey(input.value.key)) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 400 })
   const result = try Effect.result(executeWiki(hostId, storage, input.value, repo))
   if (result._tag === "Failure") {
     const reason = result.failure._tag === "WikiFailure" ? result.failure.reason : "unavailable"
-    const status = reason === "forbidden" ? 403 : reason === "sign-in" || reason === "connect" ? 401 : reason === "missing" ? 404 : reason === "unknown" || reason === "conflict" ? 409 : ["empty", "invalid", "fork", "install"].includes(reason) ? 400 : 503
+    const status = wikiRefusalStatus(reason)
     return HttpServerResponse.jsonUnsafe({ reason, ...(result.failure._tag === "WikiFailure" && result.failure.unwritten === true ? { unwritten: true } : {}) }, { status, headers: { "cache-control": "no-store" } })
   }
   const current = try authority.current()
@@ -208,7 +209,7 @@ export effect function serveWiki(hostId: string, storage: Storage, repo: WikiRep
 /** The same durable execution for HTTP, CLI/MCP and a delegated chat tool. */
 export effect function executeWiki(hostId: string, storage: Storage, input: WikiRequest, repo: WikiRepository = wikiRepository) {
   const payload = try Schema.decodeUnknownEffect(WikiRequest)(input).pipe(Effect.mapError(() => new WikiFailure({ reason: "invalid", unwritten: true })))
-  if (!/^[A-Za-z0-9-]{1,100}$/.test(payload.key)) throw new WikiFailure({ reason: "invalid" })
+  if (!requestKey(payload.key)) throw new WikiFailure({ reason: "invalid" })
   const authority = try WikiAuthority
   const actor = try authority.current()
   if (authority.authorize !== undefined) try authority.authorize(payload.op)
@@ -218,7 +219,7 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
   const injected = try Effect.serviceOption(WikiHost)
   const host = Option.isSome(injected) ? injected.value : try githubWikiHost(repo, storage, () => fresh)
   const executionId = try wikiExecutionId(actor?.id || "public", payload.op, payload.key)
-  if (payload.recovery !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(payload.recovery)) throw new WikiFailure({ reason: "invalid" })
+  if (payload.recovery !== undefined && !requestKey(payload.recovery)) throw new WikiFailure({ reason: "invalid" })
   const { recovery, ...original } = payload
   const runtime = (id: string) => Layer.merge(CloudflareRuntime.layer({ hostId, executionId: id, flow: flow._tag }, wikiEditRegistration), RunInspection.layerWith({ flows: wikiEditFlows })).pipe(Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(WikiHost, host)))
   // Only an explicit retry of a settled failure starts another execution. A lost success joins its receipt.

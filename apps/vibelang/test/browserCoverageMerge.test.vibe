@@ -4,7 +4,7 @@ import { it, expect } from "@effect/vitest"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { build } from "vite"
-import { measure } from "../e2e/coverage-reporter.ts"
+import { measure, sourcesIn } from "../e2e/coverage-reporter.ts"
 import { node, run } from "./support/processes.vibe"
 
 interface Count { readonly covered: number; readonly total: number }
@@ -53,9 +53,9 @@ const observe = () => observed ??= runPromise(scoped(effect {
     // `measure` reads map sources relative to the app's dist/assets, where the e2e build writes its chunks.
     sourceMap.sources = sourceMap.sources.map(source => path.relative(path.join(app, "dist/assets"), path.resolve(output, source)))
     const source = try fs.readFileString(bundle)
-    const directories = [path.relative(app, path.dirname(fixture))]
-    const seeded = try tryPromise(() => measure([], directories))
-    const merged = try tryPromise(() => measure([{ ...native!, source, sourceMap }], directories))
+    const sources = try tryPromise(() => sourcesIn([path.relative(app, path.dirname(fixture))]))
+    const seeded = try tryPromise(() => measure([], sources))
+    const merged = try tryPromise(() => measure([{ ...native!, source, sourceMap }], sources))
     const summary = (map: typeof merged) => map.fileCoverageFor(fixture).toSummary().toJSON() as Summary
     const before = summary(seeded), after = summary(merged)
     const file = try Effect.try(() => merged.fileCoverageFor(fixture).toJSON() as Coverage)

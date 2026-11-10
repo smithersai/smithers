@@ -2,13 +2,16 @@
 // `app/agent/ask`, the real runs and answer routes on the compose Postgres (`pnpm db:up`), and the engine the browser's
 // worker runs. The model is the only scripted seam. Proves decision 0015 §2 to §4: the run reports its status as it
 // goes, the question parks the run durably, and an answer resumes it, from this device or another.
-import { Effect, Exit, Stream } from "effect"
+import { Cause, Effect, Exit, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
 import { contents, eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { answerRow, cell, type Engine, openAgent } from "../../test/agent"
 import { AnswerNotOpen, AnswerRun, Ask, answerOf, Deliver } from "./flows"
 import { requesterOf } from "../../flows/requests"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const runtime = testFile("status")
 
@@ -213,7 +216,7 @@ describe("app/agent/ask", { timeout: ENGINE_WITHIN }, () => {
         executionId: `answer-2-${answerId}`,
         payload: { runId: answerId, version: 1, execution: wait!.execution, value: "docs-v2" },
       }))
-    expect(late).toEqual(Exit.fail(new AnswerNotOpen()))
+    expect(failureOf(late)).toEqual(new AnswerNotOpen())
   })
 
   test("a question that can't be shown isn't asked: the agent hears it wasn't answered", async () => {

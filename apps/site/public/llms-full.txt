@@ -4738,8 +4738,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.16",
-    "@smthrs/targets": "1.0.0-rc.16",
+    "@smthrs/build-cli": "1.0.0-rc.17",
+    "@smthrs/targets": "1.0.0-rc.17",
     "effect": "4.1.1"
   }
 }
@@ -32917,7 +32917,9 @@ type RepresentationIdentityVersion = 2 | 1
 
 `schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.1` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
 
-The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.1`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.1`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a tuple with an element after its rest.
+
+A record key may be a string, a template literal, a number, or a union of them, with or without checks. A number key, as in `Schema.Record(Schema.Number, Schema.Number)`, matches the keys `String(n)` prints, with the pattern `effect@4.1.1` gives it: `^(?:[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?|Infinity|-Infinity|NaN)$`. A checked number key, such as `Schema.Int`, leaves undeclared keys open, or under `"error"` names its property names by that pattern. `effect@4.0.0-rc.115` refused number keys, so no recorded step key changes. Any other key type is refused by name: `Unsupported index key type Boolean`, with the path to the key.
 
 `representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
 
@@ -44333,6 +44335,7 @@ interface Exchange {
   }
 }
 interface Recording {
+  readonly label?: string | undefined
   readonly exchanges: ReadonlyArray<Exchange>
 }
 
@@ -44342,13 +44345,15 @@ interface Options {
   readonly live?: HttpClient.HttpClient | undefined
   readonly secrets?: ReadonlyArray<string | Redacted.Redacted<string>> | undefined
   readonly normalize?: ((request: RecordedRequest) => RecordedRequest) | undefined
+  readonly label?: string | undefined
+  readonly prune?: ((body: unknown, request: RecordedRequest) => unknown) | undefined
 }
 
 const make: (options: Options) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
 const layer: (options: Options) => Layer.Layer<HttpClient.HttpClient>
 const record: (
   path: string,
-  options: Pick<Options, "live" | "secrets" | "normalize">
+  options: Pick<Options, "live" | "secrets" | "normalize" | "label" | "prune">
 ) => Effect.Effect<HttpClient.HttpClient, never, Scope.Scope>
 const replay: (
   recording: Recording,
@@ -44357,7 +44362,7 @@ const replay: (
 const load: (path: string) => Effect.Effect<Recording>
 const encode: (
   path: string,
-  exchanges: ReadonlyArray<Exchange>,
+  recording: Recording,
   secrets: Options["secrets"]
 ) => Effect.Effect<string, CredentialInRecordingError>
 const scrubRequest: (request: RecordedRequest, options?: Pick<Options, "secrets" | "normalize">) => RecordedRequest
@@ -44383,6 +44388,15 @@ claimed once, in recorded order per method, URL and body, and a request with no
 answer left dies with `UnrecordedRequestError`. A missing or malformed
 recording file, a missing `live` client, and a streamed or binary request body
 are defects.
+
+`label` is the run's identity, fixed at record time and written into the
+recording: a test puts it in the names it creates on the service, so a real run
+never meets an earlier run's data and a replay asks for exactly what was
+recorded. Read it back with `load` before a replay.
+
+`prune` removes what the code never reads from a response body before it is
+recorded. While recording, the code under test receives the pruned body too, so
+a field it needs fails the recording run rather than a later replay.
 
 `scan` returns the ids of the journal's token-shaped rules that match `text`
 (private key blocks, Smithers tokens, URL credentials, bearer tokens, JWTs and
@@ -47618,7 +47632,7 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 # CLI reference
 https://smithers.sh/docs/reference/cli/
 
-Install discovery for `smthrs` 1.0.0-rc.16, plus additional local commands, as their `--help` describes them.
+Install discovery for `smthrs` 1.0.0-rc.17, plus additional local commands, as their `--help` describes them.
 
 Other callable library commands stay outside install discovery. Use their explicit `--help`; see the [library command reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/README.md) and [CLI API](/docs/reference/api/cli/).
 

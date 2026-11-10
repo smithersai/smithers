@@ -1,20 +1,18 @@
-// Opt-in: reads main's first-parent log from real GitHub. Without GITHUB_TEST_TOKEN nothing leaves the machine.
+// main's first-parent log from real GitHub, replayed from test/recordings/main-log.json unless VIBE_GITHUB says
+// otherwise (test/support/github.vibe). A replay needs no token and reaches no network.
 import { expect, it } from "@effect/vitest"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpClient, HttpClientRequest } from "effect/http"
 import { githubMain } from "../worker/MainLog.vibe"
+import { github } from "./support/github.vibe"
 
-const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
-
-it.live.skipIf(Option.isNone(token))(Option.isNone(token) ? "SKIP: GITHUB_TEST_TOKEN is absent; real GitHub reads were not run" : "main's log from the empty cursor is the newest commits, each with a short sha and a title", () => effect {
-  if (Option.isNone(token)) return
-  provide FetchHttpClient.layer {
-    // The test, not the site, holds a token: it raises the limit for this opt-in run only.
-    const authorized = HttpClient.mapRequest(try HttpClient.HttpClient, HttpClientRequest.bearerToken(Redacted.value(token.value)))
-    const commits = try githubMain("smithersai/effect", authorized).since("")
-    expect(commits.length).toBeGreaterThan(0)
-    for (const commit of commits) {
-      expect(commit.sha).toMatch(/^[0-9a-f]{12}$/)
-      expect(typeof commit.title).toBe("string")
-    }
+it.live("main's log from the empty cursor is the newest commits, each with a short sha and a title", () => scoped(effect {
+  const real = try github("main-log")
+  // The test, not the site, holds a token: it raises the limit for a real run only.
+  const authorized = HttpClient.mapRequest(real.client, HttpClientRequest.bearerToken(Redacted.value(real.token)))
+  const commits = try githubMain("smithersai/effect", authorized).since("")
+  expect(commits.length).toBeGreaterThan(0)
+  for (const commit of commits) {
+    expect(commit.sha).toMatch(/^[0-9a-f]{12}$/)
+    expect(typeof commit.title).toBe("string")
   }
-}, 60_000)
+}), 60_000)

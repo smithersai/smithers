@@ -25,7 +25,7 @@ operations encountered while inventorying the app. Every source strictly typeche
 LemmaScript emission or Dafny resolution. They do not count as rejected executable mutations. Decision 0018 names
 which production behavior each leaves unproved and the retained host reproduction directory.
 
-`unicode-case.ts` demonstrates incorrect ASCII-only Unicode casing in the backend; `event-key.ts` retains the
+`unicode-case.ts` shows a correct non-ASCII casing contract the backend cannot prove (casing is exact only on ASCII strings, so no false casing claim proves either); `event-key.ts` retains the
 production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have
 strictly checked receipts under the host reproduction directories named in 0018.
 
@@ -81,3 +81,5 @@ Fixed in `packages/lemmascript` by this batch, each with a passing and a failing
 integer (`real-field.ts`; before the fix `real-field-wrong.ts` verified a false claim); a generic interface or object
 alias keeps its type parameters (`generic-record.ts`).
 
+
+generic-nullish.ts is a valid generic boxed-undefined presence check whose correct false result cannot currently lower: Dafny cannot infer the generic call argument from None. The false-contract twin also failed resolution, so no false proof or contract-rejection credit is claimed. Concrete generic-call instantiation remains an explicit tool boundary (0018, third-lane batch 15).

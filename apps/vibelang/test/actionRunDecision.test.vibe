@@ -1,0 +1,28 @@
+// Third-lane batch 11 (0018): an action run's decisions, proved in actionRunDecision as worker/ActionRuns uses them.
+import { describe, expect, it } from "@effect/vitest"
+import { cancellable, historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
+
+describe("an action run", () => {
+  it("names a post's reply run, and knows it only under that post", () => {
+    expect(replyChildId("run-1")).toBe("run-1-reply")
+    expect([isReplyChild(true, true, "run-1-reply", "run-1"), isReplyChild(true, true, "run-2-reply", "run-1"), isReplyChild(false, true, "run-1-reply", "run-1"), isReplyChild(true, false, "run-1-reply", "run-1")])
+      .toEqual([true, false, false, false])
+  })
+  it("starts new and queued runs, and resumes only a running post or tour", () => {
+    expect([startRuns(false, "", false), startRuns(true, "queued", false), startRuns(true, "running", false), startRuns(true, "running", true)])
+      .toEqual([true, true, false, true])
+    for (const state of ["passed", "failed", "cancelled"]) {
+      expect(startRuns(true, state, false)).toBe(false)
+      expect(startRuns(true, state, true)).toBe(false)
+    }
+  })
+  it("cancels only a queued or running run", () => {
+    expect(["queued", "running", "passed", "failed", "cancelled"].map(cancellable)).toEqual([true, true, false, false, false])
+  })
+  it("settles with a state and a result that never carry a cause", () => {
+    expect([settledState(true), settledState(false), settledResult(true), settledResult(false)]).toEqual(["failed", "passed", "Action failed", "null"])
+    expect([startSettles(true, false), startSettles(false, true), startSettles(false, false)]).toEqual([true, true, false])
+    expect([historyPassed(true, false), historyPassed(true, true), historyPassed(false, false)]).toEqual([true, false, false])
+    expect([tourSettles(true, false), tourSettles(false, true), tourSettles(false, false)]).toEqual([true, true, false])
+  })
+})

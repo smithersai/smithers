@@ -1,0 +1,33 @@
+// Third-lane batch 8 (0018): the mock factory's decisions, proved in mockFactoryDecision as MockFactory uses them.
+import { describe, expect, it } from "@effect/vitest"
+import { actorKey, afterCursor, draftOutcome, fixtureLogin, liveEvent, replyKind, replayedTo, restoredCounter, selfGrant } from "../src/core/mockFactoryDecision.vibe"
+
+describe("the mock factory", () => {
+  it("chooses a review, then a wiki page, an issue, a sandbox, the history, else its script", () => {
+    expect([
+      replyKind(true, true, true, true, true), replyKind(false, true, true, true, true), replyKind(false, false, true, true, true),
+      replyKind(false, false, false, true, true), replyKind(false, false, false, false, true), replyKind(false, false, false, false, false),
+    ]).toEqual(["specification", "wiki", "issue", "sandbox", "history", "script"])
+  })
+  it("answers a draft by how it ended", () => {
+    expect([draftOutcome(false, "forbidden"), draftOutcome(true, "forbidden"), draftOutcome(true, "unavailable")]).toEqual(["drafted", "forbidden", "failed"])
+  })
+  it("keeps a person's and their device's journals apart", () => {
+    expect([actorKey("u1", false), actorKey("u1", true)]).toEqual(["u1/person", "u1/agent"])
+    expect(new Set([actorKey("u1", false), actorKey("u1", true), actorKey("u1/agent", false), actorKey("u1/person", true)]).size).toBe(4)
+  })
+  it("resumes a restored room's ids past its journal", () => {
+    expect([restoredCounter(3, 9), restoredCounter(9, 3), restoredCounter(4, 4)]).toEqual([9, 9, 4])
+  })
+  it("replays events after the cursor, then passes on only later ones of the same conversation", () => {
+    expect([afterCursor(5, 4), afterCursor(4, 4)]).toEqual([true, false])
+    expect([replayedTo(4, 0, 99), replayedTo(4, 2, 7)]).toEqual([4, 7])
+    expect([liveEvent(true, 8, 7), liveEvent(true, 7, 7), liveEvent(false, 8, 7)]).toEqual([true, false, false])
+  })
+  it("lets a signed-in person change only their own grant without the roles gate (batch 10)", () => {
+    expect([selfGrant("4", "4"), selfGrant("4", "5"), selfGrant("", "")]).toEqual([true, false, false])
+  })
+  it("names a new fixture person by role and id", () => {
+    expect([fixtureLogin("new", "11"), fixtureLogin("maintainer", "12")]).toEqual(["joss11", "maintainer12"])
+  })
+})

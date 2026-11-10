@@ -1,0 +1,55 @@
+// Third-lane batch 6 (0018): the issues host's decisions, proved in issueHostDecision as Issues and Wiki use them.
+import { describe, expect, it } from "@effect/vitest"
+import { agentRefused, choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
+import { issueFailureOf } from "../worker/Issues.vibe"
+
+describe("the issues host", () => {
+  it("admits a request key of 1 to 100 ASCII letters, digits and dashes, as the old pattern did", () => {
+    const keys = ["", "a", "A-9", "x".repeat(100), "x".repeat(101), "a b", "a_b", "ключ", "a\n", "😀", "a-"]
+    expect(keys.map(requestKey)).toEqual(keys.map((key) => /^[A-Za-z0-9-]{1,100}$/.test(key)))
+    expect(keys.map(requestKey)).toEqual([false, true, true, true, false, false, false, false, false, false, true])
+  })
+  it("classifies a GitHub failure by outcome, truncation, rate limit, then status", () => {
+    expect([failureReason(true, true, true, 401), failureReason(false, true, true, 401), failureReason(false, false, true, 401)]).toEqual(["unknown", "partial", "rate-limited"])
+    expect([401, 403, 404, 500, 0].map((status) => failureReason(false, false, false, status))).toEqual(["sign-in", "forbidden", "missing", "unavailable", "unavailable"])
+    expect(issueFailureOf({ details: { status: 403 } })).toMatchObject({ reason: "forbidden" })
+    expect(issueFailureOf({ details: { status: "403", rateLimited: true, retryAfterMillis: 5 } })).toMatchObject({ reason: "rate-limited", code: "rate-limited", retryAfterMillis: 5 })
+    expect(issueFailureOf({ details: { status: "404" } })).toMatchObject({ reason: "unavailable", code: "unavailable" })
+  })
+  it("answers each refusal with its HTTP status", () => {
+    const reasons = ["forbidden", "sign-in", "connect", "missing", "unknown", "title", "fork", "install", "partial", "rate-limited", "protocol"]
+    expect(reasons.map(refusalStatus)).toEqual([403, 401, 401, 404, 409, 400, 400, 400, 503, 503, 503])
+  })
+  it("marks unwritten only a first execution refused before any write", () => {
+    expect([unwritten(true, false, "title"), unwritten(true, true, "title"), unwritten(false, false, "title"), unwritten(true, false, "invalid")]).toEqual([true, false, false, false])
+  })
+  it("refuses an agent's accept and decline only", () => {
+    expect([agentRefused("accept", "agent"), agentRefused("decline", "agent"), agentRefused("comment", "agent"), agentRefused("accept", "person")]).toEqual([true, true, false, false])
+  })
+  it("reads an issue as a task and a VIP", () => {
+    expect([issueTask(true, true, true, true), issueTask(true, true, false, true), issueTask(true, true, false, false), issueTask(true, false, false, false), issueTask(false, true, true, true)]).toEqual(["Done", "Running", "Queued", "", ""])
+    expect([vipState(true, true, true), vipState(true, false, true), vipState(true, false, false), vipState(false, true, false)]).toEqual(["Accepted", "Declined", "In review", ""])
+  })
+  it("keeps an Accepted label only with this project's receipt", () => {
+    expect([projectedVip("Accepted", true), projectedVip("Accepted", false), projectedVip("Declined", false), projectedVip("", false)]).toEqual(["Accepted", "In review", "Declined", ""])
+  })
+  it("advances the revision past the stored one and never behind GitHub's", () => {
+    expect([revisionRoom(-1), revisionRoom(0), revisionRoom(Number.MAX_SAFE_INTEGER - 1), revisionRoom(Number.MAX_SAFE_INTEGER)]).toEqual([false, true, true, false])
+    expect([validRevision(-1), validRevision(Number.MAX_SAFE_INTEGER), validRevision(Number.MAX_SAFE_INTEGER + 1)]).toEqual([false, true, false])
+    expect([nextRevision(4, 2), nextRevision(4, 9), nextRevision(4, 5)]).toEqual([5, 9, 5])
+  })
+  it("resumes only durable writes, and reports a resumed run's status", () => {
+    expect(["new", "spec-review", "read", "draft", ""].map(resumable)).toEqual([true, true, false, false, false])
+    expect([resumeStatus(true, true), resumeStatus(true, false), resumeStatus(false, false)]).toEqual(["completed", "failed", "running"])
+  })
+  it("offers the agent under its product name and reads the name back", () => {
+    expect([choiceLabel("bot", "bot"), choiceLabel("ada", "bot"), choiceLogin("VibeLang agent", "bot"), choiceLogin("ada", "bot")]).toEqual(["VibeLang agent", "ada", "bot", "ada"])
+  })
+  it("says what a timeline event did, and nothing for one it does not show", () => {
+    expect([
+      timelineText("labeled", true, "bug", false, ""), timelineText("unlabeled", true, "bug", false, ""), timelineText("assigned", false, "", true, "ada"),
+      timelineText("unassigned", false, "", true, "ada"), timelineText("closed", false, "", false, ""), timelineText("reopened", false, "", false, ""),
+      timelineText("labeled", false, "", false, ""), timelineText("assigned", false, "", false, ""), timelineText("mentioned", true, "bug", true, "ada"),
+    ]).toEqual(["added the bug label", "removed the bug label", "assigned ada", "unassigned ada", "closed this issue", "reopened this issue", "", "", ""])
+  })
+})

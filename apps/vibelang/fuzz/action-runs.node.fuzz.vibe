@@ -17,7 +17,7 @@ import * as Objects from "../worker/Objects.vibe"
 import { world, request, history } from "../test/support/actionObjects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
-import { run, Finding, Text } from "./run.vibe"
+import { run, Finding, Text, STEERED_FLOOR } from "./run.vibe"
 
 const Config = Schema.Struct({
   flow: Schema.Literals(["vibelang/Post", "vibelang/Tour"]),
@@ -406,4 +406,4 @@ it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) =
     }
   }
   return true
-})))
+}), undefined, { minimum: STEERED_FLOOR }))

@@ -373,7 +373,8 @@ function answerOf(model: Model, answer: Answer): ReadonlyArray<Message> {
       const number = issues === undefined ? 1 : answer.selected ? issues.selected : issues.selected + 1
       if (answer.kind === "issue-details-failed") return [Message.IssueDetailsFailed({ number })]
       const data = issues?.data
-      return data === undefined ? [] : [Message.IssueDetailsLoaded({ number, data: { ...data, seq: answer.older ? data.seq - 1 : data.seq } })]
+      // Issue states number from 0 (`Seq`): at 0 there is no older state to answer with.
+      return data === undefined || answer.older && data.seq === 0 ? [] : [Message.IssueDetailsLoaded({ number, data: { ...data, seq: answer.older ? data.seq - 1 : data.seq } })]
     }
     case "failed-media": return [Message.FailedMedia({ src: answer.src, kind: answer.video ? "video" : "image" })]
     case "wiki-location": return [Message.WikiLocationChanged({ page: answer.page })]

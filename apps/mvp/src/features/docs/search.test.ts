@@ -4,7 +4,7 @@
 // outside web (worker/test/pages.ts): GitHub is offline, so each repository's docs come from its curated home. Faults
 // are injected as test implementations of Effect services: a client that fails once.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
@@ -23,6 +23,9 @@ import { AGENT_TEXT_BYTES, DOCS_TELEMETRY } from "./contract"
 import { DocsForbidden, DocsSearchRefused, SearchDocs } from "./flows"
 import { searches, shown } from "./metrics"
 import { registration } from "./steps"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const runtime = testFile("docs_search")
 
@@ -211,12 +214,12 @@ describe("the flow", () => {
     expect(await engine.search(agentCall(2), { repository: "acme/widgets", query: "gone" })).toEqual(
       Exit.succeed({ pages: [] }),
     )
-    expect(await engine.search(agentCall(3), { repository: "acme/plain", query: "retry" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "no_docs" })),
+    expect(failureOf(await engine.search(agentCall(3), { repository: "acme/plain", query: "retry" }))).toEqual(
+      new DocsSearchRefused({ reason: "no_docs" }),
     )
     for (const [n, repository] of ["acme", "acme/widgets/extra", "app/widgets", "a b/c"].entries()) {
-      expect(await engine.search(agentCall(4 + n), { repository, query: "retry" })).toEqual(
-        Exit.fail(new DocsSearchRefused({ reason: "invalid" })),
+      expect(failureOf(await engine.search(agentCall(4 + n), { repository, query: "retry" }))).toEqual(
+        new DocsSearchRefused({ reason: "invalid" }),
       )
     }
     expect(await rows()).toEqual([])
@@ -256,17 +259,17 @@ describe("the flow", () => {
     })
 
     expect(Exit.isSuccess(await engine.search(agentCall(1), { repository: "acme/widgets", query: "flaky" }))).toBe(true)
-    expect(await engine.search(agentCall(2), { repository: "acme/widgets", query: "missing" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "not_found" })),
+    expect(failureOf(await engine.search(agentCall(2), { repository: "acme/widgets", query: "missing" }))).toEqual(
+      new DocsSearchRefused({ reason: "not_found" }),
     )
-    expect(await engine.search(agentCall(3), { repository: "acme/widgets", query: "bad" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "invalid" })),
+    expect(failureOf(await engine.search(agentCall(3), { repository: "acme/widgets", query: "bad" }))).toEqual(
+      new DocsSearchRefused({ reason: "invalid" }),
     )
-    expect(await engine.search(agentCall(4), { repository: "acme/widgets", query: "schedules" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "invalid" })),
+    expect(failureOf(await engine.search(agentCall(4), { repository: "acme/widgets", query: "schedules" }))).toEqual(
+      new DocsSearchRefused({ reason: "invalid" }),
     )
-    expect(await engine.search(agentCall(5), { repository: "acme/widgets", query: "moved" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "unreadable" })),
+    expect(failureOf(await engine.search(agentCall(5), { repository: "acme/widgets", query: "moved" }))).toEqual(
+      new DocsSearchRefused({ reason: "unreadable" }),
     )
     // A busy docs site (429 or 5xx) passes too: tried again, it answers.
     expect(Exit.isSuccess(await engine.search(agentCall(6), { repository: "acme/widgets", query: "busy" }))).toBe(true)
@@ -274,8 +277,8 @@ describe("the flow", () => {
     expect((await rows()).map((row) => row.props.title)).toEqual(["Retrying", "Retrying"])
 
     const signedOut = await openEngine({ actor: null })
-    expect(await signedOut.search(agentCall(5), { repository: "acme/widgets", query: "retry" })).toEqual(
-      Exit.fail(new DocsForbidden()),
+    expect(failureOf(await signedOut.search(agentCall(5), { repository: "acme/widgets", query: "retry" }))).toEqual(
+      new DocsForbidden(),
     )
     expect(signedOut.count({ door: "agent", outcome: "forbidden" })).toBe(1)
   }, WITHIN)
@@ -301,8 +304,8 @@ describe("the flow", () => {
 
     expect(Exit.isSuccess(await engine.search(agentCall(1), { repository: "acme/widgets", query: "retry" }))).toBe(true)
     expect(await rows()).toHaveLength(1)
-    expect(await engine.search(agentCall(2), { repository: "acme/widgets", query: "schedules" })).toEqual(
-      Exit.fail(new DocsSearchRefused({ reason: "invalid" })),
+    expect(failureOf(await engine.search(agentCall(2), { repository: "acme/widgets", query: "schedules" }))).toEqual(
+      new DocsSearchRefused({ reason: "invalid" }),
     )
     expect(engine.count({ door: "agent", outcome: "unavailable" })).toBe(1)
     expect(engine.count({ door: "agent", outcome: "shown" })).toBe(1)

@@ -80,6 +80,12 @@ export effect function gate(name: string, budget: Duration.Duration, limit: Opti
  */
 export const REPLAY_FLOOR = "15 seconds"
 
+/**
+ * Floor for a steered target whose saved-value replay and one execution took 8.5 s (`actions/steered-runs`) and 21.7 s
+ * (`wiki/steered-host`) under coverage on an idle 4-vCPU box; at 5 s and 15 s they ran none in the next run (0015).
+ */
+export const STEERED_FLOOR = "30 seconds"
+
 export const Int = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 }))
 export const Text = Schema.String.check(Schema.isMaxLength(120))
 export const TextOrBoundary = Schema.Union([Text, Schema.Literals(["", " ", "\n\t", "x".repeat(MAX_TEXT + 1), "```vibe\nhello\n```", "a`b`c", "\ud800"])])

@@ -142,3 +142,26 @@ for (const [helper, value] of [
     for (const name of scalar) assert.ok(DAFNY_HELPER_NAMES.has(name), name);
   });
 }
+
+test("every Dafny reserved word a TypeScript name can take is escaped", () => {
+  // Each was checked against Dafny 4.11's parser: `function f(w: bool): bool { w }` does not parse.
+  for (const name of ["assigned", "hide", "ORDINAL"]) {
+    const dafny = emitDafnyFile(moduleWith({ kind: "const", name, type: { kind: "int" }, value: { kind: "num", value: 1 } }), "reserved.ts");
+    assert.match(dafny, new RegExp(`\\bconst ${name}_\\b`));
+    assert.doesNotMatch(dafny, new RegExp(`\\bconst ${name}\\b(?!_)`));
+  }
+});
+
+test("flatMap composes the existing ordered map and one-level flatten in every profile", () => {
+  const array = { kind: "array", elem: { kind: "int" } } as const;
+  const file = moduleWith({ kind: "const", name: "value", type: array, value: {
+    kind: "methodCall", obj: { kind: "var", name: "values" }, objTy: array,
+    method: "flatMap", args: [{ kind: "var", name: "callback" }], monadic: false,
+  } });
+  for (const options of [DEFAULT_OPTIONS, resolveOptions({ "dafny-library": "local" }, "test"), utf16]) {
+    const result = emitDafnyFile(file, "flat-map.ts", options);
+    assert.match(result, /function (?:\{[^}]*\} )?SeqFlatten<T>/);
+    assert.match(result, /const value: seq<int> := SeqFlatten\(/);
+    assert.match(result, /\(callback\)\(values\[/);
+  }
+});

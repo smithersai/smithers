@@ -1,0 +1,23 @@
+import { describe, expect, it } from "@effect/vitest"
+import { issueModelInvocable, keyedOperation, operationTier, readDeadline, wikiModelInvocable } from "../src/core/flowPolicyDecision.vibe"
+
+const issueOps = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
+const wikiOps = ["read", "save", "propose", "draft"]
+
+describe("issue and wiki flow policies", () => {
+  it("seals reads and drafts and keys every other operation", () => {
+    expect(issueOps.filter((op) => operationTier(op) === "sealed")).toEqual(["read", "draft"])
+    expect(wikiOps.filter((op) => operationTier(op) === "irreversible")).toEqual(["save", "propose"])
+    expect(issueOps.filter(keyedOperation)).toEqual(["new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "spec-revise", "spec-review"])
+    expect(wikiOps.filter(keyedOperation)).toEqual(["save", "propose"])
+  })
+  it("never offers the agent a VIP decision", () => {
+    expect(issueOps.filter((op) => !issueModelInvocable(op))).toEqual(["accept", "decline"])
+  })
+  it("offers the agent only wiki reads and drafts", () => {
+    expect(wikiOps.filter(wikiModelInvocable)).toEqual(["read", "draft"])
+  })
+  it("bounds only reads by a deadline", () => {
+    expect([...issueOps, ...wikiOps].filter(readDeadline)).toEqual(["read", "read"])
+  })
+})

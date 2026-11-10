@@ -86,7 +86,21 @@ Executable lines are statement start lines, as in Istanbul; a declaration's hit 
   **Defect found by this set and fixed:** a failed sandbox start, stop or command lost its alert and Retry within a second, because the open pane's one-second read ran `loadedSandbox`, which ends any operation and clears its failure. The pane's read now runs `polledSandbox` and `polledFailure` (`src/web/paneDecision.vibe`, verified), which leave an operation's wait or failure alone; regression `test/sandboxFailure.runtime.test.vibe`.
 - The ⌘K `/mock` and `/live` switch (783–784, 1385–1387) reloads the page itself, and V8 drops a document's counts on reload. Covered since 2026-11-10 without touching the request: in coverage mode each document pauses in its own `beforeunload` while the collector dumps (783–784, 1385–1386, `command-k-mock-switch`). Line 1387 runs after `beforeunload`, and the new document's commit ends any later pause (`pagehide` never pauses), so Node covers it: `bench/web-commands.bench.vibe` runs `SwitchMode` in happy-dom (`web-mode-switch-command`).
 - Escape during a pending wiki Save keeps the editor and request (`none`, line 611 at `7803d917`). The `web-wiki-state` corpus asserts unchanged model identity and no emitted command.
-- Seven lines ran in Chromium but compile to different statement ranges in the bundle than in Node (`main.vibe` 946, 1121, 1131; `roleView.vibe` 34, 36; `MockFactory.vibe` 338; `markdown.vibe` 114), and four have no bundle statement at all (`main.vibe` 1119, 1120, 1130, 1270). The merge credits only identical ranges, so no browser workload can cover them. These 11 lines wait for Will's answer on the VibeLang source-map fix (asked 2026-11-10); the merge does not guess across shapes in the meantime.
+- Fourteen lines run in Chromium but the merge cannot credit them, because the bundle maps them to a different statement range than Node does, or to none. These 14 lines wait for Will's answer on the VibeLang source-map fix (asked 2026-11-10); the merge does not guess across shapes in the meantime. Measured on the `c5bbf81b` snapshot, whose text at these lines is unchanged on `5e37278e`, by remapping its retained Chromium dumps with the merge's own conversion and listing each line's statement ranges (start column, Chromium vs Node):
+
+  | Line | Chromium | Node | Kind |
+  | --- | ---: | ---: | --- |
+  | `src/web/main.vibe` 948 | 8 | 18 | declarator vs initializer |
+  | `src/web/main.vibe` 1123, 1133 | 14 | 21 | declarator vs initializer |
+  | `src/core/MockFactory.vibe` 338 | 16 | 26 | declarator vs initializer |
+  | `src/web/markdown.vibe` 114 | 12 | 20 | declarator vs initializer |
+  | `src/web/roleView.vibe` 34, 36 | 39 | 38 | inside vs at the opening parenthesis |
+  | `src/web/main.vibe` 1121, 1122, 1132, 1272 | none | 21–24 | no bundle statement |
+  | `src/web/historyApp.vibe` 476 | none | 60 | no bundle statement |
+  | `src/web/theatre.vibe` 59 | none | 19 | no bundle statement |
+  | `src/core/MockFactory.vibe` 454 | none | 18 | no bundle statement |
+
+  An earlier measurement named `main.vibe` 946, 1119, 1120, 1130, 1131 and 1270. Their Chromium and Node ranges now match, or Node runs them, so they are covered. `historyApp.vibe` 476, `theatre.vibe` 59 and `MockFactory.vibe` 454 were not named before; each follows a line Chromium ran, with no branch between.
 
 **No exclusions (2026-11-10).** The gate excludes no line: a gate is not passed by hiding production code.
 Code nothing in `src/` or `worker/` calls is deleted, each with its reason in its commit: the post continuation model
@@ -319,6 +333,13 @@ injected faulty service: each read answers "unavailable" in about 6 s, and write
 `connect`. The exclusion of these routes from every benchmark above no longer applies to their refusal paths; their
 GitHub success paths still wait for a GitHub credential.
 
+**Finding: an unreachable GitHub now holds a signed-in issue read 12 s (2026-11-10, lane vl-bench2).** After `19d7afac`
+raised the issue read's engine deadline to 12 s and its Accounts boundary to 13 s (0030, cold reads), the same
+workload's issue read retries GitHub's immediate transport failure until the 12 s deadline: one sample took 12,091 ms,
+against about 5 s before. The wiki read still answers at its 5 s deadline. The benchmark's former shared 10 s bound
+failed; it now checks each route's own 0030 boundary, issues 13 s and wiki 6 s. Answering a connection failure before the
+deadline is a read-policy change for 0030's owner, so this lane records it and changes no product code.
+
 **Receipt (2026-11-10, lane vl-bench2, `f52ffeba`).** `pnpm bench:coverage`: 70/70 files and 148/148 tests pass; the
 strict per-file gate exits 1 for 102 files. Merged benchmark-only coverage is 6,989/7,576 `src/` + `worker/` lines
 (92.25%) and 2,010/2,299 `worker/` lines (87.43%). Accounts went from 82 uncovered lines to 8 (the read-queue
@@ -491,8 +512,14 @@ the generated wiki matches its preserved browser source map, SHA-256
 57798ff1e3204e9cfdf589e89c44f839b3f29a0f80d85783805bf8059416bfd1. No source exclusion or threshold change.
 This is a full collection plus an explicitly recorded correction, not one green full-roster invocation.
 
-The draft usage-report fallbacks still need a faulty journal-recovery workload: SDK usageOf can fail
-AccountingUnavailable during journal recovery. This continuation has not exercised that boundary. The legacy
+The draft usage-report fallbacks (`worker/WikiDraft.vibe:62`, `worker/VipDraft.vibe:60`,
+`worker/SpecificationReviewers.vibe:53`) are unreachable in the production composition, so no benchmark runs them
+(lane vl-bench2, 2026-11-10). Each meter is `Budget.make({})`, without a spend ledger. `usageOf` fails only when
+journal recovery fails, and recovery with no `Journal` service returns an empty ledger
+(`packages/smithers/agent/src/Budget.ts`, `recoverUsage`). No production layer provides `@smthrs/journal`'s
+`Journal`: `CloudflareRuntime` supplies `JournalDecode.Identity` only, and the memory engine supplies none. A
+workload that injected a failing `Journal` would measure a composition production never builds, so it would be a
+coverage-only call. The lines remain counted; deleting the defensive catch is a product change outside this lane. The legacy
 budgetDecision.charge helper is superseded by reservations. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
 GitHub paths, a matching native VIP fixture, actual Container execution and the previously named unreachable
 routing guards remain as recorded above. A fresh full coverage receipt is still needed for later main changes.

@@ -7,7 +7,11 @@ import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { BrowserFactory, AgentBackend } from "../src/web/backend.vibe"
 import { BrowserMythical, HistoryBackend } from "../src/web/historyBackend.vibe"
 import { chatModel, dailyTokens, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
-import { run, Int, Text } from "./run.vibe"
+import { run, Int, Text, TextOrBoundary } from "./run.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+import { liveWiki } from "../src/core/LiveWiki.vibe"
+import { IssueRecord, IssueRequest, IssuesState, Specification, SpecificationEvent, SpecificationReview } from "../src/core/issueSchemas.vibe"
+import { WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
 
 const Input = Schema.Struct({ operation: Int, fault: Schema.Literals(["transport", "json", "schema", "refusal", "status", "stream"]), text: Text })
 
@@ -118,3 +122,67 @@ it.live("clients/history-agent-identity-boundary", () => run("clients/history-ag
     })
   }
 }))
+
+/** Refusal reasons both the issues and the wiki protocol carry; a refusal outside the protocol is prefixed so it never names one. */
+const SHARED_REASONS = ["forbidden", "budget", "invalid", "unavailable", "rate-limited", "no-model", "draft", "empty"] as const
+// Preserve the original broad number domain for saved inputs: a state whose numbers JSON cannot carry (NaN, the
+// infinities) or that are not counts must now be refused as `protocol` (0015, twelfth session).
+const RawIssueRecord = Schema.Struct({ ...IssueRecord.fields, number: Schema.Number, githubId: Schema.Number, parent: Schema.Number, comments: Schema.Number })
+const RawIssueRequest = Schema.Struct({ ...IssueRequest.fields, revision: Schema.optionalKey(Schema.Number), number: Schema.Number, parent: Schema.Number })
+const RawReview = Schema.Struct({ ...SpecificationReview.fields, revision: Schema.Number })
+const RawSpecification = Schema.Struct({ ...Specification.fields, revision: Schema.Number, astra: RawReview, sol: RawReview, fable: RawReview, opus: RawReview })
+const RawSpecificationEvent = Schema.Struct({ ...SpecificationEvent.fields, revision: Schema.Number })
+const RawSaved = Schema.Struct({ request: RawIssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Schema.Number })
+const RawIssuesState = Schema.Struct({
+  ...IssuesState.fields, seq: Schema.Number, selected: Schema.optionalKey(Schema.Number), stale: Schema.optionalKey(Schema.Number), items: Schema.Array(RawIssueRecord),
+  specification: Schema.optionalKey(RawSpecification), specificationHistory: Schema.optionalKey(Schema.Array(RawSpecificationEvent)), saved: Schema.optionalKey(RawSaved),
+})
+const RawWikiState = Schema.Struct({ ...WikiState.fields, seq: Schema.Number, stale: Schema.optionalKey(Schema.Number) })
+const Replies = Schema.Struct({
+  op: Int, transport: Schema.Boolean, status: Schema.Literals([200, 400, 403, 409, 429, 500, 502]),
+  body: Schema.Literals(["state", "refusal", "foreign-refusal", "other-json", "not-json"]),
+  reason: Schema.Literals(SHARED_REASONS), foreign: Text, unwritten: Schema.optionalKey(Schema.Boolean),
+  issues: RawIssuesState, wiki: RawWikiState, request: RawIssueRequest, change: WikiRequest, page: TextOrBoundary,
+})
+
+/**
+ * The issues and wiki clients against any reply: a state the server sends decodes; a protocol refusal keeps its reason and
+ * `unwritten`; anything else is `unavailable` (not 200) or `protocol` (200), and no reply makes the client die.
+ */
+function issuesWikiReplies(input: typeof Replies.Type) {
+  return effect {
+    const { op, transport, status, body, reason, foreign, unwritten, issues, wiki, request, change, page } = input
+    const wikiOp = op % 4 >= 2
+    const state = wikiOp ? wiki : issues
+    const valid = wikiOp ? Schema.is(WikiState)(wiki) : Schema.is(IssuesState)(issues)
+    const text = body === "state" ? JSON.stringify(state) : body === "refusal" ? JSON.stringify({ reason, ...(unwritten === undefined ? {} : { unwritten }) })
+      : body === "foreign-refusal" ? JSON.stringify({ reason: `x-${foreign}` }) : body === "other-json" ? JSON.stringify({ unexpected: foreign }) : `{${foreign}`
+    let sent = 0
+    const client = HttpClient.make((wire) => {
+      sent++
+      if (transport) return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request: wire }) }))
+      return succeed(HttpClientResponse.fromWeb(wire, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status, contentType: "application/json" }))))
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const result = try exit(effect {
+        switch (op % 4) {
+          case 0: return try (try liveIssues("http://fault.invalid")).read()
+          case 1: return try (try liveIssues("http://fault.invalid")).act(request)
+          case 2: return try (try liveWiki("http://fault.invalid")).read(page)
+          default: return try (try liveWiki("http://fault.invalid")).act(change)
+        }
+      })
+      if (result._tag === "Success") return !transport && status === 200 && body === "state" && valid
+      if (Cause.hasDies(result.cause) || Cause.hasInterrupts(result.cause)) return false
+      const failure = Cause.squash(result.cause) as { readonly reason?: string; readonly unwritten?: boolean }
+      // A page that is not durable text is refused before any request.
+      if (sent === 0) return op % 4 === 2 && failure.reason === "invalid" && failure.unwritten === true
+      if (transport) return failure.reason === "unavailable"
+      if (status === 200) return (body !== "state" || !valid) && failure.reason === "protocol"
+      if (body === "refusal") return failure.reason === reason && failure.unwritten === unwritten
+      return failure.reason === "unavailable" && failure.unwritten === undefined
+    }
+  }
+}
+
+it.live("clients/issues-wiki-replies", () => run("clients/issues-wiki-replies", Replies, issuesWikiReplies))

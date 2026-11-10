@@ -5,7 +5,7 @@
 // are injected: a router that throws, a stray message on the channel.
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Layer, Logger, Metric, Option, Scope, Stream, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Option, Scope, Stream, Tracer } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
 import { stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { build } from "../../../worker/test/flowHost.ts"
@@ -21,6 +21,9 @@ import { navigations } from "./metrics"
 import { appPath } from "./paths"
 import { GoCall, To } from "./schema"
 import { tabNavigation } from "./tab"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const ORIGIN = "http://localhost:1337"
 
@@ -305,10 +308,10 @@ describe("refusals", () => {
       ] as const).entries()
     ) {
       const id = asking.started(`nav-${index}`, "slash")
-      expect(await engine.navigate(id, to)).toEqual(Exit.fail(new NavigationRefused({ reason })))
+      expect(failureOf(await engine.navigate(id, to))).toEqual(new NavigationRefused({ reason }))
     }
-    expect(await engine.navigate("answer-1/chat/Respond@abc:1/call/1.0", "https://example.com")).toEqual(
-      Exit.fail(new NavigationRefused({ reason: "origin" })),
+    expect(failureOf(await engine.navigate("answer-1/chat/Respond@abc:1/call/1.0", "https://example.com"))).toEqual(
+      new NavigationRefused({ reason: "origin" }),
     )
 
     expect(asking.navigated).toEqual([])

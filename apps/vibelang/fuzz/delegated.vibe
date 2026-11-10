@@ -13,9 +13,12 @@ const BROKER = "https://smithers.invalid"
 const SITE = "https://vibelang.invalid"
 const PERSON = 7
 const secret = Redacted.make("fuzz-site-delegation-secret-32-chars")
-const sites: ReadonlyArray<GitHub.Delegation.Site> = [{
+/** The GitHub a connection reaches: the fuzz GitHub by default, or a real repository and the token GitHub accepts for it. */
+export interface Target { readonly api: string; readonly repository: string; readonly repositoryId: number; readonly token: Redacted.Redacted<string> }
+const fuzzTarget: Target = { api: API, repository: "o/r", repositoryId: REPOSITORY_ID, token: Redacted.make("fuzz-token") }
+const sitesFor = (target: Target): ReadonlyArray<GitHub.Delegation.Site> => [{
   origin: SITE, secret,
-  grants: [{ repository: "o/r", repositoryId: REPOSITORY_ID, scopes: ["issues", "proposals"], paths: ["wiki/", "docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }],
+  grants: [{ repository: target.repository, repositoryId: target.repositoryId, scopes: ["issues", "proposals"], paths: ["wiki/", "docs/design/vips/"], branchPrefix: "vibelang/", labelPrefix: "vibelang:" }],
 }]
 const keyring = { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=") } }
 
@@ -35,8 +38,12 @@ export effect function reached<A>(target: string, counter: Reach, property: (inp
   if (counter.writes === 0) throw new Finding({ report: `${target}: no write reached GitHub` })
 }
 
-/** A connected person: the site's delegate, the site's network, the person's delegation handle, and `end`, which revokes it at smithers.sh. */
-export effect function delegated(github: HttpClient.HttpClient, counter: Reach, login = "fuzz") {
+/**
+ * A connected person: the site's delegate, the site's network, the person's delegation handle, and `end`, which revokes it at smithers.sh.
+ * `target` points the connection at a real repository instead (test/support/github.vibe).
+ */
+export effect function delegated(github: HttpClient.HttpClient, counter: Reach, login = "fuzz", target: Target = fuzzTarget) {
+  const sites = sitesFor(target)
   const storage = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
   const counted = HttpClient.tap(github, (response) => Effect.sync(() => {
     if (response.request.method !== "GET" && response.status < 300) counter.writes += 1
@@ -47,9 +54,9 @@ export effect function delegated(github: HttpClient.HttpClient, counter: Reach, 
     refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
     revoke: () => Effect.void,
   })
-  const act: GitHub.Delegation.Act = (token) => (program) => program.pipe(GitHub.Calls.withToken(token, API), Effect.provideService(HttpClient.HttpClient, counted)) as never
+  const act: GitHub.Delegation.Act = (token) => (program) => program.pipe(GitHub.Calls.withToken(token, target.api), Effect.provideService(HttpClient.HttpClient, counted)) as never
   const host = try Connection.make(PERSON, "fuzz-connection", storage as never, { origin: BROKER, sites, keyring }, auth, act)
-  const installed = try host.install({ origin: SITE, login, tokens: { accessToken: Redacted.make("fuzz-token"), refreshToken: null, expiresAt: null } })
+  const installed = try host.install({ origin: SITE, login, tokens: { accessToken: target.token, refreshToken: null, expiresAt: null } })
   const delegate = try GitHub.Delegation.site({ origin: SITE, brokerOrigin: BROKER, secret })
   const broker = (request: HttpClientRequest.HttpClientRequest) => effect {
     const web = try Effect.orDie(HttpClientRequest.toWeb(request))

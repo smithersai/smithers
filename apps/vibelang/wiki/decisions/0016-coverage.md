@@ -17,6 +17,29 @@ person runs them by name and a wildcard `smthrs test` skips them. Each joins the
 it pass, by removing its `exclusive: true` in that commit. Every gate keeps its 100% per-file thresholds meanwhile.
 `workerdCoverage` follows the same rule. The lead decided this for the lane; it does not go to Will.
 
+## Browser gate scope (the lead's call, 2026-11-10)
+
+The browser gate's denominator is the code a browser runs: every `.vibe` file in `src/web`, plus every app source
+(`src/`, `worker/`, `scripts/`, `infra/`) that the e2e build's source maps name. A bundled source counts whole,
+including exports that tree-shaking dropped. A `src/web` file that no chunk imports still counts.
+
+`src/surfaces`, `scripts`, `worker`, `infra` and the server-only parts of `src` run in no browser, so no browser
+journey can reach them. With them in the denominator the browser gate's 100% was unreachable (session 15: 153 of 167
+files below 100%). The unit gate (`pnpm test:coverage`) and the workerd gate still measure every file in all four
+directories; nothing leaves them. A server source that the bundle starts to import enters the browser gate on that
+build, with no configuration change.
+
+The roster is `browserSources` in `e2e/coverage-reporter.ts`. It reads `dist/assets/*.js.map`, fails if the build
+has no source maps, and the reporter prints its size on each run. Test: `test/browserCoverageScope.test.vibe`.
+
+Named browser gaps that stay open:
+
+| Site | Reason |
+| --- | --- |
+| `src/history/flows.vibe:213` | V8 range defect (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`), if the bundle ships it. |
+| `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
+| `src/web/wikiView.vibe:88` (`toHtml`) | Runs only when the repository's wiki source differs from the build. Needs a recorded fixture from `vl-record-replay`. |
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;
@@ -49,8 +72,9 @@ The compiler/Vite maps preserve `.vibe` names and lines in the unbundled Vitest 
 unvisited Effect return at its original fixture line 4 and a threshold-only child exit 1 despite a passing assertion.
 Emitted CLI/MCP processes retain maps and inline source text. The prototype browser suite uses Playwright's built-in
 `page.coverage` without a new browser dependency, retains raw Chromium evidence, and checks map source content
-against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files, and that
-seed is the denominator: Chromium's evidence credits it by source start (see "Chromium merge" below). Vite's
+against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files. The
+denominator is the local e2e build's structure for the code that build contains and that seed for the rest; Chromium's
+evidence credits it by source start (see "Chromium merge" and "Build structure" below). Vite's
 generated module/preload helpers and pure re-export facades contain no app source; no production `.vibe` is excluded.
 
 ## Measurement blockers
@@ -65,6 +89,18 @@ observes line 4 uncovered and its expected-failure marker is gone; the minified 
 `test/browserCoverageMerge.test.vibe`, which still sees line 4 credited. No build/compiler behavior
 was changed as a workaround. Will's decision is required before the upstream change; a fix must have a regression
 and land through VibeLang's merge queue.
+
+**A second cause: Rolldown drops statement-start segments.** Unminified, Vite 8.3.4's bundler (Rolldown 1.2.x)
+prints no source-map segment at the start of an arrow-function or parenthesized initializer
+(`const position = () => ...`, `const next = (serial ?? 0) + 1`), drops redundant parentheses
+(`(a || b) ? x : y` prints `a || b ? x : y`) and wraps dynamic imports in `__vitePreload`. `ast-v8-to-istanbul` then
+starts those statements at the declared name, so the bundle's start differs from the compiler's (`19:19` becomes
+`19:8`). VibeLang's own map has the exact segment; plain JavaScript with no VibeLang compiler loses the same starts
+(source `1:19 2:19 3:17` become `1:13 2:8 3:8`). On main `02b22822`, 38 lines in `src/` had no statement start the
+bundle reproduces, so Chromium could never credit them. Reproduction: `~/vl/vibelang-bugs/coverage-source-ranges/rolldown-segments/` on nyc-01 (`node
+control.mjs`, `README.txt`, `app-diagnostic.json`). No map change in VibeLang adds a segment Rolldown never prints, so
+the reporter now takes the build's structure ("Build structure" below). An upstream Rolldown report is the lead's to
+take to Will.
 
 V8 precise coverage cannot be enabled on the installed workerd **1.20261019.1** inspector, directly or through
 Miniflare: workerd's own CDP dispatch consumes `Profiler.enable` to create its CPU profiler and never forwards it to
@@ -628,8 +664,8 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
-| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Real GitHub needs the GitHub test token for the test repository. Since 2026-11-10 the delegated tests run these paths against the in-memory GitHub `fuzz/issues-node-fake.vibe` (see "`worker/Issues.vibe`, `worker/Wiki.vibe`" below); whether such a protocol fake may stand in on a happy path awaits Will's ruling (vl-review-tests finding 3). | `test/issues.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
-| GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
+| GitHub read, write, VIP proposal and label paths of `worker/Issues.vibe` (`githubHost`) | Covered. The happy paths replay real GitHub through smithers.sh's delegation (`test/issues.github.test.vibe`, recordings `issues.json` and `issues-proposal.json`, [0032](0032-record-replay.md)); the fault cases stay on the in-memory GitHub as wrapped client services. | `test/issues.github.test.vibe` (replay, no token) |
+| GitHub write paths of `worker/Wiki.vibe` | Covered. A proposal and a save replay real GitHub through smithers.sh's delegation (recording `wiki.json`, [0032](0032-record-replay.md)). | `test/wikiEdit.github.test.vibe` (replay, no token) |
 
 ## Lane vl-coverage2 (2026-11-09)
 
@@ -788,9 +824,8 @@ drafts, retries and resumes, and the HTTP routes' store failures.
   `match.index` default, the review rechecks `verifiedVip` already made and Wiki's final `invalid` branch.
 - **Found, kept:** a journal that cannot record a step's attempt makes the engine interrupt the run
   (`EngineStore.actionExecute`), so the request ends interrupted rather than answering `unavailable`. That is
-  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe`, the opt-in
-  real-GitHub test, still authenticates with a token on the principal and cannot write since decision 0165; it is
-  skipped without `GITHUB_TEST_TOKEN`.
+  engine-store's lease handling, outside this app; the wiki test pins it. `test/issues.github.test.vibe` now runs the
+  issues flow through the delegation on a recording of real GitHub, on every run ([0032](0032-record-replay.md)).
 
 **`worker/Reply.vibe`, `worker/ActionRuns.vibe` (2026-11-10).** Whole suite at `5540b9b2` → over every unit test that
 imports each file. Reply: statements 144/157 → 157/157, branches 63/81 → 80/81, functions 18/18, lines → 100%.
@@ -940,6 +975,45 @@ The landed denominators are the sources' own (7479 lines, 8096 branches). Tests:
 (a real minified Vite build of the fixture under native V8, through `measure`; failed on the old reporter with 4
 branches for 2) and two cases in `test/fuzzCoverage.test.vibe` (same starts credit whatever the ends; other starts
 credit nothing; the first failed on the full-range rule).
+
+## Build structure (lane vl-sourcemaps, 2026-11-10)
+
+The compiler's statement starts could not all be credited in Chromium: Rolldown prints no map segment at some of them
+("Measurement blockers"). The browser denominator for a local run now comes from the build Chromium runs.
+`e2e/coverage-reporter.ts` reads every chunk of `dist/assets` with its map (`readBuild`), converts each once with no
+hits, and `builtStructure` (`test/support/coverageUnion.ts`) builds each source's structure from it:
+
+```
+source in a chunk?  ── no ──▶ compiler's structure (unloaded file)
+        │ yes
+        ▼
+bundle's statements, functions, branches
+  + each compiler item whose start no bundle statement or function range contains (tree-shaken code)
+  − duplicates at one source start (Rolldown maps an inner `make` and its renamed `make_2` to one start)
+```
+
+Executed bundles still credit it by identical start (`unionEvidence`). Browser and unit structures differ only where
+the bundler changed the code. A run against a deployment (`E2E_BASE_URL`) keeps the compiler's structure: its bundle
+is not the local build. The reporter logs `Chromium structure: <n> build chunks.`
+
+Same evidence (one `pnpm e2e` run, 291 passed, 19 chunks), measured both ways:
+
+| Structure | Metrics below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | --- | --- | --- | --- |
+| compiler | 553 | 3494/7888 | 3500/8350 | 1430/2970 | 4054/10036 |
+| build (landed) | 539 | 3639/7961 | 3515/8351 | 1491/3035 | 4302/10196 |
+
+145 lines gained credit and none lost it; uncovered lines fell from 4394 to 4322. 95 compiler-only lines moved to the
+line where the bundle starts the same statement (a name a line earlier). Of the 38 lines in `src/` the reproduction
+listed as uncreditable, 29 are credited; the other 9 sit in code no browser test runs (live-mode `LiveIssues` and
+`LiveWiki`, the wiki-edit submit path in `main.vibe`, `seed.vibe` 201), and each now carries the bundle's start, so a
+test that runs it counts.
+
+Tests: `test/browserCoverageBuild.test.vibe` (a real unminified Vite build of `e2e/coverage-fixtures/initializer.vibe`
+under native V8, through `measure` with that build; failed on the old reporter with line 3 uncredited),
+`test/browserStructure.test.vibe` (contained and shifted starts replaced, tree-shaken code kept, one item per start;
+failed on a per-line rule with a shifted start counted twice) and `e2e/source-map.spec.ts` (the same fixture in
+Chromium: only the tree-shaken line 10 stays uncovered).
 
 ## Lane vl-coverage3: surfaces, history and actions (2026-11-10)
 

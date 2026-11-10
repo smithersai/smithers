@@ -112,6 +112,48 @@ export function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON
   return json
 }
 
+/**
+ * The structure a bundle runs, for a source the bundle contains: the bundle's statements, functions and branches, plus
+ * each compiler item whose start no bundle statement or function contains (tree-shaken code). Rolldown prints no
+ * source-map segment at some starts, an arrow or parenthesized initializer among them, so the bundle starts
+ * `const next = (a ?? 0)` at `next` where the compiler starts it at `(`, sometimes a line earlier; matched by start
+ * against the compiler's structure, Chromium's run of it would never count (decision 0016,
+ * ~/vl/vibelang-bugs/coverage-source-ranges/rolldown-segments). The two structures then differ only where the bundler
+ * changed the code. Items that share a source start count once: the gate credits by start, and Rolldown can map two
+ * functions to one (an inner `make` renamed `make_2`).
+ */
+export function builtStructure(compiler: FileCoverageJSON, bundle: FileCoverageJSON): FileCoverageJSON {
+  const json: FileCoverageJSON = { ...structuredClone(compiler), statementMap: {}, fnMap: {}, branchMap: {}, s: {}, f: {}, b: {} }
+  const order = (position: Partial<Position>) => [position.line ?? -1, position.column ?? -1] as const
+  const before = (a: Partial<Position>, b: Partial<Position>) => order(a)[0] < order(b)[0] || (order(a)[0] === order(b)[0] && order(a)[1] <= order(b)[1])
+  const ranges = [...Object.values(bundle.statementMap), ...Object.values(bundle.fnMap).map(fn => fn.loc ?? fn.decl)]
+  const contained = (position: Partial<Position>) => ranges.some(range => before(range.start, position) && before(position, range.end))
+  const start = (range: { start: Partial<Position> }) => `${range.start.line}:${range.start.column}`
+  const seen = { s: new Set<string>(), f: new Set<string>(), b: new Set<string>() }
+  const first = (kind: keyof typeof seen, key: string) => !seen[kind].has(key) && Boolean(seen[kind].add(key))
+  for (const [owner, kept] of [[bundle, () => true], [compiler, (position: Partial<Position>) => !contained(position)]] as const) {
+    for (const [id, loc] of Object.entries(owner.statementMap)) {
+      if (!kept(loc.start) || !first("s", start(loc))) continue
+      const key = String(Object.keys(json.statementMap).length)
+      json.statementMap[key] = structuredClone(loc)
+      json.s[key] = owner.s[id] ?? 0
+    }
+    for (const [id, fn] of Object.entries(owner.fnMap)) {
+      if (!kept((fn.loc ?? fn.decl).start) || !first("f", start(fn.loc ?? fn.decl))) continue
+      const key = String(Object.keys(json.fnMap).length)
+      json.fnMap[key] = structuredClone(fn)
+      json.f[key] = owner.f[id] ?? 0
+    }
+    for (const [id, branch] of Object.entries(owner.branchMap)) {
+      if (!kept(branch.loc.start) || !first("b", JSON.stringify([branch.type, start(branch.loc), branch.locations.map(start)]))) continue
+      const key = String(Object.keys(json.branchMap).length)
+      json.branchMap[key] = structuredClone(branch)
+      json.b[key] = [...(owner.b[id] ?? branch.locations.map(() => 0))]
+    }
+  }
+  return json
+}
+
 /** The merged report, keyed by absolute source path: the base's structure, credited by each evidence in order. */
 export function mergeByPosition(base: Readonly<Record<string, FileCoverageJSON>>, evidences: ReadonlyArray<Readonly<Record<string, FileCoverageJSON>>>): Record<string, FileCoverageJSON> {
   const combined: Record<string, FileCoverageJSON> = { ...base }

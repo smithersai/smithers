@@ -315,6 +315,12 @@ REPLAY_CONVERSATION_STEPS = [
 ]
 
 LEMMA_STEPS = {
+    'src/history/seedInputDecision.vibe': [
+        ('lemma batchRevset_ensures(ids: seq<string>, start: int, end: int)',
+         '  var selected := SafeSlice(ids, start, end);\n  var mapped := seq(|selected|, i requires 0 <= i < |selected| => "present(" + selected[i] + ")");\n  assert selected == ids[start..end];\n  assert |mapped| == end - start;\n  var actual := (var s_map := SafeSlice(ids, start, end); seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var id := s_map[i_map]; (("present(" + id) + ")")));\n  assert forall i :: 0 <= i < |mapped| ==> mapped[i] == actual[i];\n  assert mapped == actual;\n  assert batchRevset(ids, start, end) == SeqJoin(actual, "|");\n  var cursor := end;\n  while cursor > start\n    invariant start <= cursor <= end\n    invariant batchRevset(ids, start, end) == SeqJoin(mapped, "|")\n    invariant SeqJoin(mapped[cursor - start..], "|") == referenceList(ids, cursor, end)\n    decreases cursor - start\n  {\n    var before := cursor - 1;\n    assert mapped[before - start..][1..] == mapped[cursor - start..];\n    assert mapped[before - start] == "present(" + ids[before] + ")";\n    cursor := before;\n  }\n'),
+        ('lemma knownTitles_ensures(ids: seq<string>, titles: map<string, string>)',
+         '  if |ids| > 0 {\n    knownTitles_ensures(ids[1..], titles);\n    var chunks := seq(|ids|, i requires 0 <= i < |ids| => if ids[i] in titles then [titles[ids[i]]] else []);\n    var tail := seq(|ids[1..]|, i requires 0 <= i < |ids[1..]| => if ids[1..][i] in titles then [titles[ids[1..][i]]] else []);\n    assert chunks[1..] == tail;\n    var actual := seq(|ids|, i_map requires 0 <= i_map < |ids| => var id := ids[i_map]; (if id in titles then [titles[id]] else []));\n    assert forall i :: 0 <= i < |chunks| ==> chunks[i] == actual[i];\n    assert chunks == actual;\n    assert knownTitles(ids, titles) == SeqFlatten(actual);\n    var actualTail := seq(|ids[1..]|, i_map requires 0 <= i_map < |ids[1..]| => var id := ids[1..][i_map]; (if id in titles then [titles[id]] else []));\n    assert forall i :: 0 <= i < |tail| ==> tail[i] == actualTail[i];\n    assert tail == actualTail;\n    assert knownTitles(ids[1..], titles) == SeqFlatten(actualTail);\n    assert SeqFlatten(chunks) == chunks[0] + SeqFlatten(chunks[1..]);\n    assert SafeSlice(ids, 1, |ids|) == ids[1..];\n  }\n'),
+    ],
     'src/core/conversation.vibe': [
         ('lemma pendingCount_ensures(pending: seq<Pending>, clientId: string, end: int)', PENDING_COUNT_STEPS),
     ],
@@ -331,6 +337,32 @@ LEMMA_STEPS = {
     'src/core/issueGraphDecision.vibe': ISSUE_GRAPH_STEPS,
     'src/history/replayDecision.vibe': REPLAY_HISTORY_STEPS,
     'src/core/replayDecision.vibe': REPLAY_CONVERSATION_STEPS,
+    'src/core/mockFactoryDecision.vibe': [
+        # Keys of different kinds end in different units ("t" of agent, "n" of person); keys of one kind and one
+        # length share their id prefix.
+        ('lemma actorKey_ensures(id: string, agent: bool)',
+         '  forall other: string\n'
+         '    ensures actorKey(id, agent) != other + "/" + actorKind(!agent)\n'
+         '  {\n'
+         '    var a := id + "/" + actorKind(agent);\n'
+         '    var b := other + "/" + actorKind(!agent);\n'
+         '    if a == b {\n'
+         '      assert a[|a| - 1] == actorKind(agent)[|actorKind(agent)| - 1];\n'
+         '      assert b[|b| - 1] == actorKind(!agent)[|actorKind(!agent)| - 1];\n'
+         '    }\n'
+         '  }\n'
+         '  forall other: string | other != id\n'
+         '    ensures actorKey(id, agent) != other + "/" + actorKind(agent)\n'
+         '  {\n'
+         '    var a := id + "/" + actorKind(agent);\n'
+         '    var b := other + "/" + actorKind(agent);\n'
+         '    if a == b {\n'
+         '      assert |id| == |other|;\n'
+         '      assert a[..|id|] == id;\n'
+         '      assert b[..|other|] == other;\n'
+         '    }\n'
+         '  }\n'),
+    ],
     'src/core/sandboxDecision.vibe': [
         ('lemma runningCountPrefix_ensures(sandboxes: seq<SandboxEntry>, end: int)',
          '  if end > 0 {\n    runningCountPrefix_ensures(sandboxes, end - 1);\n  }\n'),

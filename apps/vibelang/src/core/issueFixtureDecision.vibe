@@ -1,0 +1,62 @@
+// Issue fixture decisions used by the actual memory flow host (0018, third-lane batch 16).
+// Whitespace normalization, identity/role gates, creation (issueCreates), the graph predicate and every write
+// (issueGraphDecision.vibe, fifth lane), storage and engine execution remain outside this module.
+export interface FixtureNumber { readonly number: number }
+//@ verify
+//@ ensures -1 <= \result && \result < items.length
+//@ ensures \result >= 0 ==> items[\result].number == wanted && forall(j, 0 <= j && j < \result ==> items[j].number != wanted)
+//@ ensures \result == -1 ==> forall(j, 0 <= j && j < items.length ==> items[j].number != wanted)
+export function fixtureIssueIndex(items: ReadonlyArray<FixtureNumber>, wanted: number): number {
+  let i = 0
+  while (i < items.length) {
+    //@ invariant 0 <= i && i <= items.length
+    //@ invariant forall(j, 0 <= j && j < i ==> items[j].number != wanted)
+    //@ decreases items.length - i
+    if (items[i]!.number === wanted) return i
+    i += 1
+  }
+  return -1
+}
+export type FixtureRefusal = "" | "missing" | "title" | "incomplete" | "tree" | "assignee" | "empty" | "review"
+//@ verify
+//@ ensures \result == ((!creating && !known) ? "missing" : ((creating && titleBlank) ? "title" : ((op == "propose" && incomplete) ? "incomplete" : ((op == "split" && !known) ? "missing" : ((op == "link" && !linkAllowed) ? "tree" : ((op == "commit" && (!open || assigneeBlank)) ? "assignee" : ((op == "comment" && textBlank) ? "empty" : (((op == "accept" || op == "decline") && !reviewing) ? "review" : ""))))))))
+//@ ensures !creating && !known ==> \result == "missing"
+//@ ensures creating && titleBlank ==> \result == "title"
+export function fixtureFailure(op: string, creating: boolean, known: boolean, titleBlank: boolean, incomplete: boolean, linkAllowed: boolean, open: boolean, assigneeBlank: boolean, textBlank: boolean, reviewing: boolean): FixtureRefusal {
+  if (!creating && !known) return "missing"
+  if (creating && titleBlank) return "title"
+  if (op === "propose" && incomplete) return "incomplete"
+  if (op === "split" && !known) return "missing"
+  if (op === "link" && !linkAllowed) return "tree"
+  if (op === "commit" && (!open || assigneeBlank)) return "assignee"
+  if (op === "comment" && textBlank) return "empty"
+  if ((op === "accept" || op === "decline") && !reviewing) return "review"
+  return ""
+}
+export interface FixtureDraft { readonly title: string; readonly summary: string; readonly example: string; readonly prior: string }
+//@ verify
+//@ ensures \result.title == (title == "" ? "Tuple patterns" : title)
+//@ ensures \result.summary == (summary == "" ? "Bind the elements of a tuple in one pattern." : summary)
+//@ ensures \result.example == (example == "" ? "const pair = [1, 2]" : example)
+//@ ensures \result.prior == (prior == "" ? "Rust tuple patterns\nTypeScript tuple types" : prior)
+export function fixtureDraft(title: string, summary: string, example: string, prior: string): FixtureDraft {
+  return { title: title || "Tuple patterns", summary: summary || "Bind the elements of a tuple in one pattern.", example: example || "const pair = [1, 2]", prior: prior || "Rust tuple patterns\nTypeScript tuple types" }
+}
+//@ verify
+//@ ensures \result == (op == "new" || op == "comment")
+export function fixtureParticipation(op: string): boolean {
+  return op === "new" || op === "comment"
+}
+//@ verify
+//@ ensures \result == (tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed")
+export function fixtureErrorReason(tag: string): "conflict" | "failed" {
+  return tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed"
+}
+
+export interface FixtureIds { readonly number: number; readonly githubId: number }
+/** A fixture issue's GitHub id is its number offset by 1000, so the two never coincide. */
+//@ verify
+//@ ensures \result.number == issue && \result.githubId == issue + 1000
+export function fixtureIdentity(issue: number): FixtureIds {
+  return { number: issue, githubId: issue + 1000 }
+}

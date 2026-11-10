@@ -4,12 +4,13 @@ import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { chromium, type Browser } from "playwright"
 import { afterAll, beforeAll, expect, test } from "vitest"
+import vibelang from "vibelang-unplugin/esbuild"
 
 let server: Server
 let browser: Browser
 let origin: string
 beforeAll(async () => {
-  const bundle = await build({
+  const bundle = await build({ plugins: [vibelang()],
     entryPoints: [fileURLToPath(new URL("./fixtures/chrome-chat.tsx", import.meta.url))],
     bundle: true, write: false, outdir: "out", format: "esm", platform: "browser", target: "es2022",
     jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },

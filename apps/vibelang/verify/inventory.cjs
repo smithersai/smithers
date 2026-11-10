@@ -9,6 +9,8 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'worker/machineObject.vibe': 'Calls machineDecision for exact generation/start/running guards, receipt replay/text, lease boundary and duration, snapshot restoration, checkpoint success/failure frame, stop phase, bounded floor-cell timeout and exact output markers. Native safe-integer checks and clocks, SQLite command fencing, storage-before-destroy, locking, container execution and snapshot capture remain tested host boundaries. No end-to-end once-only execution or numeric floating-point proof is claimed.',
+
   'src/core/roles.vibe': 'Post author formatting delegates to the proved identityDecision; role grants delegate to the existing proved policy. Session signature/expiry checks and Effect service execution remain host/library boundaries.',
   'src/surfaces/session.vibe': 'Private atomic settings and credential-origin decoding are OS/FileSystem/Schema boundaries, exercised over real files and a faulty permissions service. No proof of filesystem permissions, atomic rename or JSON decoding is claimed.',
   'src/surfaces/signin.vibe': 'GitHub device transport, interval persistence, session validation and logout run inside journaled native Actions. GitHub responses, clocks, HTTP, private settings and Effect execution remain tested host boundaries, not formal proofs.',
@@ -43,10 +45,18 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  "src/core/issueHostDecision.vibe": "Proved request-key admission (exactly /^[A-Za-z0-9-]{1,100}$/), GitHub failure classification and retry codes, the HTTP status of every refusal, the unwritten mark (a first execution refused before any write), the agent accept and decline refusal, task and VIP reading, the receipt-gated Accepted projection, the advancing revision, resumable operations and resume status, the agent's choice label both ways, and timeline event text (0018 third-lane batch 6).",
+  "src/core/mockFactoryDecision.vibe": "Proved the scripted agent's exact reply precedence, the draft outcome, actor journal keys (injective over id and kind), the restored id counter, the replay cursor and the live tail (0018 third-lane batch 8); the mock accounts' self-grant rule and fixture logins (batch 10).",
+  "src/core/wikiPageDecision.vibe": "Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9).",
+  "src/core/actionRunDecision.vibe": "Proved the reply child id and test, which runs a start runs and a cancel stops, the settled state and result, and when a start, a history action and a tour settle (0018 third-lane batch 11).",
+  "src/core/sandboxMockDecision.vibe": "Proved the mock device's command precedence and the current lease (0018 third-lane batch 12).",
   "src/history/seedDecision.vibe": "Proved first area naming a scope, which queue entries count, exact join precedence (regenerated docs, revert, landed entry, new), the last sentence end that fits and the note cut (else a short first sentence, else dropped), the evidence paragraph step (a line wraps only onto an open paragraph) and how a fold reads back a stored title (0018 third-lane batch 4).",
   "src/actions/catalogDecision.vibe": "Proved exact least role (tours public; approve and fold maintainer; else contributor) and input kind for each flow tag (0018 third-lane batch 3).",
   "src/core/tourDecision.vibe": "Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2).",
-  "src/history/pageDecision.vibe": "Proved page start, exact page count (none past the end, at most a page) and the pair-safe search clip (0018 third-lane batch 2).",
+  "src/core/flowPolicyDecision.vibe": "Proved which issue and wiki operations are sealed (read, draft) or irreversible and keyed, that the agent is never offered a VIP accept or decline or a wiki save or proposal, and that only a read has a deadline (0018 third-lane batch 18).",
+  "src/history/wireDecision.vibe": "Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17).",
+  "src/core/issueFixtureDecision.vibe": "Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16).",
+  "src/history/pageDecision.vibe": "Proved page start, exact page count (none past the end, at most a page) and the pair-safe search clip (0018 third-lane batch 2); exact per-key totals over a Map (a key never seen is absent and totals 0), the stack order (epic then rank, or rank alone if an epic is absent), the open filter and the search predicate (batch 7).",
   "src/core/sequencerDecision.vibe": "Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1).",
   "src/core/followDecision.vibe": "Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1).",
   "src/history/stackDecision.vibe": "Proved exact plan step precedence (amend, empty, too-long, insert, open-epic, append), UTF-16 surrogate predicates, the pair-safe cut, the fold title (unchanged when it fits, else cut between characters with \"\u2026\" within the limit) and the first epic by title (0018 third-lane batch 1).",
@@ -81,6 +91,51 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  "src/actions/MockActions.vibe:MockActions": "Calls actionHostDecision for settlement, fixed failure text, owner refusal, actor identity, flow filters and exact run-id selection; cancellation calls actionRunDecision cancellable. Not yet proved: the private numeric id increment (unsafe-integer.ts), command tokenization/JSON codecs, native authorization and the engine, publication and follower ordering. No whole-host proof is claimed.",
+  "worker/ActionDirectory.vibe:directory": "Calls actionHostDecision indexedRun (only its own index or an unindexed child), matchingFlow and sameRun; reply cancellation calls the proved actionRunDecision isReplyChild relation. Not yet proved: newest-first native subtraction/sort, JSON request comparison, storage ordering, role lookup and SDK execution. No whole-directory ordering or exactly-once execution proof is claimed.",
+
+  "scripts/mythical-seed-program.vibe:log": "Not proved: native jj execution, newline framing and Schema/JSON decoding. The minimal JSON-codec reproduction is verify/bugs/json-codec.ts; process exit observation is a host boundary. No all-function proof is claimed.",
+  "scripts/mythical-seed-program.vibe:titlesOf": "Calls seedInputDecision batchEnd and batchRevset for bounded half-open batches and exact present(id) alternatives. Native jj execution, Map writes and commit title normalization remain unproved; the latter uses the regexp.ts boundary.",
+  "scripts/mythical-seed-program.vibe:entriesOf": "Calls seedInputDecision receiptCommits (a present empty receipt is authoritative), shortCommits, queueText and knownTitles (input order and multiplicity). Not proved: JSON/Schema decoding, Set deduplication, queue projection and filesystem/jj execution; json-codec.ts records the codec gap.",
+  "scripts/mythical-seed-program.vibe:main": "Calls the seed and history replay; their separate proofs do not prove this generator. Not proved: JSON encoding, refusal counting and generated-module formatting, configuration and filesystem writes. JSON encoding is the json-codec.ts tool boundary.",
+  "src/history/seed.vibe:scopeOf": "Not proved: conventional/bare scope regexp capture, split/trim and lowercasing. The minimal regexp.ts and unicode-case.ts reproductions record these backend boundaries; native behavioral cases remain in seed.test.vibe.",
+  "src/history/seed.vibe:sanitize": "Not proved: path/host redaction and whitespace normalization by regexp. regexp.ts records the backend boundary. The resulting sentence cut calls proved seedDecision sentenceCut via wholeSentences.",
+  "src/history/seed.vibe:endsSentence": "Not proved: punctuation/closing-delimiter regexp; minimal backend reproduction regexp.ts. Native seed tests cover the grammar.",
+  "src/history/seed.vibe:titleOf": "Not proved: first-line regexp normalization and trim. regexp.ts records the backend boundary; native seed tests cover empty and multiline descriptions.",
+
+  "src/core/sandboxMock.vibe:memoryMachines": "Calls the proved command choice (sandboxMockDecision mockCommand: a redirected echo, cat, pwd, ls, echo, blank, else unavailable) and the current lease (currentLease: running at exactly that generation). The command regexps and the device's maps stay outside; they are tested.",
+  "src/core/sandboxMock.vibe:makeMockSandboxes": "Wiring: the sandbox flows on the memory engine over the proved sandbox host (sandboxHost, sandboxDecision). The meter's alarm check belongs to the meter (vl-proof-strengthen); a flow error other than Refused or Unavailable is masked by a tag comparison the type checker narrows on.",
+  "worker/ActionRuns.vibe:start": "Calls the proved start rule (actionRunDecision startRuns: a new or queued run, or a running post/tour needing recovery; terminal runs stay terminal), the settle rule and the settled state and result. The role gate is the catalog's proved allowed. Not proved: storage, the request comparison (JSON), the engine and the sequencer; they are tested.",
+  "worker/ActionRuns.vibe:traced": "Calls the proved reply child id (replyChildId). Not proved: the trace queue, the consumer fiber and the sequencer writes; they are tested.",
+  "worker/ActionRuns.vibe:alarm": "Calls the proved history outcome (historyPassed), tour settle rule (tourSettles) and settled state and result. Not proved: the engine, receipts, intent decoding and the sequencer; they are tested.",
+  "worker/ActionRuns.vibe:cancel": "Calls the proved reply child test (isReplyChild) and cancellable states; the role gate is the catalog's proved allowed. Not proved: host cancellation, tour ending and the sequencer; they are tested.",
+  "worker/ActionRuns.vibe:make": "Wiring: one host per object incarnation; admit applies the catalog's proved allowed to the stored request and fails a run whose permission changed.",
+  "worker/ActionRuns.vibe:callerOf": "Wiring: the caller the door identified, read at its current role each time a step asks. Nothing to decide.",
+  "worker/ActionRuns.vibe:read": "Wiring: decodes the sequencer's runs. Nothing to decide.",
+  "src/core/MockAccounts.vibe:make": "Calls the proved self-grant rule (mockFactoryDecision selfGrant: only a signed-in person's own grant skips the roles gate), fixture logins, and the replay cursor and live tail the mock factory uses (afterCursor, replayedTo, liveEvent). Grants, authorization and roles are decide, apply and roleOf, proved in decide.vibe and conversation.vibe. Not proved: Refs, the lock, the engine and PubSub; they are tested.",
+  "worker/Wiki.vibe:serveWiki": "Calls the proved request-key admission (issueHostDecision requestKey) and refusal status (wikiPageDecision wikiRefusalStatus). The URL path, method, content length and JSON body decoding stay runtime boundaries.",
+  "worker/Wiki.vibe:wikiWriteKey": "Wiring: a SHA-256 of the write's identifying fields. Nothing to decide.",
+  "worker/Wiki.vibe:publicWiki": "Wiring: serveWiki with no signed-in person, through the public reads client when given. Nothing to decide.",
+  "src/core/wiki.vibe:wikiPath": "Calls the proved designs alias, page lookup and link (wikiPageDecision pageIdOf, pageIndex, wikiHref). The path normalization and section-name regexps stay boundaries (regexp.ts).",
+  "src/core/wiki.vibe:wikiPage": "Calls the proved page lookup (pageIndex) on the path before any section; the split is native.",
+  "src/core/wiki.vibe:wikiEditable": "Calls the proved editable rule (wikiPageDecision editable: a known page, never the generated decisions index).",
+  "src/core/wiki.vibe:requestedWiki": "Calls the proved request precedence (wikiRequest), the longest named page id, earliest among ties (longestIncluded), and the first decision with the number (firstWithPrefix). The word and number regexps and case folding stay boundaries (regexp.ts, unicode-case.ts).",
+  "worker/Wiki.vibe:wikiFilePath": "Calls the proved editable rule (wikiPageDecision editable); the path is the page under the repository root.",
+  "worker/Wiki.vibe:wikiFailureOf": "Calls the proved GitHub failure reason and retry code (issueHostDecision failureReason, carriesCode), shared with the issues host. The delegation refusal branch is the Connect GitHub path (smithers.sh decision 0165) and is not proved.",
+  "worker/Wiki.vibe:githubWikiHost": "Calls the proved editable rule and unwritten mark (wikiPageDecision wikiUnwritten: a first execution refused for conflict, empty or connect before writing). Not proved: GitHub reads and writes, draft storage, branch labels (regexp), review evidence and the order of writes; they are tested.",
+  "worker/Wiki.vibe:executeWiki": "Calls the proved request-key admission (issueHostDecision requestKey) and the role gate (authorizeWiki, proved in conversation.vibe). Not proved: engine polling and recovery, run inspection and the stored-payload comparison; they are tested.",
+  "src/core/WikiFactory.vibe:fixtureSource": "Calls the proved page lookup (wikiPageDecision pageIndex).",
+  "src/core/WikiFactory.vibe:fixtureWikiHost": "Calls the proved fixture verdict (fixtureVerdict: read needs a known page; an edit needs a key, a known page and text; a save or proposal needs its base and a change), the editable rule and the review number. Not proved: draft and proposal bookkeeping in Refs and the lock; they are tested.",
+  "src/core/WikiFactory.vibe:makeWikiFactory": "Wiring: the memory engine over the fixture host, the schema decode and the role gate (authorizeWiki, proved in conversation.vibe); an identity conflict reads as conflict, any other engine failure as failed.",
+  "src/core/WikiFactory.vibe:makeWikiStore": "Wiring: empty Refs and a lock. Nothing to decide.",
+  "src/core/WikiFactory.vibe:personOf": "Wiring: a fixture role names its fixture person, else the given identity is read. Nothing to decide.",
+  "src/core/MockFactory.vibe:scripted": "Calls the proved reply choice (mockFactoryDecision replyKind: a requested specification review, then a wiki page, an issue to file or split, a sandbox, the history, else the script) and draft outcome; the script's first match is proved in mockDecision. Not proved: the prompt's regular expressions and case folding (regexp.ts, unicode-case.ts), the finds of the post's text and page label, answers that format numbers, and the durable actions; the flow and factory tests cover them.",
+  "src/core/MockFactory.vibe:mockFactoryFor": "Calls the proved actor journal key (actorKey: neither a person and their device sign-in nor two ids share a journal), the restored id counter (never behind the journal), the replay cursor and live tail (afterCursor, replayedTo, liveEvent) and the tour-control step bound the Worker also uses (protocolDecision validTourStep). decide and apply are proved in decide.vibe and conversation.vibe. Not proved: locks, scopes, the engine, PubSub and streams; counter increments and lookups have nothing to decide. They are tested.",
+  "src/core/MockFactory.vibe:cryptoOf": "Wiring: a supplied Digest, else the platform's Web Crypto. Nothing to decide.",
+  "worker/Issues.vibe:issueFailureOf": "Calls the proved failure reason and retry code (issueHostDecision failureReason, carriesCode). The delegation refusal branch is the Connect GitHub path (smithers.sh decision 0165) and is not proved.",
+  "worker/Issues.vibe:githubHost": "Calls the proved agent refusal, task and VIP reading, assignee choice label and login, timeline text and unwritten mark (issueHostDecision). Not proved: GitHub paging and decoding, the VIP marker regexp, the parent URL parse (Number), assignee order (localeCompare), the case-insensitive assignee check (toLowerCase), and the order of writes; they are tested.",
+  "worker/Issues.vibe:serveIssues": "Calls the proved request-key admission and refusal status (issueHostDecision requestKey, refusalStatus). The URL path, content-length and JSON body decoding stay runtime boundaries.",
+  "worker/Issues.vibe:executeIssues": "Calls the proved request-key admission, agent refusal, receipt-gated Accepted projection, advancing revision, resumable operations and resume status (issueHostDecision). Not proved: engine polling and recovery, run inspection, the stored-payload comparison and storage I/O; they are tested.",
   "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
   "src/core/sandboxMeter.vibe:meterDelayMilliseconds": "Calls the proved meter delay (sandboxDecision meterDelay): between 1 ms and one interval, and before the interval exactly the first whole millisecond at which running × elapsed reaches the remaining allowance.",
   "src/history/seed.vibe:areaOf": "Calls the proved first area naming the scope (seedDecision areaIndex); the scope regexps stay boundaries (regexp.ts).",
@@ -90,7 +145,7 @@ const functionBoundaries = {
   "src/history/seed.vibe:seedOf": "Calls the proved entry use and join precedence (seedDecision entryUse, joins). Not proved: the commit graph walk, the claim of the oldest landed entry, epic order and id numbering (Maps, regexps).",
   // Policy tables whose contract is the table (0018, "Specifications restated").
   ...Object.fromEntries(['src/core/conversation.vibe:mayRun', 'src/core/conversation.vibe:runsOf', 'src/core/wikiDecision.vibe:wikiSubmissionAllowed', 'src/core/protocolDecision.vibe:accountRoute',
-    'worker/budgetDecision.vibe:canCharge', 'worker/budgetDecision.vibe:chargeKeyOf', 'src/core/accountCookieDecision.vibe:cookieName',
+    'worker/budgetDecision.vibe:canCharge', 'worker/budgetDecision.vibe:chargeKeyOf', 'src/core/accountCookieDecision.vibe:cookieName', 'src/core/accountCookieDecision.vibe:signInCookieName',
     'src/core/accountCookieDecision.vibe:localOrigin', 'src/core/accountCookieDecision.vibe:cookieAccepted', 'src/actions/catalogDecision.vibe:leastRoleOf',
     'src/actions/catalogDecision.vibe:inputOf', 'src/core/identityDecision.vibe:postLabel'].map((key) => [key, 'Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument.'])),
   "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
@@ -100,7 +155,19 @@ const functionBoundaries = {
   "worker/Reply.vibe:promptOf": "Calls the proved prompt window, form and speaker label; string joining is formatting.",
   "src/core/flows.vibe:touring": "Calls the proved runningTour.",
   "src/core/flows.vibe:docsPage": "Calls the proved exact docs-path admission (tourDecision docsPath), equal to the earlier regexp on 4,010 compared paths.",
-  "src/history/pages.vibe:matchesOf": "Calls the proved pair-safe search clip and match count; case folding and the stack sort are native (unicode-case.ts, sort-membership.ts) and stay boundaries.",
+  "src/history/pages.vibe:matchesOf": "Calls the proved pair-safe search clip, match count and search predicate (pageDecision found: a nonempty needle that is the id or occurs in the lowered title); case folding and the stack sort are native (unicode-case.ts, sort-membership.ts) and stay boundaries.",
+  "src/history/wire.vibe:pageRequestOf": "Calls the proved idAfter, digitsFrom and pageKind: outline, search, an m-commit id, then an e-epic id whose start is 1 to 9 digits, exactly as the replaced patterns; URLSearchParams and Number are native.",
+  "src/history/wire.vibe:historyRouteOf": "Calls the proved routeKind and writeOf: GET events, a write path only by POST, else a GET at or under /api/history reads its page.",
+  "src/core/accountCookieDecision.vibe:presentedSession": "Proved: on HTTPS only the host-prefixed session cookie; on a local HTTP origin the plain cookie when present (even empty), else the host-prefixed one (0018 third-lane batch 19).",
+  "worker/Accounts.vibe:cookieOf": "Calls the proved presentedSession with the scheme of the request's original URL; URL parsing is native.",
+  "worker/Accounts.vibe:make/presented": "Calls the proved presentedSession with the configured origin's scheme.",
+  "src/history/wire.vibe:pathOf": "Formats the request's own kind with native encodeURIComponent, which throws on a lone surrogate (then undefined); no admission decision.",
+  "src/history/pages.vibe:foldCounts": "Calls the proved per-key totals (pageDecision totals): each mythical commit maps to exactly the number of real commits folded into it, and one with none is absent.",
+  "src/history/pages.vibe:headOf": "Calls the proved totalOf for the fold count (0 when nothing folds into the commit); the rest copies fields and counts notes.",
+  "src/history/pages.vibe:stacked": "Calls the proved pageOrder: known epic positions order first, then rank; if either epic is absent, the previous rank fallback is preserved. Native sorting remains the runtime boundary (sort-membership.ts).",
+  "src/history/pages.vibe:outlineOf": "Calls the proved totals and totalOf: each epic's commit count and folded real commits are exactly the sums over its commits, 0 for an epic with none; the open list is the stacked commits the proved unlanded keeps.",
+  "src/history/pages.vibe:commitPageOf": "Wiring: a native find by id and filter by fold target, nothing to decide beyond equality. Ids are unique because apply plans only under an unseen id (proved in mythical.vibe).",
+  "src/history/pages.vibe:pageOf": "Wiring: dispatches each request kind to its reader (outlineOf, epicPageOf, commitPageOf, matchesOf), each proved or calling proved decisions.",
   "src/history/pages.vibe:epicPageOf": "Calls the proved page start and count; Math.floor and the rank sort are native (finite-round.ts, sort-membership.ts) and stay boundaries.",
   "src/history/seed.vibe:clip": "Calls the proved pair-safe cut (stackDecision pairCut), so a clipped title or note never ends in half a character; the native trimEnd is outside the proof.",
   "worker/Sequencer.vibe:entryOf": "Calls the proved first-match entryIndex; undefined exactly when no entry has the id.",
@@ -148,9 +215,21 @@ function containsLogic(node) {
 }
 const effectRoots = new Set(['Effect', 'Ref', 'Queue', 'PubSub', 'Semaphore', 'Clock', 'Console', 'Logger', 'Runtime', 'Dom', 'document', 'window']);
 const domEffects = new Set(['focus', 'blur', 'scrollTo', 'scrollIntoView', 'setAttribute', 'appendChild', 'removeChild', 'addEventListener', 'removeEventListener', 'getBoundingClientRect', 'querySelector', 'querySelectorAll']);
+// Recognize concrete native APIs; RegExp.exec and a Map named storage remain logic.
+function memberPath(node) {
+  if (node?.type === 'Identifier') return [node.name];
+  if (node?.type !== 'MemberExpression' || node.computed || node.property?.type !== 'Identifier') return undefined;
+  const prefix = memberPath(node.object);
+  return prefix && [...prefix, node.property.name];
+}
 function containsEffects(node) {
   if (functions.has(node.type)) return false;
   if (node.type === 'CallExpression') {
+    const parts = memberPath(node.callee);
+    if (parts && (parts.join('.') === 'Date.now'
+      || parts.slice(-3).join('.') === 'storage.sql.exec'
+      || (parts.at(-3) === 'raw' && parts.at(-2) === 'storage'
+        && ['get', 'put', 'list', 'delete'].includes(parts.at(-1))))) return true;
     let root = node.callee;
     while (root?.type === 'MemberExpression') root = root.object;
     if (effectRoots.has(root?.name) || ['fetch', 'setTimeout', 'queueMicrotask'].includes(root?.name)

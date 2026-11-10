@@ -1,6 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Layer, Metric, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Metric, Scope } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
 import { runFlow } from "../../../worker/test/flowHost"
 import { answerAskingTab } from "../../flows/askingTab"
@@ -10,6 +10,9 @@ import { ChatCopy, ChatEdit, MessageNotFound, QuestionNotEditable } from "./flow
 import { messageCopies, questionEdits } from "./metrics"
 import { type CopyAnswer, CopyCall, type EditAnswer, EditCall } from "./schema"
 import * as Steps from "./steps"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 // `chat/copy` and `chat/edit`'s steps over the engine's chat channels, on Node's own `BroadcastChannel`: what each
 // outcome the tab answers becomes, which door it counts, and a tab that is gone. The tab's own side, over a real
@@ -107,7 +110,7 @@ describe("chat/copy", () => {
     await tab(name, ["run-1"], "not_found", "edited")
     const registry: Metric.MetricRegistry = new Map()
     const ran = await runFlow(ChatCopy, {}, registration(name, registry), { executionId: "run-1" })
-    expect(ran.exit).toEqual(Exit.fail(new MessageNotFound()))
+    expect(failureOf(ran.exit)).toEqual(new MessageNotFound())
     expect(count(registry, messageCopies, { door: "button", which: "latest", outcome: "not_found" })).toBe(1)
   })
 
@@ -136,7 +139,7 @@ describe("chat/edit", () => {
     await tab(name, ["run-1"], "copied", reason)
     const registry: Metric.MetricRegistry = new Map()
     const ran = await runFlow(ChatEdit, {}, registration(name, registry), { executionId: "run-1" })
-    expect(ran.exit).toEqual(Exit.fail(new QuestionNotEditable({ reason })))
+    expect(failureOf(ran.exit)).toEqual(new QuestionNotEditable({ reason }))
     expect(count(registry, questionEdits, { door: "button", outcome: reason })).toBe(1)
   })
 

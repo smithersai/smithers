@@ -1,0 +1,33 @@
+import { describe, expect, it } from "@effect/vitest"
+import { batchEnd, batchRevset, knownTitles, queueText, receiptCommits, shortCommit, shortCommits } from "../src/history/seedInputDecision.vibe"
+
+describe("seed input decisions", () => {
+  it("distinguishes an empty receipt from an absent receipt", () => {
+    expect(receiptCommits(undefined, "revision")).toEqual(["revision"])
+    expect(receiptCommits([], "revision")).toEqual([])
+    expect(receiptCommits(["second", "first", "second"], "revision")).toEqual(["second", "first", "second"])
+    expect([queueText(undefined), queueText(""), queueText("gate evidence")]).toEqual(["", "", "gate evidence"])
+  })
+  it("abbreviates ids without losing positions, duplicates or short ids", () => {
+    expect(shortCommit("a", 12)).toBe("a")
+    expect(shortCommit("abcdefghijklmnop", 12)).toBe("abcdefghijkl")
+    expect(shortCommit("abcd", 0)).toBe("")
+    expect(shortCommits(["abcdefghijklmnop", "a", "abcdefghijklmnop"], 12)).toEqual(["abcdefghijkl", "a", "abcdefghijkl"])
+    expect(shortCommits([], 12)).toEqual([])
+  })
+  it("stops each read at its boundary and reaches the last partial batch", () => {
+    expect([batchEnd(0, 1502, 1500), batchEnd(1500, 1502, 1500), batchEnd(1502, 1502, 1500)]).toEqual([1500, 1502, 1502])
+  })
+  it("names exactly the selected revisions in jj order", () => {
+    const ids = ["a", "b", "a", "last"]
+    expect(batchRevset(ids, 0, 3)).toBe("present(a)|present(b)|present(a)")
+    expect(batchRevset(ids, 3, 4)).toBe("present(last)")
+    expect(batchRevset(ids, 2, 2)).toBe("")
+  })
+  it("keeps known titles in queue order, including repeats", () => {
+    const titles = new Map([["a", "First"], ["b", "Second"]])
+    expect(knownTitles(["missing", "b", "a", "b"], titles)).toEqual(["Second", "First", "Second"])
+    expect(knownTitles(["missing"], titles)).toEqual([])
+    expect(knownTitles([], titles)).toEqual([])
+  })
+})

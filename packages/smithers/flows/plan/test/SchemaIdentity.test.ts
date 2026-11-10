@@ -17,10 +17,12 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
+import * as FastCheck from "fast-check"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as internal from "../src/internal/SchemaIdentity.vibe"
 import * as Node from "../src/Node.ts"
+import { params } from "./FastCheckParams.ts"
 import { corpus, representations } from "./SchemaIdentityCorpus.ts"
 
 interface Recording {
@@ -43,6 +45,20 @@ const fixture = JSON.parse(
 const schemas = corpus(Schema, Effect)
 const documents = representations(Schema)
 const closed = { onExcessProperty: "error" } as const
+
+/**
+ * Corpus entries rc.115 refused that this package now prints, each with the
+ * test below that pins its document. Nothing recorded under rc.115 had them,
+ * so supporting them re-keys no journal.
+ */
+const supportedSinceRc115: ReadonlySet<string> = new Set(["record/number-key"])
+
+/**
+ * The key pattern `effect@4.1.1` gives a `Schema.Number` record key
+ * (`numberKeyPattern` in `src/internal/schema/toJsonSchemaDocument.ts`, built
+ * from `SchemaAST.FINITE_PATTERN`): what `String(n)` prints for every number.
+ */
+const numberKey = "^(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?|Infinity|-Infinity|NaN)$"
 
 /** A representation document no schema produces, handed straight to the emitter. */
 const emitted = (document: unknown, options?: Node.SchemaIdentityOptions): internal.Document =>
@@ -78,12 +94,20 @@ describe("schema identity under an effect upgrade", () => {
       expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(recording.documents[name])
     })
 
-    it.each(Object.entries(recording.failures))("refuses %s as rc.115 refused it", (name, failure) => {
-      const attempt = () => Node.schemaIdentity(schemas[name]!(), recording.options)
-      // The emitter's refusals are this package's to reproduce word for word.
-      // An earlier one is effect's own message about its own schema.
-      if (failure.stage === "emitter") expect(attempt).toThrow(expect.objectContaining({ message: failure.message }))
-      else expect(attempt).toThrow()
+    it.each(Object.entries(recording.failures).filter(([name]) => !supportedSinceRc115.has(name)))(
+      "refuses %s as rc.115 refused it",
+      (name, failure) => {
+        const attempt = () => Node.schemaIdentity(schemas[name]!(), recording.options)
+        // The emitter's refusals are this package's to reproduce word for word.
+        // An earlier one is effect's own message about its own schema.
+        if (failure.stage === "emitter") expect(attempt).toThrow(expect.objectContaining({ message: failure.message }))
+        else expect(attempt).toThrow()
+      }
+    )
+
+    it.each([...supportedSinceRc115])("prints %s, which rc.115 refused", (name) => {
+      expect(recording.failures[name]).toBeDefined()
+      expect(Node.schemaIdentity(schemas[name]!(), recording.options).dialect).toBe("draft-2020-12")
     })
 
     it.each(Object.keys(recording.representationDocuments))(
@@ -168,6 +192,143 @@ describe("schema identity for what rc.115 did not have", () => {
   })
 })
 
+describe("schema identity of a number-keyed record", () => {
+  const document = (schema: Record<string, unknown>) => ({ dialect: "draft-2020-12", schema, definitions: {} })
+
+  it("matches a number key with the pattern effect gives it", () => {
+    const numberValue = Node.schemaIdentity(Schema.Number).schema
+    const versions = Schema.Record(Schema.Number, Schema.Number)
+    expect(Node.schemaIdentity(versions)).toEqual(
+      document({ type: "object", patternProperties: { [numberKey]: numberValue }, additionalProperties: true })
+    )
+    expect(Node.schemaIdentity(versions, closed)).toEqual(
+      document({ type: "object", patternProperties: { [numberKey]: numberValue }, additionalProperties: false })
+    )
+  })
+
+  it("matches every key a number prints as, and no other", () => {
+    const key = new RegExp(numberKey)
+    FastCheck.assert(
+      FastCheck.property(FastCheck.double(), (value) => key.test(String(value))),
+      params(200)
+    )
+    for (const other of ["", "a", "1a", "0x10", " 1", "1 ", "+", "Infinity1", "nan"]) {
+      expect(key.test(other)).toBe(false)
+    }
+  })
+
+  it("keys a union of string and number keys the way effect does", () => {
+    const tagged = Schema.TemplateLiteral(["k-", Schema.String])
+    expect(Node.schemaIdentity(Schema.Record(Schema.Union([Schema.Number, tagged]), Schema.String), closed)).toEqual(
+      document({
+        type: "object",
+        patternProperties: { [numberKey]: { type: "string" }, "^k-[\\s\\S]*?$": { type: "string" } },
+        additionalProperties: false
+      })
+    )
+    // effect gives each member of a key union its own index signature, so a
+    // plain string member adds an open signature beside the number pattern.
+    for (const keys of [[Schema.Number, Schema.String], [Schema.String, Schema.Number]] as const) {
+      for (const options of [{}, closed]) {
+        expect(Node.schemaIdentity(Schema.Record(Schema.Union(keys), Schema.String), options)).toEqual(
+          document({
+            type: "object",
+            patternProperties: { [numberKey]: { type: "string" } },
+            allOf: [{ type: "object", additionalProperties: { type: "string" } }]
+          })
+        )
+      }
+    }
+  })
+
+  it("names a checked number key's property names by effect's pattern when undeclared keys are closed", () => {
+    const counts = Schema.Record(Schema.Int, Schema.String)
+    expect(Node.schemaIdentity(counts)).toEqual(document({ type: "object", additionalProperties: true }))
+    expect(Node.schemaIdentity(counts, closed)).toEqual(
+      document({
+        type: "object",
+        propertyNames: { type: "string", pattern: numberKey },
+        additionalProperties: { type: "string" }
+      })
+    )
+    const either = Schema.Record(
+      Schema.Union([Schema.Int, Schema.TemplateLiteral(["k-", Schema.String])]),
+      Schema.String
+    )
+    expect(Node.schemaIdentity(either, closed).schema).toMatchObject({
+      propertyNames: { anyOf: [{ type: "string", pattern: numberKey }, { type: "string", pattern: "^k-[\\s\\S]*?$" }] }
+    })
+  })
+
+  it("follows a referenced number key into its definition", () => {
+    const counts = Schema.Record(Schema.Int.annotate({ identifier: "Count" }), Schema.String)
+    expect(Node.schemaIdentity(counts, closed)).toEqual({
+      dialect: "draft-2020-12",
+      schema: {
+        type: "object",
+        propertyNames: { type: "string", pattern: numberKey },
+        additionalProperties: { type: "string" }
+      },
+      definitions: { Count: { type: "integer" } }
+    })
+  })
+
+  it("names a recursive or missing key reference behind a number key", () => {
+    const int = Schema.toRepresentation(Schema.toCodecJson(Schema.Int)).representation
+    const keyed = (parameter: unknown, references: Record<string, unknown>) => ({
+      representation: {
+        _tag: "Objects",
+        checks: [],
+        propertySignatures: [],
+        indexSignatures: [{ parameter, type: { _tag: "String", checks: [] } }]
+      },
+      references
+    })
+    const tagged = Schema.toRepresentation(Schema.TemplateLiteral(["k-", Schema.String])).representation
+    const recursive = { _tag: "Union", checks: [], types: [int, tagged, { _tag: "Reference", $ref: "Key" }] }
+    expect(emitted(keyed({ _tag: "Reference", $ref: "Key" }, { Key: recursive }), closed).schema).toEqual({
+      type: "object",
+      propertyNames: {
+        anyOf: [{ type: "string", pattern: numberKey }, { type: "string", pattern: "^k-[\\s\\S]*?$" }, {
+          type: "string"
+        }]
+      },
+      additionalProperties: { type: "string" }
+    })
+    // The pattern walk stops at the checked number; the property names reach the reference.
+    const missing = { _tag: "Union", checks: [], types: [int, { _tag: "Reference", $ref: "Missing" }] }
+    expect(() => emitted(keyed(missing, {}), closed)).toThrow(
+      expect.objectContaining({
+        message:
+          "Invalid reference Missing\n  at [\"representation\"][\"indexSignatures\"][0][\"parameter\"][\"types\"][1][\"$ref\"]"
+      })
+    )
+  })
+
+  it("is stable for number-keyed records and differs from the string-keyed ones", () => {
+    const values = [
+      () => Schema.Number,
+      () => Schema.String,
+      () => Schema.Struct({ a: Schema.Int }),
+      () => Schema.Array(Schema.Boolean),
+      () => Schema.Record(Schema.Number, Schema.String)
+    ]
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.integer({ min: 0, max: values.length - 1 }),
+        FastCheck.constantFrom<Node.SchemaIdentityOptions>({}, closed),
+        (index, options) => {
+          const value = values[index]!
+          const identity = JSON.stringify(Node.schemaIdentity(Schema.Record(Schema.Number, value()), options))
+          expect(JSON.stringify(Node.schemaIdentity(Schema.Record(Schema.Number, value()), options))).toBe(identity)
+          expect(JSON.stringify(Node.schemaIdentity(Schema.Record(Schema.String, value()), options))).not.toBe(identity)
+        }
+      ),
+      params(50)
+    )
+  })
+})
+
 describe("the limits of schema identity", () => {
   it("does not consult a toJsonSchema annotation passed to a built-in check", () => {
     // The identity of a built-in check is its id and payload. rc.115 printed
@@ -221,7 +382,7 @@ describe("a representation a later effect release could hand the emitter", () =>
   it("raises a tagged refusal a caller can classify", () => {
     const refusal = (() => {
       try {
-        Node.schemaIdentity(Schema.Record(Schema.Number, Schema.String))
+        Node.schemaIdentity(Schema.String.annotate({ contentSchema: { $ref: "#/~2" } }))
       } catch (error) {
         return error
       }
@@ -230,13 +391,33 @@ describe("a representation a later effect release could hand the emitter", () =>
     expect(refusal).toMatchObject({ _tag: "@smthrs/plan/SchemaIdentityError" })
     expect(() => emitted(checked({ representation: { id: "effect/schema/isPattern", payload: null } })))
       .toThrow(Node.SchemaIdentityError)
-    expect(() => Node.schemaIdentity(Schema.String.annotate({ contentSchema: { $ref: "#/~2" } })))
-      .toThrow(Node.SchemaIdentityError)
+  })
+
+  it("refuses a record key type neither it nor effect supports, by name", () => {
+    const keyed = (parameter: unknown) => ({
+      representation: {
+        _tag: "Objects",
+        checks: [],
+        propertySignatures: [],
+        indexSignatures: [{ parameter, type: { _tag: "String", checks: [] } }]
+      },
+      references: {}
+    })
+    const at = "\n  at [\"representation\"][\"indexSignatures\"][0][\"parameter\"]"
+    const refusal = (message: string) => expect.objectContaining({ _tag: "@smthrs/plan/SchemaIdentityError", message })
+    expect(() => emitted(keyed({ _tag: "Boolean", checks: [] }))).toThrow(
+      refusal(`Unsupported index key type Boolean${at}`)
+    )
+    expect(() =>
+      emitted(
+        keyed({ _tag: "Union", checks: [], types: [{ _tag: "Number", checks: [] }, { _tag: "BigInt", checks: [] }] })
+      )
+    ).toThrow(refusal(`Unsupported index key type BigInt${at}["types"][1]`))
   })
 
   it("refuses a kind of node it does not print, by name", () => {
     expect(() => emitted({ representation: { _tag: "Tensor", checks: [] }, references: {} })).toThrow(
-      new Node.SchemaIdentityError({ message: "Unsupported schema representation Tensor\n  at [\"representation\"]" })
+      expect.objectContaining({ message: "Unsupported schema representation Tensor\n  at [\"representation\"]" })
     )
   })
 })

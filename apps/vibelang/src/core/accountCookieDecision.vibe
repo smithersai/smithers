@@ -26,3 +26,24 @@ export function cookieAccepted(canonical: boolean, https: boolean, local: boolea
   if (hostCookie) return true
   return local && plainCookie
 }
+
+/** The sign-in state cookie: host-prefixed on HTTPS, plain on a local HTTP origin. */
+//@ verify
+//@ ensures secure ==> \result === "__Host-vibelang-sign-in"
+//@ ensures !secure ==> \result === "vibelang-sign-in"
+export function signInCookieName(secure: boolean): string {
+  return secure ? "__Host-vibelang-sign-in" : "vibelang-sign-in"
+}
+
+/**
+ * The session a request presents: on HTTPS only the host-prefixed cookie; on a local HTTP origin the plain cookie,
+ * else the host-prefixed one.
+ */
+//@ verify
+//@ ensures secure ==> \result == host
+//@ ensures !secure && plain != undefined ==> \result == plain
+//@ ensures !secure && plain == undefined ==> \result == host
+export function presentedSession(secure: boolean, host: string | undefined, plain: string | undefined): string | undefined {
+  if (secure) return host
+  return plain !== undefined ? plain : host
+}

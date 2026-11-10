@@ -1156,7 +1156,7 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       // has ctx.returnTy = Option<T>, but the record literal's natural type is T.
       const returnTyUnwrapped = ctx.returnTy.kind === "optional" ? ctx.returnTy.inner : ctx.returnTy;
       const recordTy = ty.kind === "user" ? ty : returnTyUnwrapped.kind === "user" ? returnTyUnwrapped : null;
-      const decl = recordTy ? declOfKind(ctx.typeDecls, recordTy.name, "record") : undefined;
+      const decl = recordTy ? declOfKind(ctx.typeDecls, tyBaseName(recordTy.name), "record") : undefined;
       // Union-variant literal in union-typed context (a constructed IR node,
       // `{ kind: "if", … }: TStmt`): contextual field types come from the
       // variant the literal's discriminant field selects.

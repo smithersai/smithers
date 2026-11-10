@@ -2,6 +2,7 @@
 import { Digest, SecureRandom } from "effect/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import { issueModelInvocable, keyedOperation, operationTier, readDeadline } from "./flowPolicyDecision.vibe"
 import { IssueFailure, IssueRequest, IssuesState } from "./issueSchemas.vibe"
 import { issuePermission, type Role, type IssueOperation } from "./conversation.vibe"
 
@@ -16,14 +17,14 @@ const steps = Metric.counter("vibelang_issue_steps", { incremental: true })
 const definitions = operations.map((op) => {
   const action = Action.make(`vibelang/issues/${op}/perform`, {
     payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
-    tier: op === "read" || op === "draft" ? "sealed" : "irreversible",
+    tier: operationTier(op),
     implementationVersion: "issues/v2", retryPolicy: retries,
-    ...(op === "read" || op === "draft" ? {} : { idempotencyKey: (payload: IssueRequest) => ({ request: payload.key, operation: payload.op }) }),
+    ...(!keyedOperation(op) ? {} : { idempotencyKey: (payload: IssueRequest) => ({ request: payload.key, operation: payload.op }) }),
   })
   const flow = Flow.make(`vibelang/issues/${op}`, {
     description: `VibeLang issues: ${op}. Runs with the current person's policy and GitHub identity.`,
-    modelInvocable: op !== "accept" && op !== "decline",
-    ...(op === "read" ? { deadline: issueReadDeadline } : {}),
+    modelInvocable: issueModelInvocable(op),
+    ...(readDeadline(op) ? { deadline: issueReadDeadline } : {}),
     payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
     body: Node.capture({}, (request) => action.call(request)),
   })

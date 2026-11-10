@@ -9,6 +9,7 @@ import { wikiPath } from "../src/core/wiki.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
 import * as Objects from "../worker/Objects.vibe"
 import { run, same, Finding, Int, TextOrBoundary, REPLAY_FLOOR } from "./run.vibe"
+import { scriptedModel } from "./model-server.vibe"
 
 const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
 const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
@@ -192,13 +193,17 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       break
     }
     case "tour-during-reply": {
-      // A latch holds the reply at its admission: the reply's execution holds the object while a tour arrives.
+      // A latch holds the reply at its admission: the reply's execution holds the object while a tour arrives. A reply
+      // with no model fails before admission (c5bbf81b), so this one has a model; the held admission then refuses, and
+      // the model is never called.
       if ((try bounded("post", Objects.post("conv", object, sequencer, `c${pick}`, "Guest", "Question"))) !== null) throw new Finding({ report: "a first post was refused" })
+      const scripted = try scriptedModel([{ kind: "garbage" }])
+      const configured = { model: scripted.model, unusable: "" }
       const entered = try Deferred.make<void>()
       const release = try Deferred.make<void>()
-      const held = { admit: (_day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(spend.admit())), spend: spend.spend }
-      const replying = try Effect.forkScoped(Effect.exit(Objects.alarm("conv", object, sequencer, held, model, history)))
-      try Deferred.await(entered)
+      const held = { admit: (_day: string) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(false)), spend: spend.spend }
+      const replying = try Effect.forkScoped(Effect.exit(Objects.alarm("conv", object, sequencer, held, configured, history)))
+      try bounded("reply admission", Deferred.await(entered))
       const during = try bounded("tour", Objects.tour("conv", object, sequencer))
       if (during !== "busy" || touring(try sequencer.snapshot()) !== "") throw new Finding({ report: `a tour while a reply runs answered ${during}` })
       try Deferred.succeed(release, undefined)
@@ -211,6 +216,7 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       for (let turn = 0; turn < 3; turn++) try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
       const after = try sequencer.snapshot()
       if (touring(after) !== "" || after.agent !== "idle") throw new Finding({ report: `an ended tour behind a reply left the agent ${after.agent}` })
+      if ((try scripted.calls) !== 0) throw new Finding({ report: "a reply the budget refused called the model" })
       break
     }
     case "tour-dispatch-fault": {

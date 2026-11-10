@@ -1,0 +1,11 @@
+/** Rolldown prints no source-map segment where these two initializers start (decision 0016). */
+export function scrolled(page: { readonly scrollY?: number } | undefined, serial: number | undefined) {
+  const position = () => page?.scrollY ?? 0
+  const next = (serial ?? 0) + 1
+  return position() + next
+}
+
+/** Deliberately tree-shaken from a partially used source file. */
+export function dropped() {
+  return 13
+}

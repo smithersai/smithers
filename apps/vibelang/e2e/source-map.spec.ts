@@ -1,9 +1,9 @@
 // Stays .ts: Playwright collects test files through its JS/TS loader.
 import { expect, test } from "./coverage"
-import { measure } from "./coverage-reporter"
+import { measure, readBuild, sourcesIn } from "./coverage-reporter"
 import { resolve } from "node:path"
 
-test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch", async ({ context }, info) => {
+test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch, and credits what Rolldown leaves unmapped", async ({ context }, info) => {
   // Cold compiler startup and bundle remapping exceed the UI deadline on the shared lane host.
   test.skip(process.env.E2E_BASE_URL !== undefined, "it remaps the local build's source maps, which a deployment does not serve")
   test.setTimeout(120_000)
@@ -28,7 +28,7 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
       if (sourceMap) entries.push({ ...script, sourceMap })
     }
     await info.attach("chromium-map-control", { body: JSON.stringify(entries), contentType: "application/json" })
-    const coverage = await measure(entries, ["e2e/coverage-fixtures"])
+    const coverage = await measure(entries, await sourcesIn(["e2e/coverage-fixtures"]), await readBuild())
     const file = coverage.fileCoverageFor(resolve("e2e/coverage-fixtures/fixture.vibe"))
     const misses = Object.entries(file.s).filter(([, count]) => count === 0).map(([id]) => file.statementMap[id].start.line)
     expect(misses).toContain(9)
@@ -38,6 +38,11 @@ test("Chromium remapping retains a tree-shaken export and an unvisited nested Ef
     // bundle folds both returns into one and credits it: test/browserCoverageMerge.test.vibe keeps that case.
     expect(misses).toContain(4)
     expect(file.getLineCoverage()[3]).toBeGreaterThan(0)
+    // Rolldown prints no map segment where `(serial ?? 0) + 1` starts; the build's structure still credits the line.
+    expect(await page.evaluate(() => Reflect.get(window, "coverageScrolled"))).toBe(2)
+    const built = coverage.fileCoverageFor(resolve("e2e/coverage-fixtures/initializer.vibe"))
+    const unrun = Object.entries(built.s).filter(([, count]) => count === 0).map(([id]) => built.statementMap[id].start.line)
+    expect(unrun).toEqual([10])
   } finally {
     await page.close()
   }

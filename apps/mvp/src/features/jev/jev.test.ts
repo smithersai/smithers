@@ -3,7 +3,7 @@
 // compose Postgres (`pnpm db:up`), with a scripted model as the deployment's default model: the only scripted seam. Then
 // the agent's call from a cell (src/test/agent.ts), and the payload's bounds.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream, Tracer } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
@@ -20,6 +20,9 @@ import type { Inspection, RunPage } from "../runs/schema"
 import { JEV_TELEMETRY, MAX_CRITERIA, MAX_ITEMS, MAX_LABELS } from "./contract"
 import { Classify, Evaluate, JudgeFailed, type Verdicts } from "./flows"
 import { judgments, verdicts } from "./metrics"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const runtime = testFile("jev")
 
@@ -185,8 +188,8 @@ describe("app/jev/classify", () => {
     const garbled = await openJudge(() =>
       Stream.make({ type: "text-delta" as const, id: "t", text: "Yes to all." }, usage, stop)
     )
-    expect(await garbled.classify("classify-garbled", { question: "Bug?", items: ["It crashes"] })).toEqual(
-      Exit.fail(new JudgeFailed({ code: "invalid_answer" })),
+    expect(failureOf(await garbled.classify("classify-garbled", { question: "Bug?", items: ["It crashes"] }))).toEqual(
+      new JudgeFailed({ code: "invalid_answer" }),
     )
     expect(garbled.count(judgments, { flow: "app/jev/classify", outcome: "invalid_answer" })).toBe(1)
     expect(garbled.lines()).toEqual([
@@ -195,8 +198,8 @@ describe("app/jev/classify", () => {
 
     // Signed out: the endpoint refuses before any model runs (401), and the step says the judge was unavailable.
     const signedOut = await openJudge(judged(bugs), { actor: null })
-    expect(await signedOut.classify("classify-signed-out", { question: "Bug?", items: ["It crashes"] })).toEqual(
-      Exit.fail(new JudgeFailed({ code: "unreachable" })),
+    expect(failureOf(await signedOut.classify("classify-signed-out", { question: "Bug?", items: ["It crashes"] }))).toEqual(
+      new JudgeFailed({ code: "unreachable" }),
     )
     expect(signedOut.h.requests).toEqual([])
   })

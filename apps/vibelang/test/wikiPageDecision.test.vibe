@@ -1,0 +1,69 @@
+// Third-lane batch 9 (0018): wiki page decisions, proved in wikiPageDecision as wiki.vibe and worker/Wiki.vibe use them.
+import { describe, expect, it } from "@effect/vitest"
+import { pages, requestedWiki, wikiEditable, wikiPage, wikiPath } from "../src/core/wiki.vibe"
+import { editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRefusalStatus, wikiRequest, wikiUnwritten } from "../src/core/wikiPageDecision.vibe"
+
+/** The request rule as it read before batch 9, kept to show the proved form answers alike. */
+function requestedBefore(text: string): string | undefined {
+  if (!/wiki/i.test(text)) return undefined
+  const direct = [...pages].sort((a, b) => b.id.length - a.id.length).find(page => text.toLowerCase().includes(page.id.toLowerCase()))
+  if (direct) return direct.id
+  if (/designs/i.test(text)) return "designs/index"
+  const number = /\b([0-9]{4})\b/.exec(text)?.[1]
+  if (number) return pages.find(page => page.id.startsWith(`decisions/${number}-`))?.id
+  return "index"
+}
+
+describe("wiki pages", () => {
+  it("finds the first page with an id, and none for an unknown one", () => {
+    const list = [{ id: "a" }, { id: "b" }, { id: "a" }]
+    expect([pageIndex(list, "a"), pageIndex(list, "b"), pageIndex(list, "c"), pageIndex([], "a")]).toEqual([0, 1, -1, -1])
+  })
+  it("edits a known page but never the generated decisions index", () => {
+    const list = [{ id: "decisions" }, { id: "rulings" }]
+    expect([editable(list, "rulings"), editable(list, "decisions"), editable(list, "missing")]).toEqual([true, false, false])
+    expect([wikiEditable("rulings"), wikiEditable("decisions")]).toEqual([true, false])
+  })
+  it("names the designs index and links a section", () => {
+    expect([pageIdOf("designs"), pageIdOf("rulings"), wikiHref("rulings", ""), wikiHref("rulings", "vl-28")]).toEqual(["designs/index", "rulings", "/wiki/rulings", "/wiki/rulings#vl-28"])
+    expect([wikiPage("/wiki/rulings#vl-28")?.id, wikiPage("/wiki/missing"), wikiPage("rulings")]).toEqual(["rulings", undefined, undefined])
+  })
+  it("picks the longest id a request names, the earliest of one length", () => {
+    expect(longestIncluded(["ab", "abc", "xyz", "b"], "say abc and xyz")).toBe(1)
+    expect(longestIncluded(["abc", "xyz"], "say xyz and abc")).toBe(0)
+    expect(longestIncluded(["q"], "none here")).toBe(-1)
+    expect([firstWithPrefix(["a/1", "b/2-x", "b/2-y"], "b/2-"), firstWithPrefix(["a"], "b")]).toEqual([1, -1])
+  })
+  it("opens the named page, then designs, then the numbered decision, else the index, and only when asked", () => {
+    expect([wikiRequest(false, true, true, true), wikiRequest(true, true, true, true), wikiRequest(true, false, true, true), wikiRequest(true, false, false, true), wikiRequest(true, false, false, false)])
+      .toEqual(["none", "direct", "designs", "decision", "index"])
+    const prompts = ["Open the wiki", "open wiki rulings", "wiki: ROADMAP please", "Open wiki designs", "Open wiki designs/wiki/NOTES", "wiki 0014", "wiki 9999", "open rulings", "Wiki decisions/0018-proofs", ""]
+    expect(prompts.map(requestedWiki)).toEqual(prompts.map(requestedBefore))
+  })
+  it("keeps every path the wiki admitted before", () => {
+    for (const path of ["decisions/0014-agent-tour.md", "/wiki/rulings#vl-28", "/wiki/", "/wiki/designs", "../rulings", "missing", "rulings#<script>", "rulings#"]) {
+      const normalized = path.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"
+      const [raw, hash] = normalized.split("#")
+      const id = raw === "designs" ? "designs/index" : raw
+      const before = !pages.some(page => page.id === id) || (hash !== undefined && !/^[a-z0-9-]+$/.test(hash)) ? undefined : `/wiki/${id}${hash ? `#${hash}` : ""}`
+      expect(wikiPath(path)).toBe(before)
+    }
+  })
+  it("marks unwritten only a first execution refused before writing", () => {
+    expect([wikiUnwritten(true, false, "conflict"), wikiUnwritten(true, false, "empty"), wikiUnwritten(true, false, "connect"), wikiUnwritten(true, true, "conflict"), wikiUnwritten(false, false, "empty"), wikiUnwritten(true, false, "forbidden")])
+      .toEqual([true, true, true, false, false, false])
+  })
+  it("answers a fixture request in the GitHub host's order", () => {
+    expect([fixtureVerdict("read", true, true, true, true, true), fixtureVerdict("read", false, false, false, false, false)]).toEqual(["read", "missing"])
+    expect([
+      fixtureVerdict("save", false, true, true, true, true), fixtureVerdict("save", false, false, true, true, true), fixtureVerdict("save", true, false, true, true, true),
+      fixtureVerdict("draft", true, false, false, true, true), fixtureVerdict("save", true, false, false, true, true), fixtureVerdict("propose", true, false, false, false, true),
+      fixtureVerdict("propose", true, false, false, false, false),
+    ]).toEqual(["invalid", "missing", "empty", "draft", "conflict", "empty", "write"])
+    expect([reviewNumber(0), reviewNumber(4)]).toEqual([1001, 1005])
+  })
+  it("answers each wiki refusal with its HTTP status", () => {
+    const reasons = ["forbidden", "sign-in", "connect", "missing", "unknown", "conflict", "empty", "invalid", "fork", "install", "partial", "rate-limited", "unavailable"]
+    expect(reasons.map(wikiRefusalStatus)).toEqual([403, 401, 401, 404, 409, 409, 400, 400, 400, 400, 503, 503, 503])
+  })
+})

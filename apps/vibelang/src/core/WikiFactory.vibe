@@ -6,6 +6,7 @@ import { applyWikiEdits, emptyWikiEdits, type Role, type WikiEdits, type WikiPag
 import { WikiHost, wikiEditFlow, wikiEditRegistration, authorizeWiki, wikiExecutionId } from "./wikiFlows.vibe"
 import { WikiFailure, WikiRequest, type WikiApi } from "./wikiSchemas.vibe"
 import { pages } from "./wiki.vibe"
+import { editable, fixtureVerdict, pageIndex, reviewNumber } from "./wikiPageDecision.vibe"
 import type { FixtureIdentity, FixturePerson } from "./IssuesFactory.vibe"
 
 effect function personOf(identity: FixtureIdentity): FixturePerson!! {
@@ -22,7 +23,8 @@ export effect function makeWikiStore(): WikiFixtureStore!! {
 
 /** The embedded source of a fixture page, or undefined when the repository has no such page. */
 function fixtureSource(id: string): string | undefined {
-  return pages.find((page) => page.id === id)?.source
+  const index = pageIndex(pages, id)
+  return index < 0 ? undefined : pages[index]!.source
 }
 
 /** The fixture host: the same gates and validation as the GitHub host, over the in-memory fixture repository. */
@@ -34,9 +36,11 @@ export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFix
       if (!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)) throw new WikiFailure({ reason: "forbidden" })
       try authorizeWiki(person.role, request.op, person.kind ?? "person")
       const before = try Ref.get(store.state)
-      const known = request.page !== "decisions" && fixtureSource(request.page) !== undefined
+      const known = editable(pages, request.page)
+      const current = before.pages.find((page) => page.id === request.page)?.source ?? fixtureSource(request.page) ?? ""
+      const verdict = fixtureVerdict(request.op, known, request.key === "", request.text.trim() === "", request.base !== current, request.text === current)
       if (request.op === "read") {
-        if (!known) throw new WikiFailure({ reason: "missing" })
+        if (verdict === "missing") throw new WikiFailure({ reason: "missing" })
         const draft = (try Ref.get(store.drafts)).filter((entry) => entry.person === person.id && entry.page === request.page).at(-1)
         const withDraft = (state: WikiEdits) => draft === undefined ? state : { ...state, draft: { page: draft.page, text: draft.text } }
         if (before.pages.some((page) => page.id === request.page)) return withDraft(before)
@@ -44,26 +48,22 @@ export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFix
         try Ref.set(store.state, observed)
         return withDraft(observed)
       }
-      if (request.key === "") throw new WikiFailure({ reason: "invalid", unwritten: true })
-      if (!known) throw new WikiFailure({ reason: "missing", unwritten: true })
-      const current = before.pages.find((page) => page.id === request.page)?.source ?? fixtureSource(request.page)!
-      if (request.text.trim() === "") throw new WikiFailure({ reason: "empty", unwritten: true })
+      if (verdict === "invalid" || verdict === "missing" || verdict === "empty" || verdict === "conflict") throw new WikiFailure({ reason: verdict, unwritten: true })
+      // Past the refusals the verdict is draft or write, and draft exactly for a draft.
       if (request.op === "draft") {
         const note = request.text.trim()
         const drafted = { person: person.id, page: request.page, text: current.trimEnd() + "\n\n" + note + "\n" }
         try Ref.set(store.drafts, [...(try Ref.get(store.drafts)).filter((entry) => !(entry.person === person.id && entry.page === request.page)), drafted])
         return { ...before, draft: { page: drafted.page, text: drafted.text } }
       }
-      if (request.base !== current) throw new WikiFailure({ reason: "conflict", unwritten: true })
-      if (request.text === current) throw new WikiFailure({ reason: "empty", unwritten: true })
-      // Read and draft returned above: a propose or a save.
+      // Read, draft and every refusal returned above: a propose or a save.
       const proposals = try Ref.get(store.proposals)
       const existing = proposals.find(proposal => proposal.person === person.id && proposal.op === request.op && proposal.key === request.key)
       if (existing !== undefined) {
         if (existing.page !== request.page || existing.base !== request.base || existing.text !== request.text) throw new WikiFailure({ reason: "conflict", unwritten: true })
         return { ...before, review: existing.review }
       }
-      const number = 1000 + proposals.length + 1
+      const number = reviewNumber(proposals.length)
       const review = `https://github.com/smithersai/vibelang/pull/${number}`
       try Ref.set(store.proposals, [...proposals, { person: person.id, op: request.op, key: request.key, base: request.base, text: request.text, page: request.page, review }])
       try Ref.update(store.drafts, drafts => drafts.filter(entry => !(entry.person === person.id && entry.page === request.page && entry.text === request.text)))

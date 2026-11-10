@@ -59,7 +59,7 @@ written:
 2. Response headers are cut to `content-type`, `link`, `location` and
    `retry-after`. `Set-Cookie`, request ids and rate-limit counters are dropped.
 3. URL user information is removed, and query parameters named like a
-   credential (`access_token`, `code`, `state`, `sig`, `signature` and others)
+   credential (`access_token`, `code`, `sig`, `signature` and others)
    are replaced.
 4. Each value the suite passes in `secrets` is replaced wherever it appears.
 5. Bodies go through `@smthrs/journal/Redaction`'s `redact`: a field named like
@@ -76,6 +76,14 @@ The scrubber does not know your data. A password inside an issue body in a
 shape no rule knows is recorded. Record against a test account and test data
 you can publish, and read the file before you commit it.
 
+## Keep a recording small
+
+A REST answer carries more than any client reads: GitHub's issue objects are
+two thirds hypermedia links. Pass `prune` to remove those fields before they
+are recorded. While recording, the code under test receives the pruned body
+too, so if it needs a field you removed, the recording run fails, not a later
+replay.
+
 ## Replay is strict
 
 Exchanges with the same method, URL and body are claimed once each, in
@@ -88,7 +96,12 @@ method and URL. Record the test again when the code's requests change.
 exchanges no request claimed, for a test that wants to prove it made every
 recorded call.
 
-When a request carries a value that changes from run to run, such as a
+A test that creates data on the service (an issue, a branch) needs names no
+earlier real run used, and a replay needs the names that were recorded. Pass a
+fresh `label` when recording; it is written into the recording, and a replaying
+suite reads it back with `load` and builds the same names.
+
+When a request carries another value that changes from run to run, such as a
 timestamp or a generated name, pass `normalize`. It rewrites the request before
 it is keyed and recorded, on both sides; the live service still receives the
 original.

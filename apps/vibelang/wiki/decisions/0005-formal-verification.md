@@ -210,3 +210,25 @@ with commands as data; the arms proved so far, and those still inline, are liste
 the history page's response guards, read scheduling, page merge and arm frames are proved in `screenDecision.vibe` and the
 new `historyDecision.vibe`. Four LemmaScript fixes land in `packages/lemmascript` with fixtures; one of them, `real` record
 fields, closes an unsoundness where a fractional field was proved as an integer.
+
+**Outside-web decisions (0018, third-lane batches 6–12).** Issues request keys, failure/status mapping, receipt-gated
+VIP projection, history outline totals/order/search, mock reply and actor-journal choices, wiki page/edit decisions,
+action-run admission/settlement and mock-device leases/commands move into marked production kernels. Their callers
+retain the Effect boundaries listed in 0018. Actor-key injectivity uses additions-only Dafny lemma bodies.
+The casing model now states exact ASCII mappings and leaves non-ASCII mappings unconstrained; this closes false
+Unicode value/length proofs without changing the application or dropping any application contract.
+
+**Seed-generator inputs (0018, third-lane batch 13).** The actual generator calls marked kernels for receipt
+fallback, id abbreviation, batch limits, exact jj alternatives and known-title order/multiplicity. Its whole
+process/filesystem/JSON shell remains outside those contracts. Vendored LemmaScript gains array-valued flatMap and
+array-valued spread in specifications, with positive and false-contract fixtures; no new axiom or dependency.
+
+**Action hosts (0018, third-lane batch 14).** Mock settlement, failure wording, ownership, door actor and run/flow
+selection plus the directory's source-index admission are marked scalar contracts. Existing cancellation and
+post-child relations are reused; native sorting, private ids, request JSON and SDK ordering remain unproved.
+
+
+Machine admission, receipt and checkpoint policies now delegate to fourteen `machineDecision` kernels (0018,
+third-lane batch 15), with forty body mutations and failed-first native cases. Contracts keep the integer-domain
+boundary explicit; storage/locks/container execution and once-only delivery remain runtime obligations. Final
+extended proof and mutation receipts are pending; the earlier eight kernels passed eighteen contract rejections.

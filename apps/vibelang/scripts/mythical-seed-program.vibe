@@ -10,6 +10,7 @@
 //   VIBELANG_REPO=<dir> VIBELANG_QUEUE=<file> VIBELANG_LANES=<dir> pnpm mythical-seed
 import { ChildProcess } from "effect/process"
 import { intentsOf, type QueueEntry, type RawCommit, replay, SHA_LENGTH, seedOf, titleOf } from "../src/history/seed.vibe"
+import { batchEnd, batchRevset, knownTitles, queueText, receiptCommits, shortCommits } from "../src/history/seedInputDecision.vibe"
 
 /** jj failed to read the repository; its message is on stderr. */
 error JjFailed { status: number }
@@ -61,7 +62,7 @@ effect function titlesOf(repository: string, ids: ReadonlyArray<string>) {
   const titles = new Map<string, string>()
   // One revset per batch: an argument is limited to 128 KiB.
   for (let start = 0; start < ids.length; start += 1500) {
-    const revset = ids.slice(start, start + 1500).map((id) => `present(${id})`).join("|")
+    const revset = batchRevset(ids, start, batchEnd(start, ids.length, 1500))
     for (const commit of try log(repository, revset)) titles.set(commit.sha.slice(0, SHA_LENGTH), titleOf(commit.description))
   }
   return titles
@@ -77,15 +78,15 @@ effect function entriesOf(file: string, lanes: string) {
     if (value !== undefined) decoded.push(value)
   }
   const commitsOf = (value: typeof Entry.Type) =>
-    (value.stack_receipt?.commits.map((commit) => commit.commit) ?? [value.rev]).map((id) => id.slice(0, SHA_LENGTH))
+    shortCommits(receiptCommits(value.stack_receipt?.commits.map((commit) => commit.commit), value.rev), SHA_LENGTH)
   const titles = try titlesOf(lanes, [...new Set(decoded.flatMap(commitsOf))])
   return decoded.map((value): QueueEntry => ({
     id: value.id,
     lane: value.lane,
     state: value.state,
-    reason: value.reason ?? "",
-    gate: value.gate ?? "",
-    titles: commitsOf(value).flatMap((id) => titles.has(id) ? [titles.get(id)!] : []),
+    reason: queueText(value.reason),
+    gate: queueText(value.gate),
+    titles: knownTitles(commitsOf(value), titles),
   }))
 }
 

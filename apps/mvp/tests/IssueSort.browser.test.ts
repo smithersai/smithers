@@ -4,12 +4,13 @@ import { createServer, type Server } from "node:http"
 import { fileURLToPath } from "node:url"
 import { chromium, webkit, type Browser } from "playwright"
 import { afterAll, beforeAll, expect, test } from "vitest"
+import vibelang from "vibelang-unplugin/esbuild"
 
 let server: Server
 let origin: string
 const browsers: Browser[] = []
 beforeAll(async () => {
-  const bundle = await build({ entryPoints: [fileURLToPath(new URL("./fixtures/issue-sort.tsx", import.meta.url))], bundle: true, write: false, format: "esm", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } })
+  const bundle = await build({ plugins: [vibelang()], entryPoints: [fileURLToPath(new URL("./fixtures/issue-sort.tsx", import.meta.url))], bundle: true, write: false, format: "esm", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } })
   const css = await readFile(new URL("../src/screens/issues/issues-screen.css", import.meta.url), "utf8")
   server = createServer((request, response) => {
     response.setHeader("Content-Type", request.url === "/fixture.js" ? "text/javascript" : "text/html")

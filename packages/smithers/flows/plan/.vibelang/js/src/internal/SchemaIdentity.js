@@ -251,6 +251,16 @@ const stringPattern = "[\\s\\S]*?";
 const bigIntPattern = "^-?\\d+$";
 /** @private */
 const symbolPattern = "^Symbol\\(([\\s\\S]*)\\)$";
+/**
+ * The key pattern of a `Schema.Number` record key: what `String(n)` prints for
+ * every number. It is `numberKeyPattern` of `effect@4.1.1`'s
+ * `src/internal/schema/toJsonSchemaDocument.ts`, built from that release's
+ * `SchemaAST.FINITE_PATTERN`. rc.115 refused number keys, so no recorded
+ * identity has one.
+ *
+ * @private
+ */
+const numberKeyPattern = "^(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?|Infinity|-Infinity|NaN)$";
 /** @private */
 const uuidPattern = (version) => version === null
     ? "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|" +
@@ -799,11 +809,14 @@ export const fromRepresentation = (document, options) => {
                 const additionalPropertySchemas = [];
                 const indexValueSchemas = [];
                 let hasUnrepresentableIndexPattern = false;
+                const numberKeyed = [];
                 representation.indexSignatures.forEach((signature, index) => {
                     const compiled = recur(signature.type, [...path, "indexSignatures", index, "type"]);
                     const type = sameJson(compiled, neverSchema) ? false : compiled;
                     indexValueSchemas.push(type);
-                    const patterns = parameterPatterns(signature.parameter, [...path, "indexSignatures", index, "parameter"], new Set());
+                    const walk = { numberKey: false };
+                    const patterns = parameterPatterns(signature.parameter, [...path, "indexSignatures", index, "parameter"], new Set(), walk);
+                    numberKeyed.push(walk.numberKey);
                     if (patterns === undefined) {
                         hasUnrepresentableIndexPattern = true;
                     }
@@ -830,7 +843,10 @@ export const fromRepresentation = (document, options) => {
                     if (representation.propertySignatures.length > 0)
                         propertyNames.push({ enum: Object.keys(properties) });
                     representation.indexSignatures.forEach((signature, index) => {
-                        propertyNames.push(recur(signature.parameter, [...path, "indexSignatures", index, "parameter"]));
+                        const parameterPath = [...path, "indexSignatures", index, "parameter"];
+                        propertyNames.push(numberKeyed[index]
+                            ? propertyNameSchema(signature.parameter, parameterPath, new Set())
+                            : recur(signature.parameter, parameterPath));
                     });
                     out["propertyNames"] = propertyNames.length === 1 ? propertyNames[0] : { anyOf: propertyNames };
                     out["additionalProperties"] = indexValueSchemas.length === 1
@@ -871,8 +887,35 @@ export const fromRepresentation = (document, options) => {
                 return unsupported(representation, path);
         }
     };
-    const parameterPatterns = (parameter, path, seenReferences) => {
+    // The property names of a closed record whose key walk met a number key, as
+    // effect@4.1.1's `getPropertyNameSchema` prints them. rc.115 refused every
+    // such key, so a signature that never meets one keeps rc.115's form.
+    const propertyNameSchema = (parameter, path, seenReferences) => {
         switch (parameter._tag) {
+            case "Number":
+                return { type: "string", pattern: numberKeyPattern };
+            case "Reference": {
+                if (seenReferences.has(parameter.$ref))
+                    return { type: "string" };
+                const target = Object.hasOwn(references, parameter.$ref) ? references[parameter.$ref] : undefined;
+                if (target === undefined)
+                    $raise(invalid(`Invalid reference ${parameter.$ref}`, [...path, "$ref"]));
+                return propertyNameSchema(target, ["references", parameter.$ref], new Set(seenReferences).add(parameter.$ref));
+            }
+            case "Union":
+                return {
+                    anyOf: parameter.types.map((type, index) => propertyNameSchema(type, [...path, "types", index], seenReferences))
+                };
+            default:
+                return recur(parameter, path);
+        }
+    };
+    // `walk.numberKey` records whether the walk met a number key.
+    const parameterPatterns = (parameter, path, seenReferences, walk) => {
+        switch (parameter._tag) {
+            case "Number":
+                walk.numberKey = true;
+                return parameter.checks.length === 0 ? [numberKeyPattern] : undefined;
             case "Reference": {
                 const target = Object.hasOwn(references, parameter.$ref) ? references[parameter.$ref] : undefined;
                 if (target === undefined)
@@ -880,7 +923,7 @@ export const fromRepresentation = (document, options) => {
                 compileDefinition(parameter.$ref, path);
                 if (seenReferences.has(parameter.$ref))
                     return undefined;
-                return parameterPatterns(target, ["references", parameter.$ref], new Set(seenReferences).add(parameter.$ref));
+                return parameterPatterns(target, ["references", parameter.$ref], new Set(seenReferences).add(parameter.$ref), walk);
             }
             case "String": {
                 const check = parameter.checks[0];
@@ -904,7 +947,7 @@ export const fromRepresentation = (document, options) => {
                 }
                 const patterns = [];
                 for (const [index, member] of parameter.types.entries()) {
-                    const memberPatterns = parameterPatterns(member, [...path, "types", index], seenReferences);
+                    const memberPatterns = parameterPatterns(member, [...path, "types", index], seenReferences, walk);
                     if (memberPatterns === undefined)
                         return undefined;
                     if (memberPatterns.length === 0)
@@ -914,7 +957,7 @@ export const fromRepresentation = (document, options) => {
                 return patterns;
             }
             default:
-                $raise(invalid("Invalid schema representation document", path));
+                $raise(invalid(`Unsupported index key type ${parameter._tag}`, path));
         }
     };
     const referenceKeys = Object.keys(references);
@@ -936,8 +979,10 @@ export const fromRepresentation = (document, options) => {
  * document is hashed, compared or pinned.
  *
  * Throws what rc.115 threw for a schema with no JSON Schema form: more than
- * one rest element, a record key that is neither a string nor a template, a
- * `toJsonSchema` annotation that throws.
+ * one rest element, a `toJsonSchema` annotation that throws. A record key
+ * that is not a string, a number, a template or a union of them is refused by
+ * name. A number key, which rc.115 refused, prints as `effect@4.1.1` prints
+ * it.
  *
  * @since 1.0.0
  * @private

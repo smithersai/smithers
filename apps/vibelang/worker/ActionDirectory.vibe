@@ -1,3 +1,5 @@
+import { indexedRun, matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { isReplyChild } from "../src/core/actionRunDecision.vibe"
 // Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -51,7 +53,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     const rows = try Effect.orDie(all(ids.map((id) => runs.read(id)), { concurrency: 4 }))
     // A run the agent starts inside another run is announced in that run's conversation too: each indexed run is listed
     // once, from its own conversation.
-    return rows.flatMap((read, at) => read.filter((run) => run.id === ids[at] || !indexed.has(run.id))).filter((run) => flow === "" || run.flow === flow).sort((a, b) => b.started - a.started)
+    return rows.flatMap((read, at) => read.filter((run) => indexedRun(run.id, ids[at], indexed.has(run.id)))).filter((run) => matchingFlow(flow, run.flow)).sort((a, b) => b.started - a.started)
   }
   effect function start(request: RunRequest, role: Role) {
     const currentRole = try authority.role(request.owner ?? "")
@@ -78,10 +80,10 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
   }
   effect function cancel(id: string, role: Role, owner = "") {
     const currentRole = try authority.role(owner)
-    const run = (try runs.read(id)).find(run => run.id === id)
+    const run = (try runs.read(id)).find(run => sameRun(run.id, id))
     if (run === undefined) return "not-found"
     const request = try runs.request(id)
-    const parent = run.flow === "vibelang/Reply" && request?.flow === "vibelang/Post" && id === `${request.id}-reply` ? request.flow : run.flow
+    const parent = request !== undefined && isReplyChild(run.flow === "vibelang/Reply", request.flow === "vibelang/Post", id, request.id) ? request.flow : run.flow
     if (!allowed(currentRole, registration(parent))) return "forbidden"
     const runtime = CloudflareRuntime.layer({ hostId, executionId: `cancel/${id}`, flow: CancelAction._tag }, Interpreter.layerWithImplementations(CancelAction,
       CancelRun.toLayer((p) => runs.cancel(p.id, currentRole, owner)),

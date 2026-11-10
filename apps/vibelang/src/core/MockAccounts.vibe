@@ -6,6 +6,7 @@ import { Digest } from "effect/crypto"
 import { apply, empty, leastRole, roleOf, type Event, type GrantMode, type Role } from "./conversation.vibe"
 import { decide } from "./decide.vibe"
 import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
+import { afterCursor, fixtureLogin, liveEvent, replayedTo, selfGrant } from "./mockFactoryDecision.vibe"
 
 const grantPayload = { id: Schema.String, by: Schema.String, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), mode: Schema.Literals(["person", "participation", "bootstrap"]) }
 /** Records the grant through the sequencer: `null` once recorded, else the refusal. */
@@ -86,7 +87,7 @@ export effect function make() {
     },
     grant: effect (id, role) => {
       const actor = try current()
-      if (actor.id !== id || actor.id === "") try policy.authorize(actor.id, "roles")
+      if (!selfGrant(actor.id, id)) try policy.authorize(actor.id, "roles")
       if (roleOf((try Ref.get(state)).roles, id) === role) return
       const refused = try change(id, actor.id, role, "person")
       if (refused !== null) throw new Denied({ action: "roles", least: "maintainer" })
@@ -112,7 +113,7 @@ export effect function make() {
       let id = existing?.id
       if (id === undefined) {
         id = String(try Ref.updateAndGet(counter, n => n + 1))
-        try Ref.update(people, all => [...all, { id: id!, login: (role === "new" ? "joss" : role) + id }])
+        try Ref.update(people, all => [...all, { id: id!, login: fixtureLogin(role, id!) }])
         if (role !== "new") try change(id, grants.find(grant => roleOf(grants, grant.id) === "maintainer")!.id, role, "person")
       }
       try Ref.set(selected, id)
@@ -124,9 +125,9 @@ export effect function make() {
     },
     events: (after) => Stream.unwrap(effect {
       const live = try PubSub.subscribe(published)
-      const events = (try Ref.get(log)).filter(event => event.seq > after)
-      const last = events[events.length - 1]?.seq ?? after
-      return Stream.concat(Stream.fromIterable(events), Stream.fromSubscription(live).pipe(Stream.filter(event => event.seq > last)))
+      const events = (try Ref.get(log)).filter(event => afterCursor(event.seq, after))
+      const last = replayedTo(after, events.length, events.at(-1)?.seq ?? after)
+      return Stream.concat(Stream.fromIterable(events), Stream.fromSubscription(live).pipe(Stream.filter(event => liveEvent(true, event.seq, last))))
     }),
   }
   return accounts

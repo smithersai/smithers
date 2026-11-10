@@ -473,7 +473,8 @@ below was checked by breaking the code, seeing the test fail, and restoring it.
   naming the budget and host load; `FUZZ_EXECUTIONS=0` replay still passes. At load 128 it failed
   `issues/steered-host` at 5 seconds, which passed at 60 seconds with one execution.
 - **No target reaches the network.** `history/github-public-read` left the suite; `test/mainLog.github.test.vibe`
-  reads real GitHub only with `GITHUB_TEST_TOKEN`.
+  replays a recording of real GitHub and records again only with `VIBE_GITHUB=record` and `GITHUB_TEST_TOKEN`
+  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub: a recording cannot hold generated requests.
 - **Named answers.** `sandbox/host-recovery`, `api-objects/world`, `web/subscriptions`, `wiki/tools`,
   `history/page-paths`, `reply/failure-tags`, `http/doors`, `actions/history-host`, `web/arbitrary-update`,
   `history/arbitrary-update` and `history/view-models` now require the expected outcome; the api-workerd bench reads one
@@ -680,6 +681,11 @@ recorded between `start`'s request and its fork); `mythical` 377, 411 (the lines
 `signin` 101, 173; `mcp` 36, 38; `flows` 248, 257; `commands` 351; `seed` 437; `history/tools` 93, the fallback
 after an exhaustive match that VL-37 removes in the compiler.
 
+`surfaces/run-wait` (`fuzz/surfaces-commands.node.fuzz.vibe`) injects an `Actions` whose follow stream is a fuzzed list
+of run states: `run --wait` answers the id only when the first settled state is `passed`, and fails "Action failed."
+when the stream ends empty or unsettled or settles otherwise. It reaches `commands` 351 (no run seen). Mutant caught and
+restored: waiting without `takeUntil`, which reads the stream's last run instead of its first settled one.
+
 ## Measurable on any machine (lane vl-gatefix, 2026-11-10)
 
 - `surfaces/cli-arguments` and `surfaces/mcp-arguments` spawn a process per execution: replay and the first execution
@@ -743,3 +749,62 @@ Measured and dropped: a per-gesture Command cap in `tab` (instead of 48 per tab)
 
 Seed 20261121, `FUZZ_BUDGET=20 seconds`, on a 4-vCPU Playwright box at `74f29e44`: exit 0, 205 receipts,
 36,602,466 executions, none at zero, none falsified; 63 target files and 5 browser tests passed. No new finding.
+
+## Status, 2026-11-10 (twelfth session)
+
+### Two short-tab targets
+
+A tab runs at most 48 Commands, so a long gesture sequence rarely reaches a late gesture's Commands. Two targets open a
+fresh tab for one gesture each:
+
+| Target | Input | Property | Arms reached in `src/web/main.vibe` | Mutant found |
+| --- | --- | --- | --- | --- |
+| `web/cancel-run` | role, flow, input, wait 0 to 15 ms, Cancel once or twice | Cancel on a run the person started leaves it `cancelled`, `passed` or `failed`, and the pane shows no error. A fixed maintainer witness must start a run | `CancelAction` succeeds (1028 to 1031) | `cancel` returning before the interrupt: found in 1 execution |
+| `web/terminal` | role, 1 to 6 terminal commands, stop or not | Every command typed into a started sandbox answers: the terminal is never left busy | `SandboxAction` `command` succeeds (1363 to 1366) | busy kept after a command answers: found in 4 executions |
+
+### Floor for long-tab targets
+
+One execution of `web/commands-from-any-model` takes 563 ms (arbitrary Model and Message) and one of
+`web/guided-commands` 235 ms with its two saved values, at load 24. At the 250 ms default both ran none
+(`NoExecution`). They and `web/in-flight` declare `TAB_FLOOR` (3 s), as the steered targets declare `REPLAY_FLOOR`. A
+target that executes nothing still fails.
+
+### Finding: issue and wiki numbers JSON cannot carry
+
+| Finding | Target, value | Fix | Regression |
+| --- | --- | --- | --- |
+| `IssuesState`, `IssueRequest` and `WikiState` accepted NaN, the infinities, fractions and negatives in counts, revisions and timestamps. JSON sends NaN and the infinities as `null`, so a state the schema called valid reached the client as `protocol` | new target `clients/issues-wiki-replies` (every reply to the issues and wiki clients; a state decodes, a refusal keeps its reason and `unwritten`, nothing dies) | every number in `src/core/issueSchemas.vibe` and `src/core/wikiSchemas.vibe` is `Seq` (safe, nonnegative integer) | corpus value `8d2032ccd6ffd1c4`; `test/issueWikiWireNumbers.test.vibe` 2 failed before, 3 passed after |
+
+The target keeps the old broad number domain for its inputs (`RawIssuesState`, `RawWikiState`), so saved values still
+cover states the server must refuse.
+
+### Saved values moved into the narrower domain
+
+Four saved values held issue numbers the new `Seq` refuses (`1.8e308`, `-0`, `6e-323`, `"Infinity"`), so their targets
+stopped with `FuzzError` ("the json codec cannot decode a saved value"): `web/view-branches` (2), `web/view-models` (2),
+`issues/role-gated-command-sequences` (1). Each failing number was moved to the nearest safe, nonnegative integer
+(fractions truncated, negatives and `-0` to 0, values above `Number.MAX_SAFE_INTEGER` to it); nothing else in the
+values changed. All three targets replay their saved values and pass. The package keeps refusing an undecodable saved
+value: dropping it silently would lose a regression.
+
+### Two oracles behind `c5bbf81b`
+
+`c5bbf81b` (reserve daily model budgets) checks for a model before budget admission, so a reply with no model
+reserves nothing. Two targets still assumed the old order:
+
+| Target | Symptom at seed 20261122 | Fix |
+| --- | --- | --- |
+| `reply/answers` | `Falsified` in 8 executions: no model and a refusing budget answered `unconfigured`, the oracle wanted `budget` | the oracle checks `unconfigured` first and also asserts nothing was admitted; value kept as a regression |
+| `objects/steered-host` | timed out (600 s on a box, 120 s on nyc-01): `tour-during-reply` held the reply at admission, which a reply with no model no longer reaches, and awaited that latch without a bound | the scenario gives the reply a scripted model, the held admission refuses, and the model must see 0 calls; the latch await is bounded (20 s), so a reorder is a `Finding`, not a hang |
+
+The campaign at seed 20261123 found one more input outside the narrower domain: `web/screen-answers` built an "older"
+issues answer as `seq - 1`, which is -1 at seq 0 and fails the Model's `Seq` (`PropertyError:UnknownError` in 14
+executions). The client decodes every issues state, so the product never receives it. At seq 0 the target now sends no
+older answer; 248 executions pass at that seed.
+
+### Floor for steered targets under coverage
+
+`pnpm fuzz:coverage` at seed 20261122 on an idle 4-vCPU box (load 2.2) ran `wiki/steered-host` (15 s floor) and
+`actions/steered-runs` (5 s budget) for 0 executions, after 1 each in the run before: replaying the saved value and
+one execution took 21.7 s and 8.5 s with coverage counters. Both declare `STEERED_FLOOR` (30 s) in `fuzz/run.vibe`.
+With it, under coverage: `wiki/steered-host` 1 execution in 31.8 s, `actions/steered-runs` 7 in 31.7 s.

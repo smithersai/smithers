@@ -1081,12 +1081,14 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
 
     case "someMatch": {
       let someBody: Expr;
+      let someSource = e.someBody;
       let scrutinee: Expr | string;
       const path = asTAccessPath(e.scrutinee);
       if (path) {
         // Pure access path (var or any depth of obj.f.g.h) — substitute the
         // path with the binder pre-lowering.
         const replaced = replacePathInTExpr(e.someBody, path, e.binder, e.binderTy);
+        someSource = replaced;
         someBody = lowerExpr(replaced, binds);
         // Bare-var shortcut, but route \result through lowerExpr so the
         // lemma-side replaceVar pass can substitute it with the function call.
@@ -1101,7 +1103,9 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       }
       let noneBody = lowerExpr(e.noneBody, binds);
       if (e.ty.kind === "optional") {
-        someBody = wrapOptionalBranch(someBody, e.someBody);
+        // A path projection substituted above is now the unwrapped payload.
+        // Wrap according to that refined source type, not the old Option slot.
+        someBody = wrapOptionalBranch(someBody, someSource);
         noneBody = wrapOptionalBranch(noneBody, e.noneBody);
       }
       return {
@@ -1853,7 +1857,7 @@ function buildMatchArms<T>(
   varName: string | undefined, typeName: string, typeDecls: TypeDeclInfo[],
   transformBody: (body: TStmt[], varName: string | undefined, fields: { name: string; tsType: string }[], ctorName?: string) => T | null
 ): { pattern: MatchPattern; body: T }[] | null {
-  const decl = declOf(typeDecls, typeName);
+  const decl = declOf(typeDecls, tyBaseName(typeName));
   if (!decl || (decl.kind !== "string-union" && decl.kind !== "discriminated-union")) {
     throw new Error(`match type ${typeName} is not a declared union`);
   }
@@ -1896,7 +1900,7 @@ function emitMatchStmt(
   fallthrough: TStmt[],
   typeDecls: TypeDeclInfo[],
 ): Stmt {
-  const decl = declOf(typeDecls, typeName);
+  const decl = declOf(typeDecls, tyBaseName(typeName));
   // Synth array-unions (discriminant "__isArray__") have single-field variants
   // ArrayBranch(arr) / NonArrayBranch(val). The matched arm refers to the
   // scrutinee by its bare name/path (`content`, `m.content`), not `.arr`, so
@@ -1966,7 +1970,7 @@ function replaceVarInTStmts(stmts: TStmt[], oldName: string, newName: string, ne
 
 /** If the chain has matched all variants but one, return that remaining variant. */
 function remainingVariant(typeName: string, cases: { variant: string }[], typeDecls: TypeDeclInfo[]): { name: string; fields: { name: string; tsType: string; type?: Ty }[] } | null {
-  const decl = declOf(typeDecls, typeName);
+  const decl = declOf(typeDecls, tyBaseName(typeName));
   if (!decl?.variants) return null;
   const matched = new Set(cases.map(c => c.variant));
   const remaining = decl.variants.filter(v => !matched.has(v.name));
@@ -2295,7 +2299,7 @@ function transformPureSwitch(s: TStmt & { kind: "switch" }, typeDecls: TypeDeclI
 
 function transformPureMatch(chain: Chain, typeDecls: TypeDeclInfo[]): Expr | null {
   const cases = chain.cases.map(c => ({ name: c.variant, body: c.body }));
-  const decl = declOf(typeDecls, chain.typeName);
+  const decl = declOf(typeDecls, tyBaseName(chain.typeName));
   // Synth array-unions have single-field variants and user code refers to the
   // scrutinee by its bare name, not field-accessed. See emitMatchStmt for
   // the statement-level counterpart of this substitution.

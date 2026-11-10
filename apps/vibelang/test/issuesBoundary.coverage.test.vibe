@@ -142,10 +142,10 @@ describe("the GitHub host's refusals", () => {
 
 describe("the durable issues execution", () => {
   /** Runs `executeIssues` against one storage with the injected host answering `items`. */
-  function world(authority: Issues.IssueAuthority["Service"], items: () => ReadonlyArray<IssueRecord> = () => [record()]) {
+  function world(authority: Issues.IssueAuthority["Service"], items: () => ReadonlyArray<IssueRecord> = () => [record()], observed = 1) {
     const storage = newStorage()
     const seen = { performed: 0 }
-    const host: IssueHost.Shape = { perform: () => sync(() => { seen.performed += 1; return { seq: 1, items: items(), selected: 7 } }) }
+    const host: IssueHost.Shape = { perform: () => sync(() => { seen.performed += 1; return { seq: observed, items: items(), selected: 7 } }) }
     const run = (request: IssueRequest) => Issues.executeIssues("h", storage, request, repo).pipe(Effect.provideService(Issues.IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provideService(HttpClient.HttpClient, transport(500, {}).client))
     return { storage, seen, run }
   }
@@ -168,6 +168,47 @@ describe("the durable issues execution", () => {
     try Effect.try(() => {
       expect([refused.reason, raced.reason]).toEqual(["forbidden", "forbidden"])
       expect(direct.seen.performed + flipped.seen.performed).toBe(0)
+    })
+  }, 60_000)
+
+  it.live.each([-1, 1.5, Number.MAX_SAFE_INTEGER])("refuses saved revision %s before any host work", (seq) => effect {
+    const { run, storage, seen } = world(authorityOf(person()))
+    try promise(() => storage.put("gates/state", { seq, items: [] }))
+    const result = try Effect.exit(run(asking()))
+    const saved = try promise(() => storage.get("gates/state"))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(Cause.findErrorOption(result.cause)).toMatchObject({ _tag: "Some", value: { reason: "protocol" } })
+      expect(saved).toEqual({ seq, items: [] })
+      expect(seen.performed).toBe(0)
+    })
+  }, 60_000)
+
+  it.live.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])("refuses a faulty host revision %s without storing it", (observed) => effect {
+    const { run, storage, seen } = world(authorityOf(person()), () => [record()], observed)
+    const result = try Effect.exit(run(asking()))
+    const saved = try promise(() => storage.get("gates/state"))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(Cause.findErrorOption(result.cause)).toMatchObject({ _tag: "Some", value: { reason: "protocol" } })
+      expect(saved).toBeUndefined()
+      expect(seen.performed).toBe(1)
+    })
+  }, 60_000)
+
+  it.live("stores the final safe revision once, then refuses another observation", () => effect {
+    const { run, storage, seen } = world(authorityOf(person()))
+    try promise(() => storage.put("gates/state", { seq: Number.MAX_SAFE_INTEGER - 1, items: [] }))
+    const last = try run(asking({ key: "last" }))
+    const retained = try promise(() => storage.get("gates/state"))
+    const refused = try Effect.exit(run(asking({ key: "overflow" })))
+    const saved = try promise(() => storage.get("gates/state"))
+    try Effect.try(() => {
+      expect(last.seq).toBe(Number.MAX_SAFE_INTEGER)
+      expect(refused._tag).toBe("Failure")
+      if (refused._tag === "Failure") expect(Cause.findErrorOption(refused.cause)).toMatchObject({ _tag: "Some", value: { reason: "protocol" } })
+      expect(saved).toEqual(retained)
+      expect(seen.performed).toBe(1)
     })
   }, 60_000)
 

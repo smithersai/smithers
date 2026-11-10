@@ -2,7 +2,7 @@
 // run on the Node host's durable engine over the compose Postgres (`pnpm db:up`), with a `RunsClient` given here in place
 // of the real one. The happy paths run against the real routes in flows.test.ts and status.test.ts.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Scope } from "effect"
 import { afterEach, describe, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost.ts"
 import { RunsClient, RunsRefused } from "./api"
@@ -10,6 +10,9 @@ import { AnswerNotOpen, AnswerRefused, AnswerRun, Ask, Deliver } from "./flows"
 import * as Status from "./flows"
 import { RunReporter } from "./reporter"
 import type { Report, RunAnswer } from "./schema"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const scopes: Array<Scope.Closeable> = []
 afterEach(async () => {
@@ -120,12 +123,12 @@ describe("run/answer under faults", () => {
 
   test("a refusal, or a question no longer open, is final", async () => {
     const refused = await engine({ answers: [new RunsRefused({ status: 403, code: "forbidden" })] })
-    expect(await refused.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: payload() })))
-      .toEqual(Exit.fail(new AnswerRefused({ status: 403 })))
+    expect(failureOf(await refused.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: payload() }))))
+      .toEqual(new AnswerRefused({ status: 403 }))
     expect(refused.answered).toHaveLength(1)
     const closed = await engine({ answers: [new RunsRefused({ status: 409, code: "not_open" })] })
-    expect(await closed.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: payload(true) })))
-      .toEqual(Exit.fail(new AnswerNotOpen()))
+    expect(failureOf(await closed.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: payload(true) }))))
+      .toEqual(new AnswerNotOpen())
     expect(closed.answered).toHaveLength(1)
   })
 })

@@ -1,0 +1,13 @@
+// Third-lane batch 12 (0018): the mock sandbox's decisions, proved in sandboxMockDecision as sandboxMock uses them.
+import { describe, expect, it } from "@effect/vitest"
+import { currentLease, mockCommand } from "../src/core/sandboxMockDecision.vibe"
+
+describe("the mock sandbox", () => {
+  it("reads a line as a write, a read, pwd, ls, echo, blank or other, in that order", () => {
+    expect([mockCommand(true, true, "pwd"), mockCommand(false, true, "pwd"), mockCommand(false, false, "pwd"), mockCommand(false, false, "ls"), mockCommand(false, false, "echo hi"), mockCommand(false, false, " \t"), mockCommand(false, false, "rm -rf /"), mockCommand(false, false, "echo")])
+      .toEqual(["write", "read", "pwd", "ls", "echo", "blank", "other", "other"])
+  })
+  it("holds a lease only at the running generation", () => {
+    expect([currentLease(true, 3, 3), currentLease(true, 3, 2), currentLease(false, 0, 0)]).toEqual([true, false, false])
+  })
+})

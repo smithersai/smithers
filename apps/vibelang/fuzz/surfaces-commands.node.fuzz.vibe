@@ -263,3 +263,23 @@ it.live("surfaces/ask-correlation", () => run("surfaces/ask-correlation", Schema
     return outcome === "failed" ? answer.failure.message === `The agent's reply failed: ${reason}` : answer.failure.message === "The conversation ended before the agent's reply finished."
   }
 }))
+
+const RunState = Schema.Literals(["queued", "running", "passed", "failed", "cancelled"])
+
+/**
+ * `run --wait` over an injected Actions whose follow stream is a fuzzed list of states: it answers the run's id only
+ * when the first settled state is `passed`; a stream that ends empty or unsettled, or settles otherwise, fails.
+ */
+it.live("surfaces/run-wait", () => run("surfaces/run-wait", Schema.Array(RunState).check(Schema.isMaxLength(8)), (states) => scoped(effect {
+  const base = Layer.provideMerge(MockActions({ role: "maintainer", actor: "agent", conversation: "home" }), mockFactoryFor("maintainer"))
+  const scripted = Layer.effect(Actions, map(Actions, (actions) => Object.assign(Object.create(actions) as Actions.Shape, {
+    start: () => succeed("a1"),
+    follow: (id: string) => Stream.fromIterable(states.map((state, index) => ({ id, flow: "vibelang/Tour", door: "agent" as const, actor: "agent" as const, state, started: 0, at: index, result: "", steps: [] }))),
+  }))).pipe(Layer.provide(base))
+  provide scripted {
+    const answer = try Effect.result(C.RunWorkflow.run({ flow: "vibelang/Tour", input: "{}", wait: true }))
+    const settled = states.find((state) => state !== "queued" && state !== "running")
+    if (settled === "passed") return answer._tag === "Success" && answer.success.id === "a1"
+    return answer._tag === "Failure" && answer.failure.message === "Action failed."
+  }
+})))

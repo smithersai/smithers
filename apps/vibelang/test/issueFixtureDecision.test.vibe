@@ -1,0 +1,39 @@
+import { describe, expect, it } from "@effect/vitest"
+import { fixtureDraft, fixtureErrorReason, fixtureFailure, fixtureIdentity, fixtureIssueIndex, fixtureParticipation } from "../src/core/issueFixtureDecision.vibe"
+describe("fixture issue decisions", () => {
+  it("selects the first matching issue and never a different number", () => {
+    const items = [{ number: 2 }, { number: 4 }, { number: 2 }]
+    expect([fixtureIssueIndex(items, 2), fixtureIssueIndex(items, 4), fixtureIssueIndex(items, 3), fixtureIssueIndex([], 2)]).toEqual([0, 1, -1, -1])
+  })
+  it("retains missing, title, incomplete, tree, assignee, empty and review refusal precedence", () => {
+    expect([
+      fixtureFailure("comment", false, false, true, true, false, false, true, true, false),
+      fixtureFailure("propose", true, false, true, true, false, false, true, true, false),
+      fixtureFailure("propose", true, false, false, true, false, false, true, true, false),
+      fixtureFailure("split", true, false, false, false, false, false, true, true, false),
+      fixtureFailure("split", true, false, true, true, false, false, true, true, false),
+      fixtureFailure("link", false, true, false, false, false, false, true, true, false),
+      fixtureFailure("commit", false, true, false, false, true, false, false, false, true),
+      fixtureFailure("comment", false, true, false, false, true, true, false, true, true),
+      fixtureFailure("accept", false, true, false, false, true, true, false, false, false),
+      fixtureFailure("decline", false, true, false, false, true, true, false, false, true),
+      fixtureFailure("new", true, false, false, false, false, false, true, true, false),
+    ]).toEqual(["missing", "title", "incomplete", "missing", "title", "tree", "assignee", "empty", "review", "", ""])
+  })
+  it("defaults each blank draft field independently", () => {
+    expect(fixtureDraft("", "", "", "")).toEqual({ title: "Tuple patterns", summary: "Bind the elements of a tuple in one pattern.", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types" })
+    expect(fixtureDraft("title", "summary", "example", "prior")).toEqual({ title: "title", summary: "summary", example: "example", prior: "prior" })
+  })
+  it("records participation only for new issues and comments", () => {
+    expect(["new", "comment", "propose", "read"].map(fixtureParticipation)).toEqual([true, true, false, false])
+  })
+  it("maps decorated execution identity conflicts without exposing engine errors", () => {
+    expect(["ExecutionIdentityConflict", "FlowRuntime.ExecutionIdentityConflict", "ExecutionIdentityConflictSuffix", "FlowCycleDetected"].map(fixtureErrorReason)).toEqual(["conflict", "conflict", "failed", "failed"])
+  })
+})
+
+describe("fixture issue bookkeeping", () => {
+  it("bookkeeping retains the issue number and its fixture GitHub offset", () => {
+    expect(fixtureIdentity(48)).toEqual({ number: 48, githubId: 1048 })
+  })
+})

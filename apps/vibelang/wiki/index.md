@@ -36,6 +36,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
 | [0015 surfaces, history and actions](decisions/0015-fuzzing.md#lane-vl-fuzz3-surfaces-history-and-actions-2026-11-10) | Lane vl-fuzz3: steered targets for the CLI, MCP and sign-in, the mythical history's sequencer and machines, and registered actions |
 | [0016](decisions/0016-coverage.md) | Boundary tests, strict opt-in source gates and independent suite measurements |
+| [0016 browser gate scope](decisions/0016-coverage.md#browser-gate-scope-the-leads-call-2026-11-10) | The browser gate counts `src/web` and what the bundle ships; unit and workerd gates keep every file (lane vl-coverage) |
 | [0015 test-quality fixes](decisions/0015-fuzzing.md#test-quality-review-fixes-lane-vl-test-quality-2026-11-10) | Zero-execution gate, named oracles, clocks instead of sleeps, GitHub doubles that refuse (lane vl-test-quality) |
 | [0016 vl-coverage2](decisions/0016-coverage.md#lane-vl-coverage2-2026-11-09) | HTTP, browser factory, mock actions, mock factory, state machine and live wiki at their boundaries; the reload-mid-reply fix (lane vl-coverage2) |
 | [0016 vl-coverage3](decisions/0016-coverage.md#lane-vl-coverage3-surfaces-history-and-actions-2026-11-10) | Surfaces, history and actions at their unit edges; the session guard as a seam; the inventory skips generated output (lane vl-coverage3) |
@@ -46,6 +47,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0018 strengthening](decisions/0018-proofs.md#strengthening-lane-vl-proof-strengthen-2026-11-10) | Contracts that catch the reviewed bugs: `decide`'s authorization, the budget's reservation bound, unreported usage charged its ceiling, run and walkthrough frames, the meter step, harness honesty (lane vl-proof-strengthen) |
 | [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries; five proofs lanes, the third on sequencers, commands and the worker, the fifth on issue-graph acyclicity and replay equivalence |
 | [0018 fifth lane](decisions/0018-proofs.md#fifth-proofs-lane-vl-proveall5-issue-graph-acyclicity-and-replay-equivalence) | Issue forests and exact conversation/history journal replay; mutations and LemmaScript fixes (vl-proveall5) |
+| [0018 outside the web app](decisions/0018-proofs.md#third-lane-batch-6-the-issues-hosts-decisions) | Third proofs lane: Issues, history pages, seed inputs, mock factory/accounts, wiki, action hosts and the mock sandbox device |
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 | [0021](decisions/0021-wiki.md) | The working-memory wiki: shared pane, role-gated Markdown editing and person-owned review changes; agent drafts through the same flows |
@@ -64,6 +66,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0029 hardening](decisions/0029-hosted-sign-in-broker.md#hardening-after-review-2026-11-10-lane-vl-connect-hardening) | Security review fixes: pruned abandoned sign-ins, revoked device tokens, issue search from admission (lane vl-connect-hardening) |
 | [0030](decisions/0030-read-deadlines-and-object-health.md) | Bounded issue/wiki reads, inspectable object startup and safe journal-decode failures; amended 2026-11-10 (lane vl-startup-hang): objects start under Alchemy's bridge, health names the start-up step |
 | [0031](decisions/0031-public-reads.md) | Signed-out GitHub reads through smithers.sh's App; ETags, bounded cold reads and stale copies marked in the panes (lane vl-public-reads) |
+| [0032](decisions/0032-record-replay.md) | Tests reach real GitHub through `@smthrs/testing`'s HttpRecording: replay by default, record or pass through; recordings scrubbed and scanned (VL-36, lane vl-record-replay) |
 | smithers.sh `apps/mvp/docs/decisions/0165-hosted-site-github-delegation.md`, "Revocation and the authorization" | GitHub's page after sign-out cycles is its ten-new-tokens-an-hour prompt, not our revocations; sign-out keeps revoking, the connection survives (lane vl-github-authz) |
 | [smithers.sh closed-scope check](roadmap.md) | apps/mvp cold scope check: admission and real terminal pump run; `github.reconcile.admission` and `github_reconcile_admissions` observe entry (lane vl-mvp-closed-scope) |
 
@@ -86,3 +89,5 @@ apps/vibelang/
 
 
 [Benchmark methods and measurements](benchmarks.md).
+
+- Machine generation, receipt and checkpoint proof boundaries: [0018](decisions/0018-proofs.md#third-lane-batch-15-machine-admission-and-checkpoint-policies).

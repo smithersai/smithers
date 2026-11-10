@@ -10,6 +10,22 @@ The erased flags made valid VibeLang schema fields fail EK2109 under VIP-15. `ap
 
 Drop this patch when upgrading to an Effect release whose Json schema exposes these literal flags and retains them through rebuilds, after the positive and negative regressions pass without it. The same source correction and type/runtime tests landed in [smithersai/effect, c30802502817](https://github.com/smithersai/effect/commit/c30802502817062118a6b58904a362b6d2863ace) for upstream contribution. See VibeLang decision 0023.
 
+## @effect/platform-node@4.1.1
+
+`@effect/platform-node@4.1.1.patch` changes the `createRequire` base in `internal/http.js` (and its source) from
+`typeof __filename === "string" ? __filename : import.meta.url` to `import.meta.url ?? __filename`. `node --eval`,
+`node --print` and the REPL define a global `__filename` of `[eval]`, so the ES module passed that string to
+`createRequire` and threw ERR_INVALID_ARG_VALUE while `NodeHttpClient`, `NodeHttpServer` or `NodeClusterHttp`
+loaded. The release smoke requires every packed package with `node --eval`, and the platform-node, platform-bun, cli
+and build-cli tarballs vendor this module, so the 1.0.0-rc.17 candidate failed its CJS smoke. CommonJS bundles keep
+working: esbuild gives them an empty `import.meta`, so they fall back to the module's own `__filename`.
+
+`packages/smithers/flows/platform-node/test/EvalRequire.test.ts` requires the three modules under `node --eval` and
+`node --print`; all four cases fail without the patch. Minimal reproduction, no Smithers code:
+`node --eval 'require("@effect/platform-node/NodeHttpClient")'` in any project with `@effect/platform-node@4.1.1`.
+Drop the patch when an Effect release reads `import.meta.url` first and that test passes without it. No upstream
+write is authorized.
+
 ## @vitest/coverage-v8@5.0.0
 
 The existing native-loader patch keeps Vite offsets/maps limited to code Vite actually transformed. The provider
