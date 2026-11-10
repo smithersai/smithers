@@ -20,6 +20,7 @@ export class StreamingCredentialCutter {
   /** The end of the returned text, one character shorter than the longest secret part. */
   private returned = ""
   private readonly parts: ReadonlyArray<string>
+  /** @throws {never} */
   constructor(secret: string | undefined, additional: ReadonlyArray<string> = []) {
     this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts)
   }
