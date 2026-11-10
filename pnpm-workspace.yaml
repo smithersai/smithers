@@ -116,7 +116,8 @@ patchedDependencies:
   # (kernel/test/ChildProcessSpawner.integration.test.ts), and NodeWS's `export * from "ws"` hides WebSocket from
   # esbuild's split bundles (smithers/test/TuiRuntimes.test.ts). Delete it when an Effect release fixes both.
   '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
-  # Schema.Json erases literal key flags; drop after an Effect release retains them through rebuilds (patches/README.md).
+  # Schema.Json erases literal key flags; drop after an Effect release retains them through rebuilds (patches/README.md),
+  # with build-library.mjs portableEffectDeclarations, which keeps the patched-only JsonValueSchema out of published types.
   effect@4.1.1: patches/effect@4.1.1.patch
   # Native Bun cstrings and a shell-free, private URL opener (desktop decision 0025).
   electrobun@1.18.1: patches/electrobun@1.18.1.patch

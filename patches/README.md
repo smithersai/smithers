@@ -8,6 +8,13 @@ Patch registrations and removal conditions live beside `patchedDependencies` in 
 
 The erased flags made valid VibeLang schema fields fail EK2109 under VIP-15. `apps/vibelang/test/schemaJson.test.vibe` compiles positive fields, aliases, annotation/check/rebuild, nesting, errors, tuples and records. Negative cases retain strict optional/mutable/widened-key rejection and missing-key rejection.
 
+The patch adds a name stock effect@4.1.1 does not export, and published packages declare `effect` as a peer, so
+consumers resolve the stock copy. Declarations emitted here named `Schema.JsonValueSchema` wherever a schema holds
+`Schema.Json`, and a consumer's typecheck failed with TS2694 (the 1.0.0-rc.17 release smoke: 478 references in 20
+packages). `portableEffectDeclarations` in `packages/repo-targets/scripts/build-library.mjs` rewrites each reference
+to `(typeof Schema.Json)` after every package compile and fails the build on one it cannot rewrite;
+`packages/repo-targets/test/BuildLibrary.test.ts` covers both. Delete it together with the patch.
+
 Drop this patch when upgrading to an Effect release whose Json schema exposes these literal flags and retains them through rebuilds, after the positive and negative regressions pass without it. The same source correction and type/runtime tests landed in [smithersai/effect, c30802502817](https://github.com/smithersai/effect/commit/c30802502817062118a6b58904a362b6d2863ace) for upstream contribution. See VibeLang decision 0023.
 
 ## @effect/platform-node@4.1.1

@@ -142,6 +142,35 @@ export const packageCompiler = (packageRoot) => {
 }
 
 /**
+ * patches/effect@4.1.1.patch types `Schema.Json` as `JsonValueSchema`, an
+ * interface stock effect@4.1.1 does not export. Declarations emitted against the
+ * patched copy name it wherever a schema holds `Schema.Json`, and a consumer who
+ * installs effect from npm cannot resolve them (TS2694). Each reference becomes
+ * `(typeof <namespace>.Json)`: the patched type in this workspace, stock
+ * `Codec<Json>` for consumers. A reference this cannot rewrite fails the build
+ * rather than ship. Delete it with the patch (patches/README.md).
+ */
+export const portableEffectDeclarations = (text, file = "declaration") => {
+  const rewritten = text.replace(
+    /(import\("[^"]+"\)|(?<![\w$.])[A-Za-z_$][\w$]*)\.JsonValueSchema(?![\w$])/g,
+    "(typeof $1.Json)"
+  )
+  if (rewritten.includes("JsonValueSchema")) {
+    throw new Error(`${file} still names JsonValueSchema, which only the workspace's patched effect exports`)
+  }
+  return rewritten
+}
+
+const portableDeclarationFiles = (directory) => {
+  if (!existsSync(directory)) return
+  for (const file of files(directory).filter((file) => /\.d\.[cm]?ts$/.test(file))) {
+    const text = readFileSync(file, "utf8")
+    const rewritten = portableEffectDeclarations(text, file)
+    if (rewritten !== text) writeFileSync(file, rewritten)
+  }
+}
+
+/**
  * Runs the package compiler over the package's `tsconfig.json`: the ESM
  * branch, its declarations and maps. The compiler's diagnostics go to this
  * process's output.
@@ -159,6 +188,7 @@ export const compilePackage = (packageRoot, { timeoutMs = 90_000 } = {}) => {
   })
   if (result.error) throw new Error(`package compiler failed: ${result.error.message}`, { cause: result.error })
   if (result.status !== 0) throw new Error(`package compiler exited ${result.status ?? result.signal}`)
+  portableDeclarationFiles(join(packageRoot, "dist"))
   return compiler
 }
 
