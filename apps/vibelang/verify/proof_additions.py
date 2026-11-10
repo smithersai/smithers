@@ -331,6 +331,32 @@ LEMMA_STEPS = {
     'src/core/issueGraphDecision.vibe': ISSUE_GRAPH_STEPS,
     'src/history/replayDecision.vibe': REPLAY_HISTORY_STEPS,
     'src/core/replayDecision.vibe': REPLAY_CONVERSATION_STEPS,
+    'src/core/mockFactoryDecision.vibe': [
+        # Keys of different kinds end in different units ("t" of agent, "n" of person); keys of one kind and one
+        # length share their id prefix.
+        ('lemma actorKey_ensures(id: string, agent: bool)',
+         '  forall other: string\n'
+         '    ensures actorKey(id, agent) != other + "/" + actorKind(!agent)\n'
+         '  {\n'
+         '    var a := id + "/" + actorKind(agent);\n'
+         '    var b := other + "/" + actorKind(!agent);\n'
+         '    if a == b {\n'
+         '      assert a[|a| - 1] == actorKind(agent)[|actorKind(agent)| - 1];\n'
+         '      assert b[|b| - 1] == actorKind(!agent)[|actorKind(!agent)| - 1];\n'
+         '    }\n'
+         '  }\n'
+         '  forall other: string | other != id\n'
+         '    ensures actorKey(id, agent) != other + "/" + actorKind(agent)\n'
+         '  {\n'
+         '    var a := id + "/" + actorKind(agent);\n'
+         '    var b := other + "/" + actorKind(agent);\n'
+         '    if a == b {\n'
+         '      assert |id| == |other|;\n'
+         '      assert a[..|id|] == id;\n'
+         '      assert b[..|other|] == other;\n'
+         '    }\n'
+         '  }\n'),
+    ],
     'src/core/sandboxDecision.vibe': [
         ('lemma runningCountPrefix_ensures(sandboxes: seq<SandboxEntry>, end: int)',
          '  if end > 0 {\n    runningCountPrefix_ensures(sandboxes, end - 1);\n  }\n'),

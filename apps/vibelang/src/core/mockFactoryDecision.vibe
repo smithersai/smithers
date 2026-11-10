@@ -1,0 +1,113 @@
+// The mock factory's own decisions (wiki/decisions/0018-proofs.md, third-lane batch 8): which reply the scripted
+// agent gives, how a wiki draft is answered, whose journal an actor's issues and wiki use, where a restored room's ids
+// resume, which events a reader replays and then follows live, and which mock grants need the roles gate (batch 10).
+// `MockFactory.vibe` and `MockAccounts.vibe` call these; the engine, locks, streams and the prompt's regular expressions
+// stay outside the proof.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+/** What the scripted agent answers a post with. */
+export type ReplyKind = "specification" | "wiki" | "issue" | "sandbox" | "history" | "script"
+
+/**
+ * The scripted agent's choice: a specification review it was asked for, then an explicit wiki request (which wins
+ * over action words in a page title), then an issue to file or split, then a sandbox, then the mythical history, else
+ * its script.
+ */
+//@ verify
+//@ ensures review ==> \result == "specification"
+//@ ensures !review && wiki ==> \result == "wiki"
+//@ ensures !review && !wiki && issue ==> \result == "issue"
+//@ ensures !review && !wiki && !issue && sandbox ==> \result == "sandbox"
+//@ ensures !review && !wiki && !issue && !sandbox && history ==> \result == "history"
+//@ ensures !review && !wiki && !issue && !sandbox && !history ==> \result == "script"
+export function replyKind(review: boolean, wiki: boolean, issue: boolean, sandbox: boolean, history: boolean): ReplyKind {
+  if (review) return "specification"
+  if (wiki) return "wiki"
+  if (issue) return "issue"
+  if (sandbox) return "sandbox"
+  return history ? "history" : "script"
+}
+
+/** How a wiki draft the agent was asked for ended. */
+export type DraftOutcome = "drafted" | "forbidden" | "failed"
+
+/** A draft that succeeded is drafted; a refusal for the poster's role says so; any other failure is a failure. */
+//@ verify
+//@ ensures !failed ==> \result == "drafted"
+//@ ensures failed && reason == "forbidden" ==> \result == "forbidden"
+//@ ensures failed && reason != "forbidden" ==> \result == "failed"
+export function draftOutcome(failed: boolean, reason: string): DraftOutcome {
+  if (!failed) return "drafted"
+  return reason === "forbidden" ? "forbidden" : "failed"
+}
+
+/** The kind an actor acts as: a device sign-in is an agent, anyone else a person. */
+//@ verify
+//@ ensures agent ==> \result == "agent"
+//@ ensures !agent ==> \result == "person"
+export function actorKind(agent: boolean): string {
+  return agent ? "agent" : "person"
+}
+
+/**
+ * The key of an actor's own issues and wiki journal: the person's id and kind. A person and their device sign-in never
+ * share a journal, and two ids never do.
+ */
+//@ verify
+//@ ensures \result == id + "/" + actorKind(agent)
+//@ ensures forall(other: string, \result != other + "/" + actorKind(!agent))
+//@ ensures forall(other: string, other != id ==> \result != other + "/" + actorKind(agent))
+export function actorKey(id: string, agent: boolean): string {
+  return id + "/" + actorKind(agent)
+}
+
+/** The id counter of a room restored from its journal: never behind the journal's last sequence number. */
+//@ verify
+//@ ensures \result >= counter && \result >= seq
+//@ ensures \result == counter || \result == seq
+export function restoredCounter(counter: number, seq: number): number {
+  return counter >= seq ? counter : seq
+}
+
+/** Whether an event is after a reader's cursor, so a read or a replay includes it. */
+//@ verify
+//@ ensures \result == (seq > after)
+export function afterCursor(seq: number, after: number): boolean {
+  return seq > after
+}
+
+/** Where a replay of `count` events ending at `last` leaves the reader: at `last`, or at its cursor when none replayed. */
+//@ verify
+//@ ensures count == 0 ==> \result == after
+//@ ensures count > 0 ==> \result == last
+export function replayedTo(after: number, count: number, last: number): number {
+  return count === 0 ? after : last
+}
+
+/**
+ * Whether the live tail passes an event on: one of this conversation's, after the replay. With `replayedTo`, an event
+ * the replay held never repeats, as long as sequence numbers grow.
+ */
+//@ verify
+//@ ensures \result == (sameConversation && seq > replayed)
+//@ ensures \result ==> afterCursor(seq, replayed)
+export function liveEvent(sameConversation: boolean, seq: number, replayed: number): boolean {
+  return sameConversation && seq > replayed
+}
+
+/** Whether a grant is a signed-in person's own, which the sequencer alone checks; any other grant needs the roles gate. */
+//@ verify
+//@ ensures \result == (actor != "" && actor == target)
+export function selfGrant(actor: string, target: string): boolean {
+  return actor !== "" && actor === target
+}
+
+/** A new fixture person's login: `joss` and the id for a new person, else the role and the id. */
+//@ verify
+//@ ensures role == "new" ==> \result == "joss" + id
+//@ ensures role != "new" ==> \result == role + id
+export function fixtureLogin(role: string, id: string): string {
+  return (role === "new" ? "joss" : role) + id
+}
