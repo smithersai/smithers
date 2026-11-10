@@ -1,5 +1,5 @@
-// Real workerd Durable Objects and SQLite, with a faulty Container Effect service. No successful Container operation
-// is simulated: starts fail, and the production machine/account objects must refuse them without losing their ledger.
+// Real workerd Durable Objects and SQLite, with a faulty Container Effect service. No command ever succeeds in it: the
+// production machine/account objects must refuse each fault without losing their ledger or a failed checkpoint.
 import { HttpServerResponse } from "effect/http"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { machineObject } from "../../worker/machineObject.vibe"
@@ -13,10 +13,24 @@ const json = (value: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jso
 
 error ContainerUnavailable
 const unavailable = () => Effect.fail(new ContainerUnavailable())
-const container = {
-  running: succeed(false), start: unavailable, destroy: unavailable, snapshotContainer: unavailable,
-  exec: unavailable, setInactivityTimeout: unavailable,
-  interceptOutboundHttp: unavailable, interceptAllOutboundHttp: unavailable, interceptOutboundHttps: unavailable,
+/**
+ * How the Container fails, chosen per request by the path after the machine's name. `""`: every operation fails.
+ * `"inert"`: a start returns but the box never runs. `"broken"`: the box runs, every command in it exits 1 and every
+ * checkpoint fails. `"stuck"`: broken, and destroy leaves it running.
+ */
+type Fault = "" | "inert" | "broken" | "stuck"
+function faultyContainer(fault: () => Fault) {
+  let up = false
+  const when = <A>(work: () => A) => fault() === "" ? unavailable() : sync(work)
+  return {
+    running: sync(() => up),
+    start: () => when(() => { up = fault() !== "inert" }),
+    destroy: () => when(() => { if (fault() !== "stuck") up = false }),
+    setInactivityTimeout: () => when(() => undefined),
+    exec: () => when(() => ({ stdin: undefined, stdout: Stream.empty, stderr: Stream.empty, exitCode: succeed(1) })),
+    snapshotContainer: unavailable,
+    interceptOutboundHttp: unavailable, interceptAllOutboundHttp: unavailable, interceptOutboundHttps: unavailable,
+  }
 }
 const identity: SandboxIdentity.Shape = {
   request: () => succeed({ owner: "", role: "viewer" }),
@@ -24,10 +38,12 @@ const identity: SandboxIdentity.Shape = {
 }
 
 export class MachineHost {
+  fault: Fault = ""
   readonly api: ReturnType<typeof this.build>
   constructor(readonly state: State) { this.api = this.build() }
-  build() { return runPromise(Effect.provide(machineObject(container as never, { raw: this.state } as never), runtime)) }
+  build() { return runPromise(Effect.provide(machineObject(faultyContainer(() => this.fault) as never, { raw: this.state } as never), runtime)) }
   async fetch(request: Request) {
+    this.fault = new URL(request.url).pathname.slice(1) as Fault
     const args = await request.json() as ["start" | "stop" | "command" | "lease", number, string, string]
     return json(await runPromise(Effect.provide((await this.api).apply(...args), runtime)))
   }

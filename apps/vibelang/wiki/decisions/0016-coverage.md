@@ -1811,8 +1811,10 @@ binds them. The suite's other hosts keep running the same bodies as plain object
   a post's reply is refused over Alchemy's RPC to the Budget object before any model call. 2 of 2 pass.
 - `test/sandboxObjects.workerd.test.vibe`: `worker/accountObject.vibe` and `worker/machineObject.vibe` in real workerd
   SQLite through `test/workerd/sandbox-faults.vibe`, with a faulty Container Effect service. It covers generation
-  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. Successful Container
-  execution is not simulated; those paths still need the authorized Container binding.
+  fences, failed starts, stopped reads, persisted owner checks, and the actual storage alarm. The request path picks
+  how the Container fails: a start that returns while the box never runs, a box whose setup command exits 1 and whose
+  checkpoint fails, and a destroy that leaves it running (the machine reports `checkpoint-failed` once it stops).
+  No command ever succeeds; successful start, command and checkpoint paths still need the authorized Container binding.
 - Fuzz: `workerd/alchemy-api-requests` sends `workerd/api-requests`' generated requests to the Alchemy-built Worker,
   so `worker/Api.vibe` is back in the fuzz denominator (`fuzz.config.ts` and `fuzz/coverage.vibe` no longer exclude it).
 - `test/workerdCoverageShape.test.ts` third case: Alchemy's rolldown build of a measured module puts a namespace call
@@ -1845,6 +1847,11 @@ the small denominator differences; complementary shapes are not added together. 
 The two sandbox modules' successful Container paths stay uncovered in this suite; their faulty service never
 simulates a successful start, command or checkpoint. Every per-file before/after comparison is retained in the lane
 report and `~/vl/cw-evidence/s4/workerd-comparison.md` on nyc-01.
+
+The fault modes (third session) raised `worker/machineObject.vibe` in the same command on `5e37278e` plus that change
+from 30/63 lines, 39/83 branches, 11/18 functions and 43/92 statements to 39/63, 47/83, 12/18 and 56/92: the start
+that never comes up, the failed setup, the failed checkpoint and the stuck destroy now run in workerd. 19 files / 81
+tests passed (1 file, 3 tests skipped); the gate exits 1 with 140 of 164 files below 100%.
 
 ### Unit and fuzz results after the audit roster fixes
 

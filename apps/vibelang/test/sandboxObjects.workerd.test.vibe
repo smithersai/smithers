@@ -1,6 +1,7 @@
 // The production machine and account objects in real workerd SQLite, with a faulty Container Effect service.
 // Successful Container execution still requires the authorized Container binding (0016); this suite measures the
-// available read, refusal, failed-start and alarm paths without simulating a successful machine.
+// read, refusal, failed-start, failed-setup, failed-checkpoint, stuck-destroy and alarm paths without a command ever
+// succeeding.
 import { describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
@@ -26,6 +27,23 @@ describe("sandbox objects refuse a faulty Container in workerd", () => {
       try Effect.try(() => expect(answers).toEqual([
         refused, refused, refused, { ok: true, output: "stopped" }, { ok: true, output: "" },
         refused, refused, refused, refused, refused,
+      ]))
+    }
+  })
+
+  it.live("refuses a box that never runs, fails its setup or survives destroy, and reports the lost checkpoint once stopped", () => effect {
+    provide FetchHttpClient.layer {
+      const call = (machine: string, fault: string, kind: string) => post(`/machine/${machine}/${fault}`, [kind, 1, "op", ""])
+      const answers = [
+        try call("inert", "inert", "start"),
+        try call("broken", "broken", "start"),
+        try call("broken", "stuck", "stop"),
+        try call("broken", "broken", "stop"),
+        try call("broken", "broken", "lease"),
+      ]
+      const refused = { ok: false, output: "" }
+      try Effect.try(() => expect(answers).toEqual([
+        refused, refused, refused, { ok: true, output: "checkpoint-failed" }, { ok: true, output: "stopped" },
       ]))
     }
   })
