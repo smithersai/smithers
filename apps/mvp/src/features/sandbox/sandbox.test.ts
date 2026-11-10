@@ -7,7 +7,7 @@
 // src/features/commands/commands.test.ts.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -41,6 +41,9 @@ import {
 import { calls } from "./metrics"
 import type { Standing } from "./schema"
 import { refusalOf, registrationAt, result, start } from "./steps"
+
+/** A failed call's error. The engine annotates an action's failed cause with its FailureSite, which the outcome doesn't depend on. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit
 
 const runtime = testFile("sandbox_tools")
 beforeEach(() => resetBranches(runtime))
@@ -146,11 +149,11 @@ describe("the flows", () => {
     })
     const branch = await tracked(runtime, REPO, "feature/stranger")
     const failure = new SandboxCallRefused({ reason: "members_only" })
-    expect(await engine.execute(SandboxRun, "stranger-run", { command: "pwd", conversationId: branch.conversationId }))
-      .toEqual(Exit.fail(failure))
-    expect(
+    expect(failureOf(await engine.execute(SandboxRun, "stranger-run", { command: "pwd", conversationId: branch.conversationId })))
+      .toEqual(failure)
+    expect(failureOf(
       await engine.execute(SandboxRead, "stranger-read", { path: "README.md", conversationId: branch.conversationId })
-    ).toEqual(Exit.fail(failure))
+    )).toEqual(failure)
     expect(engine.h.line("sandbox.call")).toHaveLength(2)
     expect(engine.h.starts).toEqual([])
     expect(await rows()).toEqual([])
@@ -263,7 +266,7 @@ describe("the flows", () => {
     await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
     await runtime.runPromise(settle(callId, { status: "failed", failure: "not_found" }))
 
-    expect(await reading).toEqual(Exit.fail(new SandboxCallFailed({ failure: "not_found" })))
+    expect(failureOf(await reading)).toEqual(new SandboxCallFailed({ failure: "not_found" }))
     expect(engine.count({ tool: "read", outcome: "not_found" })).toBe(1)
   }, WITHIN)
 
@@ -374,10 +377,10 @@ describe("the steps", () => {
       start("run")({ command: "pnpm install", timeoutSeconds: 901, conversationId: "c" }),
       scripted({ start: Effect.fail(refused) }).layer
     )
-    expect(starting.exit).toEqual(Exit.fail(refusalOf(refused)))
+    expect(failureOf(starting.exit)).toEqual(refusalOf(refused))
     expect(starting.count("run", "too_long")).toBe(1)
     const reading = await step(result("run")({ callId: "c" }), scripted({ result: [Effect.fail(refused)] }).layer)
-    expect(reading.exit).toEqual(Exit.fail(refusalOf(refused)))
+    expect(failureOf(reading.exit)).toEqual(refusalOf(refused))
     expect(reading.count("run", "too_long")).toBe(1)
   })
 
@@ -434,7 +437,7 @@ describe("the steps", () => {
   test("start without a conversation is invalid before anything is asked; a refusal or a failed call fails, counted", async () => {
     const none = scripted({})
     const invalid = await step(start("list")({}), none.layer)
-    expect(invalid.exit).toEqual(Exit.fail(new SandboxCallRefused({ reason: "invalid" })))
+    expect(failureOf(invalid.exit)).toEqual(new SandboxCallRefused({ reason: "invalid" }))
     expect(invalid.count("list", "invalid")).toBe(1)
     expect(none.started).toEqual([])
 
@@ -442,21 +445,21 @@ describe("the steps", () => {
       start("write")({ path: "a", content: "b", conversationId: "c" }),
       scripted({ start: Effect.fail(new CallRefused({ status: 409, code: "locked" })) }).layer
     )
-    expect(locked.exit).toEqual(Exit.fail(new SandboxCallRefused({ reason: "locked" })))
+    expect(failureOf(locked.exit)).toEqual(new SandboxCallRefused({ reason: "locked" }))
     expect(locked.count("write", "locked")).toBe(1)
 
     const offline = await step(
       start("write")({ path: "a", content: "b", conversationId: "c" }),
       scripted({ start: Effect.fail(new CallRefused({})) }).layer
     )
-    expect(offline.exit).toEqual(Exit.fail(new SandboxCallUnavailable()))
+    expect(failureOf(offline.exit)).toEqual(new SandboxCallUnavailable())
     expect(offline.count("write", "unavailable")).toBe(1)
 
     const failed = await step(
       start("run")({ command: "x", conversationId: "c" }),
       scripted({ start: Effect.succeed({ callId: "x", status: "failed", failure: "lost" }) }).layer
     )
-    expect(failed.exit).toEqual(Exit.fail(new SandboxCallFailed({ failure: "lost" })))
+    expect(failureOf(failed.exit)).toEqual(new SandboxCallFailed({ failure: "lost" }))
     expect(failed.count("run", "lost")).toBe(1)
   })
 
@@ -465,7 +468,7 @@ describe("the steps", () => {
       result("run")({ callId: "c" }),
       scripted({ result: [Effect.succeed({ callId: "c", status: "running" })] }).layer
     )
-    expect(running.exit).toEqual(Exit.fail(new SandboxCallRunning()))
+    expect(failureOf(running.exit)).toEqual(new SandboxCallRunning())
     expect(running.count("run", "unavailable")).toBe(0)
 
     const done = await step(
@@ -481,21 +484,21 @@ describe("the steps", () => {
       result("read")({ callId: "c" }),
       scripted({ result: [Effect.succeed({ callId: "c", status: "failed", failure: "path" })] }).layer
     )
-    expect(failed.exit).toEqual(Exit.fail(new SandboxCallFailed({ failure: "path" })))
+    expect(failureOf(failed.exit)).toEqual(new SandboxCallFailed({ failure: "path" }))
     expect(failed.count("read", "path")).toBe(1)
 
     const gone = await step(
       result("read")({ callId: "c" }),
       scripted({ result: [Effect.fail(new CallRefused({ status: 404 }))] }).layer
     )
-    expect(gone.exit).toEqual(Exit.fail(new SandboxCallRefused({ reason: "not_found" })))
+    expect(failureOf(gone.exit)).toEqual(new SandboxCallRefused({ reason: "not_found" }))
     expect(gone.count("read", "not_found")).toBe(1)
 
     const offline = await step(
       result("read")({ callId: "c" }),
       scripted({ result: [Effect.fail(new CallRefused({}))] }).layer
     )
-    expect(offline.exit).toEqual(Exit.fail(new SandboxCallUnavailable()))
+    expect(failureOf(offline.exit)).toEqual(new SandboxCallUnavailable())
     expect(offline.count("read", "unavailable")).toBe(0)
   })
 })
