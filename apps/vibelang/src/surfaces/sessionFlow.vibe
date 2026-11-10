@@ -10,10 +10,22 @@ export schema error SignInFailed { readonly message: string }
 export const Status = Schema.Literals(["started", "pending", "signed-in", "signed-out", "declined", "expired", "failed"])
 export type Status = typeof Status.Type
 
+// One declared step per operation; the payload names which one a run takes.
+const Login = Action.make("vibelang/session/login", { payload: {}, success: Status, error: SignInFailed })
+const PollSession = Action.make("vibelang/session/poll", { payload: {}, success: Status, error: SignInFailed })
+const Logout = Action.make("vibelang/session/logout", { payload: {}, success: Status, error: SignInFailed })
 const Operation = Flow.make("vibelang/Session", {
   description: "Changes the CLI and MCP sign-in through a private journaled action.",
   payload: { step: Schema.Literals(["login", "poll", "logout"]) }, success: Status, error: SignInFailed,
-  body: () => Node.succeed("pending" as const),
+  body: Node.capture({}, (payload) => Node.succeed(payload.step).pipe(Node.branch({
+    if: Node.capture({}, (step) => step === "login"),
+    then: () => Login.call({}),
+    else: (step) => Node.succeed(step).pipe(Node.branch({
+      if: Node.capture({}, (step) => step === "poll"),
+      then: () => PollSession.call({}),
+      else: () => Logout.call({}),
+    })),
+  }))),
 })
 const Check = Action.make("vibelang/session/check", { payload: {}, success: Poll.CheckResult(Status) })
 const Wait = Poll.make("vibelang/SessionWait", {
@@ -37,15 +49,14 @@ effect function runtime<R>(registration: Layer.Layer<never, never, R>) {
 /** A session mutation. The action's only result is its status; its error contains a safe product message. */
 export effect function sessionOperation<R>(step: "login" | "poll" | "logout", body: Status!SignInFailed!R) {
   const captured = try context<R>()
-  const registration = Layer.effectDiscard(effect {
-    const engine = try FlowRuntime.FlowRuntime
-    try engine.register(Operation, () => Action.make({ name: "vibelang/session/" + step, success: Status, error: SignInFailed,
-      execute: observe(step, Effect.provide(body, captured)),
-    }))
-  })
+  // This run executes only `step`'s action; each operation's implementation is the same observed body.
+  const operation = () => observe(step, Effect.provide(body, captured))
+  const registration = Interpreter.layerWithImplementations(Operation, Layer.mergeAll(Login.toLayer(operation), PollSession.toLayer(operation), Logout.toLayer(operation)))
   const id = try Effect.provide(effect { return try (try SecureRandom.SecureRandom).uuidV4() }, SecureRandom.layerWebCrypto)
   const host = try runtime(registration)
-  return try scoped(Effect.provide(Operation.execute({ step }, { executionId: "session/" + id }), host))
+  return try scoped(Effect.provide(effect {
+    return try (try FlowRuntime.FlowRuntime).execute(Operation, { payload: { step }, executionId: "session/" + id })
+  }, host))
 }
 
 /** SDK polling owns repetitions and durable waits. GitHub's own interval/slow-down is enforced by the check. */

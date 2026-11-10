@@ -659,6 +659,16 @@ version of this fix (44053da0) wrapped each body in one `<flow>/perform` step, a
 `perform · running` instead of the tour's `start` and `guide`. Resuming a run journaled before either change (a tour
 parked across the deploy) is untested.
 
+**More flow bodies (2026-11-09).** The same rule now holds for four more flows. `vibelang/GrantRole`
+(`src/core/MockAccounts.vibe`) is its `vibelang/role/record` step. `vibelang/actions/Request`
+(`worker/ActionDirectory.vibe`) is `vibelang/actions/index` then `vibelang/actions/start`, and `vibelang/actions/Cancel`
+is `vibelang/actions/cancel`; the steps act on the request admitted at the door, so a replay's JSON conflict check
+compares identical bytes. `vibelang/Session` (`src/surfaces/sessionFlow.vibe`) branches on its payload to
+`vibelang/session/login`, `…/poll` or `…/logout`. The seven history flows (`src/history/flows.vibe`, `tools.vibe`) still
+have placeholder bodies: Plan, Start, Note and show also run on the action host (`src/actions/execution.vibe`,
+`worker/HistoryActions.vibe`), which calls the history through `HistoryReader` and has no `Caller` principal to journal
+the history's `authorize` step. Closing them needs that principal on the action host.
+
 **A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
 dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
 child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one

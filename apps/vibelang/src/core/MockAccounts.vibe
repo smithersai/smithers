@@ -1,5 +1,5 @@
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
@@ -7,12 +7,15 @@ import { apply, empty, leastRole, roleOf, type Event, type GrantMode, type Role 
 import { decide } from "./decide.vibe"
 import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
 
+const grantPayload = { id: Schema.String, by: Schema.String, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), mode: Schema.Literals(["person", "participation", "bootstrap"]) }
+/** Records the grant through the sequencer: `null` once recorded, else the refusal. */
+const RecordRole = Action.make("vibelang/role/record", { payload: grantPayload, success: Schema.NullOr(Schema.String) })
 const Change = Flow.make("vibelang/GrantRole", {
   description: "Records a project role grant through the shared sequencer.",
   modelInvocable: false,
-  payload: { id: Schema.String, by: Schema.String, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), mode: Schema.Literals(["person", "participation", "bootstrap"]) },
+  payload: grantPayload,
   success: Schema.NullOr(Schema.String),
-  body: () => Node.succeed(null),
+  body: Node.capture({}, (payload) => RecordRole.call(payload)),
 })
 
 // The mock restores an existing fixture history; these grants are not new user actions.
@@ -37,23 +40,18 @@ export effect function make() {
     { id: "1", login: "will" }, { id: "2", login: "joss" }, { id: "3", login: "ada" }, { id: "4", login: "rira" }, { id: "5", login: "mina" },
   ])
   const lock = try Semaphore.make(1)
-  const registration = Layer.effectDiscard(effect {
-    const runtime = try FlowRuntime.FlowRuntime
-    try runtime.register(Change, (payload) => withSpan(effect {
-      return try Action.make({ name: "vibelang/role/record", success: Schema.NullOr(Schema.String), execute: Semaphore.withPermits(lock, 1)(effect {
-        const current = try Ref.get(state)
-        const decision = decide(current, { type: "GrantRole", ...payload })
-        const outcome = decision.ok ? "accepted" : decision.refusal
-        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_role_grants", { incremental: true }), { outcome }), 1)
-        try Effect.logInfo("vibelang.role").pipe(Effect.annotateLogs({ outcome }))
-        if (!decision.ok) return decision.refusal
-        try Ref.set(state, apply(current, decision.event))
-        try Ref.update(log, events => [...events, decision.event])
-        try PubSub.publish(published, decision.event)
-        return null
-      }) })
-    }, "vibelang.role"))
-  })
+  const registration = Interpreter.layerWithImplementations(Change, RecordRole.toLayer((payload) => withSpan(Semaphore.withPermits(lock, 1)(effect {
+    const current = try Ref.get(state)
+    const decision = decide(current, { type: "GrantRole", ...payload })
+    const outcome = decision.ok ? "accepted" : decision.refusal
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_role_grants", { incremental: true }), { outcome }), 1)
+    try Effect.logInfo("vibelang.role").pipe(Effect.annotateLogs({ outcome }))
+    if (!decision.ok) return decision.refusal
+    try Ref.set(state, apply(current, decision.event))
+    try Ref.update(log, events => [...events, decision.event])
+    try PubSub.publish(published, decision.event)
+    return null
+  }), "vibelang.role")))
   const digest = try Effect.provide(Digest.Digest, WebCrypto.layer)
   const engine = try Effect.cached(effect {
     const context = try Layer.buildWithScope(registration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(Digest.Digest, digest))), scope)
