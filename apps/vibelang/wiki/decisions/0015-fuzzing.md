@@ -418,3 +418,26 @@ The ninth session's reading of the 74 arms was wrong about the `??` defaults: ar
 - `web/in-flight` (`fuzz/commands.fuzz.vibe`): a signed-in mock tab, up to 12 gestures from 16 ops that start or meet a request, each optionally holding its last Message, with the event stream pumped after each settled gesture. Property: Escape never discards a wiki edit being saved (read before the save answers), and every held Command still answers with a declared Message. A fixed witness (save, Escape, edit while the save is out) runs after the fuzzed budget and must reach that check. Mutation check: Escape's `none` arm returning without the editor is found by the witness.
 - New arms in `src/web/main.vibe` against `web/guided-commands` at the same seed and budget: Escape's `none` arm, a submit while busy (`SubmittedWikiEdit`'s retry request), an editor opened while a save is out, a page the editor refuses, and the save's completion arms (lines 380, 383, 455, 463 to 465, 473, 607, 709, 939, 944, 948, 974 to 976).
 - Holding gestures in `web/guided-commands` too was measured and dropped: at about 50 executions per 20 seconds it reached no new arm.
+
+## Test-quality review fixes (lane vl-test-quality, 2026-11-10)
+
+The review `~/vl/review-tests.REPORT.md` (lane vl-review-tests) found oracles a broken implementation passed. Each fix
+below was checked by breaking the code, seeing the test fail, and restoring it.
+
+- **Zero executions fail.** `gate` in `fuzz/run.vibe` fails a target that never ran its property with `NoExecution`,
+  naming the budget and host load; `FUZZ_EXECUTIONS=0` replay still passes. At load 128 it failed
+  `issues/steered-host` at 5 seconds, which passed at 60 seconds with one execution.
+- **No target reaches the network.** `history/github-public-read` left the suite; `test/mainLog.github.test.vibe`
+  reads real GitHub only with `GITHUB_TEST_TOKEN`.
+- **Named answers.** `sandbox/host-recovery`, `api-objects/world`, `web/subscriptions`, `wiki/tools`,
+  `history/page-paths`, `reply/failure-tags`, `http/doors`, `actions/history-host`, `web/arbitrary-update`,
+  `history/arbitrary-update` and `history/view-models` now require the expected outcome; the api-workerd bench reads one
+  decoded event per SSE route.
+- **Clocks and witnesses instead of sleeps.** Runtime tests check the messages that arrived before a window-resize
+  witness; `sandbox/mock-meter-alarm` runs on the test clock; the first-visit timer runs on Playwright's page clock.
+- **GitHub doubles refuse what GitHub refuses**: 422 for a pull request from a missing branch, form-encoded device
+  answers without `Accept: application/json`.
+- **Open.** `test/signin.coverage.test.vibe` (1100 ms) and `test/signinEdges.coverage.test.vibe` still wait on wall
+  time: their checks run inside the durable session host (`sessionOperation`, `waitForSignIn` on `NodeRuntime`), which
+  does not read the test clock (a check due at test-clock 1000 polled at test-clock 0). Whether protocol doubles may
+  answer happy paths waits for Will (review finding 3).

@@ -120,3 +120,4 @@ brick                                   state         proof
 - **Connect hardening (0029, smithers.sh 0165, lane vl-connect-hardening): implemented and landed.** All nine
   findings of the 2026-11-10 security review fixed with failing-first tests; deployment adds `BROKER_LIMIT`. Lead
   deploys.
+- **Test quality (0015, lane vl-test-quality): landed.** Review findings 1, 2 and 4 to 11 fixed with mutation checks; sign-in wall-clock waits and the protocol-double ruling (finding 3) open.
