@@ -311,3 +311,9 @@ injected faulty service: each read answers "unavailable" in about 6 s, and write
 `connect`. The exclusion of these routes from every benchmark above no longer applies to their refusal paths; their
 GitHub success paths still wait for a GitHub credential.
 
+**Receipt (2026-11-10, lane vl-bench2, `f52ffeba`).** `pnpm bench:coverage`: 70/70 files and 148/148 tests pass; the
+strict per-file gate exits 1 for 102 files. Merged benchmark-only coverage is 6,989/7,576 `src/` + `worker/` lines
+(92.25%) and 2,010/2,299 `worker/` lines (87.43%). Accounts went from 82 uncovered lines to 8 (the read-queue
+deadline, participation and a cross-origin sandbox principal). Issues and Wiki keep 130 and 59, almost all GitHub
+success paths.
+
