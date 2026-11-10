@@ -1121,6 +1121,8 @@ const SEQ_FILTER_SOME = `function SeqFilterSome<T>(xs: seq<Option<T>>): seq<T>
 const SEQ_FILTER = `function SeqFilter<T(!new)>(p: T -> bool, xs: seq<T>): seq<T>
   ensures |SeqFilter(p, xs)| <= |xs|
   ensures forall x :: x in SeqFilter(p, xs) <==> x in xs && p(x)
+  // By index too: Dafny does not connect \`r[i]\` to the membership clause unaided. Proved from the body, not assumed.
+  ensures forall i :: 0 <= i < |SeqFilter(p, xs)| ==> p(SeqFilter(p, xs)[i]) && SeqFilter(p, xs)[i] in xs
   decreases |xs|
 {
   if |xs| == 0 then []

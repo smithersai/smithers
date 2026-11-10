@@ -50,7 +50,10 @@ const proofs = [
   Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
   Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),
   Smithers.file("//apps/vibelang/tsconfig.json"),
-  Smithers.file("//apps/vibelang/wiki/decisions/0018-proofs.md")
+  // A type-only import reads VibeLang's emitted declaration of its module and everything that imports, including the
+  // wiki asset `pnpm wiki:build` generates from the wiki before each proof run (verify/declarations.py).
+  Smithers.glob("//apps/vibelang/wiki/**/*"),
+  Smithers.file("//apps/vibelang/package.json")
 ]
 
 /**

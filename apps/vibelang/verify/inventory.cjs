@@ -71,6 +71,7 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  "src/web/actionModel.vibe:completions": "Calls the proved slashMatches (modelDecision): exactly the commands whose text starts with the draft's first word while the menu is open and that word starts with /; none otherwise. Reading the draft's first word is a native regexp outside the proof.",
   "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
   "src/actions/catalog.vibe:registration": "Calls the proved least role and input kind (catalogDecision); titles and command names are labels.",
   "src/core/accountCookies.vibe:validSessionCookie": "Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts).",

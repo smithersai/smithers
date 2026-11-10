@@ -36,7 +36,7 @@ export function modeCommands(mode: string | undefined): ReadonlyArray<Registered
 export function completions(model: { readonly actions?: ActionView; readonly draft: string; readonly mode?: string }) {
   const actions = actionsOf(model)
   const query = model.draft.trim().replace(/\s.*$/s, "")
-  return actions.slash && query.startsWith("/") ? [...actions.commands, ...modeCommands(model.mode)].filter((entry) => entry.command.startsWith(query)) : []
+  return ModelDecision.slashMatches(actions.slash, query, [...actions.commands, ...modeCommands(model.mode)])
 }
 
 /** A slower list/read response cannot roll back a live card or a terminal receipt. */

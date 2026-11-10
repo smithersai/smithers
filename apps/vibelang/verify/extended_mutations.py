@@ -5127,7 +5127,11 @@ cases.extend([
  ('src/web/modelDecision.vibe', 'merge-run-accept', 'mergeRunAt', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return [...current.slice(0, index), next, ...current.slice(index + 1)]', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return current', 'an accepted snapshot replaces'),
  ('src/web/modelDecision.vibe', 'merge-run-refuse', 'mergeRunAt', '  return current\n}\n\n/** The runs list', '  return [...current.slice(0, index), next, ...current.slice(index + 1)]\n}\n\n/** The runs list', 'a refused snapshot cannot roll back'),
  ('src/web/modelDecision.vibe', 'newest-first-order', 'newestFirst', 'b.started - a.started', 'a.started - b.started', 'newest start first'),
- ('src/web/modelDecision.vibe', 'newest-first-keeps-every-run', 'newestFirst', '[...runs].sort', 'runs.slice(0, 1).concat(runs.slice(0, runs.length - 1)).sort', 'every run survives the sort')])
+ ('src/web/modelDecision.vibe', 'newest-first-keeps-every-run', 'newestFirst', '[...runs].sort', 'runs.slice(0, 1).concat(runs.slice(0, runs.length - 1)).sort', 'every run survives the sort'),
+ ('src/web/modelDecision.vibe', 'slash-needs-open-menu', 'slashMatches', 'slash && query.startsWith("/")', 'query.startsWith("/")', 'a closed menu shows nothing'),
+ ('src/web/modelDecision.vibe', 'slash-needs-slash', 'slashMatches', 'slash && query.startsWith("/")', 'slash', 'a word without / shows nothing'),
+ ('src/web/modelDecision.vibe', 'slash-prefix-match', 'slashMatches', 'entry.command.startsWith(query)', 'entry.command.endsWith(query)', 'a command shows only when it starts with the word'),
+ ('src/web/modelDecision.vibe', 'slash-none-when-closed', 'slashMatches', ': []', ': commands', 'nothing shows outside the menu')])
 # Lane vl-proveall3, batch 2 (0018 "Third-lane batch 2").
 cases.extend([('src/history/pageDecision.vibe', *case) for case in [
 ('page-start-zero', 'pageStart', 'from > 0 ? from : 0', 'from', 'a page never starts before the first commit'),

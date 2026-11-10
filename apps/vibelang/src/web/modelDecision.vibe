@@ -579,3 +579,16 @@ export function newestFirst<R extends RunClock>(runs: ReadonlyArray<R>): Readonl
   return [...runs].sort((a, b) => b.started - a.started)
 }
 
+/** What the slash menu needs of a command: the text a draft's first word is matched against. */
+export interface SlashCommand { readonly command: string }
+
+/** The slash menu: while the draft has it open and its first word starts with `/`, exactly the commands whose text
+ * starts with that word; otherwise none. */
+//@ verify
+//@ ensures !(slash && query.startsWith("/")) ==> \result.length == 0
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].command.startsWith(query) && commands.includes(\result[i]))
+//@ ensures slash && query.startsWith("/") ==> forall(i, 0 <= i && i < commands.length && commands[i].command.startsWith(query) ==> \result.includes(commands[i]))
+export function slashMatches<C extends SlashCommand>(slash: boolean, query: string, commands: ReadonlyArray<C>): ReadonlyArray<C> {
+  return slash && query.startsWith("/") ? commands.filter((entry) => entry.command.startsWith(query)) : []
+}
+
