@@ -12,6 +12,7 @@ import { ChatModel, Spend } from "../worker/Reply.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { fakeClient, repo, seed, type Fake } from "./issues-node-fake.vibe"
 import { run, Finding, Int } from "./run.vibe"
+import { faultyStore } from "./faulty-store.ts"
 
 // The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
 const Clean = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[^\uD800-\uDFFF]*$/))
@@ -271,7 +272,7 @@ it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidenc
   return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
 }))
 
-const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft"] as const
+const ISSUE_SCENARIOS = ["validations", "reviews", "resume", "spec", "shapes", "served", "demoted", "refusals", "draft", "store", "running"] as const
 const SteeredIssues = Schema.Struct({
   pick: Int,
   title: Schema.Literals(["T", "A title", "Fix the parser"]),
@@ -287,7 +288,8 @@ const SERVED: Record<string, number> = { forbidden: 403, "sign-in": 401, connect
  */
 const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: number, title: typeof SteeredIssues.Type["title"]) => scoped(effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-  const storage = raw as unknown as Storage
+  const store = faultyStore(raw as unknown as Storage)
+  const storage = store.storage
   const fake = seed()
   // Issue 1 is already issue 3's child, so linking it there again writes nothing.
   fake.issues.find((issue) => issue.number === 1)!.parent_issue_url = `${repo.api}/repos/o/r/issues/3`
@@ -301,18 +303,19 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
   }
   const base: IssueRequest = { op: "read", number: 0, parent: 0, title, text: "body", example: "e", prior: "p", assignee: "", key: "" }
   let count = 0
-  const execute = (patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], drafts = false) => effect {
+  const execute = (patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], drafts = false, host?: IssueHost.Shape) => effect {
     count += 1
     try Ref.set(principal, [...as])
-    const program = executeIssues("issues-steered", storage, { ...base, key: `s${pick}-${count}`, ...patch } as IssueRequest, repo).pipe(
+    const issues = executeIssues("issues-steered", storage, { ...base, key: `s${pick}-${count}`, ...patch } as IssueRequest, repo)
+    const program = (host === undefined ? issues : Effect.provideService(issues, IssueHost, host)).pipe(
       Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
       Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag })),
     )
     return try Effect.result(drafts ? Effect.provide(program, writerLayer(true, true)) : program)
   }
   const reasonOf = (result: Result.Result<unknown, IssueFailure>) => result._tag === "Failure" ? result.failure.reason : "ok"
-  const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer]) => {
-    const result = try execute(patch, as)
+  const expect = effect (label: string, wanted: string, patch: Partial<IssueRequest>, as: ReadonlyArray<Person | undefined> = [maintainer], host?: IssueHost.Shape) => {
+    const result = try execute(patch, as, false, host)
     if (reasonOf(result) !== wanted) throw new Finding({ report: `${label} answered ${reasonOf(result)}, not ${wanted}` })
     return result
   }
@@ -473,6 +476,74 @@ const steeredIssuesScenario = (scenario: typeof ISSUE_SCENARIOS[number], pick: n
         if (failure.reason !== (reason === "key_conflict" ? "invalid" : reason)) throw new Finding({ report: `${reason} became ${failure.reason}` })
         if ((failure.code !== undefined) !== (reason === "unknown" || reason === "unavailable")) throw new Finding({ report: `${reason} carried the wrong code` })
       }
+      break
+    }
+    case "store": {
+      // The engine's store refuses to open: the typed failure is served as 503 unavailable, never as a defect.
+      store.fail(/./)
+      const broken = try execute({ op: "read" })
+      if (broken._tag !== "Failure" || reasons.includes(broken.failure.reason)) throw new Finding({ report: `a store that cannot open answered ${reasonOf(broken)}` })
+      const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/issues"), JSON.stringify({ ...base, key: `store-${pick}` })))
+      try Ref.set(principal, [maintainer])
+      const response = try Effect.provideService(serveIssues("issues-steered", storage, repo).pipe(
+        Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+      ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+      const served = try promise(() => HttpServerResponse.toWeb(response).text())
+      if (response.status !== 503 || served !== JSON.stringify({ reason: "unavailable" })) throw new Finding({ report: `a store that cannot open was served as ${response.status}` })
+      // A request opens the engine twice: to poll its key, then to run. Counted on a healthy request, the second open
+      // alone fails, and the flow's own failure is unavailable.
+      store.fail()
+      try expect("a read on a healed store", "ok", { op: "read" })
+      // The healed request migrated the store; the next one only checks its migrations.
+      const mark = store.log.length
+      try expect("a read on a migrated store", "ok", { op: "read" })
+      const opens = store.log.slice(mark).filter((query) => query.includes("flows_migrations")).length
+      if (opens === 0 || opens % 2 !== 0) throw new Finding({ report: `a request opened the store with ${opens} migration statements` })
+      store.fail(/flows_migrations/, opens / 2)
+      try expect("a read whose run cannot open the store", "unavailable", { op: "read" })
+      // The store refuses the run's row: a defect, as Objects.post's store failure is, and nothing is left behind.
+      const key = `store-${pick}`
+      store.fail(/INSERT INTO flows_runs/)
+      const died = try Effect.exit(execute({ op: "read", key }))
+      if (died._tag !== "Failure" || !Cause.hasDies(died.cause)) throw new Finding({ report: "a refused run row was not a defect" })
+      store.fail()
+      try expect("the same read after the store heals", "ok", { op: "read", key })
+      try expect("the same read again, joined", "ok", { op: "read", key })
+      // A failed write's join and recovery read the run's recorded payload and its steps; either read failing is
+      // unavailable, and the healed recovery still retries the write.
+      const write: Partial<IssueRequest> = { op: "new", key: `w-${key}` }
+      try expect("a new issue", "connect", write)
+      const reads: ReadonlyArray<readonly [string, RegExp, Partial<IssueRequest>]> = [
+        ["a join whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, write],
+        ["a recovery whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, { ...write, recovery: "r1" }],
+        ["a recovery whose steps cannot be read", /SELECT step_key_digest, attempt, state/, { ...write, recovery: "r1" }],
+      ]
+      for (const [label, pattern, patch] of reads) {
+        store.fail(pattern)
+        try expect(label, "unavailable", patch)
+      }
+      store.fail()
+      try expect("the healed recovery", "connect", { ...write, recovery: "r1" })
+      break
+    }
+    case "running": {
+      // A latch holds the write inside GitHub; the person's resume meanwhile sees it running, then completed.
+      const entered = try Deferred.make<void>()
+      const release = try Deferred.make<void>()
+      const created = { seq: 1, items: [], selected: 7 }
+      const host: IssueHost.Shape = {
+        perform: (request) => request.op !== "new" ? succeed({ seq: 1, items: [] }) : Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as(created)),
+      }
+      const key = `r${pick}`
+      const writing = try Effect.forkScoped(expect("a held new issue", "ok", { op: "new", key }, [maintainer], host))
+      try Deferred.await(entered)
+      const resume = { op: "read" as const, resumeOp: "new", resumeKey: key }
+      const during = try expect("resuming a held write", "ok", resume, [maintainer], host)
+      if (during._tag !== "Success" || during.success.saved?.status !== "running" || during.success.saved.request.key !== key) throw new Finding({ report: `a held write resumed as ${during._tag === "Success" ? during.success.saved?.status : reasonOf(during)}` })
+      try Deferred.succeed(release, undefined)
+      try Fiber.join(writing)
+      const after = try expect("resuming the released write", "ok", resume, [maintainer], host)
+      if (after._tag !== "Success" || after.success.saved?.status !== "completed" || after.success.saved.selected !== 7) throw new Finding({ report: `the released write resumed as ${after._tag === "Success" ? after.success.saved?.status : reasonOf(after)}` })
       break
     }
     case "draft": {

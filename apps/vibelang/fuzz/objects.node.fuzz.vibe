@@ -90,7 +90,7 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
   return true
 }))
 
-const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt"] as const
+const OBJECT_SCENARIOS = ["post-behind-tour", "seek-behind-reply", "tour-behind-reply", "wiki-pages", "routing", "unadmitted-receipt", "tour-seek-end"] as const
 const Scenario = Schema.Struct({ pick: Int, text: TextOrBoundary, admit: Schema.Boolean })
 const PAGES = ["index", "rulings", "nope", "", "decisions/0015-fuzzing"]
 
@@ -160,6 +160,19 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       const before = try sequencer.snapshot()
       try Objects.toursOf(sequencer).wake()
       if (!same(try sequencer.snapshot(), before)) throw new Finding({ report: "a hostless tour wake changed the conversation" })
+      break
+    }
+    case "tour-seek-end": {
+      // A seek past the last stop ends the walk without waiting out a reading hold: the tour finishes on the next alarm.
+      if ((try Objects.tour("conv", object, sequencer)) !== null) throw new Finding({ report: "a first tour was refused" })
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      const sought = try bounded("seek", Objects.controlTour("conv", object, sequencer, "seek", 11))
+      if (sought !== null) throw new Finding({ report: `a seek past the last stop answered ${sought}` })
+      try bounded("alarm", Objects.alarm("conv", object, sequencer, spend, model, history))
+      // Finished, not failed: the agent's tour entry is done without an error, and the walkthrough keeps its last step.
+      const after = try sequencer.snapshot()
+      const entry = after.entries.find((item) => item.author === "agent")
+      if (touring(after) !== "" || after.agent !== "idle" || entry?.done !== true || entry.error !== "" || after.walkthrough?.step !== 11) throw new Finding({ report: `the tour did not finish after its last stop (agent ${after.agent})` })
       break
     }
     case "unadmitted-receipt": {

@@ -14,6 +14,7 @@ import { executeWiki, githubWikiHost, serveWiki, wikiFailureOf, WikiAuthority, t
 import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, seed } from "./issues-node-fake.vibe"
 import { run, Finding } from "./run.vibe"
+import { faultyStore } from "./faulty-store.ts"
 
 const repo: WikiRepository = { owner: "o", name: "r", api: API, agent: "", root: "wiki" }
 const page = pages[0]!.id
@@ -141,7 +142,7 @@ it.live("wiki/served-failures", () => run("wiki/served-failures", Served, (input
   return true
 }))
 
-const WIKI_SCENARIOS = ["recover", "changed-payload", "missing-page", "lost", "default-host", "served-reasons", "refusals", "connected"] as const
+const WIKI_SCENARIOS = ["recover", "changed-payload", "missing-page", "lost", "default-host", "served-reasons", "refusals", "connected", "store"] as const
 const Steered = Schema.Struct({
   pick: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 })),
   text: Schema.Literals(["Edited text.", "Another edit.", "# Page\n\nNew words.\n"]),
@@ -156,7 +157,8 @@ const REFUSALS = ["connect", "install", "fork", "forbidden", "unavailable", "unk
  */
 const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, text: typeof Steered.Type["text"]) => scoped(effect {
   const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
-  const storage = raw as unknown as Storage
+  const store = faultyStore(raw as unknown as Storage)
+  const storage = store.storage
   const fake = seed()
   fake.files[`wiki/${page}.md`] = SOURCE
   const lost = try Ref.make(0)
@@ -251,6 +253,9 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
           Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag })),
         ))
       }
+      // A connected read with no delegate falls back to the public page.
+      const public_ = try as([connected], { op: "read", page, base: "", text: "", key: `public-${pick}` })
+      if (public_._tag !== "Success" || !public_.success.pages.some((entry) => entry.source.includes("repository text"))) throw new Finding({ report: `a connected read without a delegate answered ${reasonOf(public_)}` })
       const asked = try as([connected], proposal)
       if (reasonOf(asked) !== "connect") throw new Finding({ report: `a connected proposal without a delegate answered ${reasonOf(asked)}` })
       const kept = try promise(() => storage.get(`wiki/draft/7/${page}`))
@@ -261,6 +266,55 @@ const steeredScenario = (scenario: typeof WIKI_SCENARIOS[number], pick: number, 
       fake.contentStatus = 404
       const read = try as([connected], { op: "read", page, base: "", text: "", key: `read-${pick}` })
       if (reasonOf(read) !== "missing") throw new Finding({ report: `a connected read of a removed page answered ${reasonOf(read)}` })
+      break
+    }
+    case "store": {
+      // A read served whole: the page, the person's role, no caching.
+      const serve = effect (body: unknown) => {
+        const web = try HttpClientRequest.toWeb(HttpClientRequest.bodyText(HttpClientRequest.post("https://fuzz.invalid/api/wiki"), JSON.stringify(body)))
+        const response = try Effect.provideService(serveWiki("wiki-steered", storage, repo).pipe(
+          Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, fakeClient(fake)), Effect.provide(WebCrypto.layer),
+        ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+        return { status: response.status, text: try promise(() => HttpServerResponse.toWeb(response).text()) }
+      }
+      const read: WikiRequest = { op: "read", page, base: "", text: "", key: `store-${pick}` }
+      const served = try serve(read)
+      const answer = try Effect.try(() => JSON.parse(served.text) as { pages?: ReadonlyArray<{ source: string }>; role?: string })
+      if (served.status !== 200 || answer.role !== "maintainer" || answer.pages?.some((entry) => entry.source.includes("repository text")) !== true) throw new Finding({ report: `a served read answered ${served.status}` })
+      // Input the schema refuses, and a key it accepts but the execution id cannot use, are invalid and unwritten.
+      const garbage = try execute({ ...read, op: "bogus" } as unknown as WikiRequest)
+      if (garbage._tag !== "Failure" || garbage.failure.reason !== "invalid" || garbage.failure.unwritten !== true) throw new Finding({ report: `an unknown operation answered ${reasonOf(garbage)}` })
+      if (reasonOf(try execute({ ...read, key: "bad key!" })) !== "invalid") throw new Finding({ report: "a malformed key was accepted" })
+      // The engine's store refuses to open: a typed failure, served as 503 unavailable, never a defect.
+      store.fail(/./)
+      const broken = try execute({ ...read, key: `broken-${pick}` })
+      if (broken._tag !== "Failure" || ["unavailable", "invalid", "connect", "missing"].includes(broken.failure.reason)) throw new Finding({ report: `a store that cannot open answered ${reasonOf(broken)}` })
+      const refused = try serve({ ...read, key: `broken-${pick}` })
+      if (refused.status !== 503 || refused.text !== JSON.stringify({ reason: "unavailable" })) throw new Finding({ report: `a store that cannot open was served as ${refused.status}` })
+      // Healed and migrated, a request opens the engine twice; the second open alone fails, and that is unavailable.
+      store.fail()
+      try execute({ ...read, key: `healed-${pick}` })
+      const mark = store.log.length
+      try execute({ ...read, key: `migrated-${pick}` })
+      const opens = store.log.slice(mark).filter((query) => query.includes("flows_migrations")).length
+      if (opens === 0 || opens % 2 !== 0) throw new Finding({ report: `a request opened the store with ${opens} migration statements` })
+      store.fail(/flows_migrations/, opens / 2)
+      if (reasonOf(try execute({ ...read, key: `second-${pick}` })) !== "unavailable") throw new Finding({ report: "a run that cannot open the store was not unavailable" })
+      // A failed proposal's join and recovery read its recorded payload and steps; either failing is unavailable.
+      store.fail()
+      if (reasonOf(try execute(proposal)) !== "connect") throw new Finding({ report: "an unconnected proposal did not ask to connect" })
+      const reads: ReadonlyArray<readonly [string, RegExp, WikiRequest]> = [
+        ["a join whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, proposal],
+        ["a recovery whose payload cannot be read", /FROM flows_runs r WHERE r\.run_id/, { ...proposal, recovery: "r1" }],
+        ["a recovery whose steps cannot be read", /SELECT step_key_digest, attempt, state/, { ...proposal, recovery: "r1" }],
+      ]
+      for (const [label, pattern, request] of reads) {
+        store.fail(pattern)
+        const failed = try execute(request)
+        if (reasonOf(failed) !== "unavailable") throw new Finding({ report: `${label} answered ${reasonOf(failed)}` })
+      }
+      store.fail()
+      if (reasonOf(try execute({ ...proposal, recovery: "r1" })) !== "connect") throw new Finding({ report: "the healed recovery did not retry the proposal" })
       break
     }
   }

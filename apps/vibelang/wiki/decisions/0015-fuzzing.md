@@ -229,19 +229,35 @@ first step. Against the same 5 s budget before them: Wiki 137/172 and 181/234, I
 Not reached, with the reason; none is excluded:
 
 - The person's own GitHub writes need a `GitHubDelegate` (decision 0165, skipped): `Wiki` 45-46, 103-160 and 171,
-  `Issues` 142-159 and the steps after each first write (171-175, 184-194, 211-217, 228, 231, 242-243), and the
-  `selected` of a completed creation.
-- An engine or alarm failure that is not a typed refusal, which needs a failing engine store: `ActionRuns` 104-107
-  and 122, `Wiki` 163, 194 and 249, `Issues` 266 and 376. `engine.retryFrom === undefined` (`Wiki` 237, `Issues`
-  345) and a source run without a perform step (`Wiki` 244, `Issues` 352): the Cloudflare runtime always supplies both.
+  `Issues` 142-159 and the steps after each first write (171-175, 184-194, 211-217, 228, 231, 242-243).
+- A store fault reaches every typed engine failure (below). A store *write* that fails is a defect by engine-store's
+  contract (`RunDriver.ensureCreatedRun` dies on `persistence_failed`; a journal read in `retryFrom` dies on
+  `JournalError`), as `Objects.post` already states for its own store. So `retryFrom`'s typed refusal (`Issues`
+  353, `Wiki` 245) and an action whose reply execution completes as a failure (`ActionRuns` 104-107 and 122, which
+  needs a defect inside a reply step, for example a history tool the scripted model calls) stay unreached.
+  `engine.retryFrom === undefined` (`Issues` 345, `Wiki` 237) and a source run without a perform step (`Issues`
+  352, `Wiki` 244): the Cloudflare runtime always supplies both.
 - Invariant guards no input reaches: `Issues` 50 (`matchAll` always sets `index`), 96 (`verifiedVip` already proved
   the review number), 311 (`?? ""` after a receipt is found by `approvedBy`), 369 (a run's own payload names its
   flow, operation and key).
-- A resume while its write is still running (`Issues` 371, 373) needs two requests interleaved in one object.
 - `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
   with a stored request, and nothing deletes it.
-- `Objects` 125: `finish` runs only after the last stop's reading hold elapses in real time, longer than the budget.
-  `Objects` 148 and 150: a tour control needs a walkthrough while the object holds no intent, or a reply's.
+- `Objects` 148 and 150: a tour control needs a walkthrough while the object holds no intent, or a reply's; 155: the
+  tour's poll failing during a control's wake. A control is accepted only while the tour's own execution holds the
+  object.
+
+Reached this session (vl-fuzz2, 2026-11-10), each by a steered scenario that runs every execution:
+
+| Scenario | Fault or control | Reaches |
+| --- | --- | --- |
+| `issues/steered-host` `store` | `fuzz/faulty-store.ts`: SQL matching a pattern throws; a skip count, calibrated on a healthy request, fails only the run's own open | `Issues` 266 (503), 338, 347, 350, 376; a refused run row is a defect and leaves no run |
+| `issues/steered-host` `running` | an `IssueHost` held by a `Deferred` latch | `Issues` 371, 373 (`running`, then `completed` with `selected`) |
+| `wiki/steered-host` `store` | the same store; a served read; an unknown operation and a malformed key | `Wiki` 194, 199, 204, 205, 230, 239, 242, 249, 250 |
+| `wiki/steered-host` `connected` | a connected read with no delegate | `Wiki` 169 (public page) |
+| `objects/steered-host` `tour-seek-end` | a seek to step 11 | `Objects` 125 (`finish`) with no reading-hold wait |
+
+The fuzz gate's Chromium merge now credits by source start, and the browser build is unminified (decision 0016,
+"Chromium merge").
 
 Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two workers, 19,491,917 executions in 13 receipts
 (`objects/conversation-host` hung and wrote none). Two targets failed and were fixed or recorded: `actions/run-answers` (oracle: a lone surrogate post is `invalid` by
