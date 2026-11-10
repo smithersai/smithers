@@ -7,7 +7,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { z } from "incur"
 import type * as Environment from "../Environment.ts"
-import * as ControlDatabase from "../internal/ControlDatabase.ts"
+import * as ControlDatabase from "../internal/ControlDatabase.vibe"
 import * as NodeControl from "../NodeControl.ts"
 import * as $platform from "./Store.platform.ts"
 

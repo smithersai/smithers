@@ -71,7 +71,7 @@ if (import.meta.main) {
       if (!("Bun" in globalThis)) throw new Error("The staged invocation host requires Bun")
       registerPinnedLibraries(root, stateRoot)
       const [{ platform }, runtime] = await Promise.all([
-        import("../../../packages/smithers/src/internal/BunControl.ts"),
+        import("../../../packages/smithers/src/internal/BunControl.vibe"),
         import("@effect/platform-bun/BunRuntime")
       ])
       runtime.runMain(

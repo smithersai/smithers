@@ -50,7 +50,7 @@ const load = async (): Promise<Entrypoint> => {
   // Each fresh offline host explicitly chooses its completion judge.
   const [ScriptedJudge, { platform }] = await Promise.all([
     import("@smthrs/agent/ScriptedJudge"),
-    import("../src/internal/NodeControlHost.ts")
+    import("../src/internal/NodeControlHost.vibe")
   ])
   Object.assign(platform, { evaluator: ScriptedJudge.layer })
   // These assertions exercise the Effect runtime teardown owned by the

@@ -42,7 +42,7 @@ import * as CliError from "./CliError.vibe"
 
 import * as Environment_ from "./Environment.ts"
 
-import { layerEgressHttpClient, native, platform as nodePlatform } from "./internal/NodeControlHost.ts"
+import { layerEgressHttpClient, native, platform as nodePlatform } from "./internal/NodeControlHost.vibe"
 
 import {
   type EngineDurable,
@@ -51,13 +51,13 @@ import {
   type Platform as NativePlatform
 } from "./internal/NativeControl.ts"
 
-import * as CommandStatus from "./internal/CommandStatus.ts"
+import * as CommandStatus from "./internal/CommandStatus.vibe"
 import { errorCode } from "./internal/ErrorCode.ts"
 import * as Failure from "./internal/Failure.ts"
 
 import { Session } from "./internal/backend/Session.ts"
 import * as NodeWebSocket from "./internal/NodeWebSocket.ts"
-import * as RegistryWorkspace from "./internal/RegistryWorkspace.ts"
+import * as RegistryWorkspace from "./internal/RegistryWorkspace.vibe"
 import * as SupervisorMemory from "./internal/SupervisorMemory.ts"
 import * as Output from "./Output.ts"
 import * as Project from "./Project.ts"
@@ -300,7 +300,7 @@ export {
   layerEgressHttpClient,
   layerRebuildableRequestExecutor,
   rebuildableTransport
-} from "./internal/NodeControlHost.ts"
+} from "./internal/NodeControlHost.vibe"
 
 /**
  * The service adapters a native control composition is built from: the host

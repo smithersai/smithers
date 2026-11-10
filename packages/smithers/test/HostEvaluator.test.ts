@@ -11,7 +11,7 @@ import { join } from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
 import * as NativeControl from "../src/internal/NativeControl.ts"
 import { layerSeatEvaluator } from "../src/internal/NativeEquipment.ts"
-import { platform } from "../src/internal/NodeControlHost.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 /** Claude Code, scripted: every session the SDK is asked to start, and the text each one answers. */

@@ -41,8 +41,8 @@ const helper = "export const suffix = \"\"\n"
 const phase = async (root: string, stateRoot: string, restart: boolean, source = declaration, pin?: string) => {
   registerPinnedLibraries(root, stateRoot)
   const { platform } = process.versions.bun
-    ? await import("../../../packages/smithers/src/internal/BunControl.ts")
-    : await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+    ? await import("../../../packages/smithers/src/internal/BunControl.vibe")
+    : await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
   const credential = "local-invoke-fixture", digest = pin ?? createHash("sha256").update(source).digest("hex")
   let intent: any, runId = ""
   if (restart) {

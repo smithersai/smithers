@@ -377,7 +377,7 @@ export const serve = async (
     // coding registration above are the same on Bun and Node.
     if ("Bun" in globalThis) {
       const [{ platform }, runtime, http] = await Promise.all([
-        import("../../../packages/smithers/src/internal/BunControl.ts"),
+        import("../../../packages/smithers/src/internal/BunControl.vibe"),
         import("@effect/platform-bun/BunRuntime"),
         import("@effect/platform-bun/BunHttpClient")
       ])
@@ -389,7 +389,7 @@ export const serve = async (
       // one, so the client handed to landing and the remote here and the client
       // the judge dials through cannot drift apart.
       const [{ platform }, runtime, egress] = await Promise.all([
-        import("../../../packages/smithers/src/internal/NodeControlHost.ts"),
+        import("../../../packages/smithers/src/internal/NodeControlHost.vibe"),
         import("@effect/platform-node/NodeRuntime"),
         import("@smthrs/platform-node/EgressHttpClient")
       ])

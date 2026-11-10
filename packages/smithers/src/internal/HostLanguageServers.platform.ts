@@ -1,0 +1,62 @@
+/**
+ * Host access for the adjacent VibeLang module.
+ *
+ * @since 1.0.0
+ */
+
+export {
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  accessSync,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  constants,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  realpathSync
+} from "node:fs"
+export {
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  createRequire
+} from "node:module"
+export {
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  delimiter,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  isAbsolute,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  join,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  relative,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  resolve,
+  /**
+   * @private
+   * @since 1.0.0
+   */
+  sep
+} from "node:path"

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
 import * as NativeControl from "../src/internal/NativeControl.ts"
-import { platform } from "../src/internal/NodeControlHost.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
 
 const project = async () => {
   const root = await mkdtemp(join(tmpdir(), "control-materialization-"))

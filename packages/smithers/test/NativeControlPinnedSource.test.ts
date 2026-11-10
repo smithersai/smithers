@@ -11,8 +11,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "vitest"
 import * as NativeControl from "../src/internal/NativeControl.ts"
-import { platform } from "../src/internal/NodeControlHost.ts"
-import * as SourceRevision from "../src/internal/SourceRevision.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
+import * as SourceRevision from "../src/internal/SourceRevision.vibe"
 
 const NodeControl = NativeControl.make(platform)
 

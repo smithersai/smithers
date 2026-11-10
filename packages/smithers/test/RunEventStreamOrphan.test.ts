@@ -14,7 +14,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
 import * as RunEventStream from "../src/cli/RunEventStream.vibe"
-import * as ControlDatabase from "../src/internal/ControlDatabase.ts"
+import * as ControlDatabase from "../src/internal/ControlDatabase.vibe"
 import { childEnvironment } from "./support/node-child.ts"
 
 interface CommittedRun {

@@ -12,7 +12,7 @@ const [{ Effect }, MemoryStore, SupervisorMemory, { platform }] = await Promise.
   import("effect"),
   import("@smthrs/memory/MemoryStore"),
   import("../../src/internal/SupervisorMemory.ts"),
-  import("../../src/internal/NodeControlHost.ts")
+  import("../../src/internal/NodeControlHost.vibe")
 ])
 const [file, label, count] = process.argv.slice(2)
 if (file === undefined || label === undefined || count === undefined) throw new Error("usage: <file> <label> <count>")

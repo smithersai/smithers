@@ -1,7 +1,7 @@
 import { systemFlows } from "./system-flows.ts"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Effect, Layer } from "effect"
-import { platform } from "../../../../packages/smithers/src/internal/NodeControlHost.ts"
+import { platform } from "../../../../packages/smithers/src/internal/NodeControlHost.vibe"
 import * as Host from "../../coding/host.ts"
 
 // Launched with the rendered workspace boot profile by the PostgreSQL-backed

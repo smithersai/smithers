@@ -5,6 +5,7 @@
  */
 
 import { Context, Effect } from "effect"
+import { setExitCode as setExitCode$platform } from "./CommandStatus.platform.ts"
 
 /**
  * Sink for a command's process-style exit status.
@@ -13,7 +14,7 @@ import { Context, Effect } from "effect"
  */
 export const CommandStatus = Context.Reference<(code: number) => void>("/cli/CommandStatus", {
   defaultValue: () => (code) => {
-    process.exitCode = code
+    setExitCode$platform(code)
   }
 })
 

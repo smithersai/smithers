@@ -10,7 +10,7 @@
  * @since 1.0.0
  */
 
-import type { native } from "./internal/BunControl.ts"
+import type { native } from "./internal/BunControl.vibe"
 
 /**
  * Provides the Control service over Bun adapters for one project root.
@@ -24,7 +24,7 @@ import type { native } from "./internal/BunControl.ts"
  */
 export const layerControl: typeof native.layerControl = (...args) =>
   Layer.unwrap(
-    Effect.promise(() => import("./internal/BunControl.ts"))
+    Effect.promise(() => import("./internal/BunControl.vibe"))
       |> Effect.map(%, ({ native }) => native.layerControl(...args))
   )
 
@@ -37,6 +37,6 @@ export const layerControl: typeof native.layerControl = (...args) =>
  */
 export const layerRegistry: typeof native.layerRegistry = (...args) =>
   Layer.unwrap(
-    Effect.promise(() => import("./internal/BunControl.ts"))
+    Effect.promise(() => import("./internal/BunControl.vibe"))
       |> Effect.map(%, ({ native }) => native.layerRegistry(...args))
   )

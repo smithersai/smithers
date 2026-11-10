@@ -22,7 +22,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as HealthHost from "../src/internal/HealthHost.ts"
+import * as HealthHost from "../src/internal/HealthHost.vibe"
 
 const testLayer = Layer.mergeAll(TestControl.layer(), FlowEngine.layerMemory, NodeCrypto.layer)
 

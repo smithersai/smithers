@@ -24,7 +24,7 @@ import { Effect } from "effect"
 import * as Platform from "./Gc.platform.ts"
 import * as CliError from "./CliError.vibe"
 import * as DatabaseLocation from "./internal/DatabaseLocation.ts"
-import * as ExecutionSnapshotRoots from "./internal/ExecutionSnapshotRoots.ts"
+import * as ExecutionSnapshotRoots from "./internal/ExecutionSnapshotRoots.vibe"
 import * as NodeControl from "./NodeControl.ts"
 
 /**

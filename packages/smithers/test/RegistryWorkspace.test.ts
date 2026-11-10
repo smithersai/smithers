@@ -3,7 +3,7 @@ import { Registry } from "@smthrs/registry"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as RegistryWorkspace from "../src/internal/RegistryWorkspace.ts"
+import * as RegistryWorkspace from "../src/internal/RegistryWorkspace.vibe"
 
 const descriptor = (path: string, markdown = false) =>
   new Descriptor.FlowDescriptor({

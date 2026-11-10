@@ -15,7 +15,7 @@ const implementation = vi.hoisted(() => ({
   layerRegistry: vi.fn()
 }))
 
-vi.mock("../src/internal/BunControl.ts", () => {
+vi.mock("../src/internal/BunControl.vibe", () => {
   implementation.loaded()
   return { native: implementation }
 })

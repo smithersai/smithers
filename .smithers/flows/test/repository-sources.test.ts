@@ -17,7 +17,7 @@ test("repository evidence excludes retained evals and their symlink aliases whil
   await symlink(internal, join(root, "answers.json"))
   await writeFile(join(root, "source.mjs"), "export const greeting = 'hello';")
   await writeFile(join(root, ".smithers/flows/flow.ts"), "// Ordinary authored flow")
-  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
   const captured = await Effect.runPromise(
     Effect.gen(function*() {
       const source = yield* repositorySourceReader(root, yield* FileSystem.FileSystem)

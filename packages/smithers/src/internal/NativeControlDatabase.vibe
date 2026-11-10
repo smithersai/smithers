@@ -8,6 +8,7 @@ import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as CliError from "../CliError.vibe"
 import * as Migrations from "./ControlDatabaseMigrations.vibe"
+import { platform as platform$platform } from "./NativeControlDatabase.platform.ts"
 
 /** Uses injected filesystem and path services, and opens only the supplied SQL adapter.
  * @since 1.0.0
@@ -18,23 +19,23 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
   // memoizes its factory effect; its generated dependency graph can otherwise
   // acquire a distinct client for the journal, writer and runtime.
   const sql = Layer.suspend(() =>
-    Layer.unwrap(Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
+    Layer.unwrap(effect {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
       const directory = path.dirname(file)
-      yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+      try fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
       return NodeRuntime.publishFreshDatabase(file, database, Migrations.layer)
-    }))
+    })
   )
   return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), sql)).pipe(
     Layer.tap(() =>
-      Effect.gen(function*() {
-        if (process.platform === "win32") return
-        const fs = yield* FileSystem.FileSystem
+      effect {
+        if (platform$platform() === "win32") return
+        const fs = try FileSystem.FileSystem
         for (const filename of [file, `${file}-wal`, `${file}-shm`]) {
-          if (yield* fs.exists(filename)) yield* fs.chmod(filename, 0o600)
+          if (try fs.exists(filename)) try fs.chmod(filename, 0o600)
         }
-      })
+      }
     )
   )
 }
@@ -46,18 +47,18 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
  */
 export const observe = (database: (filename: string) => Layer.Layer<SqlClient>) => (file: string) =>
   Layer.provideMerge(DurableWriter.layer(), database(file)).pipe(Layer.tap((context) =>
-    Effect.gen(function*() {
+    (effect {
       const sql = Context.get(context, SqlClient)
-      const tables = yield* sql.onDialectOrElse({
+      const tables = try sql.onDialectOrElse({
         pg: () => sql<{ readonly found: boolean }>`SELECT to_regclass('flows_migrations') IS NOT NULL AS found`,
         orElse: () =>
           sql<
             { readonly found: number }
           >`SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'flows_migrations'`
       })
-      if (!tables[0]?.found) return yield* Effect.die(StoreInitializing.new())
-      const applied = yield* sql`SELECT migration_id FROM flows_migrations LIMIT 1`
-      if (applied.length === 0) return yield* Effect.die(StoreInitializing.new())
+      if (!tables[0]?.found) return try Effect.die(StoreInitializing.new())
+      const applied = try sql`SELECT migration_id FROM flows_migrations LIMIT 1`
+      if (applied.length === 0) return try Effect.die(StoreInitializing.new())
     }).pipe(Effect.orDie)
   ))
 

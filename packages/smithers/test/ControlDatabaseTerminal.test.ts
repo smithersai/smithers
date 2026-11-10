@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as NodeControlHost from "../src/internal/NodeControlHost.ts"
+import * as NodeControlHost from "../src/internal/NodeControlHost.vibe"
 
 const events = ["end", "data", "error", "close", "keypress"] as const
 const listeners = () => events.map((event) => process.stdin.rawListeners(event))

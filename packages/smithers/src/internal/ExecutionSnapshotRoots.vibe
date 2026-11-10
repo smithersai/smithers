@@ -6,7 +6,7 @@
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { existsSync } from "node:fs"
+import { exists as exists$platform } from "./ExecutionSnapshotRoots.platform.ts"
 
 class SnapshotRootError extends Schema.TaggedError<SnapshotRootError>()(
   "@smthrs/cli/SnapshotRootError",
@@ -30,23 +30,23 @@ interface Edge {
  * @private
  */
 export const live = (files: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
+  effect {
     const rows: Array<Row> = []
     const edges: Array<Edge> = []
     for (const filename of files) {
-      if (!existsSync(filename)) continue
-      const found = yield* Effect.gen(function*() {
-        const sql = yield* SqlClient
-        const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master WHERE type = 'table'`
+      if (!exists$platform(filename)) continue
+      const found = try (effect {
+        const sql = try SqlClient
+        const tables = try sql<{ readonly name: string }>`SELECT name FROM sqlite_master WHERE type = 'table'`
         if (!tables.some((table) => table.name === "flows_runs")) return { rows: [], edges: [] }
-        const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(flows_runs)`
+        const columns = try sql<{ readonly name: string }>`PRAGMA table_info(flows_runs)`
         const state = columns.some((column) => column.name === "state_json")
           ? sql.literal("state_json") :
           sql.literal("NULL")
-        const runs = yield* sql<Row>`SELECT run_id AS "runId", status, parent_run_id AS "parentRunId",
+        const runs = try sql<Row>`SELECT run_id AS "runId", status, parent_run_id AS "parentRunId",
         ${state} AS "stateJson" FROM flows_runs`
         const parents = tables.some((table) => table.name === "flows_run_parents")
-          ? yield* sql<Edge>`SELECT child_id AS "childId", parent_id AS "parentId" FROM flows_run_parents`
+          ? try sql<Edge>`SELECT child_id AS "childId", parent_id AS "parentId" FROM flows_run_parents`
           : []
         return { rows: runs, edges: parents }
       }).pipe(Effect.provide(NodeDatabase.layer({ filename })))
@@ -73,19 +73,19 @@ export const live = (files: ReadonlyArray<string>) =>
     const digests = new Set<string>()
     for (const row of rows) {
       if (!live.has(row.runId) || row.stateJson === null) continue
-      const state: unknown = yield* Effect.try({
+      const state: unknown = try Effect.try({
         try: () => JSON.parse(row.stateJson!),
         catch: () => new SnapshotRootError({ message: "Invalid live execution snapshot state" })
       })
       if (typeof state !== "object" || state === null || Array.isArray(state)) {
-        return yield* Effect.fail(new SnapshotRootError({ message: "Invalid live execution snapshot state" }))
+        throw new SnapshotRootError({ message: "Invalid live execution snapshot state" })
       }
       const { executionDigest } = state as { readonly executionDigest?: unknown }
       if (executionDigest === undefined) continue
       if (typeof executionDigest !== "string" || !/^[a-f0-9]{64}$/.test(executionDigest)) {
-        return yield* Effect.fail(new SnapshotRootError({ message: "Invalid live execution snapshot identity" }))
+        throw new SnapshotRootError({ message: "Invalid live execution snapshot identity" })
       }
       digests.add(executionDigest)
     }
     return { runIds: [...live], digests: [...digests] }
-  })
+  }

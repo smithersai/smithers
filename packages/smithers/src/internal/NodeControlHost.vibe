@@ -14,9 +14,10 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import { NodeRuntime as NodeFlowsRuntime } from "@smthrs/platform-node"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Effect, Layer, type Scope } from "effect"
-import * as ControlDatabase from "./ControlDatabase.ts"
+import * as ControlDatabase from "./ControlDatabase.vibe"
 import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
+import { environment as environment$platform } from "./NodeControlHost.platform.ts"
 
 /**
  * Respect the supplied environment's egress proxy without changing unproxied Node hosts.
@@ -98,7 +99,7 @@ export const layerRebuildableRequestExecutor = (
 
 /** The production model transport, replaceable only at the composition boundary. */
 const layerRequestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = layerRebuildableRequestExecutor(
-  environmentDispatcher(process.env)
+  environmentDispatcher(environment$platform())
 )
 
 /** Selects existing Node adapters for the shared native composition.

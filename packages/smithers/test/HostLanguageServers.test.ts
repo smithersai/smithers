@@ -20,7 +20,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import * as HostLanguageServers from "../src/internal/HostLanguageServers.ts"
+import * as HostLanguageServers from "../src/internal/HostLanguageServers.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 /**

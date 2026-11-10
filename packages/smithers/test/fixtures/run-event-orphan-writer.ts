@@ -6,7 +6,7 @@ import { RunStore } from "@smthrs/run-store"
 import { Clock, Context, Effect, Layer } from "effect"
 import { hostname } from "node:os"
 import { join } from "node:path"
-import * as ControlDatabase from "../../src/internal/ControlDatabase.ts"
+import * as ControlDatabase from "../../src/internal/ControlDatabase.vibe"
 
 const directory = process.argv[2]!
 const owner = { hostId: hostname(), pid: process.pid, nonce: "orphaned-control-writer" }

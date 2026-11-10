@@ -59,7 +59,7 @@ if (process.argv[2] === '--local') {
 `,
       { mode: 0o700 }
     )
-    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
     let loaded = 0
     const run = () =>
       Effect.runPromise(
@@ -129,7 +129,7 @@ printf '{"commitId":"${mode === "wrong-commit" ? "b".repeat(40) : "a".repeat(40)
 `,
       { mode: 0o700 }
     )
-    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
     let imports = 0
     const result = await Effect.runPromise(
       Effect.gen(function*() {
@@ -178,7 +178,7 @@ for (
     await writeFile(join(binaries, manager!), "#!/bin/sh\nprintf \"%s\\n%s\" \"$PWD\" \"$*\" > installed\n", {
       mode: 0o700
     })
-    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+    const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
     const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
     await Effect.runPromise(
       Effect.gen(function*() {
@@ -200,7 +200,7 @@ test("a failed pinned dependency install refuses before repository loading", asy
   t.after(() => rm(temporary, { recursive: true, force: true }))
   await writeFile(join(temporary, "pnpm-lock.yaml"), "pinned lockfile")
   await writeFile(join(temporary, "pnpm"), "#!/bin/sh\nexit 1\n", { mode: 0o700 })
-  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
   const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
   let imports = 0
   const result = await Effect.runPromise(
@@ -226,7 +226,7 @@ test("the repository host admits only its pinned TODO descriptor before loading 
     join(temporary, ".smithers", "flows", "todo", "flow.mdx"),
     "---\ndescription: Pinned TODO\n---\nApproved TODO body"
   )
-  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
   const Registry = await import("@smthrs/registry/Registry")
   const Discovery = await import("@smthrs/registry/Discovery")
   const Descriptor = await import("@smthrs/registry/Descriptor")
@@ -279,7 +279,7 @@ test("an installer cannot replace the approved lockfile before flow imports", as
   t.after(() => rm(temporary, { recursive: true, force: true }))
   await writeFile(join(temporary, "pnpm-lock.yaml"), "approved lockfile")
   await writeFile(join(temporary, "pnpm"), "#!/bin/sh\nprintf changed > pnpm-lock.yaml\n", { mode: 0o700 })
-  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
+  const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.vibe")
   const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
   let imports = 0
   const result = await Effect.runPromise(

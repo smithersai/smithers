@@ -22,7 +22,7 @@ if (isMainThread && !compiler) {
   installEffectResolution()
   const [ScriptedJudge, { platform }] = await Promise.all([
     import("@smthrs/agent/ScriptedJudge"),
-    import("../../src/internal/NodeControlHost.ts")
+    import("../../src/internal/NodeControlHost.vibe")
   ])
   Object.assign(platform, { evaluator: ScriptedJudge.layer })
 

@@ -6,8 +6,7 @@ import { Registry } from "@smthrs/registry"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { RegistryError } from "@smthrs/registry/RegistryError"
 import { Effect, Layer, Option } from "effect"
-import { isAbsolute, relative, resolve } from "node:path"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { fileURLToPath, isAbsolute, pathToFileURL, relative, resolve } from "./RegistryWorkspace.platform.ts"
 
 /** Private composition: relocation changes loading, never executable identity.
  * @since 1.0.0
@@ -59,8 +58,8 @@ export const layer = (
   }
   return Layer.effect(
     Registry.Registry,
-    Effect.gen(function*() {
-      const physical = yield* Registry.Registry
+    effect {
+      const physical = try Registry.Registry
       return Registry.Registry.of({
         ...physical,
         list: () => physical.list().pipe(Effect.map((entries) => entries.map(owned))),
@@ -68,22 +67,22 @@ export const layer = (
         get: (name) => physical.get(name).pipe(Effect.map(owned)),
         getOption: (name) => physical.getOption(name).pipe(Effect.map(Option.map(owned))),
         loadBody: (name, expected) =>
-          Effect.gen(function*() {
-            const entry = yield* physical.get(name)
+          effect {
+            const entry = try physical.get(name)
             // The underlying registry enforces the same reviewed digest, over
             // its physical locators. A wrong identity must still be refused there.
             const digest = Descriptor.executionDigest(project(entry))
             if (expected !== undefined && expected !== digest) {
-              return yield* new RegistryError({
+              throw new RegistryError({
                 code: "execution_changed",
                 method: "loadBody",
                 path: project(entry).body.path,
                 message: `Flow "${name}" does not match its approved project identity`
               })
             }
-            return yield* physical.loadBody(name, Descriptor.executionDigest(entry))
-          })
+            return try physical.loadBody(name, Descriptor.executionDigest(entry))
+          }
       })
-    })
+    }
   ).pipe(Layer.provide(registry))
 }

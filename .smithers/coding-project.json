@@ -375,8 +375,8 @@
       "document": ".smithers/wiki/pages/native-control.md",
       "inputs": [
         "packages/smithers/NATIVE-CONTROL.md",
-        "packages/smithers/src/internal/BunControl.ts",
-        "packages/smithers/src/internal/NodeControlHost.ts",
+        "packages/smithers/src/internal/BunControl.vibe",
+        "packages/smithers/src/internal/NodeControlHost.vibe",
         "packages/smithers/src/internal/ModuleAdmission.vibe"
       ],
       "related": [

@@ -17,7 +17,7 @@ import * as RunActivity from "../cli/RunActivity.vibe"
 import * as RunProgress from "../cli/RunProgress.ts"
 import * as CliError from "../CliError.vibe"
 import * as ExecutorOwnership from "../ExecutorOwnership.vibe"
-import * as CommandStatus from "../internal/CommandStatus.ts"
+import * as CommandStatus from "../internal/CommandStatus.vibe"
 import { causeLine } from "../internal/Failure.ts"
 
 /**

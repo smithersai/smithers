@@ -13,7 +13,7 @@ import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
 import * as Application from "../src/Application.vibe"
 import * as NativeControl from "../src/internal/NativeControl.ts"
-import { platform } from "../src/internal/NodeControlHost.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
 
 /** The tool names the assembled host offers its agent. */
 const offeredTools = async (platformOptions: Partial<NativeControl.Platform>) => {

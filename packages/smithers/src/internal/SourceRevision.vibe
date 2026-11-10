@@ -30,6 +30,7 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Effect, Option, Stream } from "effect"
 import * as CliError from "../CliError.vibe"
+import { environment as environment$platform } from "./SourceRevision.platform.ts"
 
 /**
  * Runs one read-only command in `cwd` and answers its stdout, or nothing.
@@ -72,17 +73,17 @@ export const objectId = (answer: string | undefined): string | undefined => {
  * @category constructors
  */
 export const spawnReader: Reader = (file, args, cwd) =>
-  Effect.gen(function*() {
-    const child = yield* ScopedProcess.spawn({
+  (effect {
+    const child = try ScopedProcess.spawn({
       command: file,
       args,
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+      env: { ...environment$platform(), GIT_TERMINAL_PROMPT: "0" }
     })
     const decoder = new TextDecoder()
     let bytes = 0
     let text = ""
-    const [status] = yield* Effect.all([
+    const [status] = try Effect.all([
       ScopedProcess.status(child),
       Stream.runForEach(child.stdout, (chunk) =>
         Effect.suspend(() => {
@@ -117,13 +118,13 @@ export const spawnReader: Reader = (file, args, cwd) =>
  * @category accessors
  */
 export const read = (root: string, reader: Reader = spawnReader): Effect.Effect<string | undefined> =>
-  Effect.gen(function*() {
+  effect {
     /*
      * `jj log -r @` snapshots the working copy first, so the id it prints
      * names the tree as it is on disk right now, uncommitted work included,
      * and that id keeps resolving after the working copy has moved on.
      */
-    const jj = objectId(yield* reader("jj", ["log", "-r", "@", "--no-graph", "--color=never", "-T", "commit_id"], root))
+    const jj = objectId(try reader("jj", ["log", "-r", "@", "--no-graph", "--color=never", "-T", "commit_id"], root))
     if (jj !== undefined) return jj
     /*
      * git has no name for work that is not committed. `--porcelain` lists
@@ -134,7 +135,7 @@ export const read = (root: string, reader: Reader = spawnReader): Effect.Effect<
      * read never takes `.git/index.lock` to write the refreshed index back,
      * which would fail every git and jj command in the checkout meanwhile.
      */
-    const status = yield* reader("git", ["--no-optional-locks", "status", "--porcelain"], root)
+    const status = try reader("git", ["--no-optional-locks", "status", "--porcelain"], root)
     if (status === undefined || status.trim() !== "") return undefined
-    return objectId(yield* reader("git", ["rev-parse", "HEAD"], root))
-  })
+    return objectId(try reader("git", ["rev-parse", "HEAD"], root))
+  }

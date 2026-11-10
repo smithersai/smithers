@@ -36,7 +36,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as CliError from "../src/CliError.vibe"
-import { platform } from "../src/internal/NodeControlHost.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
 import * as SupervisorMemory from "../src/internal/SupervisorMemory.ts"
 
 const roots: Array<string> = []

@@ -71,7 +71,7 @@ let host = false;
 const record = () => writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ host,
   resolver: Boolean(globalThis[Symbol.for("smthrs/effect-resolution-installed")]) }));
 registerHooks({ load(url, context, next) {
-  if (url.includes("/src/internal/NodeControlHost.ts")) { host = true; record(); }
+  if (url.includes("/src/internal/NodeControlHost.vibe")) { host = true; record(); }
   return next(url, context);
 } });
 record();

@@ -6,9 +6,9 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as ControlDatabase from "../src/internal/ControlDatabase.ts"
+import * as ControlDatabase from "../src/internal/ControlDatabase.vibe"
 import * as NativeControl from "../src/internal/NativeControl.ts"
-import { platform } from "../src/internal/NodeControlHost.ts"
+import { platform } from "../src/internal/NodeControlHost.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 it("constructs reusable hosts without evaluating approval configuration", async () => {

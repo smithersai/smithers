@@ -16,9 +16,18 @@ import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { NodeLanguageServer } from "@smthrs/platform-node"
 import { LanguageServer } from "@smthrs/std"
 import { Context, Effect, type Scope } from "effect"
-import { accessSync, constants, realpathSync } from "node:fs"
-import { createRequire } from "node:module"
-import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path"
+import {
+  accessSync,
+  constants,
+  createRequire,
+  delimiter,
+  isAbsolute,
+  join,
+  realpathSync,
+  relative,
+  resolve,
+  sep
+} from "./HostLanguageServers.platform.ts"
 
 /**
  * The files typescript-language-server answers for.

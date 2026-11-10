@@ -26,8 +26,8 @@ const bounded = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
     })
   )
 const platform = runtime === "bun"
-  ? (await import("../../src/internal/BunControl.ts")).platform
-  : (await import("../../src/internal/NodeControlHost.ts")).platform
+  ? (await import("../../src/internal/BunControl.vibe")).platform
+  : (await import("../../src/internal/NodeControlHost.vibe")).platform
 let admissionObserved: (runId: string, allowed: boolean) => Effect.Effect<void> = () => Effect.void
 // Observe the real admission answers. A fixed sleep can inspect a run while
 // recovery still owns it, before the unkeyed child has been refused.

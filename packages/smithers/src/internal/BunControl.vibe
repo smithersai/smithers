@@ -16,7 +16,7 @@ import { BunRuntime as Runtime } from "@smthrs/platform-bun"
 import { Layer } from "effect"
 import * as ControlFileSystem from "./ControlFileSystem.ts"
 import * as NativeControl from "./NativeControl.ts"
-import * as NativeControlDatabase from "./NativeControlDatabase.ts"
+import * as NativeControlDatabase from "./NativeControlDatabase.vibe"
 
 // Background flow hosts leave terminal input to the renderer.
 const services = Layer.provideMerge(

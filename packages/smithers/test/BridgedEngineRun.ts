@@ -82,7 +82,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as AuthoredRebuild from "../src/internal/AuthoredRebuild.vibe"
 import * as EngineJournalSupervisor from "../src/internal/EngineJournalSupervisor.ts"
-import * as SourceRevision from "../src/internal/SourceRevision.ts"
+import * as SourceRevision from "../src/internal/SourceRevision.vibe"
 import { makeAuthoringFixture, ScriptedAuthor } from "./AuthoringFixture.ts"
 
 /**

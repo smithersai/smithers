@@ -6,7 +6,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Layer } from "effect"
-import * as NativeControlDatabase from "./NativeControlDatabase.ts"
+import * as NativeControlDatabase from "./NativeControlDatabase.vibe"
 
 // Only the filesystem and path services the store opens with. The aggregate
 // `NodeServices.layer` also acquires `NodeTerminal`, which attaches a

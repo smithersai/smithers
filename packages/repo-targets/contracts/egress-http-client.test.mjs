@@ -191,7 +191,7 @@ describe("the outbound HTTP client shipped compositions install", () => {
     // and the first is one of the sites the gate was written for.
     for (const path of [
       "packages/smithers/build/build-cli/src/internal/rules/FetchExecutor.ts",
-      "packages/smithers/src/internal/NodeControlHost.ts",
+      "packages/smithers/src/internal/NodeControlHost.vibe",
       ".smithers/flows/repository/jev-checks.vibe"
     ]) {
       assert.ok(found.includes(path), `${path} is shipped source this gate never read`)

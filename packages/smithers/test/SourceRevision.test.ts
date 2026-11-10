@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as SourceRevision from "../src/internal/SourceRevision.ts"
+import * as SourceRevision from "../src/internal/SourceRevision.vibe"
 
 const ID = "a".repeat(40)
 

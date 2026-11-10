@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { writeFileSync } from "node:fs"
 import "./scripted-native-host.ts"
 
-const { layerRebuildableRequestExecutor, platform } = await import("../../src/internal/NodeControlHost.ts")
+const { layerRebuildableRequestExecutor, platform } = await import("../../src/internal/NodeControlHost.vibe")
 
 Object.assign(platform, {
   requestExecutor: layerRebuildableRequestExecutor(Effect.acquireRelease(

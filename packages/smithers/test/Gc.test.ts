@@ -25,7 +25,7 @@ import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 import * as CliError from "../src/CliError.vibe"
 import * as Gc from "../src/Gc.vibe"
-import * as SnapshotRoots from "../src/internal/ExecutionSnapshotRoots.ts"
+import * as SnapshotRoots from "../src/internal/ExecutionSnapshotRoots.vibe"
 
 const staged: Array<string> = []
 

@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Duplex } from "node:stream"
 import { describe, expect, it } from "vitest"
-import { environmentDispatcher, rebuildableTransport } from "../src/internal/NodeControlHost.ts"
+import { environmentDispatcher, rebuildableTransport } from "../src/internal/NodeControlHost.vibe"
 
 const listen = (server: Server) =>
   new Promise<string>((resolve) => {

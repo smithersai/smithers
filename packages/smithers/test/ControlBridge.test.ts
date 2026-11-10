@@ -13,7 +13,7 @@ import * as Bridge from "../src/cli/ControlBridge.ts"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
 import * as RunProgress from "../src/cli/RunProgress.ts"
-import * as CommandStatus from "../src/internal/CommandStatus.ts"
+import * as CommandStatus from "../src/internal/CommandStatus.vibe"
 import * as Serve from "../src/Serve.vibe"
 import * as Ui from "../src/Ui.ts"
 
