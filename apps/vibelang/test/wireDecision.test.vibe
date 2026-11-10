@@ -1,0 +1,61 @@
+import { describe, expect, it } from "@effect/vitest"
+import { digitUnit, digitsFrom, idAfter, pageKind, routeKind, writeOf } from "../src/history/wireDecision.vibe"
+import { historyRouteOf, pageRequestOf } from "../src/history/wire.vibe"
+
+// The regular expressions these kernels replaced, kept as the oracle for equal behavior.
+const EPIC = /^\/epics\/(e\d{1,9})$/
+const COMMIT = /^\/commits\/(m\d{1,9})$/
+const FROM = /^\d{1,9}$/
+const rests = ["", "/", "/search", "/search/", "/commits/m1", "/commits/m123456789", "/commits/m1234567890", "/commits/m", "/commits/e1",
+  "/commits/M1", "/commits/m1/", "/commits/m1\n", "/commits/m١", "/commits/m-1", "/commits//m1", "/epics/e0", "/epics/e999999999",
+  "/epics/e1000000000", "/epics/e", "/epics/m1", "/epics/e1x", "/epics/e 1", "x/epics/e1", "/epicse1", "/epics/e٣"]
+const froms = ["", "0", "7", "123456789", "1234567890", "-1", "1.5", "1e3", " 1", "1 ", "٣", "0x1"]
+
+describe("history wire decisions", () => {
+  it("reads a digit only in ASCII 0-9", () => {
+    expect([47, 48, 57, 58, 0x663].map(digitUnit)).toEqual([false, true, true, false, false])
+  })
+  it("matches /^\\d{1,9}$/ from any start", () => {
+    for (const from of froms) expect(digitsFrom(from, 0)).toBe(FROM.test(from))
+    expect([digitsFrom("ab12", 2), digitsFrom("ab", 2), digitsFrom("a1234567890", 1), digitsFrom("a123456789", 1)]).toEqual([true, false, false, true])
+  })
+  it("extracts the same id as the epic and commit patterns", () => {
+    for (const rest of rests) {
+      expect(idAfter(rest, "/commits/", 109)).toBe(COMMIT.exec(rest)?.[1] ?? "")
+      expect(idAfter(rest, "/epics/", 101)).toBe(EPIC.exec(rest)?.[1] ?? "")
+    }
+  })
+  it("ranks outline, search, commit, then an epic with a valid start", () => {
+    expect([pageKind("", "m1", "e1", true), pageKind("/search", "m1", "e1", true), pageKind("/x", "m1", "e1", true),
+      pageKind("/x", "", "e1", true), pageKind("/x", "", "e1", false), pageKind("/x", "", "", true)]).toEqual(["outline", "search", "commit", "epic", "", ""])
+  })
+  it("names each write path and nothing else", () => {
+    expect(["plan", "start", "note", "approve", "fold", "events", "", "plan/"].map((w) => writeOf(`/api/history/${w}`))).toEqual(["plan", "start", "note", "approve", "fold", "", "", ""])
+    expect(writeOf("/api/historyplan")).toBe("")
+  })
+  it("routes events, writes and reads by method and path", () => {
+    expect([routeKind("GET", "/api/history/events"), routeKind("POST", "/api/history/events"), routeKind("POST", "/api/history/plan"),
+      routeKind("GET", "/api/history/plan"), routeKind("GET", "/api/history"), routeKind("GET", "/api/history/epics/e1"),
+      routeKind("GET", "/api/historyx"), routeKind("PUT", "/api/history")]).toEqual(["events", "", "write", "", "read", "read", "", ""])
+  })
+  it("keeps the page each path and start asked for before the change", () => {
+    for (const rest of rests) for (const from of froms) {
+      const params = new URLSearchParams({ from, q: "tuple" })
+      const commit = COMMIT.exec(rest)
+      const epic = EPIC.exec(rest)
+      const before = rest === "" ? { what: "outline" } : rest === "/search" ? { what: "search", query: "tuple" }
+        : commit !== null ? { what: "commit", id: commit[1] } : epic !== null && FROM.test(from) ? { what: "epic", id: epic[1], from: Number(from) } : undefined
+      expect(pageRequestOf(rest, params)).toEqual(before)
+    }
+    expect(pageRequestOf("/epics/e4", new URLSearchParams())).toEqual({ what: "epic", id: "e4", from: 0 })
+  })
+  it("keeps every route the history answered before the change", () => {
+    expect(historyRouteOf("GET", "/api/history/events")).toEqual({ kind: "history-events" })
+    expect(historyRouteOf("POST", "/api/history/fold")).toEqual({ kind: "history-write", write: "fold" })
+    expect(historyRouteOf("GET", "/api/history/fold")).toBeUndefined()
+    expect(historyRouteOf("POST", "/api/history/events")).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/commits/m7")).toEqual({ kind: "history-commit", page: { what: "commit", id: "m7" } })
+    expect(historyRouteOf("GET", "/api/historyx")).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/nothing")).toBeUndefined()
+  })
+})

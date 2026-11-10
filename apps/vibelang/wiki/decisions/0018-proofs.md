@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3260 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3265 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1009,12 +1009,12 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/followDecision.vibe:16` | `followCut` | pure logic | Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1). |
 | `src/core/followDecision.vibe:23` | `fresh` | pure logic | Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1). |
 | `src/core/identityDecision.vibe:6` | `postLabel` | pure logic | Specification restated: the contract is the table the body computes. It fixes the meaning other proofs rely on and rejects an edit to the table, but proves no further property, nor that callers pass the right argument. |
-| `src/core/issueFixtureDecision.vibe:9` | `fixtureIssueIndex` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/core/issueFixtureDecision.vibe:25` | `fixtureFailure` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/core/issueFixtureDecision.vibe:42` | `fixtureDraft` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/core/issueFixtureDecision.vibe:47` | `fixtureParticipation` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/core/issueFixtureDecision.vibe:52` | `fixtureErrorReason` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
-| `src/core/issueFixtureDecision.vibe:60` | `fixtureIdentity` | pure logic | Proved: marked `//@ verify`; Dafny checks its contract and every precondition it calls (`pnpm verify`). |
+| `src/core/issueFixtureDecision.vibe:9` | `fixtureIssueIndex` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
+| `src/core/issueFixtureDecision.vibe:25` | `fixtureFailure` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
+| `src/core/issueFixtureDecision.vibe:42` | `fixtureDraft` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
+| `src/core/issueFixtureDecision.vibe:47` | `fixtureParticipation` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
+| `src/core/issueFixtureDecision.vibe:52` | `fixtureErrorReason` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
+| `src/core/issueFixtureDecision.vibe:60` | `fixtureIdentity` | pure logic | Proved first matching issue, refusal precedence, draft defaults, participation, engine error reason and the fixture GitHub id (0018 third-lane batch 16). |
 | `src/core/issueFlows.vibe:16` | `callback@16` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueFlows.vibe:21` | `callback@16/idempotencyKey` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/issueFlows.vibe:28` | `callback@16/callback@28` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -1790,11 +1790,16 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/history/tools.vibe:109` | `plan` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/history/tools.vibe:114` | `start` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/history/tools.vibe:119` | `note` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/wire.vibe:34` | `pageRequestOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/wire.vibe:46` | `pathOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/wire.vibe:60` | `historyRouteOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/wire.vibe:62` | `historyRouteOf/callback@62` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/wire.vibe:31` | `pageRequestOf` | pure logic | Calls the proved idAfter, digitsFrom and pageKind: outline, search, an m-commit id, then an e-epic id whose start is 1 to 9 digits, exactly as the replaced patterns; URLSearchParams and Number are native. |
+| `src/history/wire.vibe:45` | `pathOf` | pure logic | Formats the request's own kind with native encodeURIComponent, which throws on a lone surrogate (then undefined); no admission decision. |
+| `src/history/wire.vibe:59` | `historyRouteOf` | pure logic | Calls the proved routeKind and writeOf: GET events, a write path only by POST, else a GET at or under /api/history reads its page. |
 | `src/history/wire.vibe:92` | `statusOf` | wiring | Calls proved exact forbidden/unavailable/other refusal HTTP status mapping; no codec decision here. |
+| `src/history/wireDecision.vibe:7` | `digitUnit` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
+| `src/history/wireDecision.vibe:15` | `digitsFrom` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
+| `src/history/wireDecision.vibe:29` | `idAfter` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
+| `src/history/wireDecision.vibe:39` | `pageKind` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
+| `src/history/wireDecision.vibe:52` | `writeOf` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
+| `src/history/wireDecision.vibe:68` | `routeKind` | pure logic | Proved ASCII digit units, 1 to 9 digit runs, the epic and commit id after its prefix (the replaced patterns), page-kind precedence, the five write paths and the route kind by method (0018 third-lane batch 17). |
 | `src/surfaces/backend.vibe:31` | `notDeployed` | wiring | Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved. |
 | `src/surfaces/backend.vibe:35` | `unreachable` | wiring | Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved. |
 | `src/surfaces/backend.vibe:40` | `personClient` | effectful shell | Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved. |
@@ -4798,3 +4803,23 @@ The identity test failed first against a stub. The first `fixtureIssueIndex` pro
 early return; with the parameter renamed from `number` (the field's name) to `wanted` and the found-case postconditions
 joined as `pageIndex` states them, it proves. Which of the two changes was needed is not isolated. 33 mutations, all
 rejected in their intended function; the six functions prove in 4.2 s.
+
+## Third-lane batch 17: the mythical history's routes and pages
+
+`src/history/wire.vibe` decoded history requests with three regular expressions and a `find` over the writes. Those
+choices now live in `src/history/wireDecision.vibe`; `pageRequestOf` and `historyRouteOf` call them.
+
+| Function | What its contract states |
+| --- | --- |
+| `digitUnit` | ASCII 0-9 only, as `\d` matches without the `u` flag. |
+| `digitsFrom` | The suffix from `start` is 1 to 9 digits (`/^\d{1,9}$/`). |
+| `idAfter` | After `prefix`: the letter, then 1 to 9 digits to the end; the id is everything after the prefix, else `""` (`/^\/epics\/(e\d{1,9})$/`, `/^\/commits\/(m\d{1,9})$/`). |
+| `pageKind` | Outline, then search, then a commit, then an epic whose start is digits; else none. |
+| `writeOf` | Exactly the five write paths. |
+| `routeKind` | GET events; a write path only by POST; else a GET at or under `/api/history` reads. |
+
+`test/wireDecision.test.vibe` keeps the three patterns as an oracle and compares `idAfter`, `digitsFrom` and
+`pageRequestOf` with them on 25 paths and 12 starts, including ten digits, a trailing newline and Arabic-Indic digits.
+The kernel tests failed first against stubs (6 failed); the two host tests passed before and after the change.
+`pathOf` stays a boundary: native `encodeURIComponent` throws on a lone surrogate. 10 Dafny obligations; 21 mutations,
+all rejected in their intended function.

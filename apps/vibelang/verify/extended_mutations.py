@@ -5565,3 +5565,28 @@ cases.extend([('src/core/issueFixtureDecision.vibe', *case) for case in [
 ('fixture-identity-number', 'fixtureIdentity', 'number: issue,', 'number: issue + 1,', 'the record keeps its issue number'),
 ('fixture-identity-offset', 'fixtureIdentity', 'githubId: issue + 1000', 'githubId: issue', 'the GitHub id is offset from the number'),
 ]])
+
+# Lane vl-proveall3, batch 17: the mythical history's route and page decoding.
+cases.extend([('src/history/wireDecision.vibe', *case) for case in [
+('wire-digit-low', 'digitUnit', 'code >= 48', 'code >= 47', 'a slash is not a digit'),
+('wire-digit-high', 'digitUnit', 'code <= 57', 'code <= 58', 'a colon is not a digit'),
+('wire-digits-empty', 'digitsFrom', 'start >= text.length', 'start > text.length', 'an empty start is not digits'),
+('wire-digits-long', 'digitsFrom', 'text.length - start > 9', 'text.length - start > 10', 'ten digits are too many'),
+('wire-digits-unit', 'digitsFrom', 'if (!digitUnit(text.charCodeAt(i))) return false', 'if (false) return false', 'every unit is a digit'),
+('wire-digits-first', 'digitsFrom', 'for (let i = start;', 'for (let i = start + 1;', 'the first unit is checked'),
+('wire-id-prefix', 'idAfter', '!rest.startsWith(prefix) || ', '', 'the id follows its own prefix'),
+('wire-id-letter', 'idAfter', 'rest.charCodeAt(prefix.length) !== letter', 'false', 'the id starts with its letter'),
+('wire-id-digits-at', 'idAfter', 'digitsFrom(rest, prefix.length + 1)', 'digitsFrom(rest, prefix.length + 2)', 'the digits start right after the letter'),
+('wire-id-whole', 'idAfter', '? rest.slice(prefix.length) :', '? rest.slice(prefix.length + 1) :', 'the id keeps its letter'),
+('wire-page-outline', 'pageKind', 'if (rest === "") return "outline"', 'if (rest === "/") return "outline"', 'only the bare path is the outline'),
+('wire-page-search', 'pageKind', 'rest === "/search"', 'rest.startsWith("/search")', 'search is exactly /search'),
+('wire-page-commit-first', 'pageKind', 'if (commit !== "") return "commit"\n  if (epic !== "" && fromDigits) return "epic"', 'if (epic !== "" && fromDigits) return "epic"\n  if (commit !== "") return "commit"', 'a commit outranks an epic'),
+('wire-page-from', 'pageKind', 'epic !== "" && fromDigits', 'epic !== ""', 'an epic page needs a digit start'),
+('wire-write-plan', 'writeOf', 'if (pathname === "/api/history/plan") return "plan"\n', '', 'plan is a write'),
+('wire-write-approve', 'writeOf', 'if (pathname === "/api/history/approve") return "approve"\n', '', 'approve is a write'),
+('wire-write-fold', 'writeOf', 'return "fold"', 'return "note"', 'each path names its own write'),
+('wire-route-events-method', 'routeKind', '"/api/history/events" && method === "GET"', '"/api/history/events"', 'events are read by GET'),
+('wire-route-write-method', 'routeKind', 'method === "POST" ? "write" : ""', '"write"', 'a write needs POST'),
+('wire-route-read-method', 'routeKind', 'if (method === "GET" && (pathname', 'if ((pathname', 'a read needs GET'),
+('wire-route-read-prefix', 'routeKind', 'pathname.startsWith("/api/history/")', 'pathname.startsWith("/api/history")', 'a read stays under the history path'),
+]])
