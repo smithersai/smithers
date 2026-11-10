@@ -1,14 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { actionActor, indexedRun, matchingFlow, mockFailureText, mockState, ownerRefused, sameRun } from "../src/actions/actionHostDecision.vibe"
+import { actionActor, indexedRun, matchingFlow, mockState, ownerRefused, sameRun } from "../src/actions/actionHostDecision.vibe"
 
 describe("action hosts' decisions", () => {
-  it("settles a refusal as failed and only a pure interruption as cancelled", () => {
-    expect([mockState(true, false, false), mockState(true, true, false), mockState(false, false, true), mockState(false, false, false)]).toEqual(["passed", "failed", "cancelled", "failed"])
-    expect(mockState(true, false, true)).toBe("passed")
-    expect(mockState(false, true, true)).toBe("cancelled")
-  })
-  it("keeps failure diagnostics private and distinguishes cancellation", () => {
-    expect([mockFailureText(true), mockFailureText(false)]).toEqual(["Action failed", "Cancelled"])
+  it("passes only a successful non-refusal; a refusal or an engine failure fails", () => {
+    expect([mockState(true, false), mockState(true, true), mockState(false, false), mockState(false, true)]).toEqual(["passed", "failed", "failed", "failed"])
   })
   it("allows viewer work across owners and requires the same owner for writes", () => {
     expect([ownerRefused("viewer", "old", "new"), ownerRefused("contributor", "old", "new"), ownerRefused("maintainer", "same", "same")]).toEqual([false, true, false])

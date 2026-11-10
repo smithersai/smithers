@@ -13,7 +13,7 @@ import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
 import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
 import { allowed, bundled, registration } from "./catalog.vibe"
-import { actionActor, matchingFlow, mockFailureText, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
+import { actionActor, matchingFlow, mockState, ownerRefused, sameRun } from "./actionHostDecision.vibe"
 import { cancellable } from "../core/actionRunDecision.vibe"
 
 export interface Principal { readonly role?: Role; readonly actor: Actor; readonly conversation?: string }
@@ -122,8 +122,9 @@ export function MockActions(principal: Principal) {
       }
       const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: principal.actor })))
       const result = try exit(program.pipe(Effect.provideService(StepTrace.Sink, observer), Effect.provideService(ActionDevice, factory), origin))
-      const status = mockState(Exit.isSuccess(result), Exit.isSuccess(result) && refused(result.value), Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause))
-      const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : mockFailureText(status === "failed")
+      // A cancel interrupts this fiber before the engine's execution, so a run that gets here was not cancelled.
+      const status = mockState(Exit.isSuccess(result), Exit.isSuccess(result) && refused(result.value))
+      const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"
       try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
     }
     effect function start(name: string, input: Schema.Json, door: Door) {

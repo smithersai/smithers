@@ -5460,12 +5460,9 @@ cases.extend([('src/history/seedInputDecision.vibe', *case) for case in [
 
 # Lane vl-proveall3, batch 14: action hosts.
 cases.extend([('src/actions/actionHostDecision.vibe', *case) for case in [
-('action-host-success', 'mockState', 'if (succeeded)', 'if (!succeeded)', 'only an engine success can pass'),
-('action-host-refusal', 'mockState', 'return refusal ? "failed" : "passed"', 'return "passed"', 'a refusal value fails'),
-('action-host-interrupt', 'mockState', 'return interrupted ? "cancelled" : "failed"', 'return "failed"', 'a pure interruption cancels'),
-('action-host-failure', 'mockState', 'return interrupted ? "cancelled" : "failed"', 'return "cancelled"', 'an engine failure does not pass as a cancellation'),
-('action-host-failure-text', 'mockFailureText', 'return failed ? "Action failed" : "Cancelled"', 'return failed ? "failed" : "Cancelled"', 'failure text stays fixed and private'),
-('action-host-cancel-text', 'mockFailureText', 'return failed ? "Action failed" : "Cancelled"', 'return failed ? "Action failed" : "Action failed"', 'a cancellation says Cancelled'),
+('action-host-success', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return !succeeded && !refusal ? "passed" : "failed"', 'only an engine success can pass'),
+('action-host-refusal', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return succeeded ? "passed" : "failed"', 'a refusal value fails'),
+('action-host-failure', 'mockState', 'return succeeded && !refusal ? "passed" : "failed"', 'return succeeded && !refusal ? "passed" : "passed"', 'an engine failure does not pass'),
 ('action-host-viewer-owner', 'ownerRefused', 'return least !== "viewer" && owner !== person', 'return owner !== person', 'viewer work does not need the old owner'),
 ('action-host-write-owner', 'ownerRefused', 'return least !== "viewer" && owner !== person', 'return false', 'a different owner cannot write'),
 ('action-host-agent-door', 'actionActor', 'return door === "agent" ? "agent" : actor', 'return actor', 'an agent door is recorded as agent'),

@@ -1,20 +1,13 @@
 // Scalar policies used by the live directory and the mock action host (0018, third-lane batch 14).
-export type MockState = "passed" | "failed" | "cancelled"
+// A run that settles itself passes or fails. A cancel interrupts the run's fiber before it can settle and records
+// `cancelled` itself (MockActions.vibe `cancel`), so no settlement here is a cancellation.
+export type MockState = "passed" | "failed"
 
 //@ verify
 //@ ensures succeeded && !refusal ==> \result == "passed"
-//@ ensures succeeded && refusal ==> \result == "failed"
-//@ ensures !succeeded && interrupted ==> \result == "cancelled"
-//@ ensures !succeeded && !interrupted ==> \result == "failed"
-export function mockState(succeeded: boolean, refusal: boolean, interrupted: boolean): MockState {
-  if (succeeded) return refusal ? "failed" : "passed"
-  return interrupted ? "cancelled" : "failed"
-}
-
-//@ verify
-//@ ensures \result == (failed ? "Action failed" : "Cancelled")
-export function mockFailureText(failed: boolean): string {
-  return failed ? "Action failed" : "Cancelled"
+//@ ensures !(succeeded && !refusal) ==> \result == "failed"
+export function mockState(succeeded: boolean, refusal: boolean): MockState {
+  return succeeded && !refusal ? "passed" : "failed"
 }
 
 //@ verify
