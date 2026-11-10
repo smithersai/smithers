@@ -8,7 +8,7 @@ function icon(h: H, max = false): Html {
   return h.svg([h.Class("vl-icon"), h.ViewBox("0 0 24 24"), h.AriaHidden(true)], [h.path([h.D(max ? "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" : "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7")], [])])
 }
 /** A flow or step always shows a name, so its control keeps one when the source sent none. */
-function title(name: string): string { const last = name.split("/").at(-1) ?? name; return last.trim() === "" ? "Action" : last }
+function title(name: string): string { const last = name.slice(name.lastIndexOf("/") + 1); return last.trim() === "" ? "Action" : last }
 function status(run: Run): string { return run.state === "passed" ? "Passed" : run.state === "failed" ? "Failed" : run.state === "cancelled" ? "Cancelled" : "Running" }
 function duration(run: Run, now = run.at): string { return `${Math.max(0, Math.floor(((run.state === "queued" || run.state === "running" ? Math.max(now, run.at) : run.at) - run.started) / 1000))}s` }
 function dot(h: H, state?: string): Html { return h.span([h.Class(`vl-dot ${state === "passed" ? "vl-dot-ok" : state === "failed" ? "vl-dot-bad" : state === "running" || state === "queued" ? "vl-dot-run" : ""}`), h.AriaHidden(true)], []) }

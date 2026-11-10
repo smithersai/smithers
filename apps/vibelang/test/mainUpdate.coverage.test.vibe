@@ -5,7 +5,7 @@ import { DEMO_QUESTION } from "../src/core/walkthroughSteps.vibe"
 import { newClient } from "../src/core/conversation.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
-import { accountOf, hasConversation, init, keyMessage, Message, type Model, roleLabel, theatreOf, tourConversation, update, viewTransition } from "../src/web/main.vibe"
+import { accountOf, hasConversation, init, keyMessage, Message, type Model, roleLabel, tourConversation, update, viewTransition } from "../src/web/main.vibe"
 
 const flags = { session: "u", mode: "mock" as const, name: "Guest" }
 const home = init(flags).model
@@ -202,13 +202,13 @@ describe("the tour", () => {
   })
   it("controls ask the agent while touring and do nothing otherwise", () => {
     expect(update(touring, Message.ClickedPauseTour()).commands?.[0]).toMatchObject({ name: "ControlTour", args: { action: "pause" } })
-    expect(update({ ...touring, theatre: { ...theatreOf(touring), paused: true } }, Message.ClickedPauseTour()).commands?.[0]).toMatchObject({ args: { action: "resume" } })
+    expect(update({ ...touring, theatre: { ...touring.theatre, paused: true } }, Message.ClickedPauseTour()).commands?.[0]).toMatchObject({ args: { action: "resume" } })
     expect(update(home, Message.ClickedPauseTour()).model).toBe(home)
     expect(names(update(home, Message.ClickedPauseTour()))).toEqual([])
   })
   it("Back stops at the first stop; Skip seeks the next", () => {
     expect(update(touring, Message.ClickedBackStop()).model).toBe(touring)
-    const third: Model = { ...touring, theatre: { ...theatreOf(touring), step: 3 } }
+    const third: Model = { ...touring, theatre: { ...touring.theatre, step: 3 } }
     expect(update(third, Message.ClickedBackStop()).commands?.[0]).toMatchObject({ args: { action: "seek", step: 2 } })
     expect(update(third, Message.ClickedSkipStop()).commands?.[0]).toMatchObject({ args: { action: "seek", step: 4 } })
   })

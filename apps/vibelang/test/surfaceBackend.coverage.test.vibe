@@ -1,0 +1,146 @@
+// @vitest-environment node
+// The CLI and MCP surfaces' live backend over real loopback: which session rides each request to the factory, and a
+// factory whose health reports the mock agent.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { writeMockSession, writeSession } from "../src/surfaces/session.vibe"
+import { AddNote, Logout, PlanWork, ShowHistory } from "../src/surfaces/commands.vibe"
+import { backend, notDeployed, type LiveBackendNotDeployed } from "../src/surfaces/backend.vibe"
+
+type Seen = { readonly path: string; readonly cookie: string; readonly origin: string }
+
+/** A factory that answers health with `agent` and records what each request carried. */
+effect function factory(agent: "mock" | "live") {
+  const seen = try Ref.make<ReadonlyArray<Seen>>([])
+  const address = (try HttpServer.HttpServer).address
+  const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    try Ref.update(seen, (all) => [...all, { path: new URL(request.url, origin).pathname, cookie: request.headers["cookie"] ?? "", origin: request.headers["origin"] ?? "" }])
+    return HttpServerResponse.jsonUnsafe({ ok: true, agent })
+  })
+  return { origin, seen }
+}
+
+function configured(origin: string, directory: string, session?: string) {
+  return ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: origin, XDG_CONFIG_HOME: directory, ...(session === undefined ? {} : { VIBELANG_SESSION: session }) }))
+}
+
+/** Starts the live backend the surfaces use; its health probe is the first request. */
+effect function started() {
+  try Layer.build(backend(false, undefined))
+}
+
+describe("the surfaces' live backend", () => {
+  it.live("refuses a factory whose health reports the mock agent", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const { origin } = try factory("mock")
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        const failure = try Effect.flip(started())
+        try Effect.try(() => expect((failure as LiveBackendNotDeployed).message).toBe(notDeployed(origin)))
+      }
+    }
+  }), 60_000)
+
+  it.live.each([
+    ["the stored session's cookie", "vibelang-session=stored", "vibelang-session=stored"],
+    ["no cookie when the stored one is not a session cookie", "tracker=1", ""],
+  ] as const)("sends %s to its own factory", ([_name, stored, sent]) => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const { origin, seen } = try factory("live")
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writeSession({ origin, cookie: stored, login: "ada" })
+        try started()
+        const requests = try Ref.get(seen)
+        try Effect.try(() => expect(requests).toEqual([{ path: "/api/health", cookie: sent, origin }]))
+      }
+    }
+  }), 60_000)
+
+  it.live("sends no stored cookie to a factory the session was not issued by", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const { origin, seen } = try factory("live")
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try writeSession({ origin: "http://localhost:1", cookie: "vibelang-session=elsewhere", login: "ada" })
+        try started()
+        const requests = try Ref.get(seen)
+        try Effect.try(() => expect(requests).toEqual([{ path: "/api/health", cookie: "", origin }]))
+      }
+    }
+  }), 60_000)
+
+  it.live("an explicit VIBELANG_SESSION rides instead of the stored one", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const { origin, seen } = try factory("live")
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory, JSON.stringify({ origin, cookie: "vibelang-session=explicit" })) {
+        try writeSession({ origin, cookie: "vibelang-session=stored", login: "ada" })
+        try started()
+        const requests = try Ref.get(seen)
+        try Effect.try(() => expect(requests).toEqual([{ path: "/api/health", cookie: "vibelang-session=explicit", origin }]))
+      }
+    }
+  }), 60_000)
+
+  it.live("without the health probe it starts with no request", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const { origin, seen } = try factory("mock")
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured(origin, directory) {
+        try Layer.build(backend(false, undefined, false))
+        const requests = try Ref.get(seen)
+        try Effect.try(() => expect(requests).toEqual([]))
+      }
+    }
+  }), 60_000)
+})
+
+/** Plans a task on the first epic and notes it; answers the note as the history records it. */
+effect function noted() {
+  const epic = (try ShowHistory.run({})).epics[0]!.id
+  const planned = try PlanWork.run({ title: "fix(compiler): surface", epic, task: "t-surface" })
+  try AddNote.run({ id: planned.id, section: "tried", text: "From the surface." })
+  return (try ShowHistory.run({ commit: planned.id })).commit!.notes
+}
+
+describe("the surfaces' mock backend", () => {
+  it.live("signed out, the history signs the fixture maintainer's agent", () => scoped(effect {
+    provide NodeServices.layer {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured("https://never.invalid", directory), backend(true, undefined) {
+        const notes = try noted()
+        try Effect.try(() => expect(notes).toEqual(["tried: From the surface. (Factory CLI (agent))"]))
+      }
+    }
+  }), 60_000)
+
+  it.live("after a mock login, the history signs the signed-in person's agent", () => scoped(effect {
+    provide NodeServices.layer {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured("https://never.invalid", directory) {
+        try writeMockSession("will")
+        provide backend(true, undefined) {
+          const notes = try noted()
+          try Effect.try(() => expect(notes).toEqual(["tried: From the surface. (will (agent))"]))
+        }
+      }
+    }
+  }), 60_000)
+
+  it.live("after a mock logout, the history refuses a guest's plan", () => scoped(effect {
+    provide NodeServices.layer {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide configured("https://never.invalid", directory), backend(true, undefined) {
+        try Logout.run({})
+        const epic = (try ShowHistory.run({})).epics[0]!.id
+        const failure = try Effect.flip(PlanWork.run({ title: "fix(compiler): guest", epic, task: "t-guest" }))
+        try Effect.try(() => expect(failure).toMatchObject({ _tag: "CommandError", message: "The history refused it: forbidden" }))
+      }
+    }
+  }), 60_000)
+})

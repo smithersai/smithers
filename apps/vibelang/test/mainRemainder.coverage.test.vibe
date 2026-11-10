@@ -111,16 +111,6 @@ describe("a role change", () => {
 })
 
 describe("a message before its part of the model exists", () => {
-  const touring: Model = { ...without(chat, "theatre"), tour: true }
-  it("measures and steers the spotlight from the first stop", () => {
-    expect(update(touring, Message.RemeasureTheatre()).commands?.[0]).toMatchObject({ name: "MeasureTheatre", args: { target: "splash" } })
-    expect(update(touring, Message.ClickedBackStop()).model).toBe(touring)
-    expect(names(update(touring, Message.ClickedSkipStop()))).toEqual(["ControlTour", "MeasureTheatre"])
-    expect(update(touring, Message.ToggledTourSound()).commands?.[0]).toMatchObject({ name: "PresentTour", args: { step: 1, sound: true, paused: false } })
-  })
-  it("re-measures on any other message while touring", () => {
-    expect(names(update(touring, Message.FilteredWiki({ value: "x" })))).toEqual(["MeasureTheatre"])
-  })
   it("a sandbox pane that was never opened stays closed", () => {
     expect(update(without(chat, "sandboxPane"), Message.MaximizedSandboxes()).model.sandboxPane).toBe(update({ ...chat, sandboxPane: "closed" }, Message.MaximizedSandboxes()).model.sandboxPane)
   })

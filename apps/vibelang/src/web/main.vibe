@@ -115,7 +115,7 @@ export schema Model {
   readonly announced: number
   readonly connection: string
   /** Whether the agent is in control: the tour runs, the screen glows and Escape ends it. */
-  readonly theatre?: { readonly step: number; readonly paused: boolean; readonly sound: boolean; readonly target: string }
+  readonly theatre: { readonly step: number; readonly paused: boolean; readonly sound: boolean; readonly target: string }
   readonly tourClient?: Client
   readonly recoverTour?: boolean
   readonly tourDismissed?: boolean
@@ -413,13 +413,13 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     MovedTourFocus: ({ backward }) => ({ model, commands: [FocusTourControl({ backward })] }),
     AutoTour: () => TourDecision.autoTourStarts(model.surface, model.palette, model.tour, model.issues?.open === true, hasConversation(model)) ? learnMore(model) : { model },
     MeasuredTheatre: (box) => ({ model: { ...model, theatreBox: box } }),
-    RemeasureTheatre: () => ({ model, commands: TourDecision.remeasures(model.tour) ? [MeasureTheatre({ target: model.theatre?.target ?? "splash" })] : [] }),
-    ClickedPauseTour: () => runTourControl(model, TourDecision.pauseTour(model.tour, model.theatre?.paused === true)),
-    ClickedBackStop: () => runTourControl(model, TourDecision.backTour(model.tour, model.theatre?.step ?? 1)),
-    ClickedSkipStop: () => runTourControl(model, TourDecision.skipTour(model.tour, model.theatre?.step ?? 1)),
+    RemeasureTheatre: () => ({ model, commands: TourDecision.remeasures(model.tour) ? [MeasureTheatre({ target: model.theatre.target })] : [] }),
+    ClickedPauseTour: () => runTourControl(model, TourDecision.pauseTour(model.tour, model.theatre.paused)),
+    ClickedBackStop: () => runTourControl(model, TourDecision.backTour(model.tour, model.theatre.step)),
+    ClickedSkipStop: () => runTourControl(model, TourDecision.skipTour(model.tour, model.theatre.step)),
     ToggledTourSound: () => {
-      const present = TourDecision.toggledSound({ step: model.theatre?.step ?? 1, sound: model.theatre?.sound === true, active: model.tour, paused: model.theatre?.paused ?? false })
-      return { model: { ...model, theatre: { ...theatreOf(model), sound: present.sound } }, commands: [PresentTour(present)] }
+      const present = TourDecision.toggledSound({ step: model.theatre.step, sound: model.theatre.sound, active: model.tour, paused: model.theatre.paused })
+      return { model: { ...model, theatre: { ...model.theatre, sound: present.sound } }, commands: [PresentTour(present)] }
     },
     ReceivedTourEvent: ({ event }) => receiveTour(model, event),
     FailedTourEvents: () => ({ model: { ...model, tourError: "Connection lost" } }),
@@ -430,7 +430,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
     FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: { ...model, ...TourDecision.keptTour() } } : {
       model: { ...model, ...failScreenTour(model, reason, false), surface: "chat", recoverTour: false },
-      commands: [PresentTour({ step: theatreOf(model).step, sound: theatreOf(model).sound, active: false, paused: false }), FocusComposer({})],
+      commands: [PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})],
     },
     // The end never reached the agent: it still drives, so Esc comes back.
     FailedEndTour: () => recoverEndTour(model),
@@ -582,7 +582,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }
   if (after2.kind === "measure") {
-    return { ...next, commands: [...next.commands, MeasureTheatre({ target: next.model.theatre?.target ?? "splash" })] }
+    return { ...next, commands: [...next.commands, MeasureTheatre({ target: next.model.theatre.target })] }
   }
   return next
 }
@@ -683,19 +683,18 @@ function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model
  * tour runs does nothing new.
  */
 export function walkthroughSession(model: Model) { return model.tutorialSession ?? model.session }
-export function theatreOf(model: Model) { return model.theatre ?? { step: 1, paused: false, sound: false, target: "splash" } }
 function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const conversation = `demo-${walkthroughSession(model)}`
-  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: theatreOf(model).step, paused: theatreOf(model).paused, target: theatreOf(model).target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
+  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
   if (!step.started) return { model }
   const started = step.state
   return {
     model: { ...model, tour: started.tour, toured: started.toured, tourDismissed: started.tourDismissed, autoTour: started.autoTour, surface: started.surface, palette: started.palette, docs: started.docs, tourError: started.tourError, conversation: started.conversation,
       client: step.resetClient ? Machine.newClient : model.client, wikiAfter: started.wikiAfter, wikiStatus: started.wikiStatus,
-      tourClient: Machine.newClient, theatre: { ...theatreOf(model), step: started.step, paused: started.paused, target: started.target },
+      tourClient: Machine.newClient, theatre: { ...model.theatre, step: started.step, paused: started.paused, target: started.target },
       epoch: started.epoch, from: started.from, stream: started.stream,
     },
-    commands: [...(model.palette ? [ClosePalette({ dock: false })] : []), StartTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), PresentTour({ step: 1, sound: theatreOf(model).sound, active: true, paused: false })],
+    commands: [...(model.palette ? [ClosePalette({ dock: false })] : []), StartTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), PresentTour({ step: 1, sound: model.theatre.sound, active: true, paused: false })],
   }
 }
 function runTourControl(model: Model, control: TourDecision.TourControl): Update.Return<Model, Message, Factory | Actions> {
@@ -710,7 +709,7 @@ function touringHere(model: Model): boolean {
 }
 function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const ended = TourDecision.endedTour({ tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issueStateOf(model).open, slash: actionsOf(model).slash, maximized: actionsOf(model).maximized })
-  return { model: { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issueStateOf(model), open: ended.issuesOpen }, actions: { ...actionsOf(model), slash: ended.slash, maximized: ended.maximized } }, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: theatreOf(model).step, sound: theatreOf(model).sound, active: false, paused: false }), FocusComposer({})] }
+  return { model: { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issueStateOf(model), open: ended.issuesOpen }, actions: { ...actionsOf(model), slash: ended.slash, maximized: ended.maximized } }, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})] }
 }
 function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, Message, Factory | Actions> {
   const previous = model.tourClient ?? Machine.newClient
@@ -721,7 +720,7 @@ function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, M
   if (receipt.kind === "ignore") return { model }
   let next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, tourClient } }
   if (receipt.present && state !== undefined) {
-    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: { ...next.model, tour: true, theatre: { step: state.step, target: TourDecision.tourTarget(state.target, theatreOf(model).target), paused: state.paused, sound: theatreOf(model).sound } }, commands: [PresentTour({ step: state.step, sound: theatreOf(model).sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
+    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: { ...next.model, tour: true, theatre: { step: state.step, target: TourDecision.tourTarget(state.target, model.theatre.target), paused: state.paused, sound: model.theatre.sound } }, commands: [PresentTour({ step: state.step, sound: model.theatre.sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
     next = receipt.drive ? driveWalkthrough(presented, state) : presented
   }
   if (receipt.end) return endTour(next.model)
@@ -749,7 +748,7 @@ function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Facto
   if (plan.wiki) { send(Message.ClickedWiki({ page: "index" })); driven = { ...driven, docs: "max" } }
   if (plan.slash) { send(Message.UpdatedDraft({ value: "/" })); commands.push(FocusComposer({})) }
   if (plan.sandbox) { send(Message.ClickedSandboxes()); send(Message.MaximizedSandboxes()) }
-  if (plan.finish) { driven = { ...driven, tour: false, draft: "" }; commands.push(PresentTour({ step: 10, sound: theatreOf(model).sound, active: false, paused: false, finish: true }), FocusComposer({})) }
+  if (plan.finish) { driven = { ...driven, tour: false, draft: "" }; commands.push(PresentTour({ step: 10, sound: model.theatre.sound, active: false, paused: false, finish: true }), FocusComposer({})) }
   return { model: driven, commands }
 }
 function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
@@ -757,7 +756,7 @@ function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | A
   const state = model.tourClient?.conversation.walkthrough
   const next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, ...failedScreenEnd(model, active), tourDismissed: !active } }
   if (!active || state === undefined || state.step > WALKTHROUGH.length) return next
-  const theatre = { ...theatreOf(model), step: state.step, target: state.target || WALKTHROUGH[state.step - 1]!.target, paused: state.paused }
+  const theatre = { ...model.theatre, step: state.step, target: state.target || WALKTHROUGH[state.step - 1]!.target, paused: state.paused }
   return driveWalkthrough({ model: { ...next.model, theatre }, commands: [PresentTour({ step: state.step, sound: theatre.sound, active: true, paused: state.paused })] }, state)
 }
 
@@ -794,7 +793,7 @@ function submit(model: Model): Update.Return<Model, Message, Factory | Actions> 
   }
   if (kind === "ignore") return { model }
   if (kind === "slash") return launchAction(model, selected!.name, "slash")
-  const demonstration = UpdateDecision.demonstrates(model.tour, model.theatre?.step ?? 0, text === DEMO_QUESTION)
+  const demonstration = UpdateDecision.demonstrates(model.tour, model.theatre.step, text === DEMO_QUESTION)
   const clientId = demonstration ? `${walkthroughSession(model)}-walkthrough` : `${model.session}-${model.sent + 1}`
   return {
     model: {

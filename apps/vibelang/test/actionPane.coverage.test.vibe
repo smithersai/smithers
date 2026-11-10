@@ -1,0 +1,81 @@
+// The Actions pane in each state a person reaches: maximized with and without a flow chosen, a failed load, a flow
+// that takes input, a run with steps still to come, and flows or runs without a usable name.
+import { click, expect, given, role, scene, selector, text, type } from "foldkit/scene"
+import { it } from "@effect/vitest"
+import type { Run } from "../src/actions/Actions.vibe"
+import { registration } from "../src/actions/catalog.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { init, type Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "pane", mode: "mock", name: "Guest" }).model
+const tour = registration("vibelang/Tour")
+const post = registration("vibelang/Post")
+const plan = registration("vibelang/Plan")
+const unnamed = { ...registration("vibelang/x/"), title: "" }
+const untitled = { ...registration("vibelang/Sweep"), title: "" }
+const run = (over: Partial<Run>): Run => ({ id: "r1", flow: tour.name, door: "button", actor: "person", state: "passed", started: 0, at: 2000, result: "", steps: [], ...over })
+const pane = (over: Partial<typeof initialActions>): Model => ({ ...home, surface: "chat", actions: { ...initialActions, open: true, ...over } })
+
+it("a maximized pane lists every flow beside the chosen flow's runs, and minimizes", () => {
+  const runs = [run({ id: "r2", state: "cancelled", at: 3000 }), run({})]
+  scene({ update, view }, given(pane({ maximized: true, selected: tour.name, entries: [tour, unnamed, untitled], commands: [tour], runs })),
+    expect(role("button", { name: "Minimize Actions" })).toExist(),
+    expect(role("button", { name: "Tour3s" })).toExist(),
+    expect(role("button", { name: "Action" })).toExist(),
+    expect(role("button", { name: "Sweep" })).toExist(),
+    expect(text("Tour #r2")).toExist(),
+    expect(text("person · Cancelled")).toExist(),
+    expect(text("person · Passed")).toExist(),
+    expect(role("button", { name: "Run" })).toExist(),
+    click(role("button", { name: "Minimize Actions" })),
+    expect(role("button", { name: "Maximize Actions" })).toExist(),
+  )
+})
+
+it("a maximized pane with no flow chosen lists the flows and no runs", () => {
+  scene({ update, view }, given(pane({ maximized: true, entries: [tour, post], runs: [run({})] })),
+    expect(role("button", { name: "Tour2s" })).toExist(),
+    expect(role("button", { name: "Post" })).toExist(),
+    expect(text("Tour #r1")).toBeAbsent(),
+    expect(text("No runs yet")).toBeAbsent(),
+  )
+})
+
+it("a failed load says so and offers a retry", () => {
+  scene({ update, view }, given(pane({ error: "unavailable", entries: [tour] })),
+    expect(role("alert")).toContainText("Couldn't load runs"),
+    expect(role("button", { name: "Retry" })).toExist(),
+    expect(role("button", { name: "Tour" })).toBeAbsent(),
+  )
+})
+
+it.each([
+  ["a message", post, "Message"],
+  ["JSON", plan, "{}"],
+] as const)("a permitted flow that takes %s offers an input box", (_label, flow, placeholder) => {
+  scene({ update, view }, given(pane({ selected: flow.name, entries: [flow], commands: [flow] })),
+    expect(role("textbox", { name: "Action input" })).toHaveAttr("placeholder", placeholder),
+    type(role("textbox", { name: "Action input" }), "hi"),
+    expect(role("textbox", { name: "Action input" })).toHaveValue("hi"),
+    expect(role("button", { name: "Run" })).toExist(),
+  )
+})
+
+it("a flow a person may not run offers no input box", () => {
+  scene({ update, view }, given(pane({ selected: plan.name, entries: [plan], commands: [] })),
+    expect(role("textbox", { name: "Action input" })).toBeAbsent(),
+    expect(role("button", { name: "Run" })).toBeAbsent(),
+  )
+})
+
+it("a run card marks a running step and a step still to come apart", () => {
+  const steps = [
+    { key: "a", name: "vibelang/tour/start", attempt: 1, state: "running" as const, started: 0, at: 1 },
+    { key: "b", name: "vibelang/tour/say", attempt: 1, state: "waiting" as const, started: 0, at: 0 },
+  ]
+  scene({ update, view }, given({ ...home, surface: "chat", actions: { ...initialActions, runs: [run({ state: "running", steps })] } }),
+    expect(selector("li[data-status-class=\"run\"]")).toContainText("start"),
+    expect(selector("li[data-status-class=\"muted\"]")).toContainText("say"),
+  )
+})

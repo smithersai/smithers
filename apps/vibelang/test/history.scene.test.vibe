@@ -18,6 +18,7 @@ const chatHome: ChatModel = {
   surface: "splash", palette: false, draft: "", session: "s1", name: "Ada", reducedMotion: false, sent: 0,
   conversation: HOME_CONVERSATION, client: newClient, mode: "mock", stream: "open", epoch: 0, from: 0, following: true,
   followIntent: 0, answer: "", announced: 0, connection: "", tour: false, tourError: "", docs: "pane",
+  theatre: { step: 1, paused: false, sound: false, target: "splash" },
 }
 
 /** The compiler (m1 "one", m2 "three"), then Docs (m3 "two"), all landed. */
