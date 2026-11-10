@@ -94,7 +94,7 @@ const program = effect {
   try Effect.orDie(chatModel())
   try Effect.orDie(dailyTokens)
   try Effect.orDie(specificationModels())
-  return { fetch: apiFetch({ conversations, accounts, actions, histories }, gateway, commit, executionProps) }
+  return { fetch: apiFetch({ conversations, accounts, actions, histories, budgets: (try Budget) as Namespace<BudgetShape> }, gateway, commit, executionProps) }
 }
 
 export default class Api extends Cloudflare.Worker<Api>()(

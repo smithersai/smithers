@@ -10,6 +10,8 @@ export service IssueHost {
 }
 const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
 const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "IssueFailure", code: "unavailable" }, { tag: "IssueFailure", code: "rate-limited" }, { tag: "IssueFailure", code: "unknown" }] })
+/** Public reads settle through the engine before their retry window can hold up the page. */
+export const issueReadDeadline = "5 seconds"
 const steps = Metric.counter("vibelang_issue_steps", { incremental: true })
 const definitions = operations.map((op) => {
   const action = Action.make(`vibelang/issues/${op}/perform`, {
@@ -21,6 +23,7 @@ const definitions = operations.map((op) => {
   const flow = Flow.make(`vibelang/issues/${op}`, {
     description: `VibeLang issues: ${op}. Runs with the current person's policy and GitHub identity.`,
     modelInvocable: op !== "accept" && op !== "decline",
+    ...(op === "read" ? { deadline: issueReadDeadline } : {}),
     payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
     body: Node.capture({}, (request) => action.call(request)),
   })

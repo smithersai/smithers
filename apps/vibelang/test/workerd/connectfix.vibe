@@ -1,0 +1,113 @@
+// Historical account flow declarations retain the cutover and rollback's exact journal protocol; bodies use production Accounts.make.
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Accounts from "../../worker/Accounts.vibe"
+import { IssueHost } from "../../src/core/issueFlows.vibe"
+import { WikiHost } from "../../src/core/wikiFlows.vibe"
+import { IssueFailure, IssueRequest, IssuesState } from "../../src/core/issueSchemas.vibe"
+import { WikiFailure } from "../../src/core/wikiSchemas.vibe"
+import { holdMigration } from "../support/migrationBarrier.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+
+const rollback = Flow.make("vibelang/Account", {
+  description: "28ea402 account protocol", modelInvocable: false,
+  payload: { step: Schema.Literals(["start", "connect", "callback", "sign-out", "grant", "participation", "device"]) },
+  success: Schema.Null, body: () => Node.succeed(null),
+})
+// 28ea402's public issue read: the same sealed step and 120-second retry policy, before the new read deadline.
+const oldReadStep = Action.make("vibelang/issues/read/perform", {
+  payload: IssueRequest.fields, success: IssuesState, error: IssueFailure, tier: "sealed", implementationVersion: "issues/v2",
+  retryPolicy: RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "IssueFailure", code: "unavailable" }] }),
+})
+const oldRead = Flow.make("vibelang/issues/read", { payload: IssueRequest.fields, success: IssuesState, error: IssueFailure, body: Node.capture({}, (request) => oldReadStep.call(request)) })
+
+interface State { readonly id: { toString(): string }; readonly storage: Storage }
+interface Env { readonly PHASE: string; readonly ACCOUNTS: { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } } }
+const json = (value: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(value))
+const failingIssues: IssueHost.Shape = { perform: () => fail(new IssueFailure({ reason: "unavailable", code: "unavailable" })) }
+const failingWiki: WikiHost.Shape = { perform: () => fail(new WikiFailure({ reason: "unavailable", code: "unavailable" })) }
+export class ProjectAccounts {
+  service: Promise<Effect.Success<ReturnType<typeof Accounts.make>>> | undefined
+  constructor(readonly state: State, readonly env: Env) {}
+  async fetch(request: Request): Promise<Response> {
+    const path = new URL(request.url).pathname
+    const state = this.state
+    if (path === "/__seed") {
+      await state.storage.put("github/2", { nonce: "old-encrypted-nonce", ciphertext: "old-encrypted-token" })
+      await state.storage.put("person/2", { id: "2", login: "fixture" })
+      await runPromise(scoped(effect {
+        const engine = try FlowRuntime.FlowRuntime
+        try engine.execute(rollback, { executionId: "account/existing", payload: { step: "grant" } })
+      }).pipe(Effect.provide(CloudflareRuntime.layer({ hostId: state.id.toString(), executionId: "account/existing", flow: rollback._tag }, Interpreter.layer(rollback).pipe(Layer.provide(Action.layerImplementations))).pipe(Layer.provide(ObjectDatabase.layer(state.storage))))))
+      return json({ seeded: true })
+    }
+    if (path === "/__state") return json({
+      entered: await state.storage.get("test/migration-entered"), migrated: await state.storage.get("migrated/connect-v1"),
+      oldRows: (await state.storage.list({ prefix: "github/" })).size,
+      runs: state.storage.sql.exec("select run_id, status, state_json from flows_runs").toArray(),
+    })
+
+    if (path === "/__decode") {
+      const rows = state.storage.sql.exec("select run_id, state_json from flows_runs").toArray()
+      const decoder = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ payload: Schema.Struct({ step: Schema.String }) })))
+      const row = rows.find(row => {
+        const decoded = decoder(row.state_json)
+        return Option.isSome(decoded) && decoded.value.payload.step === "migrate"
+      })
+      if (row === undefined) return json({ missing: true })
+      const id = String(row.run_id)
+      const refusal = await runPromise(scoped(effect {
+        const engine = try FlowRuntime.FlowRuntime
+        try engine.resume(rollback, id)
+        const deadline = (try Clock.currentTimeMillis) + 2_000
+        while ((try Clock.currentTimeMillis) < deadline) {
+          const result = try engine.poll(rollback, id)
+          if (Option.isSome(result) && result.value._tag === "Complete") {
+            if (result.value.exit._tag === "Failure") {
+              const cause = result.value.exit.cause
+              return Option.getOrUndefined(try Effect.try(() => Interpreter.refusalCode(cause)))
+            }
+            return "unexpected success"
+          }
+          try sleep("20 millis")
+        }
+        return "decode deadline exceeded"
+      }).pipe(Effect.provide(CloudflareRuntime.layer({ hostId: state.id.toString(), executionId: id, flow: rollback._tag, codeVersion: "rollback-build" }, Interpreter.layer(rollback).pipe(Layer.provide(Action.layerImplementations))).pipe(Layer.provide(ObjectDatabase.layer(state.storage))))))
+      return json({ refusal })
+    }
+    if (this.env.PHASE === "rollback") {
+      const run = <A, Registered, E, R>(executionId: string, flow: Flow.Any, registration: Layer.Layer<Registered, E, R>, program: A!unknown!FlowRuntime.FlowRuntime) => scoped(Effect.provide(program, CloudflareRuntime.layer({ hostId: state.id.toString(), executionId, flow: flow._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(state.storage)))))
+      await runPromise(run("account/rollback", rollback, Interpreter.layer(rollback).pipe(Layer.provide(Action.layerImplementations)), effect {
+        return try (try FlowRuntime.FlowRuntime).execute(rollback, { executionId: "account/rollback", payload: { step: "grant" } })
+      }))
+      if (path === "/api/auth/session") return json({ id: "", login: "", role: "viewer", available: true })
+      await runPromise(run("issues/rollback", oldRead, Interpreter.layerWithImplementations(oldRead, oldReadStep.toLayer(() => fail(new IssueFailure({ reason: "unavailable", code: "unavailable" })), { implementationVersion: "issues/v2" })), effect {
+        return try (try FlowRuntime.FlowRuntime).execute(oldRead, { executionId: "issues/rollback", payload: { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "rollback" } })
+      }))
+      return json({ unexpected: true })
+    }
+    if (this.service === undefined) {
+      const storage = this.env.PHASE === "cutover" ? holdMigration(state.storage) : state.storage
+      this.service = runPromise(scoped(effect {
+        const setup = try Accounts.configured()
+        if (setup === undefined) return try Effect.die("fixture setup missing")
+        return try Accounts.make(state.id.toString(), storage, setup)
+      }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({
+          GITHUB_CLIENT_ID: "fixture", GITHUB_CLIENT_SECRET: "fixture", SESSION_SECRET: "s".repeat(32), SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          VIBELANG_ORIGIN: "https://fixture.test", VIBELANG_INITIAL_MAINTAINER_ID: "1",
+        }))),
+      ))
+    }
+    const service = await this.service
+    const incoming = HttpServerRequest.fromWeb(request).modify({ url: "https://fixture.test" + path + new URL(request.url).search })
+    return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(
+      Effect.provideService(HttpServerRequest.HttpServerRequest, incoming),
+      Effect.provideService(IssueHost, failingIssues), Effect.provideService(WikiHost, failingWiki),
+    )))
+  }
+}
+export default { fetch: (request: Request, env: Env) => env.ACCOUNTS.get(env.ACCOUNTS.idFromName(new URL(request.url).searchParams.get("object") ?? "project")).fetch(request) }

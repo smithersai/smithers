@@ -1,0 +1,95 @@
+import { describe, expect, it } from "@effect/vitest"
+import { JournalDecode } from "@smthrs/flow"
+import { TestClock } from "effect/testing"
+import * as Startup from "../worker/ObjectStartup.vibe"
+const state = { id: { toString: () => "fixture-object" } } as never
+
+describe("inspectable object startup", () => {
+  it.effect("answers health while startup waits, then exposes the actual code and completed service", () => scoped(effect {
+    const gate = try Deferred.make<void>()
+    const api = try Startup.make("ProjectAccounts", state, effect {
+      try Deferred.await(gate)
+      return { ping: () => succeed("pong") }
+    }, { ping: true }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_COMMIT: "fixture-code" }))))
+    const starting = try api.health()
+    const waiting = try forkChild(api.ping())
+    try Effect.try(() => {
+      expect(starting).toEqual({ objectClass: "ProjectAccounts", objectId: "fixture-object", codeVersion: "fixture-code", startup: "starting" })
+      expect(waiting.pollUnsafe()).toBeUndefined()
+      expect("alarm" in api).toBe(false)
+      expect("fetch" in api).toBe(false)
+      expect("then" in api).toBe(false)
+    })
+    try Deferred.succeed(gate, undefined)
+    const answer = try Fiber.join(waiting)
+    const ready = try api.health()
+    try Effect.try(() => { expect(answer).toBe("pong"); expect(ready.startup).toBe("ready") })
+  }))
+  it.effect("bounds a stuck startup, keeps health available and refuses ordinary calls", () => scoped(effect {
+    const api = try Startup.make("ProjectAccounts", state, Effect.never as { ping: () => string!! }!!, { ping: true })
+    try TestClock.adjust("6 seconds")
+    const status = try api.health()
+    const pending = try forkChild(exit(api.ping()))
+    try TestClock.adjust("6 seconds")
+    const refused = try Fiber.join(pending)
+    try Effect.try(() => { expect(status.startup).toBe("failed"); expect(refused._tag).toBe("Failure") })
+  }))
+  it.effect("reports failed initialization without exposing the service error", () => scoped(effect {
+    const api = try Startup.make("History", state, fail("private storage value") as { ping: () => string!! }!string, { ping: true })
+    const refused = try exit(api.ping())
+    const status = try api.health()
+    try Effect.try(() => {
+      expect(status.startup).toBe("failed")
+      expect(JSON.stringify(status)).not.toContain("private")
+      expect(refused._tag).toBe("Failure")
+      if (refused._tag === "Failure") expect(String(Cause.squash(refused.cause))).not.toContain("private storage value")
+    })
+  }))
+})
+
+
+it.effect("a new call retries a failed startup and health alone never restarts it", () => scoped(effect {
+  let calls = 0
+  const api = try Startup.make("ProjectAccounts", state, effect {
+    calls += 1
+    if (calls === 1) throw "temporary fault"
+    return { ping: () => succeed("recovered") }
+  }, { ping: true })
+  try exit(api.ping())
+  const failed = try api.health()
+  try api.health()
+  try Effect.try(() => { expect(failed.startup).toBe("failed"); expect(calls).toBe(1) })
+  const answer = try api.ping()
+  try Effect.try(() => { expect(answer).toBe("recovered"); expect(calls).toBe(2) })
+}))
+
+// Returned methods run later, outside the initializer's provided service context.
+it.effect("carries object identity into calls made after initialization", () => scoped(effect {
+  const api = try Startup.make("ProjectAccounts", state, succeed({ identity: () => JournalDecode.Identity }), { identity: true }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_COMMIT: "live-code" }))))
+  const identity = try api.identity()
+  try Effect.try(() => expect(identity).toEqual({ objectId: "fixture-object", codeVersion: "live-code" }))
+}))
+
+it.effect("bounds calls while startup finishes an uninterruptible storage operation", () => scoped(effect {
+  const gate = try Deferred.make<void>()
+  const api = try Startup.make("ProjectAccounts", state, Effect.uninterruptible(effect {
+    try Deferred.await(gate)
+    return { ping: () => succeed("pong") }
+  }), { ping: true })
+  const counter = Metric.withAttributes(Metric.counter("vibelang_object_startup_wait_deadlines", { incremental: true }), { objectClass: "ProjectAccounts" })
+  const before = (try Metric.value(counter)).count
+  const pending = try forkChild(api.ping())
+  try TestClock.adjust("6 seconds")
+  const timed = pending.pollUnsafe()
+  const waiting = try api.health()
+  const expired = (try Metric.value(counter)).count - before
+  // Release the critical section before asserting so even the red case closes its object scope.
+  try Deferred.succeed(gate, undefined)
+  try exit(Fiber.join(pending))
+  try Effect.try(() => {
+    expect(timed?._tag).toBe("Failure")
+    expect(waiting.startup).toBe("starting")
+    expect(expired).toBe(1)
+    if (timed?._tag === "Failure") expect(Cause.squash(timed.cause)).toMatchObject({ _tag: "ObjectStartupFailed", objectId: "fixture-object" })
+  })
+}))

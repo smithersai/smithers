@@ -5,7 +5,7 @@ import { Digest } from "effect/crypto"
 import { Base64 } from "effect/encoding"
 // GitHub is authoritative (GH-1). The host supplies a freshly authenticated person for every durable operation.
 import { GitHub } from "@smthrs/integrations"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { applyIssues, approveVip, canLinkIssues, emptyIssues, issuePermission, setCommitment, reviewActions, vipDocumentMatches, type IssueRecord, type Role } from "../src/core/conversation.vibe"
@@ -375,7 +375,12 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
       return { ...result, saved: { request, status: completed?._tag === "Success" ? "completed" as const : completed?._tag === "Failure" ? "failed" as const : "running" as const, unwritten: Option.isSome(failure) && failure.value.unwritten === true, selected: completed?._tag === "Success" ? completed.value.selected ?? request.number : request.number } }
     }
     return result
-  }, runtime(target))).pipe(Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "unavailable" })))
+  }, runtime(target))).pipe(
+    Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "unavailable" })),
+    Effect.catchDefect((defect) => RetryPolicy.errorTag(defect) === "@smthrs/flow/DeadlineExceeded"
+      ? Effect.logWarning("vibelang.issues.deadline").pipe(Effect.annotateLogs({ op: payload.op }), Effect.andThen(Metric.update(Metric.withAttributes(Metric.counter("vibelang_issue_deadline", { incremental: true }), { op: payload.op }), 1)), Effect.andThen(Effect.fail(new IssueFailure({ reason: "unavailable", code: "unavailable" }))))
+      : Effect.die(defect)),
+  )
   return { ...result, role: actor?.role ?? "viewer", connected: actor?.connection !== undefined }
 }
 

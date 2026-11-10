@@ -53,6 +53,8 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | [0029](decisions/0029-hosted-sign-in-broker.md) | Hosted sign-in through smithers.sh's registered callback, exact-origin registry, single-use PKCE-bound codes and retried temporary-token revocation (VL-33) |
 
+| [0030](decisions/0030-read-deadlines-and-object-health.md) | Bounded issue/wiki reads, inspectable object startup and safe journal-decode failures |
+
 ## Layout
 
 ```
@@ -72,4 +74,3 @@ apps/vibelang/
 
 
 [Benchmark methods and measurements](benchmarks.md).
-

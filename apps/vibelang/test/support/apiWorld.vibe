@@ -111,7 +111,7 @@ export effect function world(signIn: boolean, limit: number, agent: Agent) {
     const storage = try storageOf(kind, name)
     return { id: { toString: () => `${kind}/${name}` }, raw: { storage }, exports: name.startsWith("orphan") ? {} : { default: (options: unknown) => succeed(options) } } as never
   }
-  const builders: Record<Kind, (name: string) => Api!!> = {
+  const builders: Record<Kind, (name: string) => Api!!Scope.Scope> = {
     budget: effect (name) => { return (try budgetObject(try stateOf("budget", name), limit)) as never },
     history: effect (name) => { return (try historyObject(try stateOf("history", name), undefined, refusingGitHub)) as never },
     accounts: effect (name) => { return (try accountsObject(try stateOf("accounts", name), namespaces.budget, model as never, signIn ? setup : undefined, wikiGitHub)) as never },
@@ -145,7 +145,7 @@ export effect function world(signIn: boolean, limit: number, agent: Agent) {
   }) as never
   const namespaces = { conversation: namespaceOf("conversation"), accounts: namespaceOf("accounts"), budget: namespaceOf("budget"), history: namespaceOf("history"), actions: namespaceOf("actions") }
   const fetchOf = (request: HttpServerRequest.HttpServerRequest, props: Record<string, unknown>) =>
-    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history }, signedOutGateway as never, "fuzz-commit", succeed(props))
+    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history, budgets: namespaces.budget }, signedOutGateway as never, "fuzz-commit", succeed(props))
       .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(RuntimeContext, runtime))
   /** The entrypoint an alarm calls back into, as `Cloudflare.toHttpClient` adapts it. */
   const clientOf = (self: { readonly props: Record<string, unknown> }) => HttpClient.make((request) => Effect.orDie(effect {

@@ -1,0 +1,77 @@
+// Startup remains inspectable while the object's durable initialization is unfinished.
+import { JournalDecode } from "@smthrs/flow"
+import { HttpServerResponse } from "effect/http"
+import type { ObjectState } from "./apiObjects.vibe"
+
+export interface Status {
+  readonly objectClass: string
+  readonly objectId: string
+  readonly codeVersion: string
+  readonly startup: "starting" | "ready" | "failed"
+}
+export interface Health { readonly health: () => Status!! }
+export error ObjectStartupFailed { objectClass: string; objectId: string; codeVersion: string }
+const starts = Metric.counter("vibelang_object_startup_steps", { incremental: true })
+
+/** The host keeps this scope for the object's lifetime; ordinary calls join its bounded startup. */
+export effect function make<A extends object, E, R>(objectClass: string, state: ObjectState, program: A!E!R, members: Readonly<Record<keyof NoInfer<A> & string, true>>) {
+  const objectId = try Effect.orDie(Effect.try(() => state.id.toString()))
+  const codeVersion = try Effect.orDie(Config.withDefault(Config.String("VIBELANG_COMMIT"), "unknown"))
+  let status: Status = { objectClass, objectId, codeVersion, startup: "starting" }
+  const scope = try Scope.Scope
+  const context = try Effect.context<R>()
+  const lock = try Semaphore.make(1)
+  let ready = try Deferred.make<A, ObjectStartupFailed>()
+  const note = effect (outcome: "started" | "ready" | "failed") => {
+    const fields = { objectClass, objectId, codeVersion, step: "initialize", outcome }
+    try Metric.update(Metric.withAttributes(starts, { objectClass, step: "initialize", outcome }), 1)
+    try Effect.logInfo("vibelang.object.startup").pipe(Effect.annotateLogs(fields))
+    try Effect.annotateCurrentSpan(fields)
+  }
+  const start = effect {
+    status = { ...status, startup: "starting" }
+    ready = try Deferred.make<A, ObjectStartupFailed>()
+    const pending = ready
+    try note("started")
+    try Effect.forkIn(withSpan(effect {
+      const result = try exit(program.pipe(Effect.timeout("5 seconds"), Effect.provideService(JournalDecode.Identity, { objectId, codeVersion })))
+      const startup = result._tag === "Success" ? "ready" : "failed"
+      status = { ...status, startup }
+      try note(startup)
+      if (result._tag === "Failure") try Effect.logError("vibelang.object.startup.failed").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion, errorType: Cause.hasDies(result.cause) ? "defect" : "failure" }))
+      if (result._tag === "Success") try Deferred.succeed(pending, result.value)
+      else try Deferred.fail(pending, new ObjectStartupFailed({ objectClass, objectId, codeVersion }))
+    }, "vibelang.object.startup").pipe(Effect.provideContext(context)), scope)
+  }
+  try start
+  // A new call after failure is the person's explicit retry, never a timer or background retry loop.
+  const joined = effect {
+    try Semaphore.withPermits(lock, 1)(effect { if (status.startup === "failed") try start })
+    return try Deferred.await(ready).pipe(
+      Effect.timeout("5 seconds"),
+      Effect.catchTag("TimeoutError", () => effect {
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_object_startup_wait_deadlines", { incremental: true }), { objectClass }), 1)
+        try Effect.logWarning("vibelang.object.startup.wait.deadline").pipe(Effect.annotateLogs({ objectClass, objectId, codeVersion }))
+        throw new ObjectStartupFailed({ objectClass, objectId, codeVersion })
+      }),
+      Effect.orDie,
+      Effect.withSpan("vibelang.object.startup.wait"),
+    )
+  }
+  const health = () => sync(() => status)
+  const known = new Set<string>(["health", ...Object.keys(members)])
+  const api = new Proxy({ health, ...Object.fromEntries(Object.keys(members).map(name => [name, undefined])) }, {
+    get: (_target, property: string | symbol) => {
+      if (typeof property !== "string" || property === "then" || !known.has(property)) return undefined
+      if (property === "health") return health
+      if (property === "fetch") return joined.pipe(
+        Effect.flatMap((service) => (service as { readonly fetch: HttpServerResponse.HttpServerResponse!! }).fetch),
+        Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }),
+        Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe({ reason: "unavailable" }, { status: 503, headers: { "cache-control": "no-store" } }))),
+      )
+      return (...args: Array<unknown>) => joined.pipe(Effect.flatMap((service) =>
+        (service as Record<string, (...input: Array<unknown>) => unknown!!>)[property]!(...args)), Effect.provideService(JournalDecode.Identity, { objectId, codeVersion }))
+    },
+  })
+  return api as unknown as A & Health
+}

@@ -303,3 +303,15 @@ describe("an unreachable object", () => {
     }
   }))
 })
+
+
+it.live("health identifies the account object used by public issue and wiki reads", () => scoped(effect {
+  const w = try world(false, 1000000, "unusable")
+  const client = browser(w)
+  try client.ask("GET", "/api/auth/session")
+  const answer = try client.ask("GET", "/api/health/objects")
+  try Effect.try(() => {
+    expect(answer.status).toBe(200)
+    expect(answer.body.objects.ProjectAccounts).toMatchObject({ startup: "ready", codeVersion: "unknown" })
+  })
+}))

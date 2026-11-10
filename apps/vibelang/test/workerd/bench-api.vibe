@@ -36,7 +36,7 @@ function named(namespace: Namespace) {
     },
   } as never
 }
-const namespaces = (env: Env) => ({ conversations: named(env.CONVERSATION), accounts: named(env.ACCOUNTS), actions: named(env.ACTION_INDEX), histories: named(env.HISTORY) })
+const namespaces = (env: Env) => ({ conversations: named(env.CONVERSATION), accounts: named(env.ACCOUNTS), actions: named(env.ACTION_INDEX), histories: named(env.HISTORY), budgets: named(env.BUDGET) })
 
 async function entry(request: Request, env: Env, props: Record<string, unknown>) {
   const program = apiFetch(namespaces(env), signedOutGateway as never, "bench-commit", succeed(props))
@@ -55,7 +55,10 @@ const stateOf = (state: State) => ({ id: state.id, raw: state, exports: { defaul
 
 class ObjectHost {
   readonly api: Promise<Api>
-  constructor(body: unknown) { this.api = runPromise((body as Effect.Effect<Api>).pipe(Effect.provide(noRuntime)) as never) }
+  constructor(body: unknown, env: Env) {
+    const scope = runSync(Scope.make())
+    this.api = runPromise((body as Effect.Effect<Api, never, Scope.Scope>).pipe(Effect.provideService(Scope.Scope, scope), Effect.provide(noRuntime), Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env)))) as never)
+  }
   async fetch(request: Request): Promise<Response> {
     const api = await this.api
     if (new URL(request.url).pathname === "/__rpc") {
@@ -72,10 +75,10 @@ class ObjectHost {
 }
 
 export class Budget extends ObjectHost {
-  constructor(state: State, env: Env) { super(Effect.flatMap(configured(env, Effect.orDie(dailyTokens)), limit => budgetObject(stateOf(state), limit))) }
+  constructor(state: State, env: Env) { super(Effect.flatMap(configured(env, Effect.orDie(dailyTokens)), limit => budgetObject(stateOf(state), limit)), env) }
 }
 export class History extends ObjectHost {
-  constructor(state: State) { super(historyObject(stateOf(state), undefined, faultyGitHub)) }
+  constructor(state: State, env: Env) { super(historyObject(stateOf(state), undefined, faultyGitHub), env) }
 }
 export class ProjectAccounts extends ObjectHost {
   constructor(state: State, env: Env) {
@@ -84,7 +87,7 @@ export class ProjectAccounts extends ObjectHost {
       // readSetup builds the GitHub layer, which needs a Scope; without one configured() answers undefined (sign-in off).
       const setup = try Effect.orDie(scoped(configured(env, Accounts.configured()).pipe(Effect.provide(FetchHttpClient.layer))))
       return try accountsObject(stateOf(state), named(env.BUDGET), model, setup, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
-    })
+    }, env)
   }
 }
 export class Conversation extends ObjectHost {
@@ -92,11 +95,11 @@ export class Conversation extends ObjectHost {
     super(effect {
       const model = try Effect.orDie(configured(env, chatModel()))
       return try conversationObject(stateOf(state), named(env.BUDGET), named(env.HISTORY), named(env.ACCOUNTS), model, selfClient(env) as never)
-    })
+    }, env)
   }
 }
 export class ActionIndex extends ObjectHost {
-  constructor(state: State, env: Env) { super(actionIndexObject(stateOf(state), named(env.ACCOUNTS), named(env.CONVERSATION))) }
+  constructor(state: State, env: Env) { super(actionIndexObject(stateOf(state), named(env.ACCOUNTS), named(env.CONVERSATION)), env) }
 }
 
 export default {
