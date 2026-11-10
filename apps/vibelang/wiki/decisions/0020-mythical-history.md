@@ -82,8 +82,8 @@ the routes).
 
 `LiveMythical` is the `Mythical` layer over it. A live Fold reads GitHub's commit list of `smithersai/vibelang`
 (`worker/MainLog.vibe`, at most ten pages of 100) and walks first parents back to the last folded commit; a merge's side
-commits the pages hold come before it, and one already folded is refused `duplicate`. `GITHUB_TOKEN`, when the
-deployment sets it, raises GitHub's rate limit. Authorization is itself a journaled step, so a refusal is on the record
+commits the pages hold come before it, and one already folded is refused `duplicate`. It reads signed out through
+smithers.sh's App and the object's cache ([0031](0031-public-reads.md)); the site holds no GitHub token. Authorization is itself a journaled step, so a refusal is on the record
 as an acceptance is.
 
 **Observability.** `vibelang.history.<step>` logs and `vibelang_history_steps{step, outcome}` counts, the flows'

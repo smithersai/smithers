@@ -62,17 +62,16 @@ export function newCommits(fetched: ReadonlyArray<GitHubCommit>, cursor: string)
   return commits
 }
 
-/** main of `repository` (`owner/name`) on GitHub; `token` raises GitHub's rate limit when the deployment has one. */
-export function githubMain(repository: string, client: HttpClient.HttpClient, token: string | undefined): MainLog.Shape {
+/** main of `repository` (`owner/name`) on GitHub, read signed out over `client` (the object's cached public reads, 0031). */
+export function githubMain(repository: string, client: HttpClient.HttpClient): MainLog.Shape {
   return {
     since: effect (cursor: string) => {
       const fetched: Array<GitHubCommit> = []
       for (let page = 1; page <= MAX_PAGES; page++) {
-        let request = HttpClientRequest.get(`https://api.github.com/repos/${repository}/commits?sha=main&per_page=${PER_PAGE}&page=${page}`).pipe(
+        const request = HttpClientRequest.get(`https://api.github.com/repos/${repository}/commits?sha=main&per_page=${PER_PAGE}&page=${page}`).pipe(
           HttpClientRequest.setHeader("accept", "application/vnd.github+json"),
           HttpClientRequest.setHeader("user-agent", "vibelang-factory"),
         )
-        if (token !== undefined) request = HttpClientRequest.setHeader(request, "authorization", `Bearer ${token}`)
         const response = try Effect.mapError(client.execute(request), () => new MainUnavailable({ reason: "GitHub unreachable" }))
         if (response.status !== 200) throw new MainUnavailable({ reason: `GitHub answered ${response.status}` })
         const body = try Effect.mapError(response.json, () => new MainUnavailable({ reason: "GitHub's answer is not JSON" }))

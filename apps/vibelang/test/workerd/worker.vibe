@@ -259,7 +259,7 @@ export class Budget {
 
 export class History {
   readonly sequencer: Promise<HistorySequencer>
-  readonly main = githubMain("smithersai/vibelang", Effect.runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)), undefined)
+  readonly main = githubMain("smithersai/vibelang", Effect.runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)))
 
   constructor(readonly state: State, readonly env: Env) {
     const main = this.main

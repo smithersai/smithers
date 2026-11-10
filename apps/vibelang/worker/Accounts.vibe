@@ -1,6 +1,7 @@
 import { SESSION as HOST_SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
 export { SESSION, sessionCookieName } from "../src/core/accountCookies.vibe"
 import { GitHubDelegate, type Connection, type Delegate } from "./GitHubDelegate.vibe"
+import { PublicReads, publicReads } from "./PublicReads.vibe"
 import type { Principal } from "./Issues.vibe"
 import { IssueAuthority, serveIssues, repository } from "./Issues.vibe"
 import { WikiAuthority, serveWiki, executeWiki, wikiFilePath } from "./Wiki.vibe"
@@ -113,7 +114,12 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
   const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
   const delegate = setup.delegate ?? (setup.broker?.secret === undefined ? undefined : (GitHub.Delegation.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) catch () => undefined))
-  const delegated = <A, E, R>(program: A!E!R) => delegate === undefined ? program : Effect.provideService(program, GitHubDelegate, delegate)
+  // Signed-out reads go through smithers.sh's App with the same site key, cached in this object (0031).
+  const reads = { client: try publicReads(storage, setup.broker?.secret === undefined ? undefined : { origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) }
+  const delegated = <A, E, R>(program: A!E!R) => {
+    const read = Effect.provideService(program, PublicReads, reads)
+    return delegate === undefined ? read : Effect.provideService(read, GitHubDelegate, delegate)
+  }
   const sequencer = try Sequencer.make(logOver(storage))
   const lock = try Semaphore.make(1)
   const issueLock = try Semaphore.make(1)

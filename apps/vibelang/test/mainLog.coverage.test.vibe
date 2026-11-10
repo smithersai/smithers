@@ -37,8 +37,8 @@ function clientWith(pages: ReadonlyArray<{ readonly status: number; readonly bod
 }
 
 /** The reason `since` fails with, or `defect`/`ok` when it does not fail with MainUnavailable. */
-effect function reasonOf(client: HttpClient.HttpClient, cursor: string, token?: string) {
-  const result = try Effect.exit(githubMain("o/r", client, token).since(cursor))
+effect function reasonOf(client: HttpClient.HttpClient, cursor: string) {
+  const result = try Effect.exit(githubMain("o/r", client).since(cursor))
   if (result._tag === "Success") return "ok"
   const error = Cause.findErrorOption(result.cause)
   return Option.isSome(error) ? error.value.reason : "defect"
@@ -75,7 +75,7 @@ describe("githubMain", () => {
   it.effect("answers the first-parent walk until the cursor, without a token header", () => effect {
     const seen: Array<string> = []
     const fetched = [commit(4, [3, 8]), commit(8, [2]), commit(3, [2]), commit(2, [1]), commit(1, [0]), commit(0, [])]
-    const main = githubMain("smithersai/vibelang", clientWith([{ status: 200, body: json(fetched) }], seen), undefined)
+    const main = githubMain("smithersai/vibelang", clientWith([{ status: 200, body: json(fetched) }], seen))
     const commits = try main.since(short(0).slice(0, 8))
     try Effect.try(() => {
       expect(commits.map((commit) => commit.sha)).toEqual([1, 2, 3, 8, 4].map(short))
@@ -84,24 +84,24 @@ describe("githubMain", () => {
   })
 
   it.effect("takes the whole walk for an empty cursor", () => effect {
-    const main = githubMain("o/r", clientWith([{ status: 200, body: json([commit(1, [0]), commit(0, [])]) }], []), undefined)
+    const main = githubMain("o/r", clientWith([{ status: 200, body: json([commit(1, [0]), commit(0, [])]) }], []))
     const commits = try main.since("")
     try Effect.try(() => expect(commits.map((commit) => commit.sha)).toEqual([0, 1].map(short)))
   })
 
-  it.effect("reads pages until the cursor is within reach, sending the token on each", () => effect {
+  it.effect("reads pages until the cursor is within reach, signed out: the site sends no token (0031)", () => effect {
     const seen: Array<string> = []
     const pages = [
       { status: 200, body: json(pageOf(PER_PAGE, PER_PAGE)) },
       { status: 200, body: json(pageOf(0, PER_PAGE)) },
     ]
-    const main = githubMain("o/r", clientWith(pages, seen), "secret-token")
+    const main = githubMain("o/r", clientWith(pages, seen))
     const commits = try main.since(short(50).slice(0, 8))
     try Effect.try(() => {
       expect(commits.length).toBe(149)
       expect(commits[0]?.sha).toBe(short(51))
       expect(commits[148]?.sha).toBe(short(199))
-      expect(seen).toEqual(["1 Bearer secret-token", "2 Bearer secret-token"])
+      expect(seen).toEqual(["1 ", "2 "])
     })
   })
 

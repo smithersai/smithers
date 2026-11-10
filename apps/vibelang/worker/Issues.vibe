@@ -13,6 +13,7 @@ import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutio
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
+import { PublicReads } from "./PublicReads.vibe"
 
 /** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly connection?: Connection; readonly kind?: "person" | "agent" }
@@ -71,6 +72,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(VipWriter)
   const delegate = try Effect.serviceOption(GitHubDelegate)
+  const reads = try Effect.serviceOption(PublicReads)
   let revision = 0
   let touched = false
   effect function read(number = 0) {
@@ -130,7 +132,11 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       if (!issuePermission(actor?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
       if ((request.op === "accept" || request.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
       const work = effect {
-        if (request.op === "read") return try read(request.number)
+        if (request.op === "read") {
+          // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
+          const observed = try GitHub.ReadCache.observeStale(read(request.number))
+          return observed.stale === undefined ? observed.value : { ...observed.value, stale: observed.stale }
+        }
         if (actor === undefined || request.key === "") throw new IssueFailure({ reason: "sign-in" })
         if (request.op !== "draft" && actor.connection === undefined) throw new IssueFailure({ reason: "connect" })
         // A logical write keeps its marker when SDK retryFrom creates a new execution.
@@ -235,7 +241,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         } else throw new IssueFailure({ reason: "unsupported" })
         return try read(issue.number)
       }
-      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
+      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "IssueFailure" ? error : issueFailureOf(error)
         return fresh() && !touched && ["title", "incomplete", "empty", "tree", "assignee", "closed", "review"].includes(failure.reason) ? new IssueFailure({ ...failure, unwritten: true }) : failure
       }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
@@ -400,6 +406,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
 }
 
 /** Unconfigured sign-in still leaves GitHub's public issues readable. */
-export function publicIssues(hostId: string, storage: Storage) {
-  return serveIssues(hostId, storage).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed(undefined) }), Effect.provide(FetchHttpClient.layer))
+export function publicIssues(hostId: string, storage: Storage, reads?: HttpClient.HttpClient) {
+  const served = serveIssues(hostId, storage).pipe(Effect.provideService(IssueAuthority, { current: () => Effect.succeed(undefined) }))
+  return (reads === undefined ? served : Effect.provideService(served, PublicReads, { client: reads })).pipe(Effect.provide(FetchHttpClient.layer))
 }

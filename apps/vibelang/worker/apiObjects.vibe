@@ -29,6 +29,7 @@ import * as HistoryObject from "./HistoryObject.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
+import { publicReads, readSetup, type ReadSetup } from "./PublicReads.vibe"
 import * as Objects from "./Objects.vibe"
 import { SandboxIdentity } from "./accountObject.vibe"
 import type { Gateway } from "./SandboxHttp.vibe"
@@ -131,12 +132,12 @@ function budgetBody(state: ObjectState, limit: number) {
   }
 }
 
-/** VibeLang's history; `client` reads GitHub's main. */
-function historyBody(state: ObjectState, token: string | undefined, client: HttpClient.HttpClient) {
+/** VibeLang's history; it reads GitHub's main signed out, through smithers.sh when `reads` names it (0031). */
+function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const sequencer = try ObjectStartup.step("sequencer", HistoryObject.history(state.raw.storage))
-    const main = githubMain("smithersai/vibelang", client, token)
+    const main = githubMain("smithersai/vibelang", try publicReads(state.raw.storage, reads).pipe(Effect.provideService(HttpClient.HttpClient, client)))
     try ObjectStartup.step("bootstrap", effect {
       if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
     })
@@ -159,13 +160,15 @@ function historyBody(state: ObjectState, token: string | undefined, client: Http
 function accountsBody(state: ObjectState, budgets: Namespace<BudgetShape>, model: Model, setup: Setup | undefined, client: HttpClient.HttpClient) {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    // Sign-in unconfigured: the public wiki and issues still read through smithers.sh when the site holds its key (0031).
+    const reads = setup === undefined ? try publicReads(state.raw.storage, try Effect.orDie(readSetup())).pipe(Effect.provideService(HttpClient.HttpClient, client)) : undefined
     if (setup === undefined) return {
       draftWiki: () => succeed("forbidden"),
       current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage)
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage, reads)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage, reads)
         return try Accounts.disabled()
       },
     }

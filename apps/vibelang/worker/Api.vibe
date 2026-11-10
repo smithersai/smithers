@@ -3,6 +3,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Telemetry } from "alchemy"
 import { GitHub } from "@smthrs/integrations"
 import * as Accounts from "./Accounts.vibe"
+import { readSetup } from "./PublicReads.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
 import { chatModel, dailyTokens } from "./AgentModel.vibe"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -42,9 +43,10 @@ const BudgetLive = Budget.make(effect {
 
 const HistoryLive = History.make(effect {
   const state = try Cloudflare.DurableObjectState
-  // Read when the Worker deploys and when an object starts: GitHub's rate limit is higher with a token.
-  const token = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("GITHUB_TOKEN"))))
-  return historyObject(state, token, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+  // Read when the Worker deploys and when an object starts. The site holds no GitHub token: main is read through
+  // smithers.sh's App with the site's broker key (0031).
+  const reads = try Effect.orDie(readSetup())
+  return historyObject(state, reads, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
 })
 
 const ConversationLive = Conversation.make(effect {

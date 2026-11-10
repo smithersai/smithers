@@ -1,0 +1,41 @@
+// Signed-out GitHub reads (smithers.sh decision 0165, public reads; wiki decision 0031). With the site's broker key they
+// go through smithers.sh's App; without it, anonymously. Either way each read is cached in the object's storage with its
+// ETag and served stale when GitHub or smithers.sh refuses. The site holds no GitHub token.
+import { GitHub } from "@smthrs/integrations"
+import { HttpClient } from "effect/http"
+import type { KeyValue } from "./ObjectStorage.vibe"
+
+export interface ReadSetup { readonly origin: string; readonly brokerOrigin: string; readonly secret: Redacted.Redacted<string> }
+
+/** The client every signed-out GitHub read uses, where an object provides one. */
+export service PublicReads {
+  readonly client: HttpClient.HttpClient
+}
+
+/**
+ * `VIBELANG_ORIGIN`, `AUTH_BROKER_ORIGIN` (default `https://smithers.sh`) and `AUTH_BROKER_SITE_SECRET`: undefined, so
+ * reads go out anonymously, when the origin or key is missing. Read where an object starts, as Alchemy needs.
+ */
+export effect function readSetup() {
+  const origin = try Config.option(Config.String("VIBELANG_ORIGIN"))
+  const brokerOrigin = try Config.withDefault(Config.String("AUTH_BROKER_ORIGIN"), "https://smithers.sh")
+  const secret = try Config.option(Config.Redacted("AUTH_BROKER_SITE_SECRET"))
+  if (Option.isNone(origin) || Option.isNone(secret)) return undefined
+  const setup: ReadSetup = { origin: origin.value, brokerOrigin, secret: secret.value }
+  return setup
+}
+
+/** The object's storage as the cache's store. A storage failure is a miss, never a failed read. */
+export function storeOver(storage: KeyValue): GitHub.ReadCache.Store {
+  return {
+    get: effect (key) => tryPromise(() => storage.get(key)) catch () => undefined,
+    put: effect (key, value) => { tryPromise(() => storage.put(key, value)) catch () => undefined },
+    remove: effect (key) => { tryPromise(() => storage.delete(key)) catch () => false },
+  }
+}
+
+/** The object's signed-out GitHub client: cached over smithers.sh when `setup` names it, else over `HttpClient`. */
+export effect function publicReads(storage: KeyValue, setup: ReadSetup | undefined): HttpClient.HttpClient!never!HttpClient.HttpClient {
+  const upstream = setup === undefined ? try HttpClient.HttpClient : try GitHub.PublicRead.site({ origin: setup.origin, brokerOrigin: setup.brokerOrigin, secret: setup.secret })
+  return try GitHub.ReadCache.make({ store: storeOver(storage), upstream })
+}

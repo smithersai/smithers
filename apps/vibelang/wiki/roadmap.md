@@ -125,3 +125,7 @@ brick                                   state         proof
   findings of the 2026-11-10 security review fixed with failing-first tests; deployment adds `BROKER_LIMIT`. Lead
   deploys.
 - **Test quality (0015, lane vl-test-quality): landed.** Review findings 1, 2 and 4 to 11 fixed with mutation checks; sign-in wall-clock waits and the protocol-double ruling (finding 3) open.
+
+- **Public reads (0031, lane vl-public-reads): implemented locally.** Signed-out wiki, issue and history reads go through
+  smithers.sh's App (0165 addendum), cached with ETags and served stale when GitHub refuses; `GITHUB_TOKEN` is gone.
+  Lead deploys smithers.sh first, with `reads` on vibelang's registry entry.

@@ -17,6 +17,7 @@ export interface WikiRepository extends Repository { readonly root: string; read
 export const wikiRepository: WikiRepository = { owner: "smithersai", name: "smithers", api: "https://api.github.com", agent: "", root: "apps/vibelang/wiki" }
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
+import { PublicReads } from "./PublicReads.vibe"
 
 export service WikiAuthority {
   current(): (Principal | undefined)!WikiFailure
@@ -54,6 +55,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(WikiWriter)
   const delegate = try Effect.serviceOption(GitHubDelegate)
+  const reads = try Effect.serviceOption(PublicReads)
   let edits: WikiEdits = emptyWikiEdits
   let touched = false
   effect function loadDraft(person: string, page: string) {
@@ -83,10 +85,12 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       if (path === undefined) throw new WikiFailure({ reason: "missing", ...(fresh() ? { unwritten: true } : {}) })
       const work = effect {
         if (request.op === "read") {
-          const file = try readSource(path)
-          const state = try note({ id: request.page, source: file.text, revision: file.sha })
+          // A signed-out read GitHub refused answers the last good copy, marked with when GitHub last confirmed it (0031).
+          const observed = try GitHub.ReadCache.observeStale(readSource(path))
+          const state = try note({ id: request.page, source: observed.value.text, revision: observed.value.sha })
           const draft = try loadDraft(actor?.id ?? "", request.page)
-          return draft === undefined ? state : { ...state, draft }
+          const answer = draft === undefined ? state : { ...state, draft }
+          return observed.stale === undefined ? answer : { ...answer, stale: observed.stale }
         }
         if (actor === undefined || request.key === "") throw new WikiFailure({ reason: "sign-in" })
         const key = (name: string) => wikiWriteKey(repo, actor.id, request, name)
@@ -105,7 +109,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         }
         const authorized = <A, E, R>(program: A!E!R) => effect {
           const { connection } = try live
-          return try program.pipe(asPerson(connection, repo.api, http, delegate))
+          return try program.pipe(asPerson(connection, repo.api, http, delegate, reads))
         }
         const permitted = (operation: GitHub.DelegationPolicy.Operation): Action.Keyed<GitHub.Delegation.Receipt, WikiFailure, never> => ({
           find: (name) => effect {
@@ -161,7 +165,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         if (storage !== undefined && retained?.text === request.text) try promise(() => storage.delete(`wiki/draft/${actor.id}/${request.page}`))
         return { ...edits, review: `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}` }
       }
-      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate), Effect.mapError((error) => {
+      const run = (connection: Connection | undefined) => work.pipe(asPerson(connection, repo.api, http, delegate, reads), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)
         return fresh() && !touched && ["conflict", "empty", "connect"].includes(failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
       }), Effect.tapError((failure) => failure.reason === "connect" && authority.lost !== undefined ? authority.lost() : Effect.void))
@@ -259,7 +263,8 @@ export effect function executeWiki(hostId: string, storage: Storage, input: Wiki
   return { ...result, role: actor?.role ?? "viewer" }
 }
 
-/** Unconfigured sign-in still leaves the repository's public wiki readable. */
-export function publicWiki(hostId: string, storage: Storage) {
-  return serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, { current: () => Effect.succeed(undefined) }), Effect.provide(FetchHttpClient.layer))
+/** Unconfigured sign-in still leaves the repository's public wiki readable, through `reads` when given. */
+export function publicWiki(hostId: string, storage: Storage, reads?: HttpClient.HttpClient) {
+  const served = serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, { current: () => Effect.succeed(undefined) }))
+  return (reads === undefined ? served : Effect.provideService(served, PublicReads, { client: reads })).pipe(Effect.provide(FetchHttpClient.layer))
 }
