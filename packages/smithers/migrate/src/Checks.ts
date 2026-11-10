@@ -19,7 +19,7 @@ import * as ts from "typescript/unstable/ast"
 import * as Detect from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
 import * as Ts from "./internal/Ts.ts"
-import { io, type MigrateError } from "./MigrateError.ts"
+import { io, type MigrateError } from "./MigrateError.vibe"
 import { defaultFlowsDir, type UnitPlan } from "./Units.vibe"
 
 /**

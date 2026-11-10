@@ -24,7 +24,7 @@ import * as Sort from "./internal/Sort.ts"
 import * as Ts from "./internal/Ts.ts"
 import { isTsconfig } from "./internal/Tsconfig.ts"
 import * as Versions from "./internal/Versions.ts"
-import type { MigrateError } from "./MigrateError.ts"
+import type { MigrateError } from "./MigrateError.vibe"
 
 /**
  * Old package names that identify a 0.x project whatever their version.

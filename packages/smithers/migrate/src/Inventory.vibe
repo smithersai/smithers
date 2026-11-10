@@ -22,7 +22,7 @@ import * as Constructs from "./Constructs.ts"
 import * as Detect from "./Detect.ts"
 import * as Sort from "./internal/Sort.ts"
 import * as Ts from "./internal/Ts.ts"
-import type { MigrateError } from "./MigrateError.ts"
+import type { MigrateError } from "./MigrateError.vibe"
 
 /**
  * One construct hit.

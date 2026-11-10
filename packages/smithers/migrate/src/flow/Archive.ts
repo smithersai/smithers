@@ -37,7 +37,7 @@ import * as Fs from "../internal/Fs.ts"
 import * as Jsonc from "../internal/Jsonc.ts"
 import { isTsconfig } from "../internal/Tsconfig.ts"
 import * as Versions from "../internal/Versions.ts"
-import { io, make, MigrateError } from "../MigrateError.ts"
+import { io, make, MigrateError } from "../MigrateError.vibe"
 import * as Report from "../Report.ts"
 import * as Units from "../Units.vibe"
 

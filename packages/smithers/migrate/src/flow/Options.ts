@@ -17,7 +17,7 @@ import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import { isAbsolute, normalize, parse, sep } from "node:path"
 import * as Fs from "../internal/Fs.ts"
-import { make, type MigrateError } from "../MigrateError.ts"
+import { make, type MigrateError } from "../MigrateError.vibe"
 import * as Units from "../Units.vibe"
 
 /**

@@ -10,14 +10,14 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Fs from "../../internal/Fs.ts"
-import { io, make } from "../../MigrateError.ts"
+import { io, make } from "../../MigrateError.vibe"
 
 const isDirectory = (target: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const info = yield* Fs.optionalNotFound(fs.stat(target))
+  effect {
+    const fs = try FileSystem.FileSystem
+    const info = try Fs.optionalNotFound(fs.stat(target))
     return Option.isSome(info) && info.value.type === "Directory"
-  })
+  }
 
 /**
  * Reads version-control metadata, preferring colocated jj. Git linked
@@ -27,27 +27,27 @@ const isDirectory = (target: string) =>
  * @private
  */
 export const detect = (root: string) =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    const fs = yield* FileSystem.FileSystem
-    if (yield* isDirectory(path.join(root, ".jj"))) return "jj" as const
+  effect {
+    const path = try Path.Path
+    const fs = try FileSystem.FileSystem
+    if (try isDirectory(path.join(root, ".jj"))) return "jj" as const
     const gitPath = path.join(root, ".git")
-    const gitInfo = yield* Fs.optionalNotFound(fs.stat(gitPath))
+    const gitInfo = try Fs.optionalNotFound(fs.stat(gitPath))
     if (Option.isSome(gitInfo)) {
       if (gitInfo.value.type === "Directory") return "git" as const
       if (gitInfo.value.type === "File") {
-        const pointer = /^gitdir: (.+)\r?\n?$/.exec(yield* fs.readFileString(gitPath))?.[1]
+        const pointer = /^gitdir: (.+)\r?\n?$/.exec(try fs.readFileString(gitPath))?.[1]
         if (pointer !== undefined) {
           const gitDir = path.resolve(root, pointer)
-          if (yield* isDirectory(gitDir)) {
-            const head = yield* Fs.optionalNotFound(fs.stat(path.join(gitDir, "HEAD")))
+          if (try isDirectory(gitDir)) {
+            const head = try Fs.optionalNotFound(fs.stat(path.join(gitDir, "HEAD")))
             if (Option.isSome(head) && head.value.type === "File") return "git" as const
           }
         }
       }
     }
     return "none" as const
-  })
+  }
 
 /**
  * Refuses an unacknowledged copy-only checkpoint before any state is written.
@@ -56,13 +56,13 @@ export const detect = (root: string) =>
  * @private
  */
 export const requireCheckpoint = (root: string, backupDir: string, allowNoVcs: boolean) =>
-  Effect.gen(function*() {
-    const vcs = yield* detect(root).pipe(Effect.mapError(io(`could not inspect version control under "${root}"`)))
+  effect {
+    const vcs = try Effect.mapError(detect(root), io(`could not inspect version control under "${root}"`))
     if (vcs === "none" && !allowNoVcs) {
-      return yield* Effect.fail(make(
+      throw make(
         "no-vcs",
         `"${root}" is under no version control, so a migration would have no way back. Initialize jj or git, or rerun with --allow-no-vcs to accept a file copy under ${backupDir} as the only checkpoint.`
-      ))
+      )
     }
     return vcs
-  })
+  }

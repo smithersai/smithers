@@ -21,8 +21,8 @@ import * as Schema from "effect/Schema"
 import { randomUUID } from "node:crypto"
 import { DatabaseSync } from "node:sqlite"
 import * as Fs from "../internal/Fs.ts"
-import { io, make, type MigrateError } from "../MigrateError.ts"
-import * as Pending from "./internal/Pending.ts"
+import { io, make, type MigrateError } from "../MigrateError.vibe"
+import * as Pending from "./internal/Pending.vibe"
 import * as Options from "./Options.ts"
 
 /**

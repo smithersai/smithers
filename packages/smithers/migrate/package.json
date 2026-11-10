@@ -79,8 +79,8 @@
       "default": "./.vibelang/js/src/Mapping.js"
     },
     "./MigrateError": {
-      "types": "./src/MigrateError.ts",
-      "vibelang-source": "./src/MigrateError.ts",
+      "types": "./.vibe/declarations/src/MigrateError.d.vibe.ts",
+      "vibelang-source": "./src/MigrateError.vibe",
       "default": "./.vibelang/js/src/MigrateError.js"
     },
     "./PromptHints": {

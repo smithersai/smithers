@@ -26,7 +26,7 @@ import { posix, win32 } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import type { Detection } from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
-import type { MigrateError } from "./MigrateError.ts"
+import type { MigrateError } from "./MigrateError.vibe"
 
 /**
  * Run statuses that mean the run is over. Everything else is either running or

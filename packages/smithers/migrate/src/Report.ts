@@ -19,7 +19,7 @@ import * as Fs from "./internal/Fs.ts"
 import * as Sort from "./internal/Sort.ts"
 import type { InventoryEntry } from "./Inventory.vibe"
 import type { MappingClass } from "./Mapping.ts"
-import { io, type MigrateError } from "./MigrateError.ts"
+import { io, type MigrateError } from "./MigrateError.vibe"
 import type { RunStateReport } from "./RunState.ts"
 
 /**

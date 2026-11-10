@@ -23,7 +23,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Sort from "../internal/Sort.ts"
-import { make, type MigrateError } from "../MigrateError.ts"
+import { make, type MigrateError } from "../MigrateError.vibe"
 import type * as Report from "../Report.ts"
 import type * as Scan from "../Scan.ts"
 

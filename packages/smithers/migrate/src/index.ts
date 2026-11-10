@@ -14,7 +14,7 @@
  * @category errors
  * @since 1.0.0-rc.0
  */
-export * as MigrateError from "./MigrateError.ts"
+export * as MigrateError from "./MigrateError.vibe"
 
 /**
  * @category models

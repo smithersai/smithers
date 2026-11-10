@@ -12,7 +12,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import type * as PlatformError from "effect/PlatformError"
-import { io, type MigrateError } from "../MigrateError.ts"
+import { io, type MigrateError } from "../MigrateError.vibe"
 
 /**
  * Directory names the scanner never descends into.

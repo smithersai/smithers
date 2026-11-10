@@ -101,7 +101,7 @@ const securityReview = Smithers.SecurityReview({
         "A check-then-use gap between `refuseLink` and `fs.remove(..., { recursive: true })` or `fs.writeFile` on the same path.",
         "`privateDirectory` or `writeBackup` creating a component without `O_NOFOLLOW` or the 0700 mode."
       ],
-      paths: ["src/flow/Checkpoint.ts", "src/internal/Fs.ts", "src/flow/internal/Pending.ts", "src/flow/Archive.ts"]
+      paths: ["src/flow/Checkpoint.ts", "src/internal/Fs.ts", "src/flow/internal/Pending.vibe", "src/flow/Archive.ts"]
     },
     {
       id: "secret-redaction-to-model-and-report",
@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
         "src/flow/MigrateFlow.ts",
         "src/flow/Command.ts",
         "src/flow/Lock.ts",
-        "src/flow/internal/Pending.ts"
+        "src/flow/internal/Pending.vibe"
       ]
     }
   ]
