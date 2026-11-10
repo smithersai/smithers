@@ -97,6 +97,42 @@ class StrictSourceChecks(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertIn('TS2322', result.stderr)
 
+class IsolatedCoreBudget(unittest.TestCase):
+    def test_configured_invocation_obeys_core_cap(self):
+        # Check the policy before launching a solver; a failing test must not itself launch more than two cores.
+        import ast
+        tree = ast.parse((ROOT / 'check.py').read_text())
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != 'command': continue
+            if not node.args or not isinstance(node.args[0], ast.List): continue
+            args = node.args[0].elts
+            for i, arg in enumerate(args[:-1]):
+                if isinstance(arg, ast.Constant) and arg.value == '--cores':
+                    value = args[i + 1]
+                    choices = [value.body, value.orelse] if isinstance(value, ast.IfExp) else [value]
+                    found.extend(int(ast.literal_eval(choice)) for choice in choices)
+        self.assertTrue(found, 'No bounded Dafny invocation found')
+        self.assertTrue(all(1 <= n <= 2 for n in found), found)
+
+    def test_isolated_production_proofs_use_at_most_two_cores(self):
+        # Exercise the real production-path selection and inspect the actual Dafny invocation receipt.
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            app = pathlib.Path(folder)
+            (app / 'src/core').mkdir(parents=True)
+            (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json')}))
+            (app / 'src/core/decide.vibe').write_text('//@ verify\n//@ ensures \\result == input\nexport function same(input: number): number { return input }\n')
+            env = {k: v for k, v in os.environ.items() if k != 'VERIFY_MUTATION_MANIFEST'}
+            env['VIBELANG_VERIFY_ROOT'] = str(app)
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py')], capture_output=True, text=True, env=env, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            summaries = list((app / 'verify/.checks').glob('run-*/summary.json'))
+            self.assertEqual(len(summaries), 1)
+            calls = [c['argv'] for c in json.loads(summaries[0].read_text())['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny']
+            self.assertEqual(len(calls), 1)
+            self.assertIn('--isolate-assertions', calls[0])
+            self.assertLessEqual(int(calls[0][calls[0].index('--cores') + 1]), 2)
+
 class SourceArguments(unittest.TestCase):
     def test_extra_missing_source_is_not_ignored(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
