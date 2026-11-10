@@ -41,7 +41,8 @@ The compiler/Vite maps preserve `.vibe` names and lines in the unbundled Vitest 
 unvisited Effect return at its original fixture line 4 and a threshold-only child exit 1 despite a passing assertion.
 Emitted CLI/MCP processes retain maps and inline source text. The prototype browser suite uses Playwright's built-in
 `page.coverage` without a new browser dependency, retains raw Chromium evidence, and checks map source content
-against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files. Vite's
+against the checkout. Its full-source zero seed retains tree-shaken exports and entirely unvisited files, and that
+seed is the denominator: Chromium's evidence credits it by source start (see "Chromium merge" below). Vite's
 generated module/preload helpers and pure re-export facades contain no app source; no production `.vibe` is excluded.
 
 ## Measurement blockers
@@ -51,8 +52,9 @@ generated module/preload helpers and pure re-export facades contain no app sourc
 one conditional return. The unused export stays uncovered. The unbundled compiler map and real V8 execution agree;
 the post-bundle statement granularity changes in `ast-v8-to-istanbul`. Branch arms retain `[1, 0]`.
 `~/vl/vibelang-bugs/coverage-source-ranges/` on nyc-01 contains the minimal fixture, reproduction, both real executions
-and ranges, maps and observed statement positions. The Chromium regression remains an expected failure in the
-prototype; an unexpected pass will require removing that marker after the upstream fix. No build/compiler behavior
+and ranges, maps and observed statement positions. The e2e build is now unminified, so the Chromium control
+observes line 4 uncovered and its expected-failure marker is gone; the minified case stays a regression in
+`test/browserCoverageMerge.test.vibe`, which still sees line 4 credited. No build/compiler behavior
 was changed as a workaround. Will's decision is required before the upstream change; a fix must have a regression
 and land through VibeLang's merge queue.
 
@@ -741,3 +743,29 @@ Left uncovered in these files, each still counted:
 | `src/surfaces/backend.vibe:61` | A request to another origin; no live client sends one. Kept: it keeps the cookie on its origin. |
 | `src/surfaces/backend.vibe:80`, `:83` | A mock session read that fails, and mock accounts missing; `mockFactoryFor` always has accounts (vl-coverage2's file). |
 | `src/web/startup.vibe:72` to `:75` | Reachable, not yet tested: the browser journal of tour and demo conversations, reached by running a tour on the started page. |
+
+## Chromium merge (vl-fuzz2, 2026-11-10)
+
+`e2e/coverage-reporter.ts` merged the compiler's structure of each source (the zero seed) and the bundle's with
+Istanbul's `merge`, which keeps both shapes where it cannot match them. On the minified e2e bundle a file counted its
+`if`s and their folded ternaries: `fixture.vibe` read 4 branches for its 2, `startupDecision.vibe` 36 for 18. Now the
+seed is the structure and each bundle credits it through `test/support/coverageUnion.ts`, the fuzz and bench gates'
+merge. That module now matches by source start: a statement's, a function body's, and a branch's type with its
+ordered arm starts. Vite's composed maps keep starts and infer ends from the next mapped token (`answer`'s name ends
+at column 29 in the compiler's map and 30 in the bundle's).
+
+The e2e build (`--mode e2e`, also the fuzz suite's browser build) is unminified, as `bench-coverage` is: minification
+renames and folds code, so few minified ranges start where the compiler's do. The deployed build is unchanged. The
+coverage fixtures skip a re-export facade with or without whitespace.
+
+| One `pnpm e2e` run's evidence | Files | Metrics below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| minified, Istanbul merge | 154 | 507 | 3341/7616 | 6353/12653 | 2123/3774 | 5680/11950 |
+| minified, merge by full range | 154 | 541 | 2549/7479 | 384/8096 | 63/2803 | 2850/9577 |
+| unminified, Istanbul merge | 154 | 499 | 3545/7644 | 6155/11922 | 2302/3991 | 5837/11867 |
+| unminified, merge by start (landed) | 154 | 508 | 3343/7479 | 3445/8096 | 1345/2803 | 3903/9577 |
+
+The landed denominators are the sources' own (7479 lines, 8096 branches). Tests: `test/browserCoverageMerge.test.vibe`
+(a real minified Vite build of the fixture under native V8, through `measure`; failed on the old reporter with 4
+branches for 2) and two cases in `test/fuzzCoverage.test.vibe` (same starts credit whatever the ends; other starts
+credit nothing; the first failed on the full-range rule).

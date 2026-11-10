@@ -13,8 +13,9 @@ export default defineConfig(({ mode }) => ({
   resolve: { dedupe: ["vitest"] },
   build: {
     target: "es2022", sourcemap: true,
-    // Source coverage preserves branch statements before minifier folding (0017); timing uses the normal build.
-    ...(mode === "bench-coverage" ? { minify: false as const } : {}),
+    // Source coverage preserves branch statements before minifier folding (0017); timing uses the normal build. The
+    // e2e build is measured too (0016, 0015): unminified, its ranges are the compiler's, so Chromium credits them.
+    ...(mode === "bench-coverage" || mode === "e2e" ? { minify: false as const } : {}),
     ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html", "e2e/coverage-fixtures/index.html"] } } : {}),
   },
   server: { port: 5178 },

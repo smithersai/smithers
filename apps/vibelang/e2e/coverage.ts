@@ -31,7 +31,7 @@ export const test = base.extend<{ sourceCoverage: void }>({
         const code = script.source
         if (code === undefined) throw new Error(`Missing executed source: ${script.url}`)
         const reference = /\/\/# sourceMappingURL=(\S+)/.exec(code)?.[1]
-        if (!reference && /^\s*export\{[^}]*\}from["'][^"']+["'];?\s*$/.test(code)) continue
+        if (!reference && /^\s*export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/.test(code)) continue
         if (!reference) throw new Error(`Missing source map: ${script.url}`)
         const mapUrl = new URL(reference, script.url)
         if (process.env.E2E_BASE_URL === undefined) {

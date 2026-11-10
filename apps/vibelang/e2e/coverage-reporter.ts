@@ -8,6 +8,7 @@ import { createHash } from "node:crypto"
 import convert from "ast-v8-to-istanbul"
 import { parseAstAsync } from "vite"
 import { findCompiler, projects } from "vibelang/project"
+import { normalizeEndColumns, unionEvidence, type FileCoverageJSON } from "../test/support/coverageUnion.ts"
 
 const require = createRequire(import.meta.url)
 const { createCoverageMap } = require("istanbul-lib-coverage")
@@ -16,10 +17,17 @@ const reports = require("istanbul-reports")
 const { mergeScriptCovs } = createRequire(require.resolve("@vitest/coverage-v8"))("@bcoe/v8-coverage")
 const root = fileURLToPath(new URL("../", import.meta.url))
 
-/** Full source roster plus actual V8 ranges. Exported for the real Chromium negative control. */
+/**
+ * Full source roster plus actual V8 ranges. Exported for the real Chromium negative control.
+ *
+ * The compiler's structure of each source is the denominator. Vite's minified bundle has another shape for the same
+ * source (two `if` returns folded into one ternary), and Istanbul's `merge` unions what it cannot match, so a merged
+ * file counted both shapes. The bundle now credits the compiler structure by identical source range only, the fuzz
+ * and bench gates' rule (test/support/coverageUnion.ts, decisions 0015 and 0016).
+ */
 export async function measure(entries: Iterable<any> | AsyncIterable<any>, directories = ["src", "worker", "scripts", "infra"]) {
   const included = (file: string) => file.endsWith(".vibe") && directories.some((directory) => file.startsWith(resolve(root, directory) + "/"))
-    const coverage = createCoverageMap({})
+    const evidence: Array<Record<string, FileCoverageJSON>> = []
     // Merge Chromium ranges before parsing identical bundles; each test still retains its original evidence.
     const bundles = new Map<string, { entry: any; scripts: any[] }>()
     for await (const entry of entries) {
@@ -53,9 +61,9 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
           coverage: { url: pathToFileURL(resolve(root, "dist/assets", new URL(entry.url).pathname.split("/").at(-1)!)).href, functions: mergeScriptCovs(scripts).functions },
           wrapperLength: 0,
         })
-        coverage.merge(converted)
+        evidence.push(converted as Record<string, FileCoverageJSON>)
     }
-    coverage.filter(included)
+    const seed = createCoverageMap({})
     // Seed every full source, including loaded files: bundling may tree-shake an uncalled export from a loaded file.
     const compiler = projects({ root, project: resolve(root, "tsconfig.json"), compiler: findCompiler(root) })
     try {
@@ -67,7 +75,7 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
           if (result.error || result.errors.length > 0 || !result.map) throw new Error(`Cannot measure source: ${file}`)
           const map = structuredClone(result.map) as NonNullable<Parameters<typeof convert>[0]["sourceMap"]>
           map.sources = result.map.sources.map((source) => pathToFileURL(source).href)
-          coverage.merge(await convert({
+          seed.merge(await convert({
             code: result.code, ast: await parseAstAsync(result.code), sourceMap: map,
             coverage: { url: pathToFileURL(file).href, functions: [] }, wrapperLength: 0,
           }))
@@ -75,6 +83,15 @@ export async function measure(entries: Iterable<any> | AsyncIterable<any>, direc
       }
     } finally {
       await compiler.close()
+    }
+    const coverage = createCoverageMap({})
+    for (const file of seed.files() as string[]) {
+      const text = await readFile(file, "utf8")
+      let json = normalizeEndColumns(seed.fileCoverageFor(file).toJSON() as FileCoverageJSON, text)
+      for (const bundle of evidence) {
+        if (bundle[file] !== undefined) json = unionEvidence(json, normalizeEndColumns(bundle[file]!, text))
+      }
+      coverage.addFileCoverage(json)
     }
   return coverage
 }
