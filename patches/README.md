@@ -26,3 +26,21 @@ The ordinary negative control in `sourceCoverage.test.vibe` retains the unvisite
 
 Remove the normalization hunk when the upstream provider merges these source ranges correctly and all six controls
 pass without it. Minimal raw before/after evidence is in the coverage lane report; no upstream write is authorized.
+
+## @alchemy.run/cloudflare@2.0.0-beta.85
+
+The `lib/Workers/WorkerProvider.js` hunk is explained beside its registration in `pnpm-workspace.yaml`.
+
+The `DurableObjectBridge` hunks (`lib/` and `src/`) give each Durable Object constructor its own open `Scope`, held
+for the in-memory instance's life. `DurableObject.make` declares that the constructor's inner Effect needs `Scope`,
+and captures the services of the Effect that built the object's layer. When the host Worker provides that layer
+with `Effect.provide`, the form Alchemy documents, those services hold a scope that closes once Worker init returns.
+The bridge passed that closed scope to every constructor. Work forked into it, such as `apps/vibelang`'s bounded
+object start-up (`worker/ObjectStartup.vibe`), was interrupted before it ran, and every object stayed `starting` in
+production on 2026-11-10.
+
+`apps/vibelang/test/coldStartup.workerd.test.vibe` runs `alchemy dev` and starts every class cold at once. Without
+the hunk, no object becomes `ready`; with it, all do. Drop the hunk when an Alchemy release provides constructors an
+open scope and that test passes without it. Its minimal form: a Durable Object provided to its Worker by
+`Effect.provide`, whose constructor runs `Effect.forkIn(work, yield* Scope.Scope)`; `work` never starts. No upstream
+write is authorized; the lane report holds the evidence.

@@ -90,6 +90,8 @@ patchedDependencies:
   alchemy@2.0.0-beta.85: patches/alchemy@2.0.0-beta.85.patch
   # beta.85 moved WorkerProvider to @alchemy.run/cloudflare; its diff still passes
   # stripped news to hasChanged (lib/Workers/WorkerProvider.js:3713), losing build plugins.
+  # Its DurableObjectBridge hands constructors the Worker init's closed Scope; the patch gives each an open one
+  # (patches/README.md; apps/vibelang/test/coldStartup.workerd.test.vibe).
   "@alchemy.run/cloudflare@2.0.0-beta.85": patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch
   # Opt-in incremental query publication: access revocations must not wait behind ordered-window refills.
   # LiveQuery.Publication preserves settled publication by default; apps/mvp selects incremental (decision 0110).
