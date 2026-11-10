@@ -1,0 +1,111 @@
+// @vitest-environment node
+// The command registry at its remaining edges (wiki/decisions/0009-surfaces.md, 0016): history text with no commit
+// asked for, an issue change carrying its resume and recovery keys to the issues API, an issue draft, a wiki review,
+// `login`'s device code, and a sign-in whose settings home can't hold a flow host. Faults are real: a fake issues and
+// wiki API records what reaches it, GitHub's device endpoint is a loopback server, the settings home is a file.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import { backend, SURFACE_PRINCIPAL } from "../src/surfaces/backend.vibe"
+import { Issue, Login, ShowHistory, Wiki } from "../src/surfaces/commands.vibe"
+
+const failure = <A, R>(program: A!{ readonly message: string }!R) => Effect.map(Effect.flip(program), (error) => error.message)
+
+/** A factory with only the given issues or wiki API; everything else is absent. */
+const only = (over: Partial<Factory.Shape>) => ({ mode: "mock", ...over } as unknown as Factory.Shape)
+
+describe("history text", () => {
+  it.effect("prints the outline alone when no commit is asked for", () => effect {
+    const commits = ["fix(compiler): one", "docs: two"].map((description, index) => ({
+      sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+    }))
+    provide MockMythical(SURFACE_PRINCIPAL, () => Effect.succeed(replay(intentsOf(seedOf("o/r", commits, []))).history)) {
+      const text = try ShowHistory.render({}, false)
+      try Effect.try(() => expect(text.split("\n")).toEqual([
+        "Folded through 000000000002 (event 6).", "e1  The compiler  1", "e2  Docs, guides and the site  1",
+      ]))
+    }
+  })
+})
+
+describe("issue changes", () => {
+  it.effect("carry a resume only with its op and key, its recovery only with a resume, and print a draft", () => effect {
+    const asked: Array<typeof IssueRequest.Type> = []
+    const draft = { title: "A VIP", summary: "Why", example: "x", prior: "none" }
+    const factory = only({ issues: {
+      read: () => Effect.die("read"),
+      act: (request) => Effect.sync(() => { asked.push(request); return { seq: 3, items: [], draft } }),
+    } })
+    const base = { op: "draft", title: "A VIP", text: "Why", key: "k" }
+    const resumed = try Effect.provideService(Issue.render({ ...base, resumeOp: "draft", resumeKey: "k0", resumeRecovery: "r0", recovery: "r1" }, false), Factory, factory)
+    try Effect.provideService(Issue.run({ ...base, resumeOp: "draft", resumeKey: "k0" }), Factory, factory)
+    try Effect.provideService(Issue.run({ ...base, resumeOp: "draft", resumeRecovery: "r0" }), Factory, factory)
+    const carried = asked.map(({ resumeOp, resumeKey, resumeRecovery, recovery }) => ({ resumeOp, resumeKey, resumeRecovery, recovery }))
+    try Effect.try(() => {
+      expect(carried).toEqual([
+        { resumeOp: "draft", resumeKey: "k0", resumeRecovery: "r0", recovery: "r1" },
+        { resumeOp: "draft", resumeKey: "k0", resumeRecovery: undefined, recovery: undefined },
+        // A resume without its key is no resume: neither it nor its recovery reaches the API.
+        { resumeOp: undefined, resumeKey: undefined, resumeRecovery: undefined, recovery: undefined },
+      ])
+      expect(asked.map((request) => request.key)).toEqual(["k", "k", "k"])
+      expect(JSON.parse(resumed)).toEqual({ seq: 3, items: [], draft, detail: "null" })
+    })
+  })
+})
+
+describe("wiki changes", () => {
+  it.effect("print the review a proposal opened, with no draft", () => effect {
+    const factory = only({ wiki: {
+      read: () => Effect.die("read"),
+      act: () => Effect.succeed({ seq: 2, pages: [{ id: "index", source: "# Index", revision: "r2" }], review: "https://github.test/pull/7" }),
+    } })
+    const text = try Effect.provideService(Wiki.render({ op: "propose", page: "index", text: "# Index", key: "p" }, false), Factory, factory)
+    try Effect.try(() => expect(JSON.parse(text)).toEqual({ seq: 2, pages: ["index"], review: "https://github.test/pull/7" }))
+  })
+})
+
+type Answer = HttpServerResponse.HttpServerResponse!never!never
+const json = (body: unknown): Answer => succeed(HttpServerResponse.jsonUnsafe(body))
+
+describe("login", () => {
+  it.live("without waiting, prints where to enter the device code", () => scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const address = (try HttpServer.HttpServer).address
+      const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+      // The factory offers the device flow and plays GitHub's device endpoint.
+      try HttpServer.serveEffect(effect {
+        const path = new URL((try HttpServerRequest.HttpServerRequest).url, origin).pathname
+        return try (path === "/api/auth/device" ? json({ clientId: "fixture-client-id" })
+          : path === "/login/device/code" ? json({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: "https://github.test/device", expires_in: 600, interval: 1 })
+          : succeed(HttpServerResponse.empty({ status: 404 })))
+      })
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: origin, VIBELANG_GITHUB_WEB: origin, XDG_CONFIG_HOME: directory })) {
+        provide Layer.succeed(Factory, only({ mode: "live" })) {
+          const text = try Login.render({ wait: false }, false)
+          try Effect.try(() => expect(text).toBe("Open https://github.test/device and enter ABCD-EFGH."))
+        }
+      }
+    }
+  }), 60_000)
+
+  it.live("fails in one sentence when its settings home is a file", () => scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const home = (try Path.Path).join(try fs.makeTempDirectoryScoped(), "home")
+      try fs.writeFileString(home, "not a directory")
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: home })) {
+        provide backend(true, undefined) {
+          const message = try failure(Login.run({}))
+          try Effect.try(() => expect(message).toBe("Sign-in failed."))
+        }
+      }
+    }
+  }), 60_000)
+})
