@@ -5,7 +5,8 @@ const Step = Schema.Struct({ op: Int, text: Text })
 const Input = Schema.Struct({ steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(10)), phone: Schema.Boolean, reducedMotion: Schema.Boolean })
 
 const RETURNING = "localStorage.setItem('vibelang:toured', 'yes')"
-const AUTO_TOUR_HOLD_MS = 2_000
+/** Page-clock time run past the first visit's 1200 ms tour timer, whatever the host load. */
+const AUTO_TOUR_HOLD_MS = 5_000
 
 /**
  * A first visit to `/` starts the tour 1200 ms after boot, and the running tour consumes Ctrl+K (decision 0014).
@@ -18,9 +19,10 @@ effect function returningVisitor(page: Page) {
 /** The palette opens for a returning visitor whenever the key arrives, including after the first-visit tour's timer. */
 export effect function heldStartupTarget(page: Page) {
   try returningVisitor(page)
+  try tryPromise(() => page.clock.install())
   try tryPromise(() => page.goto("/?agent=mock"))
   try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
-  try tryPromise(() => page.waitForTimeout(AUTO_TOUR_HOLD_MS))
+  try tryPromise(() => page.clock.runFor(AUTO_TOUR_HOLD_MS))
   try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
   try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeVisible())
 }

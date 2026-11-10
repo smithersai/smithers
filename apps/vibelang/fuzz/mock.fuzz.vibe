@@ -76,8 +76,11 @@ it.live("mock/tour-lifecycle", () => run("mock/tour-lifecycle", Schema.Struct({ 
     const events = Array.from(join followed)
     const state = events.reduce(apply, empty)
     const before = state.seq
-    try sleep("50 millis")
-    if ((try factory.read(room, 0)).seq !== before || state.agent !== "idle" || !state.entries[0]?.done) return false
+    // An ordering witness: the room's next event must be this post, so the finished tour had nothing left to append.
+    try factory.post(room, "witness", "Guest", "Witness")
+    const next = try Stream.runHead(factory.events(room, before))
+    const witnessed = Option.isSome(next) && "clientId" in next.value && next.value.clientId === "witness"
+    if (!witnessed || state.agent !== "idle" || !state.entries[0]?.done) return false
     const opened = events.filter((event) => event.type === "WalkthroughDriven")
     return end ? opened.length > 0 && opened.length < WALKTHROUGH.length : opened.map((event) => event.target).join() === WALKTHROUGH.map((stop) => stop.target).join() && state.entries[0]?.text === WALKTHROUGH.map((stop) => stop.subtitle).join("\n\n")
   }

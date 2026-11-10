@@ -4,6 +4,7 @@ import { makeSandboxHost, type Machines, type Receipt, type SandboxState, type S
 import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
 import { Factory, Unavailable } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { TestClock } from "effect/testing"
 import { run, Int, Text } from "./run.vibe"
 
 const Op = Schema.Struct({
@@ -297,16 +298,16 @@ it.live("sandbox/mock-device-commands", () => run("sandbox/mock-device-commands"
   }
 }))
 
-/** The mock device's real-clock alarm meters a running sandbox exactly as the live object's storage alarm does. */
+/** The mock device meters a running sandbox exactly, on the test clock: 1500 ms running is 1500 ms used. */
 it.live("sandbox/mock-meter-alarm", () => run("sandbox/mock-meter-alarm", Schema.Null, () => effect {
   provide mockFactoryFor("contributor") {
     const factory = try Factory
     const started = try factory.startSandbox("metered", "alarm")
-    try Effect.sleep("1500 millis")
+    try TestClock.adjust("1500 millis")
     const snapshot = try factory.sandbox("metered")
-    return snapshot.status === "running" && snapshot.generation === started.generation && snapshot.used > 0 && snapshot.used < 1
+    return snapshot.status === "running" && snapshot.generation === started.generation && snapshot.used * 60000 === 1500
   }
-}))
+}.pipe(Effect.provide(TestClock.layer()))))
 
 /** The documented limits: an exhausted allowance refuses a start, and a stop for a stopped sandbox records nothing. */
 it.live("sandbox/host-limits", () => run("sandbox/host-limits", Schema.Struct({ stop: Schema.Boolean, role: Schema.Literals(["contributor", "maintainer"]) }), ({ stop, role }) => effect {
