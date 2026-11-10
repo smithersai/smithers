@@ -680,3 +680,43 @@ with no outcome. The same case still asserts the reply answers, which caught the
 **Service Shape spread.** `test/support/overlaidAccounts.vibe` lists the `Accounts` members, as `overlaid.vibe` does
 `Factory`'s, because spreading a service Shape drops its methods in VibeLang 0.0.12. The upstream fix awaits
 publication (roadmap, vl-actions); the helper can become a spread once 0.0.13 is consumed.
+
+## vl-coverage, ninth session (2026-11-09)
+
+Unit suite only, same provider and thresholds; nothing excluded, no threshold changed. Before is the run at
+`5353bea5` (1561 passed / 3 skipped); after is the run on this session's last test commit (1655 passed / 3 skipped).
+All files: lines 90.82% → 91.38%, branches 87.86% → 89.48%, functions 88.84% → 89.91%, statements 88.91% → 89.75%.
+Counts are covered/total; lines count lines that start a statement.
+
+| File | Lines | Branches | Functions | Statements |
+| --- | --- | --- | --- | --- |
+| `src/web/main.vibe` | 665/665 → 664/664 | 836/841 → 821/823 | 371/371 → 370/370 | 883/883 → 882/882 |
+| `src/surfaces/signin.vibe` | 106/108 → 108/108 | 85/94 → 93/94 | 16/26 → 25/26 | 127/142 → 141/142 |
+| `src/web/actionView.vibe` | 26/30 → 30/30 | 106/125 → 123/123 | 21/27 → 27/27 | 35/41 → 41/41 |
+| `src/web/view.vibe` | 53/53 → 53/53 | 143/173 → 160/163 | 33/33 → 33/33 | 57/58 → 58/58 |
+| `src/web/issueDecision.vibe` | 90/91 → 91/91 | 230/257 → 257/257 | 21/22 → 22/22 | 141/142 → 142/142 |
+| `src/core/IssuesFactory.vibe` | 74/76 → 74/75 | 105/122 → 114/120 | 16/16 → 16/16 | 90/100 → 96/99 |
+| `src/web/startup.vibe` | 46/50 → 47/50 | 10/22 → 18/22 | 11/13 → 11/13 | 51/64 → 55/64 |
+| `src/history/mythical.vibe` | 135/141 → 141/141 | 181/191 → 190/191 | 28/29 → 29/29 | 180/195 → 194/195 |
+| `src/surfaces/backend.vibe` | 41/45 → 45/45 | 24/35 → 33/35 | 9/14 → 12/14 | 49/58 → 55/58 |
+
+Types that forced a default that cannot happen were fixed instead of tested: `update` always answers a commands list
+(`WithCommands`), `Model.theatre` is required (init sets it, nothing clears it), `fixtureHost`'s lock is required,
+and `model.tourError ?? ""` and `split("/").at(-1) ?? name` are gone.
+
+Left uncovered in these files, each still counted:
+
+| Where | Why no test reaches it |
+| --- | --- |
+| `src/web/main.vibe:403`, two arms | The connect, fork and install wording; decision 0165's lane owns connect. |
+| `src/surfaces/signin.vibe:88` | The session file removed by another process between `login` writing it and reading it back. |
+| `src/surfaces/signin.vibe:116` | The durable wait's own journal failing after a poll succeeded; needs a FileSystem fault at one call. |
+| `src/web/view.vibe:46`, `:147` | `WALKTHROUGH[step - 1]` missing; the theatre's step stays within 1 to 10. Indexed access types it optional. |
+| `src/core/IssuesFactory.vibe:52` | The host's own permission and execution-id check; `act` authorizes and derives the id first. |
+| `src/core/IssuesFactory.vibe:62` | An empty key; `IssueRequest`'s `DurableText` refuses it before a flow runs. |
+| `src/core/IssuesFactory.vibe:93` | The `switch`'s `default`; every non-creating write is one of its cases. |
+| `src/core/IssuesFactory.vibe:115`, `:123`, `:126` | A request op with no flow, and an engine failure other than an id conflict. |
+| `src/history/mythical.vibe:562` | `rank < 0` after `epicOf` matched; the commit exists, so it has a rank. Kept for the proof. |
+| `src/surfaces/backend.vibe:61` | A request to another origin; no live client sends one. Kept: it keeps the cookie on its origin. |
+| `src/surfaces/backend.vibe:80`, `:83` | A mock session read that fails, and mock accounts missing; `mockFactoryFor` always has accounts (vl-coverage2's file). |
+| `src/web/startup.vibe:72` to `:75` | Reachable, not yet tested: the browser journal of tour and demo conversations, reached by running a tour on the started page. |
