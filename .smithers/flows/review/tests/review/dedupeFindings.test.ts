@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { dedupeFindings } from "../../src/review/dedupeFindings.ts"
 import { finalizeNativeReview } from "../../src/review/finalizeNativeReview.ts"
-import type { NativeReviewPrompt } from "../../src/workflow/nativeReviewPromptSchema.ts"
+import type { NativeReviewPrompt } from "../../src/workflow/nativeReviewPromptSchema.vibe"
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts"
-import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.ts"
+import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.vibe"
 import type { ReviewComment } from "../../src/workflow/reviewCommentSchema.ts"
 
 const path = "code.ts"

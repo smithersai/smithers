@@ -1,5 +1,4 @@
 import { Fault } from "@smthrs/flow"
-import * as Schema from "effect/Schema"
 
 /** Repository preparation failed before a review could start. */
 export class ChangeSetUnreadable

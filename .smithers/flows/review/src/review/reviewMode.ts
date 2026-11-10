@@ -1,6 +1,6 @@
 import { normalizeOpenCodeReviewInput } from "../workflow/normalizeOpenCodeReviewInput.ts"
-import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
-import type { ReviewTarget } from "../workflow/reviewTargetSchema.ts"
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
+import type { ReviewTarget } from "../workflow/reviewTargetSchema.vibe"
 
 /**
  * Reads which mode a request asks for: `--commit` wins, then `--from`/`--to`,

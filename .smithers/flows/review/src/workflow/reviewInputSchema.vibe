@@ -4,9 +4,8 @@
  *
  * @since 1.0.0
  */
-import * as Schema from "effect/Schema"
 import { withDefault } from "../schema/withDefault.ts"
-import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts"
+import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.vibe"
 
 /**
  * The full review request.

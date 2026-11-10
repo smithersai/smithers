@@ -1,0 +1,8 @@
+/**
+ * Which set of changes a review reads: the working tree, a commit range, or
+ * one commit.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export schema ReviewMode = "workspace" | "range" | "commit"

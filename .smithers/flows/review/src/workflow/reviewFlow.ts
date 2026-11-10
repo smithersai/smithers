@@ -1,4 +1,4 @@
-import { ReviewFailure } from "./reviewFailureSchema.ts"
+import { ReviewFailure } from "./reviewFailureSchema.vibe"
 /**
  * The review workflow, as four durable stages.
  *
@@ -20,7 +20,7 @@ import { ReviewFailure } from "./reviewFailureSchema.ts"
 import { type Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
-import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts"
+import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.vibe"
 import {
   ApplyVerdicts,
   FinalizeReview,
@@ -29,7 +29,7 @@ import {
   RenderWalkthrough
 } from "./reviewActions.ts"
 import { NarrateChanges, ReviewFile, VerifyFindings } from "./reviewAgentActions.ts"
-import { NarrateReviewPayload, ReviewFilesPayload, ReviewResult, VerifyReviewPayload } from "./reviewSchemas.ts"
+import { NarrateReviewPayload, ReviewFilesPayload, ReviewResult, VerifyReviewPayload } from "./reviewSchemas.vibe"
 
 /**
  * What the file-review rounds need from the composition.

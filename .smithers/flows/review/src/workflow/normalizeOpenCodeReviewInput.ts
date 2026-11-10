@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema"
-import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts"
+import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.vibe"
 
 const decodeInput = Schema.decodeUnknownSync(OpenCodeReviewInput)
 

@@ -1,5 +1,5 @@
 import { normalizeOpenCodeReviewInput } from "../workflow/normalizeOpenCodeReviewInput.ts"
-import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
 
 /**
  * Refuses a request that names more than one mode, or half a range.

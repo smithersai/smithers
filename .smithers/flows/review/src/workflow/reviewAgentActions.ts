@@ -16,13 +16,13 @@ import { arrayOf } from "../schema/withDefault.ts"
 import { buildNarratePrompt } from "../walkthrough/buildNarratePrompt.ts"
 import { ChangedFile } from "../walkthrough/changedFileSchema.ts"
 import { Story } from "../walkthrough/storySchema.ts"
-import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts"
-import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts"
+import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.vibe"
+import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.vibe"
 import { ReviewComment } from "./reviewCommentSchema.ts"
-import { ReviewMode } from "./reviewModeSchema.ts"
+import { ReviewMode } from "./reviewModeSchema.vibe"
 import { SEAT } from "./reviewSeats.ts"
 import { buildVerifyFindingsPrompt } from "./verifyFindings.ts"
-import { VerifyVerdicts } from "./verifyVerdictsSchema.ts"
+import { VerifyVerdicts } from "./verifyVerdictsSchema.vibe"
 
 /**
  * Reviews one file.

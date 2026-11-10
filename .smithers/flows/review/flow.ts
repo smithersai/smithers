@@ -2,10 +2,10 @@
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { PrepareReview } from "./src/workflow/reviewActions.ts"
-import { ReviewFailure } from "./src/workflow/reviewFailureSchema.ts"
+import { ReviewFailure } from "./src/workflow/reviewFailureSchema.vibe"
 import { ReviewFiles } from "./src/workflow/reviewFlow.ts"
-import { ReviewInput } from "./src/workflow/reviewInputSchema.ts"
-import { ReviewResult } from "./src/workflow/reviewSchemas.ts"
+import { ReviewInput } from "./src/workflow/reviewInputSchema.vibe"
+import { ReviewResult } from "./src/workflow/reviewSchemas.vibe"
 export { layer } from "./src/workflow/reviewLayer.ts"
 
 export default Flow.make("review", {

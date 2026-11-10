@@ -1,5 +1,5 @@
 import { withDefault } from "../schema/withDefault.ts"
-import { ChangeSetUnreadable, reasonOf, WalkthroughUnwritable } from "./reviewFailureSchema.ts"
+import { ChangeSetUnreadable, reasonOf, WalkthroughUnwritable } from "./reviewFailureSchema.vibe"
 /**
  * The review flow's non-model steps.
  *
@@ -22,19 +22,19 @@ import { nativeReviewPromptFromSnapshot } from "../review/nativeReviewPromptFrom
 import { previewFromSnapshot } from "../review/previewFromSnapshot.ts"
 import { pluralize } from "../text/pluralize.ts"
 import { changesFromDiffs } from "../walkthrough/changesFromDiffs.ts"
-import { Changes } from "../walkthrough/changesSchema.ts"
+import { Changes } from "../walkthrough/changesSchema.vibe"
 import { normalizeStory } from "../walkthrough/normalizeStory.ts"
 import { renderWalkthroughHtml } from "../walkthrough/renderWalkthroughHtml.ts"
 import { Story } from "../walkthrough/storySchema.ts"
 import { walkthroughPath } from "../walkthrough/walkthroughPath.ts"
 import { writeWalkthroughArtifact } from "../walkthrough/writeWalkthroughArtifact.ts"
 import { applyFindingVerdicts } from "./applyFindingVerdicts.ts"
-import { ReviewInput } from "./reviewInputSchema.ts"
+import { ReviewInput } from "./reviewInputSchema.vibe"
 import { ReviewRunOutput } from "./reviewRunOutputSchema.ts"
-import { FileBatch, type FileOutcome, FileOutcomes, PreparedReview, WalkthroughOutput } from "./reviewSchemas.ts"
+import { FileBatch, type FileOutcome, FileOutcomes, PreparedReview, WalkthroughOutput } from "./reviewSchemas.vibe"
 import { SEAT } from "./reviewSeats.ts"
-import { ReviewTarget } from "./reviewTargetSchema.ts"
-import { VerifyVerdicts } from "./verifyVerdictsSchema.ts"
+import { ReviewTarget } from "./reviewTargetSchema.vibe"
+import { VerifyVerdicts } from "./verifyVerdictsSchema.vibe"
 
 /**
  * Verification is only worth an agent round trip for a plausible finding count.

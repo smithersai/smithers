@@ -1,0 +1,13 @@
+import { ReviewMode } from "./reviewModeSchema.vibe"
+
+/**
+ * The resolved change set: which repository, read which way, at which ref.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export schema ReviewTarget {
+  readonly repoDir: string
+  readonly mode: ReviewMode
+  readonly ref: string
+}

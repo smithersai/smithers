@@ -3,8 +3,8 @@ import { diffStatus } from "../git/diffStatus.ts"
 import { effectivePath } from "../git/effectivePath.ts"
 import { fenceFor } from "../text/fenceFor.ts"
 import { trimDiff } from "../text/trimDiff.ts"
-import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
-import type { ReviewTarget } from "../workflow/reviewTargetSchema.ts"
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
+import type { ReviewTarget } from "../workflow/reviewTargetSchema.vibe"
 import { reviewChecklistForPath } from "./reviewChecklistForPath.ts"
 
 // One file per prompt, so the reviewer affords far more of it than the prompts

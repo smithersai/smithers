@@ -11,5 +11,5 @@ export const builtinDefaults = ["todo", "learning", "review"] as const
 /** Whether a POSIX path under a default's own directory ships with that default.
  * @throws {never} */
 export function shipsWithDefault(relative: string): boolean {
-  return relative === "flow.ts" || /^src\/(?:[\w.-]+\/)*[\w.-]+\.ts$/.test(relative)
+  return relative === "flow.ts" || /^src\/(?:[\w.-]+\/)*[\w.-]+\.(?:ts|vibe)$/.test(relative)
 }

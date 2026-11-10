@@ -5,8 +5,8 @@ import { loadReviewSnapshot as loadReviewSnapshotImpl } from "../../src/review/l
 import { nativeReviewPromptFromSnapshot } from "../../src/review/nativeReviewPromptFromSnapshot.ts"
 import { previewFromSnapshot } from "../../src/review/previewFromSnapshot.ts"
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts"
-import type { OpenCodeReviewInput } from "../../src/workflow/openCodeReviewInputSchema.ts"
-import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.ts"
+import type { OpenCodeReviewInput } from "../../src/workflow/openCodeReviewInputSchema.vibe"
+import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.vibe"
 import { testIo } from "../io.ts"
 import { tempRepos } from "../support/tempRepos.ts"
 

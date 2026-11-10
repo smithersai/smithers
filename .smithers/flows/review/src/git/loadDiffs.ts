@@ -1,7 +1,7 @@
 import { join } from "node:path"
 import { io, runIo } from "../io.ts"
 import { reviewMode } from "../review/reviewMode.ts"
-import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
 import { effectivePath } from "./effectivePath.ts"
 import { mergeBase } from "./mergeBase.ts"
 import { parseGitDiff } from "./parseGitDiff.ts"

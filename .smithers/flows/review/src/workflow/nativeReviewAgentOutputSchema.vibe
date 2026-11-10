@@ -1,4 +1,3 @@
-import * as Schema from "effect/Schema"
 import { arrayOf, withDefault } from "../schema/withDefault.ts"
 import { ReviewComment } from "./reviewCommentSchema.ts"
 import { ReviewSummary } from "./reviewSummarySchema.ts"

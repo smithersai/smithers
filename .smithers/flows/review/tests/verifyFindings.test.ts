@@ -3,7 +3,7 @@ import { Option, Schema } from "effect"
 import { applyFindingVerdicts } from "../src/workflow/applyFindingVerdicts.ts"
 import type { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.ts"
 import { buildVerifyFindingsPrompt, type VerifiableFinding } from "../src/workflow/verifyFindings.ts"
-import { VerifyVerdicts } from "../src/workflow/verifyVerdictsSchema.ts"
+import { VerifyVerdicts } from "../src/workflow/verifyVerdictsSchema.vibe"
 
 const decodeVerdicts = Schema.decodeUnknownSync(VerifyVerdicts)
 const tryVerdicts = Schema.decodeUnknownOption(VerifyVerdicts)

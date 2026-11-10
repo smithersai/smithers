@@ -1,0 +1,17 @@
+import { PreviewEntry } from "./previewEntrySchema.vibe"
+
+/**
+ * The whole change set before any seat is asked: every file, with the totals
+ * the walkthrough header and the run summary both read.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export schema PreviewOutput {
+  readonly entries: Array<PreviewEntry>
+  readonly totalInsertions: number
+  readonly totalDeletions: number
+  readonly totalFiles: number
+  readonly reviewableCount: number
+  readonly excludedCount: number
+}

@@ -1,4 +1,3 @@
-import * as Schema from "effect/Schema"
 import { withDefault } from "../schema/withDefault.ts"
 
 /**

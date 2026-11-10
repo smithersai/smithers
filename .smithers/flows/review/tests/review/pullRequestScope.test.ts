@@ -8,7 +8,7 @@ import { loadReviewSnapshot as loadReviewSnapshotImpl } from "../../src/review/l
 import { nativeReviewPromptFromSnapshot } from "../../src/review/nativeReviewPromptFromSnapshot.ts"
 import { previewFromSnapshot } from "../../src/review/previewFromSnapshot.ts"
 import { changesFromDiffs } from "../../src/walkthrough/changesFromDiffs.ts"
-import { NativeReviewAgentOutput } from "../../src/workflow/nativeReviewAgentOutputSchema.ts"
+import { NativeReviewAgentOutput } from "../../src/workflow/nativeReviewAgentOutputSchema.vibe"
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts"
 import { testIo } from "../io.ts"
 import { tempRepos } from "../support/tempRepos.ts"

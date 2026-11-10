@@ -1,0 +1,19 @@
+import { ReviewRunStatus } from "./reviewRunStatusSchema.ts"
+
+/**
+ * The flat summary a caller records for one run.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export schema WorkflowSummary {
+  readonly status: ReviewRunStatus
+  readonly repoDir: string
+  readonly mode: string
+  readonly reviewableFiles: number
+  readonly excludedFiles: number
+  readonly comments: number
+  readonly warnings: number
+  readonly totalTokens: number
+  readonly message: string
+}

@@ -3,7 +3,6 @@
  *
  * @since 1.0.0
  */
-import * as Schema from "effect/Schema"
 import { arrayOf, withDefault } from "../schema/withDefault.ts"
 import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts"
 

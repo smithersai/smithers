@@ -1,6 +1,6 @@
 import type { DiffRecord } from "../git/diffRecord.ts"
-import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
-import type { ReviewTarget } from "../workflow/reviewTargetSchema.ts"
+import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.vibe"
+import type { ReviewTarget } from "../workflow/reviewTargetSchema.vibe"
 import type { ReviewWarning } from "../workflow/reviewWarningSchema.ts"
 import type { FileFilter } from "./fileFilter.ts"
 

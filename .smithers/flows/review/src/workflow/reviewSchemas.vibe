@@ -9,16 +9,15 @@
  *
  * @since 1.0.0
  */
-import * as Schema from "effect/Schema"
 import { withDefault } from "../schema/withDefault.ts"
-import { Changes } from "../walkthrough/changesSchema.ts"
+import { Changes } from "../walkthrough/changesSchema.vibe"
 import { Story } from "../walkthrough/storySchema.ts"
-import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts"
-import { NativeReviewPrompt } from "./nativeReviewPromptSchema.ts"
-import { PreviewOutput } from "./previewOutputSchema.ts"
-import { ReviewInput } from "./reviewInputSchema.ts"
+import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.vibe"
+import { NativeReviewPrompt } from "./nativeReviewPromptSchema.vibe"
+import { PreviewOutput } from "./previewOutputSchema.vibe"
+import { ReviewInput } from "./reviewInputSchema.vibe"
 import { ReviewRunOutput } from "./reviewRunOutputSchema.ts"
-import { ReviewTarget } from "./reviewTargetSchema.ts"
+import { ReviewTarget } from "./reviewTargetSchema.vibe"
 
 /**
  * Everything the local git work produces in one durable step.
@@ -26,20 +25,12 @@ import { ReviewTarget } from "./reviewTargetSchema.ts"
  * @since 1.0.0
  * @category schemas
  */
-export const PreparedReview = Schema.Struct({
-  target: ReviewTarget,
-  preview: PreviewOutput,
-  changes: Changes,
-  prompt: NativeReviewPrompt
-})
-
-/**
- * A decoded preparation result.
- *
- * @since 1.0.0
- * @category models
- */
-export type PreparedReview = typeof PreparedReview.Type
+export schema PreparedReview {
+  readonly target: ReviewTarget
+  readonly preview: PreviewOutput
+  readonly changes: Changes
+  readonly prompt: NativeReviewPrompt
+}
 
 /**
  * What one file's review seat produced, or `null` when its step failed.
@@ -163,18 +154,10 @@ export type WalkthroughOutput = typeof WalkthroughOutput.Type
  * @since 1.0.0
  * @category schemas
  */
-export const ReviewResult = Schema.Struct({
-  target: ReviewTarget,
-  review: ReviewRunOutput,
-  walkthrough: WalkthroughOutput,
-  story: Story,
-  ui: Schema.Struct({ kind: Schema.Literal("html"), title: Schema.String, html: Schema.String })
-})
-
-/**
- * A decoded review result.
- *
- * @since 1.0.0
- * @category models
- */
-export type ReviewResult = typeof ReviewResult.Type
+export schema ReviewResult {
+  readonly target: ReviewTarget
+  readonly review: ReviewRunOutput
+  readonly walkthrough: WalkthroughOutput
+  readonly story: Story
+  readonly ui: { readonly kind: "html"; readonly title: string; readonly html: string }
+}
