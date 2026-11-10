@@ -1,0 +1,36 @@
+import { it, expect } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("the mock agent requests each named specification reviewer with the poster's authority", async ({ bench }) => {
+  const result = await workload(bench, "mock-agent-specification", "async", async () => {
+    await runPromise(scoped(effect {
+      provide MockFactory {
+        const factory = try Factory
+        try factory.accounts!.choose("maintainer")
+        const before = try factory.issues!.read()
+        for (const [id, name, grade] of [["astra", "Codex Astra", "A"], ["sol", "Codex Sol", "A"], ["fable", "Claude Fable", "A-"], ["opus", "Claude Opus", "A-"]] as const) {
+          const room = `spec-${id}`
+          try factory.post(room, "one", "Bench", `${name}, review the specification.`)
+          try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished" || event.type === "ReplyFailed"), Stream.timeout("15 seconds")))
+          const snapshot = try factory.read(room, 0)
+          const reply = snapshot.entries.find(entry => entry.author === "agent")!
+          const reviewed = try factory.issues!.read()
+          try Effect.try(() => {
+            expect(reply).toMatchObject({ text: `${name} · LGTM · ${grade} · r2`, done: true, error: "" })
+            expect(reviewed.specification?.[id]).toMatchObject({ verdict: "LGTM", grade, revision: 2 })
+            expect(reviewed.specification?.text).toBe(before.specification?.text)
+            expect(reviewed.specificationHistory?.at(-1)).toMatchObject({ event: "review", reviewer: id, revision: 2, verdict: "LGTM", grade })
+          })
+        }
+        const after = try factory.issues!.read()
+        try Effect.try(() => {
+          expect(after.seq).toBe(before.seq + 4)
+          expect(after.specificationHistory?.length).toBe((before.specificationHistory?.length ?? 0) + 4)
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-agent-specification", "Vitest built-in bench; three fresh product MockFactory journeys ask the shipped mock agent for all four named specification reviews. Its poster-bound read supplies the current revision and registered review flows produce each literal LGTM/grade reply and matching journal entry. Require unchanged specification text, revision two, four sequence advances and exactly four new review records; initialization, scripted chunk delays and assertions included.", ["Shipped product mock mode, deterministic fixture reviewers, no actual Codex/Claude run, provider, backend or GitHub write. Whole four-review journey, not actual model review latency; three unwarmed callbacks."], result))
+})

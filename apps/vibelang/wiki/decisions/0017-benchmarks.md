@@ -612,3 +612,40 @@ approximately two-minute retry policy must exhaust within the four-minute test d
 one admission, multiple settlement attempts, the exact budget refusal, one fixed wiki/unreachable warning, zero
 charges and the original retained ceiling. It records no duration; none is quoted. The runtime is Node with local
 HTTP model and memory/KV storage, not the browser e2e fault build. New hits join only against unchanged source bytes.
+
+
+**Poster-bound specification reviews (2026-11-10, Codex).** The product mock agent requests all four named
+reviewers from the fixture maintainer's post. Exact LGTM/A/A/A-/A- replies, revision two, matching journal records,
+four sequence advances and unchanged specification text are checked. This exercises the actual poster-bound read
+and registered mock review flows. Three fresh unwarmed four-review journeys include setup, scripted delays and
+assertions. It runs no actual Codex/Claude/provider process and performs no GitHub write; real review inference is
+outside this measurement. Counts are collected additively only while the production source hashes still match.
+
+
+**Combined receipt after two additive collections, 2026-11-10.** The full `de20c189` run passed 87 files / 182
+checks. The reply/fault add-on passed 2 files / 3 checks; the mock specification add-on passed 1 file / 1 check.
+All 265 original input hashes still match after both collections. The existing position merge joins their real
+hits: src 5,252/5,342 (98.32%), worker 2,183/2,374 (91.95%), total **7,435/7,716 (96.36%)**. This combines one
+complete run and two additive runs; it is not a single 90-file execution. The strict four-metric goal remains open
+in 111 files. No line/threshold/merge rule changed. Later documentation regeneration is outside this frozen receipt.
+
+Additional completed normal observations, nyc-01, Node 26.5.0, two reserved cores/shared host, three unwarmed
+callbacks. Min/median/max milliseconds; methods below, no tail-percentile claim. Each raw artifact keeps its own
+source revision, machine and toolchain.
+
+| Workload | Callbacks | Min ms | Median ms | Max ms | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `reply-agent-recovery` | 3 | 89.870 | 118.780 | 314.408 | `2026-11-10T19-26-06.552Z-reply-agent-recovery.json` |
+| `reply-safe-failure-tags` | 3 | 0.124 | 0.147 | 0.420 | `2026-11-10T19-26-06.706Z-reply-safe-failure-tags.json` |
+| `mock-agent-specification` | 3 | 280.045 | 293.491 | 419.984 | `2026-11-10T19-41-04.373Z-mock-agent-specification.json` |
+
+Reply recovery is a two-world corpus through the real memory engine, agent/QuickJS and sequencer over Node KV,
+with deterministic HTTP/SSE model responses: preview replacement plus a provider-credit failure and exact reported
+or ceiling settlement. Setup, serving, metrics and assertions are included; actual inference/WAN are excluded.
+Safe tags include five classifications and native revoked-Proxy allocation. Mock specification review includes
+all four product fixture reviewers, exact literal replies/journal changes and scripted delays. These are whole
+corpora, not per-token/individual-call latency. Initialization/shared-host/cold-sample variation remains included.
+
+The separately named draft fault artifact contains **counts only**: 12 settlement attempts, one admission, one
+model request, one warning, zero charged tokens and the retained 327,680-token ceiling in the instrumented sample.
+Its approximately two-minute policy is a configured deadline; no observed fault duration is published.
