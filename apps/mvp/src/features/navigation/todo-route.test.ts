@@ -19,6 +19,7 @@ test("a direct visit to a TODO opens its repository, so the page has the reposit
           warmRoute: () => undefined,
           openRoute,
           canonicalName: async (owner: string, repo: string) => `${owner}/${repo}`,
+          knownName: () => undefined,
           role: () => undefined,
         },
       },

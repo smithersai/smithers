@@ -388,6 +388,17 @@ export const aboutOf = (owner: string, name: string) =>
     return yield* until((yield* RepoStore).abouts, id, loaded)
   })
 
+/**
+ * GitHub's spelling of `owner/name` as this tab knows it now, without waiting: its owner/name once the About read
+ * settled with an answer, `null` once it settled without one (not found or failed), `undefined` while it hasn't.
+ */
+export const knownName = (owner: string, name: string) =>
+  Effect.map(
+    Effect.flatMap(RepoStore, (store) => store.abouts.get(repoId(owner, name))),
+    (row): string | null | undefined =>
+      Option.isNone(row) || !loaded(row.value) ? undefined : row.value.about?.name ?? null,
+  )
+
 /** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again when `again`, as a tree. */
 export const ensureBlob = (repository: Named, sha: string, path: string, again: boolean) =>
   Effect.gen(function* () {
@@ -697,12 +708,14 @@ export const shownRepository = (id: string) =>
   })
 
 /**
- * Loads what `target`'s page shows into this tab without opening it: what GitHub says of the repository, then, once the
- * device's row or RepoApi's refs say its clone is ready (`shown`), the file list and the file, or the directory's
- * README; for a repository nobody cloned, only what GitHub says. Ends once they
- * have loaded or failed, or after the store's `pageWait`, whichever is first; a request still on its way finishes in
- * the store's scope. A failed load loads again. A link's hover or focus runs it (the router's intent preload), and so does every navigation before it
- * opens the page, which then shows it complete.
+ * Loads what `target`'s page shows into this tab without opening it: starts reading what GitHub says of the repository,
+ * then, once the device's row or RepoApi's refs say its clone is ready (`shown`), the file list and the file, or the
+ * directory's README. Ends once they have loaded or failed, or after the store's `pageWait`, whichever is first; a
+ * request still on its way finishes in the store's scope. A failed load loads again. A link's hover or focus runs it
+ * (the router's intent preload), and so does every navigation before it opens the page, which then shows it complete.
+ * It never waits for what GitHub says (AGENTS.md, instant chat: navigation never waits on a slow read): since cbd72272
+ * that read tries a refusal again for up to three attempts, so a page renders at once with its About section loading,
+ * and fills it when the read settles. A repository nobody cloned ends as soon as the device can tell.
  */
 export const warm = (target: Target) =>
   Effect.gen(function* () {
@@ -711,8 +724,8 @@ export const warm = (target: Target) =>
     const id = repoId(target.owner, target.name)
     yield* ensureAbout(target.owner, target.name, id)
     const repository = yield* shown({ id, owner: target.owner, name: target.name })
-    // Not cloned: the page shows what GitHub says of it, so that is what to wait for.
-    if (Option.isNone(repository)) return yield* Effect.asVoid(until(store.abouts, id, loaded))
+    // Not cloned: the page shows what GitHub says of it, loading until its read settles.
+    if (Option.isNone(repository)) return
     const location = yield* locate(repository.value, target)
     if (location._tag !== "Located") return
     const { sha, path } = location

@@ -78,7 +78,7 @@ import { ViewScreen } from "./screens/view/ViewScreen"
  */
 export interface RouterContext {
   /** The router performing this navigation, supplied by createAppRouter. */
-  readonly router?: Pick<AnyRouter, "state">
+  readonly router?: Pick<AnyRouter, "state" | "navigate">
   readonly repo: RepoView
   readonly home: HomeView
   readonly docs: DocsView
@@ -174,16 +174,41 @@ const enterRepo = (
   enter(load, async () => {
     // A navigation asks once, as it starts, beside the page's warm reads; a warm that needs the role joins this read.
     if (!load.preload) context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
-    // The checks run beside the warm, never after it: each waits up to `pageWait` on its own, and in turn they added up
-    // (a cold issues list showed its search box a second later than its warm allowed).
-    const [, canonical, fileAtTree] = await Promise.all([
+    // The check runs beside the warm, never after it: in turn they added up (a cold issues list showed its search box a
+    // second later than its warm allowed).
+    const [, fileAtTree] = await Promise.all([
       warm(),
-      context.repo.actions.canonicalName(params.owner, params.repo),
       load.location.pathname.split("/")[3] === "tree" && context.repo.actions.fileAtTree(params),
     ])
-    const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
+    // GitHub's spelling, when this tab knows it already; else the page adopts it once it does (`adoptSpelling`).
+    const href = canonicalRepoHref(load.location, params, context.repo.actions.knownName(params.owner, params.repo) ?? undefined, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
-  }, open)
+  }, async () => {
+    await open()
+    adoptSpelling(context, params, load)
+  })
+
+/**
+ * GitHub's spelling of the repository's name that the navigation didn't know as it ran (`enterRepo`): once this tab's
+ * About read settles, the URL takes it in place of the entry, unless the router shows another page by then. A
+ * navigation never waits for it (AGENTS.md, instant chat): the About read tries a refusal again for up to three
+ * attempts, and every repository page waited on it.
+ */
+const adoptSpelling = (
+  context: RouterContext,
+  params: { readonly owner: string; readonly repo: string },
+  load: Load,
+) => {
+  if (context.repo.actions.knownName(params.owner, params.repo) !== undefined) return
+  void context.repo.actions.canonicalName(params.owner, params.repo).then((canonical) => {
+    const router = context.router
+    if (router === undefined || load.abortController.signal.aborted) return
+    const shown = router.state.location
+    if (shown.pathname !== load.location.pathname) return
+    const href = canonicalRepoHref(shown, params, canonical)
+    if (href !== undefined) void router.navigate({ href, replace: true })
+  }, () => undefined)
+}
 
 /**
  * The path of the page the router shows until this navigation resolves. A navigation that stays in its repository,

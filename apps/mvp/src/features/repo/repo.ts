@@ -1,7 +1,7 @@
 import { Clock, Context, Data, Effect, Layer, Metric, Option } from "effect"
 import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { aboutOf, fileAtTree, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
+import { aboutOf, fileAtTree, knownName, clone, copy, navigate, open, rawHref, refresh, retryAbout, retryClone, role, warm } from "./actions"
 import type { RepoClient } from "./api"
 import type { CopyKind } from "./contract"
 import { type RouteParams, type Target, targetOf } from "./paths"
@@ -50,8 +50,13 @@ export interface RepoLookups {
 /** What a person does, as plain functions. Each returns at once, or with a promise of what the flow did. */
 export interface RepoActions {
   readonly fileAtTree: (params: RouteParams) => Promise<boolean>
-  /** GitHub's canonical owner/name after the public metadata read settles. */
+  /**
+   * GitHub's canonical owner/name once this tab's public metadata read settles, however long its attempts take;
+   * `undefined` for a repository it has none for. It starts the read.
+   */
   readonly canonicalName: (owner: string, name: string) => Promise<string | undefined>
+  /** GitHub's spelling as this tab knows it now (`knownName` in actions.ts): never waits. */
+  readonly knownName: (owner: string, name: string) => string | null | undefined
 
   /** Clone pressed; `false` for an invalid name or insufficient/unavailable repository authority. */
   readonly clone: (owner: string, name: string) => boolean
@@ -127,9 +132,8 @@ export class Repo extends Context.Service<
             yield* Effect.logInfo("repo.alias.check").pipe(Effect.annotateLogs({ outcome, durationMs, feature: "repo" }))
             return Option.getOrElse(checked, () => false)
           }).pipe(Effect.withSpan("repo.alias.check"))),
-          canonicalName: (owner, name) => promise(aboutOf(owner, name).pipe(
-            Effect.timeoutOption(store.pageWait), Effect.map((row) => Option.isSome(row) ? row.value.about?.name : undefined),
-          )),
+          canonicalName: (owner, name) => promise(Effect.map(aboutOf(owner, name), (row) => row.about?.name)),
+          knownName: (owner, name) => run(knownName(owner, name)),
           clone: (owner, name) => run(clone(owner, name)),
           retryClone: (owner, name) => run(retryClone(owner, name)),
           retryAbout: (owner, name) => run(retryAbout(owner, name)),

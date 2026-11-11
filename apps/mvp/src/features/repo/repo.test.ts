@@ -999,7 +999,9 @@ test("canonical naming comes from GitHub; an absent repository invents no spelli
   h.github.publish("octocat", "Spoon-Knife")
   const tab = await open(h)
   expect(await tab.repo.actions.canonicalName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
+  expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
   expect(await tab.repo.actions.canonicalName("octocat", "Gone")).toBeUndefined()
+  expect(tab.repo.actions.knownName("octocat", "Gone")).toBeNull()
 })
 
 
@@ -1069,7 +1071,59 @@ test("a held About read leaves canonical spelling unknown until its real answer 
   try {
     const checking = tab.repo.actions.canonicalName("octocat", "Spoon-Knife")
     await Effect.runPromise(Deferred.await(requested).pipe(Effect.timeout("10 seconds")))
-    expect(await checking).toBeUndefined()
+    // Unknown while the read is held, past the tab's `pageWait`: nothing invents a spelling, and nothing waits for one.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBeUndefined()
+    await Effect.runPromise(Deferred.succeed(held, undefined))
+    expect(await checking).toBe("octocat/Spoon-Knife")
   } finally { await Effect.runPromise(Deferred.succeed(held, undefined)) }
-  await waitFor(async () => expect(await tab.repo.actions.canonicalName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife"))
+  expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
 })
+
+// Navigation never waits on a slow read (AGENTS.md, instant chat; the lead's ruling of 2026-11-11 on terminal
+// navigation). Since cbd72272 About tries a refusal again, for up to three attempts: a repository nobody cloned held
+// every navigation's warm on it for a whole `pageWait`, and a branch page showed its pending screen instead of its
+// terminal (src/features/terminal/navigation.test.ts).
+test("a navigation never waits for what GitHub says: the page opens with About loading, and About fills when its retried read settles", async () => {
+  const h = await repoHarness(server)
+  h.github.publish("octocat", "Spoon-Knife")
+  const existing = await open(h)
+  const client = await existing.runtime.runPromise(Effect.service(RepoClient))
+  const held = Effect.runSync(Deferred.make<void>())
+  let attempts = 0
+  let refused = true
+  // A warm that waited for the held read would end only at this `pageWait`.
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, pageWait: "20 seconds", client: Layer.succeed(RepoClient, { ...client,
+    about: (owner, name) => Effect.gen(function* () {
+      attempts++
+      yield* Deferred.await(held)
+      if (refused) return yield* Effect.fail(new RepoRefused({ status: 503, code: "github_unavailable" }))
+      return yield* client.about(owner, name)
+    }),
+  }) })
+  tabs.push(tab)
+  const params = { owner: "octocat", repo: "Spoon-Knife" }
+  const within = <A>(promise: Promise<A>) =>
+    Promise.race([promise.then((value) => ({ value })), new Promise<"waited">((resolve) => setTimeout(() => resolve("waited"), 10_000))])
+  expect(await within(tab.repo.actions.warmRoute("tree", params, {}))).toEqual({ value: undefined })
+  tab.repo.actions.openRoute("tree", params, {})
+  await waitFor(() => expect(tab.about().about?.state).toBe("loading"))
+  await waitFor(() => expect(attempts).toBe(1))
+  expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBeUndefined()
+  const spelled = tab.repo.actions.canonicalName("octocat", "Spoon-Knife")
+  // Each later navigation goes on as the read waits.
+  expect(await within(tab.repo.actions.warmRoute("tree", params, {}))).toEqual({ value: undefined })
+  expect(tab.about().about?.state).toBe("loading")
+  // The read goes on in the background: after its three attempts, the About section shows the refusal's reason.
+  await Effect.runPromise(Deferred.succeed(held, undefined))
+  await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message: GITHUB_DOWN }), { timeout: 30_000 })
+  expect(attempts).toBe(3)
+  expect(await spelled).toBeUndefined()
+  expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBeNull()
+  // Try again fills it with GitHub's answer.
+  refused = false
+  expect(tab.repo.actions.retryAbout("octocat", "Spoon-Knife")).toBe(true)
+  await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+  expect(tab.repo.actions.knownName("octocat", "Spoon-Knife")).toBe("octocat/Spoon-Knife")
+  expect(attempts).toBe(4)
+}, 90_000)
