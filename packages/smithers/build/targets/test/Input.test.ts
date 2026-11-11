@@ -537,6 +537,30 @@ describe("Input.expandGlob traversal fan-out", () => {
 })
 
 describe("Input.expandPnpmWorkspace", () => {
+  it.each(["packages/*/", "packages/*///"])("expands trailing-slash inclusions and exclusions: %s", async (pattern) => {
+    await write("package.json", "{}\n")
+    await write("packages/a/package.json", "{}\n")
+    await write("packages/b/package.json", "{}\n")
+    await write("pnpm-workspace.yaml", "packages:\n  - '" + pattern + "'\n  - '!packages/b/'\n")
+    expect(await Input.expandPnpmWorkspace(root, "", Input.pnpmWorkspace("//pnpm-workspace.yaml")))
+      .toEqual(["package.json", "packages/a/package.json", "pnpm-workspace.yaml"])
+  })
+
+  it("expands a trailing-slash pattern relative to a nested workspace", async () => {
+    await write("sub/package.json", "{}\n")
+    await write("sub/packages/a/package.json", "{}\n")
+    await write("sub/pnpm-workspace.yaml", "packages:\n  - 'packages/*/'\n")
+    expect(await Input.expandPnpmWorkspace(root, "", Input.pnpmWorkspace("//sub/pnpm-workspace.yaml")))
+      .toEqual(["sub/package.json", "sub/packages/a/package.json", "sub/pnpm-workspace.yaml"])
+  })
+
+  it("rejects inclusion patterns that match no member manifest", async () => {
+    await write("package.json", "{}\n")
+    await write("pnpm-workspace.yaml", "packages:\n  - missing/*/\n")
+    await expect(Input.expandPnpmWorkspace(root, "", Input.pnpmWorkspace("//pnpm-workspace.yaml")))
+      .rejects.toThrow(/matches no member manifest/)
+  })
+
   it("ignores comments and unrelated scalar, object, and array settings", async () => {
     await write("package.json", "{}\n")
     await write("packages/included/package.json", "{}\n")

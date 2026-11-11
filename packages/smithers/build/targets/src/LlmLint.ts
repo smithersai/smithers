@@ -2700,6 +2700,7 @@ const securityBatch = (
   context: ReadonlyArray<Segment>,
   batchIndex: number,
   attempts: Array<typeof ReviewAttempt.Type>,
+  charged: Array<typeof ReviewAttempt.Type>,
   mask: CredentialMask,
   spend: Spend
 ): Effect.Effect<ReadonlyArray<Finding>, LlmReviewError> =>
@@ -2713,7 +2714,8 @@ const securityBatch = (
     ) =>
       Effect.gen(function*() {
         const seat = seats[pass % seats.length]!
-        if (attempts.length >= 256) {
+        // Receipts replayed from the finding store were paid for by an earlier invocation.
+        if (charged.length >= 256) {
           return yield* Effect.fail(
             new LlmReviewError({
               phase: "review",
@@ -2761,7 +2763,7 @@ const securityBatch = (
           ),
           Effect.result
         )
-        attempts.push({
+        const receipt: typeof ReviewAttempt.Type = {
           batch: batchIndex,
           pass: pass + 1,
           purpose,
@@ -2771,14 +2773,15 @@ const securityBatch = (
           status: result._tag === "Success" ? "completed" : "failed",
           message: result._tag === "Success" ? "completed" : result.failure.message,
           ...(completion === undefined ? {} : { completion })
-        })
-        if (Buffer.byteLength(JSON.stringify(attempts), "utf8") > maximumFindingBytes) {
-          const last = attempts.pop()!
-          const { completion: _completion, ...receipt } = last
+        }
+        charged.push(receipt)
+        if (Buffer.byteLength(JSON.stringify(charged), "utf8") > maximumFindingBytes) {
+          const { completion: _completion, ...bare } = receipt
           const message = `security attempt receipts exceed ${maximumFindingBytes} bytes`
-          attempts.push({ ...receipt, status: "failed", message })
+          attempts.push({ ...bare, status: "failed", message })
           return yield* Effect.fail(new LlmReviewError({ phase: "review", message, attempts: [...attempts] }))
         }
+        attempts.push(receipt)
         if (result._tag === "Success") return result.success
         return yield* Effect.fail(
           new LlmReviewError({
@@ -3182,6 +3185,8 @@ export const review = (
     const reviewed: Array<string> = []
     const findings: Array<Finding> = []
     const attempts: Array<typeof ReviewAttempt.Type> = []
+    // The attempts this invocation makes; only these count against its attempt and receipt limits.
+    const charged: Array<typeof ReviewAttempt.Type> = []
     let findingBytes = 0
     let invoked = 0
     let remaining = 0
@@ -3217,6 +3222,7 @@ export const review = (
             context,
             batchIndex,
             attempts,
+            charged,
             mask,
             spend
           ))

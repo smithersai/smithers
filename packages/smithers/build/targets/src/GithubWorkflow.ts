@@ -77,6 +77,8 @@ export interface WorkflowJob {
   readonly condition: string | undefined
   /** The raw `continue-on-error:` value, or `undefined` when unset. */
   readonly continueOnError: string | undefined
+  /** The job ids in `needs:`; GitHub skips this job unless every one of them succeeds. */
+  readonly needs?: ReadonlyArray<string>
   readonly steps: ReadonlyArray<WorkflowStep>
 }
 
@@ -325,6 +327,24 @@ const readStep = (node: unknown, job: string, counter: Yaml.LineCounter): Workfl
 
 const jobIdShape = /^[A-Za-z_][A-Za-z0-9_-]*$/
 
+/**
+ * Reads a job's `needs:`: one job id or a non-empty sequence of them. Any other
+ * shape, an expression included, is refused, since a dependency the scanner
+ * cannot name is one it cannot prove runs.
+ */
+const readNeeds = (entry: Entry | undefined, job: string, counter: Yaml.LineCounter): ReadonlyArray<string> => {
+  if (entry === undefined) return []
+  const id = (node: unknown): string => {
+    if (Yaml.isScalar(node) && typeof node.value === "string" && jobIdShape.test(node.value)) return node.value
+    throw refusal(nodeLine(counter, node), "invalid_shape", `\`needs\` of job ${JSON.stringify(job)} must name job ids`)
+  }
+  if (!Yaml.isSeq(entry.value)) return [id(entry.value)]
+  if (entry.value.items.length === 0) {
+    throw refusal(entry.line, "invalid_shape", `\`needs\` of job ${JSON.stringify(job)} is empty`)
+  }
+  return entry.value.items.map(id)
+}
+
 /** Reads one entry of the top-level `jobs:` mapping. */
 const readJob = (job: Entry, counter: Yaml.LineCounter): WorkflowJob => {
   const node = job.value
@@ -390,6 +410,7 @@ const readJob = (job: Entry, counter: Yaml.LineCounter): WorkflowJob => {
     uses,
     condition: field("if"),
     continueOnError: field("continue-on-error"),
+    needs: readNeeds(fields.get("needs"), job.key, counter),
     steps
   }
 }
@@ -606,8 +627,8 @@ const skipQuoted = (script: string, open: number): number => {
   let index = open + 1
   while (index < script.length) {
     const character = script[index]!
-    // A backslash escapes inside `"…"` only; inside `'…'` it is literal.
-    if (quote === "\"" && character === "\\") {
+    // Double quotes and backticks honor escapes; inside single quotes they are literal.
+    if (quote !== "'" && character === "\\") {
       index += 2
       continue
     }
@@ -659,44 +680,212 @@ const skipHereDocument = (script: string, open: number): number => {
 }
 
 /**
- * Returns the end of a shell function definition beginning at `start`.
- *
- * A function body is deferred code: merely declaring
- * `check() { pnpm run check; }` does not run the command. The gate scanner
- * therefore skips the complete balanced body. If the body is malformed, the
- * rest of the script is swallowed, which fails closed. Calling the function
- * later is also not expanded by this deliberately small scanner; callers that
- * require a gate should spell the required command directly.
+ * Returns the offset just past the `close` that balances an `open` already
+ * read, skipping quoted strings, escapes, and here-documents. An unbalanced
+ * body swallows the rest of the script, which fails closed.
  */
-const functionDefinitionEnd = (script: string, start: number): number | undefined => {
-  const header = script.slice(start).match(
-    /^(?:(?:function[ \t\n]+[A-Za-z_][A-Za-z0-9_]*(?:[ \t\n]*\([ \t\n]*\))?)|(?:[A-Za-z_][A-Za-z0-9_]*[ \t\n]*\([ \t\n]*\)))[ \t\n]*\{/
-  )
-  if (header === null) return undefined
-  let index = start + header[0].length
+const balancedEnd = (
+  script: string,
+  start: number,
+  open: "{" | "(",
+  close: "}" | ")",
+  body = false,
+  pattern = false
+): number => {
+  let index = start
   let depth = 1
+  let expectCommand = true
+  let caseArms = 0
   while (index < script.length) {
     const character = script[index]!
-    if (character === "'" || character === "\"") {
+    if (character === " " || character === "\t") {
+      index += 1
+      continue
+    }
+    if (character === "'" || character === "\"" || character === "`") {
       index = skipQuoted(script, index)
+      expectCommand = false
       continue
     }
     if (character === "\\") {
+      if (script[index + 1] !== "\n") expectCommand = false
       index += 2
       continue
     }
     if (character === "<" && script[index + 1] === "<" && script[index + 2] !== "<") {
       index = skipHereDocument(script, index)
+      expectCommand = true
       continue
     }
-    if (character === "{") depth += 1
-    if (character === "}") {
+    if (character === "$" && script[index + 1] === "(") {
+      // An array stores the substitution's output; its case patterns still
+      // belong to shell grammar, not to the surrounding array's delimiters.
+      index = balancedEnd(script, index + 2, "(", ")", true)
+      expectCommand = false
+      continue
+    }
+    if (pattern && character === "[") {
+      index = patternSetEnd(script, index)
+      continue
+    }
+    if (body && caseArms > 0 && character === ";" && (script[index + 1] === ";" || script[index + 1] === "&")) {
+      const arm = casePatternEnd(
+        script,
+        index + (script[index + 1] === ";" && script[index + 2] === "&" ? 3 : 2)
+      )
+      index = arm.end
+      if (arm.closed) caseArms -= 1
+      expectCommand = !arm.closed
+      continue
+    }
+    if (character === open) depth += 1
+    if (character === close) {
       depth -= 1
       if (depth === 0) return index + 1
+    }
+    if (body) {
+      if (commandSeparators.has(character)) {
+        expectCommand = true
+      } else {
+        const end = wordEnd(script, index)
+        const word = script.slice(index, end)
+        if (expectCommand && word === "case") {
+          caseArms += 1
+          const arm = casePatternEnd(script, caseHeaderEnd(script, end))
+          index = arm.end
+          if (arm.closed) caseArms -= 1
+          expectCommand = !arm.closed
+          continue
+        }
+        if (expectCommand && word === "esac" && caseArms > 0) caseArms -= 1
+        if (!commandIntroducers.has(word) && !assignmentPrefix.test(word)) expectCommand = false
+        index = end
+        continue
+      }
     }
     index += 1
   }
   return script.length
+}
+
+/**
+ * Returns the end of a shell function definition beginning at `start`.
+ *
+ * A function body is deferred code: merely declaring
+ * `check() { pnpm run check; }` or `check() ( pnpm run check )` does not run
+ * the command. The gate scanner therefore skips the complete balanced body.
+ * If the body is malformed, the rest of the script is swallowed, which fails
+ * closed. Calling the function later is also not expanded by this deliberately
+ * small scanner; callers that require a gate should spell the required command
+ * directly.
+ */
+const functionDefinitionEnd = (script: string, start: number): number | undefined => {
+  const header = script.slice(start).match(
+    /^(?:(?:function[ \t\n]+[A-Za-z_][A-Za-z0-9_]*(?:[ \t\n]*\([ \t\n]*\))?)|(?:[A-Za-z_][A-Za-z0-9_]*[ \t\n]*\([ \t\n]*\)))[ \t\n]*([{(])/
+  )
+  if (header === null) return undefined
+  return header[1] === "{"
+    ? balancedEnd(script, start + header[0].length, "{", "}", true)
+    : balancedEnd(script, start + header[0].length, "(", ")", true)
+}
+
+/** An array assignment's `NAME=` or `NAME+=`, whose `(…)` is data, not a subshell. */
+const arrayAssignment = /^[A-Za-z_][A-Za-z0-9_]*\+?=$/
+
+/** Returns the offset just past the shell word starting at `start`. */
+const wordEnd = (script: string, start: number): number => {
+  let index = start
+  while (index < script.length) {
+    const next = script[index]!
+    // `CMD=(pnpm run check)` stores words in an array and runs none of them.
+    if (next === "(" && arrayAssignment.test(script.slice(start, index))) {
+      index = balancedEnd(script, index + 1, "(", ")")
+      continue
+    }
+    if (next === " " || next === "\t" || commandSeparators.has(next)) break
+    if (next === "'" || next === "\"" || next === "`") {
+      index = skipQuoted(script, index)
+      continue
+    }
+    // The same escape target inside a word: `a\;b` is one argument, not two
+    // commands.
+    index += next === "\\" ? 2 : 1
+  }
+  return index
+}
+
+/** Skips spaces, tabs, and newlines. */
+const skipBlanks = (script: string, start: number): number => {
+  let index = start
+  while (script[index] === " " || script[index] === "\t" || script[index] === "\n") index += 1
+  return index
+}
+
+/**
+ * Skips `WORD in` after a `case`, returning the offset just past `in`. Any
+ * other shape swallows the rest of the script, which fails closed.
+ */
+const caseHeaderEnd = (script: string, start: number): number => {
+  const subject = skipBlanks(script, start)
+  const keyword = skipBlanks(script, wordEnd(script, subject))
+  const end = wordEnd(script, keyword)
+  return script.slice(keyword, end) === "in" ? end : script.length
+}
+
+/**
+ * Skips a case pattern's bracket expression, including its nested POSIX
+ * classes. An unclosed set consumes the rest of the script.
+ */
+const patternSetEnd = (script: string, start: number): number => {
+  let index = start + 1
+  if (script[index] === "!" || script[index] === "^") index += 1
+  if (script[index] === "]") index += 1
+  while (index < script.length && script[index] !== "]") {
+    const marker = script[index + 1]
+    if (script[index] === "[" && (marker === ":" || marker === "=" || marker === ".")) {
+      const end = script.indexOf(marker + "]", index + 2)
+      index = end === -1 ? script.length : end + 2
+    } else {
+      index += script[index] === "\\" ? 2 : 1
+    }
+  }
+  return Math.min(script.length, index + 1)
+}
+
+/**
+ * Skips one `case` arm's pattern, through its `)`, or the closing `esac`.
+ *
+ * A pattern such as `pnpm run check)` is a value the subject is matched
+ * against, never a command. An unterminated pattern swallows the rest of the
+ * script, which fails closed.
+ */
+const casePatternEnd = (script: string, start: number): { readonly end: number; readonly closed: boolean } => {
+  let index = skipBlanks(script, start)
+  const word = wordEnd(script, index)
+  if (script.slice(index, word) === "esac") return { end: word, closed: true }
+  if (script[index] === "(") index += 1
+  while (index < script.length) {
+    const character = script[index]!
+    if (character === "'" || character === "\"" || character === "`") {
+      index = skipQuoted(script, index)
+      continue
+    }
+    if (character === "$" && script[index + 1] === "(") {
+      index = balancedEnd(script, index + 2, "(", ")", true)
+      continue
+    }
+    if (character === "(") {
+      index = balancedEnd(script, index + 1, "(", ")", false, true)
+      continue
+    }
+    if (character === "[") {
+      index = patternSetEnd(script, index)
+      continue
+    }
+    if (character === ")") return { end: index + 1, closed: false }
+    index += character === "\\" ? 2 : 1
+  }
+  return { end: script.length, closed: false }
 }
 
 /**
@@ -728,8 +917,8 @@ export interface CommandSpan {
  * own flags — rather than only its first words.
  *
  * Shell-level control flow is the one thing it deliberately looks THROUGH: a
- * command inside an `if`, a loop body, or a `case` arm is reported as run,
- * because the flows pipeline's own byte-comparison gate lives inside
+ * command inside an `if`, a loop body, or a `case` arm's body is reported as
+ * run, while the arm's pattern is not, because the flows pipeline's own byte-comparison gate lives inside
  * `if ! cmp …; then`. A workflow-level `if:` is the opposite — see
  * {@link alwaysRuns} — because GitHub may skip the whole job or step.
  *
@@ -741,6 +930,16 @@ export const commandSpans = (script: string): ReadonlyArray<CommandSpan> => {
   let open: { readonly start: number; end: number } | undefined
   let index = 0
   let expectCommand = true
+  // How many `case` arm bodies enclose the current command.
+  let caseArms = 0
+  // Reads the next `case` pattern and starts its body, or closes the `case`.
+  const nextArm = (start: number): void => {
+    const arm = casePatternEnd(script, start)
+    index = arm.end
+    open = undefined
+    if (arm.closed) caseArms -= 1
+    expectCommand = !arm.closed
+  }
   while (index < script.length) {
     const character = script[index]!
     if (character === " " || character === "\t") {
@@ -758,6 +957,11 @@ export const commandSpans = (script: string): ReadonlyArray<CommandSpan> => {
         expectCommand = false
         continue
       }
+    }
+    // `;;`, `;&`, and `;;&` end a `case` arm; a pattern follows, not a command.
+    if (character === ";" && caseArms > 0 && (script[index + 1] === ";" || script[index + 1] === "&")) {
+      nextArm(index + (script[index + 1] === ";" && script[index + 2] === "&" ? 3 : 2))
+      continue
     }
     if (commandSeparators.has(character)) {
       open = undefined
@@ -797,21 +1001,22 @@ export const commandSpans = (script: string): ReadonlyArray<CommandSpan> => {
       continue
     }
     const start = index
-    while (index < script.length) {
-      const next = script[index]!
-      if (next === " " || next === "\t" || commandSeparators.has(next)) break
-      if (next === "'" || next === "\"") {
-        index = skipQuoted(script, index)
-        continue
-      }
-      // The same escape target inside a word: `a\;b` is one argument, not two
-      // commands.
-      index += next === "\\" ? 2 : 1
-    }
+    index = wordEnd(script, start)
     if (expectCommand) {
       open = { start, end: index }
       spans.push(open)
       const word = script.slice(start, index)
+      if (word === "case") {
+        caseArms += 1
+        nextArm(caseHeaderEnd(script, index))
+        continue
+      }
+      if (word === "esac" && caseArms > 0) {
+        caseArms -= 1
+        open = undefined
+        expectCommand = false
+        continue
+      }
       if (!commandIntroducers.has(word) && !assignmentPrefix.test(word)) expectCommand = false
     } else if (open !== undefined) {
       open.end = index
@@ -919,11 +1124,36 @@ export const executesRunScript = (shell: string | undefined): boolean =>
   shell === undefined || executableShells.has(shell.trim().toLowerCase())
 
 /**
+ * The jobs GitHub runs whenever the workflow does.
+ *
+ * A job runs unconditionally when it has no condition but the always-true
+ * literal and every job it `needs` does too. GitHub skips a job whose needed
+ * job was skipped, so a job behind an `if: false` job, behind a job the file
+ * does not declare, or inside a `needs` cycle never runs.
+ */
+const unconditionalJobs = (workflow: Workflow): ReadonlySet<string> => {
+  const jobs = new Map(workflow.jobs.map((job) => [job.id, job]))
+  const verdicts = new Map<string, boolean>()
+  const runs = (id: string): boolean => {
+    const known = verdicts.get(id)
+    if (known !== undefined) return known
+    // Provisionally false, so a cycle back to this job proves nothing.
+    verdicts.set(id, false)
+    const job = jobs.get(id)
+    const verdict = job !== undefined && alwaysRuns(job.condition) && (job.needs ?? []).every(runs)
+    verdicts.set(id, verdict)
+    return verdict
+  }
+  return new Set(workflow.jobs.filter((job) => runs(job.id)).map((job) => job.id))
+}
+
+/**
  * The declared required jobs a workflow does not unconditionally run.
  *
  * A required job is required to RUN, on the same terms as a gate: a job
- * carrying an `if:` is one GitHub may skip, so `if: false` on a required job is
- * a job the pipeline does not have. A job that exists but is conditional is
+ * carrying an `if:`, or needing a job that does, is one GitHub may skip, so
+ * `if: false` on a required job is a job the pipeline does not have. A job
+ * that exists but is conditional is
  * reported as `id (conditional)`, because "missing" would send an operator
  * looking for a job that is right there in the file.
  *
@@ -939,9 +1169,7 @@ export const missingRequiredJobs = (
   requiredJobs: ReadonlyArray<string>
 ): ReadonlyArray<string> => {
   const declared = new Set(workflow.jobs.map((job) => job.id))
-  const unconditional = new Set(
-    workflow.jobs.filter((job) => alwaysRuns(job.condition)).map((job) => job.id)
-  )
+  const unconditional = unconditionalJobs(workflow)
   return requiredJobs
     .filter((id) => !unconditional.has(id))
     .map((id) => declared.has(id) ? `${id} (conditional)` : id)
@@ -952,7 +1180,8 @@ export const missingRequiredJobs = (
  *
  * A gate is satisfied only by an UNCONDITIONAL job and step: `if: false`, and
  * every other condition that is not the always-true literal, is a job or step
- * GitHub may skip, so it cannot prove an unconditional gate. `continue-on-error`
+ * GitHub may skip, so it cannot prove an unconditional gate. A job that `needs`
+ * a conditional job is skipped with it. `continue-on-error`
  * is deliberately not treated the same way — a gate asserts that a command is
  * still run, not that its failure blocks a merge, and the advisory macOS and
  * Windows lanes of a real pipeline are exactly the jobs a platform-pinned gate
@@ -964,11 +1193,12 @@ export const missingRequiredJobs = (
 export const missingGates = (
   workflow: Workflow,
   gates: ReadonlyArray<Gate>
-): ReadonlyArray<Gate> =>
-  gates.filter((gate) => {
+): ReadonlyArray<Gate> => {
+  const unconditional = unconditionalJobs(workflow)
+  return gates.filter((gate) => {
     const jobs = (gate.job === undefined
       ? workflow.jobs
-      : workflow.jobs.filter((job) => job.id === gate.job)).filter((job) => alwaysRuns(job.condition))
+      : workflow.jobs.filter((job) => job.id === gate.job)).filter((job) => unconditional.has(job.id))
     return !jobs.some((job) =>
       job.steps.filter((_, index) => stepAlwaysRuns(job.steps, index)).some((step) =>
         (step.run !== undefined && executesRunScript(step.shell) && runsCommand(step.run, gate.command)) ||
@@ -976,6 +1206,7 @@ export const missingGates = (
       )
     )
   })
+}
 
 /**
  * One supported lockfile install, with the only flags it may carry.

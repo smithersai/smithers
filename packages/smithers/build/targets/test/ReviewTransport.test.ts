@@ -91,6 +91,57 @@ const seats = (
   })
 
 describe("LlmLint.review seat transport", () => {
+  it.each([
+    [130, 1],
+    [86, 16 * 1024]
+  ])(
+    "resumes %i security batches without charging replayed receipts to invocation limits",
+    async (count, evidenceBytes) => {
+      const seen: Array<Seen> = []
+      const answer = JSON.stringify({
+        status: "completed",
+        coverage: [
+          { checkId: "general", status: "completed", evidence: "x".repeat(evidenceBytes) },
+          { checkId: "boundary", status: "completed", evidence: "y".repeat(evidenceBytes) }
+        ],
+        missingContext: [],
+        findings: []
+      })
+      const snapshot = Array.from({ length: count }, (_, index) => ({
+        path: "src/f" + String(index).padStart(3, "0") + ".ts",
+        contents: "export const f" + index + " = " + index + "\n",
+        changed: true
+      }))
+      const options = {
+        workspaceRoot: root,
+        snapshot,
+        revisions: { base: "a".repeat(40), head: "b".repeat(40) },
+        transport: seats(answer, seen),
+        store: { directory: store, owner: "//:security" }
+      }
+      const request = payload({ scope: "all", securityChecks: ["general", "boundary"] })
+      const invocations = Math.ceil(count / LlmLint.maximumReviewBatches)
+      for (let invocation = 1; invocation < invocations; invocation++) {
+        const failure = await Effect.runPromise(Effect.flip(LlmLint.review(options, request)))
+        expect(failure.message).toContain("Review incomplete")
+        expect((failure as LlmLint.LlmReviewError).attempts).toHaveLength(
+          invocation * LlmLint.maximumReviewBatches * 3
+        )
+        expect(seen).toHaveLength(invocation * LlmLint.maximumReviewBatches * 3)
+      }
+      const report = await Effect.runPromise(LlmLint.review(options, request))
+      expect(report.files).toEqual(snapshot.map(({ path }) => path))
+      expect(report.attempts).toHaveLength(count * 3)
+      expect(seen).toHaveLength(count * 3)
+      expect(report.findings).toEqual([])
+      const [name] = await Fs.readdir(Path.join(store, "runs"))
+      const record = JSON.parse(await Fs.readFile(Path.join(store, "runs", name!), "utf8")) as LlmLint.RunRecord
+      expect(record.status).toBe("completed")
+      expect(record.batches).toHaveLength(count)
+      expect(record.usage.modelCalls).toBe(count * 3)
+    }
+  )
+
   it("runs every security pass through the host's seats with no API key and records the seat transport", async () => {
     const seen: Array<Seen> = []
     const report = await Effect.runPromise(LlmLint.review(

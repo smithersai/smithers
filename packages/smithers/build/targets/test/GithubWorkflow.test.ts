@@ -1288,3 +1288,145 @@ describe("stripShellComments", () => {
     expect(stripShellComments("a\n# b\nc")).toBe("a\n\nc")
   })
 })
+
+describe("workflow execution proof", () => {
+  const gate = [{ name: "check", command: "pnpm run check", job: "gated" }]
+  const scriptWorkflow = (script: string) =>
+    parseWorkflow(
+      "jobs:\n  gated:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n" +
+        script.split("\n").map((line) => "          " + line).join("\n") + "\n"
+    )
+
+  it.each([
+    "CMD=(pnpm run check)",
+    "CMD=($(case x in x) printf x ;; esac) pnpm run check)",
+    "CMD=(`case x in x) printf x ;; esac` pnpm run check)",
+    "CMD+=(pnpm run check)",
+    "declare -a CMD=(pnpm run check)",
+    "CMD=(one\npnpm run check\n)",
+    "case \"$1\" in\npnpm run check) echo hi ;;\nesac",
+    "case \"$1\" in\n(pnpm run check|other) echo hi ;;\nesac",
+    "case \"$1\" in\none) : ;;\npnpm run check) : ;;\nesac",
+    "check() ( pnpm run check )",
+    "check() ( value=`case x in x) : ;; esac`; pnpm run check )",
+    "check() ( case x in x) : ;; esac; pnpm run check )",
+    "check() ( case x in x) case y in y) : ;; esac ;; esac; pnpm run check )",
+    "check() ( case x in x) : ;& y) : ;;& z) : ;; esac; pnpm run check )",
+    "function check ( ( pnpm run check ) )",
+    "check() ( echo \")\" ; pnpm run check )",
+    "check() ( pnpm run check",
+    "CMD=(pnpm run check",
+    "case pnpm run check",
+    "case \"$1\" in\npnpm run check",
+    "case \"$1\" in\n\"pnpm run check)\") : ;;\nesac",
+    "check() ( echo \\) ; pnpm run check )",
+    "check() (\ncat <<EOF\n)\nEOF\npnpm run check\n)"
+  ])("rejects deferred or data-only gate text: %s", (script) => {
+    expect(missingGates(scriptWorkflow(script), gate)).toEqual(gate)
+  })
+
+  it.each([
+    "CMD=(ignored)\npnpm run check",
+    "CMD=($(case x in x) printf x ;; esac) pnpm run check); pnpm run check",
+    "CMD=(`case x in x) printf x ;; esac` pnpm run check); pnpm run check",
+    "case x in @([)]|a)|pnpm) : ;; esac; pnpm run check",
+    "CMD+=(ignored); pnpm run check",
+    "check() ( : ); pnpm run check",
+    "case \"$1\" in\npnpm run check) : ;;\nesac\npnpm run check",
+    "case \"$1\" in\none) pnpm run check ;;\nesac",
+    "case \"$1\" in\none) : ;&\ntwo) pnpm run check ;;&\nthree) : ;;\nesac",
+    "case \"$1\" in\none) case \"$2\" in\ntwo) : ;;\nesac\npnpm run check ;;\nesac",
+    "( pnpm run check )",
+    "case \"$1\" in\na\\)b) : ;;\nesac\npnpm run check",
+    "case \"$1\" in\none) :\nesac\npnpm run check"
+  ])("retains executable gate commands: %s", (script) => {
+    expect(missingGates(scriptWorkflow(script), gate)).toEqual([])
+  })
+
+  it.each([
+    "shopt -s extglob\ncase x in @(a)|pnpm) : ;; esac",
+    "case x in $(case x in x) printf y ;; esac)|pnpm) : ;; esac",
+    "case x in `case x in x) printf y ;; esac`|pnpm) : ;; esac",
+    "shopt -s extglob\ncase x in @([)]|a)|pnpm) : ;; esac",
+    "case x in [[=a=])]|pnpm) : ;; esac",
+    "case x in [[.a.])]|pnpm) : ;; esac",
+    "shopt -s extglob\ncase x in (@(a|@(b))|pnpm) : ;; esac",
+    "case x in [)]|pnpm) : ;; esac",
+    "case x in [[:alpha:])]|pnpm) : ;; esac",
+    "case x in []!)]|pnpm) : ;; esac",
+    "case x in [^)]|pnpm) : ;; esac",
+    "case x in [\\)]|pnpm) : ;; esac",
+    "case x in @(unclosed",
+    "case x in [unclosed",
+    "case x in [[:unclosed"
+  ])("keeps nested pattern delimiters out of command spans: %s", (script) => {
+    const command = [{ name: "check", command: "pnpm", job: "gated" }]
+    expect(missingGates(scriptWorkflow(script), command)).toEqual(command)
+  })
+
+  it.each([
+    "check() ( echo case x in ); pnpm run check",
+    "check() ( value=`case x in x) : ;; esac`; : ); pnpm run check",
+    "check() ( echo \"case\" x in ); pnpm run check",
+    "check() ( echo c\\ase x in ); pnpm run check",
+    "check() ( echo case \\\n x in ); pnpm run check",
+    "check() ( case x in x) : ;; esac ); pnpm run check",
+    "check() ( case x in x) :\nesac ); pnpm run check",
+    "case x in [)]|@(a)) pnpm run check ;; esac",
+    "case x in $(case x in x) printf y ;; esac)|pnpm) : ;; esac; pnpm run check",
+    "check() { { :; }; }; pnpm run check"
+  ])("retains commands following nested or literal case text: %s", (script) => {
+    expect(missingGates(scriptWorkflow(script), gate)).toEqual([])
+  })
+
+  const job = (id: string, fields = "", command = "true") =>
+    "  " + id + ":\n" + fields + "    runs-on: ubuntu-latest\n    steps:\n      - run: " + command + "\n"
+
+  it.each(["never", "[never]", "[ready, never]"])("rejects a skipped dependency: %s", (needs) => {
+    const workflow = parseWorkflow(
+      "jobs:\n" +
+        job("never", "    if: false\n") + job("ready") +
+        job("gated", "    needs: " + needs + "\n", "pnpm run check")
+    )
+    expect(missingGates(workflow, gate)).toEqual(gate)
+    expect(missingRequiredJobs(workflow, ["ready", "gated"])).toEqual(["gated (conditional)"])
+  })
+
+  it.each([
+    job("never", "    if: false\n") + job("middle", "    needs: never\n") +
+    job("gated", "    needs: middle\n", "pnpm run check"),
+    job("gated", "    needs: absent\n", "pnpm run check"),
+    job("gated", "    needs: gated\n", "pnpm run check"),
+    job("gated", "    needs: other\n", "pnpm run check") + job("other", "    needs: gated\n")
+  ])("rejects missing, transitive, and cyclic dependencies", (jobs) => {
+    const workflow = parseWorkflow("jobs:\n" + jobs)
+    expect(missingGates(workflow, gate)).toEqual(gate)
+    expect(missingRequiredJobs(workflow, ["gated"])).toEqual(["gated (conditional)"])
+  })
+
+  it("accepts a dependency chain declared in any order", () => {
+    const workflow = parseWorkflow(
+      "jobs:\n" +
+        job("gated", "    needs: [left, right]\n", "pnpm run check") +
+        job("left", "    needs: ready\n") + job("right", "    needs: ready\n") + job("ready")
+    )
+    expect(workflow.jobs[0]?.needs).toEqual(["left", "right"])
+    expect(missingGates(workflow, gate)).toEqual([])
+    expect(missingRequiredJobs(workflow, ["gated"])).toEqual([])
+  })
+
+  it("accepts existing workflow values without a needs property", () => {
+    const parsed = parseWorkflow("jobs:\n" + job("gated", "", "pnpm run check"))
+    const workflow = { ...parsed, jobs: parsed.jobs.map(({ needs: _needs, ...job }) => job) }
+    expect(missingGates(workflow, gate)).toEqual([])
+    expect(missingRequiredJobs(workflow, ["gated"])).toEqual([])
+  })
+
+  it.each(["{}", "false", "''", "[]", "[ready, false]", "[[ready]]", "'$" + "{{ matrix.job }}'"])(
+    "fails closed on malformed dependencies: %s",
+    (needs) => {
+      expect(() => parseWorkflow("jobs:\n" + job("gated", "    needs: " + needs + "\n", "pnpm run check")))
+        .toThrow(WorkflowParseError)
+    }
+  )
+})

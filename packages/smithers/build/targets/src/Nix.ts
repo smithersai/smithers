@@ -78,6 +78,23 @@ export const maximumAttrLength = 256
 export const attrShape = /^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/
 
 /**
+ * Whether a declared path renders as one generated shell word, the word that
+ * was declared; an unresolvable path is not one.
+ */
+const stepPath = (path: string): boolean => {
+  try {
+    return Input.stepPathShape.test(Input.resolvePath("", path))
+  } catch {
+    return false
+  }
+}
+
+/** Environment files must also be safe when declarations enter through a schema. */
+const environmentFile = Input.File.check(
+  Schema.makeFilter((file) => stepPath(file.path) ? undefined : "Nix environment path must be a usable step path")
+)
+
+/**
  * Schema for the workspace Nix environment declaration.
  *
  * Exactly one of `flake` and `file` is set. `lock` and `attr` accompany a
@@ -87,10 +104,12 @@ export const attrShape = /^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/
  * @since 0.1.0
  */
 export const EnvironmentDeclaration = Schema.TaggedStruct("NixEnvironment", {
-  flake: Schema.optional(Input.File),
-  lock: Schema.optional(Input.File),
-  file: Schema.optional(Input.File),
-  attr: Schema.optional(Schema.NonEmptyString)
+  flake: Schema.optional(environmentFile),
+  lock: Schema.optional(environmentFile),
+  file: Schema.optional(environmentFile),
+  attr: Schema.optional(
+    Schema.NonEmptyString.check(Schema.isMaxLength(maximumAttrLength), Schema.isPattern(attrShape))
+  )
 })
 
 /**
@@ -148,8 +167,13 @@ const declaredFile = (value: unknown, what: string): Input.File => {
     typeof value !== "object" || value === null ||
     (value as { readonly _tag?: unknown })._tag !== "File" ||
     typeof (value as { readonly path?: unknown }).path !== "string"
-  ) throw new TypeError(`${what} must be an S.file declaration`)
-  return value as Input.File
+  ) throw new TypeError(`Nix.Environment ${what} must be an S.file declaration`)
+  const file = value as Input.File
+  // Generated CI names the file in a `nix develop` step.
+  if (!stepPath(file.path)) {
+    throw new Error(`${JSON.stringify(file.path)} is not a usable Nix.Environment ${what}`)
+  }
+  return file
 }
 
 /** The `flake.lock` declaration beside one declared `flake.nix`. */
@@ -184,10 +208,10 @@ const makeEnvironment = (options: EnvironmentOptions): Environment => {
     if (lock !== undefined || attr !== undefined) {
       throw new Error("Nix.Environment lock and attr accompany a flake, not a file")
     }
-    return Object.freeze(EnvironmentDeclaration.make({ file: declaredFile(file, "Nix.Environment file") }))
+    return Object.freeze(EnvironmentDeclaration.make({ file: declaredFile(file, "file") }))
   }
-  const flakeFile = declaredFile(flake, "Nix.Environment flake")
-  const lockFile = lock === undefined ? lockBeside(flakeFile) : declaredFile(lock, "Nix.Environment lock")
+  const flakeFile = declaredFile(flake, "flake")
+  const lockFile = lock === undefined ? lockBeside(flakeFile) : declaredFile(lock, "lock")
   if (attr !== undefined) {
     if (typeof attr !== "string") throw new TypeError("Nix.Environment attr must be a string")
     if (attr.length > maximumAttrLength || !attr.isWellFormed() || !attrShape.test(attr)) {

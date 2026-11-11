@@ -802,8 +802,14 @@ export const relativeFilePath = (path: string): boolean =>
  * with a Nix environment runs behind, so the tools the command spawns come
  * from the closure and never from the runner image.
  */
-const developPrefix = (nix: CiToolchain.NixSetup | undefined): ReadonlyArray<string> =>
-  nix === undefined ? [] : ["nix", "develop", ...Nix.developArguments(nix.environment), "--command"]
+const developPrefix = (nix: CiToolchain.NixSetup | undefined): ReadonlyArray<string> => {
+  if (nix === undefined) return []
+  // Exported renderers also accept structural attrs that never passed a constructor.
+  if (!Nix.isEnvironment(nix.environment)) {
+    throw new Error("GithubCiGen: Nix environment must contain usable paths and a valid attribute")
+  }
+  return ["nix", "develop", ...Nix.developArguments(nix.environment).map(shellArgument), "--command"]
+}
 
 /**
  * The extra `nix.conf` lines a declared binary cache adds, each value a

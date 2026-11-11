@@ -25,6 +25,7 @@
 
 import * as Schema from "effect/Schema"
 import * as Attr from "./Attr.ts"
+import * as Input from "./Input.ts"
 import * as NixDeclaration from "./Nix.ts"
 import * as Runtime from "./Runtime.ts"
 import * as RustToolchain from "./RustToolchain.ts"
@@ -744,18 +745,12 @@ export const Nix = (options: {
 }
 
 /**
- * A workspace-relative path a generated step may name.
- *
- * A leading `/` is allowed, for the absolute paths a runner image fixes. `*` is
- * allowed because an artifact source is a set of files. Nothing else that a
- * shell would treat as syntax is: no quote, no `$`, no backtick, no `;`, `&`,
- * `|`, `(`, `)`, `<`, `>`, and no whitespace, so a declared path is always one
- * word and always the word that was declared.
+ * A workspace-relative path a generated step may name: {@link Input.stepPathShape}.
  *
  * @category constants
  * @since 0.1.0
  */
-export const pathShape = /^[A-Za-z0-9_./*-][A-Za-z0-9_./*-]*$/
+export const pathShape: RegExp = Input.stepPathShape
 
 /**
  * Validates one declared path, or throws naming what rejected it.

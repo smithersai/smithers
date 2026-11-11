@@ -568,6 +568,21 @@ const isWorkspaceStatePath = (cacheDirectory: string, path: string): boolean =>
   path.startsWith(`${fixedStoreDirectory}/`)
 
 /**
+ * A workspace-relative path a generated step may name.
+ *
+ * A leading `/` is allowed, for the absolute paths a runner image fixes. `*` is
+ * allowed because an artifact source is a set of files. Nothing else that a
+ * shell would treat as syntax is: no quote, no `$`, no backtick, no `;`, `&`,
+ * `|`, `(`, `)`, `<`, `>`, and no whitespace, so a declared path is always one
+ * word and always the word that was declared. `CiToolchain.pathShape` and the
+ * Nix environment paths both hold to it.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const stepPathShape = /^[A-Za-z0-9_./*-][A-Za-z0-9_./*-]*$/
+
+/**
  * Resolves a declared input path or pattern against its package directory.
  *
  * Values starting with `//` resolve from the workspace root. A value starting
@@ -1641,8 +1656,11 @@ export const expandPnpmWorkspace = async (
   const directory = directoryName === "." ? "" : directoryName
   const patterns = contents.packages.map((entry) => {
     const excluded = entry.startsWith("!")
-    const value = excluded ? entry.slice(1) : entry
-    if (value === "") throw new Error(`pnpm workspace ${path} contains an empty exclusion`)
+    // pnpm reads `packages/*/` as `packages/*`; minimatch would match no directory.
+    const value = (excluded ? entry.slice(1) : entry).replace(/\/+$/, "")
+    if (value === "") {
+      throw new Error(`pnpm workspace ${path} contains an empty ${excluded ? "exclusion" : "inclusion"}`)
+    }
     return { excluded, pattern: resolvePath(directory, value) }
   })
   if (!patterns.some((pattern) => !pattern.excluded)) {
@@ -1662,6 +1680,7 @@ export const expandPnpmWorkspace = async (
   })
   const rootManifest = directory === "" ? "package.json" : `${directory}/package.json`
   const patches = Object.values(contents.patchedDependencies ?? {}).map((patch) => resolvePath(directory, patch))
+  if (members.length === 0) throw new Error(`pnpm workspace ${path} matches no member manifest`)
   return [...new Set([path, rootManifest, ...members, ...patches])].sort()
 }
 
