@@ -104,7 +104,7 @@ describe("ModuleFlow.fromModule", () => {
     expect(result.warnings.map((warning) => warning.code)).toEqual(["missing_description"])
   })
 
-  it("warns about metadata it can't read, with the line when it has one, and reads a budget", () => {
+  it("warns about metadata it can't read, with the line when it has one", () => {
     const unreadable = fromModule("export const flow = 1")
     expect(unreadable.tag).toEqual(Option.none())
     expect(unreadable.warnings.map((warning) => warning.code)).toEqual([
@@ -112,11 +112,6 @@ describe("ModuleFlow.fromModule", () => {
       "missing_description"
     ])
     expect(unreadable.warnings[0]!.message).toBe("Could not statically read the default Flow.make declaration")
-
-    const budgeted = fromModule(
-      module.replace("  capabilities: [],", "  capabilities: [],\n  budget: { tokens: 1000 },")
-    )
-    expect(Option.getOrThrow(budgeted.descriptor).budget).toEqual({ tokens: 1000 })
 
     const lined = fromModule(module.replace("  capabilities: [],", "  capabilities: granted,"))
     expect(lined.warnings.map((warning) => [warning.code, warning.message])).toEqual([[
@@ -127,6 +122,21 @@ describe("ModuleFlow.fromModule", () => {
       "unsupported_module_metadata",
       "Flow authority cannot be projected statically; using the conservative wildcard at release-notes/flow.ts:7"
     ]])
+  })
+
+  it("reads finite numeric ceilings from a module budget literal", () => {
+    const result = fromModule(
+      module.replace(
+        "  capabilities: [],",
+        "  capabilities: [],\n  budget: { tokens: 1000, milliseconds: 900000, usd: 1.25 },"
+      )
+    )
+    expect(Option.getOrThrow(result.descriptor).budget).toEqual({
+      tokens: 1000,
+      milliseconds: 900_000,
+      usd: 1.25
+    })
+    expect(result.warnings).toEqual([])
   })
 
   // The inputs MarkdownLimitsSafety.test.ts refuses in frontmatter, declared as a Flow.make literal.

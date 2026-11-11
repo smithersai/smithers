@@ -166,10 +166,13 @@ describe("durable execution snapshots", () => {
     }))
   })
 
-  it("restores the pinned checkout while the independent TODO checkout changes helper and lockfile bytes", async () => {
+  it("restores approved source into an independent checkout with edited helper and lockfile bytes", async () => {
     await run(Effect.gen(function*() {
       const { fs, root, helper, executable, digest } = yield* fixture
-      const branch = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-editable-todo-" })
+      const branch = yield* fs.makeTempDirectoryScoped({
+        directory: fileURLToPath(new URL("./fixtures", import.meta.url)),
+        prefix: ".snapshot-checkout-"
+      })
       yield* fs.makeDirectory(`${branch}/flows/snapshot`, { recursive: true })
       yield* fs.writeFileString(`${branch}/flows/snapshot/flow.ts`, "throw 'BRANCH_IMPORT_CANARY'")
       yield* fs.writeFileString(`${branch}/flows/snapshot/helper.ts`, "throw 'BRANCH_HELPER_CANARY'")
@@ -184,11 +187,20 @@ describe("durable execution snapshots", () => {
       })
       const loaded = yield* registry.loadBody("snapshot", digest)
       expect(loaded._tag).toBe("Module")
+      const options = { delegates: [], sourceRoot: { identity: root, workspace: branch } }
+      const unpinned = yield* Executable.fromDescriptor(executable.descriptor, options).pipe(Effect.flip)
+      expect(unpinned.code).toBe("body_unavailable")
+      const reloaded = yield* Executable.fromDescriptor(executable.descriptor, { ...options, snapshots })
+      expect(reloaded.descriptor).toEqual(executable.descriptor)
+      expect(reloaded.flow._tag).toBe(executable.flow._tag)
+      expect(reloaded.source!.entry).toBe(`${branch}/flows/snapshot/flow.ts`)
+      expect(new TextDecoder().decode(reloaded.source!.bytes)).toBe(source)
+      expect(new TextDecoder().decode(reloaded.source!.modules.get(`${branch}/flows/snapshot/helper.ts`)!.bytes))
+        .toBe("export const value = \"approved\"")
       const index = `${root}/.flows/executions/${digest}.json`
       yield* fs.writeFileString(index, "\"" + "0".repeat(64) + "\"")
-      const corrupt = yield* snapshots.restore(digest).pipe(Effect.flip)
-      expect(corrupt.code).toBe("missing")
-      expect(corrupt.message).not.toContain("BRANCH_IMPORT_CANARY")
+      const missing = yield* snapshots.restore(digest).pipe(Effect.flip)
+      expect(missing.code).toBe("missing")
     }))
   })
 
