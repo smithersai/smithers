@@ -9,6 +9,7 @@
  */
 import type { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
+import * as Diagnosis from "../src/Diagnosis.ts"
 import * as NativeResolution from "../src/internal/nativeResolution.ts"
 
 let sequence = 0
@@ -78,7 +79,7 @@ describe("NativeResolution.fromEvent", () => {
     expect(
       NativeResolution.fromEvent(event("control.engine.event", committed({ _tag: "Success", value: "done" }, "legacy")))
     )
-      .toEqual({ result: { runId: "run-1", executionId: "exec-1", text: "done" } })
+      .toEqual({ result: { runId: "run-1", executionId: "exec-1", text: "done", value: "done" } })
     expect(
       NativeResolution.fromEvent(
         event("control.engine.event", committed({ _tag: "Success", value: "done" }, "adopted"))
@@ -89,7 +90,7 @@ describe("NativeResolution.fromEvent", () => {
 
   it("encodes a non-string exit and reads nothing from one JSON cannot encode", () => {
     expect(NativeResolution.fromEvent(event("control.engine.event", committed({ _tag: "Success", value: { ok: 1 } }))))
-      .toEqual({ result: { runId: "run-1", executionId: "exec-1", text: "{\"ok\":1}" } })
+      .toEqual({ result: { runId: "run-1", executionId: "exec-1", text: "{\"ok\":1}", value: { ok: 1 } } })
     // `JSON.stringify` answers `undefined` for these and throws for a BigInt.
     // Neither is a committed result, and neither may reach a reader as text.
     expect(NativeResolution.fromEvent(event("control.engine.event", committed({ _tag: "Success", value: undefined }))))
@@ -103,27 +104,55 @@ describe("NativeResolution.combine", () => {
   const binding = { runId: "run-1", executionId: "exec-1" }
 
   it("keeps one agreed result across adjacent windows", () => {
-    const earlier = { binding, result: { ...binding, text: "done" } }
-    const later = { result: { ...binding, text: "done" } }
+    const earlier = { binding, result: { ...binding, text: "done", value: "done" } }
+    const later = { result: { ...binding, text: "done", value: "done" } }
     expect(NativeResolution.combine(earlier, later)).toEqual({
       binding,
-      result: { ...binding, text: "done" }
+      result: { ...binding, text: "done", value: "done" }
     })
   })
 
   it("reports two windows that disagree about one root's output as a conflict", () => {
-    const earlier = { binding, result: { ...binding, text: "first" } }
+    const earlier = { binding, result: { ...binding, text: "first", value: "first" } }
     // The same execution cannot have returned two different texts.
-    expect(NativeResolution.combine(earlier, { result: { ...binding, text: "second" } })?.conflict).toBe(true)
+    expect(NativeResolution.combine(earlier, { result: { ...binding, text: "second", value: "second" } })?.conflict)
+      .toBe(true)
     // Nor can two executions both be this run's committed result.
     expect(
-      NativeResolution.combine(earlier, { result: { runId: "run-1", executionId: "exec-2", text: "first" } })?.conflict
+      NativeResolution.combine(earlier, {
+        result: { runId: "run-1", executionId: "exec-2", text: "first", value: "first" }
+      })?.conflict
     ).toBe(true)
   })
 
   it("refuses output for a conflicted or unbound resolution", () => {
-    expect(NativeResolution.output({ binding, result: { ...binding, text: "done" } })).toBe("done")
-    expect(NativeResolution.output({ binding, result: { ...binding, text: "done" }, conflict: true })).toBeUndefined()
-    expect(NativeResolution.output({ result: { ...binding, text: "done" } })).toBeUndefined()
+    expect(NativeResolution.output({ binding, result: { ...binding, text: "done", value: "done" } })).toBe("done")
+    expect(NativeResolution.output({ binding, result: { ...binding, text: "done", value: "done" }, conflict: true }))
+      .toBeUndefined()
+    expect(NativeResolution.output({ result: { ...binding, text: "done", value: "done" } })).toBeUndefined()
+  })
+})
+
+describe("Diagnosis.committedResult", () => {
+  const bound = () => event("control.engine.bound", { version: 1, controlRunId: "run-1", executionId: "exec-1" })
+
+  it("answers the bound root's typed value and the event that committed it", () => {
+    const terminal = event("control.engine.event", committed({ _tag: "Success", value: { verdict: "pass" } }))
+
+    expect(Diagnosis.committedResult([bound(), terminal])).toEqual({
+      executionId: "exec-1",
+      value: { verdict: "pass" },
+      sequence: terminal.sequence,
+      occurredAt: terminal.occurredAt
+    })
+  })
+
+  it("answers nothing before the root commits, without a binding, or for a conflicted root", () => {
+    const terminal = event("control.engine.event", committed({ _tag: "Success", value: "done" }))
+    const other = event("control.engine.event", committed({ _tag: "Success", value: "other" }))
+
+    expect(Diagnosis.committedResult([bound()])).toBeUndefined()
+    expect(Diagnosis.committedResult([terminal])).toBeUndefined()
+    expect(Diagnosis.committedResult([bound(), terminal, other])).toBeUndefined()
   })
 })

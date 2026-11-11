@@ -625,6 +625,50 @@ export const resolvedOutput = (value: Pick<Digest, "finalOutput" | "nativeResolu
   value.finalOutput ?? NativeResolution.output(value.nativeResolution)
 
 /**
+ * A flow run's committed answer: the typed value its bound root returned, and
+ * the event that committed it.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface CommittedResult {
+  /** The bound root execution that returned {@link value}. */
+  readonly executionId: string
+  readonly value: unknown
+  readonly sequence: number
+  readonly occurredAt: number
+}
+
+/**
+ * The typed value a run's bound root committed, under the same binding and
+ * conflict rules as {@link resolvedOutput}: undefined when the root is unbound,
+ * ambiguous, or has not completed.
+ *
+ * @since 1.0.0
+ * @category projections
+ */
+export const committedResult = (
+  events: ReadonlyArray<ControlSchema.ControlEvent>
+): CommittedResult | undefined => {
+  let resolution: NativeResolution.NativeResolution | undefined
+  let committed: ControlSchema.ControlEvent | undefined
+  for (const event of events) {
+    const next = NativeResolution.fromEvent(event)
+    if (next?.result !== undefined) committed = event
+    resolution = NativeResolution.combine(resolution, next)
+  }
+  const result = resolution?.result
+  return committed === undefined || result === undefined || NativeResolution.output(resolution) === undefined
+    ? undefined
+    : {
+      executionId: result.executionId,
+      value: result.value,
+      sequence: committed.sequence,
+      occurredAt: committed.occurredAt
+    }
+}
+
+/**
  * The one-line verdict: the status plus the reason that most explains it.
  *
  * Priority order mirrors what a reader needs first: a recorded failure cause,

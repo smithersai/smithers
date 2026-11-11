@@ -273,12 +273,24 @@ truncating. Follow mode applies the per-event cap without retaining history.
 
 ```bash
 smthrs runs output <run-id>             # every registered node output
-smthrs runs output <run-id> result      # one node
+smthrs runs output <run-id> result      # one node: the run's answer
 ```
 
 `runs output` projects the node outputs a run registered. A node id the run does not
 have is a usage error naming the run, not an empty document, so a script never
 mistakes "no such node" for "no output".
+
+The reserved `result` node is the run's answer. For a prompt run it is the final
+assistant text. For a flow run it exists once the run completed: `flowName` is the
+flow's id, `input` is the input the flow ran with after its schema's defaults, and
+`value` is the flow's typed result, exactly as the flow returned it. A run that
+failed, was cancelled or is still running has no `result` node.
+
+```bash
+smthrs runs output <run-id> result --json
+# {"nodeId":"result","flowName":"review","outcome":"success",
+#  "input":{"repo":"/work/repo","commit":"9f3c…",…},"value":{"verdict":"pass",…},…}
+```
 
 Node outputs are caller-controlled data, so they are rendered through
 `Output.renderValue`. That means a stored value shaped like a control receipt

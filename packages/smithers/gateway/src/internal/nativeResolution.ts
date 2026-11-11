@@ -17,7 +17,8 @@ interface Identity {
  */
 export interface NativeResolution {
   readonly binding?: Identity | undefined
-  readonly result?: (Identity & { readonly text: string }) | undefined
+  /** The exit value as committed (`value`) and as text a reader prints (`text`). */
+  readonly result?: (Identity & { readonly text: string; readonly value: unknown }) | undefined
   readonly conflict?: true | undefined
 }
 
@@ -63,7 +64,9 @@ export const fromEvent = (event: ControlSchema.ControlEvent): NativeResolution |
   ) return undefined
   try {
     const text = typeof exit.value === "string" ? exit.value : JSON.stringify(exit.value)
-    return text === undefined ? undefined : { result: { runId: event.runId, executionId: bridge.executionId, text } }
+    return text === undefined ? undefined : {
+      result: { runId: event.runId, executionId: bridge.executionId, text, value: exit.value }
+    }
   } catch {
     return undefined
   }

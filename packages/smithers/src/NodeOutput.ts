@@ -16,13 +16,22 @@
  * The public node identity is stable for a settled
  * run — the journal is append-only and the ordinal is its order — which is
  * what a reference in a report or a follow-up command needs. The reserved id
- * `result` names the run's final assistant output.
+ * `result` names the run's answer: a prompt run's final assistant output, or
+ * the typed value a flow run's bound root committed, with the flow's id and
+ * the input its registry entry ran.
  *
  * @since 1.0.0
  */
 
 import type { ControlSchema } from "@smthrs/control"
-import { asRecord, asString, callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
+import {
+  asRecord,
+  asString,
+  callScope,
+  committedResult,
+  openCallIndex,
+  uniqueCallEvents
+} from "@smthrs/gateway/Diagnosis"
 
 /**
  * The reserved node id for the run's final output.
@@ -140,8 +149,46 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
       settledAt: finalAt,
       settledSequence: finalSequence
     })
+    return nodes
+  }
+  const committed = committedResult(events)
+  if (committed !== undefined) {
+    const entry = entryOf(events, committed.executionId)
+    nodes.push({
+      nodeId: resultNodeId,
+      flowName: entry?.flowName ?? "agent",
+      outcome: "success",
+      ...(entry === undefined ? {} : { input: entry.input }),
+      value: committed.value,
+      settledAt: committed.occurredAt,
+      settledSequence: committed.sequence
+    })
   }
   return nodes
+}
+
+/** The registry's entry execution: `registry/entry/<digest>/<flow>`. */
+const entryWrapper = /^registry\/entry\/[0-9a-f]+\/(.+)$/
+
+/**
+ * The flow a bound root ran and the input it ran with, read from the creation
+ * of the registry entry execution the root started.
+ */
+const entryOf = (
+  events: ReadonlyArray<ControlSchema.ControlEvent>,
+  root: string
+): { readonly flowName: string; readonly input: unknown } | undefined => {
+  for (const event of events) {
+    const envelope = asRecord(event.payload)
+    if (event.kind !== "control.engine.event" || envelope["eventType"] !== "flows.engine.run-decision") continue
+    const decision = asRecord(envelope["payload"])
+    const state = asRecord(decision["state"])
+    const flow = entryWrapper.exec(asString(state["flowName"]) ?? "")
+    if (decision["decision"] === "created" && flow !== null && state["parentExecutionId"] === root) {
+      return { flowName: flow[1]!, input: asRecord(state["payload"])["input"] }
+    }
+  }
+  return undefined
 }
 
 /**

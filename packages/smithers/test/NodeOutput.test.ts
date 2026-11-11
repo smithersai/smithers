@@ -161,6 +161,102 @@ describe("the projection", () => {
     expect(nodes.some((node) => node.nodeId === NodeOutput.resultNodeId)).toBe(false)
   })
 
+  describe("a flow run's committed result", () => {
+    const root = "run-1"
+    const decision = (executionId: string, payload: unknown) =>
+      event("control.engine.event", {
+        version: 1,
+        executionId,
+        generation: 0,
+        sequence: 0,
+        eventType: "flows.engine.run-decision",
+        payload
+      })
+    const bound = (executionId = root) =>
+      event("control.engine.bound", { version: 1, controlRunId: "run-1", executionId })
+    const entry = (parentExecutionId: string, input: unknown) =>
+      decision("entry-1", {
+        decision: "created",
+        state: {
+          version: 1,
+          flowName: "registry/entry/50bd3a5e/review",
+          parentExecutionId,
+          payload: { input }
+        }
+      })
+    const completed = (exit: unknown, status = "completed") =>
+      decision(root, {
+        decision: "transitioned",
+        status,
+        executionFact: {
+          version: 1,
+          baseline: "legacy",
+          observation: { executionId: root, status, flowName: "agent/run" }
+        },
+        state: {
+          version: 1,
+          flowName: "agent/run",
+          payload: { runId: "run-1", planId: "plan-1" },
+          result: { _tag: "Complete", exit }
+        }
+      })
+    const verdict = { verdict: "pass", target: { mode: "commit", ref: "abc" } }
+
+    it("answers the bound root's typed value with the flow and the input its entry ran", () => {
+      const terminal = completed({ _tag: "Success", value: verdict })
+      const nodes = NodeOutput.project([
+        bound(),
+        entry(root, { repo: ".", commit: "abc" }),
+        decision("round-2", { decision: "handed-off", status: "completed", state: { result: { exit: {} } } }),
+        terminal
+      ])
+
+      expect(nodes).toEqual([{
+        nodeId: "result",
+        flowName: "review",
+        outcome: "success",
+        input: { repo: ".", commit: "abc" },
+        value: verdict,
+        settledAt: terminal.occurredAt,
+        settledSequence: terminal.sequence
+      }])
+    })
+
+    it("keeps a string value a string rather than reading it as JSON", () => {
+      const [result] = NodeOutput.project([bound(), completed({ _tag: "Success", value: "{\"ok\":1}" })])
+
+      expect(result).toMatchObject({ nodeId: "result", value: "{\"ok\":1}" })
+    })
+
+    it("names no flow or input when the root's entry is not among the events", () => {
+      const [result] = NodeOutput.project([
+        bound(),
+        entry("someone-else", { repo: "elsewhere" }),
+        completed({ _tag: "Success", value: 1 })
+      ])
+
+      expect(result).toEqual(expect.objectContaining({ nodeId: "result", flowName: "agent", value: 1 }))
+      expect(result).not.toHaveProperty("input")
+    })
+
+    it("answers nothing for an unbound, a differently bound or a failed root", () => {
+      const success = { _tag: "Success", value: verdict }
+      expect(NodeOutput.project([completed(success)])).toEqual([])
+      expect(NodeOutput.project([bound("exec-other"), completed(success)])).toEqual([])
+      expect(NodeOutput.project([bound(), completed({ _tag: "Failure", cause: "boom" }, "failed")])).toEqual([])
+    })
+
+    it("prefers a prompt run's resolved assistant text", () => {
+      const nodes = NodeOutput.project([
+        bound(),
+        event("control.agent.resolved", { text: "done" }),
+        completed({ _tag: "Success", value: "done" })
+      ])
+
+      expect(nodes).toEqual([expect.objectContaining({ nodeId: "result", flowName: "agent", value: "done" })])
+    })
+  })
+
   it("names a call with no flow name rather than dropping it", () => {
     expect(NodeOutput.project([started(undefined as unknown as string)])[0]?.nodeId).toBe("?#1")
     expect(NodeOutput.project([event("control.agent.cell-call-started", [])])[0]?.nodeId).toBe("?#1")
