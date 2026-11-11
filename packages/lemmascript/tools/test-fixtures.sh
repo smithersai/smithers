@@ -535,6 +535,11 @@ cp tools/fixtures/schema-model/*.ts tools/fixtures/schema-model/tsconfig.json "$
 expect_proof_failure \
   "a wrong twin verified (schema-model, cross-module)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/cross-wrong.ts"
+# A rest binding of the model keeps the type `Model`, which an imported contract's narrowed optional field names.
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/rest.ts"
+expect_proof_failure \
+  "a wrong twin verified (schema-model, rest binding)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/rest-wrong.ts"
 expect_proof_failure \
   "a wrong twin verified (schema-model)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/use-wrong.ts"

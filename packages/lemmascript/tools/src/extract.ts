@@ -1451,6 +1451,19 @@ function localTypeText(type: Type, hint: string, loc: Node): string {
   return adoptAnonymous({ name: fresh, kind: "record", fields: fieldsOf(fresh, type, loc, _synthArrayUnions) }, type, _synthArrayUnions);
 }
 
+/** The written type of a destructured parameter or variable (`model: Model`), read as a parameter's type is. The
+ *  checker's type of a schema alias (`type Model = typeof Model.Type`) is anonymous, so naming it from the binding
+ *  (`Destr0`) adopted the model's type under that name, and `Model` itself, which an imported contract names, lost its
+ *  fields. Only a plain reference qualifies; a computed or generic one goes through `localTypeText`. */
+function writtenBindingType(initializer: Node): string | undefined {
+  if (!Node.isIdentifier(initializer)) return undefined;
+  const declaration = initializer.getSymbol()?.getValueDeclaration();
+  if (!declaration || !(Node.isParameterDeclaration(declaration) || Node.isVariableDeclaration(declaration))) return undefined;
+  const written = declaration.getTypeNode();
+  if (!written || !Node.isTypeReference(written) || written.getTypeArguments().length > 0 || computedTypeNode(written)) return undefined;
+  return written.getText();
+}
+
 /** A written type the checker computes rather than names: an indexed access (`Model["edit"]`), a `typeof`, or the
  *  standard library's `NonNullable<T>`. Its text is no backend type; the checker's resolved type is. */
 function computedTypeNode(tn: Node): boolean {
@@ -2003,7 +2016,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
               return !prop || !(prop.hasFlags(ts.SymbolFlags.Optional) || (prop.getDeclarations()[0] as any)?.hasQuestionToken?.());
             });
             const tempName = freshName(`_destr${_destrCounter++}`);
-            const sourceTs = localTypeText(sourceType, tempName, initializer);
+            const sourceTs = writtenBindingType(initializer) ?? localTypeText(sourceType, tempName, initializer);
             result.push({ kind: "let", name: tempName, mutable: false, tsType: sourceTs, init: extractExpr(initializer), line });
             const source: RawExpr = { kind: "var", name: tempName };
             for (const el of named) {
