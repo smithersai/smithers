@@ -128,6 +128,8 @@ Anything outside it is not read, including the 0.x `SMITHERS_HOME`,
 | `SMITHERS_MEMORY_DB` | Path of a separate SQLite file for the memory store. Runs that name the same file share one memory bank, and only then does the supervisor write accepted sentences to it. Without it, the bank is named after the workspace and the supervisor writes nothing. |
 | `SMITHERS_SUPERVISOR_STANCE` | `careful` or `paranoid`, the stance a judged run is taught. Unset is `careful`; any other value refuses to start. |
 | `SMITHERS_BUG_ENDPOINT` | Where `smthrs bug` posts its report. |
+| `SMITHERS_ALERT_TELEGRAM_TOKEN` | The Telegram bot token `smthrs alerts report` pages with when `.smithers/alerts.json` names a chat. |
+| `SMITHERS_ALERT_EMAIL_API_KEY` | The Resend API key `smthrs alerts report` sends email with when `.smithers/alerts.json` names addresses. |
 | `SMITHERS_JJ_PATH` | Explicit path to the `jj` binary. |
 | `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` | Absolute `smithers-jj-export` path for the Node and Bun hosts' filesystem helper. Unset uses the packaged or source-checkout build. `PATH` is never searched. |
 | `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | How long `flow start -d` waits for its child's admission line. |

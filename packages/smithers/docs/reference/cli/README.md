@@ -32,7 +32,7 @@ run-kind targets; `flow start` starts durable flows.
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `cache steps`, `clean [patterns...]`, `gc` | Maintain target results, step results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |
-| `memory`, `credentials`, `triggers`, `integrations`, `eval` | Operate the persistent agent features described below. |
+| `memory`, `credentials`, `triggers`, `integrations`, `eval`, `alerts` | Operate the persistent agent features described below. |
 | `open [dir]`, `.` | Open the checkout's `owner/repo` in the Smithers app (`smithers://open/<owner>/<repo>`), or print its smithers.sh page. |
 | `host start [--bundle <dir>] [--bind <addr>] [--origin <url>]`, `host stop`, `host status` | Run a verified server bundle as an unprivileged macOS LaunchAgent, stop it, or inspect its health. |
 | `host backup`, `host upgrade`, `host restore <directory>` | Host maintenance commands. Currently refuse until capture, drain and owner authorization are composed; restore validates the backup before any state change. |
@@ -327,6 +327,7 @@ declared request's kind, options, and schema to shape the answer.
 | `triggers` | `list/show/register/sync/enable/disable/fire/serve`; registration accepts flags or `--file`, `sync` registers the workspace's `S.Cron` targets, and `fire` queues an occurrence for the scheduler. |
 | `integrations` | `list` and `doctor [--offline]`. |
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. `run` also records score observations in the project's `.flows/engine.db` when it exists. |
+| `alerts` | `report/list/ack`; record a probe result in a run, page a person once on Telegram or by email, list the run's open alerts, and acknowledge one. See [probe alerts](#probe-alerts). |
 
 Memory defaults to `--namespace user:cli` and accepts `kind:id` or a bare kind
 with optional `--id`; a bare kind's ID defaults to `cli`. Bare `memory` prints help. Missing fact arguments, such as
@@ -415,6 +416,32 @@ a waiting plan prevents its launch. Inspections serialize across processes on
 stale parked receipt cannot undo another inspection's unresolved launch. A
 crashed inspector releases the database lock; the next inspection reconciles
 the same durable launch key.
+
+## Probe alerts
+
+`alerts report --run <owner> --probe <name> --state failing|ok [--summary <text>]`
+records one probe result in the run `<owner>` in the project's journal, the one
+`.flows/control.db` holds, then pages about any of the run's alerts that have
+waited long enough. `<owner>` is any run id; it need not be a run the control
+plane started. The result names the `destination` and the alerts the report
+`delivered`, `failed`, `refused` and `suppressed`. A failing probe and a page
+the channel did not take both exit 0; the next report sends the page again.
+
+`alerts list --run <owner>` prints each open alert's id, condition, state
+(`raised`, `delivered` or `acknowledged`), who acknowledged it, its summary and
+when it opened. `alerts ack --run <owner> --id <alertId> [--by <name>]` takes an
+alert so it is not paged again; `--by` defaults to the operating system user
+name. An id with no open alert on the run is refused with exit status 1 and the
+code `alert_not_open`.
+
+The policy is `.smithers/alerts.json`: `defaults`, a rule per probe under
+`probes`, and a `telegram` (`chatId`) or `email` (`to`, `from`) destination. A
+`url` under either may name a provider origin on this machine. A bad file exits
+2 and names the field. The bot token is `SMITHERS_ALERT_TELEGRAM_TOKEN` and the
+Resend API key is `SMITHERS_ALERT_EMAIL_API_KEY`; without a usable destination
+the report is recorded and nothing is paged.
+[Page a person from a shell probe](../../guides/page-a-person-from-a-probe.md)
+is the guide.
 
 ## Telemetry
 

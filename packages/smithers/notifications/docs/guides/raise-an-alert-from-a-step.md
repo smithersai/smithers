@@ -163,3 +163,5 @@ export const open = (ownerRunId: string) =>
   failure's time, and why delivery is at-least-once.
 - [Send by email and Telegram](./send-by-email-and-telegram.md): the providers
   behind `Alerts.layerChannels`.
+- [Page a person from a shell probe](../../../docs/guides/page-a-person-from-a-probe.md):
+  the same report from a shell script or a cron job, with `smthrs alerts`.
