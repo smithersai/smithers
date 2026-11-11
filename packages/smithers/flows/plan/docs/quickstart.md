@@ -8,7 +8,9 @@ sidebar:
 This quickstart takes one plan from drafts to a keyed graph and grows it. By the
 end you will have a compiled graph with real step keys, a third node added at
 generation 1 with the first two untouched, and a diff that says exactly what
-changed.
+changed. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 Nothing here executes a node or writes a row. A plan is inert: persisting one is
 [`@smthrs/plan-store`](/api/plan-store), and driving one is
@@ -115,6 +117,61 @@ Read `post-comment`'s edge: it depends on `run-tests`, which it never consumed a
 value from. Two separate declarations put it there. Its `Pending` input is an
 ordering reference, and it reads `report.json`, which `run-tests` writes, so the
 reader-after-writer pass would have ordered it behind the producer anyway.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `compileAndGrow` is an
+`effect` function: `try` runs `Plan.compile` and `Plan.append` where the
+TypeScript wrote `yield*`, and the caller provides `Crypto`. `PlanDiff.diff`
+runs in the plain `added` helper, because effect code may not call a function
+that declares no `@throws` contract.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { KeyMaterial, Plan, PlanDiff } from "@smthrs/plan"
+
+/** Everything hashed about one node. `sealed` is the tier that may be reused across runs. */
+export const material = (body: unknown, inputs: ReadonlyArray<KeyMaterial.InputRef> = []): KeyMaterial.KeyMaterial => ({
+  version: KeyMaterial.version,
+  kind: "sealed",
+  body,
+  inputs,
+  layers: [],
+  capabilities: []
+})
+
+/** Two steps: the second consumes the first's result and reads the file it wrote. */
+export const drafts: ReadonlyArray<Plan.NodeDraft> = [
+  {
+    id: "read-pr",
+    material: material({ action: "read-pr", pr: 4821 }),
+    effects: { reads: [], writes: ["pr.json"], boundaryMode: "hard" }
+  },
+  {
+    id: "run-tests",
+    material: material({ action: "run-tests" }, [{ _tag: "Ref", from: "read-pr", path: [] }]),
+    effects: { reads: ["pr.json"], writes: ["report.json"], boundaryMode: "hard" }
+  }
+]
+
+/** The node ids `next` adds to `previous`. */
+export const added = (previous: Plan.Plan, next: Plan.Plan) => PlanDiff.diff(previous, next).added
+
+/** Compiles the drafts, then appends a third node at generation 1. */
+export effect function compileAndGrow() {
+  const plan = try Plan.compile({ planId: "review-4821", flow: "example/Review", nodes: drafts })
+
+  const grown = try Plan.append(plan, [{
+    id: "post-comment",
+    material: material({ action: "post-comment" }, [{ _tag: "Pending", from: "run-tests" }]),
+    effects: { reads: ["report.json"], writes: [], boundaryMode: "hard" }
+  }])
+
+  return { plan, grown }
+}
+```
 
 ## Next steps
 
