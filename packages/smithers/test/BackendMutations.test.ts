@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { admin } from "../src/internal/backend/Admin.ts"
 import { Client, object } from "../src/internal/backend/Client.ts"
+import { definitions } from "../src/internal/backend/Definitions.ts"
 import { local } from "../src/internal/backend/Local.ts"
 import { misc } from "../src/internal/backend/Misc.ts"
 import { repositories } from "../src/internal/backend/Repositories.ts"
@@ -110,6 +111,14 @@ describe("resource mutations", () => {
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/hooks", { events: ["push"] })
     await resources["webhook deliveries"]!(c, { id: 7 }, { ...options, replay: 8 })
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/hooks/7/deliveries/8/redeliver")
+  })
+  it("keeps webhook event subscriptions when an update omits --events", async () => {
+    const { c, request } = await fixture()
+    const parsed = definitions["webhook update"].options.parse({ ...options, url: "https://hooks.example/new" })
+    await resources["webhook update"]!(c, { id: 7 }, parsed)
+    expect(request).toHaveBeenLastCalledWith("PATCH", "/api/repos/owner/repo/hooks/7", {
+      url: "https://hooks.example/new"
+    })
   })
   it("loads a webhook together with delivery receipts", async () => {
     const { c, request } = await fixture()

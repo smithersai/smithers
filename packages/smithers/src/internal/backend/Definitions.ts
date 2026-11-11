@@ -1136,7 +1136,7 @@ export const definitions = {
     args: z.object({ "id": z.coerce.number().describe("Webhook ID") }),
     options: z.object({
       "active": z.boolean().describe("Whether the webhook is active").optional(),
-      "events": z.array(z.string()).describe("Events to trigger on").default([]),
+      "events": z.array(z.string()).describe("Events to trigger on").optional(),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
       "secret-stdin": z.boolean().describe("Read the webhook secret from stdin").default(false),
       "url": z.string().describe("Webhook payload URL").optional()
