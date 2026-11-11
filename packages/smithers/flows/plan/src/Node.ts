@@ -923,7 +923,10 @@ export type SchemaIdentityError = internalSchemaIdentity.SchemaIdentityError
  * filter does.
  *
  * The document is what `Schema.toJsonSchemaDocument(schema, options)`
- * returned under `effect@4.0.0-rc.115`. It is printed by this package, not by
+ * returned under `effect@4.0.0-rc.115`, with one addition: a JSON string
+ * (`Schema.fromJsonString`) states what it decodes to as `contentSchema`,
+ * which rc.115 left out. One built with a `reviver` or a `replacer` states its
+ * media type alone. The document is printed by this package, not by
  * the installed `effect`, because a later release prints a different document
  * for the same schema and a moved identity re-keys every recorded step. Use
  * it wherever the document is hashed, compared or pinned; a JSON Schema shown
@@ -941,9 +944,10 @@ export const schemaIdentity = (schema: Schema.Top, options?: SchemaIdentityOptio
 /**
  * The versions of {@link representationIdentity}, newest first. A key written
  * under an older version stays derivable, so a driver can find an outcome
- * recorded before an `effect` upgrade: `2` is the current identity, written
- * since `effect@4.0.4`, and `1` is what every key written under
- * `effect@4.0.0-rc.115` hashed, `Schema.brand` included.
+ * recorded before the identity changed: `3` is the current identity, which
+ * includes what a JSON string decodes to; `2` is what every key written from
+ * `effect@4.0.4` until version 3 hashed; and `1` is what every key written
+ * under `effect@4.0.0-rc.115` hashed, `Schema.brand` included.
  *
  * @since 1.0.0
  * @category engine
@@ -965,9 +969,12 @@ export type RepresentationIdentityVersion = internalSchemaIdentity.Representatio
  * The value is what `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))`
  * returned under `effect@4.0.0-rc.115`, so a later `effect` release does not
  * re-key recorded steps. From `effect@4.0.4` on a brand is not part of the
- * AST: version 2, the default, omits it, and version 1 restores it from the
- * schema value as rc.115 wrote it, so a key recorded before the upgrade can
- * be derived again.
+ * AST: versions 3 and 2 omit it, and version 1 restores it from the schema
+ * value as rc.115 wrote it, so a key recorded before the upgrade can be
+ * derived again. Version 3, the default, also states what a JSON string
+ * (`Schema.fromJsonString`) decodes to; versions 2 and 1 print that string's
+ * media type alone, so they do not tell two such schemas apart. No version
+ * tells apart two JSON strings built with a `reviver` or a `replacer`.
  *
  * Reserved for the packages that derive step keys. Authors never call it; it
  * throws for a schema that has no representation.

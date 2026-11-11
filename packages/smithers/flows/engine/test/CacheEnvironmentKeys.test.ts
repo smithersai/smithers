@@ -97,12 +97,21 @@ describe("sealed cache keys fold the resolved environment (issue #75)", () => {
           "key1_1ff577a43eb9d96de10e62a98d4a65b45d6743e192f3660e45b28b058d4b5db4"
         )
       }
-      // New records are written under encoding 3, which names itself.
-      expect(yield* keyUnder(sealed("order-123"), sonnet)).toBe(
+      // Encoding 3 names itself, and never changes either.
+      const third = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        Effect.provideService(effect, FlowEngine.ActionKeyEncoding, 3)
+      expect(yield* third(keyUnder(sealed("order-123"), sonnet))).toBe(
         "key1_9d63d4f9dc261788d17d59ab85664b2567cd79eb83c8f4697cec3b7b4cde35a5"
       )
-      expect(yield* keyUnder(sealed({ operation: "stable" }), sonnet)).toBe(
+      expect(yield* third(keyUnder(sealed({ operation: "stable" }), sonnet))).toBe(
         "key1_a043263d97aae8aee91d61f4a740d980b53968bcd5fb41356289f499a127c431"
+      )
+      // New records are written under encoding 4, which names itself too.
+      expect(yield* keyUnder(sealed("order-123"), sonnet)).toBe(
+        "key1_c056171f759cc46e67d2445ee4fb30317d9032f5b767d7067eaa74ba2fcfd851"
+      )
+      expect(yield* keyUnder(sealed({ operation: "stable" }), sonnet)).toBe(
+        "key1_1c0f6d314bc62133da3f308228d364de4f9916d8d60fae9d12c03ee28a1ed521"
       )
     }))
 
@@ -306,20 +315,24 @@ describe("older key encodings reach a driver's replay lookup", () => {
     })
 
   effect(
-    "a keyed sealed action is offered its one older key once, and runs under the key the driver picks",
+    "a keyed sealed action is offered each older key once, and runs under the key the driver picks",
     () =>
       Effect.gen(function*() {
-        // Encodings 2 and 1 derive one key for a declaration with no brand; the
-        // driver is offered it once.
-        const original = yield* Effect.provideService(
-          keyUnder(sealed("order-123"), undefined, "legacy-run"),
-          FlowEngine.ActionKeyEncoding,
-          2
-        )
-        const picked = yield* offered(sealed("order-123"), (_current, legacy) => legacy[0]!)
-        expect(picked.legacy).toEqual([original])
+        const under = (encoding: FlowEngine.KeyEncoding) =>
+          Effect.provideService(
+            keyUnder(sealed("order-123"), undefined, "legacy-run"),
+            FlowEngine.ActionKeyEncoding,
+            encoding
+          )
+        // Encoding 3 names itself. Encodings 2 and 1 derive one key for a
+        // declaration with no brand; the driver is offered it once.
+        const named = yield* under(3)
+        const original = yield* under(2)
+        expect(yield* under(1)).toBe(original)
+        const picked = yield* offered(sealed("order-123"), (_current, legacy) => legacy[1]!)
+        expect(picked.legacy).toEqual([named, original])
         // Without a cache environment the run-scoped key is the same key.
-        expect(picked.runScoped).toEqual([original])
+        expect(picked.runScoped).toEqual([named, original])
         expect(picked.current).not.toBe(original)
         expect(picked.captured).toBe(original)
       })

@@ -2,10 +2,10 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A keyed sealed action's outcome replays under the key encoding it was written in.
  *
- * The first incarnation is an engine that writes encoding 2, the last unversioned one: it records the sealed step,
- * then dies inside the next one. The second incarnation writes the current encoding, which names itself, and takes
- * the run over. Its dispatch of the sealed step must find the record the first wrote, under encoding 2, and replay it:
- * the step's body never runs again. Before encodings were versioned, a change to the derivation re-keyed every
+ * The first incarnation is an engine that writes an earlier encoding: 3, the one before the current, or 2, the last
+ * unversioned one. It records the sealed step, then dies inside the next one. The second incarnation writes the
+ * current encoding, which names itself, and takes the run over. Its dispatch of the sealed step must find the record
+ * the first wrote, under the earlier encoding, and replay it: the step's body never runs again. Before encodings were versioned, a change to the derivation re-keyed every
  * recorded step, so a run parked across an upgrade ran its sealed work again.
  */
 import { FlowEngine } from "@smthrs/engine"
@@ -144,11 +144,13 @@ const incarnation = (
 const upgraded = { executionId: "upgraded", payload: {} }
 
 describe("a keyed sealed action across a key encoding change", () => {
-  it("replays the outcome an engine recorded under the older encoding, without running the step again", () =>
+  it.each([3, 2] as const)("replays the outcome an engine recorded under encoding %i, without running the step again", (
+    encoding
+  ) =>
     run(Effect.gen(function*() {
       const observed: Observed = { measured: [], finished: [] }
       const died = yield* Deferred.make<void>()
-      const before = yield* incarnation(older, 2, observed, died)
+      const before = yield* incarnation(older, encoding, observed, died)
       yield* (yield* Effect.provide(FlowRuntime.FlowRuntime, before)).execute(Upgraded, { ...upgraded, discard: true })
       yield* Deferred.await(died)
 
@@ -159,7 +161,7 @@ describe("a keyed sealed action across a key encoding change", () => {
       expect(Option.map(settled, (result) => result._tag === "Complete" && result.exit)).toEqual(
         Option.some(Exit.succeed(11))
       )
-      // The sealed step ran once, on the older engine; the newer read its record under encoding 2.
+      // The sealed step ran once, on the older engine; the newer read its record under the older encoding.
       expect(observed.measured).toEqual(["older"])
       expect(observed.finished).toEqual(["older", "newer"])
     })))
@@ -175,6 +177,6 @@ describe("a keyed sealed action across a key encoding change", () => {
       expect(yield* Effect.provide(EngineStore.drive(Upgraded, upgraded), context))
         .toEqual({ _tag: "Settled", status: "completed" })
       expect(observed.measured).toEqual(["newer"])
-      expect(FlowEngine.keyEncodings[0]).toBe(3)
+      expect(FlowEngine.keyEncodings[0]).toBe(4)
     })))
 })

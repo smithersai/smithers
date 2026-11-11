@@ -14,6 +14,8 @@
   pruned its history, and cannot tell the two apart, so the record is now
   Debug for both.
 
+- A keyed sealed action's step key includes what a JSON string (`Schema.fromJsonString`) in its success or error schema decodes to. Key encoding 4, the new default, hashes `Node.representationIdentity` version 3; `FlowEngine.keyEncodings` is now `[4, 3, 2, 1]`. Under encodings 3, 2 and 1 two declarations that differ only in what the string decodes to derive one key, so an outcome recorded under the old shape replayed under the new one. Every keyed sealed key moves, because a key names its encoding. A run finds the records it wrote under an earlier encoding again, which includes a record written before such an edit to its declaration; a cross-run cache row written under an earlier encoding misses once. ([#4623](https://github.com/smithersai/smithers/issues/4623)).
+
 - A sealed action's step key no longer moves with the installed `effect` release: its declaration digest hashes `Node.representationIdentity` instead of `SchemaRepresentation.toJson`. A declaration whose success or error schema carries `Schema.brand` re-keys once. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 
 - Action retry exhaustion and expiration preserve the final declared failure

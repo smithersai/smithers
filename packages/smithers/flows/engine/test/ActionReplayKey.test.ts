@@ -121,20 +121,21 @@ describe("actionReplayKey", () => {
     }))
 
   effect(
-    "hands the hook a branded declaration's keys under both older encodings, newest first",
+    "hands the hook a branded declaration's keys under every older encoding, newest first",
     () =>
       Effect.gen(function*() {
         const current = yield* legacyKeys(branded)
+        const third = yield* dispatchedKey(branded, "run", undefined, 3)
         const second = yield* dispatchedKey(branded, "run", undefined, 2)
         const first = yield* dispatchedKey(branded, "run", undefined, 1)
-        // Encoding 1 restores the brand encoding 2 omits, and encoding 3 names
-        // itself, so all three key the same dispatch differently.
-        expect(new Set([current.key, second, first]).size).toBe(3)
-        expect(current.cached).toEqual([second, first])
-        expect(current.runScoped).toHaveLength(2)
+        // Encoding 1 restores the brand encoding 2 omits, and encodings 3 and 4
+        // name themselves, so all four key the same dispatch differently.
+        expect(new Set([current.key, third, second, first]).size).toBe(4)
+        expect(current.cached).toEqual([third, second, first])
+        expect(current.runScoped).toHaveLength(3)
         const replayed = yield* dispatchedKey(branded, "run", (_derive, legacy) =>
           Effect.map(legacy("run", false), (keys) =>
-            keys[1]!))
+            keys[2]!))
         expect(replayed).toBe(first)
       })
   )
@@ -143,10 +144,12 @@ describe("actionReplayKey", () => {
     "hands the hook each older key once, and none an encoding shares with the current one",
     () =>
       Effect.gen(function*() {
-        // Encodings 2 and 1 derive one key for a brandless declaration: offered once.
+        // Encoding 3 names itself. Encodings 2 and 1 derive one key for a
+        // brandless declaration: offered once.
         const lookupKeys = yield* legacyKeys(lookup)
-        expect(lookupKeys.cached).toEqual([yield* dispatchedKey(lookup, "run", undefined, 2)])
-        expect(lookupKeys.cached).toEqual([yield* dispatchedKey(lookup, "run", undefined, 1)])
+        const unnamed = yield* dispatchedKey(lookup, "run", undefined, 2)
+        expect(lookupKeys.cached).toEqual([yield* dispatchedKey(lookup, "run", undefined, 3), unnamed])
+        expect(yield* dispatchedKey(lookup, "run", undefined, 1)).toBe(unnamed)
         // An unkeyed action's key and an engine already writing the oldest
         // encoding have nothing older to look under.
         expect(yield* legacyKeys(charge)).toMatchObject({ cached: [], runScoped: [] })

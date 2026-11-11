@@ -54,6 +54,13 @@ const closed = { onExcessProperty: "error" } as const
 const supportedSinceRc115: ReadonlySet<string> = new Set(["record/number-key"])
 
 /**
+ * Corpus entries whose document departs from rc.115 on purpose: a JSON string
+ * also states what it decodes to. rc.115 printed the media type alone, so two
+ * declarations that decode different values shared an identity.
+ */
+const statesContentSchema: ReadonlySet<string> = new Set(["transform/fromJsonString"])
+
+/**
  * The key pattern `effect@4.1.1` gives a `Schema.Number` record key
  * (`numberKeyPattern` in `src/internal/schema/toJsonSchemaDocument.ts`, built
  * from `SchemaAST.FINITE_PATTERN`): what `String(n)` prints for every number.
@@ -90,8 +97,28 @@ describe("schema identity under an effect upgrade", () => {
     })
 
     // Compared as text: the key order is part of what rc.115 returned.
-    it.each(Object.keys(recording.documents))("prints %s as rc.115 printed it", (name) => {
-      expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(recording.documents[name])
+    it.each(Object.keys(recording.documents).filter((name) => !statesContentSchema.has(name)))(
+      "prints %s as rc.115 printed it",
+      (name) => {
+        expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(recording.documents[name])
+      }
+    )
+
+    // Compared as text: the decoded schema prints last, after what rc.115 printed.
+    it.each([...statesContentSchema])("prints %s as rc.115 printed it, then what the string decodes to", (name) => {
+      const recorded = JSON.parse(recording.documents[name]!) as internal.Document
+      expect(JSON.stringify(Node.schemaIdentity(schemas[name]!(), recording.options))).toBe(JSON.stringify({
+        ...recorded,
+        schema: {
+          ...recorded.schema,
+          contentSchema: {
+            type: "object",
+            properties: { a: { type: "integer" } },
+            required: ["a"],
+            additionalProperties: recording.options.onExcessProperty !== "error"
+          }
+        }
+      }))
     })
 
     it.each(Object.entries(recording.failures).filter(([name]) => !supportedSinceRc115.has(name)))(
@@ -368,6 +395,108 @@ describe("the limits of schema identity", () => {
 
   it("reads a toJsonSchema annotation only when it is a function", () => {
     expect(emitted(checked({ annotations: { toJsonSchema: { pattern: "^a" } } })).schema).toEqual({ type: "string" })
+  })
+})
+
+describe("what a JSON string decodes to", () => {
+  const counts = Schema.fromJsonString(Schema.Struct({ a: Schema.Int }))
+  const names = Schema.fromJsonString(Schema.Struct({ b: Schema.String }))
+  /** A string representation with the given content and annotations. */
+  const string = (content: unknown, annotations?: unknown): unknown => ({
+    representation: { _tag: "String", checks: [], content, ...(annotations === undefined ? {} : { annotations }) },
+    references: {}
+  })
+
+  it("tells two JSON strings apart, at the root and in a field", () => {
+    expect(Node.schemaIdentity(counts, closed)).not.toEqual(Node.schemaIdentity(names, closed))
+    expect(Node.schemaIdentity(Schema.Struct({ row: counts }), closed))
+      .not.toEqual(Node.schemaIdentity(Schema.Struct({ row: names }), closed))
+    expect(Node.schemaIdentity(names, closed)).toEqual({
+      dialect: "draft-2020-12",
+      schema: {
+        type: "string",
+        contentMediaType: "application/json",
+        contentSchema: {
+          type: "object",
+          properties: { b: { type: "string" } },
+          required: ["b"],
+          additionalProperties: false
+        }
+      },
+      definitions: {}
+    })
+  })
+
+  it("files the definition the decoded schema names", () => {
+    const identified = Schema.fromJsonString(Schema.Struct({ a: Schema.Int.annotate({ identifier: "Count" }) }))
+    expect(Node.schemaIdentity(identified, closed)).toEqual({
+      dialect: "draft-2020-12",
+      schema: {
+        type: "string",
+        contentMediaType: "application/json",
+        contentSchema: {
+          type: "object",
+          properties: { a: { $ref: "#/$defs/Count" } },
+          required: ["a"],
+          additionalProperties: false
+        }
+      },
+      definitions: { Count: { type: "integer" } }
+    })
+  })
+
+  it("prints the decoded schema last, in place of an author's contentSchema annotation", () => {
+    const annotated = string(
+      { mediaType: "application/json", schema: { _tag: "Boolean", checks: [] } },
+      { contentSchema: { type: "number" }, description: "a row" }
+    )
+    expect(JSON.stringify(emitted(annotated).schema)).toBe(JSON.stringify({
+      type: "string",
+      contentMediaType: "application/json",
+      description: "a row",
+      contentSchema: { type: "boolean" }
+    }))
+  })
+
+  // effect names no decoded schema for a JSON string built with a reviver or a replacer.
+  it("prints the media type alone for a JSON string that names no decoded schema", () => {
+    const revived = Schema.fromJsonString(Schema.Struct({ a: Schema.Int }), { reviver: (_key, value) => value })
+    expect(Node.schemaIdentity(revived, closed).schema)
+      .toEqual({ type: "string", contentMediaType: "application/json" })
+    expect(emitted(string({ mediaType: "application/json" })).schema)
+      .toEqual({ type: "string", contentMediaType: "application/json" })
+  })
+
+  it("prints a JSON string used as a record key among the property names, with what it decodes to", () => {
+    const keyed = (schema: unknown): unknown => ({
+      representation: {
+        _tag: "Objects",
+        checks: [],
+        propertySignatures: [],
+        indexSignatures: [{
+          parameter: { _tag: "String", checks: [], content: { mediaType: "application/json", schema } },
+          type: { _tag: "String", checks: [] }
+        }]
+      },
+      references: {}
+    })
+    const flags = emitted(keyed({ _tag: "Boolean", checks: [] }), closed)
+    expect(flags).not.toEqual(emitted(keyed({ _tag: "Null", checks: [] }), closed))
+    expect(flags.schema).toEqual({
+      type: "object",
+      propertyNames: { type: "string", contentMediaType: "application/json", contentSchema: { type: "boolean" } },
+      additionalProperties: { type: "string" }
+    })
+    // A key that names no decoded schema is any string, as before.
+    expect(emitted(keyed(undefined), closed).schema).toEqual({
+      type: "object",
+      additionalProperties: { type: "string" }
+    })
+  })
+
+  it("prints nothing for content of another media type, as before", () => {
+    expect(emitted(string({ mediaType: "text/csv", schema: { _tag: "Boolean", checks: [] } })).schema)
+      .toEqual({ type: "string" })
   })
 })
 

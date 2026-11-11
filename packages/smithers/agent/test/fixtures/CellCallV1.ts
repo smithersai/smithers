@@ -64,6 +64,12 @@ export const modelErrorCauseKey = "key1_c753452803048e450f3f45a4ff5b97455bc729f6
 // `modelErrorCauseKey`, and a run recorded under it replays there.
 export const keyEncoding3Key = "key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388"
 
+// Key encoding 4 (2026-11-11, #4623) hashes the declaration's representation
+// identity version 3, which includes what a JSON string decodes to. This
+// declaration has no JSON string, so its material is encoding 3's under the
+// new name. Key encoding 3 still derives `keyEncoding3Key`.
+export const keyEncoding4Key = "key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {

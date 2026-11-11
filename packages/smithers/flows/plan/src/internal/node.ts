@@ -33,7 +33,7 @@ import * as Schema from "effect/Schema"
 import type { Node } from "../Node.ts"
 import type * as Planned from "../Planned.ts"
 import { jsonMirror } from "./JsonMirror.ts"
-import { schemaIdentity } from "./SchemaIdentity.ts"
+import { representationIdentity, schemaIdentity } from "./SchemaIdentity.ts"
 
 /**
  * The runtime type identifier every node carries.
@@ -196,7 +196,9 @@ export interface Branch extends Scheduled {
  * An absent filter catches the entire typed error channel, while a present
  * schema catches only values it accepts. This mirrors Effect's typed-error
  * boundary and keeps defects outside normal recovery. The serializable AST carries the schema identity; the live schema
- * remains in a side table beside the AST.
+ * remains in a side table beside the AST. `filterRepresentation` names the kinds the JSON Schema in `filter` merges,
+ * such as `Schema.Null` and `Schema.Void`, on the decoded side the catch matches on; it is absent for a filter `effect`
+ * cannot represent.
  *
  * @since 0.1.0
  * @private
@@ -209,6 +211,7 @@ export interface Catch extends Scheduled {
   readonly failure: NodeAst
   readonly filter?: unknown | undefined
   readonly filterIdentity?: FunctionIdentity | undefined
+  readonly filterRepresentation?: unknown | undefined
 }
 
 /**
@@ -754,6 +757,40 @@ const filterIdentity = (filter: Schema.Top): FunctionIdentity => {
 }
 
 /**
+ * What the JSON Schema of a filter does not tell apart: `Schema.Null`,
+ * `Schema.Undefined` and `Schema.Void` all print `{ type: "null" }`, and a
+ * `bigint` literal prints as the string of its digits. Those filters accept
+ * different errors, so the catch also records a representation identity of
+ * the filter, which names each kind. The version is pinned: a later version
+ * must not re-key a recorded catch.
+ *
+ * A catch matches a failure with `Schema.is`, which tests the decoded side of
+ * the filter, so that side is the one recorded (`side: "type"`). The JSON
+ * Schema in `filter` describes the encoded side and says nothing about a
+ * check behind a codec.
+ *
+ * `effect` cannot represent a check or a declaration that carries no
+ * `representation` annotation: a bare `Schema.makeFilter`, or the decoded side
+ * of a class. Such a filter records its encoded side instead
+ * (`side: "encoded"`), which for a class is its fields as they are encoded.
+ * A filter `effect` can represent on neither side records nothing and keeps
+ * the identity of its functions, so two such filters that differ only in a
+ * kind JSON Schema merges still share a key.
+ *
+ * @private
+ */
+const filterRepresentation = (filter: Schema.Top): unknown => {
+  for (const side of ["type", "encoded"] as const) {
+    try {
+      return { side, identity: representationIdentity(side === "type" ? Schema.toType(filter) : filter, 3) }
+    } catch {
+      // `effect` cannot represent this side.
+    }
+  }
+  return undefined
+}
+
+/**
  * Constructs a {@link Catch} whose failure topology is already evaluated.
  *
  * @since 0.1.0
@@ -761,6 +798,7 @@ const filterIdentity = (filter: Schema.Top): FunctionIdentity => {
  * @slop
  */
 export const catch_ = (subject: string, protectedAst: NodeAst, failure: NodeAst, filter?: Schema.Top): Catch => {
+  const representation = filter === undefined ? undefined : filterRepresentation(filter)
   const ast: Catch = {
     _tag: "Catch",
     subject,
@@ -771,7 +809,8 @@ export const catch_ = (subject: string, protectedAst: NodeAst, failure: NodeAst,
       : {
         filter: schemaIdentity(filter, { onExcessProperty: "error" }),
         filterIdentity: filterIdentity(filter)
-      })
+      }),
+    ...(representation === undefined ? {} : { filterRepresentation: representation })
   }
   if (filter !== undefined) filters.set(ast, filter)
   return ast

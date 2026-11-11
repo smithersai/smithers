@@ -53,10 +53,13 @@ describe("action execution keys", () => {
         .toBe("key1_5ba06eea63e4a5187bb73bb4ea7951e5048014dd09e18c33d7408b80dc4bc124")
       expect(yield* actionKey(action, "run", 1, undefined, "scope", 2))
         .toBe("key1_5ba06eea63e4a5187bb73bb4ea7951e5048014dd09e18c33d7408b80dc4bc124")
-      // Encoding 3 names itself, so its bytes differ, and new records are written under it by default.
+      // Encoding 3 names itself, so its bytes differ. It never changes either.
+      expect(yield* actionKey(action, "run", 1, undefined, "scope", 3))
+        .toBe("key1_e61fb72d3a7a261dd0ae28244d4893a2b4676d011fcf640b0ab853c4e4323692")
+      // Encoding 4 names itself too, and new records are written under it by default.
       const current = yield* actionKey(action, "run", 1, undefined, "scope")
-      expect(current).toBe(yield* actionKey(action, "run", 1, undefined, "scope", 3))
-      expect(current).toBe("key1_e61fb72d3a7a261dd0ae28244d4893a2b4676d011fcf640b0ab853c4e4323692")
+      expect(current).toBe(yield* actionKey(action, "run", 1, undefined, "scope", 4))
+      expect(current).toBe("key1_995e164aac4f8773355b2afc0b5aaa75e17f1bfda1428db446e44fa2e42c6577")
     }))
 
   effect(
@@ -124,7 +127,7 @@ describe("action execution keys", () => {
           execute: Effect.die("unused")
         })
         // The key this action derived on rc.115, and the one it derives now.
-        expect(FlowEngine.keyEncodings).toEqual([3, 2, 1])
+        expect(FlowEngine.keyEncodings).toEqual([4, 3, 2, 1])
         expect(yield* actionKey(action, "run", 1, undefined, "scope", 1))
           .toBe("key1_74c8862a35bde5cafe29effa5914ea0bf56540df0b3920271a603bebdcf1608a")
         expect(yield* actionKey(action, "run", 1, undefined, "scope", 2))
@@ -152,6 +155,31 @@ describe("action execution keys", () => {
           .toBe(yield* actionKey(plain, "run", 1, undefined, "scope", 2))
       })
   )
+
+  effect("keys a declaration by what its JSON string decodes to, from encoding 4 on", () =>
+    Effect.gen(function*() {
+      // Until encoding 4 the declaration digest held a JSON string's media
+      // type alone, so changing what the string decodes to kept the key and
+      // replayed the outcome recorded under the old shape.
+      const keyed = (success: Schema.Top) =>
+        Action.make({ name: "ActionKeys/json", success, idempotencyKey: "row", execute: Effect.die("unused") })
+      const counts = keyed(Schema.fromJsonString(Schema.Struct({ a: Schema.Int })))
+      const names = keyed(Schema.fromJsonString(Schema.Struct({ b: Schema.String })))
+      const key = (action: ReturnType<typeof keyed>, encoding: FlowEngine.KeyEncoding) =>
+        actionKey(action, "run", 1, undefined, "scope", encoding)
+      expect(yield* key(counts, 4)).not.toBe(yield* key(names, 4))
+      expect(yield* actionKey(counts, "run", 1, undefined, "scope")).toBe(yield* key(counts, 4))
+      // The earlier encodings still do not tell the two apart: a record
+      // written under one is found again, for either declaration.
+      for (const encoding of [3, 2, 1] as const) {
+        expect(yield* key(counts, encoding)).toBe(yield* key(names, encoding))
+        expect(yield* key(counts, encoding)).not.toBe(yield* key(counts, 4))
+      }
+      // The key this action derived by default before encoding 4, taken from
+      // that engine: encoding 3 has not moved.
+      expect(yield* key(counts, 3)).toBe("key1_3afad8214c98a080967b3810c15085c20ee7cb1be737caa086c623db8ab1f22b")
+      expect(yield* key(counts, 2)).toBe(yield* key(counts, 1))
+    }))
 
   effect("memoizes declaration digests by both schema ASTs across action instances", () =>
     Effect.gen(function*() {

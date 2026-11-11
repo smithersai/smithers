@@ -27,6 +27,11 @@ import * as Schema from "effect/Schema"
  * them (`actionReplayKey`) before it writes under the newest. A change to the
  * derivation adds an encoding at the front and keeps the rest.
  *
+ * - `4` hashes the declaration's `Node.representationIdentity` version 3,
+ *   which includes what a JSON string (`Schema.fromJsonString`) in the success
+ *   or error schema decodes to. Under every earlier encoding two declarations
+ *   that differ only there derive one key, so a run that wrote a record under
+ *   one and resumes after such an edit still finds that record.
  * - `3` names itself in the key (`keyEncoding: 3`) and hashes the
  *   declaration's `Node.representationIdentity` version 2. Every later
  *   encoding names itself the same way.
@@ -40,7 +45,7 @@ import * as Schema from "effect/Schema"
  * @category identity
  * @since 1.0.0
  */
-export const keyEncodings = [3, 2, 1] as const
+export const keyEncodings = [4, 3, 2, 1] as const
 
 /**
  * One encoding of {@link keyEncodings}.
@@ -62,7 +67,8 @@ export const ActionKeyEncoding = Context.Reference<KeyEncoding>("@smthrs/engine/
 })
 
 /** The representation identity version an encoding hashes a declaration with. */
-const identityVersion = (encoding: KeyEncoding): Node.RepresentationIdentityVersion => encoding === 1 ? 1 : 2
+const identityVersion = (encoding: KeyEncoding): Node.RepresentationIdentityVersion =>
+  encoding === 4 ? 3 : encoding === 1 ? 1 : 2
 
 /**
  * Extracts the hermetic boundary descriptor from an action's metadata when
@@ -157,14 +163,15 @@ export const uncanonicalKey = (
   })
 
 // Schemas are immutable and shared by separately constructed actions. Weak
-// keys keep discarded declarations collectible. Identity version 2 depends on
-// the AST alone, so it is cached by AST and shared across schema values;
-// version 1 reads the brand off the schema value, so it is cached by that
-// value. Cache only successful hashes so a failed Crypto operation can be
+// keys keep discarded declarations collectible. Identity versions 3 and 2
+// depend on the AST alone, so they are cached by AST and shared across schema
+// values; version 1 reads the brand off the schema value, so it is cached by
+// that value. Cache only successful hashes so a failed Crypto operation can be
 // retried with a working service.
 const declarations: Record<Node.RepresentationIdentityVersion, WeakMap<object, WeakMap<object, StoredKey>>> = {
   1: new WeakMap(),
-  2: new WeakMap()
+  2: new WeakMap(),
+  3: new WeakMap()
 }
 
 /**
@@ -216,7 +223,9 @@ const boundaryDigest = Effect.fnUntraced(function*(metadata: unknown) {
  * The persisted key an action dispatch is recorded under: a pure cache key
  * for a keyed sealed action, an ordinal-scoped invocation key otherwise.
  * `encoding` derives the key an earlier engine wrote; only a keyed sealed
- * action's key with a string `idempotencyKey` differs between encodings.
+ * action's key differs between encodings. A string `idempotencyKey` hashes the
+ * declaration, which the encoding shapes; every keyed sealed key from encoding
+ * 3 on names its encoding.
  *
  * @private
  * @since 0.1.0

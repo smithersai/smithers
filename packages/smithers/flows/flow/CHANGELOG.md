@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Two kinds of node re-key once, because their keys did not state what they now state. A call whose callee declares a JSON string (`Schema.fromJsonString`) in its payload, success or error schema folds in what the string decodes to. A `catch` with an error schema that `effect` can represent folds in a representation identity of the filter, which tells `Schema.Null`, `Schema.Undefined` and `Schema.Void` apart. A run recorded before the change with such a node no longer matches its recorded plan on resume. Every other node keeps its key. ([#4623](https://github.com/smithersai/smithers/issues/4623)).
+
 ### Added
 
 - `FlowRuntime.StoreUnavailable` is the typed infrastructure failure returned

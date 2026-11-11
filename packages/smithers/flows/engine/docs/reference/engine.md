@@ -156,15 +156,15 @@ This class belongs to `@smthrs/flow`'s `FlowRuntime` namespace; it is not an eng
 
 ### `FlowEngine.keyEncodings`
 
-- **Type:** `readonly [3, 2, 1]`
+- **Type:** `readonly [4, 3, 2, 1]`
 - **Since:** `1.0.0`
 - **Related:** `FlowEngine.KeyEncoding`, `FlowEngine.ActionKeyEncoding`
 
-The encodings a keyed sealed action's key has been written in, newest first. A record is found again only under the key it was written with, so every earlier encoding stays derivable and a change to the derivation adds one at the front. `3` names itself in the key (`keyEncoding: 3`) and hashes the declaration's `Node.representationIdentity` version 2. `2` is the same key without the name, written from `effect@4.0.4` until 2026-10-21. `1` hashes identity version 1, what every key written under `effect@4.0.0-rc.115` hashed, `Schema.brand` included; it derives encoding 2's key for a declaration with no brand.
+The encodings a keyed sealed action's key has been written in, newest first. A record is found again only under the key it was written with, so every earlier encoding stays derivable and a change to the derivation adds one at the front. `4` hashes the declaration's `Node.representationIdentity` version 3, which includes what a JSON string (`Schema.fromJsonString`) decodes to. `3` names itself in the key (`keyEncoding: 3`), as every later encoding does, and hashes identity version 2. `2` is the same key without the name, written from `effect@4.0.4` until 2026-10-21. `1` hashes identity version 1, what every key written under `effect@4.0.0-rc.115` hashed, `Schema.brand` included; it derives encoding 2's key for a declaration with no brand.
 
 ### `FlowEngine.KeyEncoding`
 
-- **Type:** `3 | 2 | 1`
+- **Type:** `4 | 3 | 2 | 1`
 - **Since:** `1.0.0`
 
 One encoding of `FlowEngine.keyEncodings`.

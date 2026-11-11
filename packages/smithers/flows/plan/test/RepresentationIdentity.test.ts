@@ -8,10 +8,13 @@
  * that uses one, and every recorded step behind such a schema would re-key.
  * `Node.representationIdentity` writes the rc.115 document.
  *
- * `effect@4.0.4` also dropped `Schema.brand` from the AST, so the current
- * identity (version 2) prints a branded schema as its base. Version 1 restores
- * the brands from the schema value, so a key written before the upgrade can
- * still be derived and its recorded outcome found again.
+ * `effect@4.0.4` also dropped `Schema.brand` from the AST, so version 2 prints
+ * a branded schema as its base. Version 1 restores the brands from the schema
+ * value, so a key written before the upgrade can still be derived and its
+ * recorded outcome found again.
+ *
+ * rc.115 wrote a JSON string as its media type alone. Version 3, the current
+ * identity, is version 2 with what the string decodes to.
  *
  * The fixture beside this file is what rc.115 wrote for every schema in
  * `SchemaIdentityCorpus.ts`, produced by
@@ -105,13 +108,13 @@ describe("representation identity under an effect upgrade", () => {
   it.each(Object.keys(fixture.documents).filter((name) => !branded.includes(name)))(
     "writes %s as rc.115 wrote it",
     (name) => {
-      expect(printed(name)).toBe(fixture.documents[name])
+      expect(printed(name, 2)).toBe(fixture.documents[name])
     }
   )
 
   it.each(branded)("writes %s as rc.115 wrote it, less the brand", (name) => {
-    expect(printed(name)).not.toBe(fixture.documents[name])
-    expect(printed(name)).toBe(JSON.stringify(withoutBrands(JSON.parse(fixture.documents[name]!))))
+    expect(printed(name, 2)).not.toBe(fixture.documents[name])
+    expect(printed(name, 2)).toBe(JSON.stringify(withoutBrands(JSON.parse(fixture.documents[name]!))))
   })
 
   // Compared as text: version 1 is the bytes every key written before the upgrade hashed.
@@ -120,8 +123,9 @@ describe("representation identity under an effect upgrade", () => {
   })
 
   it("names its versions newest first, and defaults to the newest", () => {
-    expect(Node.representationIdentityVersions).toEqual([2, 1])
-    expect(printed("brand/twice")).toBe(printed("brand/twice", 2))
+    expect(Node.representationIdentityVersions).toEqual([3, 2, 1])
+    expect(printed("transform/fromJsonString")).toBe(printed("transform/fromJsonString", 3))
+    expect(printed("transform/fromJsonString")).not.toBe(printed("transform/fromJsonString", 2))
   })
 
   it("restores no brand below a schema value that names no members", () => {
@@ -234,10 +238,60 @@ it("keeps author constraints on built-in checks while projecting their default a
   }
 })
 
-it("keeps a JSON string's recorded identity when its decoded schema has a named definition", () => {
-  const schema = Schema.fromJsonString(Schema.Struct({ a: Schema.Int.annotate({ identifier: "Count" }) }))
-  for (const version of Node.representationIdentityVersions) {
-    expect(JSON.stringify(Node.representationIdentity(schema, version)))
-      .toBe(fixture.documents["transform/fromJsonString"])
-  }
+describe("what a JSON string decodes to", () => {
+  const counts = () => Schema.fromJsonString(Schema.Struct({ a: Schema.Int }))
+  const names = () => Schema.fromJsonString(Schema.Struct({ b: Schema.String }))
+  const identified = () => Schema.fromJsonString(Schema.Struct({ a: Schema.Int.annotate({ identifier: "Count" }) }))
+  const identity = (schema: Schema.Top, version?: Node.RepresentationIdentityVersion): string =>
+    JSON.stringify(Node.representationIdentity(schema, version))
+
+  it("is no part of versions 2 and 1, which keep the identity recorded keys hashed", () => {
+    for (const version of [2, 1] as const) {
+      for (const schema of [counts(), names(), identified()]) {
+        expect(identity(schema, version)).toBe(fixture.documents["transform/fromJsonString"])
+      }
+    }
+  })
+
+  it("is part of version 3, at the root and in a field", () => {
+    expect(identity(counts())).not.toBe(identity(names()))
+    expect(identity(Schema.Struct({ row: counts() }))).not.toBe(identity(Schema.Struct({ row: names() })))
+    expect(Node.representationIdentity(names())).toEqual({
+      representation: {
+        _tag: "String",
+        annotations: { expected: "a string that will be decoded as JSON" },
+        checks: [],
+        content: {
+          mediaType: "application/json",
+          schema: {
+            _tag: "Objects",
+            checks: [],
+            propertySignatures: [{
+              name: { type: "string", value: "b" },
+              type: { _tag: "String", checks: [] },
+              isOptional: false,
+              isMutable: false
+            }],
+            indexSignatures: []
+          }
+        }
+      },
+      references: {}
+    })
+  })
+
+  it("keeps the definitions the decoded schema names at version 3", () => {
+    expect(Node.representationIdentity(identified())).toMatchObject({
+      representation: {
+        content: { schema: { propertySignatures: [{ type: { _tag: "Reference", $ref: "Count" } }] } }
+      },
+      references: { Count: { _tag: "Number" } }
+    })
+    expect(identity(identified())).not.toBe(identity(counts()))
+  })
+
+  it("is the one thing version 3 adds to version 2", () => {
+    expect(Object.keys(fixture.documents).filter((name) => printed(name, 3) !== printed(name, 2)))
+      .toEqual(["transform/fromJsonString"])
+  })
 })

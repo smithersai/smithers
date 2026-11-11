@@ -67,6 +67,18 @@ describe("schema identity across an effect upgrade", () => {
     expect(Object.keys(schemas).sort()).toEqual(Object.keys(fixture.documents).sort())
   })
 
+  it("tells apart two JSON strings that decode different values", () => {
+    // rc.112 and rc.115 printed a JSON string as its media type alone, so a
+    // call whose callee changed what the string decodes to kept its key and
+    // replayed the outcome recorded under the old shape.
+    const counts = identityOf("json-counts", Schema.fromJsonString(Schema.Struct({ a: Schema.Int })))
+    const names = identityOf("json-names", Schema.fromJsonString(Schema.Struct({ b: Schema.String })))
+    expect(canonicalize(counts)).not.toBe(canonicalize(names))
+    expect(counts).toMatchObject({
+      schema: { type: "string", contentMediaType: "application/json", contentSchema: { required: ["a"] } }
+    })
+  })
+
   it("does not distinguish two spellings of one constraint", () => {
     // What this identity does NOT do, stated where the pin lives. The
     // projection is JSON-Schema-shaped, so a check contributes the constraint

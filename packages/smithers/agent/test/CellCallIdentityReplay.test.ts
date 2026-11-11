@@ -30,7 +30,7 @@ import * as Safety from "./Safety.ts"
 //
 // The journal is written the way an engine before key encoding 3 wrote it
 // (encoding 2, no `keyEncoding` in the key) and resumed by the current engine,
-// which keys new records under encoding 3 and finds the recorded attempt under
+// which keys new records under the newest encoding and finds the recorded attempt under
 // the older key: the sealed call runs once, never again after the upgrade.
 const flow = Flow.make("agent/test/cell-call-v1-reopen", {
   payload: {},

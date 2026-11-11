@@ -67,7 +67,8 @@ one derivable. `FlowEngine.keyEncodings` lists them newest first:
 
 | Encoding | Written                           | Key                                                                                                       |
 | -------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `3`      | since 2026-10-21                  | Names itself (`keyEncoding: 3`); declaration digest from `Node.representationIdentity` version 2.         |
+| `4`      | since 2026-11-11                  | Declaration digest from `Node.representationIdentity` version 3: what a JSON string decodes to is in it.  |
+| `3`      | from 2026-10-21 to 2026-11-11     | Names itself (`keyEncoding: 3`); declaration digest from `Node.representationIdentity` version 2.         |
 | `2`      | from `effect@4.0.4` to 2026-10-21 | Encoding 3 without the name: identity version 2, where a `Schema.brand` contributes nothing.              |
 | `1`      | under `effect@4.0.0-rc.115`       | No name; identity version 1, each brand restored as rc.115 wrote it. Equal to encoding 2 without a brand. |
 
@@ -80,6 +81,11 @@ differs between encodings, so every other dispatch is offered nothing older and
 probes nothing. The lookup reads this run's attempts only: a cross-run cache row
 written under an older encoding misses once, and the step runs again under the
 newest.
+
+An older encoding keeps what it could not tell apart. Encodings 3, 2 and 1
+derive one key for two declarations that differ only in what a JSON string
+decodes to, so a run that recorded a step under one of them and resumes after
+such an edit replays that record. A record written under encoding 4 does not.
 
 A change to the derivation adds an encoding at the front of `keyEncodings` and
 names it in the key; it never edits one. `FlowEngine.ActionKeyEncoding` selects

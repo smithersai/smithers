@@ -156,6 +156,10 @@ const drive = <A>(
 const underEncoding2 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.provideService(effect, FlowEngine.ActionKeyEncoding, 2)
 
+/** Derives a key the way an engine before key encoding 4 wrote it. */
+const underEncoding3 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provideService(effect, FlowEngine.ActionKeyEncoding, 3)
+
 /** Seals the fixed step through a port built over `layers`. */
 const sealUnder = (layers: ReadonlyArray<string>) =>
   Effect.gen(function*() {
@@ -192,7 +196,8 @@ describe("the sealed model step key", () => {
         host: yield* sealUnder(["golden-host-layer"]),
         again: yield* sealUnder(["golden-host-layer"]),
         other: yield* sealUnder(["another-host-layer"]),
-        encoding2: yield* underEncoding2(sealUnder(["golden-host-layer"]))
+        encoding2: yield* underEncoding2(sealUnder(["golden-host-layer"])),
+        encoding3: yield* underEncoding3(sealUnder(["golden-host-layer"]))
       }
     }))
 
@@ -269,8 +274,13 @@ describe("the sealed model step key", () => {
     // (`keyEncoding: 3`, engine 631bbbe2). This move strands nothing: key
     // encoding 2 still derives the previous key, and a run journaled under it
     // replays there (CellCallIdentityReplay.test.ts).
+    //
+    // Moved again on 2026-11-11 with key encoding 4, which hashes what a JSON
+    // string in the declaration decodes to (#4623). This move strands nothing
+    // either: key encoding 3 still derives the previous key.
     expect(observed.encoding2).toBe("key1_8ea4786bba8082954abcb2c65b209b3528f9b4307df90a94d34031369879cc2d")
-    expect(observed.host).toBe("key1_f56e335aa68923604edc22e7c3da6298f8198caeb3cf3d5c75da647d1629c58c")
+    expect(observed.encoding3).toBe("key1_f56e335aa68923604edc22e7c3da6298f8198caeb3cf3d5c75da647d1629c58c")
+    expect(observed.host).toBe("key1_4c04056ff0a24810a021a292499ddc319e17d320aa3c167ff11ad95ae6ca0624")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -286,7 +296,8 @@ describe("the sealed cell-call key", () => {
       return {
         host: yield* callUnder(["golden-host-layer"]),
         other: yield* callUnder(["another-host-layer"]),
-        encoding2: yield* underEncoding2(callUnder(["golden-host-layer"]))
+        encoding2: yield* underEncoding2(callUnder(["golden-host-layer"])),
+        encoding3: yield* underEncoding3(callUnder(["golden-host-layer"]))
       }
     }))
 
@@ -314,9 +325,11 @@ describe("the sealed cell-call key", () => {
     // Moved when `HarnessError.cause` gained the provider's typed `ModelError`
     // (9904ce12f1), a declaration change; and again when sealed keys began to
     // name their encoding (`keyEncoding: 3`), which key encoding 2 undoes, so a
-    // recorded call replays.
+    // recorded call replays. Key encoding 4 (#4623) moved it once more, and
+    // key encoding 3 undoes that the same way.
     expect(observed.encoding2).toBe("key1_c753452803048e450f3f45a4ff5b97455bc729f6c3011cc8364f4c344caf6208")
-    expect(observed.host).toBe("key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388")
+    expect(observed.encoding3).toBe("key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388")
+    expect(observed.host).toBe("key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

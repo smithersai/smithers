@@ -1847,7 +1847,15 @@ const expandCatch = (builder: Builder, site: Site, ast: Extract<Node.Ast, { read
       builder.edges.push({ from: failureId, to: id, reason: "value" })
       site.inputs.push({ _tag: "Ref", from: failureId, path: [] })
     },
-    () => recordPlain(builder, site, { _tag: ast._tag, filter: ast.filter, filterIdentity: ast.filterIdentity })
+    () =>
+      recordPlain(builder, site, {
+        _tag: ast._tag,
+        filter: ast.filter,
+        filterIdentity: ast.filterIdentity,
+        // Absent for a catch with no filter, or with one effect cannot
+        // represent: the key of such a catch keeps its bytes.
+        ...(ast.filterRepresentation === undefined ? {} : { filterRepresentation: ast.filterRepresentation })
+      })
   ])
 }
 

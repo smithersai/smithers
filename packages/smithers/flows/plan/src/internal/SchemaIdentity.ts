@@ -20,6 +20,14 @@
  * It is for identity only. Where a JSON Schema is shown to a model or a
  * person, the installed emitter is the right one.
  *
+ * One document departs from rc.115 on purpose. rc.115 printed a JSON string
+ * (`Schema.fromJsonString`) as its media type alone, so two declarations that
+ * decode different values shared an identity. A JSON string prints what it
+ * decodes to as `contentSchema`, the way `effect@4.1.1` prints it. One built
+ * with a `reviver` or a `replacer` still prints the media type alone: the
+ * representation names no decoded schema for it, because the function can
+ * change the value's shape.
+ *
  * What still moves an identity, by design: a release that changes a schema's
  * JSON codec or its representation changes what the schema accepts on the
  * wire. Three limits follow from what the representation carries:
@@ -43,7 +51,7 @@
  * Changes: `onExcessProperty` is the only option; one root; a built-in
  * check's fragment comes from {@link builtinChecks}, not from
  * the installed annotation; an approximate check result contributes its
- * schema.
+ * schema; a JSON string prints its `contentSchema`.
  *
  * @since 1.0.0
  */
@@ -777,6 +785,14 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
     let output = on(representation, path)
     const ordinary = ordinaryAnnotations(representation.annotations)
     if (ordinary !== undefined) output = { ...output, ...ordinary }
+    const content = representation._tag === "String" ? representation.content : undefined
+    if (content?.mediaType === "application/json" && content.schema !== undefined) {
+      // What the string decodes to is part of what the schema accepts. As in
+      // effect@4.1.1, it takes the place of an author's `contentSchema`
+      // annotation and prints after the other annotations.
+      const { contentSchema: _, ...rest } = output
+      output = { ...rest, contentSchema: recur(content.schema, [...path, "content", "schema"]) }
+    }
     representation.checks.forEach((check, index) => {
       const compiled = compileCheck(
         check,
@@ -821,6 +837,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
       case "String":
         // Effect 4.1 moves fromJsonString's media type out of annotations.
         // This emitter owns the older durable identity, not runtime validation.
+        // `recur` adds the schema the string decodes to.
         return representation.content?.mediaType === "application/json"
           ? { type: "string", contentMediaType: "application/json" }
           : { type: "string" }
@@ -1030,6 +1047,11 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
         )
       }
       case "String": {
+        // A key that is a JSON string has no pattern. Without one the key
+        // prints among the property names, with what it decodes to.
+        if (parameter.content?.mediaType === "application/json" && parameter.content.schema !== undefined) {
+          return undefined
+        }
         const check = parameter.checks[0]
         if (check === undefined) return []
         if (parameter.checks.length !== 1 || check._tag !== "Filter" || fragmentSource(check) === undefined) {
@@ -1155,24 +1177,27 @@ const withRc115CheckAnnotations = (check: Record<string, unknown>, annotations: 
  * A copy of an encoded representation with every renamed check id written
  * back as rc.115 wrote it. Only an element of a `checks` array is a check.
  * Author annotations and payloads are preserved. Known 4.1 built-in pattern
- * defaults and JSON string content metadata are projected to their older
- * identity forms. Key order is kept, so the recorded bytes match.
+ * defaults are projected to their older identity forms. Key order is kept, so
+ * the recorded bytes match.
+ *
+ * `content` says what a JSON string contributes. `"mediaType"` projects its
+ * content metadata to the rc.115 form, a `contentMediaType` annotation and
+ * nothing about the decoded schema, which versions 2 and 1 hashed. `"schema"`
+ * keeps the member as the installed release encodes it, decoded schema
+ * included.
  *
  * @private
  */
-const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => {
-  if (Array.isArray(value)) return value.map((member) => withRc115CheckIds(member, isCheck))
+const withRc115CheckIds = (value: Schema.Json, content: "mediaType" | "schema", isCheck = false): Schema.Json => {
+  if (Array.isArray(value)) return value.map((member) => withRc115CheckIds(member, content, isCheck))
   if (!isObject(value)) return value
   const out: Record<string, Schema.Json> = {}
+  const projected = content === "mediaType" && value["_tag"] === "String" && isObject(value["content"]) &&
+    value["content"]["mediaType"] === "application/json"
   for (const [key, member] of Object.entries(value as Readonly<Record<string, Schema.Json>>)) {
-    if (
-      key === "content" && value["_tag"] === "String" && isObject(member) && member["mediaType"] === "application/json"
-    ) {
-      continue
-    }
+    if (key === "content" && projected) continue
     if (key === "annotations" || key === "payload") {
-      const annotations = key === "annotations" && value["_tag"] === "String" && isObject(value["content"]) &&
-          value["content"]["mediaType"] === "application/json" && isObject(member)
+      const annotations = key === "annotations" && projected && isObject(member)
         ? { ...member, contentMediaType: "application/json" }
         : member
       assignProperty(
@@ -1189,8 +1214,8 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
       out,
       key,
       renamed === undefined
-        ? withRc115CheckIds(member, key === "checks")
-        : withRc115CheckIds({ ...(member as Readonly<Record<string, Schema.Json>>), id: renamed })
+        ? withRc115CheckIds(member, content, key === "checks")
+        : withRc115CheckIds({ ...(member as Readonly<Record<string, Schema.Json>>), id: renamed }, content)
     )
   }
   return out
@@ -1202,8 +1227,16 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
  * derivable, so a version is never changed once published; a change adds a
  * version at the front.
  *
- * - `2`, the current version, written since `effect@4.0.4` (2026-10-13):
- *   what the installed release encodes, with the six check ids renamed after
+ * - `3`, the current version, written since 2026-11-11: version 2 with what a
+ *   JSON string (`Schema.fromJsonString`) decodes to. The string keeps the
+ *   `content` member the installed release encodes, its media type and the
+ *   schema of the decoded value, and the document keeps the definitions that
+ *   schema names. Versions 2 and 1 print the media type alone, so two
+ *   declarations that decode different values share those identities. A
+ *   string built with a `reviver` or a `replacer` has no decoded schema in
+ *   the representation, so version 3 prints its media type alone too.
+ * - `2`, written from `effect@4.0.4` (2026-10-13) until version 3: what the
+ *   installed release encodes, with the six check ids renamed after
  *   `4.0.0-rc.115` written back. From `4.0.4` on `Schema.brand` is not part of
  *   the AST, so a brand contributes nothing.
  * - `1`, what every key written under `4.0.0-rc.115` hashed: version 2 with
@@ -1213,7 +1246,7 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
  * @since 1.0.0
  * @private
  */
-export const representationIdentityVersions = [2, 1] as const
+export const representationIdentityVersions = [3, 2, 1] as const
 
 /**
  * One version of {@link representationIdentityVersions}.
@@ -1486,7 +1519,7 @@ const withRc115Brands = (
   return ambiguous ? document : { representation, references: references as Representations }
 }
 
-/** Removes definitions belonging only to 4.1 JSON content metadata. */
+/** Removes the definitions nothing in the projected document names: those only a dropped `content` named. */
 const withReachableReferences = (document: Schema.Json): Schema.Json => {
   const projected = document as {
     readonly representation: Schema.Json
@@ -1526,10 +1559,12 @@ const withReachableReferences = (document: Schema.Json): Schema.Json => {
  * `effect`.
  *
  * The installed release encodes the representation; this writes back the six
- * check ids renamed after rc.115 and projects the 4.1 pattern/content metadata
- * to the recorded identity without changing runtime validation. From `effect@4.0.4` on `Schema.brand` is not
- * part of the AST, so version 2 omits it, and version 1 restores it from the
- * schema value, where the brand still lives.
+ * check ids renamed after rc.115 and projects the 4.1 pattern metadata to the
+ * recorded identity without changing runtime validation. From `effect@4.0.4`
+ * on `Schema.brand` is not part of the AST, so versions 3 and 2 omit it, and
+ * version 1 restores it from the schema value, where the brand still lives.
+ * Version 3 keeps what a JSON string decodes to; versions 2 and 1 print its
+ * media type alone, as rc.115 did.
  *
  * Throws what rc.115 threw for a schema with no representation, such as one
  * whose check carries no `representation` annotation.
@@ -1543,6 +1578,9 @@ export const representationIdentity = (
 ): Schema.Json => {
   const document = SchemaRepresentation.toRepresentation(schema.ast)
   return withReachableReferences(
-    withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document))
+    withRc115CheckIds(
+      SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document),
+      version === 3 ? "schema" : "mediaType"
+    )
   )
 }

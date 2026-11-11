@@ -159,3 +159,21 @@ it("retains filter source and captured check values in aggregate schema identiti
   expect(await key(recordedPlanDrafts(build(false, 1)))).not.toBe(await key(recordedPlanDrafts(build(true, 1))))
   expect(await key(recordedPlanDrafts(build(false, 1)))).not.toBe(await key(recordedPlanDrafts(build(false, 2))))
 })
+
+it("refuses to resume a catch whose filter now accepts another kind of error", async () => {
+  // `Schema.Null` and `Schema.Void` print one JSON Schema and hold no function,
+  // but the first recovers a null failure and the second recovers every one.
+  const build = <A>(error: Schema.Schema<A>) =>
+    Graph.build(
+      Flow.make("filter-kind", {
+        payload: {},
+        success: Schema.Number,
+        body: () => Node.succeed(1).pipe(Node.catch({ error, onFailure: () => Node.succeed(0) }))
+      }),
+      {}
+    )
+  expect(await key(recordedPlanDrafts(build(Schema.Null)))).toBe(await key(recordedPlanDrafts(build(Schema.Null))))
+  expect(await key(recordedPlanDrafts(build(Schema.Null)))).not.toBe(await key(recordedPlanDrafts(build(Schema.Void))))
+  expect(await key(recordedPlanDrafts(build(Schema.Null))))
+    .not.toBe(await key(recordedPlanDrafts(build(Schema.Undefined))))
+})

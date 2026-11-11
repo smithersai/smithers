@@ -14,6 +14,7 @@ import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }
+import materialEncoding4 from "./fixtures/cell-call-material-key-encoding-4.json" with { type: "json" }
 import materialModelErrorCause from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
 import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
 import material112 from "./fixtures/cell-call-material-v1.json" with { type: "json" }
@@ -110,10 +111,20 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
   expect(`key1_${createHash("sha256").update(modelErrorCause).digest("hex")}`).toBe(V1.modelErrorCauseKey)
   expect(V1.modelErrorCauseKey).not.toBe(V1.reportedCostKey)
   // Key encoding 3 names itself in the same material.
-  const current = V1.canonical(materialEncoding3)
-  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.keyEncoding3Key)
+  const encoding3 = V1.canonical(materialEncoding3)
+  expect(`key1_${createHash("sha256").update(encoding3).digest("hex")}`).toBe(V1.keyEncoding3Key)
+  // Key encoding 4 does too, and is what a new record is written under.
+  const current = V1.canonical(materialEncoding4)
+  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.keyEncoding4Key)
   expect(material).not.toContain(modelErrorCause)
+  expect(material).not.toContain(encoding3)
   expect(material).toContain(current)
+  expect(observed.value).toBe(V1.keyEncoding4Key)
+})
+
+it("derives the encoding-3 key under key encoding 3, so a recorded call is found again", async () => {
+  const { material, observed } = await observe(3)
+  expect(material).toContain(V1.canonical(materialEncoding3))
   expect(observed.value).toBe(V1.keyEncoding3Key)
 })
 

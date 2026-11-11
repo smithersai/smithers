@@ -343,6 +343,7 @@ describe("Node", () => {
       value: { _tag: "PlannedReference", node: ast.subject, path: [] }
     })
     expect(ast.filter).toBeUndefined()
+    expect("filterRepresentation" in ast).toBe(false)
     expect(Node.catchFilter(ast)).toBeUndefined()
     expect(Node.catchFilter(Node.succeed(1).ast)).toBeUndefined()
     // Each catch mints its own token, so a nested arm cannot rebind an outer
@@ -365,6 +366,62 @@ describe("Node", () => {
     expect(Node.catchFilter(ast)).toBe(error)
   })
 
+  it("tells apart catch filters whose JSON Schemas are one document", () => {
+    const caught = <A>(error: Schema.Schema<A>) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    const groups = [
+      // `Null` accepts null, `Undefined` accepts undefined, and `Void` accepts every error.
+      [caught(Schema.Null), caught(Schema.Undefined), caught(Schema.Void)],
+      [caught(Schema.Literal(1n)), caught(Schema.Literal("1"))],
+      [caught(Schema.Struct({ cause: Schema.Null })), caught(Schema.Struct({ cause: Schema.Undefined }))]
+    ]
+    for (const asts of groups) {
+      // The premise: neither the JSON Schema nor the function walk separates them.
+      expect(new Set(asts.map((ast) => JSON.stringify(ast.filter))).size).toBe(1)
+      expect(new Set(asts.map((ast) => ast.filterIdentity?.digest)).size).toBe(1)
+      expect(new Set(asts.map((ast) => JSON.stringify(ast.filterRepresentation))).size).toBe(asts.length)
+      for (const ast of asts) expect(internal.isNodeAst(ast)).toBe(true)
+    }
+    expect(caught(Schema.Null).filterRepresentation).toEqual({
+      side: "type",
+      identity: { representation: { _tag: "Null", checks: [] }, references: {} }
+    })
+  })
+
+  it("records the decoded side of a catch filter, the side a catch matches on", () => {
+    const caught = <A>(error: Schema.Schema<A>) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    // The check sits behind a codec: the JSON Schema describes the encoded string and says nothing about it.
+    const above = (minimum: number) => Schema.NumberFromString.check(Schema.isGreaterThan(minimum))
+    expect(Schema.is(above(5))(6)).toBe(true)
+    expect(Schema.is(above(7))(6)).toBe(false)
+    expect(JSON.stringify(caught(above(5)).filter)).toBe(JSON.stringify(caught(above(7)).filter))
+    expect(caught(above(5)).filterRepresentation).not.toEqual(caught(above(7)).filterRepresentation)
+    expect(caught(above(5)).filterRepresentation).toEqual({
+      side: "type",
+      identity: Node.representationIdentity(Schema.toType(above(5)), 3)
+    })
+  })
+
+  it("records the encoded side of a catch filter whose decoded side effect cannot represent", () => {
+    const caught = <A>(error: Schema.Schema<A>) =>
+      tagged(Node.catch(Node.succeed(1), { error, onFailure: () => Node.succeed(0) }).ast, "Catch")
+    class NullCause extends Schema.TaggedError<NullCause>()("Refused", { cause: Schema.Null }) {}
+    class UndefinedCause extends Schema.TaggedError<UndefinedCause>()("Refused", { cause: Schema.Undefined }) {}
+    // The decoded side of a class is a declaration with no representation.
+    expect(() => Node.representationIdentity(Schema.toType(NullCause))).toThrow()
+    expect(caught(NullCause).filterRepresentation)
+      .toEqual({ side: "encoded", identity: Node.representationIdentity(NullCause, 3) })
+    expect(caught(NullCause).filterRepresentation).not.toEqual(caught(UndefinedCause).filterRepresentation)
+    // The identity is version 3's: it states what a JSON string in a field decodes to, which version 2 leaves out.
+    class Parsed extends Schema.TaggedError<Parsed>()("Parsed", {
+      row: Schema.fromJsonString(Schema.Struct({ a: Schema.Int }))
+    }) {}
+    expect(caught(Parsed).filterRepresentation)
+      .toEqual({ side: "encoded", identity: Node.representationIdentity(Parsed, 3) })
+    expect(Node.representationIdentity(Parsed, 3)).not.toEqual(Node.representationIdentity(Parsed, 2))
+  })
+
   it("keeps schema function captures and never invokes accessor metadata", () => {
     let reads = 0
     const metadata: Record<string, unknown> = { nullable: null }
@@ -383,6 +440,12 @@ describe("Node", () => {
     expect(reads).toBe(0)
     expect(ast.filterIdentity?.algorithm).toBe("sha256-source-ephemeral/v4")
     expect(ast.filterIdentity?.resumeDigest).toMatch(/^[0-9a-f]{64}$/)
+    // effect cannot represent a check with no `representation` annotation on
+    // either side, so this filter keeps the identity of its functions and
+    // records nothing more.
+    expect(() => Node.representationIdentity(error)).toThrow()
+    expect(() => Node.representationIdentity(Schema.toType(error))).toThrow()
+    expect("filterRepresentation" in ast).toBe(false)
     expect(internal.isNodeAst(ast)).toBe(true)
     expect(internal.isNodeAst({ ...ast, filterIdentity: { _tag: "FunctionIdentity" } })).toBe(false)
 

@@ -1114,6 +1114,38 @@ describe("Graph.build into a plan", () => {
       expect(a.nodes.map((node) => node.key)).not.toEqual(b.nodes.map((node) => node.key))
     }))
 
+  it.effect("keys a catch by the kind of error its filter accepts, which its JSON schema does not state", () =>
+    Effect.gen(function*() {
+      const make = <A>(error: Schema.Schema<A>) =>
+        Node.catch(Node.succeed("protected"), { error, onFailure: () => Node.succeed("recovered") })
+      const body = (node: Node.Any) =>
+        Graph.nodes(Graph.build(node)).find((candidate) => candidate.kind === "Catch")!.draft.material.body
+      // `Schema.Null` recovers a null failure and `Schema.Void` recovers every failure.
+      const none = make(Schema.Null)
+      const every = make(Schema.Void)
+      expect(Schema.is(Schema.Null)("boom")).toBe(false)
+      expect(Schema.is(Schema.Void)("boom")).toBe(true)
+      expect(Node.schemaIdentity(Schema.Null, { onExcessProperty: "error" }))
+        .toEqual(Node.schemaIdentity(Schema.Void, { onExcessProperty: "error" }))
+      const a = yield* compile("catch-kind", "catch", Graph.build(none))
+      const b = yield* compile("catch-kind", "catch", Graph.build(every))
+      expect(a.digest).not.toBe(b.digest)
+      expect(a.nodes.map((node) => node.key)).not.toEqual(b.nodes.map((node) => node.key))
+      expect(body(none)).toMatchObject({
+        filterRepresentation: {
+          side: "type",
+          identity: { representation: { _tag: "Null", checks: [] }, references: {} }
+        }
+      })
+      // A catch with no filter, and one whose filter effect cannot represent,
+      // hash the fields they hashed before, so their recorded keys still match.
+      const unfiltered = Node.catch(Node.succeed("protected"), { onFailure: () => Node.succeed("recovered") })
+      const opaque = make(Schema.String.check(Schema.makeFilter((value) => value === "a")))
+      for (const node of [unfiltered, opaque]) {
+        expect(Object.keys(body(node) as object)).toEqual(["_tag", "filter", "filterIdentity"])
+      }
+    }))
+
   it.effect("includes captured nested filter behavior in stable catch identities", () =>
     Effect.gen(function*() {
       const make = (accepted: string) =>

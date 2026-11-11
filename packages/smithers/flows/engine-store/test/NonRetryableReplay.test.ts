@@ -98,7 +98,7 @@ const environment = { layers: [], capabilities: {} } satisfies Action.CacheEnvir
 // written under the current key encoding, which names itself (`keyEncoding`).
 const actionKey = (name: string, idempotencyKey: string) =>
   key({
-    keyEncoding: 3,
+    keyEncoding: 4,
     kind: "cache",
     form: "declared",
     input: { action: name, idempotencyKey, declaration: key(declaration) },
