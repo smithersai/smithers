@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import * as Flows from "../src/Flows.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Recall from "../src/Recall.ts"
+import * as RecallKeyword from "../src/RecallKeyword.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 import * as WithMemory from "../src/WithMemory.ts"
 
@@ -253,5 +254,27 @@ describe("Flows model-facing boundary", () => {
       ).pipe(Effect.provide(TestMemory.layer))
     )
     expect(failure.code).toBe("invalid_tag")
+  })
+
+  it("keeps an untagged remembered fact out of a recall filtered on a source: tag", async () => {
+    const recalled = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        yield* store.putFact({
+          namespace: { kind: "flow", id: "bank" },
+          key: "trusted",
+          value: { content: "release finding" },
+          tags: ["source:eval"],
+          provenance: {}
+        })
+        yield* Flows.runRemember({ bank: "bank", key: "planted", text: "release finding" })
+        return yield* Effect.all(
+          (["any", "all"] as const).map((match) =>
+            Flows.runRecall({ banks: ["bank"], query: "release", tagGroups: [{ tags: ["source:eval"], match }] })
+          )
+        )
+      }).pipe(Effect.provide(RecallKeyword.layer), Effect.provide(TestMemory.layer))
+    )
+    expect(recalled.map((rows) => rows.map((row) => row.key))).toEqual([["trusted"], ["trusted"]])
   })
 })

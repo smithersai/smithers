@@ -311,10 +311,16 @@ const TagGroupPreflight = Schema.declare<TagGroup>(isTagGroupShape, {
  */
 export const TagGroup = TagGroupPreflight.pipe(Schema.decodeTo(TagGroupSchema))
 
+// A `source:` tag claims where a record came from, so a record that claims no
+// source never satisfies a leaf naming one. The untagged wildcard would
+// otherwise let an untagged model-written fact pose as trusted-source memory.
+const wildcard = (leaf: Leaf, tags: ReadonlyArray<string>): boolean =>
+  tags.length === 0 && !leaf.tags.some((tag) => tag.startsWith("source:"))
+
 const matchesLeaf = (leaf: Leaf, tags: ReadonlyArray<string>, actual: ReadonlySet<string>): boolean => {
   switch (leaf.match) {
     case "all":
-      return tags.length === 0 || leaf.tags.every((tag) => actual.has(tag))
+      return wildcard(leaf, tags) || leaf.tags.every((tag) => actual.has(tag))
     case "any_strict":
       return tags.length > 0 && leaf.tags.some((tag) => actual.has(tag))
     case "all_strict":
@@ -322,7 +328,7 @@ const matchesLeaf = (leaf: Leaf, tags: ReadonlyArray<string>, actual: ReadonlySe
     case "exact":
       return actual.size === new Set(leaf.tags).size && leaf.tags.every((tag) => actual.has(tag))
     case "any":
-      return tags.length === 0 || leaf.tags.some((tag) => actual.has(tag))
+      return wildcard(leaf, tags) || leaf.tags.some((tag) => actual.has(tag))
   }
 }
 
@@ -330,7 +336,9 @@ const matchesLeaf = (leaf: Leaf, tags: ReadonlyArray<string>, actual: ReadonlySe
  * Evaluates a tag-group against a record's tags.
  *
  * Non-strict `any` and `all` preserve Smithers' wildcard behavior for
- * untagged records. Strict modes require the record to carry at least one tag.
+ * untagged records, except for a leaf naming a `source:` tag: an untagged
+ * record claims no source, so it never passes a trusted-source filter. Strict
+ * modes require the record to carry at least one tag.
  * Evaluation rides {@link walkTagGroup}, so it shares one budget rule with the
  * schema and returns `false` for an undecoded expression that is malformed or
  * exceeds {@link MAX_TAG_GROUP_DEPTH} or {@link MAX_TAG_GROUP_NODES}, keeping

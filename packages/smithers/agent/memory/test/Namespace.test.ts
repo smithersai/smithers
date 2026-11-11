@@ -50,6 +50,11 @@ describe("Namespace", () => {
     expect(Namespace.matches({ tags: ["branch:other"] }, [])).toBe(true)
     expect(Namespace.matches({ tags: ["branch:main", "scope:other"], match: "all" }, tags)).toBe(false)
     expect(Namespace.matches({ tags: ["branch:main"], match: "all" }, [])).toBe(true)
+    // An untagged record claims no source, so a source filter never wildcards it.
+    expect(Namespace.matches({ tags: ["source:eval"] }, [])).toBe(false)
+    expect(Namespace.matches({ tags: ["source:eval", "scope:project"], match: "any" }, [])).toBe(false)
+    expect(Namespace.matches({ tags: ["source:eval"], match: "all" }, [])).toBe(false)
+    expect(Namespace.matches({ tags: ["source:eval"] }, ["source:eval"])).toBe(true)
     expect(Namespace.matches({ tags: ["branch:main"], match: "any_strict" }, [])).toBe(false)
     expect(Namespace.matches({ tags: ["branch:main", "scope:project"], match: "all_strict" }, tags)).toBe(true)
     expect(Namespace.matches({ tags: ["branch:main"], match: "exact" }, tags)).toBe(false)

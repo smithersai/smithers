@@ -57,7 +57,7 @@ const read = Effect.gen(function*() {
 
 ## Write through the remember flow
 
-When the writer is a model, use the `remember` flow's runtime handler instead of calling `putFact` yourself. It stores `{ content: text }` as the fact value, which is the shape recall renders best. It refuses a `source:` tag with `invalid_tag`, so a model-written fact cannot claim a trusted source:
+When the writer is a model, use the `remember` flow's runtime handler instead of calling `putFact` yourself. It stores `{ content: text }` as the fact value, which is the shape recall renders best. It refuses a `source:` tag with `invalid_tag`, so a model-written fact cannot claim a trusted source. An untagged record never matches a tag group leaf that names a `source:` tag, in any match mode, so a filter on `source:eval` excludes every fact written through `remember`:
 
 ```ts
 import * as Flows from "@smthrs/memory/Flows"
