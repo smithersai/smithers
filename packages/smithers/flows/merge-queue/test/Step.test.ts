@@ -11,8 +11,12 @@ import {
   inOrder,
   isTerminal,
   land,
+  landNow,
   live,
   part,
+  push,
+  pushingPart,
+  pushingRun,
   ready,
   record,
   run,
@@ -62,6 +66,7 @@ describe("withdraw", () => {
       "start 1",
       "result 0 1 pass 5",
       "result 0 2 pass 5",
+      "push 0",
       "land 0",
       "withdraw 1"
     )
@@ -80,7 +85,7 @@ describe("withdraw", () => {
       "withdraw 2"
     )
     expect(live(state, state.runs[0]!)).toBeUndefined()
-    expect(land(config, state, 0)).toBe(state)
+    expect(push(config, state, 0)).toBe(state)
   })
 })
 
@@ -166,7 +171,7 @@ describe("land", () => {
   const greenRun = [standard, "enqueue 1 0", "enqueue 2 0", "start 2", "result 0 1 pass 10", "result 0 2 pass 20"]
 
   it("moves the target onto exactly the tested tree and records the landing", () => {
-    const { state } = play(...greenRun, "land 0")
+    const { state } = play(...greenRun, "push 0", "land 0")
     expect(state.main).toEqual([{ id: 1, rev: 0 }, { id: 2, rev: 0 }])
     expect(statuses(state)).toEqual({ 1: "merged", 2: "merged" })
     expect(state.runs).toEqual([])
@@ -174,31 +179,33 @@ describe("land", () => {
       run: 0,
       base: [],
       batch: [{ id: 1, rev: 0 }, { id: 2, rev: 0 }],
-      results: [{ check: 1, verdict: "pass" }, { check: 2, verdict: "pass" }]
+      results: [{ check: 1, verdict: "pass" }, { check: 2, verdict: "pass" }],
+      foreign: false
     }])
+    expect(state.pushing).toBeNull()
   })
 
   it("refuses a partial result, however much has passed", () => {
     const { config, state } = play(...greenRun.slice(0, 5))
     expect(complete(config, state.runs[0]!.results)).toBe(false)
-    expect(land(config, state, 0)).toBe(state)
+    expect(push(config, state, 0)).toBe(state)
   })
 
   it("refuses a complete result with a failure", () => {
     const { config, state } = play(...greenRun.slice(0, 5), "result 0 2 fail 20")
     expect(complete(config, state.runs[0]!.results)).toBe(true)
-    expect(land(config, state, 0)).toBe(state)
+    expect(push(config, state, 0)).toBe(state)
   })
 
   it("refuses a run the queue does not hold", () => {
     const { config, state } = play(...greenRun)
-    expect(land(config, state, 4)).toBe(state)
+    expect(push(config, state, 4)).toBe(state)
   })
 
   it("never treats an empty set of required checks as green", () => {
     const { config, state } = play("config required= maxAttempts=1 maxBatch=1 maxRuns=1", "enqueue 1 0", "start 1")
     expect(green(config, [])).toBe(false)
-    expect(land(config, state, 0)).toBe(state)
+    expect(push(config, state, 0)).toBe(state)
   })
 
   it("lands a longer run after a shorter one: the trees are the same", () => {
@@ -212,7 +219,9 @@ describe("land", () => {
       "result 0 2 pass 1",
       "result 1 1 pass 1",
       "result 1 2 pass 1",
+      "push 0",
       "land 0",
+      "push 1",
       "land 1"
     )
     expect(mainIds(state)).toEqual([1, 2])
@@ -230,10 +239,94 @@ describe("land", () => {
       "result 0 2 pass 1",
       "result 1 1 pass 1",
       "result 1 2 pass 1",
+      "push 1",
       "land 1"
     )
     expect(mainIds(state)).toEqual([1, 2])
+    expect(push(config, state, 0)).toBe(state)
+  })
+})
+
+describe("push, then land", () => {
+  const greenRun = [standard, "enqueue 1 0", "enqueue 2 0", "start 2", "result 0 1 pass 10", "result 0 2 pass 20"]
+
+  it("a push lands nothing: the landing is recorded when the target is seen on the tree", () => {
+    const { state } = play(...greenRun, "push 0")
+    expect(state.pushing).toBe(0)
+    expect(pushingRun(state)?.id).toBe(0)
+    expect(pushingPart(state, { id: 1, rev: 0 })).toBe(true)
+    expect(pushingPart(state, { id: 9, rev: 0 })).toBe(false)
+    expect(state.main).toEqual([])
+    expect(statuses(state)).toEqual({ 1: "queued", 2: "queued" })
+  })
+
+  it("refuses a landing for a run that is not being pushed", () => {
+    const { config, state } = play(...greenRun)
     expect(land(config, state, 0)).toBe(state)
+    expect(landNow(config, state, 0).main).toHaveLength(2)
+    const other = play(...greenRun, "push 0")
+    expect(land(other.config, other.state, 1)).toBe(other.state)
+  })
+
+  it("refuses a second push while one is under way", () => {
+    const { config, state } = play(
+      standard,
+      "enqueue 1 0",
+      "enqueue 2 0",
+      "start 1",
+      "start 2",
+      "result 0 1 pass 1",
+      "result 0 2 pass 1",
+      "result 1 1 pass 1",
+      "result 1 2 pass 1",
+      "push 0"
+    )
+    expect(push(config, state, 1)).toBe(state)
+  })
+
+  it("does not withdraw a change that is on its way onto the target: it lands", () => {
+    const { state } = play(...greenRun, "push 0", "withdraw 1", "land 0")
+    expect(statuses(state)).toEqual({ 1: "merged", 2: "merged" })
+  })
+})
+
+describe("foreign: someone else moved the target", () => {
+  const pushing = [standard, "enqueue 1 0", "start 1", "result 0 1 pass 10", "result 0 2 pass 20", "push 0"]
+
+  it("adopts the commit as a merged change the queue did not test, and records it as foreign", () => {
+    const { state } = play(standard, "foreign 50")
+    expect(state.main).toEqual([{ id: 50, rev: 0 }])
+    expect(state.changes).toEqual([{ id: 50, priority: 0, seq: 0, rev: 0, attempts: 0, status: { _tag: "merged" } }])
+    expect(state.landed).toEqual([{ run: 0, base: [], batch: [{ id: 50, rev: 0 }], results: [], foreign: true }])
+  })
+
+  it("refuses an id the queue has seen", () => {
+    const before = play(standard, "enqueue 1 0").state
+    expect(play(standard, "enqueue 1 0", "foreign 1").state).toEqual(before)
+  })
+
+  it("kills every run on the old tip: a push that was under way cannot land", () => {
+    const { config, state } = play(...pushing, "foreign 50")
+    expect(live(state, state.runs[0]!)).toBeUndefined()
+    expect(pushingRun(state)).toBeUndefined()
+    expect(land(config, state, 0)).toBe(state)
+    expect(statuses(state)).toEqual({ 1: "queued", 50: "merged" })
+  })
+
+  it("the queue rebuilds on the new tip, retests and lands", () => {
+    const { state } = play(
+      ...pushing,
+      "foreign 50",
+      "plan",
+      "plan",
+      "result 1 1 pass 10",
+      "result 1 2 pass 20",
+      "plan",
+      "land 1"
+    )
+    expect(state.runs).toEqual([])
+    expect(state.main).toEqual([{ id: 50, rev: 0 }, { id: 1, rev: 0 }])
+    expect(state.landed.at(-1)).toMatchObject({ run: 1, base: [{ id: 50, rev: 0 }], foreign: false })
   })
 })
 
@@ -290,6 +383,7 @@ describe("blame", () => {
       "blame 1",
       "result 0 1 pass 1",
       "result 0 2 pass 1",
+      "push 0",
       "land 0",
       "blame 1"
     )
@@ -412,6 +506,7 @@ describe("helpers", () => {
       { _tag: "start", count: 1 },
       { _tag: "result", run: 0, check: 1, verdict: "pass", duration: 1 },
       { _tag: "result", run: 0, check: 2, verdict: "pass", duration: 1 },
+      { _tag: "push", run: 0 },
       { _tag: "land", run: 0 },
       { _tag: "enqueue", id: 2, priority: 0 },
       { _tag: "start", count: 1 },

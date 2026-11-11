@@ -4925,6 +4925,9 @@ importers:
       dprint:
         specifier: 0.57.1
         version: 0.57.1
+      effect:
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2

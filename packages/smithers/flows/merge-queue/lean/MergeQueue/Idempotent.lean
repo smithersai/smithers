@@ -18,8 +18,8 @@ theorem State.enqueue_twice (s : State) (id : ChangeId) (priority : Nat) :
     unfold State.enqueue
     simp
 
-theorem State.withdraw_twice (s : State) (id : ChangeId) : (s.withdraw id).withdraw id = s.withdraw id := by
-  unfold State.withdraw
+theorem State.withdrawNow_twice (s : State) (id : ChangeId) : (s.withdrawNow id).withdrawNow id = s.withdrawNow id := by
+  unfold State.withdrawNow
   simp only [List.map_map, State.mk.injEq, and_true, true_and]
   apply List.map_congr_left
   intro c _
@@ -78,12 +78,12 @@ theorem State.start_twice (cfg : Config) (s : State) (count : Nat) :
     right; right; right
     simp [State.ready, Run.tree]
 
-theorem State.land_twice (cfg : Config) (s : State) (run : RunId) :
-    (s.land cfg run).land cfg run = s.land cfg run := by
-  rcases s.land_cases cfg run with refused | ⟨r, batch, _, _, _, took⟩
+theorem State.landNow_twice (cfg : Config) (s : State) (run : RunId) :
+    (s.landNow cfg run).landNow cfg run = s.landNow cfg run := by
+  rcases s.landNow_cases cfg run with refused | ⟨r, batch, _, _, _, took⟩
   · rw [refused, refused]
   · rw [took]
-    exact State.land_of_absent (State.findRun_none_of_filter (s := s) rfl)
+    exact State.landNow_of_absent (State.findRun_none_of_filter (s := s) rfl)
 
 theorem State.blame_twice (cfg : Config) (s : State) (run : RunId) :
     (s.blame cfg run).blame cfg run = s.blame cfg run := by
@@ -97,6 +97,70 @@ theorem State.blame_twice (cfg : Config) (s : State) (run : RunId) :
     simp only [(State.live_some live).1, strip_append]
     simp [notReady]
 
+theorem State.withdraw_twice (s : State) (id : ChangeId) : (s.withdraw id).withdraw id = s.withdraw id := by
+  have cases : s.withdraw id = s ∨ s.withdraw id = s.withdrawNow id := by
+    unfold State.withdraw
+    split
+    · exact Or.inl rfl
+    · exact Or.inr rfl
+  rcases cases with refused | took
+  · rw [refused, refused]
+  · rw [took]
+    unfold State.withdraw
+    split
+    · rfl
+    · exact s.withdrawNow_twice id
+
+theorem State.foreign_twice (s : State) (id : ChangeId) : (s.foreign id).foreign id = s.foreign id := by
+  have cases : s.foreign id = s ∨ ∃ c ∈ (s.foreign id).changes, c.id = id := by
+    unfold State.foreign
+    split
+    · exact Or.inl rfl
+    · exact Or.inr ⟨_, List.mem_append_right _ (List.mem_singleton.mpr rfl), rfl⟩
+  rcases cases with refused | ⟨c, member, same⟩
+  · rw [refused, refused]
+  · generalize s.foreign id = t at member ⊢
+    unfold State.foreign
+    have present : t.changes.any (fun c => c.id == id) = true :=
+      List.any_eq_true.mpr ⟨c, member, by simp [same]⟩
+    simp [present]
+
+theorem State.land_twice (cfg : Config) (s : State) (run : RunId) :
+    (s.land cfg run).land cfg run = s.land cfg run := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · rw [refused, refused]
+  · rcases s.landNow_cases cfg run with same | ⟨r, batch, _, _, _, took⟩
+    · rw [eq, same, eq, same]
+    · rw [eq, took]
+      unfold State.land
+      simp
+
+theorem State.push_twice (cfg : Config) (s : State) (run : RunId) :
+    (s.push cfg run).push cfg run = s.push cfg run := by
+  have cases : s.push cfg run = s
+      ∨ ∃ r, s.findRun run = some r ∧ (s.live r).isSome = true ∧ s.push cfg run = { s with pushing := some run } := by
+    unfold State.push
+    split
+    · exact Or.inl rfl
+    · split
+      · exact Or.inl rfl
+      · rename_i r found
+        split
+        · rename_i can
+          simp only [Bool.and_eq_true] at can
+          exact Or.inr ⟨r, found, can.1, rfl⟩
+        · exact Or.inl rfl
+  rcases cases with refused | ⟨r, found, live, took⟩
+  · rw [refused, refused]
+  · rw [took]
+    have busy : State.pushingRun { s with pushing := some run } = some r := by
+      unfold State.pushingRun
+      have found' : State.findRun { s with pushing := some run } run = some r := found
+      have live' : (State.live { s with pushing := some run } r).isSome = true := live
+      simp only [found', live', if_true]
+    unfold State.push
+    simp only [busy]
+
 /-- **Delivering any event twice is the same as delivering it once.** -/
 theorem step_idempotent (cfg : Config) (s : State) (e : Event) : step cfg (step cfg s e) e = step cfg s e := by
   cases e with
@@ -105,6 +169,8 @@ theorem step_idempotent (cfg : Config) (s : State) (e : Event) : step cfg (step 
   | result run check verdict duration => exact s.result_twice cfg run check verdict duration
   | fixed id attempt => exact s.fixed_twice id attempt
   | gaveUp id attempt detail => exact s.gaveUp_twice id attempt detail
+  | foreign id => exact s.foreign_twice id
+  | push run => exact s.push_twice cfg run
   | start count => exact s.start_twice cfg count
   | land run => exact s.land_twice cfg run
   | blame run => exact s.blame_twice cfg run

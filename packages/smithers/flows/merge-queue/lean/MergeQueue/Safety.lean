@@ -36,10 +36,11 @@ theorem green_checked {cfg : Config} {results : List (CheckId × Verdict)} (h : 
   simpa [passed] using h.1.2 c hc
 
 /-- **Main is always green.** In every reachable state the target's tree is
-the empty tree it started from, or the exact tree of a recorded landing whose
-result was complete and green. -/
+the empty tree it started from, or the exact tree of a recorded landing. Every
+landing the queue made was on a complete green result; the only other landings
+are commits someone else put on the target, which the record marks. -/
 theorem main_always_green {cfg : Config} {s : State} (reachable : Reachable cfg s) :
-    s.main = [] ∨ ∃ l ∈ s.landed, l.tree = s.main ∧ l.batch ≠ [] ∧ green cfg l.results = true := by
+    s.main = [] ∨ ∃ l ∈ s.landed, l.tree = s.main ∧ l.batch ≠ [] ∧ (l.foreign = true ∨ green cfg l.results = true) := by
   have inv := reachable.inv
   rcases inv.chain.last_landed with same | ⟨l, member, tree⟩
   · exact Or.inl same
@@ -53,17 +54,20 @@ theorem landings_form_one_chain {cfg : Config} {s : State} (reachable : Reachabl
 
 /-! ## The tested tree is the merged tree -/
 
-/-- **Only a landing moves the target.** -/
+/-- **Only a landing moves the target**: one the queue made, or a commit
+someone else put there. -/
 theorem main_moves_only_by_land {cfg : Config} {s : State} {e : Event} (moved : (step cfg s e).main ≠ s.main) :
-    ∃ run, e = .land run := by
+    (∃ run, e = .land run) ∨ (∃ id, e = .foreign id) := by
   cases e with
-  | land run => exact ⟨run, rfl⟩
+  | land run => exact Or.inl ⟨run, rfl⟩
+  | foreign id => exact Or.inr ⟨id, rfl⟩
   | enqueue id priority => exact absurd (by simp only [step, State.enqueue]; split <;> rfl) moved
-  | withdraw id => exact absurd rfl moved
+  | withdraw id => exact absurd (by simp only [step, State.withdraw]; split <;> rfl) moved
   | result run check verdict duration =>
     exact absurd (by simp only [step, State.result]; split <;> rfl) moved
   | fixed id attempt => exact absurd rfl moved
   | gaveUp id attempt detail => exact absurd rfl moved
+  | push run => exact absurd (by simp only [step, State.push]; (repeat' split) <;> rfl) moved
   | start count => exact absurd (by simp only [step, State.start]; split <;> rfl) moved
   | blame run => exact absurd (by simp only [step, State.blame]; (repeat' split) <;> rfl) moved
   | cancel run => exact absurd rfl moved
@@ -71,10 +75,10 @@ theorem main_moves_only_by_land {cfg : Config} {s : State} {e : Event} (moved : 
 /-- **The tested tree is the merged tree.** When a landing moves the target,
 the new target is exactly the tree of a run the queue holds, that run's result
 is complete and green, and the run tested that tree and no other. -/
-theorem land_tree_was_tested {cfg : Config} {s : State} {run : RunId} (moved : (s.land cfg run).main ≠ s.main) :
-    ∃ r ∈ s.runs, r.id = run ∧ (s.land cfg run).main = r.tree ∧ green cfg r.results = true
+theorem landNow_tree_was_tested {cfg : Config} {s : State} {run : RunId} (moved : (s.landNow cfg run).main ≠ s.main) :
+    ∃ r ∈ s.runs, r.id = run ∧ (s.landNow cfg run).main = r.tree ∧ green cfg r.results = true
       ∧ complete cfg r.results = true ∧ failed r.results = false := by
-  unfold State.land at moved ⊢
+  unfold State.landNow at moved ⊢
   split at moved
   · exact absurd rfl moved
   · rename_i r found
@@ -89,9 +93,9 @@ theorem land_tree_was_tested {cfg : Config} {s : State} {run : RunId} (moved : (
 
 /-- **Streaming never lets a partial result merge.** A run that still misses a
 required check cannot land, whatever has passed so far. -/
-theorem partial_result_never_lands {cfg : Config} {s : State} {run : RunId} {r : Run}
-    (found : s.findRun run = some r) (unfinished : complete cfg r.results = false) : s.land cfg run = s := by
-  unfold State.land
+theorem landNow_refuses_partial {cfg : Config} {s : State} {run : RunId} {r : Run}
+    (found : s.findRun run = some r) (unfinished : complete cfg r.results = false) : s.landNow cfg run = s := by
+  unfold State.landNow
   simp only [found]
   split
   · rfl
@@ -102,9 +106,9 @@ theorem partial_result_never_lands {cfg : Config} {s : State} {run : RunId} {r :
     · rfl
 
 /-- A run with a failed check cannot land. -/
-theorem failed_result_never_lands {cfg : Config} {s : State} {run : RunId} {r : Run}
-    (found : s.findRun run = some r) (hasFailed : failed r.results = true) : s.land cfg run = s := by
-  unfold State.land
+theorem landNow_refuses_failed {cfg : Config} {s : State} {run : RunId} {r : Run}
+    (found : s.findRun run = some r) (hasFailed : failed r.results = true) : s.landNow cfg run = s := by
+  unfold State.landNow
   simp only [found]
   split
   · rfl
@@ -116,30 +120,71 @@ theorem failed_result_never_lands {cfg : Config} {s : State} {run : RunId} {r : 
 
 /-- A run the queue does not hold cannot land: a stale or invented run id is
 refused. -/
-theorem unknown_run_never_lands {cfg : Config} {s : State} {run : RunId} (absent : s.findRun run = none) :
-    s.land cfg run = s := by
-  unfold State.land
+theorem landNow_refuses_unknown {cfg : Config} {s : State} {run : RunId} (absent : s.findRun run = none) :
+    s.landNow cfg run = s := by
+  unfold State.landNow
   simp [absent]
 
-/-- **The target only grows.** Every event leaves the target's tree as it was
-or appends to it; nothing already landed is reordered or removed. -/
+/-- **A landing needs a push.** The queue records a landing only for the run
+it decided to push. -/
+theorem land_needs_a_push {cfg : Config} {s : State} {run : RunId} (other : s.pushing ≠ some run) :
+    s.land cfg run = s := by
+  unfold State.land
+  simp [other]
+
+/-- **The tested tree is the merged tree.** When the queue's landing moves the
+target, that run was the one being pushed, the new target is exactly the tree
+of that run, the run's result is complete and green, and it tested that tree
+and no other. -/
+theorem land_tree_was_tested {cfg : Config} {s : State} {run : RunId} (moved : (s.land cfg run).main ≠ s.main) :
+    s.pushing = some run ∧ ∃ r ∈ s.runs, r.id = run ∧ (s.land cfg run).main = r.tree
+      ∧ green cfg r.results = true ∧ complete cfg r.results = true ∧ failed r.results = false := by
+  rcases s.land_cases cfg run with refused | ⟨pushed, eq⟩
+  · rw [refused] at moved; exact absurd rfl moved
+  · rw [eq] at moved ⊢
+    exact ⟨pushed, landNow_tree_was_tested moved⟩
+
+/-- **Streaming never lets a partial result merge.** A run that still misses a
+required check cannot land, whatever has passed so far. -/
+theorem partial_result_never_lands {cfg : Config} {s : State} {run : RunId} {r : Run}
+    (found : s.findRun run = some r) (unfinished : complete cfg r.results = false) : s.land cfg run = s := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · exact refused
+  · rw [eq]; exact landNow_refuses_partial found unfinished
+
+/-- A run with a failed check cannot land. -/
+theorem failed_result_never_lands {cfg : Config} {s : State} {run : RunId} {r : Run}
+    (found : s.findRun run = some r) (hasFailed : failed r.results = true) : s.land cfg run = s := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · exact refused
+  · rw [eq]; exact landNow_refuses_failed found hasFailed
+
+/-- A run the queue does not hold cannot land: a stale or invented run id is
+refused. -/
+theorem unknown_run_never_lands {cfg : Config} {s : State} {run : RunId} (absent : s.findRun run = none) :
+    s.land cfg run = s := by
+  rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+  · exact refused
+  · rw [eq]; exact landNow_refuses_unknown absent
+
+/-- **The target only fast-forwards.** Every event leaves the target's tree as
+it was or appends to it; nothing already there is reordered or removed. -/
 theorem main_only_grows (cfg : Config) (s : State) (e : Event) :
     ∃ added, (step cfg s e).main = s.main ++ added := by
   by_cases same : (step cfg s e).main = s.main
   · exact ⟨[], by simp [same]⟩
-  · obtain ⟨run, rfl⟩ := main_moves_only_by_land same
-    obtain ⟨r, _, _, tree, _⟩ := land_tree_was_tested same
-    simp only [step] at same ⊢
-    unfold State.land at same tree ⊢
-    split at same
-    · exact absurd rfl same
-    · rename_i found _
-      split at same
-      · exact absurd rfl same
-      · rename_i batch live
-        split at same
-        · exact ⟨batch, by simp [*, (State.live_some live).1]⟩
-        · exact absurd rfl same
+  · rcases main_moves_only_by_land same with ⟨run, rfl⟩ | ⟨id, rfl⟩
+    · simp only [step] at same ⊢
+      rcases s.land_cases cfg run with refused | ⟨_, eq⟩
+      · rw [refused] at same; exact absurd rfl same
+      · rw [eq] at same ⊢
+        rcases s.landNow_cases cfg run with refused | ⟨r, batch, _, live, _, took⟩
+        · rw [refused] at same; exact absurd rfl same
+        · exact ⟨batch, by rw [took]; exact (State.live_some live).1⟩
+    · simp only [step, State.foreign] at same ⊢
+      split
+      · exact ⟨[], by simp⟩
+      · exact ⟨_, rfl⟩
 
 /-! ## No change is lost or merged twice -/
 
@@ -179,17 +224,29 @@ theorem ended_is_final (cfg : Config) {s : State} {c : Change} (member : c ∈ s
     split
     · exact member
     · exact List.mem_append_left _ member
-  | withdraw id => exact mem_map_of_fixed member (by simp [notQueued, notFixing])
+  | withdraw id =>
+    simp only [step, State.withdraw]
+    split
+    · exact member
+    · exact mem_map_of_fixed member (by simp [notQueued, notFixing])
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> exact member
   | fixed id attempt => exact mem_map_of_fixed member (by simp [notFixing])
   | gaveUp id attempt detail => exact mem_map_of_fixed member (by simp [notFixing])
+  | foreign id =>
+    simp only [step, State.foreign]
+    split
+    · exact member
+    · exact List.mem_append_left _ member
+  | push run =>
+    simp only [step, State.push]
+    (repeat' split) <;> exact member
   | start count =>
     simp only [step, State.start]
     split <;> exact member
   | land run =>
-    simp only [step, State.land]
+    simp only [step, State.land, State.landNow]
     (repeat' split) <;> first | exact member | exact mem_map_of_fixed member (by simp [notQueued])
   | blame run =>
     simp only [step, State.blame]
@@ -210,17 +267,29 @@ theorem never_lost (cfg : Config) {s : State} {c : Change} (member : c ∈ s.cha
     split
     · exact same
     · exact ⟨c, List.mem_append_left _ member, rfl, rfl, rfl⟩
-  | withdraw id => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
+  | withdraw id =>
+    simp only [step, State.withdraw]
+    split
+    · exact same
+    · exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> exact same
   | fixed id attempt => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
   | gaveUp id attempt detail => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
+  | foreign id =>
+    simp only [step, State.foreign]
+    split
+    · exact same
+    · exact ⟨c, List.mem_append_left _ member, rfl, rfl, rfl⟩
+  | push run =>
+    simp only [step, State.push]
+    (repeat' split) <;> exact same
   | start count =>
     simp only [step, State.start]
     split <;> exact same
   | land run =>
-    simp only [step, State.land]
+    simp only [step, State.land, State.landNow]
     (repeat' split) <;> first | exact same | exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
   | blame run =>
     simp only [step, State.blame]
@@ -320,14 +389,26 @@ theorem stale_verdict_refused (s : State) (id : ChangeId) (attempt : Nat) (detai
     · rfl
   rw [same]
 
-/-- **A change that has not ended can always be withdrawn.** Queued or being
-fixed, it is withdrawn at once. -/
+/-- **A change that has not ended can always be withdrawn**, unless it is on
+its way onto the target. Queued or being fixed, it is withdrawn at once. -/
 theorem withdraw_takes_effect (s : State) {c : Change} (member : c ∈ s.changes)
-    (unfinished : c.status.isTerminal = false) :
+    (unfinished : c.status.isTerminal = false)
+    (free : ∀ d ∈ s.changes, d.id = c.id → s.pushingPart d.part = false) :
     { c with status := Status.withdrawn } ∈ (s.withdraw c.id).changes := by
-  simp only [State.withdraw, List.mem_map]
+  have open_ : ¬(s.changes.any (fun d => d.id == c.id && s.pushingPart d.part) = true) := by
+    simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, not_exists, not_and, Bool.not_eq_true]
+    exact free
+  simp only [State.withdraw, open_, if_false, Bool.false_eq_true, State.withdrawNow, List.mem_map]
   refine ⟨c, member, ?_⟩
   cases status : c.status <;> simp_all [Status.isTerminal, Status.isQueued, Status.isFixing]
+
+/-- A change on its way onto the target is not withdrawn: it lands. -/
+theorem pushing_change_is_not_withdrawn (s : State) {c : Change} (member : c ∈ s.changes)
+    (pushing : s.pushingPart c.part = true) : s.withdraw c.id = s := by
+  unfold State.withdraw
+  have blocked : s.changes.any (fun d => d.id == c.id && s.pushingPart d.part) = true :=
+    List.any_eq_true.mpr ⟨c, member, by simp [pushing]⟩
+  simp [blocked]
 
 /-- **Cancelling a run forgets that run and no other.** -/
 theorem cancel_keeps_other_runs (s : State) (run : RunId) (r : Run) (member : r ∈ s.runs) (other : r.id ≠ run) :

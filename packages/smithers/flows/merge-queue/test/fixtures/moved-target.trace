@@ -1,0 +1,14 @@
+config required=1 maxAttempts=1 maxBatch=2 maxRuns=2 window=3 defaultDuration=60
+enqueue 1 0
+enqueue 2 0
+plan
+result 0 1 pass 20
+plan
+foreign 900
+land 0
+plan
+plan
+result 1 1 pass 21
+plan
+land 1
+plan

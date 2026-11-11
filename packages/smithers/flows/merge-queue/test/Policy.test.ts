@@ -52,13 +52,13 @@ describe("plan: starting runs", () => {
     const { config, state } = play(...lines)
     expect(prefixLength(state, state.runs[0]!)).toBeUndefined()
     expect(plan(config, state)).toBeUndefined()
-    expect(decision(...lines, "result 0 1 pass 1", "result 0 2 pass 1")).toBe("land 0")
+    expect(decision(...lines, "result 0 1 pass 1", "result 0 2 pass 1")).toBe("push 0")
   })
 })
 
 describe("plan: landing", () => {
   it("lands a complete green run", () => {
-    expect(decision(standard, "enqueue 1 0", "plan", "result 0 1 pass 1", "result 0 2 pass 1")).toBe("land 0")
+    expect(decision(standard, "enqueue 1 0", "plan", "result 0 1 pass 1", "result 0 2 pass 1")).toBe("push 0")
   })
 
   it("lands the longest landable run, and the earlier one on a tie", () => {
@@ -74,7 +74,7 @@ describe("plan: landing", () => {
       "result 1 1 pass 1",
       "result 1 2 pass 1"
     ]
-    expect(decision(...both)).toBe("land 1")
+    expect(decision(...both)).toBe("push 1")
     const { config, state } = play(...both)
     expect(bestLandable(config, state)?.id).toBe(1)
     const tie = play(standard, "enqueue 1 0", "start 1", "result 0 1 pass 1", "result 0 2 pass 1")
@@ -94,12 +94,12 @@ describe("plan: failures", () => {
     expect(shortestFailed(play(...failing).state)).toBe(4)
     expect(decision(...failing)).toBe("start 2")
     const firstHalf = [...failing, "plan", "result 1 1 pass 1"]
-    expect(decision(...firstHalf)).toBe("land 1")
-    const secondHalf = [...firstHalf, "plan"]
+    expect(decision(...firstHalf)).toBe("push 1")
+    const secondHalf = [...firstHalf, "plan", "land 1"]
     expect(mainIds(play(...secondHalf).state)).toEqual([1, 2])
     expect(shortestFailed(play(...secondHalf).state)).toBe(2)
     expect(decision(...secondHalf)).toBe("start 1")
-    const third = [...secondHalf, "plan", "result 2 1 pass 1", "plan"]
+    const third = [...secondHalf, "plan", "result 2 1 pass 1", "plan", "land 2"]
     expect(mainIds(play(...third).state)).toEqual([1, 2, 3])
     expect(decision(...third)).toBe("blame 0")
     const blamed = play(...third, "plan")

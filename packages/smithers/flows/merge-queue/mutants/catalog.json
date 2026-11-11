@@ -130,13 +130,13 @@
     "what": "Land without writing the landing to the record.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "          landed := s.landed ++ [{ run, base := s.main, batch, results := r.results }] }",
-      "mutated": "          landed := s.landed }"
+      "original": "          landed := s.landed ++ [{ run, base := s.main, batch, results := r.results, foreign := false }]\n",
+      "mutated": "          landed := s.landed\n"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "    landed: [...state.landed, { run, base: state.main, batch, results: found.results }]",
-      "mutated": "    landed: state.landed"
+      "original": "    landed: [...state.landed, { run, base: state.main, batch, results: found.results, foreign: false }],",
+      "mutated": "    landed: state.landed,"
     }
   },
   {
@@ -360,13 +360,13 @@
     "what": "Accept a second change under an id the queue has seen.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "  if s.changes.any (fun c => c.id == id) then s",
-      "mutated": "  if false then s"
+      "original": "def State.enqueue (s : State) (id : ChangeId) (priority : Nat) : State :=\n  if s.changes.any (fun c => c.id == id) then s",
+      "mutated": "def State.enqueue (s : State) (id : ChangeId) (priority : Nat) : State :=\n  if false then s"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "  state.changes.some((change) => change.id === id)\n    ? state",
-      "mutated": "  false\n    ? state"
+      "original": "export const enqueue = (state: State, id: number, priority: number): State =>\n  state.changes.some((change) => change.id === id)\n    ? state",
+      "mutated": "export const enqueue = (state: State, id: number, priority: number): State =>\n  false\n    ? state"
     }
   },
   {
@@ -374,13 +374,13 @@
     "what": "Give two changes the same arrival number.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "      nextSeq := s.nextSeq + 1 }",
-      "mutated": "      nextSeq := s.nextSeq }"
+      "original": "attempts := 0, status := .queued }]\n      nextSeq := s.nextSeq + 1 }",
+      "mutated": "attempts := 0, status := .queued }]\n      nextSeq := s.nextSeq }"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "      nextSeq: state.nextSeq + 1",
-      "mutated": "      nextSeq: state.nextSeq"
+      "original": "      nextSeq: state.nextSeq + 1\n    }",
+      "mutated": "      nextSeq: state.nextSeq\n    }"
     }
   },
   {
@@ -528,13 +528,13 @@
     "what": "Never cancel a run the queue no longer needs.",
     "lean": {
       "file": "lean/MergeQueue/Policy.lean",
-      "original": "      match s.runs.find? fun r => (!(s.live r).isSome && !s.evidence r) || s.doomed r with",
+      "original": "      match s.runs.find? s.useless with",
       "mutated": "      match s.runs.find? fun _ => false with"
     },
     "ts": {
       "file": "src/Policy.ts",
-      "original": "  const useless = state.runs.find((run) =>\n    (live(state, run) === undefined && !evidence(state, run)) || doomed(state, run)\n  )",
-      "mutated": "  const useless = state.runs.find(() => false)"
+      "original": "  const forgotten = state.runs.find((run) => useless(state, run))",
+      "mutated": "  const forgotten = state.runs.find(() => false)"
     }
   },
   {
@@ -591,6 +591,114 @@
       "file": "src/Predict.ts",
       "original": "estimate(config, history, right) - estimate(config, history, left)",
       "mutated": "estimate(config, history, left) - estimate(config, history, right)"
+    }
+  },
+  {
+    "name": "land-without-a-push",
+    "what": "Record a landing for a run the queue never decided to push.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if s.pushing = some run then s.landNow cfg run else s",
+      "mutated": "  if s.pushing = some run ∨ True then s.landNow cfg run else s"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  state.pushing === run ? landNow(config, state, run) : state",
+      "mutated": "  state.pushing === run || true ? landNow(config, state, run) : state"
+    }
+  },
+  {
+    "name": "push-a-red-run",
+    "what": "Decide to push a run whose result is not green.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "    | some r => if (s.live r).isSome && green cfg r.results then { s with pushing := some run } else s",
+      "mutated": "    | some r => if (s.live r).isSome && (green cfg r.results || true) then { s with pushing := some run } else s"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  return found !== undefined && live(state, found) !== undefined && green(config, found.results)\n    ? { ...state, pushing: run }",
+      "mutated": "  return found !== undefined && live(state, found) !== undefined\n    ? { ...state, pushing: run }"
+    }
+  },
+  {
+    "name": "push-while-pushing",
+    "what": "Start a second push while one is under way.",
+    "lean": null,
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  if (pushingRun(state) !== undefined) return state\n  const found = findRun(state, run)\n  return found",
+      "mutated": "  const found = findRun(state, run)\n  return found"
+    }
+  },
+  {
+    "name": "foreign-leaves-the-target",
+    "what": "Adopt someone else's commit without moving the target's tree, so runs on the old tip stay live.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      main := s.main ++ [⟨id, 0⟩]\n",
+      "mutated": "      main := s.main\n"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      main: [...state.main, { id, rev: 0 }],",
+      "mutated": "      main: state.main,"
+    }
+  },
+  {
+    "name": "foreign-is-unrecorded",
+    "what": "Adopt someone else's commit without recording it as foreign.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "results := [], foreign := true }] }",
+      "mutated": "results := [], foreign := false }] }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "results: [], foreign: true }]",
+      "mutated": "results: [], foreign: false }]"
+    }
+  },
+  {
+    "name": "withdraw-a-pushing-change",
+    "what": "Withdraw a change that is on its way onto the target.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if s.changes.any (fun c => c.id == id && s.pushingPart c.part) then s else s.withdrawNow id",
+      "mutated": "  if s.changes.any (fun c => c.id == id && s.pushingPart c.part && false) then s else s.withdrawNow id"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  state.changes.some((change) => change.id === id && pushingPart(state, part(change)))\n    ? state\n    : withdrawNow(state, id)",
+      "mutated": "  withdrawNow(state, id)"
+    }
+  },
+  {
+    "name": "cancel-the-pushing-run",
+    "what": "Let the policy forget the run it is pushing.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "(s.doomed r && s.pushing != some r.id)",
+      "mutated": "s.doomed r"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "(doomed(state, run) && state.pushing !== run.id)",
+      "mutated": "doomed(state, run)"
+    }
+  },
+  {
+    "name": "land-keeps-pushing",
+    "what": "Record a landing without ending the push.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "          pushing := none }\n",
+      "mutated": "          pushing := s.pushing }\n"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    pushing: null\n  }\n}",
+      "mutated": "    pushing: state.pushing\n  }\n}"
     }
   }
 ]

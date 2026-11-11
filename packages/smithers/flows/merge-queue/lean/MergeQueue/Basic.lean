@@ -117,6 +117,9 @@ structure Landing where
   batch : List Part
   /-- The results that justified it. -/
   results : List (CheckId × Verdict)
+  /-- Someone other than the queue put these commits on the target. The queue
+  did not test them; it adopted the new tip and retests everything on it. -/
+  foreign : Bool
 deriving DecidableEq, Repr, Inhabited
 
 def Landing.tree (l : Landing) : Tree := l.base ++ l.batch
@@ -150,10 +153,13 @@ structure State where
   landed : List Landing
   /-- Durations of finished checks, oldest first, at most `window` per check. -/
   history : List (CheckId × Nat)
+  /-- The run whose tree the queue is fast-forwarding the target onto. The
+  landing is recorded when the target is seen there. -/
+  pushing : Option RunId
 deriving Repr, Inhabited
 
 def State.empty : State :=
-  { main := [], changes := [], runs := [], nextRun := 0, nextSeq := 0, landed := [], history := [] }
+  { main := [], changes := [], runs := [], nextRun := 0, nextSeq := 0, landed := [], history := [], pushing := none }
 
 /-- What happens to the queue. The first group arrives from outside; the second
 is what the queue decides, and `Policy.plan` chooses among them. Every event is
@@ -167,10 +173,14 @@ inductive Event where
   | fixed (id : ChangeId) (attempt : Nat)
   /-- The fix agent judged the change unmergeable and wrote why. -/
   | gaveUp (id : ChangeId) (attempt : Nat) (detail : String)
+  /-- Someone other than the queue put a commit on the target. -/
+  | foreign (id : ChangeId)
+  /-- The target was seen on the tree the queue was pushing: the landing. -/
+  | land (run : RunId)
   /-- Test the first `count` ready changes on top of the target. -/
   | start (count : Nat)
-  /-- Move the target onto a run's tree. -/
-  | land (run : RunId)
+  /-- Fast-forward the target onto a run's tree. -/
+  | push (run : RunId)
   /-- Send the only suspect of a failed run to a fix agent. -/
   | blame (run : RunId)
   /-- Forget a run: the queue cancelled it, or CI lost it. -/

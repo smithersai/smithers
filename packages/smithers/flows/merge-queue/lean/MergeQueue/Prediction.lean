@@ -101,44 +101,59 @@ their duration history take the same step: the same changes, runs, landings
 and target. -/
 theorem predictions_never_decide (cfg : Config) (s : State) (history : List (CheckId × Nat)) (e : Event) :
     (step cfg { s with history := history } e).core = (step cfg s e).core := by
+  have findRun : ∀ run, State.findRun { s with history := history } run = s.findRun run := fun _ => rfl
+  have live : ∀ r, State.live { s with history := history } r = s.live r := fun _ => rfl
+  have ready : State.ready { s with history := history } = s.ready := rfl
+  have pending : State.pendingCount cfg { s with history := history } = s.pendingCount cfg := rfl
+  have pushingRun : State.pushingRun { s with history := history } = s.pushingRun := rfl
+  have pushingPart : ∀ p, State.pushingPart { s with history := history } p = s.pushingPart p := fun _ => rfl
+  have failuresOf : ∀ c, State.failuresOf { s with history := history } c = s.failuresOf c := fun _ => rfl
   cases e with
   | enqueue id priority =>
     simp only [step, State.enqueue]
     split <;> rfl
-  | withdraw id => rfl
+  | withdraw id =>
+    simp only [step, State.withdraw, pushingPart]
+    split <;> rfl
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> rfl
   | fixed id attempt => rfl
-  | gaveUp id attempt detail => rfl
+  | gaveUp id attempt detail =>
+    simp only [step, State.gaveUp, failuresOf]
+    rfl
+  | foreign id =>
+    simp only [step, State.foreign]
+    split <;> rfl
+  | push run =>
+    simp only [step, State.push, pushingRun, findRun]
+    split
+    · rfl
+    · split
+      · rfl
+      · rename_i r _
+        simp only [live]
+        split <;> rfl
   | start count =>
-    simp only [step, State.start]
-    show State.core (if _ then _ else _) = State.core (if _ then _ else _)
-    have ready : State.ready { s with history := history } = s.ready := rfl
-    have pending : State.pendingCount cfg { s with history := history } = s.pendingCount cfg := rfl
-    simp only [ready, pending]
+    simp only [step, State.start, ready, pending]
     split <;> rfl
   | land run =>
-    simp only [step, State.land]
-    have found : State.findRun { s with history := history } run = s.findRun run := rfl
-    rw [found]
+    simp only [step, State.land, State.landNow, findRun]
     split
-    · rfl
-    · rename_i r _
-      have live : State.live { s with history := history } r = s.live r := rfl
-      rw [live]
-      split
+    · split
       · rfl
-      · split <;> rfl
+      · rename_i r _
+        simp only [live]
+        split
+        · rfl
+        · split <;> rfl
+    · rfl
   | blame run =>
-    simp only [step, State.blame]
-    have found : State.findRun { s with history := history } run = s.findRun run := rfl
-    rw [found]
+    simp only [step, State.blame, findRun]
     split
     · rfl
     · rename_i r _
-      have live : State.live { s with history := history } r = s.live r := rfl
-      rw [live]
+      simp only [live]
       split
       · split <;> rfl
       · rfl
@@ -213,7 +228,9 @@ theorem history_bounded {cfg : Config} {s : State} (reachable : Reachable cfg s)
     | enqueue id priority =>
       simp only [step, State.enqueue]
       split <;> exact ih
-    | withdraw id => exact ih
+    | withdraw id =>
+      simp only [step, State.withdraw]
+      split <;> exact ih
     | result run c verdict duration =>
       rcases s.result_cases cfg run c verdict duration with refused | ⟨_, took⟩
       · simp only [step, refused]; exact ih
@@ -221,13 +238,21 @@ theorem history_bounded {cfg : Config} {s : State} (reachable : Reachable cfg s)
         exact record_bounded _ _ _ _ _ ih
     | fixed id attempt => exact ih
     | gaveUp id attempt detail => exact ih
+    | foreign id =>
+      simp only [step, State.foreign]
+      split <;> exact ih
+    | push run =>
+      simp only [step, State.push]
+      (repeat' split) <;> exact ih
     | start count =>
       simp only [step, State.start]
       split <;> exact ih
     | land run =>
-      rcases s.land_cases cfg run with refused | ⟨_, _, _, _, _, took⟩
+      rcases s.land_cases cfg run with refused | ⟨_, eq⟩
       · simp only [step, refused]; exact ih
-      · simp only [step, took]; exact ih
+      · rcases s.landNow_cases cfg run with refused | ⟨_, _, _, _, _, took⟩
+        · simp only [step, eq, refused]; exact ih
+        · simp only [step, eq, took]; exact ih
     | blame run =>
       rcases s.blame_cases cfg run with refused | ⟨_, _, _, _, _, took⟩
       · simp only [step, refused]; exact ih

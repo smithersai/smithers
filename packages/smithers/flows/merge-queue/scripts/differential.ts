@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import { replay } from "../src/index.ts"
+import { replay } from "../src/Kernel.ts"
 import { trace } from "../test/support/Generate.ts"
 
 const reference = process.env["MERGE_QUEUE_REFERENCE"]

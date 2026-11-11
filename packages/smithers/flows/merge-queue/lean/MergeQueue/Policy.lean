@@ -116,17 +116,26 @@ def State.bestLandable (cfg : Config) (s : State) : Option Run :=
       else best)
     none
 
+/-- The run to push next: the best landable run, unless a push is under way. -/
+def State.nextPush (cfg : Config) (s : State) : Option Run :=
+  if s.pushingRun.isSome then none else s.bestLandable cfg
+
+/-- A run the queue should forget: it can no longer land or help a fix, or it
+is doomed. The run being pushed is never forgotten. -/
+def State.useless (s : State) (r : Run) : Bool :=
+  (!(s.live r).isSome && !s.evidence r) || (s.doomed r && s.pushing != some r.id)
+
 /-- The queue's next decision, or `none` when it has to wait for the world.
-In order: land what can land, blame what can be blamed, cancel what is no
+In order: push what can land, blame what can be blamed, cancel what is no
 longer useful, then start the next run. -/
 def plan (cfg : Config) (s : State) : Option Event :=
-  match s.bestLandable cfg with
-  | some r => some (.land r.id)
+  match s.nextPush cfg with
+  | some r => some (.push r.id)
   | none =>
     match s.runs.find? s.blameable with
     | some r => some (.blame r.id)
     | none =>
-      match s.runs.find? fun r => (!(s.live r).isSome && !s.evidence r) || s.doomed r with
+      match s.runs.find? s.useless with
       | some r => some (.cancel r.id)
       | none =>
         match s.nextStart cfg with

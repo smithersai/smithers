@@ -171,6 +171,32 @@ export const failuresOf = (state: State, change: Change): ReadonlyArray<number> 
 }
 
 /**
+ * The run the queue is pushing, while that push can still succeed: the run is
+ * held and still live. A push whose run died (the target moved, a part was
+ * blamed) is over.
+ *
+ * @category liveness
+ * @since 0.1.0
+ */
+export const pushingRun = (state: State): Run | undefined => {
+  if (state.pushing === null) return undefined
+  const found = findRun(state, state.pushing)
+  return found !== undefined && live(state, found) !== undefined ? found : undefined
+}
+
+/**
+ * Whether the part is on its way onto the target: it is in the batch being
+ * pushed.
+ *
+ * @category liveness
+ * @since 0.1.0
+ */
+export const pushingPart = (state: State, entry: Part): boolean => {
+  const pushed = pushingRun(state)
+  return pushed !== undefined && pushed.batch.some((other) => samePart(other, entry))
+}
+
+/**
  * Records one finished check, keeping at most `window` samples per check.
  *
  * @category durations
@@ -216,17 +242,55 @@ export const enqueue = (state: State, id: number, priority: number): State =>
     }
 
 /**
+ * Ends a change that has not ended as withdrawn.
+ *
+ * @category events
+ * @since 0.1.0
+ */
+export const withdrawNow = (state: State, id: number): State =>
+  rewrite(state, (change) =>
+    change.id === id && (change.status._tag === "queued" || change.status._tag === "fixing")
+      ? { ...change, status: { _tag: "withdrawn" } }
+      : change)
+
+/**
  * The author takes a change back. Only a change that has not ended can be
- * withdrawn.
+ * withdrawn, and not one that is on its way onto the target: that one lands.
  *
  * @category events
  * @since 0.1.0
  */
 export const withdraw = (state: State, id: number): State =>
-  rewrite(state, (change) =>
-    change.id === id && (change.status._tag === "queued" || change.status._tag === "fixing")
-      ? { ...change, status: { _tag: "withdrawn" } }
-      : change)
+  state.changes.some((change) => change.id === id && pushingPart(state, part(change)))
+    ? state
+    : withdrawNow(state, id)
+
+/**
+ * Someone other than the queue put a commit on the target. The queue adopts
+ * the new tip: the commit joins the target's tree as a merged change the
+ * queue did not test, and every run on the old tip stops being live, so
+ * everything still queued is rebuilt on the new tip and tested again.
+ *
+ * @category events
+ * @since 0.1.0
+ */
+export const foreign = (state: State, id: number): State =>
+  state.changes.some((change) => change.id === id)
+    ? state
+    : {
+      ...state,
+      main: [...state.main, { id, rev: 0 }],
+      changes: [...state.changes, {
+        id,
+        priority: 0,
+        seq: state.nextSeq,
+        rev: 0,
+        attempts: 0,
+        status: { _tag: "merged" }
+      }],
+      nextSeq: state.nextSeq + 1,
+      landed: [...state.landed, { run: 0, base: state.main, batch: [{ id, rev: 0 }], results: [], foreign: true }]
+    }
 
 /**
  * One check result streams in. It is recorded when the check is required, the
@@ -311,13 +375,31 @@ export const start = (config: Config, state: State, count: number): State => {
 }
 
 /**
- * Moves the target onto a run's tree. The run must be live and its result
- * complete and green. The target becomes exactly the tree that was tested.
+ * Decides to fast-forward the target onto a run's tree. The run must be live
+ * and its result complete and green, and no other push may be under way.
+ * Nothing lands yet: the landing is recorded when the target is seen on that
+ * tree.
  *
  * @category decisions
  * @since 0.1.0
  */
-export const land = (config: Config, state: State, run: number): State => {
+export const push = (config: Config, state: State, run: number): State => {
+  if (pushingRun(state) !== undefined) return state
+  const found = findRun(state, run)
+  return found !== undefined && live(state, found) !== undefined && green(config, found.results)
+    ? { ...state, pushing: run }
+    : state
+}
+
+/**
+ * Records a landing. The run must be live and its result complete and green.
+ * The target becomes exactly the tree that was tested, which extends the
+ * target as it is now: a fast-forward.
+ *
+ * @category events
+ * @since 0.1.0
+ */
+export const landNow = (config: Config, state: State, run: number): State => {
   const found = findRun(state, run)
   if (found === undefined) return state
   const batch = live(state, found)
@@ -331,9 +413,20 @@ export const land = (config: Config, state: State, run: number): State => {
         : change
     ),
     runs: state.runs.filter((entry) => entry.id !== run),
-    landed: [...state.landed, { run, base: state.main, batch, results: found.results }]
+    landed: [...state.landed, { run, base: state.main, batch, results: found.results, foreign: false }],
+    pushing: null
   }
 }
+
+/**
+ * The target was seen on the tree the queue was pushing. Only the run being
+ * pushed can land.
+ *
+ * @category events
+ * @since 0.1.0
+ */
+export const land = (config: Config, state: State, run: number): State =>
+  state.pushing === run ? landNow(config, state, run) : state
 
 /**
  * The words recorded when a change runs out of fix attempts.
@@ -406,8 +499,12 @@ export const step = (config: Config, state: State, event: Event): State => {
       return fixed(state, event.id, event.attempt)
     case "gaveUp":
       return gaveUp(state, event.id, event.attempt, event.detail)
+    case "foreign":
+      return foreign(state, event.id)
     case "start":
       return start(config, state, event.count)
+    case "push":
+      return push(config, state, event.run)
     case "land":
       return land(config, state, event.run)
     case "blame":
