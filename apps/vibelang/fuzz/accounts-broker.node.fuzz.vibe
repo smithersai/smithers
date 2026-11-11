@@ -13,7 +13,7 @@ import { Node } from "@smthrs/plan"
 import * as Accounts from "../worker/Accounts.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
-import { run, Int } from "./run.vibe"
+import { run, Int, STEERED_FLOOR } from "./run.vibe"
 
 const SITE = "https://factory.example"
 const BROKER = "https://broker.example"
@@ -155,12 +155,12 @@ const ALLOWED = new Set([200, 204, 302, 303, 400, 401, 403, 404, 405, 408, 413, 
 /** A sign-in signs in exactly the person GitHub named, once; a tampered handoff never does; Connect needs a person's
  * own session and stores a delegation only after consent; a device session stays an agent; nothing answers 500. */
 it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Input, (input) => scoped(effect {
-  // The walk runs in the brokered world and in GitHub's own OAuth, so neither depends on the draw; drawn ops run in
-  // the drawn world.
-  if (input.walk && !(try play(input, true, false, true))) return false
-  if (input.walk && !(try play(input, false, false, true))) return false
+  // Every execution walks the brokered world and GitHub's own OAuth, so neither depends on the draw (one execution
+  // takes seconds, so a drawn walk might never run at a short budget); drawn ops then run in the drawn world.
+  if (!(try play(input, true, false, true))) return false
+  if (!(try play(input, false, false, true))) return false
   return try play(input, input.brokered, !input.brokered && input.named, false)
-})), 120_000)
+}), undefined, { minimum: STEERED_FLOOR }), 120_000)
 
 effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean) {
   const w = try world(input.slug, brokered, named)

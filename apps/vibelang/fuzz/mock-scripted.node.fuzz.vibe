@@ -10,7 +10,7 @@ import { AgentActions } from "../src/actions/agent.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import { MockActions } from "../src/actions/MockActions.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
-import { run, Int } from "./run.vibe"
+import { run, Int, STEERED_FLOOR } from "./run.vibe"
 
 const PROMPTS = {
   wiki: "Open the wiki rulings page",
@@ -51,9 +51,9 @@ function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean,
 }
 
 it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ walk, role, kinds: drawn, room }) => effect {
-  // A walk asks for every action kind once, so none depends on the draw. History, whose first read imports the large
-  // seed module, is drawn only; other targets reach its reply.
-  const kinds = walk ? ["wiki", "draft", "issue", "split", "sandbox", "review", "action"] as const : drawn
+  // Every execution asks for each action kind once, then the drawn ones, so none depends on the draw. History, whose
+  // first read imports the large seed module, is drawn only; other targets reach its reply.
+  const kinds = [...(["wiki", "draft", "issue", "split", "sandbox", "review", "action"] as const), ...(walk ? [] : drawn)]
   // The app binds its actions service for the agent; the mock's actions run over their own mock Factory.
   const actions = Context.get(try Layer.build(MockActions({ role, actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
   provide mockFactoryFor(role), AgentActions = { actions } {
@@ -83,4 +83,4 @@ it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ wa
     }
     return true
   }
-}), 300_000)
+}, undefined, { minimum: STEERED_FLOOR }), 300_000)
