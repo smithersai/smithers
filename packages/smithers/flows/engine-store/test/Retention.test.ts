@@ -133,6 +133,7 @@ const footprint = (runId: string) =>
     checkpoints: countOf("flows_journal_checkpoints", "run_id", runId),
     stepCache: countOf("flows_step_cache_recorded", "recorded_run_id", runId),
     archive: countOf("flows_time_travel_archive", "run_id", runId),
+    generations: countOf("flows_journal_generations", "run_id", runId),
     childEdges: countOf("flows_run_parents", "child_id", runId),
     parentEdges: countOf("flows_run_parents", "parent_id", runId)
   })
@@ -207,6 +208,11 @@ const seedDependents = (runId: string) =>
       (key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq)
       VALUES (${`${runId}-digest`}, ${"{}"}, ${"{}"}, ${0}, ${runId}, ${0})`.pipe(Effect.orDie)
     yield* archive(runId, 0)
+    // A time-travel rewind's generation row. Left behind, one collected
+    // rewound run makes every later `StepCacheFold.rebuild` read the file as
+    // rewound and clear the whole step cache.
+    yield* sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq)
+      VALUES (${runId}, ${1}, ${receipt.seq})`.pipe(Effect.orDie)
   })
 
 /** Drives an owned run to a terminal status. */
@@ -351,6 +357,7 @@ describe("retention", () => {
             checkpoints: 0,
             stepCache: 0,
             archive: 0,
+            generations: 0,
             childEdges: 0,
             parentEdges: 0
           })
@@ -362,6 +369,7 @@ describe("retention", () => {
         expect(yield* companionFacts("still-running")).toBe(2)
         expect((yield* footprint("fresh-completed")).runs).toBe(1)
         expect((yield* footprint("fresh-completed")).journal).toBe(1)
+        expect((yield* footprint("fresh-completed")).generations).toBe(1)
         expect(after).toEqual(before)
         expect(yield* statusOf("still-running")).toBe("running")
         expect(

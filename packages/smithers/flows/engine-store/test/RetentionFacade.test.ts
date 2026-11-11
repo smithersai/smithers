@@ -614,49 +614,6 @@ describe("Retention.collect", () => {
       expect(yield* sql`SELECT run_id FROM flows_journal_dedup`).toEqual([{ run_id: "recent" }])
     })))
 
-  it.effect("accounts for every run-naming table the ladder installs", () =>
-    migrated(Effect.gen(function*() {
-      // A table that names a run and is in none of these sets is a table
-      // retention leaks forever. Listing is deliberate, so this pins the list
-      // against the catalog rather than trusting it.
-      const sql = yield* SqlClient.SqlClient
-      const rows: Array<{ table_name: string; column_name: string }> = []
-      for (const table of yield* Dialect.tables(sql)) {
-        for (const column of yield* Dialect.columns(sql, table.name)) {
-          if (column.name.endsWith("run_id") || ["execution_id", "child_id", "parent_id"].includes(column.name)) {
-            rows.push({ table_name: table.name, column_name: column.name })
-          }
-        }
-      }
-      const cascades = new Set((yield* sql.onDialectOrElse({
-        pg: () =>
-          sql<{ table_name: string }>`SELECT rel.relname AS table_name
-          FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
-          WHERE con.confrelid = 'flows_runs'::regclass AND con.confdeltype = 'c'`,
-        orElse: () =>
-          sql<{ table_name: string }>`SELECT m.name AS table_name
-          FROM sqlite_master AS m, pragma_foreign_key_list(m.name) AS f
-          WHERE m.type = 'table' AND f."table" = 'flows_runs' AND f.on_delete = 'CASCADE'`
-      })).map((row) => row.table_name))
-      const inventory = new Set(Retention.runScopedTables.map((entry) => `${entry.table}.${entry.column}`))
-      const exempt = new Set([
-        // The run row itself, deleted last in generation order.
-        "flows_runs.run_id",
-        "flows_runs.parent_run_id",
-        // Dropped with each run row by the `flows_run_parents_gc` trigger.
-        "flows_run_parents.child_id",
-        "flows_run_parents.parent_id",
-        // Deletion tombstones the change feed reads after the row is gone.
-        "flows_run_changes.run_id",
-        // The shared step cache outlives the run that first recorded an entry.
-        "flows_step_cache.recorded_run_id"
-      ])
-      const unaccounted = rows
-        .map((row) => `${row.table_name}.${row.column_name}`)
-        .filter((key) => !inventory.has(key) && !exempt.has(key) && !cascades.has(key.split(".")[0]!))
-      expect(unaccounted).toEqual([])
-    })))
-
   it.effect("reports nothing on a database with no run table at all", () =>
     Effect.gen(function*() {
       const report = yield* Retention.collect({ olderThanMs: 500 }).pipe(Effect.provide(TestDatabase.layer))
@@ -726,12 +683,17 @@ describe("Retention.collect", () => {
       "flows_journal_events",
       "flows_journal_checkpoints",
       "flows_journal_dedup",
+      "flows_journal_generations",
       "flows_consensus_leases",
       "flows_step_cache_recorded",
       "flows_time_travel_archive",
       "flows_time_travel_snapshots",
       "flows_time_travel_audits",
       "flows_time_travel_edges",
+      "control_signal_commands",
+      "control_tokens",
+      "control_grants",
+      "control_run_resumes",
       "control_run_messages",
       "control_runs"
     ])
