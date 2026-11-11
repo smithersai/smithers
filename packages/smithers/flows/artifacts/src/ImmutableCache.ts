@@ -293,49 +293,49 @@ export const make = (cache: WebCache, options: Options): Service => {
 
   return ImmutableCache.of({
     get: (key) =>
-      observe(
-        "get",
-        key,
-        Option.match({
-          onNone: () => ({ outcome: "miss", bytes: 0 }),
-          onSome: (entry) => ({ outcome: "hit", bytes: entry.bytes.byteLength })
-        }),
-        Effect.gen(function*() {
-          const url = yield* address(key)
-          const response = yield* attempt("get", () => cache.match(url))
-          if (response === undefined) return Option.none<Entry>()
-          const body = new Uint8Array(yield* attempt("get", () => response.arrayBuffer()))
-          const metadata = decodeMetadata(decodeURIComponentOrNull(response.headers.get(metadataHeader)))
-          if (Option.isNone(metadata)) {
-            return yield* new ImmutableCacheError({ backend, operation: "get", reason: "corrupt" })
-          }
-          return Option.some<Entry>({ bytes: body, metadata: metadata.value })
-        })
-      ),
+      Effect.flatMap(address(key), (url) =>
+        observe(
+          "get",
+          key,
+          Option.match({
+            onNone: () => ({ outcome: "miss", bytes: 0 }),
+            onSome: (entry) => ({ outcome: "hit", bytes: entry.bytes.byteLength })
+          }),
+          Effect.gen(function*() {
+            const response = yield* attempt("get", () => cache.match(url))
+            if (response === undefined) return Option.none<Entry>()
+            const body = new Uint8Array(yield* attempt("get", () => response.arrayBuffer()))
+            const metadata = decodeMetadata(decodeURIComponentOrNull(response.headers.get(metadataHeader)))
+            if (Option.isNone(metadata)) {
+              return yield* new ImmutableCacheError({ backend, operation: "get", reason: "corrupt" })
+            }
+            return Option.some<Entry>({ bytes: body, metadata: metadata.value })
+          })
+        )),
 
     put: (key, entry) =>
-      observe(
-        "put",
-        key,
-        (outcome: PutOutcome) => ({ outcome, bytes: outcome === "stored" ? entry.bytes.byteLength : 0 }),
-        Effect.gen(function*() {
-          const url = yield* address(key)
-          const metadata = JSON.stringify(entry.metadata)
-          if (entry.bytes.byteLength > maxEntryBytes || encoder.encode(metadata).byteLength > maxMetadataBytes) {
-            return "too_large" as const
-          }
-          // `slice` copies, so the caller may reuse its array once `put` starts.
-          const response = new Response(entry.bytes.slice(), {
-            headers: {
-              "cache-control": "public, max-age=31536000, immutable",
-              "content-type": "application/octet-stream",
-              [metadataHeader]: encodeURIComponent(metadata)
+      Effect.flatMap(address(key), (url) =>
+        observe(
+          "put",
+          key,
+          (outcome: PutOutcome) => ({ outcome, bytes: outcome === "stored" ? entry.bytes.byteLength : 0 }),
+          Effect.gen(function*() {
+            const metadata = JSON.stringify(entry.metadata)
+            if (entry.bytes.byteLength > maxEntryBytes || encoder.encode(metadata).byteLength > maxMetadataBytes) {
+              return "too_large" as const
             }
+            // `slice` copies, so the caller may reuse its array once `put` starts.
+            const response = new Response(entry.bytes.slice(), {
+              headers: {
+                "cache-control": "public, max-age=31536000, immutable",
+                "content-type": "application/octet-stream",
+                [metadataHeader]: encodeURIComponent(metadata)
+              }
+            })
+            yield* attempt("put", () => cache.put(url, response))
+            return "stored" as const
           })
-          yield* attempt("put", () => cache.put(url, response))
-          return "stored" as const
-        })
-      )
+        ))
   })
 }
 

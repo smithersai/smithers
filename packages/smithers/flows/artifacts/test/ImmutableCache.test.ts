@@ -205,13 +205,35 @@ describe("the memory cache", () => {
     expect(result).toEqual({ a: true, b: false, c: true })
   })
 
-  it("dies on a namespace that is not a short label, so no path reaches telemetry", async () => {
+  it.each(["get", "put"] as const)("rejects an invalid namespace before %s telemetry", async (operation) => {
     for (const namespace of ["", "Repo", "src/index.ts", "repo blob", "repo..blob", "repo.", "a".repeat(65)]) {
-      const exit = await exitOf(get(ImmutableCache.key(namespace, "x")), ImmutableCache.layerMemory())
+      const t = telemetry()
+      const key = ImmutableCache.key(namespace, "x")
+      const call = operation === "get"
+        ? Effect.asVoid(get(key))
+        : Effect.asVoid(put(key, { bytes: utf8("x"), metadata: {} }))
+      const exit = await Effect.runPromise(t.provide(Effect.exit(Effect.provide(call, ImmutableCache.layerMemory()))))
       expect(Exit.hasDies(exit)).toBe(true)
+      expect(t.spans).toEqual([])
+      expect(JSON.parse(t.recorded())).toEqual([[], [], []])
     }
-    const fine = await exitOf(get(ImmutableCache.key("a".repeat(64), "x")), ImmutableCache.layerMemory())
-    expect(Exit.isSuccess(fine)).toBe(true)
+  })
+
+  it.each(["a", "a".repeat(64), "repo.blob_1-cache"])("accepts the namespace %s and records it", async (namespace) => {
+    const t = telemetry()
+    const key = ImmutableCache.key(namespace, "x")
+    const entry = { bytes: utf8("x"), metadata: {} }
+    await Effect.runPromise(t.provide(Effect.provide(
+      Effect.gen(function*() {
+        expect(yield* put(key, entry)).toBe("stored")
+        expect(Option.getOrThrow(yield* get(key))).toEqual(entry)
+      }),
+      ImmutableCache.layerMemory()
+    )))
+    const labels = { backend: "memory", namespace }
+    expect(t.count(ImmutableCache.requests, { ...labels, operation: "put", outcome: "stored" })).toBe(1)
+    expect(t.count(ImmutableCache.requests, { ...labels, operation: "get", outcome: "hit" })).toBe(1)
+    expect(t.spans.map((span) => span.attributes.get("immutable_cache.namespace"))).toEqual([namespace, namespace])
   })
 })
 
