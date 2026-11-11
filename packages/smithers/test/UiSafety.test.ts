@@ -13,7 +13,7 @@ describe("plain terminal safety", () => {
       }
     })
     const ui = Ui.make({ output, interactive: false })
-    const supplied = "safe\u001b[2J\u001b]0;owned\u0007text"
+    const supplied = "safe\u001b[2J\u001b]0;owned\u0007text\rdeny\ballow\u0007\u0085\u009f\u202e\u2066\n\tnext\r\nlast"
     await Effect.runPromise(Effect.gen(function*() {
       yield* ui.info(supplied)
       yield* ui.note(supplied, supplied)
@@ -28,8 +28,8 @@ describe("plain terminal safety", () => {
         { label: (value) => value }
       )
     }))
-    expect(chunks.join("")).not.toMatch(/[\u001b\u0007]/)
-    expect(chunks.join("")).toContain("safetext")
+    expect(chunks.join("")).not.toMatch(/(?![\n\t])[\p{Cc}\p{Cf}]/u)
+    expect(chunks.join("")).toContain("safetextdenyallow\n\tnext\nlast")
   })
 })
 

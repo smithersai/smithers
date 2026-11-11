@@ -118,9 +118,12 @@ call the terminal renderer at all. See
 [Embed the command tree](../guides/embed-the-command-tree.md) for driving the
 terminal renderer from your own program.
 
-Plain terminal output strips supplied VT control sequences, including streamed
-suggestion labels. Interrupting a scan stops subsequent repository checks and
-output. Cancelling a follow-up confirmation ends the command with status 130;
+Plain terminal output strips supplied VT sequences, remaining control characters
+and Unicode format characters, including in streamed suggestion labels. Newlines
+and tabs survive, and CRLF becomes a newline. Interrupting a scan stops subsequent
+repository checks and output. An already-aborted suggestion stream reads no items;
+a result arriving after cancellation is discarded. Cancelling a follow-up
+confirmation ends the command with status 130;
 its outcome retains changes already written.
 
 Interactive prompts receive the Effect cancellation signal so interruption

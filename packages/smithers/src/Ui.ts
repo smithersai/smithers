@@ -25,7 +25,6 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import { Context, Effect, Layer, Option } from "effect"
 import type { Readable, Writable } from "node:stream"
 import { Writable as WritableStream } from "node:stream"
-import { stripVTControlCharacters } from "node:util"
 import type * as Environment from "./Environment.ts"
 import * as Failure from "./internal/Failure.ts"
 import { packageVersion } from "./Version.ts"
@@ -228,7 +227,7 @@ export const isInteractive = (
 export const levelWord = (level: Check["level"]): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
 
 const write = (output: Writable, line: string): void => {
-  output.write(`${stripVTControlCharacters(line)}\n`)
+  output.write(`${Failure.terminalSafeLines(line)}\n`)
 }
 
 /**
@@ -298,8 +297,8 @@ export const make = (options: Options): Service => {
         try {
           live?.start(scanning)
           while (true) {
-            const next = await Promise.race([iterator.next(), aborted])
-            if (next === "aborted") {
+            const next = signal.aborted ? "aborted" : await Promise.race([iterator.next(), aborted])
+            if (next === "aborted" || signal.aborted) {
               const message = `${scanning} stopped, ${settled(collected.length)}`
               if (live === undefined) write(output, message)
               else live.cancel(message)

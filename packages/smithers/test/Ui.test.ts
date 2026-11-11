@@ -348,16 +348,51 @@ describe("streamSuggestions", () => {
     }
   })
 
-  it("treats a signal that is already aborted as an empty scan", async () => {
-    const term = terminal()
-    const ui = make(term, false)
-    const controller = new AbortController()
-    controller.abort()
-    const streamed = await Effect.runPromise(
-      ui.streamSuggestions(source(["a"]), { ...options, signal: controller.signal })
+  for (const interactive of [false, true]) {
+    it.each(["before", "next", "label", "done"] as const)(
+      `stops settled iterator results when aborted %s (interactive: ${interactive})`,
+      async (when) => {
+        const term = terminal()
+        const controller = new AbortController()
+        let nextCalls = 0
+        let returnCalls = 0
+        const immediate: AsyncIterable<string> = {
+          [Symbol.asyncIterator]: () => ({
+            next: () => {
+              nextCalls++
+              if (when === "next" || when === "done") queueMicrotask(() => controller.abort())
+              return Promise.resolve(
+                when === "done" || nextCalls > 3
+                  ? { done: true as const, value: undefined }
+                  : { done: false as const, value: "item" }
+              )
+            },
+            return: () => {
+              returnCalls++
+              return Promise.resolve({ done: true as const, value: undefined })
+            }
+          })
+        }
+        if (when === "before") controller.abort()
+        const streamed = await Effect.runPromise(
+          make(term, interactive).streamSuggestions(immediate, {
+            ...options,
+            signal: controller.signal,
+            label: (item, position) => {
+              if (when === "label") controller.abort()
+              return options.label(item, position)
+            }
+          })
+        )
+        const count = when === "label" ? 1 : 0
+        expect(streamed).toEqual({ items: when === "label" ? ["item"] : [], stopped: true })
+        expect(nextCalls).toBe(when === "before" ? 0 : 1)
+        expect(returnCalls).toBe(1)
+        expect(term.plain()).toContain(`Scanning the tree stopped, ${count} found`)
+        expect(term.plain().includes("1. item")).toBe(when === "label")
+      }
     )
-    expect(streamed).toEqual({ items: [], stopped: true })
-  })
+  }
 
   it("settles the spinner as an error and fails with the cause", async () => {
     for (const interactive of [true, false]) {

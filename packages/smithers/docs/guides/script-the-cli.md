@@ -84,12 +84,15 @@ An `Accepted` receipt with exit 3 means the run started and then parked on an
 in-run Node approval. The run journals a `control.approval.requested` event
 whose `payload.question` describes the ask and whose `payload.payload` is the
 exact argument for `smthrs approvals approve`. Approving that Node resumes
-the existing run; it needs no new `flow execute` submission:
+the existing run; it needs no new `flow execute` submission. Read the complete
+finite history with `--audience human --json`: CI otherwise defaults to the
+first 100 events, which can miss the current ask. The complete read still
+obeys the event and byte limits below, and `jq -e` refuses a missing ask:
 
 ```bash
 run_id="$(printf '%s' "$receipt" | jq -r '.runId')"
-ask="$(smthrs runs logs "$run_id" --json \
-  | jq -c 'map(select(.kind == "control.approval.requested")) | last | .payload.payload')"
+ask="$(smthrs runs logs "$run_id" --audience human --json \
+  | jq -ce 'map(select(.kind == "control.approval.requested")) | last | .payload.payload')"
 smthrs approvals approve "$ask" --scope once --json
 ```
 
