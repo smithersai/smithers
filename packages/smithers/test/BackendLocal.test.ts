@@ -46,4 +46,38 @@ describe("npm CLI in a real jj checkout", () => {
       await rm(directory, { recursive: true, force: true })
     }
   }, 120000)
+  it("reports conflicted paths, not copied ones, as change conflicts", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "one-cli-jj-conflicts-"))
+    const env = childEnvironment({
+      ...process.env,
+      JJ_USER: "CLI test",
+      JJ_EMAIL: "cli@example.test",
+      SMITHERS_DISABLE_SYSTEM_KEYRING: "1"
+    })
+    const run = (command: string, args: string[]) =>
+      execFileSync(command, args, { cwd: directory, env, encoding: "utf8", timeout: 30000 })
+    const conflicts = (rev: string) =>
+      JSON.parse(run(process.execPath, [cli, "change", "conflicts", rev, "--json"])).conflicts
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index}`).join("\n") + "\n"
+    try {
+      run("jj", ["git", "init"])
+      await writeFile(join(directory, "shared.txt"), lines)
+      run("jj", ["commit", "-m", "base"])
+      run("jj", ["bookmark", "create", "base", "-r", "@-"])
+      await writeFile(join(directory, "shared.txt"), "left\n")
+      run("jj", ["commit", "-m", "left"])
+      run("jj", ["bookmark", "create", "left", "-r", "@-"])
+      run("jj", ["new", "base"])
+      await writeFile(join(directory, "copy.txt"), lines)
+      await writeFile(join(directory, "shared.txt"), lines + "right\n")
+      run("jj", ["commit", "-m", "right"])
+      run("jj", ["bookmark", "create", "right", "-r", "@-"])
+      expect(run("jj", ["diff", "--summary", "-r", "right"])).toContain("C {shared.txt => copy.txt}")
+      expect(conflicts("right")).toEqual([])
+      run("jj", ["new", "left", "right", "-m", "merge"])
+      expect(conflicts("@")).toEqual(["shared.txt"])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  }, 120000)
 })

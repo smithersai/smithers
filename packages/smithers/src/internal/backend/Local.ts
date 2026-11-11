@@ -134,14 +134,14 @@ local["change diff"] = async (c, a) => ({
   change_id: a.id || "@",
   diff: await c.exec("jj", ["diff", "-r", str(a.id || "@")])
 })
-for (const name of ["files", "conflicts"]) {
-  local[`change ${name}`] = async (c, a) => ({
-    change_id: a.id,
-    [name]: (await files(c, str(a.id))).filter((file) => name === "files" || file.status.includes("C")).map((file) =>
-      file.path
-    )
-  })
-}
+local["change files"] = async (c, a) => ({
+  change_id: a.id,
+  files: (await files(c, str(a.id))).map((file) => file.path)
+})
+local["change conflicts"] = async (c, a) => ({
+  change_id: a.id,
+  conflicts: lines(await c.exec("jj", ["file", "list", "-r", str(a.id), "-T", "if(conflict, path ++ \"\\n\")"]))
+})
 local["land create"] = async (c, _a, o) => {
   const change_ids = o.change || o["change-id"]
     ? [str(o["change-id"] || o.change)]

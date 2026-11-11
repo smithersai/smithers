@@ -885,19 +885,22 @@ describe("workspace selection and local changes", () => {
     const { c, exec } = await fixture()
     exec.mockImplementation(async (_command, args) =>
       args[0] === "diff"
-        ? "M changed.ts\nC conflict.ts\n"
+        ? "M changed.ts\nC {changed.ts => copy.ts}\n"
+        : args[0] === "file"
+        ? "conflict.ts\n"
         : args[0] === "bookmark"
         ? "main\tchange\tcommit"
         : "change\tcommit\tDescription"
     )
     expect(await local.status!(c, {}, {})).toMatchObject({
       working_copy: { change_id: "change", commit_id: "commit" },
-      files: [{ status: "M", path: "changed.ts" }, { status: "C", path: "conflict.ts" }]
+      files: [{ status: "M", path: "changed.ts" }, { status: "C", path: "{changed.ts => copy.ts}" }]
     })
     expect(await local["change conflicts"]!(c, { id: "change" }, {})).toEqual({
       change_id: "change",
       conflicts: ["conflict.ts"]
     })
+    expect(exec).toHaveBeenCalledWith("jj", ["file", "list", "-r", "change", "-T", "if(conflict, path ++ \"\\n\")"])
     expect(await local["bookmark list"]!(c, {}, {})).toEqual([{
       name: "main",
       target_change_id: "change",
