@@ -155,3 +155,68 @@ export default defineConfig({ root: ${try sync(() => JSON.stringify(directory))}
     }), 60_000)
   }
 }
+
+// A user's member initializer must not be mistaken for Vite's generated import binding.
+for (const format of ["ts", "vibe"] as const) {
+  it.live(`counts named-import member initializers in ${format} without crediting an uncalled function`, () => scoped(effect {
+    provide NodeServices.layer, ExperimentalNodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-provider-import-" })
+      const root = try path.fromFileUrl(new URL("../", import.meta.url))
+      try fs.symlink(path.join(root, "node_modules"), path.join(directory, "node_modules"))
+      try fs.writeFileString(path.join(directory, "package.json"), '{"type":"module"}')
+      try fs.writeFileString(path.join(directory, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", lib: ["ES2022", "DOM"],
+          strict: true, skipLibCheck: true, rewriteRelativeImportExtensions: true, noEmit: true },
+        include: ["*.vibe", "*.ts"],
+      }))
+      try fs.writeFileString(path.join(directory, `mod.${format}`), 'export const EMPTY = "base"\n')
+      try fs.writeFileString(path.join(directory, `index.${format}`), `export * as Mod from "./mod.${format}"\n`)
+      const body = `export function run(items: ReadonlyArray<string>) {
+  let tree = Mod.EMPTY
+  for (const item of items) tree += item
+  return tree
+}
+export function uncalled() {
+  let tree = Mod.EMPTY
+  return tree
+}
+`
+      for (const kind of ["named", "star"] as const) {
+        const imports = kind === "named" ? `import { Mod } from "./index.${format}"\n` : `import * as Mod from "./mod.${format}"\n`
+        try fs.writeFileString(path.join(directory, `${kind}.${format}`), imports + body)
+      }
+      try fs.writeFileString(path.join(directory, "check.test.js"), `import { expect, test } from "vitest"
+import * as named from "./named.${format}"
+import * as star from "./star.${format}"
+test("executes both imports, leaving the second function uncalled", () => {
+  for (const module of [named, star]) expect(module.run(["x"])).toBe("basex")
+})
+`)
+      try fs.writeFileString(path.join(directory, "vite.config.mjs"), `import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+export default defineConfig({ root: ${try sync(() => JSON.stringify(directory))}, plugins: [vibelang()], test: {
+  include: ["check.test.js"], maxWorkers: 1,
+  coverage: { provider: "v8", include: ["named.${format}", "star.${format}"], reporter: ["json"], reportsDirectory: "coverage" }
+} })
+`)
+      const result = try run(try node(), [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", path.join(directory, "vite.config.mjs"), "--coverage"])
+      const json = try fs.readFileString(path.join(directory, "coverage/coverage-final.json"))
+      const raw = try Effect.try(() => JSON.parse(json))
+      try Effect.try(() => {
+        expect(result.status, result.stdout + result.stderr).toBe(0)
+        expect(result.stdout + result.stderr).toContain("1 passed")
+        for (const kind of ["named", "star"]) {
+          const data = raw[path.join(directory, `${kind}.${format}`)]
+          const hits = (line: number) => Object.entries(data.statementMap).filter(([, loc]: [string, any]) => loc.start.line === line).map(([id]) => data.s[id])
+          // Both function bodies have identical syntax; only run was called.
+          expect(hits(3), kind).toEqual([1])
+          expect(hits(8), kind).toEqual([0])
+          expect(Object.keys(data.fnMap)).toHaveLength(2)
+          expect(Object.values(data.f).sort()).toEqual([0, 1])
+        }
+      })
+    }
+  }), 60_000)
+}

@@ -63,6 +63,13 @@ The ordinary negative control in `sourceCoverage.test.vibe` retains the unvisite
 Remove the normalization hunk when the upstream provider merges these source ranges correctly and all six controls
 pass without it. Minimal raw before/after evidence is in the coverage lane report; no upstream write is authorized.
 
+The named-import regression (vl-bench resume 8, 2026-11-11) removes the provider's overly broad member-initializer
+filter. Vite rewrites a user's `let tree = Mod.EMPTY` to a member chain rooted in `__vite_ssr_import_*`; that is still
+an executed source statement. Only Vite's generated binding names are filtered, and unmapped scaffolding is discarded
+during remapping. The public-command regressions compare named and namespace imports in TypeScript and VibeLang,
+check the initializer has one hit, and require its identical uncalled function to retain zero hits. All seven prior
+provider controls remain. No compiler lowering, coverage exclusion or threshold changes.
+
 ## @alchemy.run/cloudflare@2.0.0-beta.85
 
 The `lib/Workers/WorkerProvider.js` hunk is explained beside its registration in `pnpm-workspace.yaml`.

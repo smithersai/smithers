@@ -57,7 +57,7 @@ index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..e1568f6e041bf07b64e5d095cfd0a612
  	async stopCoverage({ isolate }) {
  		if (isolate === false) {
 diff --git a/dist/provider.js b/dist/provider.js
-index 07ecd376670f3d648d0745632862debc22cba049..091d7ac1bf3e943ee4b136d25d5aa7a1ab95b624 100644
+index 07ecd376670f3d648d0745632862debc22cba049..5d9a0514e09d3138a90daca127a2abea06692cf3 100644
 --- a/dist/provider.js
 +++ b/dist/provider.js
 @@ -50,6 +50,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
@@ -77,7 +77,20 @@ index 07ecd376670f3d648d0745632862debc22cba049..091d7ac1bf3e943ee4b136d25d5aa7a1
  			code: result.code,
  			sourceMap: result.map,
  			ast,
-@@ -215,6 +216,39 @@ class V8CoverageProvider extends BaseCoverageProvider {
+@@ -173,10 +174,8 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 				if (type === "statement" && node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.id.name.startsWith("__vite_ssr_import_")) {
+ 					return true;
+ 				}
+-				// SSR transformed import binding
+-				if (type === "statement" && node.type === "VariableDeclarator" && node.init && node.init.type === "MemberExpression" && node.init.object.type === "MemberExpression" && node.init.object.object.type === "Identifier" && node.init.object.object.name.startsWith("__vite_ssr_import_")) {
+-					return true;
+-				}
++				// A member initializer such as const tree = __vite_ssr_import_0__.Mod.EMPTY is user code.
++				// Generated imports are filtered by their binding name above; sourcemaps discard unmapped scaffolding.
+ 				// SSR transformed exports vite@>6.3.5
+ 				if (type === "statement" && node.type === "ExpressionStatement" && node.expression.type === "AssignmentExpression" && node.expression.left.type === "MemberExpression" && node.expression.left.object.type === "Identifier" && node.expression.left.object.name === "__vite_ssr_exports__") {
+ 					return true;
+@@ -215,6 +214,39 @@ class V8CoverageProvider extends BaseCoverageProvider {
  				}
  			}
  		});
