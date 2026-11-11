@@ -485,7 +485,8 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     }
     if (matchingRefs && request.method === "GET") {
       const owned = fake.branches[`${matchingRefs[1]}/${matchingRefs[2]}`] ?? {}
-      const items = Object.entries(owned).filter(([name]) => name.startsWith(matchingRefs[3]!)).map(([name, sha]) => ({ ref: `refs/heads/${name}`, object: { sha, type: "commit" } }))
+      // GitHub answers matching refs sorted by name, not in the order they were made (test/fakeConformance.test.vibe).
+      const items = Object.entries(owned).filter(([name]) => name.startsWith(matchingRefs[3]!)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([name, sha]) => ({ ref: `refs/heads/${name}`, object: { sha, type: "commit" } }))
       return try page(items, false)
     }
     if (createRef && request.method === "POST") {

@@ -65,3 +65,17 @@ test("the role picker changes sandbox authority and keeps each person's files se
   await command.press("Enter")
   await expect(page.getByLabel("Terminal output")).toContainText("private")
 })
+
+// The fault page's sandbox meter runs on a clock that jumps once the first sandbox starts (test/support/FaultyFactory.vibe).
+for (const [fault, notice] of [["sandbox-low", "5 minutes left"], ["sandbox-out", /^Out of minutes — \S+ stopped$/]] as const) {
+  test(`${fault}: the meter's minutes show as a notice`, async ({ page }) => {
+    await page.goto(`/e2e/runtime/index.html?agent=mock&fault=${fault}`)
+    await page.getByRole("combobox", { name: "Visit as" }).selectOption("contributor")
+    await page.getByRole("button", { name: "Ask the agent" }).click()
+    await page.getByRole("dialog").getByRole("textbox").fill("hello")
+    await page.getByRole("dialog").getByRole("button", { name: "Send" }).click()
+    await page.getByRole("button", { name: "Sandboxes", exact: true }).click()
+    await page.getByRole("button", { name: "New sandbox" }).click()
+    await expect(page.getByRole("status", { name: "Sandbox minutes" })).toHaveText(notice, { timeout: 20_000 })
+  })
+}

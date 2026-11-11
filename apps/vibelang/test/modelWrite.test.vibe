@@ -1,0 +1,49 @@
+// The two proof-only functions in src/web/modelWrite.vibe, held to the code they specify: Escape writes the issues
+// screen exactly when the proved escapeWrite changes it, never when the page has no issues screen, and writing back the
+// screen just read changes nothing.
+import { describe, expect, it } from "@effect/vitest"
+import { actionsOf } from "../src/web/actionModel.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { accountOf, init, type Model } from "../src/web/main.vibe"
+import { escapeWrite, escapeWritesIssues, screenKept } from "../src/web/modelWrite.vibe"
+import { escapeScreen } from "../src/web/screenRead.vibe"
+import { type EscapeRoute, pressedEscape } from "../src/web/updateDecision.vibe"
+
+const home = init({ session: "pane", mode: "mock", name: "Guest" }).model
+const routes: ReadonlyArray<EscapeRoute> = ["tour", "palette", "docs", "splash"]
+const pages: ReadonlyArray<readonly [string, Model]> = [
+  ["no issues screen", (({ issues: _issues, ...rest }) => rest)(home)],
+  ["the issues list open", { ...home, issues: { ...initialIssues, open: true, dialog: "" } }],
+  ["an issue dialog open", { ...home, issues: { ...initialIssues, open: true, dialog: "split" } }],
+  ["the issues list closed", { ...home, issues: { ...initialIssues, open: false, dialog: "" } }],
+]
+
+describe("escapeWritesIssues", () => {
+  for (const [name, model] of pages) for (const route of routes) for (const wikiPane of [false, true]) {
+    it(`${name}, route ${route}, wiki pane ${wikiPane}: true exactly when Escape changes the issues screen`, () => {
+      const account = accountOf(model)
+      const actions = actionsOf(model)
+      const step = pressedEscape(escapeScreen(model, account, actions), route, wikiPane)
+      const written = escapeWrite(model, account, actions, model.issues ?? initialIssues, step)
+      const writes = escapeWritesIssues(model, account, actions, route, wikiPane)
+      expect(writes).toBe(model.issues !== undefined && JSON.stringify(written.issues) !== JSON.stringify(model.issues))
+      if (model.issues === undefined) expect(writes).toBe(false)
+    })
+  }
+})
+
+it("Escape over an open issue dialog or list writes the issues screen; over a tour it does not", () => {
+  const [, dialog] = pages[2]!
+  const [, list] = pages[1]!
+  expect(escapeWritesIssues(dialog, accountOf(dialog), actionsOf(dialog), "docs", false)).toBe(true)
+  expect(escapeWritesIssues(list, accountOf(list), actionsOf(list), "docs", false)).toBe(true)
+  expect(escapeWritesIssues(dialog, accountOf(dialog), actionsOf(dialog), "tour", false)).toBe(false)
+})
+
+describe("screenKept", () => {
+  for (const [name, model] of [...pages, ["a palette and a tour error", { ...home, palette: true, tourError: "busy" }] as const]) {
+    it(`${name}: writing back the screen just read changes nothing`, () => {
+      expect(screenKept(model)).toEqual(model)
+    })
+  }
+})

@@ -60,6 +60,21 @@ test.describe("the history page's refusals and epic page", () => {
     await expect(page.getByRole("dialog").getByText("Before", { exact: true })).toBeVisible()
   })
 
+  test("an open plan keeps naming its commit after the page goes back", async ({ page }) => {
+    await open(page, "&role=maintainer")
+    await page.getByRole("button", { name: /The compiler/ }).click()
+    await page.getByRole("list", { name: "The compiler" }).getByRole("link").first().click()
+    await expect(page).toHaveURL(/#m\d+$/)
+    const id = new URL(page.url()).hash.slice(1)
+    await page.getByRole("button", { name: "Insert before…" }).click()
+    const target = page.getByRole("dialog").locator(".mh-mono")
+    await expect(target).toHaveText(new RegExp(`^${id} \\S`))
+    // The dialog stays open over the list; the commit it plans before is still named, by its id.
+    await page.goBack()
+    await expect(page).not.toHaveURL(/#m\d+$/)
+    await expect(target).toHaveText(id)
+  })
+
   test("opens an epic's page from a commit's crumb, and from its address", async ({ page }) => {
     await open(page)
     await page.getByRole("button", { name: /The compiler/ }).click()

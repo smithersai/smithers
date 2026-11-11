@@ -28,6 +28,47 @@ test.describe("the history page when the history fails", () => {
     await expect(page.getByText("No mythical history yet.")).toBeVisible({ timeout: 20_000 })
   })
 
+  test("a history nothing is folded into yet shows no folded-through commit", async ({ page }) => {
+    await open(page, "unfolded")
+    await expect(page.getByTitle("Folded through")).toHaveCount(0)
+  })
+
+  test("a commit newer than the outline shows no epic until the outline reads again", async ({ page }) => {
+    await open(page, "reads")
+    // Spend the one failed search and commit read first.
+    const filter = page.getByRole("searchbox", { name: "Filter commits" })
+    await filter.fill("retry")
+    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
+    await filter.fill("register the computed-key match witness once")
+    await page.getByRole("list", { name: "Matching commits" }).getByRole("link").first().click()
+    await expect(page.getByRole("alert")).toHaveText(UNREACHABLE)
+    await page.getByRole("link", { name: "History", exact: true }).click()
+
+    // The plan's event reads the outline, which fails: the outline doesn't hold the new epic.
+    await page.getByRole("button", { name: "Plan work" }).click()
+    const dialog = page.getByRole("dialog", { name: "Plan work" })
+    await dialog.getByLabel("Epic").selectOption({ label: "New epic…" })
+    await dialog.getByLabel("New epic").fill("Later")
+    await dialog.getByLabel("Commit").fill("fix(history): ahead of the outline")
+    await dialog.getByRole("button", { name: "Plan work" }).click()
+    await expect(page.getByRole("heading", { level: 1, name: "fix(history): ahead of the outline" })).toBeVisible()
+    const trail = page.getByRole("navigation", { name: "Breadcrumbs" })
+    await expect(trail.getByRole("link", { name: "History", exact: true })).toBeVisible()
+    await expect(trail.getByRole("link", { name: "Later", exact: true })).toHaveCount(0)
+
+    await trail.getByRole("link", { name: "History", exact: true }).click()
+    await filter.fill("ahead of the outline")
+    const match = page.getByRole("list", { name: "Matching commits" }).getByRole("link", { name: "fix(history): ahead of the outline" })
+    await expect(match).toBeVisible()
+    await expect(match).not.toContainText("Later")
+
+    // The next event reads the outline again, and the commit's epic appears.
+    await match.click()
+    await page.getByLabel("Lane").fill("lane-a")
+    await page.getByRole("button", { name: "Start" }).click()
+    await expect(trail.getByRole("link", { name: "Later", exact: true })).toBeVisible()
+  })
+
   test("a failed epic, commit or search read says so, and reading again recovers", async ({ page }) => {
     await open(page, "reads")
     const compiler = page.getByRole("button", { name: /The compiler/ })

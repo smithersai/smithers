@@ -602,16 +602,15 @@ function accountScreen(model: Model): ModelDecision.AccountScreen { return Scree
 
 function escapeScreen(model: Model): UpdateDecision.EscapeScreen { return ScreenRead.escapeScreen(model, accountOf(model), actionsOf(model)) }
 
-/** Applies Escape's one proved change: its Model is the proved escapeWrite (modelWrite.vibe); Escape writes the issues
- *  screen only when the Model has one (escapeWritesIssues), so the default never stands in for it. */
+/** Applies Escape's one proved change: its Model is the proved escapeWrite (modelWrite.vibe), which leaves the Model
+ *  as it is for a tour, the palette and the splash, whose own steps then run; Escape writes the issues screen only when
+ *  the Model has one (escapeWritesIssues), so the default never stands in for it. */
 function runEscape(model: Model, step: UpdateDecision.EscapeStep): Update.Return<Model, Message, Factory | Actions> {
-  switch (step.kind) {
-    case "tour": return endTour(model)
-    case "palette": return openPalette(model, false)
-    case "splash": return minimizeSplash(model)
-  }
   const next = ModelWrite.escapeWrite(model, accountOf(model), actionsOf(model), model.issues ?? initialIssues, step)
   switch (step.kind) {
+    case "tour": return endTour(next)
+    case "palette": return openPalette(next, false)
+    case "splash": return minimizeSplash(next)
     case "role": return { model: next, commands: [CloseRoleDialog({})] }
     case "issue-dialog": return { model: next, commands: [CloseIssueDialog({})] }
     case "menu": return { model: next, commands: [FocusAccountMenu({ open: false })] }

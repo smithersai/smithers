@@ -52,6 +52,15 @@ describe("the list", () => {
     )
   })
 
+  it("open work in an epic the outline doesn't hold yet is named by its title, with no epic beside it", () => {
+    // A search or epic page can be newer than the outline: another client opened the epic after the outline was read.
+    const model = loaded("viewer")
+    const head = { id: "m9", epic: "e-later", rank: 9, title: "Later work", state: "planned" as const, task: "", lane: "", notes: 0, folds: 0 }
+    scene(app, given({ ...model, filter: "Later", matches: { seq: model.outline.seq + 1, query: "Later", commits: [head] } }),
+      expect(role("link", { name: "Later work" })).toHaveAttr("href", "#m9"),
+    )
+  })
+
   it("an untitled epic is offered as Epic in the plan form", () => {
     const model = loaded("contributor")
     scene(app, given({ ...model, outline: { ...model.outline, epics: model.outline.epics.map((epic, index) => index === 0 ? { ...epic, title: " " } : epic) } }),
@@ -90,6 +99,14 @@ describe("a commit's page", () => {
     const page = model.commit!
     scene(app, given({ ...model, commit: { ...page, real: page.real.map((each) => ({ ...each, sha: "" })) } }),
       expect(role("link", { name: "Commit" })).toExist(),
+    )
+  })
+
+  it("a commit read that failed names the commit and says why, instead of a skeleton", () => {
+    const model = loaded("viewer", "m7")
+    scene(app, given({ ...model, commit: { seq: 0, commit: null, real: [] }, commitId: "", error: "unavailable" }),
+      expect(within(role("navigation", { name: "Breadcrumbs" }), role("link", { name: "History" }))).toExist(),
+      expect(role("alert")).toExist(),
     )
   })
 })

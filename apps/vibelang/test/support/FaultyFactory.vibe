@@ -7,7 +7,7 @@ import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "roles-gap" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "sandbox-low" | "sandbox-out" | "roles" | "roles-gap" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -74,7 +74,8 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
 
 /**
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
- * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
+ * fails every sandbox read; `sandbox-start` fails the first start; `sandbox-low` and `sandbox-out` move the sandbox
+ * meter's clock, once the first sandbox starts, to five minutes before the allowance runs out or a minute past it; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
@@ -96,6 +97,24 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       once.add(name)
       return true
     }
+    // The sandbox meter's faulty clock: the wall clock plus `skew`. It starts on the 15th of this month (UTC), so the
+    // jump when the first sandbox starts, at most a contributor's 600 minutes, never crosses into the next month.
+    const wall = try Clock.Clock
+    const skewed = fault === "sandbox-low" || fault === "sandbox-out"
+    const built = new Date(wall.currentTimeMillisUnsafe())
+    let skew = skewed ? Date.UTC(built.getUTCFullYear(), built.getUTCMonth(), 15) - built.getTime() : 0
+    let skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
+    let jumped = false
+    const clock: Clock.Clock = {
+      currentTimeMillisUnsafe: () => wall.currentTimeMillisUnsafe() + skew,
+      currentTimeMillis: sync(() => wall.currentTimeMillisUnsafe() + skew),
+      currentTimeNanosUnsafe: () => wall.currentTimeNanosUnsafe() + skewNanos,
+      currentTimeNanos: sync(() => wall.currentTimeNanosUnsafe() + skewNanos),
+      monotonicTimeNanosUnsafe: () => wall.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: wall.monotonicTimeNanos,
+      sleep: (duration) => wall.sleep(duration),
+    }
+    const metered = <A, E, R>(run: Effect.Effect<A, E, R>) => skewed ? Effect.provideService(run, Clock.Clock, clock) : run
     return {
       mode: fault === "live-header" || fault === "live-details" ? "live" : base.mode,
       ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
@@ -161,14 +180,21 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       },
       sandbox: effect (conversation) => {
         if (fault === "sandbox-read") throw new Unavailable({ reason: "sandbox unavailable" })
-        return try base.sandbox(conversation)
+        return try metered(base.sandbox(conversation))
       },
       startSandbox: effect (conversation, operationId) => {
         if (first("sandbox-start")) throw new Unavailable({ reason: "sandbox unavailable" })
-        return try base.startSandbox(conversation, operationId)
+        const started = try metered(base.startSandbox(conversation, operationId))
+        if (skewed && !jumped) {
+          jumped = true
+          skew += (fault === "sandbox-low" ? started.remaining - 5 : started.remaining + 1) * 60_000
+          skewNanos = try Effect.orDie(Effect.try(() => BigInt(skew) * 1_000_000n))
+          try Effect.logInfo("vibelang.e2e.sandbox-clock").pipe(Effect.annotateLogs({ fault }))
+        }
+        return started
       },
-      stopSandbox: base.stopSandbox,
-      sandboxCommand: base.sandboxCommand,
+      stopSandbox: (conversation, operationId, generation) => metered(base.stopSandbox(conversation, operationId, generation)),
+      sandboxCommand: (conversation, operationId, command, generation) => metered(base.sandboxCommand(conversation, operationId, command, generation)),
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         if (conversation.startsWith("tour-") && first("tour-events")) return Stream.fail(new Unavailable({ reason: "connection interrupted" }))

@@ -35,6 +35,8 @@ test("after a save, a page shows the repository's copy, not the build's", async 
   await expect(editor).toHaveCount(0)
   await expect(wiki(page).getByRole("heading", { name: "Wiki fixture", exact: true })).toBeVisible()
   await expect(wiki(page).getByText("A real repository page.", { exact: true })).toBeVisible()
+  // The repository copy's relative link resolves to the wiki's own page.
+  await expect(wiki(page).getByRole("link", { name: "roadmap", exact: true })).toHaveAttribute("href", "/wiki/roadmap")
 })
 
 test("a pause the server doesn't take is visible during the tour", async ({ page }) => {

@@ -23,7 +23,8 @@ export type State = typeof WikiState.Type
 export const FULL = `${TEST_REPOSITORY.owner}/${TEST_REPOSITORY.name}`
 export const PAGE = pages[0]!.id
 export const PATH = `wiki/${PAGE}.md`
-export const SOURCE = "# Wiki fixture\n\nA real repository page.\n"
+// It links to another wiki page, so a browser showing the repository copy resolves a link (e2e/fault-paths.spec.ts).
+export const SOURCE = "# Wiki fixture\n\nA real repository page.\n\nSee the [roadmap](roadmap.md).\n"
 const blank: WikiRequest = { op: "read", page: PAGE, base: "", text: "", key: "k" }
 /** Who is asking: the person GitHub names as the author of what the run writes, a maintainer unless it says otherwise. */
 export interface Caller { readonly role: Principal["role"]; readonly kind?: "person" | "agent" }

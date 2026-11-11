@@ -84,3 +84,13 @@ test("a VIP whose save was lost reopens at its review step with Retry", async ({
   await expect(page).toHaveURL(origin + "/?issues=1")
   await expect(page.locator(".sui-item-conv-header")).toContainText("VIP · In review")
 })
+
+test("a deployment without sign-in says so when Sign in is pressed", async ({ page }, info) => {
+  const origin = origins[info.project.name]!
+  await page.request.post(origin + "/__fault?writes=0&session=unavailable")
+  await open(page, origin, "")
+  const signIn = page.getByRole("button", { name: "Sign in", exact: true })
+  await signIn.click()
+  await expect(page.getByRole("alert").getByText("Sign-in unavailable.")).toBeVisible()
+  await expect(signIn).toBeEnabled()
+})

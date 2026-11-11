@@ -1,17 +1,20 @@
 // Unshipped live browser host: production issue HTTP routes and GitHub host, the real durable engine and delegation,
 // SQLite in workerd, and strict GitHub replay (test/support/recordedIssues.vibe). Faults fail the host at its Effect
 // boundary before a GitHub call; the engine keeps that failed request for the browser to recover after a reload.
+// `/__fault?session=unavailable` answers the session route as a deployment without sign-in does (`Accounts.disabled`).
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpRecording } from "@smthrs/testing"
 import { IssueHost } from "../../src/core/issueFlows.vibe"
 import { IssueFailure, IssueRequest } from "../../src/core/issueSchemas.vibe"
 import { HEALTH_PATH } from "../../src/core/wire.vibe"
 import { IssueAuthority, serveIssues } from "../../worker/Issues.vibe"
+import * as Accounts from "../../worker/Accounts.vibe"
 import { GitHubDelegate } from "../../worker/GitHubDelegate.vibe"
 import type { Storage } from "../../worker/Objects.vibe"
 import { recordedClient, recordedConnection, recordedPerson, REPOSITORY } from "../support/recordedIssues.vibe"
 
 const FAULTS = "faults/writes"
+const SESSION = "faults/session"
 const PHASE = "recording/phase"
 export class LiveIssuesObject {
   constructor(readonly state: { readonly storage: Storage; readonly id: { toString(): string } }, readonly env: { readonly RECORDING: string }) {}
@@ -20,7 +23,15 @@ export class LiveIssuesObject {
     const url = new URL(request.url)
     if (url.pathname === "/__fault") {
       await storage.put(FAULTS, Number(url.searchParams.get("writes") ?? "0"))
+      await storage.put(SESSION, url.searchParams.get("session") ?? "")
       return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
+    if (url.pathname === "/api/auth/session") {
+      if (await storage.get(SESSION) !== "unavailable") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(recordedPerson))
+      return HttpServerResponse.toWeb(await runPromise(Accounts.disabled().pipe(
+        Effect.tap(() => Effect.logWarning("vibelang.e2e.session-fault")),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+      )))
     }
     const input = request.method === "POST" ? Schema.decodeUnknownSync(IssueRequest)(await request.clone().json()) : undefined
     const phase = await storage.get(PHASE)
@@ -52,8 +63,7 @@ interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fet
 export default { fetch(request: Request, env: { readonly ISSUES: Namespace }) {
   const path = new URL(request.url).pathname
   if (path === HEALTH_PATH) return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "live" }))
-  if (path === "/api/auth/session") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(recordedPerson))
   if (path === "/api/roles") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe([recordedPerson]))
-  if (path === "/api/issues" || path === "/__fault") return env.ISSUES.get(env.ISSUES.idFromName("issues")).fetch(request)
+  if (path === "/api/issues" || path === "/api/auth/session" || path === "/__fault") return env.ISSUES.get(env.ISSUES.idFromName("issues")).fetch(request)
   return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
 } }

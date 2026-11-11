@@ -292,6 +292,8 @@ effect function serveApi() {
   }
   const will = try session({ id: "1", login: "will" })
   const ada = try session({ id: "7", login: "ada" })
+  // Another person, whose grants the page must not take as its own.
+  try session({ id: "8", login: "bo" })
   const accounts = try Accounts.make("history-startup", storage, {
     origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
   })
@@ -370,6 +372,26 @@ it.live("live, a signed-in person plays the session's role, and a grant changes 
       }, { timeout: 5000 }))
       // The grant arrived as a role event; the session was not read again.
       try Effect.try(() => expect(client.asked("/api/auth/session")).toBe(1))
+    })
+  }
+}), 30_000)
+
+it.live("live, a grant to someone else leaves the person's role", () => scoped(effect {
+  const { node, window } = try host()
+  provide NodeHttpServer.layerTest, MockMythical(PERSON, small) {
+    try scoped(effect {
+      const api = try serveApi()
+      try api.maintainer.grant("7", "contributor")
+      const client = pageClient(api.native, api.origin, api.ada)
+      const { frame } = try mountLive(node, window, client.layer)
+      try promise(() => vi.waitFor(() => expect(frame()?.getAttribute("data-role")).toBe("contributor"), { timeout: 5000 }))
+      // Bo's grant reaches the page's role stream within milliseconds on loopback; 1.5 s later Ada is still a contributor.
+      try api.maintainer.grant("8", "community")
+      try sleep("1500 millis")
+      try Effect.try(() => expect(frame()?.getAttribute("data-role")).toBe("contributor"))
+      // The stream still follows Ada's own grants.
+      try api.maintainer.grant("7", "maintainer")
+      try promise(() => vi.waitFor(() => expect(frame()?.getAttribute("data-role")).toBe("maintainer"), { timeout: 5000 }))
     })
   }
 }), 30_000)

@@ -44,6 +44,75 @@ Named browser sites and status:
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
 
+### History fallbacks, refused sign-in, sandbox minutes, the wiki link and escape (session 22, 2026-11-11)
+
+**History fallbacks.** Five `historyView.vibe` fallbacks are for data the history never holds. The proved `decide`
+(`src/history/mythical.vibe`) trims each epic and commit title and refuses one that is then empty. It also refuses
+an empty id and a fold with an empty SHA, and the Sequencer's SHAs come from git. The five are a blank epic label in
+the crumb and in the plan form, a blank commit link name, and a blank SHA. This session deleted them, but on rebase
+`main` had moved them into proved helpers (`historyViewDecision.vibe` `orFallback` and the commit link name, another
+lane's work). They are kept as that lane wrote them, and the unit scenes that reach their fallback arms stay. In the
+browser their blank arms stay uncovered; they close if `decide`'s guarantee is moved into the outline's schema.
+`fuzz/issues-node-fake.vibe` now answers matching refs sorted by name, as GitHub does. The new recording made the
+conformance test (`test/fakeConformance.test.vibe`) fail first: the fake had answered in creation order.
+
+The four reachable fallbacks are now credited in Chromium:
+
+| Site | When it happens | Journey |
+| --- | --- | --- |
+| `historyView.vibe:111`, no folded-through mark | A read between the first fold's `EpicOpened` and its `Folded`: the Sequencer writes three events | fault `unfolded` (`test/support/FaultyMythical.vibe`), `e2e/history-faults.spec.ts` |
+| `historyView.vibe:191`, `:251`, an epic missing from the outline | A search or commit page newer than the outline, here because the outline read after a plan failed | `e2e/history-faults.spec.ts` "a commit newer than the outline…" |
+| `historyView.vibe:365`, the plan target unknown | The page went back while the plan dialog stayed open (`navigatedFrame` keeps the dialog) | `e2e/history-paths.spec.ts` "an open plan keeps naming its commit…" |
+| `historyView.vibe:59`, a failed commit read (unit gate) | The commit read failed | unit scene |
+
+**Live sign-in refused.** The live workerd host (`test/workerd/live-issues.vibe`) now answers
+`/__fault?session=unavailable` with the session route of a deployment that has no sign-in: the production
+`Accounts.disabled()`. `e2e/live-issues.spec.ts` "a deployment without sign-in…" reaches `clickedSignIn`'s refused arm.
+
+**Sandbox minutes.** Faults `sandbox-low` and `sandbox-out` (`test/support/FaultyFactory.vibe`) run the sandbox meter
+on a faulty `Clock`. It starts on the 15th of the current month (UTC), so the jump never crosses a reset. When the
+first sandbox starts, it jumps to five minutes before the allowance runs out, or to one minute past it.
+`e2e/sandboxes.spec.ts` checks "5 minutes left" and "Out of minutes — <id> stopped" (`sandboxLowMinutes`,
+`sandboxOutOfMinutes`).
+
+**Wiki link.** The fixture page (`test/support/wikiWorld.vibe` `SOURCE`) now links to the roadmap. `wiki.json` was
+recorded again against `codeplanesmithers/smithers-vibelang-e2e` (0032; label `wiki-1794437464295`, 100 exchanges,
+135 KB). The old recording failed first with `UnrecordedRequestError`. Afterwards the test repository had no open pull
+request and no branch from the run. vl-bench's `bench/wiki-delegated.bench.vibe` replays the new recording and its
+description names the link. `e2e/fault-paths.spec.ts` checks that the link resolves to `/wiki/roadmap`
+(`wikiView.vibe:88`).
+
+**Unit gaps from another lane's refactor.** `runEscape` (`main.vibe`) now runs the proved `escapeWrite` for every
+kind. The proof shows it returns the Model unchanged for a tour, the palette and the splash, whose own steps then run,
+so those three arms are live. `escapeWritesIssues` and `screenKept` are proof-only. They are tested against the code
+they specify (`test/modelWrite.test.vibe`), as earlier specification functions are, because VibeLang has no
+specification-only function (`~/vl/vibelang-bugs/spec-only-function`). `historyStartup.vibe:71`: a grant to someone
+else leaves the person's role. That test failed with the person filter removed: Expected contributor, Received
+community.
+
+Named, not closed:
+
+| Site | Reason | Closes with |
+| --- | --- | --- |
+| `historyStartup.vibe:69`, `identity.ledger?.seq ?? 0` | Both Accounts (worker and mock) give every signed-in identity a ledger. `Identity.ledger` is optional only because a viewer has none. | `Identity` as a union of a viewer and a signed-in person (vl-roles, 0019) |
+| `modelDecision.vibe` `slashHighlight` empty, `actionsFailureApplies` no epoch | Unchanged from session 21 | Unchanged |
+| `src/history/flows.vibe:213` (V8), `src/history/tools.vibe:93` (VL-37) | Unchanged | Unchanged |
+
+Measurements on this session's tree (unit: box node26 job `c70505ea…`; browser: box playwright). The unit run had
+two failing tests, both fixed after it (the fake's ref order, and a scene test of a deleted fallback, restored with
+the fallback on rebase):
+
+| Gate | Files below 100% | Lines | Branches | Functions | Statements |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| Unit, session 21 → 22 | 14/196 → 12/196 | 8596/8619 → 8617/8634 | 8895/8940 → 8881/8919 | 3253/3271 → 3271/3287 | 10928/10954 → 10950/10970 |
+| Browser, session 21 → 22 | 95/117 → 94/117 | 4235/5339 → 4425/5354 | 4112/6134 → 4231/6113 | 1811/2231 → 1884/2247 | 5063/6817 → 5286/6833 |
+
+Browser checks: 432 passed, 12 opt-in skips, 0 unexpected. `historyView.vibe` read 100% in the browser before the
+rebase onto the proved helpers above. The unit
+files still below 100% are `MockFactory`, `core/flows`, `issueGraphDecision` and `replayDecision` (proof-only),
+`issueHostDecision`, `sandboxHost`, `sandboxMeter`, `sandboxMock`, `history/tools` (VL-37), `historyStartup` (`:69`,
+above), `view` and `worker/mainLogDecision`. `modelWrite` reaches 100%.
+
 ### Browser coverage across navigations, and People over a maximized pane (session 21, 2026-11-11)
 
 Both full gates, each on a box over this session's tree before its history journey. `pnpm test:coverage`
