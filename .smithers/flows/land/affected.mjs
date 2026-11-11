@@ -366,8 +366,8 @@ export const gitSource = (root, base, tree) => {
 const indexPath = ".smithers/target-index.json"
 
 /**
- * Paths the farm clients never copy to a host (farm/mini-run's filter and lat-run's excludes): credentials,
- * build output and media. A change to one can't reach the tests that run there.
+ * Paths the farm clients never copy to a host (farm/credentials.filter, farm/mini-run's filter and lat-run's
+ * excludes): credentials, build output and media. A change to one can't reach the tests that run there.
  */
 export const farmSkips = (path) => {
   const parts = path.split("/"), name = parts.at(-1)

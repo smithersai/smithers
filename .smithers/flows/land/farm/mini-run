@@ -145,7 +145,8 @@ fi
 node -e 'setTimeout(()=>{require("fs").writeFileSync(process.argv[2],"timeout"); console.error("[mini-run] RUN_TIMEOUT after "+process.argv[3]+"s"); process.kill(Number(process.argv[1]),"SIGTERM")},Number(process.argv[3])*1000)' "$$" "$STATE/timeout.$RUN_ID" "$RUN_SECONDS" &
 TIMER=$!
 # Perishable exclusions protect installed/generated paths but permit removing
-# a deleted source package. Never send credentials or VCS storage to the mini.
+# a deleted source package. Never send VCS storage to the mini. credentials.filter
+# keeps credentials and private data out and deletes copies left in the slot.
 FILTER=$STATE/filter.$$
 cat > "$FILTER" <<'FILTERS'
 -,p .jj/
@@ -156,22 +157,12 @@ cat > "$FILTER" <<'FILTERS'
 -,p .alchemy/
 -,p .wrangler/
 -,p .cache/
--,p .env*
--,p .dev.vars*
--,p .ssh/
--,p .aws/
--,p .npmrc
--,p *.pem
--,p *.key
--,p *.p12
--,p *.tfstate*
--,p /data/
 -,p test-results/
 -,p playwright-report/
 FILTERS
 SYNC=1
 for _attempt in 1 2 3; do
-  rsync -a --timeout=60 --delete --filter="merge $FILTER" "$SRC/" "$HOST:smithers-mirror/slot$SLOT/"
+  rsync -a --timeout=60 --delete --filter="merge $BASE/credentials.filter" --filter="merge $FILTER" "$SRC/" "$HOST:smithers-mirror/slot$SLOT/"
   SYNC=$?
   [ "$SYNC" != 23 ] && [ "$SYNC" != 24 ] && break
   sleep 1

@@ -14,6 +14,9 @@ credential belongs in this directory. `MINI_RUN_HOST` and `LAT_RUN_ENDPOINTS`
 can supply the same settings explicitly. The Mac needs Node, Python, SSH and
 rsync; tests additionally need jj, Bash, diff3 and ShellCheck. No install runs
 on the Mac. Each client uploads its server helper only after reserving a slot.
+Neither client uploads the credentials and private data named in
+`credentials.filter` (`.env*`, `.npmrc`, `.ssh/`, keys, Terraform state, `/data/`),
+and each sync deletes any copy an older client left in the slot.
 
 ```sh
 MINI_RUN_SRC=$PWD ~/.smithers-lead/scratchpad-mirror/mini-run apps/mvp -- pnpm exec vitest run --coverage.enabled=false db/Database.test.ts

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert"
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync, rmSync, mkdirSync, readdirSync } from "node:fs"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { test } from "node:test"
 import { install, files } from "./install.mjs"
@@ -19,7 +19,7 @@ test("atomic installation preserves private config, live reservations and unrela
   assert.equal(readFileSync(join(root, "mini-farm/slot1.lock/owner"), "utf8"), "live\n")
   for (const path of files) {
     assert.deepEqual(readFileSync(join(root, path)), readFileSync(join(here, path)))
-    if (!path.endsWith(".yml")) assert.ok(statSync(join(root, path)).mode & 0o100)
+    if (!/\.(yml|filter)$/.test(path)) assert.ok(statSync(join(root, path)).mode & 0o100)
   }
   assert.equal(readdirSync(root).some((name) => name.endsWith(".new")), false)
 })
@@ -110,5 +110,57 @@ test("Latitude rejects invalid configuration and unsafe detached launches before
     const result = run("python3", ["lat-run", ".", "--", "true"], { env: { ...baseline, ...patch } })
     assert.equal(result.status, 2)
     assert.equal(result.stderr.includes("Traceback"), false)
+  }
+})
+
+// Fake SSH: health, reservation and the job succeed; every other command (rsync's server, helper uploads,
+// remote locks) runs locally in the fake host home, so each client performs its real transfer.
+const fakeHost = (root) => {
+  const home = join(root, "host")
+  for (const dir of ["lat-mirror/.farm", "smithers-mirror/.farm"]) mkdirSync(join(home, dir), { recursive: true })
+  mkdirSync(join(root, "bin"))
+  writeFileSync(join(root, "bin/ssh"), `#!/bin/bash
+while [ "$1" = -i ] || [ "$1" = -o ]; do shift 2; done
+shift; command="$*"
+case "$command" in
+  *flock*) echo reserved; cat >/dev/null; exit 0;;
+  'bash -s -- "$HOME"') cat >/dev/null; exit 0;;
+  *'.farm/remote-'*) exit 0;;
+esac
+cd ${JSON.stringify(home)} && HOME=${JSON.stringify(home)} exec bash -c "$command"
+`, { mode: 0o755 })
+  return home
+}
+
+const privateFiles = [".npmrc", ".env", ".env.local", ".dev.vars", ".dev.vars.production", ".ssh/id_rsa", ".aws/credentials", "fixture.p12", "fixture.pem", "fixture.key", "fixture.tfstate", "fixture.tfstate.backup", "data/private.json", "apps/mvp/.env", "apps/mvp/.npmrc", "apps/mvp/.ssh/id_ed25519"]
+const sourceFiles = ["package.json", "apps/mvp/index.ts", "apps/mvp/data/fixture.json", "apps/mvp/env.ts"]
+
+test("both clients never upload credentials or private data and delete copies left in a reused slot", async (t) => {
+  const { farmSkips } = await import("../affected.mjs")
+  for (const [client, mirror, interpreter, env] of [
+    ["lat-run", "lat-mirror", "python3", { LAT_RUN_ENDPOINTS: '{"fixture":"fake"}', LAT_RUN_HOSTS: "fixture", LAT_RUN_SLOT_LAST: "1" }],
+    ["mini-run", "smithers-mirror", "bash", { MINI_RUN_HOST: "fake" }]
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), `devx-farm-${client}-`))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    install(root)
+    const home = fakeHost(root), source = join(root, "src"), slot = join(home, mirror, "slot1")
+    for (const path of [...privateFiles, ...sourceFiles]) {
+      mkdirSync(dirname(join(source, path)), { recursive: true }); writeFileSync(join(source, path), "canary\n")
+      mkdirSync(dirname(join(slot, path)), { recursive: true }); writeFileSync(join(slot, path), "left by an older client\n")
+    }
+    const result = spawnSync(interpreter, [join(root, client), "apps/mvp", "--", "true"], {
+      encoding: "utf8", timeout: 30000,
+      env: { ...process.env, ...env, PATH: `${join(root, "bin")}:${process.env.PATH}`, LAT_RUN_SRC: source, MINI_RUN_SRC: source, LAT_RUN_WAIT_SECONDS: "5", MINI_RUN_WAIT_SECONDS: "5" }
+    })
+    assert.equal(result.status, 0, `${client}: ${result.stderr}`)
+    for (const path of privateFiles) {
+      assert.equal(existsSync(join(slot, path)), false, `${client} left ${path} in the slot`)
+      assert.ok(farmSkips(path), `farmSkips must name ${path}`)
+    }
+    for (const path of sourceFiles) {
+      assert.equal(readFileSync(join(slot, path), "utf8"), "canary\n", `${client} must send ${path}`)
+      assert.equal(farmSkips(path), false, path)
+    }
   }
 })

@@ -108,8 +108,8 @@ try:
   if keeper is None: time.sleep(2)
  print(f'[lat-run] {host} slot {slot}',file=sys.stderr)
  target=ips[host]
- excludes=['/apps/maintainer-site/queue/before/','/evals/swebench/logs/','*.mp4','*.webm','/.specs/design/mock/','/apps/app/build/','/apps/app/artifacts/','.native/','/packages/smithers/out/','/apps/backend/backend','.flows/','.native-ffi/','.artifacts/','.backend-go-modcache/','.backend-sqlc/','.playwright-mcp/','target/','.cache/','.venv/','.jj/','.git/','node_modules/','dist/','dist-chrome/','dist-firefox/','.env*','*.pem','*.key','.alchemy/','.wrangler/','test-results/','playwright-report/']
- sync=['rsync','-a','--timeout=60','--delete','-e',shlex.join(ssh)]
+ excludes=['/apps/maintainer-site/queue/before/','/evals/swebench/logs/','*.mp4','*.webm','/.specs/design/mock/','/apps/app/build/','/apps/app/artifacts/','.native/','/packages/smithers/out/','/apps/backend/backend','.flows/','.native-ffi/','.artifacts/','.backend-go-modcache/','.backend-sqlc/','.playwright-mcp/','target/','.cache/','.venv/','.jj/','.git/','node_modules/','dist/','dist-chrome/','dist-firefox/','.alchemy/','.wrangler/','test-results/','playwright-report/']
+ sync=['rsync','-a','--timeout=60','--delete','-e',shlex.join(ssh),'--filter=merge '+str(BASE/'credentials.filter')]
  for item in excludes: sync+=['--exclude='+item]
  t=time.monotonic()
  transfer=sp.Popen(sync+[str(SRC)+'/',target+f':lat-mirror/slot{slot}/'])

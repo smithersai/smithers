@@ -5,14 +5,14 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
-export const files = ["mini-run", "mini-remote.sh", "lat-run", "lat-remote.sh", "lat-services.sh", "health.sh", "compose.slot.yml"]
+export const files = ["mini-run", "mini-remote.sh", "lat-run", "lat-remote.sh", "lat-services.sh", "health.sh", "compose.slot.yml", "credentials.filter"]
 export function install(destination = join(homedir(), ".smithers-lead/scratchpad-mirror")) {
   mkdirSync(destination, { recursive: true })
   for (const name of files) {
     const temporary = join(destination, `.${name}.${process.pid}.new`)
     try {
       copyFileSync(join(import.meta.dirname, name), temporary)
-      chmodSync(temporary, name.endsWith(".yml") ? 0o644 : 0o755)
+      chmodSync(temporary, /\.(yml|filter)$/.test(name) ? 0o644 : 0o755)
       renameSync(temporary, join(destination, name))
     } finally { rmSync(temporary, { force: true }) }
   }
