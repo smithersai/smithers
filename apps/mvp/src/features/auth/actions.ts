@@ -104,7 +104,7 @@ export const load = Effect.gen(function* () {
   return (state.signedIn ? state.roleConfirmed === false ? "unconfirmed" : "signed_in" : "signed_out") as CheckOutcome
 }).pipe(Effect.annotateLogs({ feature: "auth" }))
 
-/** What started a session check: the app opening, the browser coming back online, or `auth/refresh` asking again. */
+/** What started a session check: the app opening, the browser coming back online, a manual retry, or `auth/refresh` asking again. */
 export type CheckVia = "startup" | "online" | "retry"
 
 /**

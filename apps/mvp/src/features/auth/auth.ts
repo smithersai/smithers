@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, Layer, Queue, Stream } from "effect"
 import { runners } from "../../boundary"
 import { FlowDispatch } from "../../flows/dispatch"
-import { check, load, pressSignIn, refresh, restore, signOut } from "./actions"
+import { check, pressSignIn, refresh, restore, signOut } from "./actions"
 import type { AuthClient } from "./api"
 import type { DeviceWipe } from "./device"
 import { AuthStore } from "./store"
@@ -42,7 +42,7 @@ export class Auth extends Context.Service<Auth, { readonly queries: AuthQueries;
     Effect.gen(function* () {
       const store = yield* AuthStore
       const { runSync: run } = runners(yield* Effect.context<AuthStore | AuthClient | DeviceWipe | FlowDispatch>(), "auth")
-      const reload = Effect.asVoid(Effect.forkIn(load.pipe(
+      const reload = Effect.asVoid(Effect.forkIn(check("retry").pipe(
         Effect.tap((outcome) => outcome === "unreachable" || outcome === "unconfirmed" ? refresh : Effect.void),
       ), store.scope, { startImmediately: true }))
       yield* Effect.forkIn(restore, store.scope, { startImmediately: true })

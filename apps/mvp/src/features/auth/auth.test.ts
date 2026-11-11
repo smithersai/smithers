@@ -694,6 +694,70 @@ test("an online check waits for the unresolved startup check instead of overlapp
   expect(tab.count(sessionRefreshes, { via: "online" })).toBe(1)
 })
 
+test.each(["startup", "online", "reload"] as const)(
+  "manual reload waits for a held %s check and keeps the newer role on the device",
+  async (via) => {
+    const b = browser(await signInHarness(server))
+    await b.signIn()
+    const entered = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    let holdNext = via !== "online"
+    let calls = 0
+    let active = 0
+    let maximum = 0
+    // Hold a real Member answer after ChatApi has read it, so a later request can observe the demotion.
+    const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.gen(function* () {
+        calls++
+        active++
+        maximum = Math.max(maximum, active)
+        const hold = holdNext
+        holdNext = false
+        const state = yield* real.session
+        if (hold) {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+        }
+        return state
+      }).pipe(Effect.ensuring(Effect.sync(() => { active-- }))),
+    }))).pipe(Layer.provide(realClient(b)))
+    const target = new EventTarget()
+    const device = nodeDevice()
+    const tab = await openTab(client, device, device.wipe, via === "reload" ? false : target)
+    if (via === "online") {
+      await vi.waitFor(() => expect(lines(tab, "session loaded")).toHaveLength(1))
+      holdNext = true
+      target.dispatchEvent(new Event("online"))
+    } else if (via === "reload") tab.actions.reload()
+    await Effect.runPromise(Deferred.await(entered))
+    const before = calls
+    const completed = lines(tab, "session loaded").length
+    try {
+      await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE sessions SET role = 'guest'`))
+      tab.actions.reload()
+      // Give the public action's fork a turn while the earlier Member answer remains held.
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    } finally {
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+    }
+    await vi.waitFor(() => expect(lines(tab, "session loaded")).toHaveLength(completed + 2))
+    expect(tab.session().role).toBe("guest")
+    expect(tab.confirmed()?.role).toBe("guest")
+    expect(tab.access()).toBe("members_only")
+    expect(calls).toBe(before + 1)
+    expect(maximum).toBe(1)
+    expect(tab.count(sessionRefreshes, { via: "retry" })).toBe(via === "reload" ? 2 : 1)
+    expect(lines(tab, "auth.session_refresh").at(-1)).toEqual({ via: "retry" })
+    await vi.waitFor(() => expect(device.storedRows("auth-confirmed")).toEqual([expect.objectContaining({ role: "guest" })]))
+    await tab.dispose()
+    const offline = await openTab(silentClient, device, device.wipe, false)
+    await restored(offline)
+    expect(offline.confirmed()?.role).toBe("guest")
+    expect(offline.access()).toBe("members_only")
+  },
+)
+
 /** The real client for a tab in `b`'s browser behind a switch: ChatApi answers 503 until `heal`, as a gateway does. */
 const healingClient = (b: ReturnType<typeof browser>) => {
   let healed = false
@@ -712,6 +776,32 @@ const lines = (tab: Awaited<ReturnType<typeof openTab>>, message: string) =>
   tab.logs.filter((log) => log.message === message).map((log) => log.annotations)
 
 describe("a session check ChatApi couldn't answer", () => {
+  test.each(["unreachable", "unconfirmed"] as const)("manual reload starts durable recovery for an %s answer", async (outcome) => {
+    const b = browser(await signInHarness(server))
+    await b.signIn()
+    let healed = false
+    const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => healed ? real.session : outcome === "unreachable"
+        ? Effect.fail(new AuthUnreachable({ status: 503 }))
+        : Effect.map(real.session, (state) => state.signedIn ? { ...state, role: null, roleConfirmed: false } : state)),
+    }))).pipe(Layer.provide(realClient(b)))
+    const device = nodeDevice()
+    const tab = await openTab(client, device, device.wipe, false)
+    tab.actions.reload()
+    await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "retry" })).toBeGreaterThanOrEqual(2), { timeout: 10_000 })
+    expect(tab.access()).toBe(outcome === "unconfirmed" ? "wait" : "sign_in")
+    expect(lines(tab, "auth.refresh")).toHaveLength(1)
+    healed = true
+    await vi.waitFor(() => {
+      expect(lines(tab, "flow.dispatch")).toEqual([expect.objectContaining({ flow: "auth/refresh", outcome: "done" })])
+      expect(tab.refreshing()).toBe(false)
+    }, { timeout: 10_000 })
+    expect(tab.access()).toBe("ask")
+    expect(tab.session().role).toBe("member")
+    expect(lines(tab, "auth.refresh")).toHaveLength(1)
+  }, 20_000)
+
   test("recovers by itself: auth/refresh asks the tab again until ChatApi answers, with no event, click or reload", async () => {
     const h = await signInHarness(server)
     const b = browser(h)
