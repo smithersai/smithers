@@ -379,12 +379,12 @@ no agent writes a status file and nothing goes stale.
 a task the plan doesn't list joins it with `--title` as its title, or its id.
 
 ```
-smthrs runner start lexer.md --config runner.json --profile claude --repository app \
+smthrs runner start lexer.md --config runner.json --profile my-agent --repository app \
   --workstream parser-port --task lexer
 smthrs runner status --config runner.json
 Parser port (parser-port)  active  0/2 tasks
   goal: The new parser replaces the old one.
-  doing   Port the lexer (lexer)  9f3c… claude parked
+  doing   Port the lexer (lexer)  9f3c… my-agent parked
   todo    Document the parser (docs)  no lane
 ```
 
