@@ -10,6 +10,7 @@
  */
 
 export * as CommandCi from "./CommandCi.ts"
+export * as CommandFixer from "./CommandFixer.ts"
 export * as Driver from "./Driver.ts"
 export * as FileInbox from "./FileInbox.ts"
 export * as JjRepository from "./JjRepository.ts"
