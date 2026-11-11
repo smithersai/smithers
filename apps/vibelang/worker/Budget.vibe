@@ -84,9 +84,13 @@ export effect function make(ledger: Ledger, limit: number) {
           try invalid()
         }
         const result = settle(spent, reserved, over, held, charged, usable, ceiling, recorded, limit)
-        // A recorded reply holds nothing: `admit` refuses it, and its charge zeroed its hold in the same write. So
-        // `settle` writes only a reply's first settlement.
         if (!result.write) return
+        // A charged reply that still holds a reservation only releases it: its receipt and the day's charges stand.
+        if (recorded) {
+          try ledger.write({ [RESERVED]: result.reserved, [holdKey(reply)]: 0 })
+          try Effect.logInfo("vibelang.budget.release").pipe(Effect.annotateLogs({ released: held, reserved: result.reserved, limit }))
+          return
+        }
         try ledger.write({ [SPENT]: result.spent, [RESERVED]: result.reserved, [OVER]: result.over, [holdKey(reply)]: 0, [replyKey(reply)]: result.added })
         try Metric.update(tokens, result.added)
         if (result.over > over) try Metric.update(overshoot, result.over - over)

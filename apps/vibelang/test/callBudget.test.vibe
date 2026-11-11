@@ -93,4 +93,19 @@ describe("physical model call budgets", () => {
       })
     })
   }
+
+  it.effect("releases a charged reply's retained hold without rewriting its receipt", () => effect {
+    const data = try Ref.make<Readonly<Record<string, number>>>({ spent: 3, reserved: 2, over: 0, "hold/retained": 2, "reply/retained": 3 })
+    const daily = try Daily.make({
+      read: key => Ref.get(data).pipe(Effect.map(entries => entries[key])),
+      write: entries => Ref.update(data, previous => ({ ...previous, ...entries })),
+    }, 10)
+    try daily.spend("retained", 999, true, 2)
+    const readmitted = try daily.admit("retained", 2)
+    const state = try Ref.get(data)
+    try Effect.sync(() => {
+      expect(readmitted).toBe(false)
+      expect(state).toEqual({ spent: 3, reserved: 0, over: 0, "hold/retained": 0, "reply/retained": 3 })
+    })
+  })
 })
