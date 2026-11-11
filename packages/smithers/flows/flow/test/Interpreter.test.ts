@@ -11,7 +11,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.ts"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
+import { layerMemory, layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 
 const Read = Action.make("interpreter/read", {
   payload: { path: Schema.String },
@@ -62,8 +62,12 @@ const implementations = Layer.mergeAll(
 /** What a layer under test may ask for: the table, and a runtime to register with. */
 type Wiring = Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations>
 
-/** Everything a driven body needs: the table, the implementations, a runtime. */
-const wired = (registration: Wiring = Layer.empty) => layerWired(Layer.merge(implementations, registration))
+/**
+ * Everything a driven body needs: the table, the implementations, a runtime.
+ * Pass `state` to build over a durable record a later build can reopen.
+ */
+const wired = (registration: Wiring = Layer.empty, state?: MemoryState) =>
+  layerWired(Layer.merge(implementations, registration), state)
 
 /** A bare interpretation, outside any registered flow execution. */
 const drive = <A, E>(
@@ -148,17 +152,20 @@ describe("Interpreter.layer", () => {
         success: Schema.Number,
         body: ({ path }) => Write.call({ path, value: 1 })
       })
-      const layer = wired(Interpreter.layer(Replayed))
+      // Two processes over one durable record: the second rebuilds the graph,
+      // dispatches `Write` again and is answered from the recorded outcome.
+      const state = makeMemoryState()
+      const process = () =>
+        withCrypto(
+          Replayed.execute({ path: "replay.txt" }, { executionId: "replay-1" }).pipe(
+            Effect.provide(wired(Interpreter.layer(Replayed), state))
+          )
+        )
 
-      const results = yield* withCrypto(
-        Effect.gen(function*() {
-          const first = yield* Replayed.execute({ path: "replay.txt" }, { executionId: "replay-1" })
-          const second = yield* Replayed.execute({ path: "replay.txt" }, { executionId: "replay-1" })
-          return [first, second]
-        }).pipe(Effect.provide(layer))
-      )
+      const first = yield* process()
+      const second = yield* process()
 
-      expect(results).toEqual([2, 2])
+      expect([first, second]).toEqual([2, 2])
       expect(calls).toEqual(["write:replay.txt:1"])
     }))
 })

@@ -42,10 +42,10 @@ const wired = (
 /** A host flow for interpretations driven outside a registered execution. */
 const Host = Flow.make("sleep/host", { payload: {}, body: () => Node.succeed(undefined) })
 
-/** The clock the `ordinal`-th sleep of an execution arms, as a test names it. */
-const clockOf = (executionId: string, ordinal: number) =>
+/** The clock the `ordinal`-th sleep at interpreter node `site` of an execution arms, as a test names it. */
+const clockOf = (executionId: string, ordinal: number, site: string) =>
   DurableClock.make({
-    name: `Sleep/${dispatchKey(executionId, Sleep.action, ordinal)}`,
+    name: `Sleep/${dispatchKey(executionId, Sleep.action, ordinal, site)}`,
     duration: "10 minutes"
   })
 
@@ -132,7 +132,7 @@ describe("Sleep parks", () => {
       expect(marks).toEqual(["before", "after"])
 
       // The wake itself is journaled, under the clock this dispatch armed.
-      const recorded = yield* engine.deferredResult(clockOf(executionId, 1).deferred).pipe(
+      const recorded = yield* engine.deferredResult(clockOf(executionId, 1, "root.flow.andThen.then").deferred).pipe(
         Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Timed, executionId))
       )
       expect(Option.isSome(recorded)).toBe(true)
@@ -173,8 +173,8 @@ describe("Sleep parks", () => {
 
       // Two clocks, one per dispatch, both settled.
       const instance = makeInstance(Twice, executionId)
-      for (const ordinal of [1, 2]) {
-        const recorded = yield* engine.deferredResult(clockOf(executionId, ordinal).deferred).pipe(
+      for (const site of ["root.flow.andThen.andThen", "root.flow.andThen.then"]) {
+        const recorded = yield* engine.deferredResult(clockOf(executionId, 1, site).deferred).pipe(
           Effect.provideService(FlowRuntime.FlowInstance, instance)
         )
         expect(Option.isSome(recorded)).toBe(true)
@@ -221,10 +221,10 @@ describe("Sleep parks", () => {
 
       // One clock for the one dispatch, and no second one beside it.
       const instance = makeInstance(Rearmed, executionId)
-      const armed = yield* engine.deferredResult(clockOf(executionId, 1).deferred).pipe(
+      const armed = yield* engine.deferredResult(clockOf(executionId, 1, "root.flow.andThen.then").deferred).pipe(
         Effect.provideService(FlowRuntime.FlowInstance, instance)
       )
-      const second = yield* engine.deferredResult(clockOf(executionId, 2).deferred).pipe(
+      const second = yield* engine.deferredResult(clockOf(executionId, 2, "root.flow.andThen.then").deferred).pipe(
         Effect.provideService(FlowRuntime.FlowInstance, instance)
       )
       expect(Option.isSome(armed)).toBe(true)
@@ -283,7 +283,7 @@ describe("Sleep replays", () => {
         Effect.gen(function*() {
           // Exactly the state a fired timer leaves behind before the round is
           // re-driven: the wake recorded under this dispatch's own clock.
-          const clock = clockOf("sleep-replay", 1)
+          const clock = clockOf("sleep-replay", 1, "root")
           const token = DurableDeferred.tokenFromExecutionId(clock.deferred, {
             flow: Host,
             executionId: "sleep-replay"

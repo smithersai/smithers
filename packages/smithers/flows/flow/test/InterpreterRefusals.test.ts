@@ -58,7 +58,13 @@ it("refuses a cycle in an untaken branch before dispatching an independent actio
     )
   ))
   expect(Exit.isFailure(exit)).toBe(true)
-  if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Interpreter.InterpreterError)
+  if (Exit.isFailure(exit)) {
+    expect(Cause.squash(exit.cause)).toBeInstanceOf(Interpreter.InterpreterError)
+    expect(Cause.squash(exit.cause)).toMatchObject({
+      code: "incomplete_graph",
+      message: expect.stringMatching(/cycl/i)
+    })
+  }
   expect(calls).toBe(0)
 })
 

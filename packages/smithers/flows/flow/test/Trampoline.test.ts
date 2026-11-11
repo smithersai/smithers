@@ -372,6 +372,25 @@ describe("the interpreter settles a body's root outcome", () => {
   // Real elapsed time: `it.effect`'s TestClock would stall this.
   it.live("parks under the reason the body declared", () =>
     Effect.gen(function*() {
+      // The instance each round runs in, captured as the runtime hands it to
+      // the registered body, so the wait the round is filed under is visible.
+      const instances: Array<FlowRuntime.FlowInstance["Service"]> = []
+      const capturing = Layer.effect(FlowRuntime.FlowRuntime)(
+        Effect.map(FlowRuntime.FlowRuntime, (runtime) =>
+          FlowRuntime.FlowRuntime.of({
+            ...runtime,
+            register: (flow, execute, options) =>
+              runtime.register(
+                flow,
+                (payload, executionId) =>
+                  Effect.flatMap(FlowRuntime.FlowInstance, (instance) => {
+                    instances.push(instance)
+                    return execute(payload, executionId)
+                  }),
+                options
+              )
+          }))
+      )
       const result = yield* withCrypto(
         Effect.gen(function*() {
           const executionId = yield* Parking.execute({ token: "req-7" }, {
@@ -384,10 +403,12 @@ describe("the interpreter settles a body's root outcome", () => {
             polled = yield* Parking.poll(executionId)
           }
           return polled
-        }).pipe(Effect.provide(wired(Interpreter.layer(Parking))))
+        }).pipe(Effect.provide(wired(Interpreter.layer(Parking).pipe(Layer.provide(capturing)))))
       )
 
       expect(Option.isSome(result) && result.value._tag).toBe("Suspended")
+      expect(instances).toHaveLength(1)
+      expect(instances[0]!.waiting).toEqual({ reason: "approval", token: "req-7" })
     }))
 
   it.effect("leaves a body that settles with an ordinary value alone", () =>

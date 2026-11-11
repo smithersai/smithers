@@ -50,10 +50,17 @@ interface Trace {
   readonly interrupted: Array<string>
   /** Opens once a `Block` named `gate` has started. */
   readonly gate: Deferred.Deferred<void>
+  /** Opens once the `Refuse` named `second` has started. */
+  readonly secondRefused: Deferred.Deferred<void>
 }
 
 const tracing = (options: { readonly blockSucceeds?: boolean } = {}) => {
-  const trace: Trace = { started: [], interrupted: [], gate: Deferred.makeUnsafe<void>() }
+  const trace: Trace = {
+    started: [],
+    interrupted: [],
+    gate: Deferred.makeUnsafe<void>(),
+    secondRefused: Deferred.makeUnsafe<void>()
+  }
   const opened = Deferred.makeUnsafe<void>()
   const layer = Layer.mergeAll(
     Value.toLayer(({ name, value }) =>
@@ -65,7 +72,15 @@ const tracing = (options: { readonly blockSucceeds?: boolean } = {}) => {
     Refuse.toLayer(({ name }) =>
       Effect.suspend(() => {
         trace.started.push(name)
-        return Effect.fail(`${name} refused`)
+        if (name === "second") Deferred.doneUnsafe(trace.secondRefused, Exit.void)
+        // `first` refuses only after `second` has, and after the scheduler
+        // has turned enough times for that refusal to settle its member.
+        const after = name === "first"
+          ? Deferred.await(trace.secondRefused).pipe(
+            Effect.andThen(Effect.forEach(Array.from({ length: 50 }), () => Effect.yieldNow))
+          )
+          : Effect.void
+        return Effect.andThen(after, Effect.fail(`${name} refused`))
       })
     ),
     Block.toLayer(({ name }) =>
@@ -113,23 +128,6 @@ const run = <A, E>(
     )
   )
 
-/**
- * What a restarted process finds: every recorded dispatch but the ones that
- * ended interrupted. The fixture memoizes an interrupt; a real journal writes
- * no outcome for an attempt that never finished.
- */
-const restarted = (state: MemoryState): MemoryState => ({
-  actions: new Map(
-    [...state.actions].filter(([, exit]) =>
-      !(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) &&
-      !(Exit.isSuccess(exit) && exit.value._tag === "Complete" && Exit.isFailure(exit.value.exit) &&
-        Cause.hasInterruptsOnly(exit.value.exit.cause))
-    )
-  ),
-  deferredResults: new Map(state.deferredResults),
-  nodeRecords: []
-})
-
 const failureOf = (exit: Exit.Exit<unknown, unknown>) =>
   Exit.isFailure(exit) ? exit.cause.reasons.find((reason) => reason._tag === "Fail") : undefined
 
@@ -150,11 +148,12 @@ describe("Node.any", () => {
       const exit = yield* run(
         Effect.exit(Interpreter.interpret(Node.any({
           first: Refuse.call({ name: "first" }),
-          second: Refuse.call({ name: "second" }).pipe(Node.priority(-1))
+          second: Refuse.call({ name: "second" })
         }))),
         layer
       )
-      expect(failureOf(exit)).toMatchObject({ error: expect.stringMatching(/refused$/) })
+      // `first` fails after `second`, so the first failure would be `second refused`.
+      expect(failureOf(exit)).toMatchObject({ error: "first refused" })
     }))
 
   it.effect("interrupts the member still running once one succeeds, and reports it skipped", () =>
@@ -192,6 +191,39 @@ describe("Node.any", () => {
         layer
       )
       expect(failureOf(exit)).toMatchObject({ error: { code: "unresolved_action" } })
+    }))
+})
+
+describe("dispatch identity", () => {
+  it.effect("replays two concurrent call sites of one action to their own results when they arrive reversed", () =>
+    Effect.gen(function*() {
+      const state = makeMemoryState()
+      const first = tracing()
+      const live = yield* run(
+        Interpreter.interpret(Node.all({
+          left: Value.call({ name: "left", value: 1 }),
+          right: Value.call({ name: "right", value: 2 })
+        })),
+        first.layer,
+        state
+      )
+      expect(live.value).toEqual({ left: 1, right: 2 })
+      expect(first.trace.started).toEqual(["left", "right"])
+
+      // The same graph with its members declared the other way round, so
+      // `right` dispatches first. An identity taken from arrival order would
+      // hand `right` the outcome `left` recorded.
+      const second = tracing()
+      const replayed = yield* run(
+        Interpreter.interpret(Node.all({
+          right: Value.call({ name: "right", value: 2 }),
+          left: Value.call({ name: "left", value: 1 })
+        })),
+        second.layer,
+        state
+      )
+      expect(replayed.value).toEqual({ left: 1, right: 2 })
+      expect(second.trace.started).toEqual([])
     }))
 })
 
@@ -405,7 +437,7 @@ describe("a losing child execution after a crash (#2892)", () => {
       // the loser, so its body does not start again.
       const second = tracing()
       const replayed: Array<string> = []
-      const resumed = yield* drive(Interpreter.interpret(racing), second.layer, restarted(state), replayed)
+      const resumed = yield* drive(Interpreter.interpret(racing), second.layer, state, replayed)
       expect(resumed.value).toBe(9)
       expect(replayed).toEqual([opened])
       expect(second.trace.started).toEqual([])
@@ -440,7 +472,7 @@ describe("a losing child execution after a crash (#2892)", () => {
 
       // The resumed walk cancels the parked child again from the record.
       const replayed: Array<string> = []
-      const resumed = yield* drives(restarted(state), replayed)
+      const resumed = yield* drives(state, replayed)
       expect(resumed.value).toBe(7)
       expect(replayed).toEqual([opened])
     }))
@@ -453,7 +485,7 @@ describe("a losing child execution after a crash (#2892)", () => {
       yield* drive(Interpreter.interpret(race), layer, state, [])
       state.deferredResults.set("joins/join/root", Exit.succeed(["fast"]))
       const interrupts: Array<string> = []
-      const resumed = yield* drive(Interpreter.interpret(race), layer, restarted(state), interrupts)
+      const resumed = yield* drive(Interpreter.interpret(race), layer, state, interrupts)
       expect(resumed.value).toBe(1)
       expect(interrupts).toEqual([])
     }))
@@ -469,7 +501,7 @@ describe("a losing child execution after a crash (#2892)", () => {
         Exit.succeed({ members: ["fast"], children: [{ node: "root.race.gone", executionId: "orphan" }] })
       )
       const interrupts: Array<string> = []
-      const exit = yield* drive(Effect.exit(Interpreter.interpret(race)), layer, restarted(state), interrupts)
+      const exit = yield* drive(Effect.exit(Interpreter.interpret(race)), layer, state, interrupts)
       expect(failureOf(exit)).toMatchObject({ error: { code: "join_mismatch", node: "root" } })
       expect(interrupts).toEqual([])
     }))
@@ -549,7 +581,7 @@ describe("join journal", () => {
 
       // The restarted process would now pick `c` first: it succeeds at once.
       const second = tracing({ blockSucceeds: true })
-      const result = yield* run(Interpreter.interpret(crashing), second.layer, restarted(state))
+      const result = yield* run(Interpreter.interpret(crashing), second.layer, state)
       expect(result.value).toEqual({ joined: { a: 1, b: 2 }, gate: 100 })
       expect(second.trace.started).toEqual(["gate"])
       expect(result.skipped).toContain("root.andThen.race.c")
@@ -563,7 +595,7 @@ describe("join journal", () => {
       const exit = yield* run(
         Effect.exit(Interpreter.interpret(Node.race({ quick: Node.succeed(1) }))),
         layer,
-        restarted(state)
+        state
       )
       expect(failureOf(exit)).toMatchObject({ error: { code: "join_mismatch", node: "root" } })
     }))
@@ -576,7 +608,7 @@ describe("join journal", () => {
       const exit = yield* run(
         Effect.exit(Interpreter.interpret(Node.quorum(1, { a: Node.fail("a"), b: Node.fail("b") }))),
         layer,
-        restarted(state)
+        state
       )
       expect(failureOf(exit)).toMatchObject({ error: { code: "join_mismatch" } })
     }))
@@ -587,7 +619,7 @@ describe("join journal", () => {
       const { layer } = tracing()
       const members = { a: Node.succeed(1), b: Node.succeed(2), c: Node.succeed(3) }
       yield* run(Interpreter.interpret(Node.quorum(2, members)), layer, state)
-      const exit = yield* run(Effect.exit(Interpreter.interpret(Node.quorum(1, members))), layer, restarted(state))
+      const exit = yield* run(Effect.exit(Interpreter.interpret(Node.quorum(1, members))), layer, state)
       expect(failureOf(exit)).toMatchObject({ error: { code: "join_mismatch" } })
     }))
 
@@ -599,7 +631,7 @@ describe("join journal", () => {
       const exit = yield* run(
         Effect.exit(Interpreter.interpret(Node.race({ a: Park.call({}) }))),
         layer,
-        restarted(state)
+        state
       )
       expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
     }))

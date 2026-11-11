@@ -121,22 +121,6 @@ const drive = <A, E>(
   )
 }
 
-/**
- * What a restarted process finds: every recorded dispatch but the ones that
- * ended interrupted, and every journaled deferred.
- */
-const restarted = (state: MemoryState): MemoryState => ({
-  actions: new Map(
-    [...state.actions].filter(([, exit]) =>
-      !(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) &&
-      !(Exit.isSuccess(exit) && exit.value._tag === "Complete" && Exit.isFailure(exit.value.exit) &&
-        Cause.hasInterruptsOnly(exit.value.exit.cause))
-    )
-  ),
-  deferredResults: new Map(state.deferredResults),
-  nodeRecords: []
-})
-
 const pagesOf = (state: MemoryState) =>
   state.nodeRecords.map((entry) => entry.record).filter((record) =>
     record._tag === "PlanRecorded" || record._tag === "SubgraphAppended"
@@ -331,7 +315,7 @@ describe("Interpreter joins", () => {
       expect(state.deferredResults.get("edges/join/root")).toEqual(Exit.succeed({ members: ["a"], children: [] }))
       const exit = yield* drive(
         Effect.exit(Interpreter.interpret(Node.any({ a: Park.call({}), b: Block.call({ name: "b" }) }))),
-        { state: restarted(state) }
+        { state: state }
       )
       expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
     }))
@@ -344,7 +328,7 @@ describe("Interpreter joins", () => {
       const instance = makeInstance(host, "edges")
       const waiting = { reason: "approval", token: "sibling" }
       instance.waiting = waiting
-      const result = yield* drive(Interpreter.interpret(race), { state: restarted(state), instance })
+      const result = yield* drive(Interpreter.interpret(race), { state: state, instance })
       expect(result.value).toBe(1)
       expect(instance.waiting).toBe(waiting)
     }))

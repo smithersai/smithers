@@ -3,7 +3,7 @@ import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Duration, Effect, Exit, Layer, Schema } from "effect"
 import { effect } from "./Harness.ts"
-import { layerMemory } from "./MemoryFlowRuntime.ts"
+import { layerMemory, layerMemoryOver, makeMemoryState } from "./MemoryFlowRuntime.ts"
 
 describe("canonical prompt flows", () => {
   it("plans one ordinary action without rendering the prompt", () => {
@@ -42,18 +42,28 @@ describe("canonical prompt flows", () => {
         return `Count ${count}`
       }
     })
-    const layer = Interpreter.layerWithImplementations(
-      flow,
-      flow.action.toLayer((payload) => Effect.succeed(flow.prompt(payload)))
-    ).pipe(Layer.provideMerge(layerMemory))
+    // Each process is a fresh runtime over one durable record, so the second
+    // `execute` re-enters the interpreter and replays the recorded prompt.
+    const state = makeMemoryState()
+    const process = () =>
+      Interpreter.layerWithImplementations(
+        flow,
+        flow.action.toLayer((payload) => Effect.sync(() => flow.prompt(payload)))
+      ).pipe(Layer.provideMerge(layerMemoryOver(state)))
     return Effect.gen(function*() {
-      const invalid = yield* Effect.exit(flow.execute({ count: "wrong" } as never, { executionId: "bad" }))
+      const invalid = yield* Effect.exit(
+        flow.execute({ count: "wrong" } as never, { executionId: "bad" }).pipe(Effect.provide(process()))
+      )
       expect(Exit.isFailure(invalid)).toBe(true)
       expect(renders).toBe(0)
-      expect(yield* flow.execute({ count: 3 }, { executionId: "same" })).toBe("Count 3")
-      expect(yield* flow.execute({ count: 3 }, { executionId: "same" })).toBe("Count 3")
+      expect(yield* flow.execute({ count: 3 }, { executionId: "same" }).pipe(Effect.provide(process()))).toBe(
+        "Count 3"
+      )
+      expect(yield* flow.execute({ count: 3 }, { executionId: "same" }).pipe(Effect.provide(process()))).toBe(
+        "Count 3"
+      )
       expect(renders).toBe(1)
-    }).pipe(Effect.provide(layer))
+    })
   })
 
   it("retains renderer, action, and literal metadata through annotations", () => {

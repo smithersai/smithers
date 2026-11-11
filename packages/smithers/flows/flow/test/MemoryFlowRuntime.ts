@@ -3,16 +3,27 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * A minimal in-memory implementation of the `FlowRuntime` port, used to
  * exercise the authoring APIs this package owns.
  *
- * `@smthrs/flow` deliberately does not depend on anything that executes
- * flows, so its suite cannot reach for `@smthrs/engine`'s `layerMemory`. This
- * fixture is the smallest runtime the authoring surface needs: it registers
- * handlers, drives suspension and resumption, memoizes action outcomes per
- * (identity, attempt), and records durable deferred results. Everything the
- * real engine adds on top — step-key derivation, ordinal pinning, retry
- * policy decisions, snapshot boundaries — is tested in `@smthrs/engine`,
- * against the engine that owns it.
+ * `@smthrs/engine` is a dev dependency, and suites that need the real engine
+ * use `FlowEngine.layerMemory` (`NumberKeyedRecord.test.ts`,
+ * `TransientRetry.test.ts`). This fixture is the smaller runtime most suites
+ * here run on: it registers handlers, drives suspension and resumption, and
+ * records action outcomes and durable deferred results in a `MemoryState` a
+ * second build can reopen.
+ *
+ * Its dispatch identity follows the engine's contract: the ordinal scope folds
+ * in the interpreter's `StepIdentity.DispatchSite`, so two concurrent call
+ * sites of one action never share an ordinal counter and replay does not
+ * depend on fiber arrival order. Like a real journal, it records no outcome
+ * for a dispatch that ended interrupted.
+ *
+ * What it does not model: the engine's step-key digests, retry policy
+ * decisions and snapshot boundaries; a restarted process re-arms a timer for
+ * its full duration rather than the time left; and a round that hands off
+ * settles as itself rather than following the lineage. `@smthrs/engine`
+ * tests those against the engine that owns them.
  */
-import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, StepIdentity } from "@smthrs/flow"
+import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
@@ -57,14 +68,19 @@ export const makeInstance = (
 
 const toJsonExit = Exit.map((value: any) => value ?? null)
 
-/** The ordinal counter one declaration's dispatches are allocated from. */
-const ordinalScope = (action: { readonly name: string; readonly idempotencyKey?: unknown }): string =>
-  `${action.name}/${JSON.stringify(action.idempotencyKey ?? null)}`
+/**
+ * The ordinal counter one declaration's dispatches are allocated from at one
+ * interpreter site. A handler-driven dispatch has no site.
+ */
+const ordinalScope = (
+  action: { readonly name: string; readonly idempotencyKey?: unknown },
+  site: string | undefined
+): string => `${action.name}/${JSON.stringify(action.idempotencyKey ?? null)}/${JSON.stringify(site ?? null)}`
 
 /**
  * The dispatch identity this fixture hands an implementation through
- * `Action.CurrentInvocationKey`: the `ordinal`-th dispatch of `action`
- * within `executionId`, counting from one.
+ * `Action.CurrentInvocationKey`: the `ordinal`-th dispatch of `action` at
+ * `site` within `executionId`, counting from one.
  *
  * The real engine derives a digest here rather than a readable tuple. What the
  * two share is what an implementation may rely on: one value per dispatch,
@@ -74,8 +90,19 @@ const ordinalScope = (action: { readonly name: string; readonly idempotencyKey?:
 export const dispatchKey = (
   executionId: string,
   action: { readonly name: string; readonly idempotencyKey?: unknown },
-  ordinal: number
-): string => JSON.stringify([executionId, ordinalScope(action), ordinal])
+  ordinal: number,
+  site?: string
+): string => JSON.stringify([executionId, ordinalScope(action, site), ordinal])
+
+/**
+ * Whether a dispatch settled, and so has an outcome a real journal keeps. A
+ * dispatch that failed outright, or whose body ended interrupted, never
+ * finished.
+ */
+const settled = (exit: Exit.Exit<Flow.Result<unknown, unknown>>): boolean =>
+  Exit.isSuccess(exit) &&
+  !(exit.value._tag === "Complete" && Exit.isFailure(exit.value.exit) &&
+    Cause.hasInterruptsOnly(exit.value.exit.cause))
 
 type Handler = (
   payload: object,
@@ -280,7 +307,8 @@ const makeRuntime = (durable: MemoryState) =>
       resume: (_flow, executionId) => drive(executionId) as Effect.Effect<void>,
       actionExecute: Effect.fnUntraced(function*(action: any, attempt: number) {
         const instance = yield* FlowRuntime.FlowInstance
-        const scope = ordinalScope(action)
+        const site = Option.getOrUndefined(yield* Effect.serviceOption(StepIdentity.DispatchSite))
+        const scope = ordinalScope(action, site)
         const slot = yield* Action.CurrentOrdinal
         let ordinal: number
         if (slot === undefined) {
@@ -302,7 +330,7 @@ const makeRuntime = (durable: MemoryState) =>
         // an implementation reading `CurrentInvocationKey` gets the same value
         // on every attempt and on every replay of one node; the memo is per
         // (dispatch, attempt) because a retried attempt is its own recording.
-        const dispatch = dispatchKey(instance.executionId, action, ordinal)
+        const dispatch = dispatchKey(instance.executionId, action, ordinal, site)
         const id = JSON.stringify([dispatch, attempt])
         const memo = actions.get(id)
         if (memo && !(memo._tag === "Success" && memo.value._tag === "Suspended")) {
@@ -343,7 +371,7 @@ const makeRuntime = (durable: MemoryState) =>
           // them, has no settlement, so the next process runs the step again.
           Effect.onExit((exit: any) =>
             Effect.sync(() => {
-              if (exit._tag === "Success") actions.set(id, exit)
+              if (settled(exit)) actions.set(id, exit)
             })
           )
         ) as Effect.Effect<Flow.Result<unknown, unknown>>)) as Flow.Result<unknown, unknown>
