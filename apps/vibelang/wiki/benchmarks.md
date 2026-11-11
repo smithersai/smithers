@@ -4131,3 +4131,37 @@ metered minutes that never decrease. It measures the client's overhead only: the
 Limitations: scripted or deterministic models, so no inference latency; node:sqlite or memory stores, not Durable
 Object storage, except the workerd host; injected store faults, not real outages; objects reach each other by fetch,
 not Alchemy RPC; the maintainer comes from configuration and trusted props, not a GitHub sign-in.
+
+## Real-app links and keys, sign-in faults (2026-11-11, nyc-01)
+
+Vitest built-in bench, local, three unwarmed samples each, nyc-01 (32 cores) at load 82 to 96, so wall times are
+observations only. Method, checks and limitations: [0017](decisions/0017-benchmarks.md), "Source-map lines in Node".
+
+| Workload | Mean ms | Min ms | Max ms | Samples | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `web-wiki-links` | 1,496.22 | 1,247.84 | 1,883.23 | 3 | `2026-11-11T07-10-10.848Z-web-wiki-links.json` |
+| `web-account-menu-keys` | 715.23 | 664.48 | 756.85 | 3 | `2026-11-11T07-10-13.424Z-web-account-menu-keys.json` |
+| `web-tour-keys` | 673.86 | 645.58 | 691.65 | 3 | `2026-11-11T07-10-15.849Z-web-tour-keys.json` |
+| `web-wiki-state` | 0.4013 | 0.2483 | 3.1580 | 250 | `2026-11-11T06-50-03.465Z-web-wiki-state.json` |
+| `signin-device-faults` | 2,015.06 | 1,592.54 | 2,419.76 | 3 | `2026-11-11T06-51-56.353Z-signin-device-faults.json` |
+
+Each DOM sample includes a fresh app runtime, its first render and every wait for a step's result (5 ms polling).
+`web-wiki-links` includes the mock agent's two scripted answers.
+
+## Tour pause, small source paths, Factory refusals (2026-11-11, nyc-01)
+
+Vitest built-in bench, local, nyc-01 (32 cores) at load 90 to 105, so wall times are observations only. Method,
+checks and limitations: [0017](decisions/0017-benchmarks.md), "Small paths, Factory refusals, the Container replay".
+
+| Workload | Mean ms | Min ms | Max ms | Samples | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `web-tour-pause` | 858.13 | 801.18 | 911.28 | 3 | `2026-11-11T07-50-34.174Z-web-tour-pause.json` |
+| `src-edge-decisions` | 3.3191 | 0.1416 | 115.94 | 63 | `2026-11-11T07-51-01.703Z-src-edge-decisions.json` |
+| `wiki-proposal-restart` | 105.78 | 41.26 | 232.23 | 3 | `2026-11-11T07-51-02.271Z-wiki-proposal-restart.json` |
+| `docs-open-flow` | 6.2608 | 2.9718 | 16.7671 | 16 | `2026-11-11T07-51-02.783Z-docs-open-flow.json` |
+| `cli-sandbox-run-text` | 15.31 | 11.29 | 23.86 | 7 | `2026-11-11T07-51-03.464Z-cli-sandbox-run-text.json` |
+| `client-local-answers` | 63.80 | 43.82 | 79.69 | 5 | `2026-11-11T07-51-10.110Z-client-local-answers.json` |
+| `live-factory-refusals` | 2.8614 | 1.8567 | 7.0691 | 35 | `2026-11-11T08-04-04.062Z-live-factory-refusals.json` |
+
+`src-edge-decisions`' 116 ms maximum is its first, cold sample; its median is under 1 ms. `web-tour-pause` includes a
+fresh app runtime, its first render and the mock tour's first step.

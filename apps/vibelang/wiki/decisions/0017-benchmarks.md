@@ -86,7 +86,7 @@ Executable lines are statement start lines, as in Istanbul; a declaration's hit 
   **Defect found by this set and fixed:** a failed sandbox start, stop or command lost its alert and Retry within a second, because the open pane's one-second read ran `loadedSandbox`, which ends any operation and clears its failure. The pane's read now runs `polledSandbox` and `polledFailure` (`src/web/paneDecision.vibe`, verified), which leave an operation's wait or failure alone; regression `test/sandboxFailure.runtime.test.vibe`.
 - The ⌘K `/mock` and `/live` switch (783–784, 1385–1387) reloads the page itself, and V8 drops a document's counts on reload. Covered since 2026-11-10 without touching the request: in coverage mode each document pauses in its own `beforeunload` while the collector dumps (783–784, 1385–1386, `command-k-mock-switch`). Line 1387 runs after `beforeunload`, and the new document's commit ends any later pause (`pagehide` never pauses), so Node covers it: `bench/web-commands.bench.vibe` runs `SwitchMode` in happy-dom (`web-mode-switch-command`).
 - Escape during a pending wiki Save keeps the editor and request (`none`, line 611 at `7803d917`). The `web-wiki-state` corpus asserts unchanged model identity and no emitted command.
-- Fourteen lines run in Chromium but the merge cannot credit them, because the bundle maps them to a different statement range than Node does, or to none. These 14 lines wait for Will's answer on the VibeLang source-map fix (asked 2026-11-10); the merge does not guess across shapes in the meantime. Measured on the `c5bbf81b` snapshot, whose text at these lines is unchanged on `5e37278e`, by remapping its retained Chromium dumps with the merge's own conversion and listing each line's statement ranges (start column, Chromium vs Node):
+- Fourteen lines run in Chromium but the merge cannot credit them, because the bundle maps them to a different statement range than Node does, or to none. The merge does not guess across shapes. Re-measured on 2026-11-11 and run in Node instead, all but one now count ("Source-map lines in Node" below). Measured on the `c5bbf81b` snapshot, whose text at these lines is unchanged on `5e37278e`, by remapping its retained Chromium dumps with the merge's own conversion and listing each line's statement ranges (start column, Chromium vs Node):
 
   | Line | Chromium | Node | Kind |
   | --- | ---: | ---: | --- |
@@ -769,3 +769,88 @@ box returns only stdout, so totals are not stated; `worker/` has 71 uncovered li
 | `PublicReads.vibe` 38-39 | 2 | Opt-in `BENCH_PUBLIC_GITHUB`, as before. |
 
 New workloads: `draft-journal-fault`, `reply-lost-post`, `api-objects-maintainer-action-run` (wiki/benchmarks.md).
+
+## Source-map lines in Node, sign-in faults (lane vl-bench, 2026-11-11)
+
+**Re-measured at `040c5684`.** One `bench:coverage` on a 4-vCPU box, 04:13 to 05:12 UTC. Three Vitest files failed and
+the maps were merged anyway: `sandbox-faults` and `sandbox-objects` still expect sandbox refusals without the
+`reason` that `e50b2cc2` added (lane vl-bench2 holds the fix), and `scripts.bench.vibe` needs git 2.41 or later, which
+the box image lacks. Lines of `src/` and `worker/`: **7,866/8,063 (97.56%)**, src 5,508/5,620, worker 2,358/2,443. The
+worker denominator grew with the new probe Worker (`worker/sandboxProbeFetch.vibe`, 37 lines uncovered).
+
+Of the fourteen lines above, three are credited now: `main.vibe` 948, `markdown.vibe` 114 (through
+`markdown-compile`) and `historyApp.vibe` 476. The other eleven fall into two shapes, read from the box's Chromium dumps
+with the merge's own conversion:
+
+| Shape | Lines | Node vs Chromium |
+| --- | --- | --- |
+| Same statement, other start column | `main.vibe` 1123, 1133; `roleView.vibe` 34, 36; `MockFactory.vibe` 349 | initializer vs declarator; at vs inside the opening parenthesis |
+| No bundle statement | `main.vibe` 1121, 1122, 1132, 1272; `theatre.vibe` 59; `MockFactory.vibe` 465 | Rolldown joins consecutive declarations or inlines a single-use constant |
+
+The e2e report answers both shapes with the build's own structure (0016, "Build structure"), because the browser is
+its only runtime. The benchmark merge keeps Node's structure for a file Node also runs, so Chromium still credits it
+by identical start only. Instead of a rule that guesses across shapes, the lines now run in Node:
+`bench/web-dom.bench.vibe` embeds the actual app (Foldkit runtime, update, view and the shipped subscriptions) in
+happy-dom over `MockFactory` and `MockActions`.
+
+| Workload | Journey | Checked every sample |
+| --- | --- | --- |
+| `web-wiki-links` | Ctrl-click a wiki link, click it, ask the agent to open the designs wiki, ask it to draft a roadmap edit, click the answer's Review link | Ctrl-click ignored; pane follows the link; pane at `designs/index`; editor on the roadmap holding the page plus the request as its note |
+| `web-account-menu-keys` | open the account menu, ArrowDown, ArrowUp, ArrowUp, ArrowDown, Enter | focused item after each key; menu still open |
+| `web-tour-keys` | Learn more, Tab, Shift+Tab | tour events arrive; first control, then a wrap to the last; first stop |
+| `web-wiki-state` (extended) | a retried Save; a second page's editor after a save | same key under a fresh recovery key; the page's embedded source |
+| `signin-device-faults` | a waited sign-in the person authorizes; a device grant and a sign-out whose factory refuses connections; a pending-flow file that can't be written | exact sentences; the pending flow kept; the session forgotten |
+
+Messages for a person's other steps (choosing an identity, typing a post) enter through one test channel
+(`bench/dom-input.ts`); no product subscription, command or service is replaced. Limitations: happy-dom has no layout,
+paint or speech; synthetic mouse and keyboard events stand in for a pointer and a keyboard; the mock agent's 25 ms
+chunk delays are included; sign-in's identity provider is the local fixture and "unreachable" is a refused loopback
+connection. Each workload fails when its product behavior is removed: a wiki-link selector that matches nothing reads
+`/wiki/index` where `/wiki/rulings` was expected, and an ArrowDown that focuses People times out waiting for Sign out.
+
+A coverage run of only the three changed files credits, in Node, 21 of the 22 lines this range aimed at: `main.vibe`
+1121-1123, 1132, 1133, 1272, 1351; `roleView.vibe` 34, 36; `theatre.vibe` 59; `MockFactory.vibe` 465; `wiki.vibe` 31;
+`wikiEditorDecision.vibe` 103; `signin.vibe` 86, 131, 138, 196. `MockFactory.vibe` 349, the mock's tour control, led to a product defect, below.
+
+**Defect found and fixed: a refused tour control showed "Connection lost".** The sequencer refuses Pause, Resume and
+a seek until the walkthrough's first step is driven (`not-replying`, `src/core/decide.vibe`), but the theatre's
+controls are on screen as soon as the tour's first event arrives. `ControlTour` turned every failure into
+`FailedTourEvents`, so a Pause (or Space) in that window showed "Connection lost" while the tour kept playing. In the
+mock the window is about 50 ms; against the live Worker it is the drive's round trip. A `Refused` answer now leaves
+the controls showing the tour as it is (`src/web/main.vibe`); only an unreachable agent or a backend without controls
+reports a lost connection. Regression: `test/mainCommands.coverage.test.vibe` (failed first) and `web-tour-pause`,
+which fails with `early: 'Connection lost'` when the fix is reverted. That workload's second Space pauses the tour, so
+Node now runs `MockFactory.vibe` 349.
+
+**Remaining in `src/web`, `src/core` and `src/surfaces`** at `040c5684` with this range (61 lines):
+
+- Specification-only functions, waiting on lane vl-ghost-functions, which moves them out of runtime code (35):
+  `issueGraphDecision.vibe` 20, `flowDecision.vibe` 135-139 and 203-206, `core/replayDecision.vibe` 22, 30, 40,
+  `sequencerDecision.vibe` 19, 20, `issueDecision.vibe` 208.
+- Sandbox paths measured while `sandbox-objects` and `sandbox-faults` failed before reaching them (6):
+  `machineDecision.vibe` 29, 36, 102, `sandboxHost.vibe` 198, 199, `sandboxMock.vibe` 38. Re-measure after
+  vl-bench2's fix; Container paths beyond these use the real-Container recording once it is on main.
+- Not yet benchmarked (20): all but two now run, below. `startup.vibe` 38 and 88 stay: they answer a browser whose
+  storage throws on access (storage blocked, or a sandboxed frame); no workload blocks storage yet.
+
+**Small paths, Factory refusals, the Container replay (2026-11-11).** Each line in the table ran in a coverage run of
+only the new files (Node, nyc-01, 07:41 to 08:08 UTC):
+
+| Workload | Journey | Lines | Checked every sample |
+| --- | --- | --- | --- |
+| `web-tour-pause` | Learn more; Space as soon as the first event arrives; Space once the walkthrough runs | `MockFactory.vibe` 349 | the early press shows no error and leaves the tour playing; the second pauses it |
+| `src-edge-decisions` | the issue fixture's engine errors, session cookie choice, a link above the wiki root, a decision lookup miss, a lone surrogate's conversation path, not-deployed and write-failure wording, Markdown with no resolver | `issueFixtureDecision.vibe` 54, 60; `protocolDecision.vibe` 117; `wikiLinks.vibe` 14; `wikiPageDecision.vibe` 85; `wire.vibe` 52; `backend.vibe` 32; `commandDecision.vibe` 145; `markdown.vibe` 174 | values written out in the file |
+| `wiki-proposal-restart` | propose, rebuild the engine over the same store, retry the key, change the text under it | `WikiFactory.vibe` 63, 64 | same review link; `conflict`, unwritten; one stored proposal |
+| `docs-open-flow` | `vibelang/docs/open` on the flow engine, an opened and an unknown page | `flows.vibe` 477 | the flow answers what its step answered |
+| `cli-sandbox-run-text` | start a sandbox, `sandbox-run` with no operation id, as text | `commands.vibe` 268 | output `hi` |
+| `client-local-answers` | `LiveAccounts.choose`; history forced to mock | `LiveAccounts.vibe` 32; `historyBackend.vibe` 34 | `AccountUnavailable`; mode `mock` twice |
+| `live-factory-refusals` | post, open wiki, tour control, tour and end tour answered by a 409 refusal body | `LiveFactory.vibe` 51 | each fails as `Refused busy` |
+
+`LiveFactory.vibe` 120, a terminal command's answer, runs in `sandbox-live-replay` (lane vl-bench2's replay of the
+real Container recording), which this lane measured before that workload landed and dropped its own copy. Non-tautology
+check: with the tour fix reverted and `wikiLinks.vibe`'s `out.push("..")` removed, `web-tour-pause` and
+`src-edge-decisions` both fail; sources restored. Limitations: the decisions are pure functions timed alone; the docs
+step and the factory refusal are injected services (a deterministic step, an Effect `HttpClient` answering 409), not
+the Worker; `cli-sandbox-run-text` runs the command in process because one mock CLI process can't hold a running
+sandbox across two invocations; `web-tour-pause`'s early press must land before the mock drives step 1, and a sample
+where it lands later fails rather than passing.
