@@ -1736,6 +1736,31 @@
       "flows": []
     },
     {
+      "id": "release/runbook",
+      "description": "Release Smithers from cut to npm as one durable runbook; the run is the release record.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/runbook/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:bash *",
+        "proc:spawn:jj *",
+        "proc:spawn:git *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:bun *",
+        "proc:spawn:sleep *",
+        "net:get:**",
+        "net:private:**",
+        "net:post:registry.npmjs.org/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "release/smoke",
       "description": "Install a packed release candidate into scratch consumers, import every published entry point and record smoke evidence.",
       "summary": null,
@@ -1814,7 +1839,11 @@
       "kind": "ts",
       "path": ".smithers/flows/rollout/flow.ts",
       "capabilities": [
-        "deploy:rollout"
+        "deploy:rollout",
+        "proc:spawn:pnpm run deploy --yes",
+        "proc:spawn:node ops/deploy-smoke/run.ts",
+        "net:get:api.cloudflare.com/**",
+        "net:post:api.cloudflare.com/**"
       ],
       "model": null,
       "modelInvocable": false,
@@ -1864,6 +1893,20 @@
         "tokens": 20000000,
         "milliseconds": 14400000
       }
+    },
+    {
+      "id": "telegram-inbox",
+      "description": "Poll a Telegram bot and record each message from an allowed chat in a memory thread, once.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/telegram-inbox/flow.ts",
+      "capabilities": [
+        "net:post:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
     },
     {
       "id": "test/coverage-campaign",

@@ -1115,6 +1115,7 @@ const releaseSteps = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/release/publish/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/installer/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/rehearsal/flow.test.ts"),
+    Smithers.file("//.smithers/flows/release/runbook/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/npm-dedupe/flow.test.ts")
   ]),
   srcs: [sources, ...releaseSources],

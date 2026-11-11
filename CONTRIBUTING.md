@@ -385,6 +385,18 @@ step into `release.yml` in the same commit.
 The order is bump → changelog → commit → tag → push the tag → `release.yml`
 publishes.
 
+From a maintainer's checkout, the `release/runbook` flow runs the same order as
+one durable run: `release/cut` (with `commit`), `release/rehearsal`,
+`release/pack`, `release/smoke` and `release/publish`. It asks before the cut
+and again, elevated, before publication; land the release commit and push its
+tag before you approve publication. The run's journal is the release record,
+so there is no separate log to keep:
+
+```sh
+RELEASE_TAG=v<version> pnpm exec smthrs flow start release/runbook --data '{"version":"<version>"}' --wait
+pnpm exec smthrs runs list --flow release/runbook
+```
+
 ### 1. Rehearse
 
 Dispatch the workflow at the version you are about to cut, with the dry run
