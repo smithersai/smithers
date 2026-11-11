@@ -938,7 +938,8 @@ const journaled = <R>(
  * once: landings start in the order work finished, at most
  * {@link RoundOptions.landConcurrency} at a time, while other items still work. Every item whose claim succeeded is released as soon as
  * it settles, with its final status and detail; a release failure is appended
- * to the row's detail. A release defect fails the item; a typed infra release
+ * to the row's detail. A landed item stays landed whatever its release fails
+ * with. Otherwise a release defect fails the item and a typed infra release
  * failure requeues within the same bound. Rows keep discovery
  * order.
  *
@@ -1016,19 +1017,25 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
     const priorCounts = new Map(counts)
     type Settled = Extract<Attempt<W>, { readonly _tag: "Settled" }>
     type Observed<A> = { readonly _tag: "Value"; readonly value: A } | Settled
+    // A failed stage's detail; a defect also carries its fault.
+    const describe = (stage: string, cause: Cause.Cause<unknown>): string => {
+      const defect = cause.reasons.find(Cause.isDieReason)
+      const value = defect === undefined
+        ? cause.reasons.find(Cause.isFailReason)?.error ?? Cause.squash(cause)
+        : defect.defect
+      return `${stage}: ${detailOf(value)}${defect === undefined ? "" : `; ${JSON.stringify(Fault.of(value))}`}`
+    }
     const failure = (card: Card<It>, stage: string, cause: Cause.Cause<unknown>): Effect.Effect<Settled, Stop> => {
       const defect = cause.reasons.find(Cause.isDieReason)
       const error = cause.reasons.find(Cause.isFailReason)?.error
       if (defect === undefined && ownTag(error, "flows/patterns/Burndown/Stop")) return Effect.fail(error as Stop)
-      const value = defect === undefined ? error ?? Cause.squash(cause) : defect.defect
-      const fault = Fault.of(value)
       const spent = priorCounts.get(card.id) ?? 0
-      const infra = defect === undefined && fault.class === "infra"
+      const infra = defect === undefined && Fault.of(error ?? Cause.squash(cause)).class === "infra"
       if (infra) counts.set(card.id, spent < maxRequeues ? spent + 1 : spent)
       return Effect.succeed({
         _tag: "Settled",
         status: infra && spent < maxRequeues ? "requeued" : "failed",
-        detail: `${stage}: ${detailOf(value)}${defect === undefined ? "" : `; ${JSON.stringify(fault)}`}`
+        detail: describe(stage, cause)
       })
     }
     const observe = <A>(
@@ -1155,11 +1162,16 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
           Effect.matchCauseEffect({
             onSuccess: () => Effect.succeed(undefined),
             onFailure: (cause) => {
-              if (!Cause.hasDies(cause)) {
-                const error = cause.reasons.find(Cause.isFailReason)?.error
-                if (!ownTag(error, "flows/patterns/Burndown/Stop") && Fault.of(error).class !== "infra") {
-                  return Effect.succeed({ ...row, detail: `release: ${detailOf(error)}` })
-                }
+              const defect = cause.reasons.find(Cause.isDieReason)
+              const error = cause.reasons.find(Cause.isFailReason)?.error
+              const typed = defect === undefined
+              // A landed item stays landed: requeuing or failing it would land it
+              // again or report a merged item failed.
+              if (
+                !(typed && ownTag(error, "flows/patterns/Burndown/Stop")) &&
+                (row.status === "landed" || (typed && Fault.of(error).class !== "infra"))
+              ) {
+                return Effect.succeed({ ...row, detail: describe("release", cause) })
               }
               return failure(card, "release", cause)
             }

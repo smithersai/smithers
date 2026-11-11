@@ -1482,7 +1482,8 @@ describe("Burndown durable external work isolation", () => {
           }
         })
         expect(result.rows).toHaveLength(2)
-        expect(result.rows[0]).toMatchObject({ id: "bad", status: "failed" })
+        // A landed item stays landed even when its release breaks.
+        expect(result.rows[0]).toMatchObject({ id: "bad", status: member === "release" ? "landed" : "failed" })
         expect(result.rows[0]!.detail).toContain(`${member} exploded`)
         expect(result.rows[0]!.detail).toContain("bug")
         expect(result.rows[0]!.detail).toContain("unregistered")
@@ -1578,15 +1579,54 @@ describe("Burndown durable external work isolation", () => {
 describe("Burndown retry and Stop boundaries", () => {
   const infra = { _tag: "BurndownTestInfra", message: "network unavailable" }
   Fault.register("BurndownTestInfra", "infra")
-  for (const stage of ["select", "land", "release"] as const) {
+  it("keeps a landed item landed when its release fails infra or dies", async () => {
+    for (
+      const [release, message] of [
+        [Effect.fail(infra), "network unavailable"],
+        [Effect.die(new Error("label api exploded")), "label api exploded"]
+      ] as const
+    ) {
+      const { note, tape } = recorder()
+      const result = await runRound({ items: items("bad", "good") }, {
+        ...baseOptions(note),
+        land: ({ item }) => note(`land:${item.id}`),
+        release: ({ item }) => item.id === "bad" ? release : Effect.void
+      })
+      expect(result.rows[0]).toMatchObject({ id: "bad", status: "landed" })
+      expect(result.rows[0]).not.toHaveProperty("requeues")
+      expect(result.rows[0]!.detail).toContain(`release: ${message}`)
+      expect(result.rows[1]).toMatchObject({ id: "good", status: "landed" })
+      expect(tape).toContain("land:bad")
+    }
+  })
+  it("requeues an item that did not land when its release fails infra", async () => {
+    const { note } = recorder()
+    const result = await runRound({ items: items("a") }, {
+      ...baseOptions(note),
+      work: () => Effect.fail({ _tag: "BurndownTestRefusal", message: "boom" }),
+      release: () => Effect.fail(infra)
+    })
+    expect(result.rows[0]).toMatchObject({ status: "requeued", requeues: 1 })
+    expect(result.rows[0]!.detail).toContain("work: boom; release: network unavailable")
+  })
+  it("fails an item that did not land when its release dies", async () => {
+    const { note } = recorder()
+    const result = await runRound({ items: items("a") }, {
+      ...baseOptions(note),
+      work: () => Effect.fail(infra),
+      release: () => Effect.die(new Error("label api exploded"))
+    })
+    expect(result.rows[0]).toMatchObject({ status: "failed", requeues: 1 })
+    expect(result.rows[0]!.detail).toContain("work: network unavailable; release: label api exploded")
+  })
+  for (const stage of ["select", "land"] as const) {
     it(`counts ${stage} infra once and keeps siblings`, async () => {
       const { note } = recorder()
       const result = await runRound({ items: items("bad", "good") }, {
         ...baseOptions(note),
         select: ({ item }) =>
           item.id === "bad" && stage === "select" ? Effect.fail(infra) : Effect.succeed(Burndown.ours),
-        land: ({ item }) => item.id === "bad" && stage === "land" ? Effect.fail(infra) : Effect.void,
-        release: ({ item }) => item.id === "bad" && stage === "release" ? Effect.fail(infra) : Effect.void
+        land: ({ item }) => item.id === "bad" && stage === "land" ? Effect.fail(infra) : Effect.void
       })
       expect(result.rows[0]).toMatchObject({ status: "requeued", requeues: 1 })
       expect(result.rows[1]).toMatchObject({ status: "landed" })

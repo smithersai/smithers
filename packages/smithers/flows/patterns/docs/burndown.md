@@ -168,7 +168,7 @@ What each member decides:
 | `claim`     | For each item a slot admits                                         | `Held` settles it `held`; anything else settles it `failed`          |
 | `work`      | After a successful claim                                            | Settles it `failed`; the items beside it keep running                |
 | `land`      | In the order work finished, `landConcurrency` at a time (default 1) | Settles it `failed`; the next landing still runs                     |
-| `release`   | Once per successful claim, when the item settles                    | Appended to the row's detail; the status stays                       |
+| `release`   | Once per successful claim, when the item settles                    | Appended to the row's detail; a landed item stays `landed`           |
 | `capacity`  | When a slot frees and an item is still waiting                      | Admits nothing through that slot                                     |
 | `cancelled` | When an item's work or the round is interrupted                     | Counts as no cancel: the item is requeued                            |
 

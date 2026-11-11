@@ -488,7 +488,7 @@ applies to thrown selection, detail, landing, and release callbacks.
 Only typed `Stop({ message })` stops the round; open claims are released.
 A defect containing a `Stop` is still an item defect. When the round itself is
 interrupted, each open claim is released the same way if `cancelled` answers
-`true`, and otherwise with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. Rows keep
+`true`, and otherwise with status `requeued` and `round interrupted`. A release failure is appended to the row's detail. A landed item stays `landed` whatever its release fails with; for any other item, a release defect fails it and a typed infra release failure requeues it within `maxRequeues`. Rows keep
 discovery order. `round` fails with `PatternError` before any member runs for a
 blank `key`, a `concurrency` or `slots` that is not a positive safe integer,
 a negative or fractional `round`, or an item without a unique nonblank string
