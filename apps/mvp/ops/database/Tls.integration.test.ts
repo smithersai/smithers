@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process"
-import { chmodSync, chownSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, chownSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -182,6 +182,43 @@ test.skipIf(!available)("standalone migrations succeed on loopback and verify-fu
     })
     expect(result).toContain("db:migrate: up to date")
   }
+})
+
+// The issuer and its revocation go through the same boundary: a pinned CA connects, the wrong pin is refused with the
+// host only, and the token itself reaches the file and nothing else.
+test.skipIf(!available)("machine tokens are issued and revoked over verified TLS with a pinned CA, never with the wrong pin", async () => {
+  const { migrate } = await import("./Connection.ts")
+  const pinned = (pin: "ca" | "other") => `postgresql://ops_tls:test-password@localhost:${port}/postgres?sslmode=require&sslrootcert=${encodeURIComponent(join(directory, `${pin}.crt`))}`
+  await Effect.runPromise(Effect.scoped(migrate(Redacted.make(pinned("ca")))))
+  const issuer = (args: ReadonlyArray<string>, pin: "ca" | "other") => spawnSync(process.execPath, ["ops/machine-token/issue.ts", ...args], {
+    cwd: fileURLToPath(new URL("../..", import.meta.url)), encoding: "utf8", timeout: 20_000,
+    env: { PATH: process.env.PATH, DATABASE_URL: pinned(pin) },
+  })
+  const out = join(mkdtempSync("/tmp/mvp-ops-token-"), "token")
+  const request = ["--repo", "a/b", "--agent", "fixer", "--lane", "lane-1", "--by", "test", "--out", out]
+  const refused = issuer(request, "other")
+  expect(refused.status).toBe(1)
+  expect(refused.stdout).toBe("")
+  expect(refused.stderr.trim()).toBe("database operation failed for localhost")
+  // The file comes before the row: a token no one holds opens nothing. Make room for the issued one.
+  rmSync(out)
+  const issued = issuer(request, "ca")
+  expect(issued.stderr).toBe("")
+  expect(issued.status).toBe(0)
+  const line = JSON.parse(issued.stdout) as { readonly digest: string }
+  expect(line).toMatchObject({ event: "machine_token.issued", repo: "github/a/b", agent: "fixer", lane: "lane-1", by: "test" })
+  const token = readFileSync(out, "utf8").trim()
+  expect(token).toMatch(/^smm_[\w-]{43}$/)
+  expect(issued.stdout).not.toContain(token)
+  const revoked = issuer(["--revoke", line.digest, "--by", "test"], "ca")
+  expect(revoked.stderr).toBe("")
+  expect(revoked.status).toBe(0)
+  expect(JSON.parse(revoked.stdout)).toMatchObject({ event: "machine_token.revoked", digest: line.digest, revoked: 1 })
+  const again = issuer(["--revoke", line.digest, "--by", "test"], "other")
+  expect(again.status).toBe(1)
+  expect(again.stdout).toBe("")
+  expect(again.stderr.trim()).toBe("database operation failed for localhost")
+  expect(refused.stderr + again.stderr).not.toMatch(/postgresql|test-password|ops_tls|smm_/)
 })
 
 const hasPsql = (() => { try { execFileSync("psql", ["--version"], { stdio: "ignore" }); return true } catch { return false } })()

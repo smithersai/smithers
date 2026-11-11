@@ -64,10 +64,12 @@ test("gate failure stdout and persistent log contain the hostname only", () => {
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-for (const [script, args] of [
-  ["ops/feed-barrier/confirm.ts", ["--by", "test", "--release", "aaaaaaaaaaaa"]],
-  ["ops/role-age/expire.ts", ["--repo", "a/b", "--person", "test"]],
-] as const) test(`${script} does not relay nested URL driver messages`, () => {
+for (const { name, script, args } of [
+  { name: "ops/feed-barrier/confirm.ts", script: "ops/feed-barrier/confirm.ts", args: ["--by", "test", "--release", "aaaaaaaaaaaa"] },
+  { name: "ops/role-age/expire.ts", script: "ops/role-age/expire.ts", args: ["--repo", "a/b", "--person", "test"] },
+  { name: "ops/machine-token/issue.ts", script: "ops/machine-token/issue.ts", args: ["--repo", "a/b", "--agent", "fixer", "--lane", "lane-1", "--by", "test", "--out", join(mkdtempSync(join(tmpdir(), "machine-")), "token")] },
+  { name: "ops/machine-token/issue.ts --revoke", script: "ops/machine-token/issue.ts", args: ["--revoke", "a".repeat(64), "--by", "test"] },
+]) test(`${name} does not relay nested URL driver messages`, () => {
   const value = "postgresql://private-user:private-pass@database.invalid/private-db?sslmode=verify-full&connect_timeout=" + encodeURIComponent("postgresql://otheruser:otherpass@otherhost/otherdatabase")
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd: join(root, "apps/mvp"), encoding: "utf8", timeout: 15_000,

@@ -9,7 +9,9 @@
 //
 // The raw token goes to `--out`, created mode 600, and never to argv, stdout or a log. One audit JSON line goes to stdout
 // with the digest and everything else the row holds. The database: DATABASE_URL when set; else production's, through
-// Neon's API, as ops/feed-barrier/confirm.ts reads it.
+// Neon's API, as ops/feed-barrier/confirm.ts reads it. Either way it is reached through the verified connection boundary
+// (ops/database/Connection.ts): a remote URL without verified TLS is refused before any connection, and a database
+// failure names only the host, never the driver's words.
 import { digestSync } from "@smthrs/crypto"
 import { repoId } from "../../src/features/repo/contract.ts"
 import { randomBytes } from "node:crypto"
@@ -17,8 +19,8 @@ import { closeSync, constants, openSync, writeSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { Effect, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
-import * as Database from "../../db/Database.ts"
-import { neonUri, scrub } from "../feed-barrier/confirm.ts"
+import * as Database from "../database/Connection.ts"
+import { neonUri, scrub, secretsOf } from "../feed-barrier/confirm.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 const PREFIX = "smm_"
@@ -99,10 +101,15 @@ const main = async () => {
   const uri = process.env.DATABASE_URL !== undefined && process.env.DATABASE_URL !== ""
     ? Redacted.make(process.env.DATABASE_URL)
     : await neonUri({ key, orgId: process.env.NEON_ORG_ID ?? "", project: values.project ?? "", stage: values.stage! })
-  const layer = Database.layer(Effect.succeed(uri))
+  // While `databaseOperation` holds, a failure is the database's: it prints as the boundary's host-only diagnostic,
+  // since a driver's words can carry a URL. Validating the URL comes first, before any connection.
+  let databaseOperation = true
   try {
+    const layer = Database.layer(uri)
+    databaseOperation = false
     if (values.revoke !== undefined) {
       if (values.by === undefined) throw new Error("--by is required")
+      databaseOperation = true
       console.log(JSON.stringify(await Effect.runPromise(revoke(values.revoke, values.by).pipe(Effect.provide(layer)))))
       return
     }
@@ -111,9 +118,11 @@ const main = async () => {
     const token = newToken()
     // The file first: a token no one holds is a row that opens nothing, and a failed write leaves no row.
     writeToken(values.out, token)
+    databaseOperation = true
     console.log(JSON.stringify(await Effect.runPromise(issue(token, request).pipe(Effect.provide(layer)))))
   } catch (error) {
-    console.error(scrub(error instanceof Error ? error.message : String(error), [key, Redacted.value(uri)]))
+    const message = databaseOperation ? Database.diagnostic(error, uri) : error instanceof Error ? error.message : String(error)
+    console.error(scrub(message, secretsOf(process.env, uri)))
     process.exitCode = 1
   }
 }
