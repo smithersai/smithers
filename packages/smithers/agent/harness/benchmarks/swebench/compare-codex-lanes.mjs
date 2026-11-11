@@ -174,7 +174,7 @@ const literalBreaches = (text) => {
 
 const containerIdentity = /^[\w][\w.-]*$/u
 
-/** Every `{ container, command }` call in one parsed value, JSON strings included. */
+/** Every command boundary in one parsed value, JSON strings included. */
 const containerCalls = (value, found) => {
   if (typeof value === "string") {
     if (!/^\s*[[{]/u.test(value)) return found
@@ -191,6 +191,8 @@ const containerCalls = (value, found) => {
   if (typeof value.container === "string" && value.container !== "" && program !== undefined) {
     const container = containerIdentity.test(value.container) ? value.container : JSON.stringify(value.container)
     found.push(`docker exec ${container} ${program.replace(/\s+/gu, " ")}`)
+  } else if (program !== undefined) {
+    found.push("exec")
   }
   for (const child of Object.values(value)) containerCalls(child, found)
   return found
@@ -205,7 +207,9 @@ const containerCalls = (value, found) => {
  * attempt and never as in-container. Each such call found in a JSON line is
  * written as `docker exec <container> <command>` on the line before it, which
  * keeps its container identity for the seal reading and starts its outcome
- * window where the call is. Codex transcripts and older traces pass unchanged.
+ * window where the call is. A structured host command starts an `exec` block
+ * too, so its result cannot be credited to a preceding container command.
+ * Codex transcripts and older traces pass unchanged.
  */
 const withContainerLines = (text) =>
   text.split("\n").map((line) => {
@@ -271,9 +275,10 @@ const quietWindow = (window) =>
  *
  * `breaches` supplies the attempts, so this cannot drift from it on *what counts
  * as an in-container fetch*; only the outcome reading is added on top. The
- * window an outcome is read from ends at the next `docker exec`, so one
- * command's failure is never credited to another, and is capped so a quiet trace
- * cannot absolve an attempt with something printed thousands of lines later.
+ * window an outcome is read from ends at the next command or transcript event,
+ * so a host failure or assistant prose cannot clear a container fetch. It is
+ * capped so a quiet trace cannot absolve an attempt with something printed
+ * thousands of lines later.
  *
  * @category conversions
  * @since 0.1.0
@@ -288,7 +293,16 @@ export const inContainerEgress = (trace) => {
     const start = at === -1 ? from : at + command.length
     if (at !== -1) from = start
     const next = text.indexOf("docker exec", start)
-    const end = Math.min(next === -1 ? text.length : next, start + 4000)
+    // Codex marks every command and assistant turn; older traces may instead
+    // use a shell prompt. Structured calls get these same boundaries
+    // from withContainerLines, including calls that run on the host.
+    const boundary = /\n(?:(?:exec|codex|thinking|user|tokens used)\r?(?:\n|$)|web search:|\$\s)/u
+      .exec(text.slice(start, start + 4000))
+    const end = Math.min(
+      next === -1 ? text.length : next,
+      boundary === null ? text.length : start + boundary.index + 1,
+      start + 4000
+    )
     const window = text.slice(start, end)
     // Only literal identities can share evidence. An option or a shell
     // expression we cannot resolve gets only its own command's refusal.

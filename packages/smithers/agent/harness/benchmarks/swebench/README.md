@@ -534,9 +534,12 @@ outcome, and the reading fails closed:
   shown refusing nothing. A quiet trace proves nothing and is given nothing.
 
 Refusal evidence stays within its command's bounded output window and literal
-container identity. A refusal in `swb` cannot excuse a fetch in `otherbox`.
-When the parser cannot identify a literal container, only that command's own
-refusal can excuse it; unresolved shell expressions never share evidence.
+container identity. The window ends at the next command or transcript event,
+including host commands and assistant turns. A later host DNS failure cannot
+clear an earlier container fetch that printed a patch. A refusal in `swb`
+cannot excuse a fetch in `otherbox`. When the parser cannot identify a literal
+container, only that command's own refusal can excuse it; unresolved shell
+expressions never share evidence.
 
 Anywhere the container was not observed `none`, the old rule stands untouched, so
 no `bridge` or unrecorded lane's report moves.

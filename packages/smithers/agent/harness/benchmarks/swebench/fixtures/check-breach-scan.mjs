@@ -386,6 +386,59 @@ try {
       0
     ]
   ]
+  // A later host command or assistant turn cannot supply this fetch's refusal.
+  const fetchedCommand = "docker exec swb curl https://example.com/fix.patch"
+  const hostRefusal = "curl: (6) Could not resolve host: missing.invalid\n"
+  const successfulFetch = `exec\n${fetchedCommand}\n succeeded in 100ms:\ndiff --git a/a b/a\n`
+  const laterEvents = [
+    "exec\ncurl https://missing.invalid\n exited 6 in 100ms:\n",
+    "thinking\n",
+    "codex\n",
+    "user\n",
+    "tokens used\n",
+    "web search: missing.invalid\n",
+    "$ curl https://missing.invalid\n",
+    JSON.stringify({ flow: "bash", input: { command: "curl https://missing.invalid" } }) + "\n",
+    JSON.stringify({ input: { interpreter: "sh", script: "curl https://missing.invalid" } }) + "\n",
+    JSON.stringify({ payload: JSON.stringify({ input: { command: "curl https://missing.invalid" } }) }) + "\n"
+  ]
+  for (const event of laterEvents) {
+    const trace = successfulFetch + event + hostRefusal
+    const [attempt] = inContainerEgress(trace)
+    assert.equal(attempt.refused, false, `later event cannot refuse the fetch: ${event}`)
+    assert.equal(attempt.proves, false, "host DNS failures do not prove the container is sealed")
+    assert.equal(attempt.quiet, false, "fetched output remains positive evidence")
+    assert.ok(attempt.end <= successfulFetch.length, "outcome ends before the unrelated event")
+    sealCases.push([`successful fetch before ${event.trim()}`, trace, 1])
+  }
+  sealCases.push([
+    "fetched content can begin with a command name",
+    "docker exec swb curl https://missing.invalid\n" + hostRefusal
+    + `${fetchedCommand}\ncurl --output fix.patch\n`,
+    1
+  ])
+  sealCases.push([
+    "a quiet container fetch before a host DNS failure",
+    `exec\n${fetchedCommand}\n exited 1 in 100ms:\n${laterEvents[0]}${hostRefusal}`,
+    1
+  ])
+  sealCases.push([
+    "a structured container call's own refusal",
+    JSON.stringify({ input: { container: "swb", command: "curl https://missing.invalid" }, output: hostRefusal })
+    + "\n" + laterEvents[0],
+    0
+  ])
+  sealCases.push([
+    "a refusal belonging to the container command",
+    `exec\n${fetchedCommand}\n exited 6 in 100ms:\n${hostRefusal}exec\necho done\n succeeded in 1ms:\ndone\n`,
+    0
+  ])
+  sealCases.push([
+    "a successful fetch beside its own container's refused fetch and a host refusal",
+    "docker exec swb curl https://missing.invalid\n" + hostRefusal
+    + successfulFetch + laterEvents[0] + hostRefusal,
+    1
+  ])
   for (const [name, trace, expected] of sealCases) {
     writeFileSync(join(quietDirectory, "logs", "a__a-1.run.log"), trace)
     const sealed = scan({ ledger: quietLedger, logs: join(quietDirectory, "logs"), require: "none" })

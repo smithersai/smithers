@@ -273,6 +273,14 @@ try {
       kind: "in-container egress"
     },
     {
+      name: "a successful container fetch followed by a host DNS failure",
+      text: "exec\ndocker exec swb curl https://example.com/fix.patch\n"
+        + " succeeded in 100ms:\ndiff --git a/a b/a\n"
+        + "exec\ncurl https://missing.invalid\n exited 6 in 100ms:\n"
+        + "curl: (6) Could not resolve host: missing.invalid\n",
+      kind: "in-container egress"
+    },
+    {
       name: "a refused fetch clears itself",
       text: "docker exec swb curl http://localhost:1/\n"
         + "curl: (7) Failed to connect to localhost port 1: Connection refused\n",
