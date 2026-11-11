@@ -31,11 +31,14 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
 import { TestClock } from "effect/testing"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { key, sha256, withCrypto } from "./Sha256.ts"
 
 const ReplayFlow = Flow.make("NonRetryableReplay/Flow", {
@@ -56,21 +59,20 @@ const jj = Jj.make({
 })
 
 type Services =
-  | Layer.Success<ReturnType<typeof TestStores.layer>>
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
-  | DurableEngineState.DurableEngineState
   | Jj.Jj
   | TestClock.TestClock
   | Layer.Success<ReturnType<typeof Action.layerCacheEnvironment>>
   | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
-const provide = <A, E>(effect: Effect.Effect<A, E, Services>, state: DurableEngineState.Service) =>
+/** One process over `filename`: its own connection, closed when `effect` ends. */
+const provide = <A, E>(effect: Effect.Effect<A, E, Services>, filename?: string) =>
   withCrypto(
     effect.pipe(
-      Effect.provideService(DurableEngineState.DurableEngineState, state),
       Effect.provideService(Jj.Jj, jj),
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer()),
+      Effect.provide(PersistentDatabase.stores(filename)),
       Effect.provide(TestClock.layer()),
       // Sealed cache keys hash the resolved environment. Declaring an empty
       // one — what a hand-wired composition does through
@@ -93,6 +95,21 @@ const declaration = {
   ))
 }
 const environment = { layers: [], capabilities: {} } satisfies Action.CacheEnvironment
+
+/** A database file two processes open in turn. */
+const withDatabaseFile = <A, E, R>(body: (filename: string) => Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.promise(async () => {
+      const directory = await mkdtemp(join(tmpdir(), "non-retryable-"))
+      return { directory, filename: PersistentDatabase.filename(join(directory, "engine.sqlite")) }
+    }),
+    ({ filename }) => body(filename),
+    ({ directory, filename }) =>
+      Effect.promise(async () => {
+        await PersistentDatabase.remove(filename)
+        await rm(directory, { recursive: true, force: true })
+      })
+  )
 // `form` names which idempotency-key form built `input`, so a caller object
 // that spells the string form's encoding cannot alias it (B3). New records are
 // written under the current key encoding, which names itself (`keyEncoding`).
@@ -150,7 +167,6 @@ describe("non-retryable verdict durability across resume", () => {
           return Effect.fail({ _tag: "FatalBoom" as const, detail: "durable" })
         })
       })
-      const state = DurableEngineState.makeMemory()
       const makeEngine = EngineStore.make({
         owner: { hostId: "non-retryable-host" },
         journalSource: "non-retryable-test",
@@ -163,90 +179,98 @@ describe("non-retryable verdict durability across resume", () => {
         attempt: 1
       }
 
-      const result = yield* provide(
+      const result = yield* withDatabaseFile((filename) =>
         Effect.gen(function*() {
-          const attempts = yield* AttemptStore.AttemptStore
-          const journal = yield* Journal.Journal
           // First process: the attempt fails and `attempts.finish` durably
-          // records the non-retryable failure, then the process dies before
+          // records the non-retryable failure, then the process stops before
           // the failure propagates to the engine's retry decision — the hook
           // parks the fiber right after the failed finish and the scope close
           // interrupts it there, releasing the run.
-          yield* Effect.scoped(Effect.gen(function*() {
-            // The park sits on the journal transaction that commits the failed
-            // attempt: its `after` firing is the first instant at which the
-            // failure is durable — the row and its `attemptFinished` entry land
-            // together — and it is still before the engine sees the failure and
-            // takes a retry decision. Parking inside `attempts.finish` instead
-            // would hold an open write transaction on this suite's single
-            // SQLite connection, deadlocking the assertion below against it.
-            let terminal = false
-            let parked = false
-            const blocked = Notifying.wrap(
-              journal,
-              (op, order, args) => {
-                if (
-                  op === "emitDurable" && order === "after" &&
-                  (args[0] as { readonly eventType: string }).eventType === "flows.engine.attempt-finished"
-                ) {
-                  terminal = true
-                  return Effect.void
+          yield* provide(
+            Effect.scoped(Effect.gen(function*() {
+              const attempts = yield* AttemptStore.AttemptStore
+              const journal = yield* Journal.Journal
+              // The park sits on the journal transaction that commits the failed
+              // attempt: its `after` firing is the first instant at which the
+              // failure is durable — the row and its `attemptFinished` entry land
+              // together — and it is still before the engine sees the failure and
+              // takes a retry decision. Parking inside `attempts.finish` instead
+              // would hold an open write transaction on this process's single
+              // SQLite connection, deadlocking the assertion below against it.
+              let terminal = false
+              let parked = false
+              const blocked = Notifying.wrap(
+                journal,
+                (op, order, args) => {
+                  if (
+                    op === "emitDurable" && order === "after" &&
+                    (args[0] as { readonly eventType: string }).eventType === "flows.engine.attempt-finished"
+                  ) {
+                    terminal = true
+                    return Effect.void
+                  }
+                  if (op !== "transact" || order !== "after" || !terminal || parked) return Effect.void
+                  // Park exactly once. The scope close below interrupts the fiber
+                  // here, and the driver's interrupt finalizer releases the run
+                  // through another transaction — which must not park again.
+                  parked = true
+                  return Effect.interruptible(Effect.never)
                 }
-                if (op !== "transact" || order !== "after" || !terminal || parked) return Effect.void
-                // Park exactly once. The scope close below interrupts the fiber
-                // here, and the driver's interrupt finalizer releases the run
-                // through another transaction — which must not park again.
-                parked = true
-                return Effect.interruptible(Effect.never)
-              }
-            )
-            const engine = yield* Effect.provideService(
-              makeEngine,
-              Journal.Journal,
-              blocked
-            )
-            yield* engine.register(ReplayFlow, () => fatal)
-            yield* executeUntilParked(engine, ReplayFlow, {
-              executionId: "non-retryable-run",
-              payload: {},
-              discard: true
-            }).pipe(Effect.forkChild({ startImmediately: true }))
-            // Let the attempt run and durably fail; the fiber is now parked in
-            // the post-finish hook.
-            yield* Effect.yieldNow
-            yield* TestDatabase.until(
-              attempts.get(attemptId).pipe(Effect.map((row) => Option.isSome(row) && row.value.state === "failed"))
-            )
-            const row = yield* attempts.get(attemptId)
-            expect(Option.isSome(row) && row.value.state === "failed").toBe(true)
-          }))
+              )
+              const engine = yield* Effect.provideService(
+                makeEngine,
+                Journal.Journal,
+                blocked
+              )
+              yield* engine.register(ReplayFlow, () => fatal)
+              yield* executeUntilParked(engine, ReplayFlow, {
+                executionId: "non-retryable-run",
+                payload: {},
+                discard: true
+              }).pipe(Effect.forkChild({ startImmediately: true }))
+              // Let the attempt run and durably fail; the fiber is now parked in
+              // the post-finish hook.
+              yield* Effect.yieldNow
+              yield* TestDatabase.until(
+                attempts.get(attemptId).pipe(Effect.map((row) => Option.isSome(row) && row.value.state === "failed"))
+              )
+              const row = yield* attempts.get(attemptId)
+              expect(Option.isSome(row) && row.value.state === "failed").toBe(true)
+            })),
+            filename
+          )
           const dispatchesBeforeResume = dispatches
 
-          // Second process: reclaim and re-drive. The persisted failed attempt
-          // must replay the original `FatalBoom` — no readmission, no real
-          // dispatch, and no backoff sleep (the clock is never advanced).
-          yield* Effect.scoped(Effect.gen(function*() {
-            const engine = yield* makeEngine
-            yield* engine.register(ReplayFlow, () => fatal)
-            const result = yield* engine.poll(ReplayFlow, "non-retryable-run")
-            expect(Option.isNone(result)).toBe(true)
-            yield* executeUntilParked(engine, ReplayFlow, {
-              executionId: "non-retryable-run",
-              payload: {},
-              discard: true
-            }, ["failed"])
-            // Join the resumed drive's durable terminal commit. One scheduler
-            // yield is not a completion receipt; closing here otherwise
-            // interrupts a still-running drive and releases it as suspended.
-          }))
-          const store = yield* RunStore.RunStore
-          return {
-            dispatchesBeforeResume,
-            dispatchesAfterResume: dispatches,
-            row: yield* store.get("non-retryable-run")
-          }
-        }),
-        state
+          // Second process, over its own connection to the same database:
+          // reclaim and re-drive. The persisted failed attempt must replay the
+          // original `FatalBoom` — no readmission, no real dispatch, and no
+          // backoff sleep (the clock is never advanced).
+          return yield* provide(
+            Effect.gen(function*() {
+              yield* Effect.scoped(Effect.gen(function*() {
+                const engine = yield* makeEngine
+                yield* engine.register(ReplayFlow, () => fatal)
+                const result = yield* engine.poll(ReplayFlow, "non-retryable-run")
+                expect(Option.isNone(result)).toBe(true)
+                yield* executeUntilParked(engine, ReplayFlow, {
+                  executionId: "non-retryable-run",
+                  payload: {},
+                  discard: true
+                }, ["failed"])
+                // Join the resumed drive's durable terminal commit. One scheduler
+                // yield is not a completion receipt; closing here otherwise
+                // interrupts a still-running drive and releases it as suspended.
+              }))
+              const store = yield* RunStore.RunStore
+              return {
+                dispatchesBeforeResume,
+                dispatchesAfterResume: dispatches,
+                row: yield* store.get("non-retryable-run")
+              }
+            }),
+            filename
+          )
+        })
       )
 
       expect(result.dispatchesBeforeResume).toBe(1)
@@ -263,8 +287,6 @@ describe("non-retryable verdict durability across resume", () => {
       // Unit-level pin on `ActionPersistence`: a `failed` row must rethrow
       // the persisted cause — the `_tag` survives the JSON round trip so
       // `RetryPolicy` non-retryable matching works on replay.
-      const { default: makeState } = { default: DurableEngineState.makeMemory }
-      const state = makeState()
       const makeEngine = EngineStore.make({
         owner: { hostId: "failed-row-host" },
         journalSource: "failed-row-test",
@@ -302,8 +324,7 @@ describe("non-retryable verdict durability across resume", () => {
             attempt: 1
           })
           return { row, dispatches }
-        }),
-        state
+        })
       )
 
       expect(outcome.dispatches).toBe(1)
@@ -360,8 +381,7 @@ describe("non-retryable verdict durability across resume", () => {
           die: seedAndReplay("rehydrate/die", { reasons: [{ _tag: "Die", defect: { boom: true } }] }),
           interrupt: seedAndReplay("rehydrate/interrupt", { reasons: [{ _tag: "Interrupt", fiberId: null }] }),
           raw: seedAndReplay("rehydrate/raw", "not-a-cause-shape")
-        }),
-        DurableEngineState.makeMemory()
+        })
       )
 
       expect(outcome.die.dispatches).toBe(0)

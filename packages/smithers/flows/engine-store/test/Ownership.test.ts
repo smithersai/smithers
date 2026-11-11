@@ -10,11 +10,10 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
-import * as TestStores from "../src/test/TestStores.ts"
 import { executeAndDrain } from "./ExecuteAndDrain.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const TestFlow = Flow.make("Ownership/Test", {
@@ -79,8 +78,7 @@ const provideJournal = <A, E, R>(
 ) =>
   effect.pipe(
     Effect.scoped,
-    Effect.provide(TestStores.layer()),
-    Effect.provide(DurableEngineState.layerMemory),
+    Effect.provide(PersistentDatabase.stores()),
     Effect.provide(TestClock.layer())
   )
 

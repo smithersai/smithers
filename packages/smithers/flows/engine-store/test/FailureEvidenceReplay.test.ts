@@ -14,11 +14,13 @@ import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import { join } from "node:path"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
+import { tempDirectory } from "./TempDirectory.ts"
 
 const FailFlow = Flow.make("FailureEvidence/Flow", {
   payload: {},
@@ -39,10 +41,12 @@ const jj = Jj.make({
 
 describe("failure evidence across restarts", () => {
   it.effect("replays a terminal failure instead of reevaluating the step that produced it", () =>
-    Effect.gen(function*() {
+    Effect.scoped(Effect.gen(function*() {
       let successDispatches = 0
       let failingDispatches = 0
-      const state = DurableEngineState.makeMemory()
+      const filename = yield* PersistentDatabase.scoped(
+        join(yield* tempDirectory("failure-evidence-"), "engine.sqlite")
+      )
 
       const stable = Action.make({
         name: "stable",
@@ -74,31 +78,19 @@ describe("failure evidence across restarts", () => {
           return `${first}/${second}`
         })
 
-      const outcome = yield* withCrypto(
+      // One process: its own connection and engine over the database file,
+      // both closed before the next process opens the file again.
+      const process = withCrypto(
         Effect.scoped(
           Effect.gen(function*() {
-            const runs = yield* RunStore.RunStore
-            const makeEngine = EngineStore.make({
+            const engine = yield* EngineStore.make({
               owner: { hostId: "failure-evidence-host" },
               journalSource: "failure-evidence-test",
               isAlive: () => Effect.succeed(false)
             })
-
-            const first = yield* makeEngine
-            yield* first.register(FailFlow, handler)
-            const firstExit = yield* Effect.exit(
-              first.execute(FailFlow, {
-                executionId: "failure-evidence-run",
-                payload: {},
-                discard: false
-              })
-            )
-            const afterFailure = yield* runs.get("failure-evidence-run")
-
-            const restarted = yield* makeEngine
-            yield* restarted.register(FailFlow, handler)
-            const secondExit = yield* Effect.exit(
-              restarted.execute(FailFlow, {
+            yield* engine.register(FailFlow, handler)
+            const exit = yield* Effect.exit(
+              engine.execute(FailFlow, {
                 executionId: "failure-evidence-run",
                 payload: {},
                 discard: false
@@ -106,17 +98,21 @@ describe("failure evidence across restarts", () => {
             )
             const journal = yield* Journal.Journal
             yield* journal.flush
-            const afterRestart = yield* runs.get("failure-evidence-run")
-            return { firstExit, secondExit, afterFailure, afterRestart }
-          }).pipe(
-            Effect.provideService(DurableEngineState.DurableEngineState, state),
-            Effect.provideService(Jj.Jj, jj)
-          )
+            return { exit, row: yield* (yield* RunStore.RunStore).get("failure-evidence-run") }
+          }).pipe(Effect.provideService(Jj.Jj, jj))
         ).pipe(
           Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(TestStores.layer())
+          Effect.provide(TestStores.layerAt(filename))
         )
       )
+      const first = yield* process
+      const restarted = yield* process
+      const outcome = {
+        firstExit: first.exit,
+        secondExit: restarted.exit,
+        afterFailure: first.row,
+        afterRestart: restarted.row
+      }
 
       expect(outcome.firstExit._tag).toBe("Failure")
       expect(outcome.afterFailure.status).toBe("failed")
@@ -131,5 +127,5 @@ describe("failure evidence across restarts", () => {
       expect(failingDispatches).toBe(1)
       expect(outcome.secondExit._tag).toBe("Failure")
       expect(String(outcome.secondExit)).toContain("transient")
-    }))
+    })))
 })

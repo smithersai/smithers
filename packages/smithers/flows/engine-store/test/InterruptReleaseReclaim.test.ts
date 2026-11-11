@@ -24,12 +24,14 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
+import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
 import { releaseCauseOf } from "../src/RunState.ts"
-import * as TestStores from "../src/test/TestStores.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
+import { tempDirectory } from "./TempDirectory.ts"
 
 const TestFlow = Flow.make("InterruptReleaseReclaim/Test", {
   payload: {},
@@ -47,13 +49,14 @@ const makeDriver = (nonce: string) =>
     engine: Effect.succeed(fakeEngine)
   })
 
+/** One process's connection to the durable SQL store; `filename` names the database a later process reopens. */
 const provideJournal = <A, E, R>(
-  effect: Effect.Effect<A, E, R | Journal.Journal | RunStore.RunStore>
+  effect: Effect.Effect<A, E, R | Journal.Journal | RunStore.RunStore>,
+  filename?: string
 ) =>
   effect.pipe(
     Effect.scoped,
-    Effect.provide(TestStores.layer()),
-    Effect.provide(DurableEngineState.layerMemory),
+    Effect.provide(PersistentDatabase.stores(filename)),
     Effect.provide(TestClock.layer())
   )
 
@@ -308,15 +311,20 @@ describe("interrupt-released runs are reclaimable (issue #39)", () => {
     }))
 
   it.effect("parks the released run with a durable waiting reason", () =>
-    Effect.gen(function*() {
-      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
-        const store = yield* RunStore.RunStore
-        const state = yield* DurableEngineState.DurableEngineState
-        yield* releaseMidAction("release-parked")
-        const row = yield* store.get("release-parked")
-        const waiting = yield* state.waiting("release-parked")
-        return { row, waiting }
-      })))
+    Effect.scoped(Effect.gen(function*() {
+      const filename = yield* PersistentDatabase.scoped(join(yield* tempDirectory("release-parked-"), "engine.sqlite"))
+      yield* withCrypto(provideJournal(releaseMidAction("release-parked"), filename))
+      // A second connection reads what the released process left on disk.
+      const result = yield* withCrypto(provideJournal(
+        Effect.gen(function*() {
+          const store = yield* RunStore.RunStore
+          const state = yield* DurableEngineState.DurableEngineState
+          const row = yield* store.get("release-parked")
+          const waiting = yield* state.waiting("release-parked")
+          return { row, waiting }
+        }),
+        filename
+      ))
 
       expect(result.row.status).toBe("suspended")
       expect(result.row.owner).toBeNull()
@@ -324,30 +332,34 @@ describe("interrupt-released runs are reclaimable (issue #39)", () => {
       if (Option.isSome(result.waiting)) {
         expect(result.waiting.value.reason).toBe("released")
       }
-    }))
+    })))
 
   it.effect("a later worker's sweep re-drives the released run to completion", () =>
-    Effect.gen(function*() {
-      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
-        const store = yield* RunStore.RunStore
-        yield* releaseMidAction("release-redrive")
+    Effect.scoped(Effect.gen(function*() {
+      const filename = yield* PersistentDatabase.scoped(join(yield* tempDirectory("release-redrive-"), "engine.sqlite"))
+      yield* withCrypto(provideJournal(releaseMidAction("release-redrive"), filename))
+      const result = yield* withCrypto(provideJournal(
+        Effect.gen(function*() {
+          const store = yield* RunStore.RunStore
+          // A fresh worker over its own connection to the same database: its
+          // sweep must find the released run and re-drive it without any
+          // operator action.
+          const successor = yield* makeDriver("owner-2")
+          yield* successor.register(TestFlow, () => Effect.succeed("reclaimed"))
 
-        // A fresh worker over the same store: its sweep must find the
-        // released run and re-drive it without any operator action.
-        const successor = yield* makeDriver("owner-2")
-        yield* successor.register(TestFlow, () => Effect.succeed("reclaimed"))
-
-        let row = yield* store.get("release-redrive")
-        for (let i = 0; i < 2000 && row.status !== "completed"; i++) {
-          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
-          yield* TestClock.adjust(Duration.toMillis(Ownership.heartbeatInterval))
-          row = yield* store.get("release-redrive")
-        }
-        return { row }
-      })))
+          let row = yield* store.get("release-redrive")
+          for (let i = 0; i < 2000 && row.status !== "completed"; i++) {
+            yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
+            yield* TestClock.adjust(Duration.toMillis(Ownership.heartbeatInterval))
+            row = yield* store.get("release-redrive")
+          }
+          return { row }
+        }),
+        filename
+      ))
 
       expect(result.row.status).toBe("completed")
-    }))
+    })))
 
   it.effect("requestCancel against a released run is eventually delivered", () =>
     Effect.gen(function*() {

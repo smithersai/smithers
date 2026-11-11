@@ -29,6 +29,7 @@ import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import * as WakeBus from "../src/WakeBus.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
@@ -51,9 +52,8 @@ const hourPolicy = RetryPolicy.make({
 })
 
 type Services =
-  | Layer.Success<ReturnType<typeof TestStores.layer>>
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
-  | DurableEngineState.DurableEngineState
   | Jj.Jj
   | TestClock.TestClock
   | WakeBus.WakeBus
@@ -75,16 +75,10 @@ const withEngine = <A, E>(
           isAlive: () => Effect.succeed(false)
         })
         return yield* body(makeEngine)
-      }).pipe(
-        Effect.provideService(
-          DurableEngineState.DurableEngineState,
-          DurableEngineState.makeMemory()
-        ),
-        Effect.provideService(Jj.Jj, jj)
-      )
+      }).pipe(Effect.provideService(Jj.Jj, jj))
     ).pipe(
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer()),
+      Effect.provide(PersistentDatabase.stores()),
       Effect.provide(wakeBusLayer),
       Effect.provide(TestClock.layer())
     )

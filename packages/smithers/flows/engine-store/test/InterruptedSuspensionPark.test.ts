@@ -32,11 +32,14 @@ import * as Latch from "effect/Latch"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
+import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
+import { tempDirectory } from "./TempDirectory.ts"
 
 const TestFlow = Flow.make("InterruptedSuspensionPark/Test", {
   payload: {},
@@ -81,58 +84,62 @@ const recordedResult = (stateJson: string): { readonly _tag?: string } | undefin
 /**
  * Runs `wait` inside one round, waits for it to suspend, then closes the
  * engine's scope the way process shutdown closes it, and reads the durable
- * row the interruption left behind.
+ * row the interruption left behind through a second connection.
  */
-const parkByShutdown = (executionId: string, wait: DurableWait) => {
-  const state = DurableEngineState.makeMemory()
-  return withCrypto(
-    Effect.scoped(
+const parkByShutdown = (executionId: string, wait: DurableWait) =>
+  Effect.scoped(Effect.gen(function*() {
+    const filename = yield* PersistentDatabase.scoped(join(yield* tempDirectory("interrupted-park-"), "engine.sqlite"))
+    yield* withCrypto(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const engineScope = yield* Scope.make()
+          const engine = (yield* EngineStore.make({
+            owner: { hostId: "interrupted-park-host" },
+            journalSource: "interrupted-park-test",
+            isAlive: () => Effect.succeed(false)
+          }).pipe(Scope.provide(engineScope))) as FlowRuntime.FlowRuntime["Service"]
+          const suspended = yield* Latch.make(false)
+          yield* engine.register(
+            TestFlow,
+            () =>
+              Effect.gen(function*() {
+                const waiter = yield* Effect.forkChild(wait, { startImmediately: true })
+                // A durable wait suspends by interrupting its own fiber, so its
+                // exit is how the round learns the suspension was taken.
+                yield* Fiber.await(waiter)
+                yield* Latch.open(suspended)
+                return yield* Effect.never
+              })
+          )
+          yield* executeUntilParked(engine, TestFlow, {
+            executionId,
+            payload: {},
+            discard: true
+          }).pipe(Effect.forkChild({ startImmediately: true }))
+          yield* Latch.await(suspended)
+          yield* Scope.close(engineScope, Exit.void)
+        }).pipe(Effect.provideService(Jj.Jj, jj))
+      ).pipe(
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(TestStores.layerAt(filename)),
+        Effect.orDie
+      )
+    )
+    return yield* withCrypto(
       Effect.gen(function*() {
         const store = yield* RunStore.RunStore
-        const engineScope = yield* Scope.make()
-        const engine = (yield* EngineStore.make({
-          owner: { hostId: "interrupted-park-host" },
-          journalSource: "interrupted-park-test",
-          isAlive: () => Effect.succeed(false)
-        }).pipe(Scope.provide(engineScope))) as FlowRuntime.FlowRuntime["Service"]
-        const suspended = yield* Latch.make(false)
-        yield* engine.register(
-          TestFlow,
-          () =>
-            Effect.gen(function*() {
-              const waiter = yield* Effect.forkChild(wait, { startImmediately: true })
-              // A durable wait suspends by interrupting its own fiber, so its
-              // exit is how the round learns the suspension was taken.
-              yield* Fiber.await(waiter)
-              yield* Latch.open(suspended)
-              return yield* Effect.never
-            })
-        )
-        yield* executeUntilParked(engine, TestFlow, {
-          executionId,
-          payload: {},
-          discard: true
-        }).pipe(Effect.forkChild({ startImmediately: true }))
-        yield* Latch.await(suspended)
-        yield* Scope.close(engineScope, Exit.void)
-        return {
+        const state = yield* DurableEngineState.DurableEngineState
+        const park: Park = {
           row: yield* store.get(executionId),
           waiting: yield* state.waiting(executionId),
           clocks: yield* state.pendingClocks({ executionId }),
           approvalSweep: yield* state.waitingRuns({ reason: "approval" }),
           releasedSweep: yield* state.waitingRuns({ reason: "released" })
         }
-      }).pipe(
-        Effect.provideService(DurableEngineState.DurableEngineState, state),
-        Effect.provideService(Jj.Jj, jj)
-      )
-    ).pipe(
-      Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer()),
-      Effect.orDie
+        return park
+      }).pipe(Effect.provide(TestStores.layerAt(filename)), Effect.orDie)
     )
-  )
-}
+  }))
 
 describe("a shutdown that interrupts a suspended round parks it, and says what for", () => {
   it.effect("keeps the approval the flow declared, with its wake token", () =>

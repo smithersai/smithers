@@ -11,11 +11,13 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const Root = Flow.make("NestedFailure/Root", {
@@ -40,6 +42,29 @@ const jj = Jj.make({
   workspaceForget: noWorkspace,
   status: noWorkspace
 })
+
+/** One process: its own store bundle over `filename`, its connection closed when `effect` ends. */
+const inProcess = (filename?: string) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provideService(Jj.Jj, jj),
+    Effect.provide(StepBoundary.layerTest()),
+    Effect.provide(PersistentDatabase.stores(filename))
+  )
+
+/** A database a released process and its successor open in turn. */
+const withDatabaseFile = <A, E, R>(body: (filename: string) => Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.promise(async () => {
+      const directory = await mkdtemp(join(tmpdir(), "nested-failure-"))
+      return { directory, filename: PersistentDatabase.filename(join(directory, "engine.sqlite")) }
+    }),
+    ({ filename }) => body(filename),
+    ({ directory, filename }) =>
+      Effect.promise(async () => {
+        await PersistentDatabase.remove(filename)
+        await rm(directory, { recursive: true, force: true })
+      })
+  )
 
 describe("nested action failure coordinates", () => {
   for (
@@ -110,17 +135,14 @@ describe("nested action failure coordinates", () => {
           }
           expect(calls).toBe(1)
         }).pipe(
-          Effect.provideService(Jj.Jj, jj),
-          Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-          Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(TestStores.layer())
+          inProcess()
         )
       )))
   }
 
   for (const prefix of ["smm_", "smt1.e30."]) {
-    it.live(`preserves a structured token error through failed-attempt crash replay (${prefix})`, () =>
-      withCrypto(Effect.scoped(
+    it.live(`preserves a structured token error through failed-attempt release replay (${prefix})`, () =>
+      withCrypto(withDatabaseFile((filename) =>
         Effect.gen(function*() {
           const token = prefix + "A".repeat(42) + "Q"
           const error = { _tag: "TokenRejected", message: `rejected ${token}`, stack: `at upstream (${token})` }
@@ -165,52 +187,55 @@ describe("nested action failure coordinates", () => {
               }))
             return engine
           })
-          const first = yield* create
-          const running = yield* Effect.forkChild(first.execute(flow, { executionId: "structured-root", payload: {} }))
-          yield* Deferred.await(reached)
-          const runs = yield* RunStore.RunStore
-          expect((yield* runs.get("structured-root")).status).toBe("running")
-          const journal = yield* Journal.Journal
-          yield* journal.flush
-          const entries = yield* journal.entries({ runId: "structured-root" as never, limit: 100 })
-          const settled = entries.entries.find((entry) => entry.eventType === "flows.engine.attempt-finished")!
-          expect(settled).toBeDefined()
-          const identity = settled.payload as { runId: string; stepKeyDigest: string; attempt: number }
-          const attempts = yield* AttemptStore.AttemptStore
-          const recorded = yield* attempts.get(identity)
-          expect(recorded._tag).toBe("Some")
-          if (recorded._tag === "Some") expect(recorded.value.state).toBe("failed")
-          // Interrupt only after the attempt is durable, while root settlement is held.
-          yield* Fiber.interrupt(running)
-          yield* Deferred.succeed(finish, undefined)
-          const restarted = yield* create
-          const exit = yield* Effect.exit(restarted.execute(flow, { executionId: "structured-root", payload: {} }))
-          expect(Exit.isFailure(exit)).toBe(true)
-          if (Exit.isFailure(exit)) {
-            const reason = exit.cause.reasons.find(Cause.isFailReason)
-            expect(reason?.error).toEqual(error)
-          }
-          if (recorded._tag === "Some") {
-            expect(recorded.value.error).toMatchObject({ reasons: [{ _tag: "Fail", error }] })
-          }
-          expect(calls).toBe(1)
-          const row = yield* runs.get("structured-root")
-          expect(row.status).toBe("failed")
-          const diagnostic = JSON.stringify(JSON.parse(row.stateJson).failure)
-          expect(diagnostic).not.toContain(token)
-          expect(diagnostic).toContain("[REDACTED")
-        }).pipe(
-          Effect.provideService(Jj.Jj, jj),
-          Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-          Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(TestStores.layer())
-        )
+          // First process: the attempt fails durably, then the process stops
+          // while root settlement is held, releasing the run and closing its connection.
+          const recorded = yield* Effect.scoped(Effect.gen(function*() {
+            const first = yield* create
+            const running = yield* Effect.forkChild(
+              first.execute(flow, { executionId: "structured-root", payload: {} })
+            )
+            yield* Deferred.await(reached)
+            expect((yield* (yield* RunStore.RunStore).get("structured-root")).status).toBe("running")
+            const journal = yield* Journal.Journal
+            yield* journal.flush
+            const entries = yield* journal.entries({ runId: "structured-root" as never, limit: 100 })
+            const settled = entries.entries.find((entry) => entry.eventType === "flows.engine.attempt-finished")!
+            expect(settled).toBeDefined()
+            const identity = settled.payload as { runId: string; stepKeyDigest: string; attempt: number }
+            const recorded = yield* (yield* AttemptStore.AttemptStore).get(identity)
+            expect(recorded._tag).toBe("Some")
+            if (recorded._tag === "Some") expect(recorded.value.state).toBe("failed")
+            // Interrupt only after the attempt is durable, while root settlement is held.
+            yield* Fiber.interrupt(running)
+            yield* Deferred.succeed(finish, undefined)
+            return recorded
+          })).pipe(inProcess(filename))
+          // Second process: a fresh bundle over the same database replays the failed attempt.
+          yield* Effect.scoped(Effect.gen(function*() {
+            const restarted = yield* create
+            const exit = yield* Effect.exit(restarted.execute(flow, { executionId: "structured-root", payload: {} }))
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isFailure(exit)) {
+              const reason = exit.cause.reasons.find(Cause.isFailReason)
+              expect(reason?.error).toEqual(error)
+            }
+            if (recorded._tag === "Some") {
+              expect(recorded.value.error).toMatchObject({ reasons: [{ _tag: "Fail", error }] })
+            }
+            expect(calls).toBe(1)
+            const row = yield* (yield* RunStore.RunStore).get("structured-root")
+            expect(row.status).toBe("failed")
+            const diagnostic = JSON.stringify(JSON.parse(row.stateJson).failure)
+            expect(diagnostic).not.toContain(token)
+            expect(diagnostic).toContain("[REDACTED")
+          })).pipe(inProcess(filename))
+        })
       )))
   }
 
   for (const replay of [false, true]) {
     it.live(`keeps separate origins when the parent handles only the first child failure (${replay ? "replay" : "live"})`, () =>
-      withCrypto(Effect.scoped(
+      withCrypto(withDatabaseFile((filename) =>
         Effect.gen(function*() {
           const calls = { A: 0, B: 0 }
           const action = (name: "A" | "B", count: number) =>
@@ -255,28 +280,29 @@ describe("nested action failure coordinates", () => {
             )
             return engine
           })
-          let engine = yield* create
+          // Replay: a first process settles the child; the root then runs in
+          // a second process over the same database and replays it.
           if (replay) {
-            yield* Effect.exit(engine.execute(Child, { executionId: "composite-child", payload: {} }))
-            engine = yield* create
+            yield* Effect.scoped(Effect.gen(function*() {
+              const engine = yield* create
+              yield* Effect.exit(engine.execute(Child, { executionId: "composite-child", payload: {} }))
+            })).pipe(inProcess(filename))
           }
-          const exit = yield* Effect.exit(engine.execute(Root, { executionId: "composite-root", payload: {} }))
-          expect(Exit.isFailure(exit)).toBe(true)
-          const store = yield* RunStore.RunStore
-          const child = JSON.parse((yield* store.get("composite-child")).stateJson)
-          expect(child.failureSites.map((site: { action: string }) => site.action)).toEqual([
-            "Composite/A",
-            "Composite/B"
-          ])
-          const root = JSON.parse((yield* store.get("composite-root")).stateJson)
-          expect(root.failure).toMatchObject({ executionId: "composite-child", action: "Composite/B", attempts: 3 })
-          expect(calls).toEqual({ A: 2, B: 3 })
-        }).pipe(
-          Effect.provideService(Jj.Jj, jj),
-          Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-          Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(TestStores.layer())
-        )
+          yield* Effect.scoped(Effect.gen(function*() {
+            const engine = yield* create
+            const exit = yield* Effect.exit(engine.execute(Root, { executionId: "composite-root", payload: {} }))
+            expect(Exit.isFailure(exit)).toBe(true)
+            const store = yield* RunStore.RunStore
+            const child = JSON.parse((yield* store.get("composite-child")).stateJson)
+            expect(child.failureSites.map((site: { action: string }) => site.action)).toEqual([
+              "Composite/A",
+              "Composite/B"
+            ])
+            const root = JSON.parse((yield* store.get("composite-root")).stateJson)
+            expect(root.failure).toMatchObject({ executionId: "composite-child", action: "Composite/B", attempts: 3 })
+            expect(calls).toEqual({ A: 2, B: 3 })
+          })).pipe(inProcess(filename))
+        })
       )))
   }
 
@@ -311,10 +337,7 @@ describe("nested action failure coordinates", () => {
         }
         expect(calls).toBe(1)
       }).pipe(
-        Effect.provideService(Jj.Jj, jj),
-        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-        Effect.provide(StepBoundary.layerTest()),
-        Effect.provide(TestStores.layer())
+        inProcess()
       )
     )))
 
@@ -346,10 +369,7 @@ describe("nested action failure coordinates", () => {
         expect(row.status).toBe("failed")
         expect(JSON.parse(row.stateJson).failure.message).toBe("x".repeat(1023) + "…")
       }).pipe(
-        Effect.provideService(Jj.Jj, jj),
-        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-        Effect.provide(StepBoundary.layerTest()),
-        Effect.provide(TestStores.layer())
+        inProcess()
       )
     )))
 
@@ -388,10 +408,7 @@ describe("nested action failure coordinates", () => {
           expect(JSON.parse(row.stateJson).failureSites).toBeUndefined()
           expect(calls).toBe(1)
         }).pipe(
-          Effect.provideService(Jj.Jj, jj),
-          Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-          Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(TestStores.layer())
+          inProcess()
         )
       )))
   }
@@ -439,17 +456,14 @@ describe("nested action failure coordinates", () => {
           expect(new TextEncoder().encode(JSON.stringify(state.failure[key])).length).toBeLessThanOrEqual(512)
         }
       }).pipe(
-        Effect.provideService(Jj.Jj, jj),
-        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-        Effect.provide(StepBoundary.layerTest()),
-        Effect.provide(TestStores.layer())
+        inProcess()
       )
     )))
 
   for (const metadata of ["ordinary", "oversized", "accessor", "proxy"] as const) {
     for (const replay of [false, true]) {
       it.live(`retains the child action's three attempts through an outer action with ${metadata} metadata (${replay ? "failed-attempt replay" : "live"})`, () =>
-        withCrypto(Effect.scoped(
+        withCrypto(withDatabaseFile((filename) =>
           Effect.gen(function*() {
             const reached = yield* Deferred.make<void>()
             const finish = yield* Deferred.make<void>()
@@ -524,46 +538,51 @@ describe("nested action failure coordinates", () => {
                 }))
               return engine
             })
-            const first = yield* create
-            let result: Exit.Exit<unknown, unknown>
+            // Replay: the first process stops once the inner attempts are durable;
+            // the root then replays in a second process over the same database.
             if (replay) {
-              const running = yield* Effect.forkChild(first.execute(Root, { executionId: "nested-root", payload: {} }))
-              yield* Deferred.await(reached)
-              yield* Fiber.interrupt(running)
-              yield* Deferred.succeed(finish, undefined)
-              const restarted = yield* create
-              result = yield* Effect.exit(restarted.execute(Root, { executionId: "nested-root", payload: {} }))
+              yield* Effect.scoped(Effect.gen(function*() {
+                const first = yield* create
+                const running = yield* Effect.forkChild(
+                  first.execute(Root, { executionId: "nested-root", payload: {} })
+                )
+                yield* Deferred.await(reached)
+                yield* Fiber.interrupt(running)
+                yield* Deferred.succeed(finish, undefined)
+              })).pipe(inProcess(filename))
             } else {
               yield* Deferred.succeed(finish, undefined)
-              result = yield* Effect.exit(first.execute(Root, { executionId: "nested-root", payload: {} }))
             }
-            expect(Exit.isFailure(result)).toBe(true)
-            if (Exit.isFailure(result)) {
-              const reason = result.cause.reasons.find(Cause.isFailReason)
-              expect(reason, String(result.cause)).toBeDefined()
-              expect(reason!.error).toBe("nested provider unavailable")
-              if (metadata === "ordinary" || metadata === "oversized") {
-                expect(Context.getOrUndefined(Cause.reasonAnnotations(reason!), FlowEngine.FailureSite))
-                  .toMatchObject({ executionId: "nested-child", action: "NestedFailure/Inner", attempts: 3 })
+            yield* Effect.scoped(Effect.gen(function*() {
+              const engine = yield* create
+              const result = yield* Effect.exit(engine.execute(Root, { executionId: "nested-root", payload: {} }))
+              expect(Exit.isFailure(result)).toBe(true)
+              if (Exit.isFailure(result)) {
+                const reason = result.cause.reasons.find(Cause.isFailReason)
+                expect(reason, String(result.cause)).toBeDefined()
+                expect(reason!.error).toBe("nested provider unavailable")
+                if (metadata === "ordinary" || metadata === "oversized") {
+                  expect(Context.getOrUndefined(Cause.reasonAnnotations(reason!), FlowEngine.FailureSite))
+                    .toMatchObject({ executionId: "nested-child", action: "NestedFailure/Inner", attempts: 3 })
+                }
               }
-            }
-            const store = yield* RunStore.RunStore
-            const root = yield* store.get("nested-root")
-            expect(root.status).toBe("failed")
-            const failure = JSON.parse(root.stateJson).failure
-            expect(failure.message).toBe(JSON.stringify("nested provider unavailable"))
-            if (metadata === "ordinary" || metadata === "oversized") {
-              expect(failure).toMatchObject({ executionId: "nested-child", action: "NestedFailure/Inner", attempts: 3 })
-            }
-            expect(metadataReads).toBe(0)
-            expect(innerCalls).toBe(3)
-            expect(outerCalls).toBe(1)
-          }).pipe(
-            Effect.provideService(Jj.Jj, jj),
-            Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
-            Effect.provide(StepBoundary.layerTest()),
-            Effect.provide(TestStores.layer())
-          )
+              const store = yield* RunStore.RunStore
+              const root = yield* store.get("nested-root")
+              expect(root.status).toBe("failed")
+              const failure = JSON.parse(root.stateJson).failure
+              expect(failure.message).toBe(JSON.stringify("nested provider unavailable"))
+              if (metadata === "ordinary" || metadata === "oversized") {
+                expect(failure).toMatchObject({
+                  executionId: "nested-child",
+                  action: "NestedFailure/Inner",
+                  attempts: 3
+                })
+              }
+              expect(metadataReads).toBe(0)
+              expect(innerCalls).toBe(3)
+              expect(outerCalls).toBe(1)
+            })).pipe(inProcess(filename))
+          })
         )))
     }
   }

@@ -31,11 +31,15 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
@@ -63,38 +67,52 @@ const completed = (store: RunStore.Service, runId: string) =>
   })
 
 type Services =
-  | Layer.Success<ReturnType<typeof TestStores.layer>>
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
-  | DurableEngineState.DurableEngineState
   | Jj.Jj
   | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
+/** One engine incarnation over `filename` (the matrix's private database when none), its connection closed when `body` ends. */
 const withEngine = <A, E>(
-  state: DurableEngineState.Service,
+  filename: string | undefined,
   body: (
     makeEngine: Effect.Effect<unknown, never, Services>,
-    store: RunStore.Service
+    store: RunStore.Service,
+    state: DurableEngineState.Service
   ) => Effect.Effect<A, E, Services>
 ) =>
   withCrypto(
     Effect.scoped(
       Effect.gen(function*() {
         const store = yield* RunStore.RunStore
+        const state = yield* DurableEngineState.DurableEngineState
         const makeEngine = EngineStore.make({
           owner: { hostId: "nested-wait-host" },
           journalSource: "nested-wait-test",
           isAlive: () => Effect.succeed(false)
         })
-        return yield* body(makeEngine, store)
-      }).pipe(
-        Effect.provideService(DurableEngineState.DurableEngineState, state),
-        Effect.provideService(Jj.Jj, jj)
-      )
+        return yield* body(makeEngine, store, state)
+      }).pipe(Effect.provideService(Jj.Jj, jj))
     ).pipe(
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer())
+      Effect.provide(PersistentDatabase.stores(filename))
     )
+  )
+
+/** A database file two independently built bundles can open in turn: a restart. */
+const withDatabaseFile = <A, E, R>(body: (filename: string) => Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.promise(async () => {
+      const directory = await mkdtemp(join(tmpdir(), "nested-wait-"))
+      return { directory, filename: PersistentDatabase.filename(join(directory, "engine.sqlite")) }
+    }),
+    ({ filename }) => body(filename),
+    ({ directory, filename }) =>
+      Effect.promise(async () => {
+        await PersistentDatabase.remove(filename)
+        await rm(directory, { recursive: true, force: true })
+      })
   )
 
 describe("a durable wait taken inside an action, under the run's own instance", () => {
@@ -125,9 +143,7 @@ describe("a durable wait taken inside an action, under the run's own instance", 
             )
           })
         })
-      const state = DurableEngineState.makeMemory()
-
-      const result = yield* withEngine(state, (makeEngine, store) =>
+      const result = yield* withEngine(undefined, (makeEngine, store, state) =>
         Effect.gen(function*() {
           const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
           yield* engine.register(NestedFlow, handler)
@@ -168,15 +184,13 @@ describe("a durable wait taken inside an action, under the run's own instance", 
               execute: Effect.provide(DurableDeferred.await(gate), services)
             })
           })
-        const state = DurableEngineState.makeMemory()
-
-        const result = yield* withEngine(state, (makeEngine, store) =>
+        const park = (
+          makeEngine: Effect.Effect<unknown, never, Services>,
+          store: RunStore.Service,
+          state: DurableEngineState.Service
+        ) =>
           Effect.gen(function*() {
-            const firstScope = yield* Scope.make()
-            let engine =
-              (yield* makeEngine.pipe(Effect.provideService(Scope.Scope, firstScope))) as FlowRuntime.FlowRuntime[
-                "Service"
-              ]
+            const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
             yield* engine.register(SignalFlow, handler)
             yield* executeUntilParked(engine, SignalFlow, {
               executionId: "parking-signal",
@@ -185,13 +199,14 @@ describe("a durable wait taken inside an action, under the run's own instance", 
             })
             const suspendedRow = yield* store.get("parking-signal")
             const parked = yield* state.waiting("parking-signal")
-
-            if (restart) {
-              yield* Scope.close(firstScope, Exit.void)
-              engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
-              yield* engine.register(SignalFlow, handler)
-            }
-
+            return { engine, suspendedRow, parked }
+          })
+        const deliver = (
+          engine: FlowRuntime.FlowRuntime["Service"],
+          store: RunStore.Service,
+          state: DurableEngineState.Service
+        ) =>
+          Effect.gen(function*() {
             yield* engine.deferredDone(gate, {
               flowName: SignalFlow._tag,
               executionId: "parking-signal",
@@ -200,9 +215,29 @@ describe("a durable wait taken inside an action, under the run's own instance", 
             })
             const completedRow = yield* completed(store, "parking-signal")
             const afterResume = yield* state.waiting("parking-signal")
-            if (!restart) yield* Scope.close(firstScope, Exit.void)
-            return { suspendedRow, parked, completedRow, afterResume }
-          }))
+            return { completedRow, afterResume }
+          })
+
+        // A restart closes the first engine and its connection, then delivers
+        // through a second bundle that reads the park back from the database.
+        const result = restart
+          ? yield* withDatabaseFile((filename) =>
+            Effect.gen(function*() {
+              const { suspendedRow, parked } = yield* withEngine(filename, park)
+              const delivered = yield* withEngine(filename, (makeEngine, store, state) =>
+                Effect.gen(function*() {
+                  const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
+                  yield* engine.register(SignalFlow, handler)
+                  return yield* deliver(engine, store, state)
+                }))
+              return { suspendedRow, parked, ...delivered }
+            })
+          )
+          : yield* withEngine(undefined, (makeEngine, store, state) =>
+            Effect.gen(function*() {
+              const { engine, suspendedRow, parked } = yield* park(makeEngine, store, state)
+              return { suspendedRow, parked, ...(yield* deliver(engine, store, state)) }
+            }))
 
         expect(result.suspendedRow.status).toBe("suspended")
         expect(Option.getOrThrow(result.parked).reason).toBe("event")
@@ -243,9 +278,7 @@ describe("a durable wait taken inside an action, under the run's own instance", 
             )
           })
         })
-      const state = DurableEngineState.makeMemory()
-
-      const result = yield* withEngine(state, (makeEngine, store) =>
+      const result = yield* withEngine(undefined, (makeEngine, store, state) =>
         Effect.gen(function*() {
           const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
           yield* engine.register(ApprovalFlow, handler)

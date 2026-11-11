@@ -24,10 +24,9 @@ import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import * as TestStores from "../src/test/TestStores.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const AdmissionFlow = Flow.make("EngineStoreAdmission/Flow", {
@@ -46,10 +45,9 @@ const jj = Jj.make({
 })
 
 const baseLayers = Layer.mergeAll(
-  TestStores.layer(),
+  PersistentDatabase.stores(),
   StepBoundary.layerTest(),
-  Layer.succeed(Jj.Jj, jj),
-  Layer.succeed(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory())
+  Layer.succeed(Jj.Jj, jj)
 )
 
 describe("EngineStore shares one admission mutex across dispatches (issue #112)", () => {

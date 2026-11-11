@@ -5,14 +5,19 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  *
  * - A completion the store fails to record is retried on its own: the handler runs once and the caller gets its
  *   result (before, the next take ran the handler again, and after the queue's attempts the caller stayed parked).
- * - A worker that dies after the handler's exit was recorded leaves the next worker to replay that exit and record
+ * - A worker that stops after the handler's exit was recorded leaves the next worker to replay that exit and record
  *   the completion: the handler is not run again.
- * - A worker that dies inside the handler leaves the next worker to run it again (at least once until recorded).
+ * - A worker that stops inside the handler leaves the next worker to run it again (at least once until recorded).
  *
  * Two workers stand for two processes: each runs over its own engine incarnation on one SQLite file, and the queue
  * is the SQL `PersistedQueue` store in that file. The completion store's failures are the engine runtime's own
- * `deferredDone`, wrapped; a worker's death interrupts its fiber and closes its engine before replacement. Nothing is mocked.
+ * `deferredDone`, wrapped. A worker stops in one of two ways. Released: its fiber is interrupted and its engine
+ * closed, which releases its runs. Killed: its committed state is copied with `VACUUM INTO` while it is frozen, the
+ * disk a SIGKILL leaves (the item's execution `running` under the dead owner, the queue row still locked by it), and
+ * the next worker starts over the copy: it steals the execution and takes the item once the dead lock lapses.
+ * Nothing is mocked.
  */
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Action, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
@@ -27,6 +32,7 @@ import * as Option from "effect/Option"
 import * as PersistedQueue from "effect/persistence/PersistedQueue"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -99,13 +105,18 @@ interface Observed {
 }
 
 /**
- * One incarnation's engine over the shared file, its queue store and the caller's registration. Its runtime's
- * `deferredDone` refuses the queue's first `refusals` completions; with `parkCompletion` it never answers one.
+ * One incarnation's engine over `options.database` (the shared file by default), its queue store and the caller's
+ * registration. Its runtime's `deferredDone` refuses the queue's first `refusals` completions; with `parkCompletion`
+ * it never answers one.
  */
 const incarnation = (
   owner: Ownership.OwnerId,
   observed: Observed,
-  options: { readonly refusals?: number; readonly parkCompletion?: Deferred.Deferred<void> } = {}
+  options: {
+    readonly refusals?: number
+    readonly parkCompletion?: Deferred.Deferred<void>
+    readonly database?: string
+  } = {}
 ) =>
   Effect.gen(function*() {
     const engine = EngineStore.layer({
@@ -115,7 +126,9 @@ const incarnation = (
       sweep: "process"
     }).pipe(
       Layer.provide(OwnerIdentity.layerConstant(owner)),
-      Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerUnsupported, jj))
+      Layer.provideMerge(
+        Layer.mergeAll(TestStores.layerAt(options.database ?? filename), StepBoundary.layerUnsupported, jj)
+      )
     )
     let refused = 0
     const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
@@ -145,7 +158,15 @@ const incarnation = (
         Interpreter.layer(Caller)
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(PersistedQueue.layer.pipe(Layer.provideMerge(PersistedQueue.layerStoreSql()))),
+        // A short lock lapse lets the next worker take an item a killed worker still holds; a live worker refreshes
+        // its own lock well inside it.
+        Layer.provideMerge(
+          PersistedQueue.layer.pipe(
+            Layer.provideMerge(
+              PersistedQueue.layerStoreSql({ lockRefreshInterval: "100 millis", lockExpiration: "1 second" })
+            )
+          )
+        ),
         Layer.provideMerge(runtime)
       )
     )
@@ -169,6 +190,38 @@ const worker = (
     ),
     { startImmediately: true }
   )
+
+type End = "released" | "killed"
+
+/** A killed worker runs on SQLite, since `VACUUM INTO` is how its disk is copied. */
+const dyingDatabase = (end: End) => end === "killed" ? join(directory, "engine.sqlite") : filename
+
+/**
+ * Stops the first worker. A killed one leaves the next incarnation only what its database had committed, copied
+ * into a SQLite file nothing releases; a released one leaves the shared file after its engine closed.
+ */
+const stop = (end: End, dying: Context.Context<never>, dead: Fiber.Fiber<unknown>, dyingScope: Scope.Closeable) =>
+  Effect.gen(function*() {
+    const killed = join(directory, "killed.sqlite")
+    if (end === "killed") {
+      yield* Context.get(dying as Context.Context<SqlClient.SqlClient>, SqlClient.SqlClient)`VACUUM INTO ${killed}`
+        .pipe(Effect.orDie)
+      // What no scope close leaves: the dead owner still runs the item's execution and holds the queue row.
+      const left = yield* Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        return {
+          runs: yield* sql`SELECT status FROM flows_runs WHERE owner_nonce = ${first.nonce} AND status = 'running'`,
+          locked: yield* sql`SELECT acquired_by FROM effect_queue WHERE acquired_by IS NOT NULL`
+        }
+      }).pipe(Effect.orDie, Effect.provide(NodeDatabase.layer({ filename: killed })))
+      expect(left.runs.length).toBeGreaterThan(0)
+      expect(left.locked).toHaveLength(1)
+    }
+    yield* Fiber.interrupt(dead)
+    // The single-instance liveness check is valid only after the old engine has stopped.
+    yield* Scope.close(dyingScope, Exit.void)
+    return end === "killed" ? killed : filename
+  })
 
 /** Waits on the live clock: the SQL queue measures retry visibility with database time. */
 const settled = (context: Context.Context<never>, executionId: string) =>
@@ -200,53 +253,60 @@ describe("DurableQueue on the durable engine", () => {
       ])
     })))
 
-  it("leaves the next worker to replay a recorded handler exit and record the completion", () =>
-    run(Effect.gen(function*() {
-      const observed: Observed = { handled: [], writes: [] }
-      const parked = yield* Deferred.make<void>()
-      const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
-      const dying = yield* incarnation(first, observed, { parkCompletion: parked }).pipe(
-        Effect.provideService(Scope.Scope, dyingScope)
-      )
-      const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
-      const dead = yield* worker(dying, first, observed)
-      yield* runtime.execute(Caller, { executionId: "recorded", payload: { id: "recorded", value: 41 }, discard: true })
-      yield* Deferred.await(parked)
-      // The first worker dies while recording the completion, after the handler's exit was recorded.
-      yield* Fiber.interrupt(dead)
-      // The single-instance liveness check is valid only after the old engine has stopped.
-      yield* Scope.close(dyingScope, Exit.void)
+  it.each<End>(["released", "killed"])(
+    "leaves the next worker to replay a recorded handler exit and record the completion (%s)",
+    (end) =>
+      run(Effect.gen(function*() {
+        const observed: Observed = { handled: [], writes: [] }
+        const parked = yield* Deferred.make<void>()
+        const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+        const dying = yield* incarnation(first, observed, { parkCompletion: parked, database: dyingDatabase(end) })
+          .pipe(Effect.provideService(Scope.Scope, dyingScope))
+        const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
+        const dead = yield* worker(dying, first, observed)
+        yield* runtime.execute(Caller, {
+          executionId: "recorded",
+          payload: { id: "recorded", value: 41 },
+          discard: true
+        })
+        yield* Deferred.await(parked)
+        // The first worker stops while recording the completion, after the handler's exit was recorded.
+        const database = yield* stop(end, dying, dead, dyingScope)
 
-      const next = yield* incarnation(second, observed)
-      yield* worker(next, second, observed)
-      expect(yield* settled(next, "recorded")).toEqual(Option.some(Exit.succeed(42)))
-      expect(observed.handled).toEqual(["first"])
-      expect(observed.writes.at(-1)).toEqual({ by: "second", refused: false })
-    })))
+        const next = yield* incarnation(second, observed, { database })
+        yield* worker(next, second, observed)
+        expect(yield* settled(next, "recorded")).toEqual(Option.some(Exit.succeed(42)))
+        expect(observed.handled).toEqual(["first"])
+        expect(observed.writes.at(-1)).toEqual({ by: "second", refused: false })
+      }))
+  )
 
-  it("leaves the next worker to run a handler again that died before its exit was recorded", () =>
-    run(Effect.gen(function*() {
-      const observed: Observed = { handled: [], writes: [] }
-      const entered = yield* Deferred.make<void>()
-      const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
-      const dying = yield* incarnation(first, observed).pipe(Effect.provideService(Scope.Scope, dyingScope))
-      const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
-      const dead = yield* worker(
-        dying,
-        first,
-        observed,
-        () => Effect.andThen(Deferred.succeed(entered, undefined), Effect.never)
-      )
-      yield* runtime.execute(Caller, { executionId: "died", payload: { id: "died", value: 41 }, discard: true })
-      yield* Deferred.await(entered)
-      yield* Fiber.interrupt(dead)
-      // The single-instance liveness check is valid only after the old engine has stopped.
-      yield* Scope.close(dyingScope, Exit.void)
+  it.each<End>(["released", "killed"])(
+    "leaves the next worker to run a handler again that stopped before its exit was recorded (%s)",
+    (end) =>
+      run(Effect.gen(function*() {
+        const observed: Observed = { handled: [], writes: [] }
+        const entered = yield* Deferred.make<void>()
+        const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+        const dying = yield* incarnation(first, observed, { database: dyingDatabase(end) }).pipe(
+          Effect.provideService(Scope.Scope, dyingScope)
+        )
+        const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
+        const dead = yield* worker(
+          dying,
+          first,
+          observed,
+          () => Effect.andThen(Deferred.succeed(entered, undefined), Effect.never)
+        )
+        yield* runtime.execute(Caller, { executionId: "died", payload: { id: "died", value: 41 }, discard: true })
+        yield* Deferred.await(entered)
+        const database = yield* stop(end, dying, dead, dyingScope)
 
-      const next = yield* incarnation(second, observed)
-      yield* worker(next, second, observed)
-      expect(yield* settled(next, "died")).toEqual(Option.some(Exit.succeed(42)))
-      expect(observed.handled).toEqual(["first", "second"])
-      expect(observed.writes).toEqual([{ by: "second", refused: false }])
-    })))
+        const next = yield* incarnation(second, observed, { database })
+        yield* worker(next, second, observed)
+        expect(yield* settled(next, "died")).toEqual(Option.some(Exit.succeed(42)))
+        expect(observed.handled).toEqual(["first", "second"])
+        expect(observed.writes).toEqual([{ by: "second", refused: false }])
+      }))
+  )
 })

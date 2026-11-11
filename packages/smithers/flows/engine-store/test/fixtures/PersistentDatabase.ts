@@ -3,8 +3,9 @@ import { TestSchemas } from "@smthrs/database"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
+import * as TestStores from "../../src/test/TestStores.ts"
 
 export const filename = (sqlitePath: string): string => {
   if (!process.env.SMITHERS_TEST_PG_URL) return sqlitePath
@@ -25,3 +26,16 @@ export const remove = async (filename: string): Promise<void> => {
     }).pipe(Effect.provide(PostgresDatabase.layer({ url: url.toString(), driver: Pg, schema })))
   )
 }
+
+/** `sqlitePath` as the matrix's database identity, its PostgreSQL schema dropped when the scope closes. */
+export const scoped = (sqlitePath: string) =>
+  Effect.acquireRelease(Effect.sync(() => filename(sqlitePath)), (name) => Effect.promise(() => remove(name)))
+
+/**
+ * Every durable engine store over `name`, or, when none is given, over the matrix's private database:
+ * in-memory SQLite, or a fresh PostgreSQL schema dropped once the stores have closed.
+ */
+export const stores = (name?: string, options?: TestStores.TestStoresOptions) =>
+  name !== undefined ?
+    TestStores.layerAt(name, options) :
+    Layer.unwrap(Effect.map(scoped(":memory:"), (memory) => TestStores.layerAt(memory, options)))

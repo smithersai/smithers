@@ -66,11 +66,16 @@ it.each([false, true])(
         }).pipe(Effect.provide(TestStores.layerAt(filename)), Effect.provide(TestClock.layer()))
       )))
       let calls = 0
+      let checks = 0
       let allowed = !initiallyRefused
       const host = EngineStore.layer({
         owner: { hostId: "replacement" },
         journalSource: "pending-recovery",
-        canExecute: () => Effect.succeed(allowed)
+        canExecute: () =>
+          Effect.sync(() => {
+            checks++
+            return allowed
+          })
       }).pipe(
         Layer.provideMerge(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerTest(), jj))
       )
@@ -87,12 +92,21 @@ it.each([false, true])(
       await Effect.runPromise(withCrypto(Effect.scoped(
         Effect.gen(function*() {
           const runtime = yield* FlowRuntime.FlowRuntime
+          // The sweep first sees the row once it is heartbeat-stale, so the
+          // host's admission check runs only after the clock moves.
+          yield* TestClock.adjust("31 seconds")
+          for (let turn = 0; turn < 300 && checks === 0; turn++) yield* Effect.yieldNow
+          expect(checks).toBeGreaterThanOrEqual(1)
           if (initiallyRefused) {
+            for (let turn = 0; turn < 300; turn++) yield* Effect.yieldNow
             expect((yield* (yield* RunStore.RunStore).get("pending-child")).status).toBe("pending")
             expect(calls).toBe(0)
+            const refusals = checks
             allowed = true
+            yield* TestClock.adjust("1 second")
+            for (let turn = 0; turn < 300 && checks === refusals; turn++) yield* Effect.yieldNow
+            expect(checks).toBeGreaterThan(refusals)
           }
-          yield* TestClock.adjust("31 seconds")
           let result = yield* runtime.poll(Child, "pending-child")
           for (let turn = 0; turn < 300 && Option.isNone(result); turn++) {
             yield* Effect.yieldNow

@@ -14,13 +14,16 @@ import * as Layer from "effect/Layer"
 import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as StepSandbox from "../src/StepSandbox.ts"
-import * as TestStores from "../src/test/TestStores.ts"
 import { executeUntilParked } from "./ExecuteUntilParked.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const LayerFlow = Flow.make("EngineStoreLayer/Flow", {
@@ -66,13 +69,10 @@ const recordingJj = (
     ...overrides
   })
 
-const baseLayers = (jj: Jj.Jj, state: DurableEngineState.Service) =>
-  Layer.mergeAll(
-    TestStores.layer(),
-    StepBoundary.layerTest(),
-    Layer.succeed(Jj.Jj, jj),
-    Layer.succeed(DurableEngineState.DurableEngineState, state)
-  )
+// Every store, engine state included, is the SQL one: a named file is what a
+// second process reopens.
+const baseLayers = (jj: Jj.Jj, filename?: string) =>
+  Layer.mergeAll(PersistentDatabase.stores(filename), StepBoundary.layerTest(), Layer.succeed(Jj.Jj, jj))
 
 describe("EngineStore.layer", () => {
   it("names opaque-handler fixtures and refuses accidental body interpretation", () => {
@@ -103,7 +103,7 @@ describe("EngineStore.layer", () => {
               journalSource: "layer-test",
               isAlive: () => Effect.succeed(true)
             }).pipe(
-              Layer.provideMerge(baseLayers(recordingJj(calls), DurableEngineState.makeMemory()))
+              Layer.provideMerge(baseLayers(recordingJj(calls)))
             )
           ),
           Effect.scoped
@@ -150,7 +150,7 @@ describe("EngineStore.layer", () => {
               Layer.succeed(Jj.Jj, privileged)
             ).pipe(
               Layer.provideMerge(
-                baseLayers(recordingJj(actionCalls), DurableEngineState.makeMemory())
+                baseLayers(recordingJj(actionCalls))
               )
             )
           ),
@@ -196,7 +196,7 @@ describe("EngineStore.layer", () => {
               journalSource: "layer-test",
               isAlive: () => Effect.succeed(true)
             }).pipe(
-              Layer.provideMerge(baseLayers(failing, DurableEngineState.makeMemory()))
+              Layer.provideMerge(baseLayers(failing))
             )
           ),
           Effect.scoped
@@ -209,7 +209,6 @@ describe("EngineStore.layer", () => {
 
   it.effect("provides a flow engine from the same layer that drives a registered flow to completion", () =>
     Effect.gen(function*() {
-      const state = DurableEngineState.makeMemory()
       const row = yield* withCrypto(
         Effect.scoped(Effect.gen(function*() {
           const engine = yield* FlowRuntime.FlowRuntime
@@ -228,7 +227,7 @@ describe("EngineStore.layer", () => {
               journalSource: "layer-test",
               isAlive: () => Effect.succeed(true)
             }).pipe(
-              Layer.provideMerge(baseLayers(recordingJj([]), state))
+              Layer.provideMerge(baseLayers(recordingJj([])))
             )
           ),
           Effect.scoped
@@ -243,9 +242,9 @@ describe("EngineStore.layer", () => {
 describe("EngineStore.make liveness", () => {
   it.effect("forwards the stable registration-sweep wake identity to the journal", () =>
     Effect.gen(function*() {
-      const state = DurableEngineState.makeMemory()
       const entries = yield* withCrypto(
         Effect.scoped(Effect.gen(function*() {
+          const state = yield* DurableEngineState.DurableEngineState
           const runs = yield* RunStore.RunStore
           yield* runs.create(
             "historical-deferred",
@@ -267,7 +266,7 @@ describe("EngineStore.make liveness", () => {
           const journal = yield* Journal.Journal
           yield* journal.flush
           return (yield* journal.entries({ runId: "historical-deferred" as never, limit: 100 })).entries
-        })).pipe(Effect.provide(baseLayers(recordingJj([]), state)))
+        })).pipe(Effect.provide(baseLayers(recordingJj([]))))
       )
 
       const wakes = entries.filter((entry) =>
@@ -322,7 +321,7 @@ describe("EngineStore.make liveness", () => {
           const entries = yield* journal.entries({ runId: "foreign-run" as never, limit: 100 })
           return { row: yield* store.get("foreign-run"), entries: entries.entries }
         })).pipe(
-          Effect.provide(baseLayers(recordingJj([]), DurableEngineState.makeMemory()))
+          Effect.provide(baseLayers(recordingJj([])))
         )
       )
 
@@ -380,7 +379,7 @@ describe("EngineStore.make liveness", () => {
           const entries = yield* journal.entries({ runId: "abandoned-run" as never, limit: 100 })
           return { row: yield* store.get("abandoned-run"), entries: entries.entries }
         })).pipe(
-          Effect.provide(baseLayers(recordingJj([]), DurableEngineState.makeMemory()))
+          Effect.provide(baseLayers(recordingJj([])))
         )
       )
 
@@ -395,7 +394,8 @@ describe("EngineStore.make liveness", () => {
 
   it.effect("replays an action that declares no idempotency key from its own run journal", () =>
     Effect.gen(function*() {
-      const state = DurableEngineState.makeMemory()
+      const directory = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "engine-store-unkeyed-")))
+      const filename = PersistentDatabase.filename(join(directory, "engine.sqlite"))
       let dispatches = 0
       const unkeyed = Action.make({
         name: "unkeyed",
@@ -413,27 +413,34 @@ describe("EngineStore.make liveness", () => {
           const released = yield* DurableDeferred.await(gate)
           return `${value}/${released}`
         })
+      // Each incarnation builds its own connection and stores over the file.
+      const incarnation = <A>(body: Effect.Effect<A, unknown, FlowRuntime.FlowRuntime | RunStore.RunStore>) =>
+        withCrypto(
+          Effect.scoped(Effect.gen(function*() {
+            const engine = yield* EngineStore.make({
+              owner: { hostId: "layer-host" },
+              journalSource: "layer-test",
+              isAlive: () => Effect.succeed(false)
+            })
+            yield* engine.register(LayerFlow, handler)
+            return yield* body.pipe(Effect.provideService(FlowRuntime.FlowRuntime, engine))
+          })).pipe(Effect.provide(baseLayers(recordingJj([]), filename)))
+        )
 
-      const result = yield* withCrypto(
-        Effect.scoped(Effect.gen(function*() {
-          const makeEngine = EngineStore.make({
-            owner: { hostId: "layer-host" },
-            journalSource: "layer-test",
-            isAlive: () => Effect.succeed(false)
-          })
-          const first = yield* makeEngine
-          yield* first.register(LayerFlow, handler)
-          yield* executeUntilParked(first, LayerFlow, {
+      const result = yield* Effect.gen(function*() {
+        const suspended = yield* incarnation(Effect.gen(function*() {
+          yield* executeUntilParked(yield* FlowRuntime.FlowRuntime, LayerFlow, {
             executionId: "unkeyed-run",
             payload: {},
             discard: true
           })
+          return yield* (yield* RunStore.RunStore).get("unkeyed-run")
+        }))
+        // The first engine's scope and connection are closed: the restarted
+        // engine sees only what the file holds.
+        const value = yield* incarnation(Effect.gen(function*() {
+          const restarted = yield* FlowRuntime.FlowRuntime
           const store = yield* RunStore.RunStore
-          const suspended = yield* store.get("unkeyed-run")
-
-          // A fresh engine over the same durable state models a restart.
-          const restarted = yield* makeEngine
-          yield* restarted.register(LayerFlow, handler)
           yield* restarted.deferredDone(gate, {
             flowName: LayerFlow._tag,
             executionId: "unkeyed-run",
@@ -441,16 +448,17 @@ describe("EngineStore.make liveness", () => {
             exit: Exit.succeed("released")
           })
           yield* TestDatabase.until(store.get("unkeyed-run").pipe(Effect.map((row) => row.status === "completed")))
-          const value = yield* restarted.execute(LayerFlow, {
+          return yield* restarted.execute(LayerFlow, {
             executionId: "unkeyed-run",
             payload: {},
             discard: false
           })
-          return { suspended, value }
-        })).pipe(
-          Effect.provide(baseLayers(recordingJj([]), state))
-        )
-      )
+        }))
+        return { suspended, value }
+      }).pipe(Effect.ensuring(Effect.promise(async () => {
+        await PersistentDatabase.remove(filename)
+        await rm(directory, { recursive: true, force: true })
+      })))
 
       expect(result.suspended.status).toBe("suspended")
       expect(result.value).toBe("dispatch-1/released")
@@ -463,7 +471,6 @@ describe("EngineStore boundary metadata", () => {
   it.live("serializes a keyed durable cache race between two engines", () =>
     Effect.gen(function*() {
       // Independent engines share storage but have separate in-process permits.
-      const state = DurableEngineState.makeMemory()
       const executions = yield* Ref.make(0)
       const action = Action.make({
         name: "hermetic-nondeterministic",
@@ -527,7 +534,7 @@ describe("EngineStore boundary metadata", () => {
         })).pipe(
           Effect.provide(
             Layer.mergeAll(
-              baseLayers(recordingJj([]), state),
+              baseLayers(recordingJj([])),
               StepSandbox.layerTest(),
               Action.layerCacheEnvironment({ layers: [], capabilities: {} })
             )
@@ -543,7 +550,6 @@ describe("EngineStore boundary metadata", () => {
 
   it.effect("forwards a hermetic boundary descriptor so a sealed result is shared across runs", () =>
     Effect.gen(function*() {
-      const state = DurableEngineState.makeMemory()
       let dispatches = 0
       const hermetic = Action.make({
         name: "hermetic",
@@ -579,7 +585,7 @@ describe("EngineStore boundary metadata", () => {
         })).pipe(
           Effect.provide(
             Layer.mergeAll(
-              baseLayers(recordingJj([]), state),
+              baseLayers(recordingJj([])),
               StepSandbox.layerTest(),
               // Cross-run reuse is only offered once the composition states the
               // environment its sealed keys were computed under: an undeclared
@@ -604,7 +610,6 @@ describe("EngineStore boundary metadata", () => {
       // identical hard boundary, and no declared environment must still execute
       // twice, because nothing proves the second run resolves the same layers
       // and capabilities as the first.
-      const state = DurableEngineState.makeMemory()
       let dispatches = 0
       const hermetic = Action.make({
         name: "hermetic-undeclared",
@@ -637,7 +642,7 @@ describe("EngineStore boundary metadata", () => {
             discard: false
           })
           return { first, second }
-        })).pipe(Effect.provide(baseLayers(recordingJj([]), state)))
+        })).pipe(Effect.provide(baseLayers(recordingJj([]))))
       )
 
       expect(result.first).toBe("hermetic-result-1")
