@@ -337,8 +337,15 @@ export const steer = Effect.gen(function* () {
 })
 
 /**
- * The runs page's route loader (docs/features/actions.md): syncs the repository's runs, once, and reads its flows a
- * person runs by hand into the Run form in the background.
+ * What the runs page's route calls on a link's hover or focus (docs/features/navigation.md): syncs the repository's
+ * runs, once, and leaves the Run form alone: a preload keeps the flow and branch a person chose, and never points the
+ * form at another repository.
+ */
+export const warmRepoRuns = (repo: RepoName) => Effect.flatMap(RunsStore, (store) => store.openRepoRuns(repo.owner, repo.name))
+
+/**
+ * What the runs page's route calls on a navigation (docs/features/actions.md): reads the repository's flows a person
+ * runs by hand into the Run form in the background, and syncs its runs, once.
  */
 export const openRepoRuns = (repo: RepoName) =>
   Effect.gen(function* () {

@@ -618,13 +618,15 @@ const issueRoute = createRoute({
 
 /**
  * `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. Its Run
- * card runs a flow by hand.
+ * card runs a flow by hand. A preload syncs the runs only; only a navigation reads the flows into the Run form, so a
+ * hovered Runs link keeps the chosen flow and branch and never points the form at another repository.
  */
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actions,
   component: repoGated(ActionsScreen),
-  beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
+  beforeLoad: ({ context, params, ...load }) =>
+    enterRepository(context, params, load, () => context.runs.actions.warmRepoRuns(params.owner, params.repo), () => context.runs.actions.openRepoRuns(params.owner, params.repo)),
   // A Run still answering no longer moves a tab that left (docs/features/actions.md#running-a-flow-by-hand).
   onLeave: ({ context }) => context.runs.actions.closeRepoRuns(),
 })

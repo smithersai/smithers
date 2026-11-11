@@ -414,7 +414,8 @@ describe("a repository's run on Cloudflare", () => {
     await until(() => expect(listed()).toEqual([
       expect.objectContaining({ flow: "ci · main", state: "running", href: actionRunPath("elsewhere", "project", runId) }),
     ]))
-    await t.runs.actions.openRepoRuns("ELSEWHERE", "PROJECT")
+    // A hovered Runs link, in another letter case, reuses the sync the page opened.
+    await t.runs.actions.warmRepoRuns("ELSEWHERE", "PROJECT")
     await t.runs.actions.openRun(runId, { owner: "elsewhere", name: "project" })
     await until(() => expect(t.page()).toMatchObject({ id: runId, state: "not_started" }))
     await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))

@@ -29,6 +29,7 @@ import {
   steer,
   stop,
   warmList,
+  warmRepoRuns,
 } from "./actions"
 import type { RepoName, RunTab } from "./schema"
 import { RunsStore } from "./store"
@@ -70,9 +71,11 @@ export interface RunsActions {
   readonly warmList: () => Promise<void>
   /** The list's route loader; `open` is the run shown opened in place. */
   readonly openList: (open?: string) => Promise<void>
+  /** A repository's list's route warm, a link's preload: syncs its runs, once, and leaves the Run form as it is. */
+  readonly warmRepoRuns: (owner: string, name: string) => Promise<void>
   /**
-   * A repository's list's route loader: syncs the repositories' runs, once, and reads the flows a person runs by hand
-   * (docs/features/actions.md).
+   * A repository's list's route open, a navigation's: reads the flows a person runs by hand into the Run form, and
+   * syncs the repository's runs, once (docs/features/actions.md).
    */
   readonly openRepoRuns: (owner: string, name: string) => Promise<void>
   readonly chooseRepoFlow: (flow: string) => void
@@ -134,6 +137,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
         actions: {
           warmList: () => promise(warmList),
           openList: (open) => promise(openList(open)),
+          warmRepoRuns: (owner, name) => promise(warmRepoRuns({ owner, name })),
           openRepoRuns: (owner, name) => promise(openRepoRuns({ owner, name })),
           chooseRepoFlow: (flow) => fork(chooseRepoFlow(flow)),
           runRepoFlow: (values) => fork(runRepoFlow(values)),
