@@ -345,6 +345,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/flow": "1.0.0-rc.17",
     "@smthrs/journal": "1.0.0-rc.17",
     "yjs": "13.6.32"
   },

@@ -22,6 +22,7 @@
  * @since 1.0.0-rc.17
  */
 
+import { RetryPolicy } from "@smthrs/flow"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { fits, participantOf, rosterFrame } from "./internal/PresenceWire.ts"
@@ -106,6 +107,14 @@ export const isFinal = (code: number): boolean =>
  */
 export const reconnect = { initialMs: 1_000, maxMs: 30_000, maxAttempts: 10 } as const
 
+/** {@link reconnect} as a retry policy; the first connection counts as an attempt. */
+const reconnectPolicy = RetryPolicy.make({
+  initialMs: reconnect.initialMs,
+  factor: 2,
+  maxMs: reconnect.maxMs,
+  maxAttempts: reconnect.maxAttempts + 1
+})
+
 /**
  * The delay before reconnect attempt `attempt` (1 for the first), or
  * `undefined` once `reconnect.maxAttempts` attempts have been spent.
@@ -114,9 +123,7 @@ export const reconnect = { initialMs: 1_000, maxMs: 30_000, maxAttempts: 10 } as
  * @since 1.0.0-rc.17
  */
 export const reconnectDelay = (attempt: number): number | undefined =>
-  attempt < 1 || attempt > reconnect.maxAttempts
-    ? undefined
-    : Math.min(reconnect.maxMs, reconnect.initialMs * 2 ** (attempt - 1))
+  Option.getOrUndefined(RetryPolicy.nextDelay(reconnectPolicy, attempt))
 
 /**
  * What a participant may do on the page the room covers: change it

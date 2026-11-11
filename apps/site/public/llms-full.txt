@@ -42931,7 +42931,7 @@ https://smithers.sh/docs/reference/api/sync/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sync/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sync/docs)
 
-> **Related APIs:** [`@smthrs/journal`](/docs/reference/api/journal/)
+> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/)
 
 ```ts
 import { JournalEvent } from "@smthrs/journal"
