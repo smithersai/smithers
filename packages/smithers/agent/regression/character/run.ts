@@ -11,8 +11,9 @@
  * Offline (the default) replays every golden transcript and every
  * counterexample through the real agent loop and the world's tools with a
  * scripted model, and exits 0 only when every golden passes and every
- * counterexample fails. It spends nothing and is deterministic: it is the gate
- * that keeps the cases and the scorers honest.
+ * counterexample runs its transcript and fails an expectation check. It
+ * spends nothing and is deterministic: it is the gate that keeps the cases
+ * and the scorers honest.
  *
  * `--live` runs the suite's profile on a subscription seat (`--seat`, default
  * the suite's) for `--trials` runs per case, at most `--concurrency` (default
@@ -201,6 +202,26 @@ const summaryOf = (reply: string | undefined): string | undefined => {
   }
 }
 
+/**
+ * An offline turn must run its transcript as written: every call made in
+ * order and the recorded reply returned. A call the loop rejected (unknown
+ * tool, invalid input) or a missing `reply` is a failed run, not the role's
+ * answer, so a broken counterexample can't count as caught.
+ */
+const replayed = (transcript: Subject.Transcript, turn: Subject.Turn): Subject.Turn => {
+  if (turn.reply === undefined) return turn
+  const expected = (transcript.calls ?? []).map((call) => call.tool).join(", ")
+  const made = turn.actions.map((action) => action.tool).join(", ")
+  if (turn.reply === transcript.reply && made === expected) return turn
+  return {
+    ...turn,
+    reply: undefined,
+    failure: `the replay did not run its transcript: calls [${made}] of [${expected}], reply ${
+      JSON.stringify(turn.reply).slice(0, 400)
+    }`
+  }
+}
+
 const converse = (suiteCase: CharacterSuite.Case, variant: Variant, trial: number): Effect.Effect<Conversation> =>
   Effect.gen(function*() {
     const results: Array<TurnResult> = []
@@ -236,7 +257,7 @@ const converse = (suiteCase: CharacterSuite.Case, variant: Variant, trial: numbe
       const liveTurn = Effect.suspend(() =>
         liveSeat === undefined ? Effect.die("Live seat was not resolved") : run(liveSeat)
       )
-      let raw = variant.kind === "live" ? yield* liveTurn : yield* run(Subject.replaySeat(transcript!))
+      let raw = variant.kind === "live" ? yield* liveTurn : replayed(transcript!, yield* run(Subject.replaySeat(transcript!)))
       for (
         let attempt = 1;
         variant.kind === "live" && attempt <= 2 && (raw.failure ?? "").includes("transport");
@@ -246,7 +267,7 @@ const converse = (suiteCase: CharacterSuite.Case, variant: Variant, trial: numbe
         raw = yield* liveTurn
       }
       const outcome = replyFrom === "summary" ? { ...raw, reply: summaryOf(raw.reply) } : raw
-      const checks = Score.score({ suite, world, trigger: turn.trigger, expect: turn.expect, turn: outcome })
+      const checks = Score.score({ suite, world, where: suiteCase.where, trigger: turn.trigger, expect: turn.expect, turn: outcome })
       results.push({ prompt, trigger: turn.trigger, turn: outcome, checks })
       if (trace) {
         process.stderr.write(
@@ -532,7 +553,7 @@ const rescore = (file: string) =>
           prompt,
           trigger: savedTurn.trigger,
           turn,
-          checks: Score.score({ suite, world, trigger: savedTurn.trigger, expect, turn })
+          checks: Score.score({ suite, world, where: suiteCase.where, trigger: savedTurn.trigger, expect, turn })
         })
         history.push({ from: savedTurn.trigger.from, text: savedTurn.trigger.text, at: savedTurn.trigger.at })
         const did = describeActions(turn.actions)
@@ -675,7 +696,12 @@ const program = Effect.gen(function*() {
   if (!reportLive) {
     for (const outcome of outcomes) {
       const expectedPass = outcome.plan.variant.kind === "golden"
-      const ok = outcome.pass === expectedPass
+      const completed = outcome.error === undefined &&
+        outcome.conversation?.turns.length === outcome.plan.suiteCase.turns.length &&
+        outcome.conversation.turns.every((result) =>
+          result.turn.reply !== undefined && !result.checks.some((check) => check.id === "run")
+        )
+      const ok = expectedPass ? outcome.pass : completed && outcome.failed.length > 0
       if (!ok) exitCode = 1
       lines.push(
         `${ok ? "✓" : "✗"} ${outcome.plan.suiteCase.id} ${variantName(outcome.plan.variant)}: ${
@@ -687,12 +713,16 @@ const program = Effect.gen(function*() {
               outcome.checksPass && !outcome.judgePass ? "judge" : ""
             }`
         }${
-          outcome.pass || !expectedPass
+          ok || outcome.pass
             ? ""
             : `\n    ${outcome.failed.map((check) => `${check.id}: ${check.detail}`).join("\n    ")}${
               outcome.error === undefined ? "" : `\n    ${outcome.error}`
             }`
-        }${!expectedPass && outcome.pass ? "\n    a counterexample passed: the case does not catch it" : ""}`
+        }${!expectedPass && outcome.pass ? "\n    a counterexample passed: the case does not catch it" : ""}${
+          !expectedPass && !ok && !outcome.pass
+            ? "\n    counterexample did not complete scoring with a failed expectation"
+            : ""
+        }`
       )
     }
   }

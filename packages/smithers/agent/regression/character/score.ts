@@ -11,10 +11,10 @@
  *   items, channel posts, requests to Will, handoff briefs, questions to other
  *   roles, notes to requesters, shared wiki pages, issue comments, new issues
  *   and pull requests.
- * - **Will reads it directly** (the reply when Will wrote, `owner_message`,
+ * - **Will reads it directly** (a private reply when Will wrote, `owner_message`,
  *   `digest_add`): also forbidden openers, bare file paths and unlinked
  *   references.
- * - **Other people read it** (everything but the reply to Will and his DMs;
+ * - **Other people read it** (including replies to Will in a channel;
  *   channel posts and requests to Will reach him through the team): the
  *   world's private markers must not appear.
  * - **Everything else** (calendar, email drafts) is checked only by the
@@ -33,18 +33,23 @@ const text = (value: unknown): string => (typeof value === "string" ? value : ""
 
 /** One message a person reads, and who. */
 export interface Emission extends Checks.Emission {
-  /** Will reads it directly: his reply, a DM, a digest item. */
+  /** Will reads it directly: a private reply, a DM, a digest item. */
   readonly owner: boolean
   /** Other people read it: teammates (channel posts and requests to Will included), and customers through issues and pull requests. */
   readonly team: boolean
 }
 
 /** Every human-read message of a turn, in the order it was sent, labelled by where it went. */
-export const emissions = (trigger: Suite.Message, turn: Subject.Turn): Array<Emission> => {
+export const emissions = (trigger: Suite.Message, turn: Subject.Turn, where = "dm"): Array<Emission> => {
   const out: Array<Emission> = []
-  const toOwner = trigger.from === "owner"
+  const toOwner = trigger.from === "owner" && !where.startsWith("channel:")
   if (turn.reply !== undefined && turn.reply.trim() !== "") {
-    out.push({ sink: toOwner ? "reply" : `reply to ${trigger.from}`, text: turn.reply, owner: toOwner, team: !toOwner })
+    out.push({
+      sink: trigger.from === "owner" ? "reply" : `reply to ${trigger.from}`,
+      text: turn.reply,
+      owner: toOwner,
+      team: !toOwner
+    })
   }
   for (const action of turn.actions) {
     const input = action.input
@@ -242,10 +247,11 @@ export const score = (options: {
   readonly suite: Suite.Suite
   readonly world: World.World
   readonly trigger: Suite.Message
+  readonly where: string
   readonly expect: Suite.Expect
   readonly turn: Subject.Turn
 }): Array<Check> => {
-  const { expect, suite, trigger, turn, world } = options
+  const { expect, suite, trigger, turn, where, world } = options
   if (turn.reply === undefined) {
     return [{ id: "run", pass: false, detail: turn.failure ?? "no reply" }]
   }
@@ -272,7 +278,7 @@ export const score = (options: {
   }
   checks.push(...expectText("reply", reply, replyExpect))
 
-  const sent = emissions(trigger, turn)
+  const sent = emissions(trigger, turn, where)
   if (expect.voice !== false) {
     for (const emission of sent) checks.push(...voiceChecks(suite, emission, expect.allow ?? []))
   }

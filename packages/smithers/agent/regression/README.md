@@ -208,8 +208,17 @@ A case file holds the world patch, the conversation so far, the trigger (or
 `turns` for a conversation), expectations (`reply`, `owner`, `calls`,
 `booking`, `leakage`, `allow`, `focus`), a golden transcript and
 counterexamples. Offline, each counterexample replaces one turn of the golden
-conversation and must make the case fail on its own; a counterexample that
+conversation and must complete every turn with a reply and fail at least one
+expectation check. An intentionally empty reply still counts as completed.
+An executor error, a missing transcript, or a replay that rejects one of its
+calls or has no `reply` makes the gate fail; it does not count as catching the
+counterexample. A counterexample that
 passes means the case can't see that failure.
+
+Replies use the case's `where` to identify their readers: a reply in a
+`channel:` is team-visible even when the trigger came from `owner`, so
+private markers fail the leakage check there as they do in channel posts.
+A private reply to `owner` may contain private markers.
 
 Work is simulated against the world's fixtures, so a case can assert that a
 role did it instead of saying it can't: `repo_read` and `repo_search` read
