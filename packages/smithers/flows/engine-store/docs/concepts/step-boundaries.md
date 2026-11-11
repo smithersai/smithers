@@ -20,7 +20,7 @@ optional `removes`, and a `boundaryMode` of `hard` or `expected`.
 interface Service {
   readonly prepare: (descriptor: FileBoundary) => Effect<PreparedBoundary, UnsupportedBoundary, Crypto>
   readonly settle: (prepared: PreparedBoundary) => Effect<BoundaryEvidence, SettleError, Crypto>
-  readonly replayOutputs: (evidence: BoundaryEvidence) => Effect<void, ReplayError, Crypto>
+  readonly replayOutputs: (evidence: BoundaryEvidence, options?: ReplayOptions) => Effect<void, ReplayError, Crypto>
 }
 ```
 
@@ -34,7 +34,14 @@ snapshot is the evidence that they still describe reality.
 `diffIdentity` naming the post-state, and two optional honest flags,
 `wholeTreeWritesVerified` and `hermeticReadsVerified`.
 
-`replayOutputs` reproduces those outputs from the evidence.
+`replayOutputs` reproduces those outputs from the evidence. By default it
+reproduces the whole recorded post-state: it overwrites a recorded output whose
+content differs, removes each recorded removal, and prunes unrecorded files
+under a recorded tree. A cache hit replays this way, because the workspace
+never ran the step. With `{ restore: "missing" }` it writes a recorded output
+only where the path is absent and removes nothing. A wake that replays an
+attempt its own run already settled uses that mode, so it never undoes what a
+later step or a person did to those paths.
 
 ## Hard mode refuses, expected mode records
 

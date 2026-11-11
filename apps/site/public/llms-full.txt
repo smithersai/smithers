@@ -16506,7 +16506,7 @@ interface Service {
     UndeclaredWrite | MissingDeclaredOutput | SurvivingDeclaredRemoval | UnsupportedBoundary | BoundaryCorruption,
     Crypto
   >
-  readonly replayOutputs: (evidence: BoundaryEvidence) => Effect<
+  readonly replayOutputs: (evidence: BoundaryEvidence, options?: ReplayOptions) => Effect<
     void,
     UnsupportedBoundary | BoundaryCorruption | MissingArtifact,
     Crypto
@@ -16536,6 +16536,16 @@ interface Service {
 | `MissingOutputDeviation`    | `{ paths, diffIdentity }`, declared writes never produced                                                                                         |
 | `SurvivingRemovalDeviation` | `{ paths, diffIdentity }`, declared removals left in place                                                                                        |
 | `BoundaryDeviation`         | the union of the three                                                                                                                            |
+
+### ReplayOptions
+
+`ReplayOptions` is `{ restore?: "all" | "missing" }`. `"all"`, the default,
+reproduces the recorded post-state: it overwrites a recorded output whose
+content differs, removes each recorded removal, and prunes unrecorded files
+under a recorded tree. A cache hit uses it. `"missing"` writes a recorded
+output only where its path is absent and removes nothing. A replay of an
+attempt the run already settled uses it, so a wake never undoes what a later
+step or a person did to those paths.
 
 ### FileSystemOptions
 

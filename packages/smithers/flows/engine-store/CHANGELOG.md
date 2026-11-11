@@ -32,6 +32,14 @@
 
 ### Fixed
 
+- A wake no longer reverts files a settled step wrote. Replaying a succeeded
+  attempt of the same run restores a recorded output only where its path is
+  absent. It used to reproduce the recorded post-state on every drive: it
+  overwrote a later step's or a person's edit to a recorded output, removed a
+  path the step had removed and something put back, and deleted files added
+  under a recorded tree. `StepBoundary.replayOutputs` takes `ReplayOptions`
+  (`{ restore: "missing" }`) for this; a cache hit keeps the default, `"all"`
+  ([#4762](https://github.com/smithersai/smithers/issues/4762)).
 - An unrecordable step releases its durable run and returns the typed
   `FlowRuntime.StoreUnavailable` failure to outermost execute callers instead
   of interrupting their requests. Every joining caller receives the failure;

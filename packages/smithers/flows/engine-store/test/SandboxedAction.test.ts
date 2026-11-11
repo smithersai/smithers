@@ -728,6 +728,82 @@ describe("cache-hit replay under a sandboxed composition", () => {
     }))
 })
 
+describe("succeeded-attempt replay under the production composition", () => {
+  const key = "sandbox/attempt-replay"
+  const metadata: ActionPersistence.BoundaryMetadata = {
+    readSet: [{ path: "src/in.txt", digest: sha256("hello") }],
+    writeSet: ["out/result.txt", { _tag: "TreeArtifact", path: "gen" }],
+    removes: ["stale.txt"],
+    boundaryMode: "hard"
+  }
+  const producer = body(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const content = yield* fs.readFileString("src/in.txt")
+      yield* fs.writeFileString("out/result.txt", `${content}!`)
+      yield* fs.writeFileString("gen/a.txt", "generated")
+      yield* fs.remove("stale.txt")
+      return { rendered: content.length }
+    }).pipe(Effect.orDie)
+  )
+  /**
+   * One run dispatches the step, the workspace changes while the run is
+   * parked, and the wake dispatches the same attempt again: the succeeded row
+   * answers it.
+   */
+  const wake = (root: string, runId: string, parked: Effect.Effect<void>) =>
+    Effect.gen(function*() {
+      yield* seed(root, { "src/in.txt": "hello", "stale.txt": "stale" })
+      let executions = 0
+      const drive = dispatch(runId, key, metadata, () => Effect.sync(() => executions++).pipe(Effect.andThen(producer)))
+        .pipe(Effect.provide(production(root, true)))
+      yield* activate(runId)
+      const first = yield* drive
+      yield* parked
+      const replayed = yield* drive
+      return { executions, first, replayed }
+    }).pipe(Effect.provide(TestStores.layer()))
+
+  it.effect("keeps what a later step or a person changed in its outputs (issue #4762)", () =>
+    Effect.gen(function*() {
+      const root = workspace()
+      const { executions, first, replayed } = yield* withCrypto(wake(
+        root,
+        "sandbox-attempt-replay-edited",
+        // A later step edits a recorded output, a person adds a file under
+        // the recorded tree, and something puts the removed path back.
+        seed(root, { "out/result.txt": "edited later", "gen/b.txt": "added later", "stale.txt": "back" })
+      ))
+
+      expect(first).toEqual({ rendered: 5 })
+      expect(replayed).toEqual({ rendered: 5 })
+      expect(executions).toBe(1)
+      expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("edited later")
+      expect(yield* withCrypto(hostText(root, "gen/a.txt"))).toBe("generated")
+      expect(yield* withCrypto(hostText(root, "gen/b.txt"))).toBe("added later")
+      expect(yield* withCrypto(hostText(root, "stale.txt"))).toBe("back")
+    }))
+
+  it.effect("restores a recorded output that is missing", () =>
+    Effect.gen(function*() {
+      const root = workspace()
+      const { executions, replayed } = yield* withCrypto(wake(
+        root,
+        "sandbox-attempt-replay-missing",
+        Effect.provide(
+          Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(join(root, "gen"), { recursive: true })),
+          NodeFileSystem.layer
+        ).pipe(Effect.orDie)
+      ))
+
+      expect(replayed).toEqual({ rendered: 5 })
+      expect(executions).toBe(1)
+      expect(yield* withCrypto(hostText(root, "gen/a.txt"))).toBe("generated")
+      expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("hello!")
+      expect(yield* withCrypto(hostText(root, "stale.txt"))).toBeUndefined()
+    }))
+})
+
 describe("the transaction is not a security boundary", () => {
   it.effect("says so: a body reaching a service the transaction never seeded is outside it", () =>
     Effect.gen(function*() {

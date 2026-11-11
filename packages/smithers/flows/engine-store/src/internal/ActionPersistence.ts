@@ -2428,7 +2428,7 @@ const storedRefusal = (dispatch: Dispatch, meta: AttemptMeta | undefined) => {
 }
 
 /**
- * Replays a durably succeeded attempt: re-materializes its outputs when its
+ * Replays a durably succeeded attempt: restores its missing outputs when its
  * evidence allows, converges the cache and the journal with it, and answers
  * its recorded outcome.
  */
@@ -2462,13 +2462,17 @@ const replaySucceeded = (dispatch: Dispatch, row: AttemptStore.Attempt) =>
   })
 
 /**
- * Re-materializes a succeeded attempt's recorded outputs, answering whether
- * its evidence was found corrupt (and quarantined).
+ * Restores a succeeded attempt's recorded outputs where they are missing,
+ * answering whether its evidence was found corrupt (and quarantined).
+ *
+ * The attempt already settled in this run, so every drive after it replays
+ * the row. Reproducing the recorded post-state each time would revert what a
+ * later step or a person did to those paths since (issue #4762).
  */
 const replayAttemptOutputs = (dispatch: Dispatch, meta: AttemptMeta, evidence: StepBoundary.BoundaryEvidence) =>
   Effect.gen(function*() {
     const boundary = yield* StepBoundary.StepBoundary
-    const materialized = yield* boundary.replayOutputs(evidence).pipe(Effect.exit)
+    const materialized = yield* boundary.replayOutputs(evidence, { restore: "missing" }).pipe(Effect.exit)
     if (Exit.isSuccess(materialized)) {
       return false
     }

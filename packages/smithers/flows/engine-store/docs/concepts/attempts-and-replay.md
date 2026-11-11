@@ -26,12 +26,12 @@ question, answered in [Cache admission](./cache-admission.md).
 
 ## What a replay does with each row state
 
-| Persisted row | What a replay does                                                                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `succeeded`   | Returns the recorded result, and calls `StepBoundary.replayOutputs` first so the workspace holds the outputs the step produced. |
-| `failed`      | Rethrows the persisted domain failure. It never re-admits the attempt.                                                          |
-| `running`     | Asks the step cache first when the step is cache-eligible, then recovers under the run fence and admission permit.              |
-| `suspended`   | Continues the same attempt rather than burning a new one against the retry budget.                                              |
+| Persisted row | What a replay does                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `succeeded`   | Returns the recorded result, and first calls `StepBoundary.replayOutputs` with `restore: "missing"` to put back each recorded output whose path is absent. It never overwrites, removes, or prunes a path, so a later step's or a person's change to those files survives every wake. |
+| `failed`      | Rethrows the persisted domain failure. It never re-admits the attempt.                                                                                                                                                                                                                |
+| `running`     | Asks the step cache first when the step is cache-eligible, then recovers under the run fence and admission permit.                                                                                                                                                                    |
+| `suspended`   | Continues the same attempt rather than burning a new one against the retry budget.                                                                                                                                                                                                    |
 
 A settled attempt remains authoritative when a matching shared cache row
 exists; another run's cached success cannot replace its result or failure.

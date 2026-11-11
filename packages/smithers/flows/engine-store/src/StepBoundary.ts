@@ -334,13 +334,34 @@ export class MissingArtifact extends Schema.TaggedError<MissingArtifact>()(
 ) {}
 
 /**
+ * How much of the recorded post-state a `replayOutputs` call puts back.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface ReplayOptions {
+  /**
+   * `"all"`, the default, reproduces the recorded post-state: it overwrites a
+   * recorded output whose content differs, removes each recorded removal, and
+   * prunes unrecorded files under a recorded tree. A cache hit uses it, because
+   * the workspace never ran the step.
+   *
+   * `"missing"` writes a recorded output only where its path is absent and
+   * removes nothing. A wake that replays an attempt its own run already
+   * settled uses it, so the replay never undoes what a later step or a person
+   * did to those paths.
+   */
+  readonly restore?: "all" | "missing" | undefined
+}
+
+/**
  * The three-call lifecycle of a hermetic step boundary.
  *
  * `prepare` measures the declared read set before the step runs; `settle`
  * measures the writes afterwards and turns them into {@link BoundaryEvidence};
  * `replayOutputs` reproduces a previous step's outputs from that evidence, so
  * a cache hit can materialize results on a workspace that never executed
- * anything.
+ * anything. {@link ReplayOptions} narrows it to the outputs that are missing.
  *
  * @since 0.1.0
  * @category services
@@ -357,7 +378,8 @@ export interface Service {
     (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
   readonly replayOutputs: (
-    evidence: BoundaryEvidence
+    evidence: BoundaryEvidence,
+    options?: ReplayOptions
   ) => Effect.Effect<
     void,
     UnsupportedBoundary | BoundaryCorruption | MissingArtifact,
@@ -985,7 +1007,7 @@ export const makeFileSystem = (
           : {})
       }
     }),
-    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(function*(evidence) {
+    replayOutputs: Effect.fn("StepBoundary.replayOutputs")(function*(evidence, replay) {
       yield* Effect.annotateCurrentSpan({ diffIdentity: evidence.diffIdentity })
       const decoded = Schema.decodeUnknownResult(MaterializedOutputs)(evidence.declaredOutputs)
       if (decoded._tag === "Failure") {
@@ -1019,6 +1041,19 @@ export const makeFileSystem = (
       // Before any mutation: a host that cannot be confined refuses the whole
       // replay, and the caller falls back to a real execution.
       const host = yield* replayHost
+      if (replay?.restore === "missing") {
+        // The run that recorded this evidence already settled the step, and
+        // the workspace has moved on since: a path that exists holds either
+        // the recorded output or a later step's or a person's change to it,
+        // and neither is this replay's to overwrite, remove, or prune (issue
+        // #4762). Only an output that is gone is put back.
+        for (const output of decoded.success.outputs) {
+          if (output.digest === null) continue
+          const present = yield* host.exists(output.path).pipe(Effect.mapError(hostFailure))
+          if (!present) yield* materialize(host, output)
+        }
+        return
+      }
       const emptyDirectoryCandidates = new Set<string>()
       for (const tree of decoded.success.trees ?? []) {
         const prefix = `${tree.path}/`.replace(/\/{2,}$/g, "/")
