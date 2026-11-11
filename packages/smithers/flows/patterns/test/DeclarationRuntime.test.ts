@@ -15,7 +15,7 @@ import * as MergeQueue from "../src/MergeQueue.vibe"
 import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.vibe"
-import * as Supervisor from "../src/Supervisor.ts"
+import * as Supervisor from "../src/Supervisor.vibe"
 import * as Trellis from "../src/Trellis.vibe"
 import { execute, member } from "./Execute.ts"
 

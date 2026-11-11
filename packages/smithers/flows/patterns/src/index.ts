@@ -148,4 +148,4 @@ export * as Sidecar from "./Sidecar.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Supervisor from "./Supervisor.ts"
+export * as Supervisor from "./Supervisor.vibe"

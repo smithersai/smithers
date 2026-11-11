@@ -27,7 +27,7 @@ import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.vibe"
 import * as Saga from "../src/Saga.vibe"
 import * as Sidecar from "../src/Sidecar.vibe"
-import * as Supervisor from "../src/Supervisor.ts"
+import * as Supervisor from "../src/Supervisor.vibe"
 import { approval, check, fail, flow, type Pattern, roles, scripted, settleRun } from "./Parity.ts"
 
 const drift: Pattern<{ readonly alerts: boolean }> = {

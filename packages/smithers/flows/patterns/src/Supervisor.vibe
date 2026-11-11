@@ -1,0 +1,137 @@
+/**
+ * Supervisor pattern: one boss plans, workers execute in parallel, the boss
+ * reviews, and only the tasks the review calls retriable are re-delegated.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import * as Stalling from "./internal/Stalling.ts"
+import { PatternError } from "./PatternError.ts"
+import {
+  bound,
+  type Completed,
+  done,
+  type Exhausted,
+  invalid,
+  type Outcome,
+  type Plan,
+  retriable,
+  type RuntimeOptions,
+  type Task,
+  unrounded,
+  validateTasks
+} from "./internal/SupervisorMake.ts"
+
+export {
+  type Completed,
+  type Exhausted,
+  make,
+  type MakeOptions,
+  type Outcome,
+  type Plan,
+  type RuntimeOptions,
+  type SupervisorFlow,
+  type Task
+} from "./internal/SupervisorMake.ts"
+
+
+/**
+ * Runs a supervision: plan once, then per round delegate the pending tasks
+ * with bounded concurrency, review every task's latest outcome, and either
+ * finalize or re-delegate the tasks the review named retriable.
+ *
+ * A typed worker failure is captured as a `Failed` outcome instead of failing
+ * the supervision, so the review decides whether the task is worth another
+ * round. Only a typed failure is an outcome: a worker defect, like an
+ * interruption, fails the supervision and cancels the workers still in flight.
+ * The supervision ends as {@link Exhausted} when the round bound is reached or
+ * when an unaccepted review names no retriable task, because nothing is left
+ * to re-delegate.
+ *
+ * `run` fails with a `PatternError` when the plan is malformed, empty, names
+ * more than `maxTasks` tasks (checked before any worker runs), or repeats a
+ * task id. Outcomes are keyed by task id, so a repeated id would
+ * delegate twice and hand the review the same outcome twice.
+ *
+ * `run` snapshots every callback and every bound at the call, so a later
+ * edit to the option object does not alter that run. The plan a `plan`
+ * callback returns is copied task by task when it is validated.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3, E4, R4>(
+  input: I,
+  options: RuntimeOptions<I, P, Out, Review, Final, E, R, E2, R2, E3, R3, E4, R4>
+): (Completed<Final> | Exhausted<Review>)!(E | E3 | E4 | PatternError)!(R | R2 | R3 | R4) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the option object in between must not reach it.
+  const boss = { plan: options.plan, review: options.review, finalize: options.finalize }
+  const worker = options.worker
+  const maxRounds = options.maxRounds
+  const maxTasks = options.maxTasks
+  const concurrency = options.concurrency
+  const stall = Stalling.resolve("Supervisor", options.stall)
+  const signals = options.stall?.signals ?? ((results: ReadonlyArray<Outcome<Out>>) => ({ output: unrounded(results) }))
+  return effect {
+    if (!bound(maxRounds) || !bound(maxTasks) || !bound(concurrency)) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "Supervisor maxRounds, maxTasks and concurrency must be positive safe integers"
+      })
+    }
+    if (stall instanceof PatternError) throw stall
+    const observe = Stalling.tracker(stall, signals)
+    const plan = try boss.plan(input)
+    // The plan, the reviews and the results are callers' values: the readers
+    // run in `sync`, so a getter or proxy that throws is a defect, as in the
+    // generator.
+    const tasks = try sync(() => validateTasks(plan, maxTasks))
+    if (tasks instanceof PatternError) throw tasks
+    const ids = tasks.map((task) => task.id)
+    if (new Set(ids).size !== ids.length) throw invalid("Supervisor task ids must be unique")
+    const latest = new Map<string, Outcome<Out>>()
+    const supervise = effect (
+      pending: ReadonlyArray<Task>,
+      round: number,
+      previous: { readonly review: Review; readonly retriable: ReadonlyArray<string> } | undefined
+    ): (Completed<Final> | Exhausted<Review>)!(E3 | E4 | PatternError)!(R2 | R3 | R4) => {
+      const outcomes = try forEach(
+        pending,
+        effect (task): Outcome<Out>!!R2 => {
+          // A re-delegated worker sees the review that sent it back, as the
+          // declared form's worker call does.
+          const delegated = map(
+            worker(previous === undefined ? { task, plan, round, input } : { task, plan, round, input, ...previous }),
+            (output): Outcome<Out> => ({ _tag: "Done", id: task.id, workerType: task.workerType, round, output })
+          )
+          return delegated catch (error) => ({ _tag: "Failed", id: task.id, workerType: task.workerType, round, error })
+        },
+        { concurrency }
+      )
+      for (const outcome of outcomes) latest.set(outcome.id, outcome)
+      // Round one visits every task and later rounds only replace entries,
+      // so `latest` contains one outcome for every validated task here.
+      const results = tasks.map((task) => latest.get(task.id)!)
+      const review = try boss.review({ plan, results, round, input })
+      if (try sync(() => done(review))) {
+        const final = try boss.finalize({ plan, results, review, rounds: round, input })
+        return { exhausted: false, rounds: round, final } satisfies Completed<Final>
+      }
+      if (round === maxRounds) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
+      const stalled = try sync(() => observe(results))
+      if (stalled !== undefined) {
+        if (stalled.on === "escalate") throw Stalling.escalated("Supervisor", stalled.rounds)
+        return { exhausted: true, rounds: round, review, stalled } satisfies Exhausted<Review>
+      }
+      const again = try sync(() => retriable(review))
+      const next = tasks.filter((task) => again.includes(task.id))
+      if (next.length === 0) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
+      return try supervise(next, round + 1, { review, retriable: again })
+    }
+    return try supervise(tasks, 1, undefined)
+  }
+}

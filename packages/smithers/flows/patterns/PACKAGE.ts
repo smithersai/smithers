@@ -78,7 +78,8 @@ const securityReview = Smithers.SecurityReview({
         "src/DelegationChain.ts",
         "src/Escalation.vibe",
         "src/internal/EscalationMake.ts",
-        "src/Supervisor.ts",
+        "src/Supervisor.vibe",
+        "src/internal/SupervisorMake.ts",
         "src/ScanFixVerify.ts",
         "src/DriftDetector.vibe"
       ]
@@ -115,7 +116,8 @@ const securityReview = Smithers.SecurityReview({
         "Burndown launching more items than concurrency or capacity slots allow, or a lineage that continues past maxRounds."
       ],
       paths: [
-        "src/Supervisor.ts",
+        "src/Supervisor.vibe",
+        "src/internal/SupervisorMake.ts",
         "src/Trellis.vibe",
         "src/internal/TrellisMake.ts",
         "src/DelegationChain.ts",
@@ -145,7 +147,8 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Kanban.vibe",
         "src/internal/KanbanMake.ts",
-        "src/Supervisor.ts",
+        "src/Supervisor.vibe",
+        "src/internal/SupervisorMake.ts",
         "src/Panel.vibe",
         "src/internal/PanelMake.ts",
         "src/Bounded.vibe",

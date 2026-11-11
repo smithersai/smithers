@@ -35,7 +35,7 @@ import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Saga from "../src/Saga.vibe"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.vibe"
-import * as Supervisor from "../src/Supervisor.ts"
+import * as Supervisor from "../src/Supervisor.vibe"
 import type { Executable } from "./Execute.ts"
 import { fields } from "./Parity.ts"
 

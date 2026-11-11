@@ -7939,7 +7939,7 @@
         "Saga.d.ts": "ce7db02350241d68cb3ed42a7de7463c0e720f1bcf14dc128472572e2b48407c",
         "ScanFixVerify.d.ts": "da25d3779a85a2a2180a904a0ed73a4d0baad16d0f83cfe53bb0dfe0993b939b",
         "Sidecar.d.ts": "18a155d78ad0bf52f15c5b0b108c53d358dd63bb5e66bf75dff38941b22e73de",
-        "Supervisor.d.ts": "edb1c49b592ede426f9e6d527d0c7b1f6379db6f787e4b6ed4958bf4ab96de10",
+        "Supervisor.d.ts": "f5f3404475d9232640c31bc114fe5cb935f98b437f598955c2bafea410e6998d",
         "Trellis.d.ts": "14ea8e921ce2cfdbd787cd4e0a3e0cb46a0a48df05f47c421023580187c3cfb9",
         "index.d.ts": "c925e5b3afcc96a1528fe8aacebc09b4fdeb2d35ae3515d50a3a2b1cc61ff6a5",
         "internal/Approval.d.ts": "eed55122b279752df1ca9deee5f71a0b561bed07f49261899233a07fc3ed9857",
@@ -7963,6 +7963,7 @@
         "internal/SagaMake.d.ts": "6f92fb2472bf00a606c96c30e0aa7508ccde241914bc5fd4a2b9f72803579218",
         "internal/SidecarMake.d.ts": "72b476727dd457f5c482fa5d752a469fe26b556ffc76ba6e656e284c787cb5de",
         "internal/Stalling.d.ts": "c302379eadf7c252c4115d5ced9bf3bd858e1f3aed5dc7743b2034258a4490e0",
+        "internal/SupervisorMake.d.ts": "77b0c08e292980369a4754ccdcca4e719d99658c7d36a51bdedd6c6beffee7ab",
         "internal/TrellisMake.d.ts": "ac058ba483beedf3df06d3fcf870f1459b52c5b8cdd6507e5f5029949434d139"
       }
     },

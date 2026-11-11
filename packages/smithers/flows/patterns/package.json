@@ -60,7 +60,7 @@
     "./Saga": "./src/Saga.vibe",
     "./ScanFixVerify": "./src/ScanFixVerify.ts",
     "./Sidecar": "./src/Sidecar.vibe",
-    "./Supervisor": "./src/Supervisor.ts",
+    "./Supervisor": "./src/Supervisor.vibe",
     "./Trellis": "./src/Trellis.vibe",
     "./TryCatchFinally": null,
     "./WithApproval": null,

@@ -1,9 +1,7 @@
 /**
- * Supervisor pattern: one boss plans, workers execute in parallel, the boss
- * reviews, and only the tasks the review calls retriable are re-delegated.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Supervisor`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Supervisor.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -12,15 +10,15 @@ import * as Flow from "@smthrs/flow/Flow"
 import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import * as Stalling from "./internal/Stalling.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
+import * as Stalling from "./Stalling.ts"
 
 /**
  * One unit of delegated work named by the plan.
@@ -186,9 +184,21 @@ export type SupervisorFlow<R = never> = Flow.Flow<
 
 // Own properties only: an inherited `allDone` or `retriable` is not the
 // review's verdict.
-const done = (value: unknown): boolean => value === true || Compose.ownTrue(value, "allDone")
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const done = (value: unknown): boolean => value === true || Compose.ownTrue(value, "allDone")
 
-const retriable = (value: unknown): ReadonlyArray<string> => {
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const retriable = (value: unknown): ReadonlyArray<string> => {
   if (typeof value !== "object" || value === null || !Object.hasOwn(value, "retriable")) return []
   const ids = (value as { readonly retriable: unknown }).retriable
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : []
@@ -199,7 +209,13 @@ const retriable = (value: unknown): ReadonlyArray<string> => {
  * ran in, and an `Error` failure by its name and message, since it has no
  * canonical form to hash.
  */
-const unrounded = (results: unknown): unknown =>
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const unrounded = (results: unknown): unknown =>
   (results as ReadonlyArray<Outcome<unknown>>).map((outcome) => {
     if (outcome._tag === "Done") {
       return { _tag: "Done", id: outcome.id, workerType: outcome.workerType, output: outcome.output }
@@ -210,13 +226,33 @@ const unrounded = (results: unknown): unknown =>
 
 const unroundedSignal: Stalling.Signal = { name: "unrounded", read: unrounded }
 
-const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 // Task lists come from the flow input or from the plan a boss returned, so a
 // malformed one is a data fault, not a declaration fault.
-const invalid = (message: string): PatternError => new PatternError({ code: "invalid_input", message })
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const invalid = (message: string): PatternError => new PatternError({ code: "invalid_input", message })
 
-const validateTasks = (input: unknown, maxTasks: number): ReadonlyArray<Task> | PatternError => {
+/**
+ * Shared with the Effect form in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const validateTasks = (input: unknown, maxTasks: number): ReadonlyArray<Task> | PatternError => {
   if (typeof input !== "object" || input === null || !Object.hasOwn(input, "tasks")) {
     return invalid("Supervisor input must contain a tasks array")
   }
@@ -553,120 +589,5 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
       [boss.plan, ...workers.map(([, worker]) => worker), boss.review, boss.finalize]
     ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
-  })
-}
-
-/**
- * Runs a supervision: plan once, then per round delegate the pending tasks
- * with bounded concurrency, review every task's latest outcome, and either
- * finalize or re-delegate the tasks the review named retriable.
- *
- * A typed worker failure is captured as a `Failed` outcome instead of failing
- * the supervision, so the review decides whether the task is worth another
- * round. Only a typed failure is an outcome: a worker defect, like an
- * interruption, fails the supervision and cancels the workers still in flight.
- * The supervision ends as {@link Exhausted} when the round bound is reached or
- * when an unaccepted review names no retriable task, because nothing is left
- * to re-delegate.
- *
- * `run` fails with a `PatternError` when the plan is malformed, empty, names
- * more than `maxTasks` tasks (checked before any worker runs), or repeats a
- * task id. Outcomes are keyed by task id, so a repeated id would
- * delegate twice and hand the review the same outcome twice.
- *
- * `run` snapshots every callback and every bound at the call, so a later
- * edit to the option object does not alter that run. The plan a `plan`
- * callback returns is copied task by task when it is validated.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3, E4, R4>(
-  input: I,
-  options: RuntimeOptions<I, P, Out, Review, Final, E, R, E2, R2, E3, R3, E4, R4>
-): Effect.Effect<Completed<Final> | Exhausted<Review>, E | E3 | E4 | PatternError, R | R2 | R3 | R4> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const boss = { plan: options.plan, review: options.review, finalize: options.finalize }
-  const worker = options.worker
-  const maxRounds = options.maxRounds
-  const maxTasks = options.maxTasks
-  const concurrency = options.concurrency
-  if (!bound(maxRounds) || !bound(maxTasks) || !bound(concurrency)) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "Supervisor maxRounds, maxTasks and concurrency must be positive safe integers"
-      })
-    )
-  }
-  const stall = Stalling.resolve("Supervisor", options.stall)
-  if (stall instanceof PatternError) return Effect.fail(stall)
-  const signals = options.stall?.signals ?? ((results: ReadonlyArray<Outcome<Out>>) => ({ output: unrounded(results) }))
-  return Effect.gen(function*() {
-    const observe = Stalling.tracker(stall, signals)
-    const plan = yield* boss.plan(input)
-    const tasks = validateTasks(plan, maxTasks)
-    if (tasks instanceof PatternError) return yield* Effect.fail(tasks)
-    const ids = tasks.map((task) => task.id)
-    if (new Set(ids).size !== ids.length) {
-      return yield* Effect.fail(
-        invalid("Supervisor task ids must be unique")
-      )
-    }
-    const latest = new Map<string, Outcome<Out>>()
-    const supervise = (
-      pending: ReadonlyArray<Task>,
-      round: number,
-      previous: { readonly review: Review; readonly retriable: ReadonlyArray<string> } | undefined
-    ): Effect.Effect<Completed<Final> | Exhausted<Review>, E3 | E4 | PatternError, R2 | R3 | R4> =>
-      Effect.gen(function*() {
-        const outcomes = yield* Effect.forEach(
-          pending,
-          (task) =>
-            // A re-delegated worker sees the review that sent it back, as the
-            // declared form's worker call does.
-            worker(previous === undefined ? { task, plan, round, input } : { task, plan, round, input, ...previous })
-              .pipe(
-                Effect.map((output): Outcome<Out> => ({
-                  _tag: "Done",
-                  id: task.id,
-                  workerType: task.workerType,
-                  round,
-                  output
-                })),
-                Effect.catch((error): Effect.Effect<Outcome<Out>> =>
-                  Effect.succeed({
-                    _tag: "Failed",
-                    id: task.id,
-                    workerType: task.workerType,
-                    round,
-                    error
-                  })
-                )
-              ),
-          { concurrency }
-        )
-        for (const outcome of outcomes) latest.set(outcome.id, outcome)
-        // Round one visits every task and later rounds only replace entries,
-        // so `latest` contains one outcome for every validated task here.
-        const results = tasks.map((task) => latest.get(task.id)!)
-        const review = yield* boss.review({ plan, results, round, input })
-        if (done(review)) {
-          const final = yield* boss.finalize({ plan, results, review, rounds: round, input })
-          return { exhausted: false, rounds: round, final } satisfies Completed<Final>
-        }
-        if (round === maxRounds) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
-        const stalled = observe(results)
-        if (stalled !== undefined) {
-          if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("Supervisor", stalled.rounds))
-          return { exhausted: true, rounds: round, review, stalled } satisfies Exhausted<Review>
-        }
-        const ids = retriable(review)
-        const next = tasks.filter((task) => ids.includes(task.id))
-        if (next.length === 0) return { exhausted: true, rounds: round, review } satisfies Exhausted<Review>
-        return yield* supervise(next, round + 1, { review, retriable: ids })
-      })
-    return yield* supervise(tasks, 1, undefined)
   })
 }

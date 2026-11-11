@@ -10,7 +10,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
-import * as Supervisor from "../src/Supervisor.ts"
+import * as Supervisor from "../src/Supervisor.vibe"
 import { execute } from "./Execute.ts"
 import { payloadOf } from "./Graphs.ts"
 
