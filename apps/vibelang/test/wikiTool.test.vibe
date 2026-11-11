@@ -28,7 +28,7 @@ describe("the wiki tool", () => {
     const w = try world()
     try w.sequencer.post("person", "Guest", "Open the wiki")
     try w.sequencer.start("m1")
-    const [binding] = try wikiTools("r1", toursOf(w.sequencer)).bindings()
+    const [binding] = try wikiTools("r1", toursOf(w.sequencer, () => Effect.void)).bindings()
     const opened = try binding!.run(call("rulings"))
     try w.sequencer.finish("r1", "Opened Rulings.")
     const ended = try binding!.run(call("roadmap"))
@@ -42,7 +42,7 @@ describe("the wiki tool", () => {
   }))
   it.live("reuses a completed opening execution without recording a second pane event", () => scoped(effect {
     const w = try world()
-    const layer = wikiRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer))))
+    const layer = wikiRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer, () => Effect.void))))
     provide layer {
       const engine = try FlowRuntime.FlowRuntime
       const first = try engine.execute(OpenWiki, { executionId: "wiki/once", payload: { page: "roadmap" } })
@@ -57,7 +57,7 @@ it.live("the reply's docs tool stays beside wiki and uses the same captured acto
   const w = try world()
   try w.sequencer.post("person", "Guest", "Open the docs")
   try w.sequencer.start("m1")
-  const [, docs] = try wikiTools("r1", toursOf(w.sequencer)).bindings()
+  const [, docs] = try wikiTools("r1", toursOf(w.sequencer, () => Effect.void)).bindings()
   const request = new Cell.Call({ ...call(""), flowName: "vibelang/docs/open", input: { path: "/setup", actor: "forged" } })
   const opened = try docs!.run(request)
   try w.sequencer.finish("r1", "Opened setup.")
@@ -76,7 +76,7 @@ it.live("the actual draft binding stores a contributor draft and opens its pane 
   try w.sequencer.post("person", "jun", "Draft an edit")
   try w.sequencer.start("m1")
   const wiki = try makeWikiFactory("contributor")
-  const [, , draft] = try wikiTools("r1", toursOf(w.sequencer), { draft: effect (page, ask, key) => {
+  const [, , draft] = try wikiTools("r1", toursOf(w.sequencer, () => Effect.void), { draft: effect (page, ask, key) => {
     try wiki.act({ op: "draft", page, text: ask, key, base: "" })
   } }).bindings()
   const result = try draft!.run(new Cell.Call({ ...call(""), flowName: "vibelang/wiki/draft", input: { page: "roadmap", ask: "Add one reviewed brick." } }))

@@ -42,7 +42,7 @@ describe("a reply whose Budget object is unreachable", () => {
     const flows = registration.pipe(
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.mergeAll(
-        Layer.succeed(Replies, repliesOf(sequencer)), Layer.succeed(Tours, toursOf(sequencer)), Layer.succeed(Spend, unreachable), Layer.succeed(ChatModel, model),
+        Layer.succeed(Replies, repliesOf(sequencer)), Layer.succeed(Tours, toursOf(sequencer, () => Effect.void)), Layer.succeed(Spend, unreachable), Layer.succeed(ChatModel, model),
         Layer.succeed(HistoryTools, { history: readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
       )),
     )

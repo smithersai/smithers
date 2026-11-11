@@ -175,7 +175,7 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       if (started._tag !== "Failure" || woken._tag !== "Failure") throw new Finding({ report: "a reply or tour execution routed a flow" })
       // Tours with no host wake: waking them writes nothing and arms nothing.
       const before = try sequencer.snapshot()
-      try Objects.toursOf(sequencer).wake()
+      try Objects.toursOf(sequencer, () => Effect.void).wake()
       if (!same(try sequencer.snapshot(), before)) throw new Finding({ report: "a hostless tour wake changed the conversation" })
       break
     }

@@ -42,7 +42,7 @@ effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting =
   const flows = registration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.mergeAll(
-      Layer.succeed(Replies, replies), Layer.succeed(Tours, toursOf(sequencer)), Layer.succeed(Spend, spend),
+      Layer.succeed(Replies, replies), Layer.succeed(Tours, toursOf(sequencer, () => Effect.void)), Layer.succeed(Spend, spend),
       Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }),
       Layer.succeed(HistoryTools, { history: readerOver(() => interrupting ? Effect.interrupt : Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
     )),

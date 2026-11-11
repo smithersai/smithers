@@ -33,7 +33,7 @@ it.live("wiki/tools", () => run("wiki/tools", Input, (input) => scoped(effect {
       if (input.drafting === "faulty") throw new WikiFailure({ reason: "draft" })
     },
   }
-  const bindings = try wikiTools("r1", toursOf(sequencer), drafting).bindings()
+  const bindings = try wikiTools("r1", toursOf(sequencer, () => Effect.void), drafting).bindings()
   if (bindings.length !== (drafting === undefined ? 2 : 3)) return false
   const page = input.known ? pages[input.page % pages.length]!.id : `missing-${input.page}`
   if (input.tool === "draft" && drafting === undefined) return true

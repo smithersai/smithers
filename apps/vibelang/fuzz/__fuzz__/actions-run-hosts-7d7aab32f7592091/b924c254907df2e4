@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 19
+bias 3
+null-prototype false
+key 2240362255
+tape dDva6SWDm1KzbOjizyuxrvag095HWMIHjXnN5okCCth4O7dIJ1_yWMueRpVYX-QBN26WAoeZcbSpeWVwtSYXVdQ3kupZPubvzxZ4ulC5HJ8hSUCjOrKR9toRe7vtPhvyOv4rHPaMIpbl3x9jz9sCVQ2VTkwSgTdM-mu6J8gWtjOG7sgzs5APatuqU2Xtphf9imF6et_vx_3oZEbosjWtaZ6v0N4
+schedule-key 3867161560
+schedule 
+signature "PropertyError:Finding"
+path 3.5.3.4.4.3
+codec "json"
+value "[{\"op\":\"stuckHost\",\"run\":0,\"flow\":19,\"well\":false,\"variant\":0,\"role\":\"viewer\"}]"
+# PropertyError:Finding
+# [{"op":"stuckHost","run":0,"flow":19,"well":false,"variant":0,"role":"viewer"}]

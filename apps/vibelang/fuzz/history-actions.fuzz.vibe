@@ -1,7 +1,7 @@
 // The SDK execution host for registered history and sandbox runs, driven directly over each flow it may be given.
 import { it } from "@effect/vitest"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { ActionDevice } from "../src/actions/execution.vibe"
+import { ActionDevice, isHistory, prepare } from "../src/actions/execution.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
@@ -24,7 +24,10 @@ const inputOf = (flow: string, variant: number): Schema.Json => {
 const MAINTAINER = { principal: { role: "maintainer" as const, name: "Ada", agent: false } }
 const Input = Schema.Struct({ flow: Schema.Literals(FLOWS), variant: Int, admit: Schema.Boolean, alarms: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })), cancel: Schema.Boolean })
 
-/** A flow the host does not run is input; one it runs settles to a receipt, and once it holds an execution it is busy. */
+/**
+ * A flow the catalog cannot prepare fails typed; posts and tours prepare as conversation runs, which the host's type
+ * refuses; a history run settles to a receipt, and once the host holds an execution it is busy.
+ */
 const drive = (input: typeof Input.Type) => effect {
   const w = try world()
   provide MockFactory, history {
@@ -37,11 +40,19 @@ const drive = (input: typeof Input.Type) => effect {
       const host = input.admit ? HistoryActions.make(id, object.storage) : HistoryActions.make(id, object.storage, () => succeed(false))
       const body = request(id, input.flow, inputOf(input.flow, input.variant), w.person.id)
       const runs = !["vibelang/EndTour", "vibelang/Post", "vibelang/Tour"].includes(input.flow)
-      // A flow the catalog cannot prepare fails typed; one it prepares but this host does not run is input.
-      const started = host.start(body) catch (error) => error._tag
-      if (!runs && started !== "input" && started !== "ActionFailure") throw new Finding({ report: `${input.flow} started on the history host` })
-      if (runs && started !== null) throw new Finding({ report: `${input.flow} answered ${started}` })
-      if (runs && (try host.start({ ...body, id: "other" })) !== "busy") throw new Finding({ report: "a second run started while one is held" })
+      const prepared = prepare(body.flow, body.input, body.id) catch (error) => error._tag
+      if (typeof prepared === "string") {
+        if (runs || input.flow !== "vibelang/EndTour") throw new Finding({ report: `${input.flow} failed to prepare: ${prepared}` })
+        return true
+      }
+      if (!isHistory(prepared)) {
+        if (runs) throw new Finding({ report: `${input.flow} prepared as ${prepared.kind}` })
+        return true
+      }
+      if (!runs) throw new Finding({ report: `${input.flow} prepared as a history run` })
+      const started = try host.start(body, prepared)
+      if (started !== null) throw new Finding({ report: `${input.flow} answered ${started}` })
+      if ((try host.start({ ...body, id: "other" }, prepared)) !== "busy") throw new Finding({ report: "a second run started while one is held" })
       let settled = false
       for (let turn = 0; turn < input.alarms; turn++) settled = (try host.alarm(product, MAINTAINER))._tag === "Settled" || settled
       if (input.cancel) {
@@ -50,13 +61,8 @@ const drive = (input: typeof Input.Type) => effect {
         if (cancelled !== undefined) throw new Finding({ report: `cancel answered ${String(cancelled)}` })
       }
       // A receipt is asked for once an alarm settled the run, or once a cancellation was recorded.
-      if (!runs) {
-        // A prepared flow this host never runs has no receipt here.
-        if (started === "input" && Option.isSome(try host.receipt(body))) throw new Finding({ report: `${input.flow} has a receipt it never ran` })
-        return true
-      }
       if (!settled && !input.cancel) return true
-      const receipt = try host.receipt(body)
+      const receipt = try host.receipt(body, prepared)
       if (settled && Option.isSome(receipt) && receipt.value._tag !== "Complete") throw new Finding({ report: "a settled run has no complete receipt" })
       return true
     }

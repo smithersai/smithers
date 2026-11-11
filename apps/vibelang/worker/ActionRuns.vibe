@@ -6,7 +6,7 @@ import { Flow, RunMetrics } from "@smthrs/flow"
 import { Run, type Role } from "../src/actions/Actions.vibe"
 import { allowed, registration } from "../src/actions/catalog.vibe"
 import { RunRequest } from "../src/actions/wire.vibe"
-import { prepare, refused } from "../src/actions/execution.vibe"
+import { isHistory, prepare, refused } from "../src/actions/execution.vibe"
 import { cancellable, historyPassed, isReplyChild, replyChildId, settledResult, settledState, startRuns, startSettles, tourSettles } from "../src/core/actionRunDecision.vibe"
 import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
 import * as HistoryActions from "./HistoryActions.vibe"
@@ -67,8 +67,8 @@ export effect function start(hostId: string, storage: Objects.Storage, sequencer
   try promise(() => storage.put("action/request", request))
   try sequencer.action({ type: "RequestAction", id: request.id, flow: request.flow, door: request.door, actor: request.actor, at: try Clock.currentTimeMillis })
   const raw: Readonly<Record<string, Schema.Json>> = request.input !== null && typeof request.input === "object" && !Array.isArray(request.input) ? request.input as Readonly<Record<string, Schema.Json>> : {}
-  if (request.flow !== Tour._tag && request.flow !== Post._tag) {
-    const refusal = historyHost.start(request) catch () => "input"
+  if (isHistory(valid)) {
+    const refusal = historyHost.start(request, valid) catch () => "input"
     if (refusal !== null) try sequencer.action({ type: "SettleAction", id: request.id, state: "failed", result: "Action failed", at: try Clock.currentTimeMillis })
     return refusal
   }
@@ -100,7 +100,10 @@ export effect function alarm(hostId: string, storage: Objects.Storage, sequencer
   if (request.flow !== Tour._tag && request.flow !== Post._tag) {
     const outcome = try traced(sequencer, request, historyHost.alarm(history, callerOf(request, authority)))
     if (outcome._tag === "Settled") {
-      const receipt: Option.Option<Flow.Result<unknown, unknown>> = try Effect.orDie(historyHost.receipt(request))
+      // Only a settled run has a receipt, so only it prepares the stored request: a request stored by an older deployment
+      // or before a crash may no longer prepare, and the host drives such a run without it.
+      const invocation = try Effect.orDie(prepare(request.flow, request.input, request.id))
+      const receipt: Option.Option<Flow.Result<unknown, unknown>> = isHistory(invocation) ? try Effect.orDie(historyHost.receipt(request, invocation)) : Option.none()
       if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
         const result = receipt.value.exit
         const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"

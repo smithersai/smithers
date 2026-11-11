@@ -7,6 +7,7 @@ import { pageOf } from "../src/history/pages.vibe"
 import type { MainLog } from "../src/history/flows.vibe"
 import * as HistoryObject from "../worker/HistoryObject.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
+import { isHistory, prepare } from "../src/actions/execution.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { history, request } from "./support/actionObjects.vibe"
@@ -55,20 +56,21 @@ it.effect("a write that cannot reach history is unavailable and preserves none o
   })
 })
 
-it.live("the history run host refuses another workflow, preserves a busy intent and settles its default admission", () => scoped(effect {
+it.live("the history run host preserves a busy intent and settles under the SDK's default admission", () => scoped(effect {
   const storage = (try database()) as unknown as Storage
   const host = HistoryActions.make("history-default", storage)
-  const unsupported = request("wrong-host", "vibelang/Post", { text: "A post." }, "1")
   const first = request("history-first", "vibelang/history/show", { what: "outline" }, "1")
   const other = request("history-other", "vibelang/history/show", { what: "outline" }, "1")
-  expect(try host.start(unsupported)).toBe("input")
-  expect(Option.isNone(try host.receipt(unsupported))).toBe(true)
-  expect(try host.start(first)).toBeNull()
-  expect(try host.start(first)).toBeNull()
-  expect(try host.start(other)).toBe("busy")
+  const show = try prepare(first.flow, first.input, first.id)
+  // Posts and tours are not history runs: the type keeps them from this host, and ActionRuns routes them by it.
+  expect([isHistory(show), isHistory(try prepare("vibelang/Post", { text: "A post." }, "p")), isHistory(try prepare("vibelang/Tour", {}, "t"))]).toEqual([true, false, false])
+  if (!isHistory(show)) return
+  expect(try host.start(first, show)).toBeNull()
+  expect(try host.start(first, show)).toBeNull()
+  expect(try host.start(other, show)).toBe("busy")
   provide history {
     try host.alarm(try Mythical, { principal: maintainer })
   }
-  const receipt = try host.receipt(first)
+  const receipt = try host.receipt(first, show)
   try Effect.try(() => expect(receipt).toMatchObject({ _tag: "Some", value: { _tag: "Complete", exit: { _tag: "Success" } } }))
 }), 60_000)

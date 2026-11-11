@@ -222,7 +222,7 @@ function historyOf(env: Env, principal?: Principal, owner?: string) {
 
 /** The product's shared controller in the real SQLite engine, with a faulty wait service holding its park boundary. */
 effect function readingAlarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, release: Deferred.Deferred<void>) {
-  const tours: Tours.Shape = Objects.toursOf(sequencer)
+  const tours: Tours.Shape = Objects.toursOf(sequencer, () => Effect.void)
   const ended = tours.ended
   tours.ended = (tour) => ensuring(ended(tour), effect {
     if ((try promise(() => storage.get("test/parked"))) !== undefined) return

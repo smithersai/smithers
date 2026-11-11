@@ -28,7 +28,7 @@ effect function answer(scripts: ReadonlyArray<Scripted>) {
   const flows = registration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.mergeAll(
-      Layer.succeed(Replies, Objects.repliesOf(sequencer)), Layer.succeed(Tours, Objects.toursOf(sequencer)), Layer.succeed(Spend, spend),
+      Layer.succeed(Replies, Objects.repliesOf(sequencer)), Layer.succeed(Tours, Objects.toursOf(sequencer, () => Effect.void)), Layer.succeed(Spend, spend),
       Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }), Layer.succeed(HistoryTools, { history: unavailableHistory }),
     )),
   )

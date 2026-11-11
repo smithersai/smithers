@@ -45,7 +45,7 @@ describe("the conversation object's storage adapters", () => {
     const missing = try executions.get("k")
     const budget = try Objects.budget(storage, 100)
     const admitted = try budget.admit("probe", 10)
-    const tours = Objects.toursOf(sequencer)
+    const tours = Objects.toursOf(sequencer, () => Effect.void)
     try tours.wake()
     const execution = try Objects.postExecutionId("probe")
     try Effect.try(() => {

@@ -31,7 +31,7 @@ effect function tours() {
   const sequencer = try Sequencer.make({ read: () => Ref.get(events), write: event => Ref.update(events, log => [...log, event]) }, { start: () => Effect.void, tour: () => Effect.void })
   try sequencer.post("person", "Guest", "Draft an edit")
   try sequencer.start("m1")
-  return toursOf(sequencer)
+  return toursOf(sequencer, () => Effect.void)
 }
 
 it.live("a refused wiki draft tells the agent its reason", () => scoped(effect {

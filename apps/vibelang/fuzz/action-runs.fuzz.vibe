@@ -4,7 +4,6 @@ import { it } from "@effect/vitest"
 import { FlowRuntime } from "@smthrs/flow"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { ActionDevice } from "../src/actions/execution.vibe"
-import { ActionFailure } from "../src/actions/Actions.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { Factory, Unavailable } from "../src/core/Factory.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
@@ -163,8 +162,8 @@ it.live("actions/run-hosts", () => run("actions/run-hosts", Steps, (steps) => ef
             break
           }
           case "failingHost": {
-            // The durable host refuses the request outright: the run answers input and is recorded as failed.
-            const failing = { ...real, start: () => Effect.fail(new ActionFailure({ code: "input" })) }
+            // The durable host cannot encode the run's intent: the run answers input and is recorded as failed.
+            const failing = { ...real, start: () => Schema.decodeUnknownEffect(Schema.String)(0).pipe(Effect.as(null)) }
             const answer = try Runs.start(id, object.storage, object.sequencer, body, step.role, failing, w.authority)
             try conflicts(body, answer)
             if (!STARTS.includes(answer)) throw new Finding({ report: "a failing host's start answered outside its refusals" })

@@ -29,6 +29,11 @@ export effect function prepare(name: string, input: Schema.Json, id: string) {
   }
 }
 export type Invocation = Effect.Success<ReturnType<typeof prepare>>
+/** A history or sandbox run: what worker/HistoryActions drives. Posts and tours run on the conversation's host. */
+export type HistoryInvocation = Exclude<Invocation, { readonly kind: "post" | "tour" }>
+export function isHistory(invocation: Invocation): invocation is HistoryInvocation {
+  return invocation.kind !== "post" && invocation.kind !== "tour"
+}
 
 /** A history write answers its refusal as a value, so its flow succeeds. The run still failed: nothing was written. */
 export function refused(answer: unknown): boolean {

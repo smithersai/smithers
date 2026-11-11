@@ -120,7 +120,7 @@ effect function world() {
   )
   const flows = tourRegistration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.void))),
     Layer.provide(WebCrypto.layer),
   )
   const context = try Layer.build(flows)
@@ -142,7 +142,7 @@ function capture(lines: Ref.Ref<ReadonlyArray<string>>) {
 
 /** `body` with the world's `Tours`, logging into its lines. */
 function inWorld<A, E, R>(w: World, body: A!E!(Tours | R)) {
-  return Effect.provide(Effect.provideService(body, Tours, toursOf(w.sequencer)), capture(w.lines))
+  return Effect.provide(Effect.provideService(body, Tours, toursOf(w.sequencer, () => Effect.void)), capture(w.lines))
 }
 
 describe("the tour's flows over the live sequencer", () => {
@@ -169,7 +169,7 @@ describe("the tour's flows over the live sequencer", () => {
   it.effect("the actual walkthrough holds its first step to the exact table deadline", () => scoped(effect {
     const w = try world()
     try w.sequencer.startTour()
-    try Layer.build(walkRegistration.pipe(Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer))), onEngine(w)))
+    try Layer.build(walkRegistration.pipe(Layer.provide(Layer.succeed(Tours, toursOf(w.sequencer, () => Effect.void))), onEngine(w)))
     const running = fork w.engine.execute(Tour, { executionId: "tour/pacing", payload: { tour: "t1" } })
     try until2(w, event => event.type === "ReplyDelta")
     try TestClock.adjust("6 seconds")

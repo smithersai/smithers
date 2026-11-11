@@ -111,7 +111,7 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
 }
 
 /** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
-export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () => Effect.void): Tours.Shape {
+export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!!): Tours.Shape {
   return {
     current: () => Effect.map(sequencer.snapshot(), tourWalkthrough),
     drive: sequencer.drive,
@@ -141,6 +141,11 @@ export effect function postExecutionId(prefix = "post") {
  * resumes within minutes, and a meter, read, post or tour execution names a fresh random id a caller never re-asks.
  */
 export const EXECUTION_RETENTION: CloudflareRuntime.Retention = { olderThanMs: 86_400_000 }
+
+/** The object's tour waker, for every composition that provides Tours: a flow that wakes the tour wakes this object's. */
+function tourWaker(hostId: string, storage: Storage) {
+  return () => Effect.orDie(wakeTour(hostId, storage))
+}
 
 /** Resume a parked reading hold after Escape, then let the object's normal alarm settle the tour. */
 effect function wakeTour(hostId: string, storage: Storage) {
@@ -186,7 +191,7 @@ export effect function controlTour(hostId: string, storage: Storage, sequencer: 
   const executionId = try postExecutionId("control-tour")
   const flow = action === "pause" ? PauseTour : action === "resume" ? ResumeTour : SeekTour
   const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
-    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage)))),
   )
   return try Effect.orDie(Effect.provide(effect { const engine = try FlowRuntime.FlowRuntime; return try (action === "pause" ? engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? engine.execute(ResumeTour, { executionId, payload: {} }) : engine.execute(SeekTour, { executionId, payload: { step } })) }, runtime))
 }
@@ -195,7 +200,7 @@ effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Seq
   const executionId = try postExecutionId(prefix)
   const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
-    Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage)))),
   )
   return try Effect.orDie(effect {
     provide runtime {
@@ -282,7 +287,7 @@ function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.S
   const services = Layer.mergeAll(
     Layer.succeed(HistoryTools, { history: active.history }),
     Layer.succeed(Replies, repliesOf(sequencer)),
-    Layer.succeed(Tours, toursOf(sequencer)),
+    Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage))),
     Layer.succeed(Spend, active.spend), Layer.succeed(ChatModel, active.model),
   )
   return CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
@@ -328,7 +333,7 @@ export effect function executionResult(hostId: string, storage: Storage, intent:
 export effect function openWiki(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, page: string) {
   const executionId = try postExecutionId("wiki")
   const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: OpenWiki._tag }, wikiRegistration).pipe(
-    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage)))),
   )
   const opened = try Effect.orDie(effect {
     provide runtime {
