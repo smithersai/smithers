@@ -1,0 +1,39 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { Budget } from "@smthrs/agent"
+import { ModelRequest } from "@smthrs/model"
+import * as Daily from "../worker/Budget.vibe"
+import { callBudget } from "../worker/CallBudget.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("the physical call meter refuses unusable answer ceilings before admitting any provider call", async ({ bench }) => {
+  const result = await workload(bench, "call-meter-ceilings", "async", () => runPromise(effect {
+    const events: string[] = []
+    const values = try Ref.make<Readonly<Record<string, number>>>({})
+    const day = try Daily.make({
+      read: key => Ref.get(values).pipe(Effect.map(data => data[key])),
+      write: entries => Ref.update(values, data => ({ ...data, ...entries })),
+    }, 81_920)
+    try day.admit("run", 40_960)
+    const ledger = {
+      admit: (_day: string, key: string, ceiling: number) => day.admit(key, ceiling).pipe(Effect.tap(() => sync(() => { events.push("admit") }))),
+      spend: (_day: string, key: string, used: number, reported: boolean, ceiling: number) => day.spend(key, used, reported, ceiling).pipe(Effect.tap(() => sync(() => {
+        expect([key, used, reported, ceiling]).toEqual(["run", 0, true, 40_960])
+        events.push("release")
+      }))),
+    }
+    const meter = callBudget(try Effect.orDie(Budget.make({})), ledger, "run", "2026-11-11", 40_960)
+    for (const maxTokens of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+      const request = try Effect.try(() => ModelRequest.ModelRequest.make({ modelId: "bench", system: [], messages: [], tools: [], params: ModelRequest.GenerationParams.make(maxTokens === undefined ? {} : { maxTokens }) }))
+      const result = try Effect.result(meter.reserveCall!(request))
+      try Effect.try(() => expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "/harness/HarnessError", code: "engine_failed", message: "The model call has no usable ceiling" } }))
+    }
+    const stored = try Ref.get(values)
+    try Effect.try(() => {
+      expect(stored).toEqual({ reserved: 0, spent: 0, over: 0, "hold/run": 0, "reply/run": 0 })
+      expect(events).toEqual(Array(5).fill("release"))
+      expect(meter.ledgerUnavailable()).toBe(false)
+    })
+  })).run(quick)
+  await runPromise(artifact("call-meter-ceilings", "Vitest built-in bench: a real Budget meter adapted by callBudget rejects five unusable maxTokens values (absent, zero, negative, fractional, overflowing total ceiling). Each rejection releases the parent run's hold exactly once, never admits a physical call, returns engine_failed and leaves the ledger-outage flag clear. All assertions, five requests, real Budget admission and final stored accounting checks included.", ["In-process boundary validation over the real Budget with a fresh Ref ledger and a transparent operation observer. No RPC, provider, inference, durable engine or persistent storage. Admission and physical charging are measured by the existing budget and draft workloads."], result))
+})

@@ -1,0 +1,61 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { Spend, REASONS, REPLY_CEILING } from "../worker/Reply.vibe"
+import { liveSpecificationReviewers, REVIEW_CEILING } from "../worker/SpecificationReviewers.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { scriptedModel, cell } from "../fuzz/model-server.vibe"
+import { within } from "../test/support/durableWriters.vibe"
+import { replyWorld } from "../test/support/replyWorld.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a specification's unpaid or refused physical call ends as budget", async ({ bench }) => {
+  const result = await workload(bench, "reviewer-call-budget-faults", "async", () => runPromise(scoped(effect {
+    const counter = Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft: "specification" })
+    for (const fault of ["unreachable", "spent"] as const) {
+      const before = (try Metric.value(counter)).count
+      const values = try Ref.make<Readonly<Record<string, number>>>({})
+      const day = try Budget.make({ read: key => Ref.get(values).pipe(Effect.map(data => data[key])), write: entries => Ref.update(values, data => ({ ...data, ...entries })) }, 3 * REVIEW_CEILING)
+      let attempts = 0
+      const spend: Spend.Shape = {
+        admit: (_day, key, ceiling) => fault === "spent" && key.startsWith("model/") ? succeed(false) : day.admit(key, ceiling),
+        spend: (_day, key, used, reported, ceiling) => key.startsWith("model/") ? effect { attempts += 1; throw new Unreachable({ what: "budget" }) } : day.spend(key, used, reported, ceiling),
+      }
+      const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: "LGTM", grade: "A", review: "Consistent." }))], prompt: 3, completion: 4 }])
+      const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...scripted.values, SPEC_REVIEW_SOL: JSON.stringify(scripted.record) }))))
+      const reason = try within(layer, effect {
+        const empty = unansweredSpecificationReview()
+        const answer = try Effect.result((try SpecificationReviewers).review("sol", { revision: 3, text: "# Spec", astra: empty, sol: empty, fable: empty, opus: empty }))
+        return answer._tag === "Failure" ? answer.failure.reason : "answered"
+      })
+      const calls = try scripted.calls
+      const failures = (try Metric.value(counter)).count - before
+      const ledger = try Ref.get(values)
+      try Effect.try(() => expect([reason, calls, failures, attempts, ledger[Budget.SPENT], ledger[Budget.RESERVED]]).toEqual(["budget", fault === "unreachable" ? 1 : 0, fault === "unreachable" ? 1 : 0, fault === "unreachable" ? 1 : 0, 0, fault === "unreachable" ? REVIEW_CEILING : 0]))
+    }
+  }))).run(slow)
+  await runPromise(artifact("reviewer-call-budget-faults", "Vitest built-in bench: the real Sol specification reviewer/agent on the memory flow engine with real Budget accounting, a local deterministic HTTP/SSE model and faulty Spend. Each sample checks an unreachable physical charge, then a spent-day physical admission. Both end as budget; exact model requests (1/0), failed charges (1/0), failure counters (1/0), zero spent and retained reservation (ceiling/0) are checked. Three fresh scoped samples; setup and assertions included.", ["No real provider inference, RPC or eviction. Fault is an injected Effect service, no request interception. The hidden app retries are removed (0030); one ledger attempt is required."], result))
+})
+
+it("a reply's unpaid physical call ends as budget with one count and a retained hold", async ({ bench }) => {
+  const result = await workload(bench, "reply-call-budget-fault", "async", () => runPromise(scoped(effect {
+    const counter = Metric.counter("vibelang_reply_spend_failures", { incremental: true })
+    const before = (try Metric.value(counter)).count
+    let attempts = 0
+    const faulty = (spend: Spend.Shape): Spend.Shape => ({
+      admit: spend.admit,
+      spend: (day, key, used, reported, ceiling) => key.startsWith("model/") ? effect { attempts += 1; throw new Unreachable({ what: "budget" }) } : spend.spend(day, key, used, reported, ceiling),
+    })
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [cell('"Hi"')], prompt: 3, completion: 4 }])
+    const w = try replyWorld(scripted.model, scripted.calls, 0, false, 1_000_000, faulty)
+    const { entry, calls, ledger } = try w.answer("Hello?")
+    const failures = (try Metric.value(counter)).count - before
+    try Effect.try(() => {
+      expect(entry).toMatchObject({ done: true, error: REASONS.budget })
+      expect([calls, attempts, failures, ledger[Budget.SPENT], ledger[Budget.RESERVED]]).toEqual([1, 1, 1, 0, REPLY_CEILING])
+    })
+  }))).run(slow)
+  await runPromise(artifact("reply-call-budget-fault", "Vitest built-in bench: the real Reply flow/agent and sequencer on the memory flow engine, real in-memory Budget and local deterministic HTTP/SSE model. An injected faulty Spend cannot record model keys but can release/settle the reply key. Require the terminal budget message, exactly one request, one charge attempt and failure counter, zero spent and the physical call's ceiling retained. Three fresh scoped samples; setup and assertions included.", ["No provider inference, workerd/SQLite, RPC or real outage. No request interception. One physical charge attempt, no app retry (0030)."], result))
+})

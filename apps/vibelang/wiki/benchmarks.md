@@ -4188,3 +4188,40 @@ limitations: [0017](decisions/0017-benchmarks.md), "Sandbox and storage paths, a
 `startup-storage-refused` includes two fresh app startups and one first render. `sandbox-mock-alarm`'s minute is
 TestClock time; its samples are the mock's start, 60 clock steps and the forked alarm fiber's meter.
 
+
+## Resume 8: physical-call budgets and the run clock (2026-11-11)
+
+Vitest built-in bench, Node 26.5.0 on a 4-vCPU Linux x86-64 Cloudflare box, **15:56 UTC (07:56 PST)**,
+candidate `235062729046`. Fresh ledger/engine/app per sample; setup and correctness assertions are included.
+These are observations, with no timing threshold or tail claim. Raw JSON under `bench/results/` retains machine,
+versions, method, limitations and samples.
+
+| Workload | Mean ms | Min–max ms | Samples |
+| --- | ---: | ---: | ---: |
+| `web-action-clock` | 1679.53 | 1616.96–1786.48 | 3 |
+| `wiki-draft-budget-deadline` | 266.39 | 266.39–266.39 | 1 |
+| `reviewer-call-budget-faults` | 150.41 | 67.82–307.53 | 3 |
+| `reply-call-budget-fault` | 56.93 | 45.42–74.81 | 3 |
+| `call-meter-ceilings` | 0.92 | 0.59–6.22 | 109 |
+
+`web-action-follow-recovery`, same box type on Node 24.22.2 at **17:19 UTC (09:19 PST)**, revision `73d89aa7`:
+mean 2617.99 ms, 2609.44–2629.23 ms, 3 samples. The production two-second follow reconnect dominates it.
+
+- `call-meter-ceilings`: five invalid or absent answer ceilings over the real Budget/Ref ledger. Exact parent
+  releases and final zero spent/reserved accounting; no physical admission or outage flag. No RPC or provider.
+- `reviewer-call-budget-faults`: the real Sol reviewer and memory flow engine over a local deterministic HTTP/SSE
+  model and faulty Spend. Unrecordable charge and refused admission both end as budget. Exact calls (1/0), failed
+  attempts/counts (1/0), and retained ceiling/zero hold. Two faults per sample; no model inference or real outage.
+- `reply-call-budget-fault`: real Reply/agent/sequencer, local deterministic HTTP model, memory engine and real
+  Budget; only the physical charge is unreachable. One model request, one charge attempt, one count, retained hold.
+- `web-action-clock`: real Foldkit app, view and subscriptions in happy-dom over product MockFactory/MockActions.
+  Start Tour, let the actual active-run clock advance the card by at least one second, open its card and cancel.
+  No tick is injected. Includes the deliberate timer wait; no layout/paint or throughput claim.
+- `wiki-draft-budget-deadline`: one completed wiki draft meets a single unreachable physical charge, reports
+  budget, counts once and retains its reservation without asking the model again. The old 918.76 ms observation
+  included hidden app retries; removal under DUR-2 (0030) changes the failure policy. Different machines and a
+  single observation do not establish a speed-up. The writer's run-key settlement still has its engine policy.
+
+The ceiling workload executes the path formerly at `CallBudget.vibe:45`. The requested `main.vibe:1119` line is now 1122 (action-follow reconnect); its separate `web-action-follow-recovery` workload injects one typed follow fault and requires the real running and cancellation snapshots after reconnect. The clock workload is additional coverage.
+No dependency, coverage exclusion, baseline or threshold changed. Live timings are not rerun for these injected
+faults; these observations describe the local test boundary, not production network or provider latency.

@@ -440,3 +440,20 @@ and removal conditions.
 `GitHub.GitDatabase`. It needs no VL-5 sign-off (the lead's reading, 2026-11-11): VL-5 forbids third-party
 dependencies, and `@smthrs/jj` is the monorepo's own package, like the `@smthrs/*` packages the app already uses.
 No external package is added.
+
+## Resume 8 additions (2026-11-11, lane vl-bench)
+
+| Suite | Boundary and correctness oracle |
+| --- | --- |
+| `callBudget.test.vibe` | Unreachable release/admission/charge attempts once and fails closed; no app retry (0030). |
+| `specificationReviewers.coverage.test.vibe`, `replyAgent.coverage.test.vibe` | Real agent/engine, faulty Spend: terminal budget failure, one model request, retained hold, one failure count. |
+| `coverageProvider.test.vibe` | Named and namespace import member initializers counted in TS/VibeLang; identical uncalled function remains uncovered. |
+| `call-meter.bench.vibe` | Five unusable ceilings, exact parent releases, no physical admission. |
+| `web-dom.bench.vibe` `web-action-clock` | Real app subscription advances the run card before cancellation; no injected tick. |
+| `benchmarkCoverageGate.test.vibe` | The coverage merge command exits 1 on an empty or foreign report. |
+
+No tool or dependency added.
+
+The `model-budget-faults.bench.vibe` workloads additionally exercise the real reviewer and Reply flow with a faulty
+Spend service, exact budget outcomes, request/attempt/failure counts and retained reservations. Timing methods and
+raw sample counts are in [benchmarks](../benchmarks.md#resume-8-physical-call-budgets-and-the-run-clock-2026-11-11).

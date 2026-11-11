@@ -926,3 +926,27 @@ locator timeouts on the composer status). Lines of `src/` and `worker/`: **7,957
 Sandbox Container bindings (`SandboxAccounts`, `SandboxMachine`, `SandboxProbe`, `sandboxProbeFetch`) remain live
 only, as above.
 
+
+## Resume 8: budget boundaries and named imports (2026-11-11, lane vl-bench)
+
+`call-meter-ceilings` exercises the physical meter's unusable-answer-ceiling arm (formerly `CallBudget.vibe:45`).
+Five inputs cover absent, nonpositive, fractional and overflowing ceilings. Each returns `engine_failed`,
+releases only the parent reservation, never admits a provider call and does not mark the ledger unavailable.
+
+`web-action-clock` runs the real app over product MockFactory/MockActions in happy-dom. It opens Actions, starts a
+Tour, waits for the app's own active-run subscription to advance the rendered elapsed time, and cancels the run.
+No clock message is injected. The measured interval includes the one-second subscription wait; it is feedback
+latency, not clock throughput. The full map showed the requested moved line is the action-follow reconnect, not this clock callback; `web-action-follow-recovery` covers it.
+
+The physical-call ledger's app retries are removed under DUR-2 (0030). Fault workloads now require exactly one
+failed charge attempt, one model request, a retained reservation and one terminal budget warning/count. The previous
+918.76 ms wiki measurement included three app retries and is historical; no speed-up is claimed.
+
+The provider regression for named-import member initializers reproduces with plain TypeScript and VibeLang. A
+source statement such as `let tree = Mod.EMPTY` must be counted for both `import { Mod }` and `import * as Mod`.
+Its identical initializer in an uncalled function must remain zero. The provider's import-binding filter, not
+VibeLang's compilation or source maps, owns the fix; no source exclusion or coverage threshold changes.
+
+`bench/merge-coverage.ts` refuses a report with no source file under the current checkout (empty, or written by
+another checkout) and exits 1 instead of certifying zero files at 100%. `test/benchmarkCoverageGate.test.vibe`
+runs the actual command on both inputs.
