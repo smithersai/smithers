@@ -188,7 +188,8 @@ export const settled = (status: string): boolean => (SETTLED as ReadonlyArray<st
  * - `stale`: the run moved since the page read it (its journal's last sequence differs), so the page shows it again;
  * - `settled`: it has settled, so there is nothing to stop or resume;
  * - `not_settled`: it hasn't settled, so there is nothing to retry yet;
- * - `not_retryable`: its flow is never retried with its own payload;
+ * - `not_retryable`: its flow is never retried with its own payload, or what it stored can't run again as it was: a
+ *   payload its flow's schema won't read, or a pinned child whose payload names no revision;
  * - `not_here`: this engine doesn't run its flow, or can't retry it from a step;
  * - `step_not_run`: Retry from here named a step the run never ran, or one it never settled;
  * - `forbidden`: Cloudflare refused it: only a Member on the repository stops or retries a repository's run;

@@ -180,22 +180,28 @@ const PINNED_CHILDREN: ReadonlyArray<string> = [FLOW_CODE, "flow/run/prompt"]
 /**
  * What a run of your flow (`flow/run`) ran: the flow id and revision its load pinned, as its pinned child's payload holds
  * them, or none when it never got that far. A pinned Retry runs exactly those, even when the run named no revision or the
- * flow's name went to another flow since.
+ * flow's name went to another flow since, so a pin it can't read is never dropped for the latest: a child whose payload
+ * can't be read fails the step, and one whose payload names no revision is refused `not_retryable`.
  */
-const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
+const ranRevision = (runId: string, children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
   Effect.gen(function* () {
     const child = children.find((each) => PINNED_CHILDREN.includes(each.flowName))
     if (child === undefined) return undefined
-    const read = yield* Effect.result((yield* EngineStore.RunInspection.RunInspection).payload(child.runId))
-    if (read._tag === "Failure") {
-      // The pinned child's payload couldn't be read, so the retry runs the run's own payload, without the revision.
-      yield* Effect.logWarning("run.retry.revision").pipe(
-        Effect.annotateLogs({ feature: "runs", outcome: "unread", errorCode: codeOf(read.failure) }),
+    const unpinned = (outcome: "unread" | "malformed", errorCode?: string) =>
+      Effect.logWarning("run.retry.revision").pipe(
+        Effect.annotateLogs({ feature: "runs", outcome, ...(errorCode === undefined ? {} : { errorCode }) }),
       )
-      return undefined
-    }
-    const { flowId, revision } = read.success.payload as { readonly flowId?: unknown; readonly revision?: unknown }
-    return typeof flowId === "string" && typeof revision === "number" ? { flowId, revision } : undefined
+    // The child was listed a moment ago: a store that can't read its payload now is a defect, not an answer. The step
+    // fails, and the person's page says the engine couldn't be reached.
+    const read = yield* (yield* EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(
+      Effect.tapError((error) => unpinned("unread", codeOf(error))),
+      Effect.orDie,
+    )
+    const { flowId, revision } = read.payload as { readonly flowId?: unknown; readonly revision?: unknown }
+    if (typeof flowId === "string" && typeof revision === "number") return { flowId, revision }
+    // A pinned child whose payload names no revision is history this engine can't run again as it was.
+    yield* unpinned("malformed")
+    return yield* refuse("retry", runId, "not_retryable")
   })
 
 /** The run id a repository's run started by step `executionId` gets: the same for a step run again. */
@@ -293,7 +299,7 @@ export const retry = ({ failed, host, repo, runId, version }: {
     const flow = declared(run.flowName as FlowName)
     // The run was read a moment ago: a store that can't read it now is a defect, not an answer.
     const stored = yield* Effect.orDie((yield* EngineStore.RunInspection.RunInspection).payload(runId))
-    const ran = version === "pinned" && run.flowName === "flow/run" ? yield* ranRevision(children) : undefined
+    const ran = version === "pinned" && run.flowName === "flow/run" ? yield* ranRevision(runId, children) : undefined
     const original = ran === undefined ? stored.payload : { ...(stored.payload as object), ...ran }
     // The engine stored the payload encoded by the flow's own schema; a registered flow's schema needs no service.
     const codec = Schema.toCodecJson(flow.payloadSchema) as unknown as Schema.Codec<unknown, unknown>

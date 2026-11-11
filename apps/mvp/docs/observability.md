@@ -256,7 +256,7 @@ What each feature lost when something failed, logged once with its code (the 202
 |---|---|---|---|
 | `run.read` | Warn when `unavailable`, else Debug | `act` (`run`, `list`, `cloud`, `outcome`, `page`, `child`, `child_page`, `more`), `outcome`, `durationMs`, `events`, `errorCode`, `status` (ChatApi's, for a run on Cloudflare) | a read of a run, a page of its journal, a child or the list failed |
 | `run.retry.reserve` | Warn | `outcome: unavailable`, `errorCode` | the engine couldn't say whether a retry's id is taken, so Retry was refused |
-| `run.retry.revision` | Warn | `outcome: unread`, `errorCode` | engine worker: a pinned Retry couldn't read its pinned child's payload and used the run's own |
+| `run.retry.revision` | Warn | `outcome` (`unread`, `malformed`), `errorCode` when `unread` | engine worker: a pinned Retry couldn't read its pinned child's payload, so the act's step failed, or the payload named no revision, so the act was refused `not_retryable`; neither ran the latest in the pin's place |
 | `runs.repo_runs.load`, `repo.repositories.load`, `views.home.load`, `todos.issue.load` | Warn | `outcome: failed`, `errorCode` | a list's first sync failed: a repository's runs, the repositories, the home's views, the issues while drafting from one |
 | `pulls.files.load` | Warn | `outcome: failed`, `errorCode`, `status` | a pull request's comparison couldn't be read; the Files tab shows it failed |
 | `pulls.merge` | Warn | `outcome` (`forbidden`, `sign_in`, `unavailable`), `errorCode`, `status` | a merge press was refused or unreachable |

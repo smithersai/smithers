@@ -498,19 +498,43 @@ test("a real completed personal flow journal lights its graph as completed", asy
 }, SLOW)
 
 
-test("pinned retry refuses corrupt history when the child is missing, unreadable or has no pinned revision", async () => {
+test("a pinned Retry keeps its pin: an unreadable pinned child fails the act, one naming no revision is refused, and a run that pinned nothing runs its own payload", async () => {
   const d = await device()
   const runId = crypto.randomUUID()
-  await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "hello" } }))
+  expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "hello" } }))).toEqual(Exit.succeed("Hello."))
+  // The run's own payload names no revision: run as it is, it would run the latest `hello`.
+  expect(await Effect.runPromise(d.engine.inspection.payload(runId))).toEqual({ flowName: "flow/run", payload: { name: "hello" } })
+  const child = (await Effect.runPromise(d.engine.inspection.inspect(runId, { limit: 1 }))).children.find((each) => each.flowName === "flow/run/code")!
+  /** The runs the retries of `runId` started. */
+  const started = () => inEngine(d, (sql) =>
+    sql<{ readonly run_id: string }>`SELECT run_id FROM flows_runs WHERE run_id LIKE ${`retry:${runId}:%/run`}`)
+
+  // The pinned child's payload can't be read: the act's step fails on that read, before it asks the runtime for anything.
   const service = d.engine.inspection
-  for (const fault of ["missing", "unreadable", "malformed"] as const) {
-    const reads = EngineStore.RunInspection.RunInspection.of({ ...service,
-      inspect: (id, options) => service.inspect(id, options).pipe(Effect.map((result) => fault === "missing" ? { ...result, children: [] } : result)),
-      payload: (id) => id === runId ? Effect.succeed({ flowName: "flow/run", payload: { name: 5 } }) : fault === "unreadable"
-        ? Effect.fail(new EngineStore.RunInspection.RunNotFound({ runId: id }))
-        : Effect.succeed({ flowName: "flow/run/prompt", payload: {} }),
-    })
-    const exit = await Effect.runPromiseExit(RunSteps.retry({ runId, version: "pinned" }).pipe(Effect.provideService(EngineStore.RunInspection.RunInspection, reads)) as Effect.Effect<unknown, unknown>)
-    expect(refusal(exit), fault).toBe("not_retryable")
-  }
+  const unreadable = EngineStore.RunInspection.RunInspection.of({ ...service,
+    payload: (id) => id === child.runId ? Effect.fail(new EngineStore.RunInspection.RunNotFound({ runId: id })) : service.payload(id) })
+  const failed = await Effect.runPromiseExit(RunSteps.retry({ runId, version: "pinned" }).pipe(
+    Effect.provideService(EngineStore.RunInspection.RunInspection, unreadable),
+  ) as Effect.Effect<unknown, unknown>)
+  expect(Exit.isFailure(failed) && Cause.hasDies(failed.cause) ? Cause.squash(failed.cause) : failed)
+    .toEqual(new EngineStore.RunInspection.RunNotFound({ runId: child.runId }))
+  expect(await started()).toEqual([])
+
+  // The pinned child's payload names no revision: the act is refused, and starts nothing.
+  await inEngine(d, (sql) =>
+    sql`UPDATE flows_runs SET state_json = jsonb_set(state_json::jsonb, '{payload}', '{}')::text WHERE run_id = ${child.runId}`)
+  expect(refusal(await d.run(d.engine.flows.execute(Retry, { executionId: retryActId(runId, 1), payload: { runId, version: "pinned" } }))))
+    .toBe("not_retryable")
+  expect(await started()).toEqual([])
+
+  // A run that failed before its load pinned anything has no pin to keep: Retry runs its own payload again.
+  const unpinned = crypto.randomUUID()
+  expect(Exit.isFailure(await d.run(d.engine.flows.execute(FlowRun, { executionId: unpinned, payload: { name: "nobody" } })))).toBe(true)
+  expect((await Effect.runPromise(d.engine.inspection.inspect(unpinned, { limit: 1 }))).children).toEqual([])
+  const act = retryActId(unpinned, 1)
+  expect(await d.run(d.engine.flows.execute(Retry, { executionId: act, payload: { runId: unpinned, version: "pinned" } })))
+    .toEqual(Exit.succeed({ runId: retriedRunId(act) }))
+  const [stored] = await inEngine(d, (sql) =>
+    sql<{ readonly state: string }>`SELECT state_json AS state FROM flows_runs WHERE run_id = ${retriedRunId(act)}`)
+  expect(JSON.parse(stored!.state).payload).toEqual({ name: "nobody" })
 }, SLOW)
