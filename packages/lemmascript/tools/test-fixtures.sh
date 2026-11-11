@@ -530,6 +530,11 @@ cp tools/fixtures/schema-model/*.ts tools/fixtures/schema-model/tsconfig.json "$
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/use.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/local.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/client-first.ts"
+# A proved function of another module called with the schema's value type names its datatype in the signature.
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/cross.ts"
+expect_proof_failure \
+  "a wrong twin verified (schema-model, cross-module)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/cross-wrong.ts"
 expect_proof_failure \
   "a wrong twin verified (schema-model)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/use-wrong.ts"

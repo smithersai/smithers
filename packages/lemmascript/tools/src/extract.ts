@@ -248,13 +248,21 @@ function detectCrossFileExtern(
   // NoTruncation: a wide expansion (e.g. an alias for a large string-literal
   // union, not importable at the call site) must print whole — a truncated
   // union is unparseable and synthesizes an opaque decl named by its own text.
-  const externTypeText = (t: Type) =>
-    t.getText(callee, ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope | ts.TypeFormatFlags.NoTruncation);
+  // A type the printer can only spell as its structure (an Effect Schema value type, `typeof Model.Type`) has no
+  // name at the call site: the callee's own written type names it (`model: Model`), a plain reference the resolver
+  // declares from the callee's type nodes; otherwise it is read by the datatype that models it.
+  const externTypeText = (t: Type, written?: Node) => {
+    const printed = t.getText(callee, ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope | ts.TypeFormatFlags.NoTruncation);
+    if (!printed.includes("{")) return printed;
+    if (written && Node.isTypeReference(written) && written.getTypeArguments().length === 0) return written.getTypeName().getText().replace(/^.*\./, "");
+    return typeToString(t);
+  };
+  const declaration = sig.getDeclaration() as Node & { getReturnTypeNode?: () => Node | undefined };
   const params = sig.getParameters().map(p => ({
     name: p.getName(),
-    tsType: externTypeText(p.getTypeAtLocation(callee)),
+    tsType: externTypeText(p.getTypeAtLocation(callee), (p.getDeclarations()[0] as { getTypeNode?: () => Node | undefined } | undefined)?.getTypeNode?.()),
   }));
-  const returnType = externTypeText(sig.getReturnType());
+  const returnType = externTypeText(sig.getReturnType(), declaration?.getReturnTypeNode?.());
   for (const p of sig.getParameters()) {
     sigTypesOut.push({ type: p.getTypeAtLocation(callee), node: callee });
   }
