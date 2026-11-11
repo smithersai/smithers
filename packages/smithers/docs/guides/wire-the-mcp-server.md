@@ -41,15 +41,19 @@ the enabled server with `codex mcp list --json` before reporting success.
 Existing unrelated settings and servers are preserved. Verify registration with
 `codex mcp list`; this checks discovery, not an MCP connection.
 
-For Claude, the write is a temp-file-plus-rename under a lock file, with the original
-file's mode preserved, so a crash mid-write cannot leave a half-written
-configuration. The lock names the process holding it, so one left by a process
+Claude Code must be installed on `PATH`. Smithers reads the configuration
+without changing it, then uses `claude mcp add-json --scope user` (after
+`claude mcp remove --scope user` for an outdated entry) and verifies the
+recorded entry before reporting success. Claude Code writes under its own lock
+and re-reads the file first, so an update a Claude client makes after Smithers
+read the file survives. A configuration that is not valid JSON, or whose
+`mcpServers` member is not an object, is refused and left untouched.
+
+Registrations for one configuration file run one at a time under a Smithers
+lock file. The lock names the process holding it, so one left by a process
 that has since died is reclaimed under an exclusive recovery guard. A crashed
 recovery leaves that guard in place; the refusal names it for manual removal
-once no Smithers process is running. A detected source mismatch leaves the
-configuration untouched and removes its temporary file. Writers that ignore
-Smithers' lock can still race the final replacement; concurrent vendor or manual
-edits are not protected by that lock.
+once no Smithers process is running.
 
 If the file already holds the exact entry, nothing is written
 and the result says `unchanged`. Add `--json` for one array of registration results,

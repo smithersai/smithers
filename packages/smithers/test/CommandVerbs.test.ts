@@ -41,6 +41,7 @@ import * as NodeControl from "../src/NodeControl.ts"
 import * as Output from "../src/Output.ts"
 import * as Project from "../src/Project.ts"
 import { packageVersion } from "../src/Version.ts"
+import { claudePath } from "./support/claude-cli.ts"
 
 const runCommand = Command.runWith(cli, { version: packageVersion })
 
@@ -66,7 +67,7 @@ const demoFlow = {
 const canonical = async (args: Array<string>, root?: string) => {
   let output = ""
   let code = 0
-  await makeCli({ environment: { HOME: process.env["HOME"] } }).serve([
+  await makeCli({ environment: { HOME: process.env["HOME"], PATH: process.env["PATH"] } }).serve([
     ...args,
     ...(root === undefined ? [] : ["--root", root]),
     "--json"
@@ -521,6 +522,9 @@ describe("smthrs claude monitor", () => {
 describe("smthrs mcp add", () => {
   it("registers the MCP server in each agent's own config file", async () => {
     const home = project()
+    // Claude registration goes through the installed Claude Code CLI.
+    const ambientPath = process.env.PATH
+    process.env.PATH = claudePath()
 
     const wired = await withHome(
       home,
@@ -529,7 +533,9 @@ describe("smthrs mcp add", () => {
         expect(result.code, result.output).toBe(0)
         return result.data
       }
-    ) as ReadonlyArray<{ readonly agent: string; readonly status: string }>
+    ).finally(() => {
+      process.env.PATH = ambientPath
+    }) as ReadonlyArray<{ readonly agent: string; readonly status: string }>
 
     expect(wired.map((entry) => entry.agent).sort()).toEqual(Agents.agents.map((agent) => agent.id).sort())
     const claude = JSON.parse(readFileSync(join(home, ".claude.json"), "utf8")) as {

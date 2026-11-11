@@ -16,6 +16,7 @@ import {
   runIn,
   temporaryDirectoryPrefix
 } from "./support/bin.ts"
+import { claudePath } from "./support/claude-cli.ts"
 import { childEnvironment } from "./support/node-child.ts"
 
 describe("keyless host startup", processBudget, () => {
@@ -122,18 +123,20 @@ describe("canonical verb ownership", processBudget, () => {
 
   it("registers the documented MCP entry using the current executable", () => {
     inEmptyDirectory((cwd) => {
-      const result = runIn(cwd, ["mcp", "add", "--agent", "claude", "--json"])
+      // Registration goes through the installed Claude Code CLI.
+      const environment = { PATH: claudePath() }
+      const result = runIn(cwd, ["mcp", "add", "--agent", "claude", "--json"], environment)
       expect(result.status, result.stdout + result.stderr).toBe(0)
       expect(JSON.parse(result.stdout)).toEqual([{
         agent: "claude",
         path: join(cwd, ".claude.json"),
         status: "written"
       }])
-      expect(JSON.parse(readFileSync(join(cwd, ".claude.json"), "utf8"))).toEqual({
-        mcpServers: { smithers: { command: process.execPath, args: [executable, "--mcp"] } }
+      expect(JSON.parse(readFileSync(join(cwd, ".claude.json"), "utf8")).mcpServers).toEqual({
+        smithers: { command: process.execPath, args: [executable, "--mcp"] }
       })
       expect(existsSync(join(cwd, ".flows"))).toBe(false)
-      const repeated = runIn(cwd, ["mcp", "add", "--agent", "claude", "--json"])
+      const repeated = runIn(cwd, ["mcp", "add", "--agent", "claude", "--json"], environment)
       expect(repeated.status, repeated.stdout + repeated.stderr).toBe(0)
       expect(JSON.parse(repeated.stdout)[0].status).toBe("unchanged")
     })

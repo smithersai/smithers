@@ -16,15 +16,15 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import * as Agents from "../src/Agents.ts"
+import { claudePath } from "./support/claude-cli.ts"
 
 const staged: Array<string> = []
 
@@ -89,15 +89,25 @@ describe("the known agents", () => {
 })
 
 describe("registering the MCP server", () => {
+  // Claude registrations go through the real Claude Code CLI.
+  const ambientPath = process.env.PATH
+  beforeAll(() => {
+    process.env.PATH = claudePath()
+  })
+  afterAll(() => {
+    process.env.PATH = ambientPath
+  })
+
   it("writes the entry and leaves the rest of the configuration alone", () => {
     const directory = home()
-    writeFileSync(join(directory, ".claude.json"), JSON.stringify({ theme: "dark", mcpServers: { other: {} } }))
+    // Not "dark": Claude Code drops a setting that equals its default when it saves.
+    writeFileSync(join(directory, ".claude.json"), JSON.stringify({ theme: "light", mcpServers: { other: {} } }))
 
     const wired = Agents.addMcp(Agents.find("claude")!, directory)
 
     expect(wired).toMatchObject({ agent: "claude", status: "written" })
     const document = JSON.parse(readFileSync(wired.path, "utf8")) as Record<string, any>
-    expect(document.theme).toBe("dark")
+    expect(document.theme).toBe("light")
     expect(document.mcpServers.other).toEqual({})
     expect(document.mcpServers.smithers.args).toContain("--mcp")
   })
@@ -171,20 +181,6 @@ describe("registering the MCP server", () => {
     expect(readFileSync(path, "utf8")).toBe(original)
   })
 
-  it("atomically updates a valid file without changing its mode", () => {
-    const directory = home()
-    const path = join(directory, ".claude.json")
-    writeFileSync(path, "{\"theme\":\"dark\"}\n")
-    chmodSync(path, 0o640)
-
-    const wired = Agents.addMcp(Agents.find("claude")!, directory)
-
-    expect(wired.status).toBe("written")
-    expect(statSync(path).mode & 0o777).toBe(0o640)
-    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ theme: "dark" })
-    expect(readdirSync(directory).filter((entry) => entry.includes(".tmp"))).toEqual([])
-  })
-
   it("leaves a configuration byte-for-byte unchanged while another writer owns it", () => {
     const directory = home()
     const path = join(directory, ".claude.json")
@@ -197,7 +193,6 @@ describe("registering the MCP server", () => {
     expect(wired.status).toBe("failed")
     expect(wired.reason).toMatch(/another Smithers process/)
     expect(readFileSync(path, "utf8")).toBe(original)
-    expect(readdirSync(directory).filter((entry) => entry.endsWith(".tmp"))).toEqual([])
   })
 
   it("recovers a lock left behind by a process that is gone", () => {
@@ -306,7 +301,11 @@ describe("registering the MCP server", () => {
     const directory = home()
     const profile = join(home(), "accounts", "second")
 
-    const wired = Agents.addMcp(Agents.find("claude")!, undefined, { HOME: directory, CLAUDE_CONFIG_DIR: profile })
+    const wired = Agents.addMcp(Agents.find("claude")!, undefined, {
+      HOME: directory,
+      CLAUDE_CONFIG_DIR: profile,
+      PATH: process.env.PATH
+    })
 
     // Claude Code reads `$CLAUDE_CONFIG_DIR/.claude.json` for such a profile,
     // so an entry under the home directory never reached it.
@@ -333,22 +332,51 @@ describe("registering the MCP server", () => {
     const directory = home()
     const claude = Agents.find("claude")!
     const entry = () => JSON.parse(readFileSync(join(directory, ".claude.json"), "utf8")).mcpServers.smithers
-    const shared = { HOME: directory, SMITHERS_MEMORY_DB: join(directory, "shared", "memory.db") }
+    const shared = {
+      HOME: directory,
+      PATH: process.env.PATH,
+      SMITHERS_MEMORY_DB: join(directory, "shared", "memory.db")
+    }
 
     expect(Agents.addMcp(claude, undefined, shared).status).toBe("written")
     expect(entry().env).toEqual({ SMITHERS_MEMORY_DB: join(directory, "shared", "memory.db") })
     expect(Agents.addMcp(claude, undefined, shared).status).toBe("unchanged")
 
     // A relative store is recorded where it resolves now, not wherever the agent later starts the server.
-    expect(Agents.addMcp(claude, undefined, { HOME: directory, SMITHERS_MEMORY_DB: "relative.db" }).status)
+    expect(Agents.addMcp(claude, undefined, { ...shared, SMITHERS_MEMORY_DB: "relative.db" }).status)
       .toBe("written")
     expect(entry().env).toEqual({ SMITHERS_MEMORY_DB: join(process.cwd(), "relative.db") })
 
-    for (const none of [{ HOME: directory }, { HOME: directory, SMITHERS_MEMORY_DB: "" }]) {
+    for (const none of [{ HOME: directory, PATH: process.env.PATH }, { ...shared, SMITHERS_MEMORY_DB: "" }]) {
       Agents.addMcp(claude, undefined, shared)
       expect(Agents.addMcp(claude, undefined, none).status).toBe("written")
       expect(entry()).not.toHaveProperty("env")
     }
+  })
+
+  /** A `claude` on PATH that runs `source` for every `mcp` call. */
+  const fakeClaude = (source: string): NodeJS.ProcessEnv => {
+    const bin = home()
+    writeFileSync(join(bin, "claude"), `#!/bin/sh\necho "claude internals: token=abc123" >&2\n${source}\n`)
+    chmodSync(join(bin, "claude"), 0o755)
+    return { PATH: `${bin}:/usr/bin:/bin` }
+  }
+
+  it.each([
+    ["claude is missing", undefined, "claude could not be started (ENOENT)"],
+    ["mcp add-json fails", "exit 3", "claude mcp add-json failed (exit 3)"],
+    ["the entry is not recorded", "exit 0", "Claude Code did not record the Smithers MCP server"],
+    [
+      "the configuration is unreadable afterwards",
+      `printf '[]' > "$HOME/.claude.json"`,
+      "Claude Code did not record the Smithers MCP server"
+    ]
+  ])("reports a failed registration when %s with a Claude sentence, never Claude's own text", (_, source, reason) => {
+    const directory = home()
+    const environment = source === undefined ? { PATH: "/nonexistent" } : fakeClaude(source)
+    const wired = Agents.addMcp(Agents.find("claude")!, undefined, { ...environment, HOME: directory })
+    expect(wired).toMatchObject({ agent: "claude", status: "failed", reason })
+    expect(wired.reason).not.toMatch(/token|abc123|internals/)
   })
 
   it("prints instructions that carry the memory store", () => {

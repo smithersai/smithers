@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { Session } from "node:inspector"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -72,14 +72,13 @@ if (scenario === "subscribe") {
       raced++
     }, "unlinkSync")
   } else {
-    const needle = scenario === "mismatch" ? "if (!sourceStillMatches(path, source, mode))" : "renameSync(temporary, path)"
-    stop = at(needle, () => { writeFileSync(path, '{"theme":"external"}\n'); raced++ })
+    // An external client's update lands after Smithers read the configuration.
+    stop = at('run(["add-json"', () => { writeFileSync(path, '{"theme":"external"}\n'); raced++ })
   }
   const result = Agents.addMcp(agent, root)
   const hits = stop()
   const lockSurvived = peerHeld && existsSync(lock) && readFileSync(lock, "utf8").startsWith(`${child.pid}:`)
   if (peerHeld) writeFileSync(join(root, "release"), "continue")
   console.log(JSON.stringify({ result, hits, raced, peerHeld, lockSurvived,
-    document: JSON.parse(readFileSync(path, "utf8")),
-    temporary: readdirSync(root).filter((entry) => entry.endsWith(".tmp")) }))
+    document: JSON.parse(readFileSync(path, "utf8")) }))
 }

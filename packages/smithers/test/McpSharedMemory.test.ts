@@ -13,6 +13,7 @@ import { join } from "node:path"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 import { afterEach, expect, it } from "vitest"
+import { claudePath } from "./support/claude-cli.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const children: Array<ChildProcessWithoutNullStreams> = []
@@ -91,7 +92,7 @@ const register = (root: string, name: string, memory: string): Launch => {
     ["--no-warnings", bin, "mcp", "add", "--agent", "claude", "--memory-db", memory, "--json"],
     {
       cwd: root,
-      env: { PATH: process.env.PATH, HOME: join(root, name), CLAUDE_CONFIG_DIR: directory },
+      env: { PATH: claudePath(), HOME: join(root, name), CLAUDE_CONFIG_DIR: directory },
       encoding: "utf8",
       timeout: 100_000
     }

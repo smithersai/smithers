@@ -19,20 +19,7 @@
 
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import {
-  chmodSync,
-  closeSync,
-  fstatSync,
-  fsyncSync,
-  linkSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeFileSync
-} from "node:fs"
+import { closeSync, linkSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import * as CliError from "./CliError.ts"
@@ -168,13 +155,7 @@ interface Unusable {
   readonly reason: string
 }
 
-interface Configuration {
-  readonly document: Record<string, unknown>
-  readonly source: Buffer | undefined
-  readonly mode: number | undefined
-}
-
-const isUnusable = (value: Configuration | Unusable): value is Unusable => "reason" in value
+const isUnusable = <A extends object>(value: A | Unusable): value is Unusable => "reason" in value
 
 /**
  * Reads an agent's configuration, or says why it must not be written over.
@@ -194,19 +175,17 @@ const unreadable = (path: string, error: unknown): string => {
   return `${path} could not be read${code === undefined ? "" : ` (${code})`}. Fix the file, then run this again.`
 }
 
-const readJson = (path: string): Configuration | Unusable => {
+const readJson = (path: string): { readonly document: Record<string, unknown> } | Unusable => {
   let descriptor: number
   try {
     descriptor = openSync(path, "r")
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return { document: {}, source: undefined, mode: undefined }
+    if (errorCode(error) === "ENOENT") return { document: {} }
     return { reason: unreadable(path, error) }
   }
   let source: Buffer
-  let mode: number
   try {
     source = readFileSync(descriptor)
-    mode = fstatSync(descriptor).mode & 0o777
   } catch (error) {
     return { reason: unreadable(path, error) }
   } finally {
@@ -221,25 +200,7 @@ const readJson = (path: string): Configuration | Unusable => {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { reason: `${path} has a root that is not a JSON object. Fix the file, then run this again.` }
   }
-  return { document: parsed as Record<string, unknown>, source, mode }
-}
-
-const sourceStillMatches = (path: string, source: Buffer | undefined, mode: number | undefined): boolean => {
-  try {
-    const current = readFileSync(path)
-    return source !== undefined && current.equals(source) && (statSync(path).mode & 0o777) === mode
-  } catch (error) {
-    return source === undefined && errorCode(error) === "ENOENT"
-  }
-}
-
-const syncPath = (path: string): void => {
-  const descriptor = openSync(path, "r")
-  try {
-    fsyncSync(descriptor)
-  } finally {
-    closeSync(descriptor)
-  }
+  return { document: parsed as Record<string, unknown> }
 }
 
 /**
@@ -381,9 +342,39 @@ const releaseLock = (lockPath: string, token: string): void => {
   }
 }
 
-/** A Codex registration step that failed: Codex is the dependency at fault. */
-const codexRefused = (code: string, message: string): CliError.Refused =>
+/** An agent CLI registration step that failed: the agent's CLI is the dependency at fault. */
+const agentRefused = (code: string, message: string): CliError.Refused =>
   new CliError.Refused({ fault: "dependency", code, message })
+
+/**
+ * Runs `<agent> mcp <args>` and answers its stdout, or throws a sentence of
+ * ours: the agent's stderr is its own text, never the reason an operator reads.
+ */
+const runMcp = (
+  agent: "claude" | "codex",
+  args: ReadonlyArray<string>,
+  cwd: string,
+  env: NodeJS.ProcessEnv
+): string => {
+  const result = spawnSync(agent, ["mcp", ...args], {
+    cwd,
+    env,
+    encoding: "utf8",
+    timeout: 15_000,
+    maxBuffer: 1024 * 1024
+  })
+  if (result.error !== undefined) {
+    const code = errorCode(result.error)
+    throw agentRefused(`${agent}_unavailable`, `${agent} could not be started${code === undefined ? "" : ` (${code})`}`)
+  }
+  if (result.status !== 0) {
+    throw agentRefused(
+      `${agent}_mcp_failed`,
+      `${agent} mcp ${args[0]} failed (${result.signal ?? `exit ${result.status}`})`
+    )
+  }
+  return result.stdout
+}
 
 /** Register through Codex's configuration writer and verify its discovery result. */
 const registerCodex = (
@@ -393,28 +384,9 @@ const registerCodex = (
 ): Wired => {
   const entry = launchCommand()
   const store = serverEnvironment(environment)
-  const run = (args: ReadonlyArray<string>): string => {
-    const result = spawnSync("codex", ["mcp", ...args], {
-      // Avoid project configuration overriding the user registration we verify.
-      cwd: dirname(path),
-      env: { ...environment, HOME: home, CODEX_HOME: dirname(path) },
-      encoding: "utf8",
-      timeout: 15_000,
-      maxBuffer: 1024 * 1024
-    })
-    if (result.error !== undefined) {
-      const code = errorCode(result.error)
-      throw codexRefused("codex_unavailable", `codex could not be started${code === undefined ? "" : ` (${code})`}`)
-    }
-    if (result.status !== 0) {
-      // Codex's stderr is its own text, never the reason an operator reads.
-      throw codexRefused(
-        "codex_mcp_failed",
-        `codex mcp ${args[0]} failed (${result.signal ?? `exit ${result.status}`})`
-      )
-    }
-    return result.stdout
-  }
+  // Avoid project configuration overriding the user registration we verify.
+  const run = (args: ReadonlyArray<string>): string =>
+    runMcp("codex", args, dirname(path), { ...environment, HOME: home, CODEX_HOME: dirname(path) })
   const discoversEntry = (): boolean => {
     const listed = run(["list", "--json"])
     let servers: unknown
@@ -424,7 +396,7 @@ const registerCodex = (
       servers = undefined
     }
     if (!Array.isArray(servers)) {
-      throw codexRefused("codex_mcp_list_invalid", "codex mcp list returned an invalid server list")
+      throw agentRefused("codex_mcp_list_invalid", "codex mcp list returned an invalid server list")
     }
     return servers.some((server: unknown) => {
       if (server === null || typeof server !== "object") return false
@@ -450,12 +422,62 @@ const registerCodex = (
     ...entry.args
   ])
   if (!discoversEntry()) {
-    throw codexRefused(
+    throw agentRefused(
       "codex_mcp_not_discovered",
       "Codex did not discover the enabled Smithers MCP server after registration"
     )
   }
   return { agent: "codex", path, status: "written" }
+}
+
+/** The Smithers entry recorded in Claude's configuration, or why the file must not be touched. */
+const recordedClaudeEntry = (path: string): { readonly entry: unknown } | Unusable => {
+  const configuration = readJson(path)
+  if (isUnusable(configuration)) return configuration
+  const servers = configuration.document["mcpServers"]
+  if (servers === undefined) return { entry: undefined }
+  if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
+    return { reason: `${path} has an mcpServers member that is not an object. Fix the file, then run this again.` }
+  }
+  return { entry: (servers as Record<string, unknown>)[serverName] }
+}
+
+/**
+ * Register through Claude Code's configuration writer and verify the entry it
+ * recorded.
+ *
+ * Claude Code takes its own lock on `.claude.json` and re-reads the file just
+ * before writing, so an update a Claude client made after Smithers read the
+ * file survives. A replacement written from here could not: it would put back
+ * the snapshot Smithers read, and no portable filesystem call replaces a file
+ * only if it is unchanged.
+ */
+const registerClaude = (
+  path: string,
+  home: string,
+  environment: NodeJS.ProcessEnv
+): Wired => {
+  const entry = launchCommand()
+  const store = serverEnvironment(environment)
+  const desired = JSON.stringify({
+    command: entry.command,
+    args: [...entry.args],
+    ...(store === undefined ? {} : { env: store })
+  })
+  const recorded = recordedClaudeEntry(path)
+  if (isUnusable(recorded)) return { agent: "claude", path, status: "failed", reason: recorded.reason }
+  if (JSON.stringify(recorded.entry) === desired) return { agent: "claude", path, status: "unchanged" }
+  // Claude Code reads `$CLAUDE_CONFIG_DIR/.claude.json` when a profile names one, else `~/.claude.json`.
+  const configDir = environment["CLAUDE_CONFIG_DIR"] ? dirname(path) : undefined
+  const run = (args: ReadonlyArray<string>): string =>
+    runMcp("claude", args, home, { ...environment, HOME: home, CLAUDE_CONFIG_DIR: configDir })
+  if (recorded.entry !== undefined) run(["remove", "--scope", "user", serverName])
+  run(["add-json", "--scope", "user", serverName, desired])
+  const written = recordedClaudeEntry(path)
+  if (isUnusable(written) || JSON.stringify(written.entry) !== desired) {
+    throw agentRefused("claude_mcp_not_recorded", "Claude Code did not record the Smithers MCP server")
+  }
+  return { agent: "claude", path, status: "written" }
 }
 
 /**
@@ -475,7 +497,6 @@ export const addMcp = (
   const path = agent.id === "codex"
     ? resolve(environment["CODEX_HOME"] || join(directory, ".codex"), "config.toml")
     : resolve(environment["CLAUDE_CONFIG_DIR"] || directory, ...agent.mcpConfig)
-  const entry = launchCommand()
   const lockPath = `${path}.smithers.lock`
   const token = `${process.pid}:${Date.now()}:${randomUUID()}`
   let held = false
@@ -485,57 +506,7 @@ export const addMcp = (
     if (refusal !== undefined) return { agent: agent.id, path, status: "failed", reason: refusal.reason }
     held = true
     if (agent.id === "codex") return registerCodex(path, directory, environment)
-    const configuration = readJson(path)
-    if (isUnusable(configuration)) {
-      return { agent: agent.id, path, status: "failed", reason: configuration.reason }
-    }
-    const { document, mode, source } = configuration
-    const existing = document["mcpServers"]
-    if (existing !== undefined && (existing === null || typeof existing !== "object" || Array.isArray(existing))) {
-      return {
-        agent: agent.id,
-        path,
-        status: "failed",
-        reason: `${path} has an mcpServers member that is not an object. Fix the file, then run this again.`
-      }
-    }
-    const servers = existing === undefined ? {} : { ...existing as Record<string, unknown> }
-    const store = serverEnvironment(environment)
-    const desired = { command: entry.command, args: [...entry.args], ...(store === undefined ? {} : { env: store }) }
-    if (JSON.stringify(servers[serverName]) === JSON.stringify(desired)) {
-      return { agent: agent.id, path, status: "unchanged" }
-    }
-    servers[serverName] = desired
-    // Temp-plus-rename, mode preserved: a crash between truncation and the
-    // last byte would otherwise leave the operator with a half-written
-    // configuration and no copy of the original.
-    const temporary = `${path}.smithers-${process.pid}-${randomUUID()}.tmp`
-    writeFileSync(temporary, `${JSON.stringify({ ...document, mcpServers: servers }, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-      mode: mode ?? 0o600
-    })
-    try {
-      if (mode !== undefined) chmodSync(temporary, mode)
-      syncPath(temporary)
-      if (!sourceStillMatches(path, source, mode)) {
-        return {
-          agent: agent.id,
-          path,
-          status: "failed",
-          reason: `${path} changed while Smithers was preparing the update. No change was written; run this again.`
-        }
-      }
-      renameSync(temporary, path)
-      syncPath(dirname(path))
-    } finally {
-      try {
-        unlinkSync(temporary)
-      } catch {
-        // The temp file is already gone, which is the outcome this wanted.
-      }
-    }
-    return { agent: agent.id, path, status: "written" }
+    return registerClaude(path, directory, environment)
   } catch (error) {
     return {
       agent: agent.id,
