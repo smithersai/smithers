@@ -160,12 +160,15 @@ export const vitestIncludes = (config) => {
 
 const readJson = (text) => { try { return JSON.parse(text) } catch { return undefined } }
 
-/** A target input as a path predicate. Extglob `!(...)` widens to `*`, so a match is never missed. */
+/**
+ * A target input as a path predicate. Extglob includes widen to `*`; extglob exclusions are omitted
+ * because widening an exclusion could drop a required target.
+ */
 const inputMatcher = (input) => {
   const glob = (pattern) => globRegExp(pattern.replace(/[!@+?]\([^)]*\)/g, "*"))
   if (input.kind === "file") return (path) => path === input.path
   if (input.kind === "glob") {
-    const include = glob(input.pattern), exclude = (input.exclude ?? []).map(glob)
+    const include = glob(input.pattern), exclude = (input.exclude ?? []).filter((pattern) => !/[!@+?*]\(/.test(pattern)).map(glob)
     return (path) => include.test(path) && !exclude.some((pattern) => pattern.test(path))
   }
   if (input.kind === "git-diff") { const patterns = (input.paths ?? []).map(glob); return (path) => patterns.some((pattern) => pattern.test(path)) }

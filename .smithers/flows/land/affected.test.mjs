@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert"
 import { createHash } from "node:crypto"
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, join, matchesGlob } from "node:path"
 import { test } from "node:test"
 import { createRequire } from "node:module"
 import { spawnSync } from "node:child_process"
@@ -42,6 +42,37 @@ test("a change affects its package's tests and every test that depends on that p
   assert.deepEqual(affectedTargets(index, []), [])
   assert.equal(globRegExp("src/**/*.test.{ts,vibe}").test("src/features/chat/chat.test.ts"), true)
   assert.equal(globRegExp("src/**/*.test.{ts,vibe}").test("src/chat.ts"), false)
+})
+
+test("extglob exclusions never drop an explicit reader or its dependent tests", () => {
+  for (const [pattern, file] of [
+    ["!(*.test).ts", "Chat.test.ts"],
+    ["@(Chat|Other).ts", "View.ts"],
+    ["+(Chat).ts", "View.ts"],
+    ["?(Chat).ts", "View.ts"],
+    ["*(Chat).ts", "View.ts"],
+    ["@(!(Chat|Other)).ts", "Chat.ts"]
+  ]) {
+    const path = `apps/mvp/worker/${file}`, exclude = `apps/mvp/worker/${pattern}`
+    assert.equal(matchesGlob(path, exclude), false, exclude)
+    const rows = [
+      target("//checks:reader", { kinds: ["build"], inputs: [{ kind: "glob", pattern: "apps/mvp/worker/*.ts", exclude: [exclude] }] }),
+      target("//checks:testReader", { dependencies: ["//checks:reader"] })
+    ]
+    assert.deepEqual(affectedTargets(rows, [path]), ["//checks:testReader"], exclude)
+    assert.deepEqual(affectedTargets(rows, ["apps/mvp/worker/Chat.js"]), [], exclude)
+    assert.deepEqual(affectedTargets(rows, ["apps/mvp/other/Chat.test.ts"]), [], exclude)
+  }
+})
+
+test("ordinary exclusions still apply beside an omitted extglob exclusion", () => {
+  const rows = [target("//checks:testReader", { inputs: [{
+    kind: "glob", pattern: "apps/mvp/worker/**/*.ts", exclude: ["apps/mvp/worker/!(*.test).ts", "apps/mvp/worker/generated/**", "apps/mvp/worker/Skip.test.ts"]
+  }] })]
+  assert.deepEqual(affectedTargets(rows, ["apps/mvp/worker/Chat.test.ts"]), ["//checks:testReader"])
+  assert.deepEqual(affectedTargets(rows, ["apps/mvp/worker/generated/Chat.test.ts"]), [])
+  assert.deepEqual(affectedTargets(rows, ["apps/mvp/worker/Skip.test.ts"]), [])
+  assert.deepEqual(affectedTargets(rows, ["apps/mvp/worker/generated/Chat.test.ts", "apps/mvp/worker/Chat.test.ts"]), ["//checks:testReader"])
 })
 
 // A package with one bin in a tree's node_modules, as an install leaves it: the runner runs bins by node.
