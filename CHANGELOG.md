@@ -9,10 +9,12 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3398 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3458 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
+- **merge-queue:** the target as a jj bookmark, with candidates rebased on its tip ([4a5dd32d87](https://github.com/smithersai/smithers/commit/4a5dd32d876bb79147a72f0d70421d06155b6f7f))
+- **merge-queue:** the inbox as a JSON-lines file ([7e50506edf](https://github.com/smithersai/smithers/commit/7e50506edf206da0b4ac1cf9c4bd26fb948726e2))
 - **vibelang:** prove a spec function as VibeLang lowers it ([495bc84bce](https://github.com/smithersai/smithers/commit/495bc84bce2771ac77cf69db9d0c5e6aa15be55b))
 - **vibelang:** prove the history's RegExp tests (sentence end, own line, trailer) ([6283173cb2](https://github.com/smithersai/smithers/commit/6283173cb2ecbf44430a7a222cfc9fc27ea3cfd0))
 - **lemmascript:** prove RegExp test on a literal pattern subset ([e069fd89a9](https://github.com/smithersai/smithers/commit/e069fd89a92a277ff759571ecb25f191aa316085))
@@ -429,6 +431,49 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **lemmascript:** name a schema value type in a cross-module signature ([e8ffc55b89](https://github.com/smithersai/smithers/commit/e8ffc55b896c0f05cb08104c8ee2fff021db1f44))
+- **lemmascript:** one string-literal union is one type; widen records by optional fields ([3ffdd47d12](https://github.com/smithersai/smithers/commit/3ffdd47d12f9eabc0ec6e243dbdd78576fa7c169))
+- **lemmascript:** lower Message.match in expressions, statement-valued arms and short-circuits ([dca85ebc28](https://github.com/smithersai/smithers/commit/dca85ebc288b340067f81907fe811a0027f99e6e))
+- **lemmascript:** instantiate computed record aliases ([31cb539568](https://github.com/smithersai/smithers/commit/31cb539568a0893efa86499e85d9c4d052dbf39a))
+- **lemmascript:** read computed parameter types and unannotated local records ([b68a1b5326](https://github.com/smithersai/smithers/commit/b68a1b53261b3181bb8ae3b1460a26f8f7d5fb9d))
+- **lemmascript:** declare destructured and inline-parameter records ([405f36e597](https://github.com/smithersai/smithers/commit/405f36e597cca75d93bd33b1a10bfb18f7fc6643))
+- **lemmascript:** keep the optional type of x ?? null ([9a60fecc8c](https://github.com/smithersai/smithers/commit/9a60fecc8c6c8b768041a2ed767d1d525e948115))
+- **lemmascript:** name the function and line of a resolution error ([5df7e3aca1](https://github.com/smithersai/smithers/commit/5df7e3aca1bd3e1ab1eaba035b5e8c3f49b53297))
+- **sandbox:** reject lost pipeline settings and isolate call files ([21805f60c1](https://github.com/smithersai/smithers/commit/21805f60c19fad18cd7b73790f5fdf88325c1337))
+- **review:** confine dot-prefixed walkthrough paths ([44b3cb67f4](https://github.com/smithersai/smithers/commit/44b3cb67f4fd1b4f9fcc60b8a5bb4960b8a595c6))
+- **time-travel:** preserve run status when recovering rewinds ([2ee45b1d96](https://github.com/smithersai/smithers/commit/2ee45b1d9604ca0509f15d33346cf58c0b7da405))
+- **swebench:** keep seal refusals within their command ([9e0ad2e1d0](https://github.com/smithersai/smithers/commit/9e0ad2e1d0bd4a7b480547661cd241c1728c1edf))
+- **swebench:** fail closed on lifecycle receipts ([07532d3aa8](https://github.com/smithersai/smithers/commit/07532d3aa847731b4f6827b9cfa12604953441ba))
+- **swebench:** require receipts for Cloud network probes ([54e42a6a54](https://github.com/smithersai/smithers/commit/54e42a6a54667cf58c98554d1e975b93d21f246b))
+- **swebench:** require explicit Docker host-shell opt-in ([d1ee177998](https://github.com/smithersai/smithers/commit/d1ee1779989568470654e07fb1745b1951126179))
+- **mvp:** keep work-link credentials out of diagnostics ([b0ed057970](https://github.com/smithersai/smithers/commit/b0ed0579706950cf14d1c3af6047bfd0586d876e))
+- **build:** load the platform socket namespace under Bun ([102312c804](https://github.com/smithersai/smithers/commit/102312c804bbace2b7827a43aa57b02874fb4715))
+- **targets:** honor review extglobs and configured security models ([5550257336](https://github.com/smithersai/smithers/commit/555025733631520546883e7a5d7d1b27200d10d8))
+- **gateway:** bound runtime monitor journal reads ([a914ef7b3e](https://github.com/smithersai/smithers/commit/a914ef7b3ee4c9594c71b8154e36958844d7547f))
+- **flows:** contain dependency documentation refreshes ([ae5362e880](https://github.com/smithersai/smithers/commit/ae5362e8807a69d2fe9dd09a019b643868e653aa))
+- **std:** align search encoding and CR boundaries ([ac49f2646f](https://github.com/smithersai/smithers/commit/ac49f2646faa2d3b9577872f3466395ddab8ff4a))
+- **rpc:** remove unused contracts and test repository sections ([8764369035](https://github.com/smithersai/smithers/commit/87643690353e9546ef6fff9d95d62623c0fc6d4a))
+- **gateway:** refresh terminal trace spans across status changes ([8b07e3f558](https://github.com/smithersai/smithers/commit/8b07e3f558ecf43a1900e4ab8cfa73e2454ea6e0))
+- **time-travel:** keep the rewind root out of descendants ([81cc4df6ab](https://github.com/smithersai/smithers/commit/81cc4df6abf0c00f53f05d9a2dfce4c66f65a290))
+- **kernel:** inject child-process host configuration ([fdae27d369](https://github.com/smithersai/smithers/commit/fdae27d36970b54ba91ffaec420b0e3cbf1e636a))
+- **engine:** join identical deeply nested payloads ([625c3e613a](https://github.com/smithersai/smithers/commit/625c3e613a4468fed9a49a00de226d8b688055b9))
+- **run-store:** distinguish cancellation outcomes and document attempt fences ([968ebcbf33](https://github.com/smithersai/smithers/commit/968ebcbf337cbf40ad97abc2b2d7701d42a0bf11))
+- **build-cli:** bound remote CAS discovery batches ([688cec58e3](https://github.com/smithersai/smithers/commit/688cec58e3cbd4eea316bfe1ca5969ca3d6f7cba))
+- **plan:** exercise real analysis and typed integrity refusals ([3b0e62ea0b](https://github.com/smithersai/smithers/commit/3b0e62ea0be65b598a184abfe29e1325aea954cb))
+- **platform-browser:** keep tabs usable after worker callback errors ([9fd3cd663e](https://github.com/smithersai/smithers/commit/9fd3cd663e04d4ca2e6e309ba199a4eeac3ef7db))
+- **rpc:** remove unused host contracts and distinguish TODO inputs ([0253bef546](https://github.com/smithersai/smithers/commit/0253bef546f392ade1a5610c9957610755c25dc2))
+- **plugin:** resolve manifest collisions by trust tier ([c5ecf5feed](https://github.com/smithersai/smithers/commit/c5ecf5feedca1a767a5db66423bdf25d4ab3f250))
+- **tui:** repair torn spend records before appending ([994abfdb83](https://github.com/smithersai/smithers/commit/994abfdb83e439f9750ad5df676523a80f839600))
+- **artifacts:** handle read races and interrupted publications ([465b0d8a0d](https://github.com/smithersai/smithers/commit/465b0d8a0d9a7357f14d26d4f468680598a17883))
+- **cli:** stop aborted scans and recover current approvals ([132a59f6ef](https://github.com/smithersai/smithers/commit/132a59f6ef62cbb8fb34df374bd49104d556b8b1))
+- **mvp:** confirm device storage before acknowledging TODO drafts ([8ee6f10548](https://github.com/smithersai/smithers/commit/8ee6f10548d5df49bd6d88d56c734f9960b30ea0))
+- **coverage:** retain named import member statements ([0048c60ea0](https://github.com/smithersai/smithers/commit/0048c60ea02422e1a361c6f04e66aff0a65c067d))
+- **vibelang:** remove app retries from physical accounting ([d94d65cce7](https://github.com/smithersai/smithers/commit/d94d65cce736db270df8000379e3748e565396e4))
+- **vibelang:** report reply accounting outages as budget ([9702beb261](https://github.com/smithersai/smithers/commit/9702beb261298f85f996eb1e305602c4d8fc2b2b))
+- **vibelang:** classify specification call budget failures ([058c39b2df](https://github.com/smithersai/smithers/commit/058c39b2df25279e6db1e0423807f77faacf8ca4))
+- **std:** shell_command and test keep a timed-out command's output ([2ee6ec6b7c](https://github.com/smithersai/smithers/commit/2ee6ec6b7c83892c003254bad208dc0b598fe7bb))
+- **sync:** replace global test patches with service injection ([3679cb1432](https://github.com/smithersai/smithers/commit/3679cb1432e038e11a237509940535a0e8df42f9))
+- **ui:** bound Markdown document nesting ([0f494ba4dc](https://github.com/smithersai/smithers/commit/0f494ba4dcc888a7f63339889ea7dd1b75455ea8))
 - **ui:** scan Markdown link delimiters in linear time ([de495d4969](https://github.com/smithersai/smithers/commit/de495d4969b901968b2b460078d81afb0abc4b73))
 - **mvp:** invalidate Alchemy Worker caches after rollback ([acdca7df16](https://github.com/smithersai/smithers/commit/acdca7df167fee5befa20dcc86b80f2b709e02e3))
 - **mvp:** derive complete deploy installs and check prerequisites before publication ([e6ce2f8b37](https://github.com/smithersai/smithers/commit/e6ce2f8b3771b3c9a7f56127accc6bbef6ab0d93))
@@ -2304,6 +2349,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **lemmascript:** list the re-applied and new patches in the README ([4bfe056489](https://github.com/smithersai/smithers/commit/4bfe05648996644e026be28853b6e5d8c472aedc))
 - **mvp:** record the full frontier-harness-eval run and the review fixes ([4bd5184939](https://github.com/smithersai/smithers/commit/4bd5184939217c9ca76bdc6b2e5e5da645ae5b4e))
 - **vibelang:** record session 19 coverage, action failure fixes and the wiki repository journey ([7d54448c00](https://github.com/smithersai/smithers/commit/7d54448c00c0bf39456bc0cf014e83743ab0cc00))
 - **cli:** the runner status example names the doc's own profile, not an agent vendor ([7da970061e](https://github.com/smithersai/smithers/commit/7da970061e64768ce807e1358d64f86aa68ef3cb))
@@ -2720,6 +2766,20 @@ the release notes at
 
 ### 📦 Other changes
 
+- **style(build):** format the remote CAS batch test ([7c1fd8d6e9](https://github.com/smithersai/smithers/commit/7c1fd8d6e90f311b4b0ef293edd78758ab72d452))
+- **test(engine):** pin follower wake, decode logs and retry recovery ([49197df985](https://github.com/smithersai/smithers/commit/49197df985ad77bfb3725278c3ef9672ae7aad86))
+- **proof(vibelang):** prove the screen read and written back ([506229caa2](https://github.com/smithersai/smithers/commit/506229caa241a68c1b422ecc5c2a86b58941d610))
+- **proof(vibelang):** prove opening a wiki page over the Model ([d61dcfeafc](https://github.com/smithersai/smithers/commit/d61dcfeafcbb292d1bedda62c6ec7b62faf6b663))
+- **proof(vibelang):** prove the sandbox's Model writes ([00301e27eb](https://github.com/smithersai/smithers/commit/00301e27eb154dc294d73f43e6318ebb4ff6d472))
+- **proof(vibelang):** prove the tour's start and end over the Model ([e34f0ec7bd](https://github.com/smithersai/smithers/commit/e34f0ec7bd72a6159d690abd305d720877286ed6))
+- **proof(vibelang):** prove Escape's Model write ([49e8490928](https://github.com/smithersai/smithers/commit/49e8490928ad9b83d67a8beadab15daaac431981))
+- **proof(vibelang):** prove the screens update's decisions read from the Model ([d555b61477](https://github.com/smithersai/smithers/commit/d555b614770ba6baa46896082e063069f6bf285b))
+- **test(journal):** inject observations instead of patching globals ([6f65a03822](https://github.com/smithersai/smithers/commit/6f65a038226dc0803eb4c40401189766c12a0f56))
+- **test(agent):** verify checkpoint bindings and foreign-host round admission ([bf0a2d70f8](https://github.com/smithersai/smithers/commit/bf0a2d70f858b9c17e85061e74d5ad737e5a9933))
+- **test(build):** enforce complete package coverage ([bde0da03c9](https://github.com/smithersai/smithers/commit/bde0da03c94efa7616e795e0bb364d25fccdac7a))
+- **test(harness):** prove selection, steering and replay boundaries ([f97e6361c6](https://github.com/smithersai/smithers/commit/f97e6361c6a73876b26bb1f93d0d8e6f1c5bc10a))
+- **test(registry):** exercise real budgets and checkout snapshot restoration ([3db2938b33](https://github.com/smithersai/smithers/commit/3db2938b33335323da29373fd21918e5d75fdb02))
+- **test(mvp):** await session confirmation before terminal navigation setup ([de244bddfd](https://github.com/smithersai/smithers/commit/de244bddfd4dc0aada15a23aabbc722ebdba6d72))
 - **bench(vibelang):** a VIP draft whose model call cannot be charged, counted fault coverage ([06bf599064](https://github.com/smithersai/smithers/commit/06bf599064575969384af3035f5ac033dbe8acdf))
 - **test(mvp):** the config-at-build check walks each helper once, not once per file ([b5b7b2ad79](https://github.com/smithersai/smithers/commit/b5b7b2ad794df194d8d3553d2676d36e76dc2211))
 - **test(mvp):** the terminal panel test waits for the tabs to follow the open row ([851fab9b5a](https://github.com/smithersai/smithers/commit/851fab9b5a9dccb0b3ecfb454e4da6300b08ea3e))
