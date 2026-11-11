@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Retrying an identical deeply nested JSON payload with the same execution id
+  joins the recorded run instead of reporting a different input. Opaque
+  memory-only payload comparisons retain their conservative depth bound.
+
 - Execute adapters preserve the typed `FlowRuntime.StoreUnavailable` failure
   from durable stores, so callers can answer unavailable and retry the same
   execution id. Step interruption and caller cancellation remain interrupts.

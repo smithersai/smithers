@@ -467,6 +467,49 @@ describe("execution identity", () => {
     })
   }
 
+  for (const depth of [63, 64, 70, 128]) {
+    for (const container of ["object", "array"] as const) {
+      effect(`joins identical ${container} payloads nested ${depth} levels without repeating the body`, () => {
+        let schema: Schema.Codec<unknown> = Schema.Struct({ label: Schema.String, code: Schema.Number })
+        let first: unknown = { label: "leaf", code: 1 }
+        let equal: unknown = { code: 1, label: "leaf" }
+        let different: unknown = { label: "different", code: 1 }
+        for (let index = 0; index < depth; index++) {
+          if (container === "object") {
+            schema = Schema.Struct({ next: schema })
+            first = { next: first }
+            equal = { next: equal }
+            different = { next: different }
+          } else {
+            schema = Schema.Array(schema)
+            first = [first]
+            equal = [equal]
+            different = [different]
+          }
+        }
+        const flow = Flow.make(`Memory/deep-payload/${container}/${depth}`, {
+          payload: { value: schema },
+          success: Schema.Number,
+          body: () => Node.succeed(0)
+        })
+        return Effect.scoped(Effect.gen(function*() {
+          const engine = yield* FlowRuntime.FlowRuntime
+          let calls = 0
+          yield* engine.register(flow, () => Effect.sync(() => ++calls))
+          const executionId = `deep-${container}-${depth}`
+          expect(yield* flow.execute({ value: first }, { executionId })).toBe(1)
+          expect(yield* flow.execute({ value: equal }, { executionId })).toBe(1)
+          const exit = yield* flow.execute({ value: different }, { executionId }).pipe(Effect.exit)
+          expect(Exit.isFailure(exit)).toBe(true)
+          const conflict = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined
+          expect(conflict).toBeInstanceOf(FlowEngine.ExecutionIdentityConflict)
+          expect(conflict).toMatchObject({ field: "payload", executionId })
+          expect(calls).toBe(1)
+        })).pipe(Effect.provide(FlowEngine.layerMemory))
+      })
+    }
+  }
+
   effect("compares payload shape conservatively across key, array, depth, and opaque boundaries", () =>
     Effect.scoped(
       Effect.gen(function*() {
@@ -558,7 +601,7 @@ describe("execution identity", () => {
           success: Schema.Void,
           body: () => Node.succeed(undefined)
         })
-        yield* conflict(Deep, { value: firstDeep }, { value: secondDeep }, "payload-depth-bound")
+        yield* join(Deep, { value: firstDeep }, { value: secondDeep }, "payload-depth-bound")
 
         const Opaque = Schema.declare<object>((_value): _value is object => true)
         const Hostile = Flow.make("Memory/payload-hostile-opaque", {
@@ -568,6 +611,13 @@ describe("execution identity", () => {
         })
         class OpaqueValue {}
         const opaqueReference = new OpaqueValue()
+        // The live reference makes JSON encoding fail, selecting the bounded fallback.
+        yield* conflict(
+          Hostile,
+          { value: { deep: firstDeep, reference: opaqueReference } },
+          { value: { deep: secondDeep, reference: opaqueReference } },
+          "payload-opaque-depth-bound"
+        )
         yield* join(Hostile, { value: opaqueReference }, { value: opaqueReference }, "payload-same-opaque-reference")
         yield* conflict(
           Hostile,

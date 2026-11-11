@@ -395,7 +395,7 @@ const sameEntries = (left: object, right: object, depth: number): boolean => {
 }
 
 /**
- * JSON identity, with a conservative fallback for memory-only payloads.
+ * Structural identity, with a conservative bound for memory-only payloads.
  * Plain objects and arrays are structural even when declared opaque; other
  * references only match themselves. Bounds cycles and deep inputs.
  */
@@ -422,7 +422,8 @@ const samePayload = (flow: Flow.Any, left: unknown, right: unknown): Effect.Effe
       ) as Effect.Effect<[Schema.Json, Schema.Json], Schema.SchemaError>
     ))
     return Exit.isSuccess(encoded)
-      ? sameShape(encoded.value[0], encoded.value[1], 64)
+      // JSON snapshots are acyclic; only the opaque fallback needs a depth bound.
+      ? sameShape(encoded.value[0], encoded.value[1], Infinity)
       : sameShape(left, right, 64)
   })
 
