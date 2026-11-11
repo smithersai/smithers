@@ -60,12 +60,17 @@ Agent kwargs (`--ak key=value`):
     cwd=/app        working directory inside the container; default: the
                     task's `workdir`, else `/app`
     budget_sec=N    wall-clock budget for the run; default: the agent timeout
-                    the runner enforces on the trial, minus a minute. A trial
+                    the runner enforces on the trial, minus 30 s. A trial
                     whose timeout cannot be found is refused (`BudgetUnknown`)
     reasoning_effort=E
                     the flow's reasoning effort; default `xhigh`
                     (`accounts.DEFAULT_EFFORT`), the kwarg and the default of
                     the stock Codex arm (`codex_pool.py`)
+    transport=T     how commands reach the task: `docker` (`docker exec` on
+                    this host's daemon) or `harbor` (the runner's own
+                    `environment.exec`, through `harbor_exec.py`). Default:
+                    `docker` for a local Docker environment, `harbor` for
+                    every other one (Runta, Daytona, Modal, ...)
 """
 
 from __future__ import annotations
@@ -84,10 +89,11 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from . import accounts, calls, plue_docker
+    from . import accounts, calls, harbor_exec, plue_docker
 except ImportError:  # imported by file path (fixtures)
     import accounts  # type: ignore[no-redef]
     import calls  # type: ignore[no-redef]
+    import harbor_exec  # type: ignore[no-redef]
     import plue_docker  # type: ignore[no-redef]
 
 # Pier ships Harbor as a dependency, so under Pier both import; the runner
@@ -130,6 +136,18 @@ CLI_RELATIVE = Path("packages/smithers/bin/smithers.mjs")
 BUILT_RELATIVE = Path("packages/smithers/dist/esm/bin.js")
 SUBJECT_RELATIVE = Path("packages/smithers/agent/harness/benchmarks/swebench/lib/subject.mjs")
 FLOW_NAME = "task"
+# The task's agent can hand a sub-task to a copy of itself: a second markdown
+# flow beside the task's, which a cell calls as `ctx.call("worker", { args })`.
+# It names no model and no effort, so it runs on the trial's own seat.
+WORKER_PATH = HERE / "worker.md"
+WORKER_NAME = "worker"
+# The scratch workspace's own note of the container its CLI is sealed to, for
+# `audit_host_calls.py` to find a running attempt's journal by.
+SEAL_FILE = "smithers-bench.json"
+# Where the sealed CLI runs a `bash` call that names no container
+# (`Bash.sealed`): the task container. Recorded per trial because a CLI from
+# before that refused such a call instead.
+UNNAMED_BASH = "container"
 
 COMMIT_PARAGRAPH = """
 - The task directory is a git repository, and only committed work counts:
@@ -180,18 +198,24 @@ def effort_of(value: Any) -> str:
     return value
 
 
-def render_prompt(instruction: str, *, seat: str, container: str, cwd: str, commit: bool,
+def render_prompt(instruction: str, *, seat: str, cwd: str, commit: bool,
                   effort: str = DEFAULT_EFFORT) -> str:
-    """The one flow file, with the instruction verbatim."""
+    """The one flow file, with the instruction verbatim. It names no
+    container: the CLI is sealed to the task's (`SMITHERS_BASH_CONTAINER`)
+    and runs every command there."""
     template = PROMPT_PATH.read_text(encoding="utf-8")
     return (
         template.replace("{{effort}}", effort_of(effort))
         .replace("{{seat}}", seat)
-        .replace("{{container}}", container)
         .replace("{{cwd}}", cwd)
         .replace("{{commit}}", COMMIT_PARAGRAPH if commit else "")
         .replace("{{instruction}}", instruction.strip() + "\n")
     )
+
+
+def render_worker(*, cwd: str) -> str:
+    """The worker flow file. The registry appends the caller's `args` to it."""
+    return WORKER_PATH.read_text(encoding="utf-8").replace("{{cwd}}", cwd)
 
 
 HELPER_VARIABLE = "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"
@@ -227,16 +251,19 @@ shim_directory = plue_docker.shim_directory
 def container_commands(events: list[dict[str, Any]], container: str) -> dict[str, int]:
     """Commands the agent sent to the task container, and how many exited 0.
 
-    A `cell-call-started` whose input names the container, joined by call id
-    to its `cell-call-settled`. Zero successes means the agent never reached
-    the task: the trial measured the transport, not the model."""
+    A `bash` `cell-call-started` joined by call id to its `cell-call-settled`.
+    The CLI is sealed to `container`, so a call that names no container ran
+    there; one that names another was refused and is not counted. Zero
+    successes means the agent never reached the task: the trial measured the
+    transport, not the model."""
     targeted: set[str] = set()
     attempted = succeeded = 0
     for event in events:
         payload = event["payload"]
         if event["type"] == "control.agent.cell-call-started":
             given = payload.get("input")
-            if isinstance(given, dict) and given.get("container") == container:
+            if (isinstance(given, dict) and payload.get("flowName") == "bash"
+                    and given.get("container") in (None, container)):
                 targeted.add(str(payload.get("callId")))
         elif event["type"] == "control.agent.cell-call-settled" and str(payload.get("callId")) in targeted:
             attempted += 1
@@ -620,6 +647,38 @@ def subject_fingerprint(root: Path) -> dict[str, Any] | None:
     return {"stamp": document.get("stamp"), "head": document.get("head"), "refusals": document.get("refusals", [])}
 
 
+TRANSPORTS = ("docker", "harbor")
+
+
+def environment_kind(environment: Any) -> str | None:
+    """The runner's name for the environment (`docker`, `runta`, `plue`, ...).
+    Harbor answers with an enum, plue with a string."""
+    kind = getattr(environment, "type", None)
+    if not callable(kind):
+        return None
+    try:
+        value = kind()
+    except Exception:  # noqa: BLE001 - an environment that cannot name itself is not local docker
+        return None
+    return str(getattr(value, "value", value))
+
+
+def transport_of(environment: Any, asked: str | None) -> str:
+    """`docker` when the task is a container on this host's daemon, else
+    `harbor`: the runner's own `environment.exec`. `asked` overrides."""
+    if asked is not None:
+        if asked not in TRANSPORTS:
+            raise ValueError(f"transport must be one of {', '.join(TRANSPORTS)}; got {asked!r}")
+        return asked
+    return "docker" if environment_kind(environment) in (None, "docker") else "harbor"
+
+
+def harbor_container_name(session_id: str) -> str:
+    """The name the prompt and the seal use for a task reached through the
+    runner's environment: no daemon knows it, the bridge answers for it."""
+    return "task-" + re.sub(r"[^A-Za-z0-9_.-]", "-", session_id)[:48]
+
+
 def plue_workspace_of(environment: Any) -> str | None:
     """The workspace id when `environment` is a running plue environment."""
     kind = getattr(environment, "type", None)
@@ -671,10 +730,12 @@ def verdict(log_text: str, summary: dict[str, Any], events: list[dict[str, Any]]
     return kind, cause
 
 
-# The CLI is stopped a minute inside the runner's agent timeout: the time this
-# adapter needs to fold the journal, write the record and commit the work
-# before the runner cancels `run()`.
-BUDGET_MARGIN_SEC = 60.0
+# The CLI is stopped half a minute inside the runner's agent timeout: the time
+# this adapter needs to fold the journal, write the record, probe the task and
+# commit the work before the runner cancels `run()`. Measured 2026-11-11 on a
+# host at load 115: 2.4 s. It was a minute, 7% of a 900 s task the stock arm
+# keeps.
+BUDGET_MARGIN_SEC = 30.0
 BUDGET_FLOOR_SEC = 60.0
 # When the runner cancels `run()` anyway, the CLI gets SIGTERM and this long to
 # exit before SIGKILL.
@@ -834,7 +895,10 @@ class SmithersAgent(BaseAgent):
     """The Smithers flows harness, driven from the host against the task container."""
 
     if AgentCapabilities is not None:
-        capabilities = AgentCapabilities(atif=True)
+        # Harbor 0.25 refuses `reasoning_effort` for an agent that does not
+        # declare it; 0.23 has no such field and forbids unknown ones.
+        capabilities = AgentCapabilities(atif=True, **(
+            {"reasoning_effort": True} if "reasoning_effort" in AgentCapabilities.model_fields else {}))
     else:  # Pier still reads the flag
         SUPPORTS_ATIF = True
 
@@ -848,6 +912,7 @@ class SmithersAgent(BaseAgent):
         cwd: str | None = None,
         budget_sec: Any = None,
         reasoning_effort: Any = None,
+        transport: str | None = None,
         **kwargs: Any,
     ) -> None:
         # Harbor hands the task and trial paths to every agent; this one never
@@ -861,6 +926,10 @@ class SmithersAgent(BaseAgent):
         self._cwd_override = cwd
         self._budget_sec = float(budget_sec) if budget_sec is not None else None
         self._effort = effort_of(reasoning_effort) if reasoning_effort is not None else DEFAULT_EFFORT
+        if transport is not None and transport not in TRANSPORTS:
+            raise ValueError(f"transport must be one of {', '.join(TRANSPORTS)}; got {transport!r}")
+        self._transport_asked = transport
+        self._transport = "docker"
         self.root = Path(os.environ.get("SMITHERS_ROOT") or HERE.parents[5]).resolve()
         self.docker = os.environ.get("SMITHERS_BENCH_DOCKER", "docker")
         self.seat = seat_of(self.model_name)
@@ -868,6 +937,10 @@ class SmithersAgent(BaseAgent):
         configured = os.environ.get("SMITHERS_OPENAI_AUTH", "").strip()
         self.auth_mode = configured or ("chatgpt" if provider == "openai" else "api-key")
         self._summary: dict[str, Any] | None = None
+        # What this checkout is, read once in `setup()`: the runner's agent
+        # timeout covers `run()` alone, and these took 13.6 s of it.
+        self._revision: str | None = None
+        self._subject: dict[str, Any] | None = None
         self._plue = False
         self._pool: accounts.Pool | None = None
         self._account: accounts.Account | None = None
@@ -905,6 +978,8 @@ class SmithersAgent(BaseAgent):
                 f"no atomic filesystem helper: build it with (cd {self.root} && cargo build --release "
                 f"-p smithers-ffi --bin smithers-jj-export) or set {HELPER_VARIABLE}"
             )
+        self._revision = await asyncio.to_thread(harness_revision, self.root)
+        self._subject = await asyncio.to_thread(subject_fingerprint, self.root)
         if self.auth_mode == "chatgpt":
             self._pool = accounts.Pool.from_environment()
             if self._pool.accounts:
@@ -921,11 +996,16 @@ class SmithersAgent(BaseAgent):
         after the environment's session id."""
         override = os.environ.get("SMITHERS_BENCH_CONTAINER")
         if override:
+            self._transport = self._transport_asked or "docker"
             return override
         workspace_id = plue_workspace_of(environment)
         if workspace_id:
             self._plue = True
+            self._transport = "plue"
             return workspace_id
+        self._transport = transport_of(environment, self._transport_asked)
+        if self._transport == "harbor":
+            return harbor_container_name(environment.session_id)
         project = compose_project_name(environment.session_id)
         result = subprocess.run(
             [self.docker, "ps", "-q", "--filter", f"label=com.docker.compose.project={project}",
@@ -937,18 +1017,32 @@ class SmithersAgent(BaseAgent):
             raise RuntimeError(f"expected one running `main` container for compose project {project}, found {ids}")
         return ids[0]
 
-    def container_cwd(self, environment: BaseEnvironment) -> str:
+    async def container_cwd(self, environment: BaseEnvironment) -> str:
+        """Where the task's commands run: `--ak cwd`, else the task's declared
+        `workdir`, else the directory the environment itself starts a command
+        in (the image's WORKDIR), asked once with `pwd`. `/app` only when the
+        environment cannot say."""
         if self._cwd_override:
             return self._cwd_override
         config = getattr(environment, "task_env_config", None)
         workdir = getattr(config, "workdir", None)
         # On plue the environment read the image's WORKDIR from its registry.
-        return workdir or getattr(environment, "_plue_workdir", None) or "/app"
+        declared = workdir or getattr(environment, "_plue_workdir", None)
+        if declared:
+            return declared
+        try:
+            result = await environment.exec("pwd", timeout_sec=60)
+        except Exception:  # noqa: BLE001 - a transport that cannot answer leaves the default
+            return "/app"
+        answer = (getattr(result, "stdout", "") or "").strip().splitlines()
+        if getattr(result, "return_code", 1) == 0 and answer and answer[-1].startswith("/"):
+            return answer[-1]
+        return "/app"
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         budget = resolve_budget(self._budget_sec, self._agent_timeout_sec, self.logs_dir, environment)
         container = self.container_of(environment)
-        cwd = self.container_cwd(environment)
+        cwd = await self.container_cwd(environment)
         helper = helper_binary(self.root, dict(os.environ))
         kept = self.logs_dir / "workspace"
         if kept.exists():
@@ -969,13 +1063,23 @@ class SmithersAgent(BaseAgent):
         flow_dir = workspace / ".smithers" / "flows" / FLOW_NAME
         flow_dir.mkdir(parents=True)
         (flow_dir / "flow.mdx").write_text(
-            render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit,
-                          effort=self._effort),
+            render_prompt(instruction, seat=self.seat, cwd=cwd, commit=self._commit, effort=self._effort),
             encoding="utf-8",
         )
+        worker_dir = workspace / ".smithers" / "flows" / WORKER_NAME
+        worker_dir.mkdir(parents=True)
+        (worker_dir / "flow.mdx").write_text(render_worker(cwd=cwd), encoding="utf-8")
+        (workspace / SEAL_FILE).write_text(json.dumps({"container": container, "unnamedBash": UNNAMED_BASH}))
         shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
         shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
             if shim_home else None
+        # Off this host's daemon the task is reached the way the runner reaches
+        # it: the bridge answers the CLI's `docker exec` with `environment.exec`.
+        bridge = harbor_exec.Bridge(environment, container, log=self.logs_dir / "bridge.jsonl") \
+            if self._transport == "harbor" else None
+        if bridge is not None:
+            await bridge.__aenter__()
+            shim = bridge.bin
         env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
                               codex_home=self._account.home if self._account else None,
                               container=container, cwd=cwd)
@@ -984,28 +1088,32 @@ class SmithersAgent(BaseAgent):
             "seat": self.seat,
             "authMode": self.auth_mode,
             "account": self._account.label if self._account else None,
-            "transport": "plue" if self._plue else "docker",
+            "transport": self._transport,
             "openaiApiKeyInCliEnvironment": "OPENAI_API_KEY" in env,
             "asks": env.get(ASKS_VARIABLE),
             "helper": str(helper) if helper else None,
             "container": container,
+            "unnamedBash": UNNAMED_BASH,
             "cwd": cwd,
             "commit": self._commit,
             "effort": self._effort,
             **budget,
             "harnessRoot": str(self.root),
-            "harnessRevision": harness_revision(self.root),
-            "subject": subject_fingerprint(self.root),
+            "harnessRevision": self._revision,
+            "subject": self._subject,
             "startedAt": _iso(int(time.time() * 1000)),
         }
         (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
 
         started = time.monotonic()
         try:
-            exit_status, phase = await self._drive(workspace, env, budget["budgetSec"])
+            exit_status = await self._drive(workspace, env, budget["budgetSec"])
         finally:
             if shim_home is not None:
                 shutil.rmtree(shim_home, ignore_errors=True)
+            if bridge is not None:
+                await bridge.__aexit__(None, None, None)
+                record["bridge"] = {"calls": bridge.calls, "failures": bridge.failures, "execMs": bridge.exec_ms}
         wall = time.monotonic() - started
         shutil.move(str(workspace), str(kept))
         workspace = kept
@@ -1019,6 +1127,8 @@ class SmithersAgent(BaseAgent):
             log_text = ""
         kind, cause = verdict(log_text, summary, events)
         reached = container_commands(events, container)
+        # How far the one `up` process got: a run it started, or only a plan.
+        phase = "run" if any(event["type"].startswith("control.run.") for event in events) else "plan"
         record.update({
             "verdict": kind,
             "cause": cause,
@@ -1104,37 +1214,23 @@ class SmithersAgent(BaseAgent):
         return ["node", str(self.root / CLI_RELATIVE), "--json", *args]
 
     async def _drive(self, workspace: Path, env: dict[str, str], budget: float,
-                     grace: float = CANCEL_GRACE_SEC) -> tuple[int, str]:
-        """plan, approve, run; the same three verbs the SWE-bench lane uses.
-        A cancelled trial stops whichever verb is running (`run_child`)."""
-        log = (self.logs_dir / "smithers-run.log").open("a", encoding="utf-8")
-        try:
-            plan = await run_child(self._cli("plan", FLOW_NAME), cwd=workspace, env=env,
-                                   capture_output=True, timeout=300, grace=grace)
-            log.write(plan.stderr)
-            if plan.returncode != 0:
-                log.write(plan.stdout)
-                return plan.returncode, "plan"
+                     grace: float = CANCEL_GRACE_SEC) -> int:
+        """`up`: plan, approve and run the flow in one CLI process, and its
+        exit status. A cancelled trial stops it (`run_child`).
+
+        One process, not `plan`, `approve` and `run` in three: every CLI start
+        loads the whole host, and on 2026-11-11 the three starts took 45 s of
+        a 900 s task before the first model call. `up` approves at run scope,
+        as `approve --scope run` did, and only a flow that declares its
+        capabilities, which `prompt.md` does."""
+        with (self.logs_dir / "smithers-run.log").open("a", encoding="utf-8") as log:
             try:
-                approval = json.dumps(json.loads(plan.stdout)["approval"])
-            except (ValueError, KeyError):
-                log.write(plan.stdout)
-                return 1, "plan"
-            approve = await run_child(self._cli("approve", approval, "--scope", "run"), cwd=workspace, env=env,
-                                      capture_output=True, timeout=300, grace=grace)
-            log.write(approve.stderr)
-            if approve.returncode != 0:
-                log.write(approve.stdout)
-                return approve.returncode, "approve"
-            try:
-                run = await run_child(self._cli("run", approval), cwd=workspace, env=env,
+                run = await run_child(self._cli("up", FLOW_NAME), cwd=workspace, env=env,
                                       stdout=log, stderr=subprocess.STDOUT, timeout=budget, grace=grace)
             except subprocess.TimeoutExpired:
                 log.write(f"\nsmithers_agent: run exceeded its {budget:.0f}s budget and was killed\n")
-                return 124, "run"
-            return run.returncode, "run"
-        finally:
-            log.close()
+                return 124
+            return run.returncode
 
     async def _commit_work(self, environment: BaseEnvironment, cwd: str) -> dict[str, Any]:
         """Commit whatever the run left, so a grader that reads HEAD sees it.

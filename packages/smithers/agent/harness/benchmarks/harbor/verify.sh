@@ -5,7 +5,7 @@
 #
 # `fixtures/check_infra.py` pins crash containment, the infra classification,
 # the slot ledger and the verifier handover. `fixtures/check_agent.py` pins the prompt, the environment the CLI is given,
-# the CLI's three verbs and their cancellation, the journal fold, the trajectory and the names. `fixtures/check_budget.py`
+# the worker flow, the CLI's one `up` process and its cancellation, the journal fold, the trajectory and the names. `fixtures/check_budget.py`
 # pins the run's time budget to the task's own agent timeout, and its effort.
 # `fixtures/check_calls.py` pins that every model call is a row, that totals by
 # purpose sum to the run's ledger, the time split, the Codex session fold and
@@ -16,6 +16,7 @@ set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
 PY="${HARBOR_PYTHON:-python3}"
 "$PY" "$S/fixtures/check_agent.py"
+"$PY" "$S/fixtures/check_harbor_exec.py"
 "$PY" "$S/fixtures/check_calls.py"
 "$PY" "$S/fixtures/check_budget.py"
 "$PY" "$S/fixtures/check_infra.py"

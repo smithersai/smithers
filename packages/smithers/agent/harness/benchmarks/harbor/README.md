@@ -7,7 +7,12 @@ on the host, the `smthrs` CLI out of this checkout, with the task instruction
 as the flow's whole task and the task container as the only thing its `bash`
 and file flows may touch. Every command and file operation reaches the
 container by `docker exec`, the same seam the SWE-bench rig uses
-(`packages/smithers/agent/std/src/Container.ts`).
+(`packages/smithers/agent/std/src/Container.ts`). On a local Docker
+environment that is the real `docker`. On any other Harbor environment, such
+as Runta, the adapter puts a `docker` shim on the CLI's `PATH` that answers
+`docker exec` with Harbor's own `environment.exec` (`harbor_exec.py`), so the
+same harness runs wherever Harbor can run a command. `--ak transport=docker`
+or `--ak transport=harbor` overrides the choice.
 The model is called from the host, so the container keeps the task's
 `no-network` seal.
 
@@ -27,7 +32,10 @@ adapter's own logic and is the only thing here CI runs.
 | `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial                                                |
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
 | `seal.py`                 | The denied-connect probe and verdict behind the stock arm's `sealed`                                              |
-| `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
+| `harbor_exec.py`          | The `docker` the harness calls on a remote Harbor environment: `exec` becomes `environment.exec`, logged per call |
+| `prompt.md`               | The flow file every task runs; the instruction is pasted verbatim                                                 |
+| `worker.md`               | The `worker` flow beside it: the task's agent hands a sub-task to a copy of itself with `ctx.call("worker", ...)` |
+| `trace.py`                | One trial as frames: tokens, the cell the model wrote, each call with its time and result, what was printed back  |
 | `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / host-calls-unread / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
 | `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
@@ -64,6 +72,16 @@ PYTHONPATH=$PWD harbor run -d terminal-bench/terminal-bench@4.0.0 \
   -k 1 -n 1 -o "$PWD/packages/smithers/agent/harness/benchmarks/harbor/jobs" --job-name smithers-smoke -y
 ```
 
+On Runta (`uv tool install "harbor[runta]"`, `runta login`), add
+`-e runta --override-storage-mb 32768`: Runta refuses a sandbox under 32 GiB of
+disk and Harbor 0.25 asks for 16. Every `environment.exec` there costs about
+2.3 s before the command starts, so a trial's wall clock is mostly round
+trips; `bridge.jsonl` says how many.
+
+The CLI runs as one process, `smthrs up task`: it plans, approves and runs the
+flow without three separate starts. `up` approves only a flow that declares
+its `capabilities`, which `prompt.md` and `worker.md` do.
+
 The oracle arm proves the sandbox and the verifier (`--agent oracle`); the
 stock Codex CLI arm is
 `-a codex -m openai/gpt-6.1-sol --ak reasoning_effort=xhigh` with
@@ -99,7 +117,7 @@ The multiplier is `--agent-timeout-multiplier` when set, else
 `--timeout-multiplier`. DeepSWE 1.1 tasks declare 5,400 s. Harbor 0.23.0 and
 Pier 0.3.1 hand that number to the oracle agent only, so the adapter computes
 it from the trial's `config.json` and `[agent] timeout_sec` in the task's
-`task.toml`, and gives the CLI one minute less. `--ak budget_sec=N` sets the
+`task.toml`, and gives the CLI 30 s less. `--ak budget_sec=N` sets the
 budget outright. There is no default: a trial whose timeout cannot be found
 raises `BudgetUnknown` before any model call. The 2026-09-26 runs fell back to
 3,600 s here while the stock Codex arm had each task's 5,400 s. When the
@@ -359,7 +377,8 @@ Under the trial's `agent/` directory:
 | `smithers-run.json` | seat, auth mode, route bindings off the journal, harness revision, subject fingerprint, wall clock, tokens, exit status, phase |
 | `trajectory.json`   | ATIF-v1.8 trajectory folded from the harness journal; Harbor reads the token totals off it                                     |
 | `smithers-run.log`  | the CLI's stdout and stderr                                                                                                    |
-| `workspace/`        | the flow file and `.flows/control.db`, the journal itself                                                                      |
+| `workspace/`        | the flow files and `.flows/control.db`, the journal itself                                                                     |
+| `bridge.jsonl`      | `harbor` transport only: one line per remote exec with its time, exit status, byte counts and argv head; no stdin, no env values |
 
 The trajectory holds one step for each model call the agent made. A frame
 whose reply held no runnable cell asks the model again, so it is two steps,
@@ -371,6 +390,22 @@ unset rather than priced. `packages/smithers/agent/harness/benchmarks/swebench/p
 price for `gpt-6-sol` ($2 in, $0.20 cached, $10 out per 1M tokens, standard
 tier, short context) for the api-key arm; quote it against a subscription run
 only as what the tokens would have cost.
+
+### Read what the agent did
+
+```sh
+python3 -B trace.py <trial dir>            # every frame, clipped
+python3 -B trace.py <trial dir> --frame 3  # one frame
+python3 -B trace.py <trial dir> --full --html trial.html
+```
+
+The trace opens with the run's totals and one row per frame, then a "Look
+here first" list: frames that made one call and did not complete, a call
+repeated with the same input, failed calls, non-zero exits and large prints.
+Each frame then shows what the model read, the cell it wrote, every call with
+its input, time and result, and what the cell printed back. A `worker` call
+shows its child run under it, one line per child frame, and the child's
+tokens are in the totals.
 
 ### Where time and tokens went
 

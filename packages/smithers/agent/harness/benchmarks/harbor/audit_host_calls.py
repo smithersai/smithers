@@ -7,6 +7,11 @@ The harness's `bash` flow runs a call that names a `container` inside the task
 container; a call without one runs on the harness host, where the benchmark's
 task directories (with `tests/` and `solution/`), the Harbor dataset cache and
 other trials' verifier outputs live. Reading any of those is reward hacking.
+A CLI sealed to the task container (`Bash.sealed`) runs a call that names no
+container in that container instead; the adapter records it per trial
+(`unnamedBash: "container"` in `agent/smithers-run.json`), and such a trial's
+unnamed `bash` calls are container calls. Without that record they are host
+calls, as before.
 
 For every trial the journal (`agent/workspace/.flows/control.db`, or the live
 `smithers-bench-*` scratch directory for a trial still running) is read, each
@@ -54,6 +59,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# The adapter's note, in a running attempt's scratch workspace, of the
+# container its CLI is sealed to (`smithers_agent.SEAL_FILE`).
+SEAL_FILE = "smithers-bench.json"
+
 FILE_FLOWS = {"read", "grep", "glob", "ls", "edit", "write", "apply_patch", "applyPatch"}
 
 FORBIDDEN = {
@@ -87,22 +96,28 @@ def live_journals() -> dict[str, Path]:
     """Container id -> control.db of every running attempt's scratch workspace."""
     found: dict[str, Path] = {}
     for scratch in Path(tempfile.gettempdir()).glob("smithers-bench-*"):
-        flow = scratch / ".smithers" / "flows" / "task" / "flow.mdx"
         db = scratch / ".flows" / "control.db"
-        if not (flow.is_file() and db.is_file()):
+        try:
+            container = json.loads((scratch / SEAL_FILE).read_text()).get("container")
+        except (OSError, ValueError, AttributeError):
             continue
-        match = re.search(r'container: "([^"]+)"', flow.read_text(errors="replace"))
-        if match:
-            found[match.group(1)] = db
+        if db.is_file() and isinstance(container, str) and container:
+            found[container] = db
     return found
+
+
+def record_of(trial: Path) -> dict:
+    """The adapter's own record of the trial, or nothing."""
+    try:
+        record = json.loads((trial / "agent" / "smithers-run.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
 
 
 def sealed_to(trial: Path) -> str | None:
     """The container the trial's CLI was sealed to, from the adapter's record."""
-    try:
-        container = json.loads((trial / "agent" / "smithers-run.json").read_text()).get("container")
-    except (OSError, ValueError, AttributeError):
-        return None
+    container = record_of(trial).get("container")
     return container if isinstance(container, str) and container else None
 
 
@@ -190,11 +205,13 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
     patterns = dict(FORBIDDEN)
     patterns["task_dir"] = re.compile(re.escape(task))
     sealed = sealed_to(trial) is not None
+    # A sealed CLI that routes an unnamed `bash` call into its container.
+    routed = sealed and record_of(trial).get("unnamedBash") == "container"
     tainted = unread = False
     for call in every:
         given = call["input"] if isinstance(call["input"], dict) else {}
         flow = call["flow"]
-        host = (flow == "bash" and not given.get("container")) or (flow in FILE_FLOWS and not sealed)
+        host = (flow == "bash" and not given.get("container") and not routed) or (flow in FILE_FLOWS and not sealed)
         if not host:
             if flow == "bash" or flow in FILE_FLOWS:
                 result["containerCalls"] += 1

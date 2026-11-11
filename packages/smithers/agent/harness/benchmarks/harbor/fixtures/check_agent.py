@@ -18,7 +18,7 @@ What is pinned, and why each one matters:
     the two validators ATIF enforces. When Harbor is importable the trajectory
     is validated by its own pydantic model as well, and the check says so.
   - The compose project name is sanitized the way Docker Compose does it.
-  - `_drive` runs plan, approve and run as real children: each outcome keeps
+  - `_drive` runs `up` as a real child: each outcome keeps
     its exit status, phase and output, and a cancelled trial stops the CLI
     (SIGTERM, then SIGKILL after the grace) instead of leaving it running.
   - The stock Codex arm runs as the image's own uid when the task names no
@@ -96,12 +96,13 @@ def synthetic_journal(path: Path) -> None:
 
 
 def check_prompt() -> None:
-    text = agent.render_prompt(INSTRUCTION, seat="openai:gpt-6-sol", container="abc123", cwd="/app", commit=False)
+    text = agent.render_prompt(INSTRUCTION, seat="openai:gpt-6-sol", cwd="/app", commit=False)
     assert text.startswith("---\n"), "the flow file opens with frontmatter"
     assert "model: openai:gpt-6-sol\n" in text, "the seat is the frontmatter model"
     assert "\neffort: xhigh\n" in text, "a task runs at xhigh unless the run names another effort"
-    assert 'container: "abc123"' in text and 'cwd: "/app"' in text, "the container and cwd are taught"
-    assert 'flows: ["bash", "apply_patch", "edit", "read", "grep"]\n' in text, "the file flows are bound"
+    assert "container:" not in text and "unhermetic" not in text, "the seal names the container, the model never types it"
+    assert 'ctx.call("bash", { command: "<command>" })' in text and "in `/app` unless" in text, "the bare call and its cwd are taught"
+    assert 'flows: ["bash", "apply_patch", "edit", "read", "grep", "jev", "worker"]\n' in text, "the file flows, jev and the worker are bound"
     assert "relative to `/app`" in text, "the file flows' relative paths are taught"
     assert "no file flows" not in text and "has no network" not in text, "the prompt claims nothing false"
     assert text.rstrip().endswith(INSTRUCTION), "the instruction is the last thing in the prompt, verbatim"
@@ -109,9 +110,20 @@ def check_prompt() -> None:
     for forbidden in ("tests/", "solution/", "solve.sh", "FAIL_TO_PASS"):
         assert forbidden not in text, f"the prompt never names {forbidden}"
     assert "git add -A" not in text, "no commit paragraph unless commit mode is on"
-    committed = agent.render_prompt(INSTRUCTION, seat="s", container="c", cwd="/app", commit=True)
+    committed = agent.render_prompt(INSTRUCTION, seat="s", cwd="/app", commit=True)
     assert "git add -A && git commit" in committed, "commit mode teaches the commit rule"
     assert committed.count(INSTRUCTION) == 1
+    # The worker is the task's agent again: no seat or effort of its own, the
+    # same authority, the same container, and nothing of the task's instruction.
+    worker = agent.render_worker(cwd="/work dir")
+    front = worker.split("---\n")[1]
+    assert not any(line.startswith(("model:", "effort:")) for line in front.splitlines()), \
+        "the worker runs on the caller's seat and effort"
+    task_front = text.split("---\n")[1]
+    capabilities = [line for line in task_front.splitlines() if line.startswith("capabilities:")]
+    assert capabilities and capabilities[0] in front, "the worker holds exactly the task flow's authority"
+    assert "in `/work dir` unless" in worker and "{{" not in worker, "the worker is taught the same cwd"
+    assert INSTRUCTION not in worker and worker.rstrip().endswith("## Sub-task"), "its sub-task is the caller's args"
 
 
 def check_environment() -> None:
@@ -346,14 +358,19 @@ def check_shim_reaches_cli(root: Path) -> None:
 def check_container_gate() -> None:
     """A trial is healthy only if a command reached the task container with
     exit 0: preflight-A's 20 calls all failed (125) or ran on the host."""
-    def call(n: int, container: str | None, exit_code: int) -> list[dict]:
-        given = {"command": "ls", "mode": "unhermetic", **({"container": container} if container else {})}
-        return [{"type": "control.agent.cell-call-started", "payload": {"callId": f"c{n}", "input": given}},
+    def call(n: int, container: str | None, exit_code: int, flow: str = "bash", outcome: str = "success") -> list[dict]:
+        given = {"command": "ls", **({"container": container} if container else {})}
+        return [{"type": "control.agent.cell-call-started",
+                 "payload": {"callId": f"c{n}", "flowName": flow, "input": given}},
                 {"type": "control.agent.cell-call-settled",
-                 "payload": {"callId": f"c{n}", "outcome": "success", "value": {"exitCode": exit_code}}}]
-    unreachable = call(1, "ws-1", 125) + call(2, None, 0) + call(3, "ws-other", 0)
+                 "payload": {"callId": f"c{n}", "outcome": outcome, "value": {"exitCode": exit_code}}}]
+    # A transport failure (125), a call the seal refused for naming another
+    # container, and another flow's call: none of them reached the task.
+    unreachable = call(1, "ws-1", 125) + call(2, "ws-other", 0, outcome="failure") + call(3, None, 0, flow="jev")
     assert agent.container_commands(unreachable, "ws-1") == {"attempted": 1, "succeeded": 0}
     assert agent.container_commands(unreachable + call(4, "ws-1", 0), "ws-1") == {"attempted": 2, "succeeded": 1}
+    # The sealed CLI runs a call that names no container in the task's.
+    assert agent.container_commands(unreachable + call(5, None, 0), "ws-1") == {"attempted": 2, "succeeded": 1}
     sys.path.insert(0, str(HERE.parents[6]))
     try:
         from packages.smithers.agent.harness.benchmarks.harbor import codex_pool
@@ -627,30 +644,21 @@ def check_container_survival() -> None:
 # A real CLI child for `_drive`: `STUB_MODE` picks the outcome, and a run
 # that hangs writes its pid to `STUB_PID` once it is ready to be cancelled.
 STUB_CLI = r"""
-import json, os, signal, sys, time
+import os, signal, sys, time
 verb, mode = sys.argv[1], os.environ["STUB_MODE"]
-if verb == "plan":
-    print("planned", file=sys.stderr)
-    if mode == "plan-fails":
-        print("no plan")
-        sys.exit(2)
-    print("not json" if mode == "plan-garbled" else json.dumps({"approval": {"id": "a1"}}))
-elif verb == "approve":
-    print("approved " + sys.argv[2], file=sys.stderr)
-    if mode == "approve-fails":
-        print("refused")
-        sys.exit(5)
-else:
-    if mode == "stubborn":
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    print("ran " + sys.argv[2], flush=True)
-    print("warned", file=sys.stderr, flush=True)
-    if mode in ("hang", "stubborn"):
-        pid = os.environ["STUB_PID"]
-        open(pid + ".tmp", "w").write(str(os.getpid()))
-        os.replace(pid + ".tmp", pid)
-        time.sleep(600)
-    sys.exit(3)
+if verb != "up":
+    print("unknown verb " + verb)
+    sys.exit(64)
+if mode == "stubborn":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+print("ran " + sys.argv[2], flush=True)
+print("warned", file=sys.stderr, flush=True)
+if mode in ("hang", "stubborn"):
+    pid = os.environ["STUB_PID"]
+    open(pid + ".tmp", "w").write(str(os.getpid()))
+    os.replace(pid + ".tmp", pid)
+    time.sleep(600)
+sys.exit(3)
 """
 
 
@@ -704,16 +712,13 @@ def check_judge_preflight() -> None:
 
 
 def check_drive() -> None:
-    """plan, approve, run against a real child: the exit status, the phase it
-    ended in and what `smithers-run.log` keeps of the CLI's output."""
+    """`up` against a real child, in one process: its exit status and what
+    `smithers-run.log` keeps of its output."""
     import asyncio
 
     cases = [
-        ("exit", 600, (3, "run"), ["planned", 'approved {"id": "a1"}', 'ran {"id": "a1"}', "warned"]),
-        ("plan-fails", 600, (2, "plan"), ["planned", "no plan"]),
-        ("plan-garbled", 600, (1, "plan"), ["planned", "not json"]),
-        ("approve-fails", 600, (5, "approve"), ['approved {"id": "a1"}', "refused"]),
-        ("hang", 2, (124, "run"), ['ran {"id": "a1"}', "run exceeded its 2s budget and was killed"]),
+        ("exit", 600, 3, ["ran task", "warned"]),
+        ("hang", 2, 124, ["ran task", "run exceeded its 2s budget and was killed"]),
     ]
     for mode, budget, expected, logged in cases:
         with tempfile.TemporaryDirectory() as directory:
@@ -741,7 +746,7 @@ def check_drive_cancelled() -> None:
         task = asyncio.create_task(stub._drive(root, env, 600, **grace))
         deadline = time.monotonic() + 30
         while not (root / "pid").exists():
-            assert time.monotonic() < deadline and not task.done(), "the stub reached its run verb"
+            assert time.monotonic() < deadline and not task.done(), "the stub started its run"
             await asyncio.sleep(0.02)
         pid = int((root / "pid").read_text())
         started = time.monotonic()
@@ -1121,5 +1126,5 @@ if __name__ == "__main__":
     check_accounts()
     revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment, "
-          f"the judge preflight, the CLI's three verbs and their cancellation, and account pool hold; "
+          f"the judge preflight, the CLI's one `up` process and its cancellation, and account pool hold; "
           f"stock arm's image user {image_user}; its install {install}; harness revision {revision}; trajectory {validation}.")

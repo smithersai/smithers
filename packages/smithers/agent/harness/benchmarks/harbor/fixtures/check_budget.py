@@ -158,20 +158,20 @@ def refused(root: Path, **given) -> str:
 def check_budget() -> None:
     cases = [
         # name, trial arguments, budget, source, the runner's agent timeout, task files opened
-        ("the task's own timeout, Pier's config", {"config": PIER}, 5340.0, "task.toml", 5400.0, ["task.toml"]),
-        ("the task's own timeout, Harbor's config", {"config": HARBOR}, 5340.0, "task.toml", 5400.0, ["task.toml"]),
+        ("the task's own timeout, Pier's config", {"config": PIER}, 5370.0, "task.toml", 5400.0, ["task.toml"]),
+        ("the task's own timeout, Harbor's config", {"config": HARBOR}, 5370.0, "task.toml", 5400.0, ["task.toml"]),
         ("--agent-timeout-multiplier wins over --timeout-multiplier",
-         {"config": {**PIER, "agent_timeout_multiplier": 2.0, "timeout_multiplier": 3.0}}, 10740.0, "task.toml", 10800.0, ["task.toml"]),
-        ("--timeout-multiplier alone", {"config": {**HARBOR, "timeout_multiplier": 1.5}}, 8040.0, "task.toml", 8100.0, ["task.toml"]),
+         {"config": {**PIER, "agent_timeout_multiplier": 2.0, "timeout_multiplier": 3.0}}, 10770.0, "task.toml", 10800.0, ["task.toml"]),
+        ("--timeout-multiplier alone", {"config": {**HARBOR, "timeout_multiplier": 1.5}}, 8070.0, "task.toml", 8100.0, ["task.toml"]),
         ("the cap applies before the multiplier",
-         {"config": {"timeout_multiplier": 2.0, "agent": {"max_timeout_sec": 3000.0}}}, 5940.0, "task.toml", 6000.0, ["task.toml"]),
+         {"config": {"timeout_multiplier": 2.0, "agent": {"max_timeout_sec": 3000.0}}}, 5970.0, "task.toml", 6000.0, ["task.toml"]),
         ("the trial's override replaces the task's timeout, which is then not read",
-         {"config": {"agent": {"override_timeout_sec": 1800.0}}}, 1740.0, "override_timeout_sec", 1800.0, []),
-        ("a short timeout keeps a minute of budget", {"task_toml": "[agent]\ntimeout_sec = 90\n"}, 60.0, "task.toml", 90.0, ["task.toml"]),
+         {"config": {"agent": {"override_timeout_sec": 1800.0}}}, 1770.0, "override_timeout_sec", 1800.0, []),
+        ("a short timeout keeps a minute of budget", {"task_toml": "[agent]\ntimeout_sec = 70\n"}, 60.0, "task.toml", 70.0, ["task.toml"]),
         ("an explicit budget is used as given", {"budget_sec": "900"}, 900.0, "budget_sec", None, []),
         ("an explicit budget needs no task timeout", {"task_toml": None, "config": None, "budget_sec": 1200}, 1200.0, "budget_sec", None, []),
         ("a runner that hands over its timeout is believed", {"task_toml": None, "config": None, "agent_timeout_sec": "5400"},
-         5340.0, "agent_timeout_sec", 5400.0, []),
+         5370.0, "agent_timeout_sec", 5400.0, []),
     ]
     for name, given, budget, source, timeout, opened in cases:
         with tempfile.TemporaryDirectory() as directory:
@@ -325,15 +325,15 @@ def flow_effort(logs: Path) -> str:
 
 def check_effort() -> None:
     assert agent.DEFAULT_EFFORT == "xhigh", "benchmarks run at xhigh (owner ruling 2026-10-10)"
-    prompt = agent.render_prompt("x", seat="openai:gpt-6.1-sol", container="c", cwd="/app", commit=False)
+    prompt = agent.render_prompt("x", seat="openai:gpt-6.1-sol", cwd="/app", commit=False)
     assert "\neffort: xhigh\n" in prompt and "{{" not in prompt, "the flow file defaults to xhigh"
-    chosen = agent.render_prompt("x", seat="s", container="c", cwd="/app", commit=False, effort="max")
+    chosen = agent.render_prompt("x", seat="s", cwd="/app", commit=False, effort="max")
     assert "\neffort: max\n" in chosen and "xhigh" not in chosen
     assert Driven(logs_dir=Path("/nonexistent"), model_name=MODEL, reasoning_effort="max")._effort == "max"
     # The harness reads an unknown `effort:` as unset and runs at `high`.
     for bad in ("ultra", "XHIGH", "", "xhigh\nflows: [\"bash\", \"write\"]", "{{instruction}}"):
         try:
-            agent.render_prompt("x", seat="s", container="c", cwd="/app", commit=False, effort=bad)
+            agent.render_prompt("x", seat="s", cwd="/app", commit=False, effort=bad)
         except ValueError:
             pass
         else:

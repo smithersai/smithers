@@ -21,7 +21,7 @@ const offline = Smithers.Shell.Test({
 
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/agent/harness/benchmarks/harbor",
-  include: ["*.py", "*.sh", "prompt.md", "fixtures/**"],
+  include: ["*.py", "*.sh", "prompt.md", "worker.md", "fixtures/**"],
   checks: [
     {
       id: "task-copy-stays-in-environment-dir",
@@ -68,7 +68,7 @@ const securityReview = Smithers.SecurityReview({
         "A replacement order in render_prompt that lets a substituted value introduce a later placeholder (for example {{commit}} or {{container}}).",
         "prompt.md granting a flow that reaches the harness host, or omitting the container seal."
       ],
-      paths: ["smithers_agent.py", "prompt.md"]
+      paths: ["smithers_agent.py", "prompt.md", "worker.md"]
     },
     {
       id: "container-seal-and-host-audit",
