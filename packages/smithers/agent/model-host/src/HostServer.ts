@@ -8,7 +8,7 @@ import type { ModelStep } from "@smthrs/agent"
 
 import { digestSync } from "@smthrs/crypto"
 import { type Model, ModelError } from "@smthrs/model"
-import { AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
+import { AgentContext, AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
 import { Cause, Effect, Exit, Metric, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { z } from "zod"
@@ -169,6 +169,10 @@ const ToolsSchema = z.array(
   }).strict()
 )
 
+/** A turn's runtime context is rendered into hidden instructions, so a body whose context fails its schema is refused. */
+const validContext = (context: unknown): boolean =>
+  context === undefined || AgentContext.AgentRuntimeContextSchema.safeParse(context).success
+
 const turnRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const body = value as Record<string, unknown>
@@ -177,6 +181,7 @@ const turnRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefi
   }
   if (!z.array(MessageSchema).safeParse(body.messages).success) return undefined
   if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success) return undefined
+  if (!validContext(body.context)) return undefined
   return value as NativeAgent.StartAgentTurnRequest
 }
 
@@ -230,6 +235,7 @@ const streamRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | unde
   if (typeof body.runId !== "string" || !Array.isArray(body.messages)) return undefined
   if (!z.array(MessageSchema).safeParse(body.messages).success) return undefined
   if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success) return undefined
+  if (!validContext(body.context)) return undefined
   return {
     ...body,
     instructions: typeof body.instructions === "string" ? body.instructions : ""

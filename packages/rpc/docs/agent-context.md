@@ -14,9 +14,12 @@ with no newline rule of their own, so the client collapses each one's whitespace
 before it posts the turn; a raw draft string fails this schema at the server
 boundary and the turn is rejected rather than answered.
 
-The renderer also protects callers that have not parsed the schema: it replaces
-CRLF, CR, and LF in metadata with a space and truncates each value to 4096 code
-units. Metadata cannot introduce another top-level instruction line.
+The model host's turn and stream endpoints parse `context` with this schema and
+refuse a request whose context fails it with `request_invalid`. Render only a
+parsed context: the renderer replaces CRLF, CR, and LF in string metadata with a
+space and truncates each value to 4096 code units, but it interpolates numbers
+and reads required fields as the schema types them. A parsed context cannot
+introduce another top-level instruction line.
 
 Wiki bodies, public repository descriptions, and onboarding transcript messages
 accept multiline text. The renderer splits CRLF, CR, and LF and prefixes every
