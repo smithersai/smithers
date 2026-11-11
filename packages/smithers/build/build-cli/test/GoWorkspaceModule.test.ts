@@ -282,3 +282,37 @@ export const Package = S.Package({ targets: { probe: S.Shell.Test({ shell: "prob
     expect(result.text).toContain("is not a command name")
   }, 120_000)
 })
+
+describe.runIf(launcher !== undefined && canConfine)("a nested Go module", () => {
+  it("builds, tests and downloads in the module's directory", async () => {
+    const root = await module(
+      `export const Package = S.Package({ targets: {
+  binary: S.Go.Binary({ pkg: "example.test/probe", out: "bin/probe", offline: true, sandbox: {} }),
+  download: S.Go.ModDownload({ mod: S.file("//mod/go.mod"), sum: S.file("//mod/go.sum"), outDirs: [".gomodcache"], sandbox: {} })
+} })`,
+      {
+        module: "mod",
+        files: {
+          "mod/PACKAGE.ts": `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  tests: S.Go.Test({ pkgs: ["./..."], offline: true, sandbox: {} }),
+  local: S.Go.Binary({ pkg: "./", out: "bin/local", offline: true, sandbox: {} })
+} })
+`
+        }
+      }
+    )
+    const binary = await ran(root, ["build", "//:binary"])
+    expect(binary.exitCode, binary.text).toBe(0)
+    expect((await Fs.stat(NodePath.join(root, "bin/probe"))).isFile()).toBe(true)
+    const local = await ran(root, ["build", "//mod:local"])
+    expect(local.exitCode, local.text).toBe(0)
+    expect((await Fs.stat(NodePath.join(root, "mod/bin/local"))).isFile()).toBe(true)
+    const tests = await ran(root, ["test", "//mod:tests"])
+    expect(tests.exitCode, tests.text).toBe(0)
+    // A module with no requirements has nothing to fetch; go says so from
+    // inside the module rather than "no modules specified" from the root.
+    const download = await ran(root, ["build", "//:download"])
+    expect(download.text).toContain("go: no module dependencies to download")
+  }, 240_000)
+})

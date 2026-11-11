@@ -70,6 +70,12 @@ export interface Planned {
    */
   readonly readSet: ReadonlyArray<string>
   readonly closureIdentity?: unknown
+  /**
+   * The workspace-relative directory `go` runs in: the declared module's,
+   * `"."` for a module at the workspace root. Paths in `argv` are relative to
+   * it; `outDirs`, `writeSet` and `readSet` stay workspace-relative.
+   */
+  readonly cwd: string
 }
 
 const toolchain = (workspace: WorkspaceDeclaration.WorkspaceDeclaration): Go.ToolchainDeclaration | undefined =>
@@ -89,11 +95,25 @@ const moduleFiles = (context: Context): ReadonlyArray<string> => {
   return [declaration.mod, declaration.sum].map((input) => Input.resolvePath("", input.path))
 }
 
-const moduleDirectory = (context: Context): string => {
+/**
+ * The workspace-relative directory holding the declared `go.mod`, `""` for a
+ * module at the workspace root. Every `go` a Go rule starts runs here: `go`
+ * finds its module by walking up from its working directory, so a nested
+ * module run from the workspace root answers "go.mod file not found".
+ */
+const moduleRelative = (context: Context): string => {
   const declaration = toolchain(context.workspace)
-  if (declaration === undefined) return context.root
-  const mod = Input.resolvePath("", declaration.mod.path)
-  return NodePath.join(context.root, NodePath.dirname(mod))
+  if (declaration === undefined) return ""
+  const directory = NodePath.posix.dirname(Input.resolvePath("", declaration.mod.path))
+  return directory === "." ? "" : directory
+}
+
+const moduleDirectory = (context: Context): string => NodePath.join(context.root, moduleRelative(context))
+
+/** One workspace-relative path as the module directory sees it. */
+const fromModule = (context: Context, path: string): string => {
+  const relative = NodePath.posix.relative(moduleRelative(context), path)
+  return relative === "" ? "." : relative
 }
 
 /**
@@ -307,10 +327,29 @@ export const resolveNix = async (name: string, context: Context): Promise<
   }
 }
 
-const anchor = (pattern: string, packagePath: string): string => {
-  if (pattern.startsWith("//")) return `./${pattern.slice(2)}`
-  if (!pattern.startsWith("./") || packagePath === "") return pattern
-  return `./${[packagePath, pattern.slice(2)].filter(Boolean).join("/")}`
+/**
+ * A declared package pattern as `go` reads it from the module directory.
+ *
+ * `./` patterns are relative to the declaring package and `//` patterns to the
+ * workspace root; an import path is left alone. A directory pattern outside
+ * the module names no package of it, so it is refused rather than handed to a
+ * `go` that would report a different module's error.
+ */
+const anchor = (pattern: string, packagePath: string, context: Context): string => {
+  const directory = pattern.startsWith("//")
+    ? pattern.slice(2)
+    : pattern.startsWith("./") || pattern === "."
+    ? NodePath.posix.join(packagePath, pattern)
+    : undefined
+  if (directory === undefined) return pattern
+  const relative = NodePath.posix.relative(moduleRelative(context), NodePath.posix.normalize(directory))
+  if (relative === ".." || relative.startsWith("../")) {
+    throw new Error(
+      `package pattern ${JSON.stringify(pattern)} is outside the module at ` +
+        `${JSON.stringify(moduleRelative(context) === "" ? "." : moduleRelative(context))}`
+    )
+  }
+  return relative === "" ? "." : relative === "..." ? "./..." : `./${relative}`
 }
 
 const targetOf = (value: unknown): Target.AnyTarget | undefined => {
@@ -323,7 +362,7 @@ const targetOf = (value: unknown): Target.AnyTarget | undefined => {
 }
 
 const patternsOf = (value: unknown, context: Context): ReadonlyArray<string> => {
-  if (Array.isArray(value)) return value.map((entry) => anchor(String(entry), context.packagePath))
+  if (Array.isArray(value)) return value.map((entry) => anchor(String(entry), context.packagePath, context))
   const target = targetOf(value)
   if (target !== undefined && Target.metadata(target).target === "Go.Packages") {
     const source = Target.metadata(target).sourceFile
@@ -331,7 +370,7 @@ const patternsOf = (value: unknown, context: Context): ReadonlyArray<string> => 
       ? context.packagePath
       : NodePath.relative(context.root, NodePath.dirname(source)).split(NodePath.sep).join("/")
     return (Target.metadata(target).attrs as { readonly pkgs: ReadonlyArray<string> }).pkgs.map((entry) =>
-      anchor(entry, ownPath)
+      anchor(entry, ownPath, context)
     )
   }
   return []
@@ -614,10 +653,12 @@ export const planRule = async (
   const env = environment(context, attrs)
   const listEnv = { ...hostEnvironment(context), ...graphEnvironment(context, attrs) }
   const authority = moduleFiles(context)
+  const cwd = moduleRelative(context) === "" ? "." : moduleRelative(context)
   if (rule === "Go.Packages") {
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
     const graph = await closure(packages, context, goPath, listEnv)
     return {
+      cwd,
       env,
       outDirs: [],
       writeSet: [],
@@ -630,6 +671,7 @@ export const planRule = async (
       Input.resolvePath(context.packagePath, path)
     )
     return {
+      cwd,
       argv: [goPath, "mod", "download"],
       env: { ...env, GOMODCACHE: outDirs[0] ?? ".gomodcache" },
       outDirs,
@@ -638,7 +680,7 @@ export const planRule = async (
     }
   }
   if (rule === "Go.Binary") {
-    const pkg = anchor(String(attrs["pkg"]), context.packagePath)
+    const pkg = anchor(String(attrs["pkg"]), context.packagePath, context)
     const out = Input.resolvePath(context.packagePath, String(attrs["out"]))
     const flags = [...((attrs["ldflags"] as ReadonlyArray<string> | undefined) ?? [])]
     for (const [name, value] of Object.entries((attrs["stamp"] as Record<string, unknown> | undefined) ?? {})) {
@@ -655,13 +697,14 @@ export const planRule = async (
       "build",
       "-buildvcs=false",
       "-o",
-      out,
+      fromModule(context, out),
       ...(flags.length === 0 ? [] : ["-ldflags", flags.join(" ")]),
       pkg
     ]
-    const packages = await selectedPackages([pkg], { ...context, packagePath: "" }, goPath, listEnv)
+    const packages = await selectedPackages([String(attrs["pkg"])], context, goPath, listEnv)
     const graph = await closure(packages, context, goPath, listEnv)
     return {
+      cwd,
       argv,
       env,
       outDirs: [NodePath.dirname(out)],
@@ -679,6 +722,7 @@ export const planRule = async (
     if (attrs["runner"] === "gotestsum" && gotestsum === undefined) {
       return {
         refusal: "host binary \"gotestsum\" is not present on PATH (required by S.Go.Test({ runner: \"gotestsum\" }))",
+        cwd,
         env,
         outDirs: [],
         writeSet: [],
@@ -698,6 +742,7 @@ export const planRule = async (
       : [gotestsum, "--", ...testFlags]
     const graph = await closure(packages, context, goPath, listEnv, true)
     return {
+      cwd,
       argv,
       env,
       outDirs: [],
@@ -707,19 +752,20 @@ export const planRule = async (
     }
   }
   if (rule === "Go.Lint") {
-    const pkgs = (attrs["pkgs"] as ReadonlyArray<string>).map((entry) => anchor(entry, context.packagePath))
+    const pkgs = (attrs["pkgs"] as ReadonlyArray<string>).map((entry) => anchor(entry, context.packagePath, context))
     const config = Input.resolvePath(context.packagePath, (attrs["config"] as Input.File).path)
     const changes = ((attrs["changes"] as ReadonlyArray<string> | undefined) ?? []).map((entry) =>
       Input.resolvePath(context.packagePath, entry)
     )
     return {
+      cwd,
       argv: [
         goPath,
         "run",
         `github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${String(attrs["version"])}`,
         "run",
         "--config",
-        config,
+        fromModule(context, config),
         ...(changes.length > 0 ? ["--fix"] : []),
         ...pkgs
       ],
@@ -733,6 +779,7 @@ export const planRule = async (
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
     const graph = await closure(packages, context, goPath, listEnv)
     return {
+      cwd,
       argv: [goPath, "generate", ...packages],
       env,
       outDirs: [],
@@ -744,10 +791,11 @@ export const planRule = async (
     }
   }
   if (rule === "Go.Fuzz") {
-    const pkg = anchor(String(attrs["pkg"]), context.packagePath)
-    const packages = await selectedPackages([pkg], { ...context, packagePath: "" }, goPath, listEnv)
+    const pkg = anchor(String(attrs["pkg"]), context.packagePath, context)
+    const packages = await selectedPackages([String(attrs["pkg"])], context, goPath, listEnv)
     const graph = await closure(packages, context, goPath, listEnv, true)
     return {
+      cwd,
       argv: [
         goPath,
         "test",
@@ -764,5 +812,5 @@ export const planRule = async (
       closureIdentity: graph.identity
     }
   }
-  return { env, outDirs: [], writeSet: [], readSet: authority }
+  return { cwd, env, outDirs: [], writeSet: [], readSet: authority }
 }

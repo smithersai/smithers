@@ -353,8 +353,8 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     )
     const planned = await GoExec.planRule(
       "Go.Packages",
-      { pkgs: ["./lib", "//other"], cgo: true, goos: "linux", goarch: "arm64", env: { CUSTOM: "1" } },
-      { ...host.context, workspace: withToolchains(goToolchain) },
+      { pkgs: ["./lib", "//mod/other"], cgo: true, goos: "linux", goarch: "arm64", env: { CUSTOM: "1" } },
+      { ...host.context, packagePath: "mod/pkg", workspace: withToolchains(goToolchain) },
       goPath()
     )
     expect(planned.readSet).toEqual(["mod/go.mod", "mod/go.sum", "pkg/lib/asm.s", "pkg/lib/c/h.h", "pkg/lib/lib.go"])
@@ -424,6 +424,7 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     )
     expect(planned).toEqual({
       refusal: "host binary \"gotestsum\" is not present on PATH (required by S.Go.Test({ runner: \"gotestsum\" }))",
+      cwd: ".",
       env: {},
       outDirs: [],
       writeSet: [],
@@ -484,9 +485,45 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     expect(serial.argv).toEqual([goPath(), "test", "./pkg/lib", "-run=^$", "-fuzz=F", "-fuzztime=1s"])
   })
 
+  it("plans a nested module relative to its directory and refuses a pattern outside it", async () => {
+    await listPackage({ "lib.go": "package main\n" })
+    await Fs.mkdir(NodePath.join(host.root, "mod"))
+    const nested = { ...host.context, packagePath: "mod/cmd", workspace: withToolchains(goToolchain) }
+    const binary = await GoExec.planRule("Go.Binary", { pkg: "./", out: "bin/app" }, nested, goPath())
+    expect(binary.cwd).toBe("mod")
+    expect(binary.argv).toEqual([goPath(), "build", "-buildvcs=false", "-o", "cmd/bin/app", "./cmd"])
+    expect(binary.outDirs).toEqual(["mod/cmd/bin"])
+    const fuzz = await GoExec.planRule("Go.Fuzz", { pkg: "//mod", fuzz: "F", time: "1s" }, nested, goPath())
+    expect(fuzz.argv?.slice(0, 3)).toEqual([goPath(), "test", "."])
+    expect(
+      (await GoExec.planRule(
+        "Go.Lint",
+        {
+          pkgs: ["//mod/..."],
+          config: S.file("//mod/lint.yml"),
+          version: "v2"
+        },
+        nested,
+        goPath()
+      )).argv?.slice(-3)
+    ).toEqual(["--config", "lint.yml", "./..."])
+    await expect(
+      GoExec.planRule(
+        "Go.Test",
+        { pkgs: ["./lib"] },
+        { ...host.context, workspace: withToolchains(goToolchain) },
+        goPath()
+      )
+    ).rejects.toThrow("package pattern \"./lib\" is outside the module at \"mod\"")
+    await expect(GoExec.planRule("Go.Binary", { pkg: "//other", out: "app" }, nested, goPath())).rejects.toThrow(
+      "package pattern \"//other\" is outside the module at \"mod\""
+    )
+  })
+
   it("plans module download, lint and offline runs without go list", async () => {
     const download = await GoExec.planRule("Go.ModDownload", { outDirs: ["cache"] }, host.context, goPath())
     expect(download).toEqual({
+      cwd: ".",
       argv: [goPath(), "mod", "download"],
       env: { GOMODCACHE: "pkg/cache" },
       outDirs: ["pkg/cache"],
@@ -499,10 +536,12 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     const lint = await GoExec.planRule(
       "Go.Lint",
       { pkgs: ["./..."], config: S.file(".golangci.yml"), version: "v2.1.0", changes: ["fixed.go"] },
-      { ...host.context, workspace: withToolchains(goToolchain) },
+      { ...host.context, packagePath: "mod/pkg", workspace: withToolchains(goToolchain) },
       goPath()
     )
+    // `go` runs in the module directory, so its paths are relative to it.
     expect(lint).toMatchObject({
+      cwd: "mod",
       argv: [
         goPath(),
         "run",
@@ -513,8 +552,8 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
         "--fix",
         "./pkg/..."
       ],
-      writeSet: ["pkg/fixed.go"],
-      readSet: ["mod/go.mod", "mod/go.sum", "pkg/.golangci.yml"]
+      writeSet: ["mod/pkg/fixed.go"],
+      readSet: ["mod/go.mod", "mod/go.sum", "mod/pkg/.golangci.yml"]
     })
     const check = await GoExec.planRule(
       "Go.Lint",
@@ -535,6 +574,7 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
       goPath()
     )
     expect(offline).toEqual({
+      cwd: ".",
       env: { GOPROXY: "off", GOFLAGS: "-mod=readonly", GOMODCACHE: ".gomodcache/fixture" },
       outDirs: [],
       writeSet: [],

@@ -146,6 +146,7 @@ describe("Go planning contracts", () => {
     }
     const planned = await GoExec.planRule("Go.Lint", attrs, context, "/selected/bin/go")
     expect(planned).toEqual({
+      cwd: ".",
       argv: [
         "/selected/bin/go",
         "run",

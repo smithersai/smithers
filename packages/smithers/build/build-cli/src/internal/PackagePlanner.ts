@@ -2145,6 +2145,9 @@ const visit = async (
         }, go.path)
         if (plannedGo.refusal !== undefined) noteRefusal(plannedGo.refusal)
         argv = plannedGo.argv === undefined ? undefined : [...plannedGo.argv]
+        // `go` finds its module by walking up from its working directory, so a
+        // nested module's rules run in its directory, not the workspace root.
+        cwd = plannedGo.cwd
         env = { ...plannedGo.env }
         // Go refuses a relative GOMODCACHE; the planned value stays
         // workspace-relative so two checkouts key alike, and is rooted at spawn.

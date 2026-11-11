@@ -11,6 +11,12 @@ probes `go version` in the module directory, so a repository using
 `GOTOOLCHAIN=auto` keys on the version Go actually selected rather than on the
 one a file asked for.
 
+Go rules run in the directory of the declared `go.mod`, so a module nested in
+the workspace (`S.file("//typescript/tsc/go.mod")`) builds, tests and downloads
+as one at the root does. `./` package patterns are relative to the declaring
+package and `//` patterns to the workspace root; a directory pattern outside
+the module refuses the target.
+
 The executable rules are `S.Go.Test`, `S.Go.Binary`, `S.Go.ModDownload`,
 `S.Go.Lint`, `S.Go.Generate`, and `S.Go.Fuzz`. `S.Go.bin` and
 `S.Go.run("module/cmd@version")` are tool references rather than targets. Every
