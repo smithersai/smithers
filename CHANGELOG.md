@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3372 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3393 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
@@ -429,6 +429,23 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **smithers:** the runner's process watcher follows children of a seen process that left the agent's tree ([24d33f97a1](https://github.com/smithersai/smithers/commit/24d33f97a19a6fd4b2312224c4b65594c5cdfa53))
+- **cli:** terminal-mode cancellation stops the command's descendants before returning 130 ([8fd6cd96af](https://github.com/smithersai/smithers/commit/8fd6cd96afa996696ff75d81c3476821aad61355))
+- **cli:** detached admission verification stops at cancellation and its deadline ([5f9778c669](https://github.com/smithersai/smithers/commit/5f9778c669884832e5f547c99ee93bdc910afcde))
+- **release:** the containment fixture waits out the CLI's own admission window ([b258be6f6b](https://github.com/smithersai/smithers/commit/b258be6f6b62ec2b2e2f8048d1565d742ce52910))
+- **review:** review VibeLang source and default-exclude its tests ([3ce2bbd045](https://github.com/smithersai/smithers/commit/3ce2bbd04582d8b9131839fe74857b6abe385304))
+- **release:** derive the later Effect fixtures from the pin ([2e9a966c89](https://github.com/smithersai/smithers/commit/2e9a966c8975d1880dcc4e402661ba5f3d05f877))
+- **release:** consumer subprocesses get no credentials and print none ([3e6fdb5a80](https://github.com/smithersai/smithers/commit/3e6fdb5a803f7a2d4a32b03730d1369435fbc4cf))
+- **release:** staging and the final tarball check refuse local credential files ([1d680a492b](https://github.com/smithersai/smithers/commit/1d680a492be9f9afad674acf11aea04048d43087))
+- **harness:** the Harbor adapter counts child runs, stops a cancelled command and passes its own checks ([3291d6bda5](https://github.com/smithersai/smithers/commit/3291d6bda568127cb366ede064ba66de9bb19de9))
+- **harness:** a timed-out bash call keeps its output, and a child flow cannot widen its caller's authority ([4c15c04c65](https://github.com/smithersai/smithers/commit/4c15c04c65eeacb483a7e77eef0c62fe959907e0))
+- **sandbox:** batched file commits lock, keep path bytes, tolerate foreign owners and work on BusyBox ([ac6ece1504](https://github.com/smithersai/smithers/commit/ac6ece1504c9962626abd0cd3a5184546ed7f162))
+- **flows:** farm clients never upload credentials or private data ([d59600ee62](https://github.com/smithersai/smithers/commit/d59600ee62d3f41f798bafa1f0ebbeb03f559a46))
+- **issue-sweep:** wait for job disk outside the admission lock ([8b4474367f](https://github.com/smithersai/smithers/commit/8b4474367f4d967a9da56233ee166da4e51b1cb0))
+- **build-cli:** keep unconfined bundler and repository results out of the remote cache ([03d3128e3d](https://github.com/smithersai/smithers/commit/03d3128e3dfbb94248007382aa744b894a70381d))
+- **cli:** relocate burndown fixture flows from flows/ so the fault scenarios launch ([19e7b84f9d](https://github.com/smithersai/smithers/commit/19e7b84f9dac68caa64409828e9be6497411211c))
+- **fs:** refuse hidden schema-record flows behind stale routes ([dcc13e2b68](https://github.com/smithersai/smithers/commit/dcc13e2b6857670d754c2f89cb8629a23a2ba34f))
+- **flows:** the issue-sweep install-hook guard refuses .pnpmfile.mjs ([72167e86d2](https://github.com/smithersai/smithers/commit/72167e86d22ca497c2a23a52d3df6f38224eb9db))
 - **targets:** key Docker.Build on its context and cache Docker.Bake only with data ([c52c876436](https://github.com/smithersai/smithers/commit/c52c876436bc3814d20eabf16d03f897f36c77eb))
 - **fs:** typed calls accept void input and output ([8e34ac826a](https://github.com/smithersai/smithers/commit/8e34ac826ac4dd0a608dd28dd2aa12fb1b486f2f))
 - **flows:** qualify lane-gate baseline failures by check and Go package ([b0f02bf8a3](https://github.com/smithersai/smithers/commit/b0f02bf8a30e1d30409b48d618e6b4842475fac6))
@@ -2282,6 +2299,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **mvp:** record the full frontier-harness-eval run and the review fixes ([4bd5184939](https://github.com/smithersai/smithers/commit/4bd5184939217c9ca76bdc6b2e5e5da645ae5b4e))
 - **vibelang:** record session 19 coverage, action failure fixes and the wiki repository journey ([7d54448c00](https://github.com/smithersai/smithers/commit/7d54448c00c0bf39456bc0cf014e83743ab0cc00))
 - **cli:** the runner status example names the doc's own profile, not an agent vendor ([7da970061e](https://github.com/smithersai/smithers/commit/7da970061e64768ce807e1358d64f86aa68ef3cb))
 - **vibelang:** record the per-mutant wall budget ruling and its measurements (0018) ([d87535bb4e](https://github.com/smithersai/smithers/commit/d87535bb4e42533162ef4feabe8889e0e9df4f18))
@@ -2697,6 +2715,9 @@ the release notes at
 
 ### 📦 Other changes
 
+- **bench(vibelang):** a VIP draft whose model call cannot be charged, counted fault coverage ([06bf599064](https://github.com/smithersai/smithers/commit/06bf599064575969384af3035f5ac033dbe8acdf))
+- **test(mvp):** the config-at-build check walks each helper once, not once per file ([b5b7b2ad79](https://github.com/smithersai/smithers/commit/b5b7b2ad794df194d8d3553d2676d36e76dc2211))
+- **test(mvp):** the terminal panel test waits for the tabs to follow the open row ([851fab9b5a](https://github.com/smithersai/smithers/commit/851fab9b5a9dccb0b3ecfb454e4da6300b08ea3e))
 - **style:** format four files main left unformatted ([ff146c9bd9](https://github.com/smithersai/smithers/commit/ff146c9bd9903bbdbd976990775b0b01da7b3005))
 - **bench(vibelang):** the draft-budget and action-command workloads follow the call meter and failure ops ([1851cc1583](https://github.com/smithersai/smithers/commit/1851cc1583338711c8c67473e38462f08b9279f9))
 - **test(engine-store):** run the lifecycle, wake-up, replay and step-cache suites on the matrix's PostgreSQL leg ([df4d5706c6](https://github.com/smithersai/smithers/commit/df4d5706c64ec5b50baee35b19534122a0e72a1c))
