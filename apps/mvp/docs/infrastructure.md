@@ -27,6 +27,15 @@ The Vite plugin compiles browser `.vibe` imports. ChatApi's local Worker is bund
 
 You need Docker with Compose v2, Node 26 (it runs the TypeScript scripts directly) and pnpm.
 
+The local stack publishes Postgres at `127.0.0.1:54321`, Electric at `127.0.0.1:30001` and PgBouncer at
+`127.0.0.1:54322`. Electric has no secret and the databases use development credentials: local programs can reach
+them directly, so these listeners must stay on loopback on shared or networked hosts. Changing the host binding
+requires an explicit `MVP_TEST_POSTGRES_BIND`, `MVP_TEST_ELECTRIC_BIND` or `MVP_TEST_POOL_BIND` override in
+`host:port` form. The owned test stack supplies its own loopback ports.
+
+`node --test db/test-stack.compose.test.mjs` checks the resolved Compose bindings without starting containers;
+`pnpm test:stack` includes this check before exercising the owned fixtures.
+
 1. `pnpm install` in the repository root.
 2. `pnpm db:up` starts Postgres and Electric from `docker-compose.yml` and waits until both are healthy.
 3. `pnpm db:migrate` applies `db/migrations` to `DATABASE_URL`, the compose Postgres by default.

@@ -3,6 +3,7 @@
 set -euo pipefail
 app_directory=$(cd "$(dirname "$0")/.." && pwd)
 cd "$app_directory"
+node --test db/test-stack.compose.test.mjs
 receipt=$(mktemp)
 trap 'rm -f "$receipt"' EXIT
 export MVP_STACK_TEST_RECEIPT="$receipt"

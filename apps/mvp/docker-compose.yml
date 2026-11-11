@@ -10,7 +10,7 @@ services:
     # Electric reads Postgres' logical replication stream.
     # max_connections 300: several agents' parallel suites share this database (100 ran out).
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_connections=${MVP_TEST_MAX_CONNECTIONS:-300}"]
-    ports: ["${MVP_TEST_POSTGRES_BIND:-54321}:5432"]
+    ports: ["${MVP_TEST_POSTGRES_BIND:-127.0.0.1:54321}:5432"]
     volumes: ["postgres:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smithers -d smithers"]
@@ -21,9 +21,10 @@ services:
     image: electricsql/electric:1.8.1
     environment:
       DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers?sslmode=disable
-      # As in production (infra/ElectricGateway.ts): Electric has no secret, and only ChatApi reaches it.
+      # Local Electric has no secret; its published listener is loopback-only by default.
+      # Production is private behind ChatApi (infra/ElectricGateway.ts).
       ELECTRIC_INSECURE: "true"
-    ports: ["${MVP_TEST_ELECTRIC_BIND:-30001}:3000"]
+    ports: ["${MVP_TEST_ELECTRIC_BIND:-127.0.0.1:30001}:3000"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,7 +44,7 @@ services:
       DEFAULT_POOL_SIZE: "4"
       MAX_CLIENT_CONN: "${MVP_TEST_POOL_MAX_CLIENTS:-500}"
       MAX_DB_CONNECTIONS: "${MVP_TEST_POOL_MAX_DATABASE_CONNECTIONS:-0}"
-    ports: ["${MVP_TEST_POOL_BIND:-54322}:5432"]
+    ports: ["${MVP_TEST_POOL_BIND:-127.0.0.1:54322}:5432"]
     depends_on:
       postgres:
         condition: service_healthy
