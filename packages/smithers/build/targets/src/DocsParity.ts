@@ -2,8 +2,10 @@
  * Package documentation parity checks.
  *
  * Checks that a README exists, has a title, and meets the configured minimum
- * prose length. The README is a declared input. This target does not check
- * JSDoc or compare documentation with source code.
+ * prose length, and that each declared page example is a byte copy of the
+ * source file a test imports. The README, the pages, the examples and their
+ * tests are declared inputs. This target does not check JSDoc or compare
+ * prose with source code.
  *
  * @since 0.1.0
  */
@@ -55,10 +57,33 @@ export class DocsParityError extends Schema.TaggedError<DocsParityError>()(
 ) {}
 
 /**
+ * One page example as the check reads it: the documentation `page`, the
+ * `example` source file the page shows, and the `test` that imports and runs
+ * it. All three are workspace-relative.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ExamplePayload = Schema.Struct({
+  page: Schema.NonEmptyString,
+  example: Schema.NonEmptyString,
+  test: Schema.NonEmptyString
+})
+
+/**
+ * One page example as the check reads it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type ExamplePayload = typeof ExamplePayload.Type
+
+/**
  * Payload for one README parity check.
  *
  * `path` is workspace-relative and resolves against the workspace root at
- * execution time.
+ * execution time. `examples` lists the page examples to hold to their
+ * sources; omitted, the check reads the README alone.
  *
  * @category schemas
  * @since 0.1.0
@@ -68,7 +93,8 @@ export const ReadmePayload = Schema.Struct({
   minimumProseCharacters: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(1),
     Schema.isLessThanOrEqualTo(maximumReadmeBytes)
-  )
+  ),
+  examples: Schema.optional(Schema.Array(ExamplePayload))
 })
 
 /**
@@ -117,6 +143,93 @@ const withoutFences = (text: string): string => {
     kept.push(line)
   }
   return kept.join("\n")
+}
+
+/**
+ * One fenced code block: the first word of its info string and its body.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Fence {
+  readonly language: string
+  readonly body: string
+}
+
+/**
+ * Reads every fenced code block in a Markdown text, in order.
+ *
+ * `language` is the first word of the opening line's info string, empty when
+ * there is none; `body` is the lines between the fences joined by newlines.
+ * An unclosed fence runs to the end of the text, as CommonMark reads it.
+ *
+ * @category parsing
+ * @since 1.0.0
+ */
+export const fences = (text: string): ReadonlyArray<Fence> => {
+  const found: Array<Fence> = []
+  let open: { readonly character: string; readonly length: number; readonly language: string } | undefined
+  let body: Array<string> = []
+  for (const line of text.replaceAll("\r\n", "\n").split("\n")) {
+    if (open === undefined) {
+      const marker = fence.exec(line)?.[1]
+      if (marker === undefined) continue
+      const info = line.trimStart().slice(marker.length).trim()
+      open = { character: marker[0]!, length: marker.length, language: info.split(/\s/, 1)[0]! }
+      body = []
+      continue
+    }
+    const current = open
+    const candidate = line.trim()
+    if (
+      candidate.length >= current.length &&
+      [...candidate].every((character) => character === current.character)
+    ) {
+      found.push({ language: current.language, body: body.join("\n") })
+      open = undefined
+      continue
+    }
+    body.push(line)
+  }
+  if (open !== undefined) found.push({ language: open.language, body: body.join("\n") })
+  return found
+}
+
+/** The file extension a page example's fence names as its language: `vibe` for `quickstart.vibe`. */
+const languageOf = (path: string): string => NodePath.posix.extname(path).slice(1)
+
+/** A source text with Windows line endings and trailing newlines removed. */
+const normalizedSource = (text: string): string => text.replaceAll("\r\n", "\n").replace(/\n+$/, "")
+
+/**
+ * Judges one page example without touching the filesystem.
+ *
+ * The page must carry a fence whose language is the example file's extension
+ * and whose body is the example's text, so a reader copies exactly what the
+ * test runs, and the test must import the example by its relative path.
+ * Answers the problem as a sentence, or `undefined` when there is none.
+ *
+ * @category parsing
+ * @since 1.0.0
+ */
+export const exampleProblem = (
+  example: ExamplePayload,
+  texts: { readonly page: string; readonly example: string; readonly test: string }
+): string | undefined => {
+  const language = languageOf(example.example)
+  const source = normalizedSource(texts.example)
+  const candidates = fences(texts.page).filter((block) => block.language === language)
+  if (!candidates.some((block) => normalizedSource(block.body) === source)) {
+    return candidates.length === 0 ?
+      `${example.page} has no \`${language}\` fence; paste ${example.example} into one` :
+      `no \`${language}\` fence in ${example.page} matches ${example.example}; paste the file again`
+  }
+  const specifier = NodePath.posix.relative(NodePath.posix.dirname(example.test), example.example)
+  const relative = specifier.startsWith(".") ? specifier : `./${specifier}`
+  if (!texts.test.includes(`"${relative}"`) && !texts.test.includes(`'${relative}'`)) {
+    return `${example.test} does not import ${relative}, so no test runs the example ${example.page} shows`
+  }
+  return undefined
 }
 
 /**
@@ -185,7 +298,8 @@ export const summarize = (contents: string): Summary => {
 }
 
 /**
- * Checks one package README for presence, a title, and real prose.
+ * Checks one package README for presence, a title, and real prose, and each
+ * page example against its source and test.
  *
  * @category actions
  * @since 0.1.0
@@ -230,24 +344,50 @@ const judge = (payload: ReadmePayload, contents: string | undefined): Effect.Eff
  */
 export const checkDocs = (options: {
   readonly workspaceRoot: string
-}, payload: ReadmePayload): Effect.Effect<void, DocsParityError> =>
-  Effect.flatMap(
+}, payload: ReadmePayload): Effect.Effect<void, DocsParityError> => {
+  const read = (path: string, what: string) =>
     Effect.tryPromise({
       try: async (signal) => {
         const root = await SafeFs.canonicalRoot(options.workspaceRoot)
-        const relative = Input.resolvePath("", payload.path)
+        const relative = Input.resolvePath("", path)
         return SafeFs.readText(NodePath.join(root, relative), {
           root,
           signal,
           symlinks: "follow",
           limit: maximumReadmeBytes,
-          what: "package README"
+          what
         })
       },
-      catch: (cause) => new DocsParityError({ path: payload.path, message: failureMessage(cause) })
-    }),
-    (contents) => judge(payload, contents)
+      catch: (cause) => new DocsParityError({ path, message: failureMessage(cause) })
+    })
+  const present = (path: string, what: string) =>
+    Effect.flatMap(read(path, what), (text) =>
+      text === undefined ?
+        Effect.fail(new DocsParityError({ path, message: `the ${what} ${path} does not exist` })) :
+        Effect.succeed(text))
+  const checkExample = (example: ExamplePayload) =>
+    Effect.flatMap(
+      Effect.all({
+        page: present(example.page, "documentation page"),
+        example: present(example.example, "page example"),
+        test: present(example.test, "example test")
+      }),
+      (texts) => {
+        const problem = exampleProblem(example, texts)
+        return problem === undefined ?
+          Effect.void :
+          Effect.fail(new DocsParityError({ path: example.page, message: problem }))
+      }
+    )
+  return Effect.flatMap(
+    read(payload.path, "package README"),
+    (contents) =>
+      Effect.andThen(
+        judge(payload, contents),
+        Effect.forEach(payload.examples ?? [], checkExample, { discard: true })
+      )
   )
+}
 
 /**
  * Implements {@link CheckDocs} with confined, descriptor-stable, bounded
@@ -280,6 +420,17 @@ export const Attrs = Schema.Struct({
     Schema.isLessThanOrEqualTo(maximumReadmeBytes)
   ).pipe(
     Schema.withConstructorDefault(Effect.succeed(defaultMinimumProseCharacters))
+  ),
+  /**
+   * Page examples held to their sources: each `page` must show its `example`
+   * file verbatim in a fence named for the file's extension, and `test` must
+   * import that file. List the package's `test` target in `deps` so the docs
+   * verb also compiles and runs the example.
+   *
+   * @default []
+   */
+  examples: Schema.Array(Schema.Struct({ page: Input.File, example: Input.File, test: Input.File })).pipe(
+    Schema.withConstructorDefault(Effect.succeed([]))
   ),
   cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
@@ -320,6 +471,13 @@ export const DocsParity = Target.make("DocsParity", {
   implementation: (attrs) =>
     CheckDocs.call({
       path: Input.resolvePath(attrs.cwd, attrs.readme.path),
-      minimumProseCharacters: attrs.minimumProseCharacters
+      minimumProseCharacters: attrs.minimumProseCharacters,
+      ...(attrs.examples.length === 0 ? {} : {
+        examples: attrs.examples.map((example) => ({
+          page: Input.resolvePath(attrs.cwd, example.page.path),
+          example: Input.resolvePath(attrs.cwd, example.example.path),
+          test: Input.resolvePath(attrs.cwd, example.test.path)
+        }))
+      })
     })
 })
