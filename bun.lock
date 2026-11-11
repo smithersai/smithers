@@ -469,7 +469,7 @@
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
-        "@smthrs/flow": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -573,7 +573,7 @@
     },
     "packages/errors": {
       "name": "@smthrs/errors",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "vibelang-runtime": "0.0.12",
       },
@@ -604,7 +604,7 @@
     },
     "packages/fuzz": {
       "name": "@smthrs/fuzz",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
@@ -669,7 +669,7 @@
       "name": "@smthrs/rpc",
       "version": "0.0.0",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
         "string-width": "7.2.0",
         "yjs": "13.6.32",
         "zod": "4.6.7",
@@ -687,7 +687,7 @@
     },
     "packages/smithers": {
       "name": "@smthrs/cli",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "bin": {
         "smithers": "./bin/smithers.mjs",
         "smthrs": "./bin/smithers.mjs",
@@ -699,43 +699,43 @@
         "@effect/sql-sqlite-node": "4.1.1",
         "@opentui/core": "0.5.11",
         "@opentui/react": "0.5.11",
-        "@smthrs/agent": "1.0.0-rc.17",
-        "@smthrs/build-cli": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/evals": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/gateway": "1.0.0-rc.17",
-        "@smthrs/harness": "1.0.0-rc.17",
-        "@smthrs/integrations": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/mcp": "1.0.0-rc.17",
-        "@smthrs/memory": "1.0.0-rc.17",
-        "@smthrs/migrate": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/observability": "1.0.0-rc.17",
-        "@smthrs/patterns": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/scorers": "1.0.0-rc.17",
-        "@smthrs/std": "1.0.0-rc.17",
-        "@smthrs/step-cache": "1.0.0-rc.17",
-        "@smthrs/sync": "1.0.0-rc.17",
-        "@smthrs/targets": "1.0.0-rc.17",
-        "@smthrs/time-travel": "1.0.0-rc.17",
-        "@smthrs/triggers": "1.0.0-rc.17",
+        "@smthrs/agent": "1.0.0-rc.18",
+        "@smthrs/build-cli": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/evals": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/gateway": "1.0.0-rc.18",
+        "@smthrs/harness": "1.0.0-rc.18",
+        "@smthrs/integrations": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/mcp": "1.0.0-rc.18",
+        "@smthrs/memory": "1.0.0-rc.18",
+        "@smthrs/migrate": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/observability": "1.0.0-rc.18",
+        "@smthrs/patterns": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/scorers": "1.0.0-rc.18",
+        "@smthrs/std": "1.0.0-rc.18",
+        "@smthrs/step-cache": "1.0.0-rc.18",
+        "@smthrs/sync": "1.0.0-rc.18",
+        "@smthrs/targets": "1.0.0-rc.18",
+        "@smthrs/time-travel": "1.0.0-rc.18",
+        "@smthrs/triggers": "1.0.0-rc.18",
         "@types/ws": "8.18.2",
         "diff": "9.0.0",
         "incur": "0.5.1",
@@ -756,9 +756,9 @@
         "@effect/sql-sqlite-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/platform-bun": "1.0.0-rc.17",
-        "@smthrs/testing": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/platform-bun": "1.0.0-rc.18",
+        "@smthrs/testing": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -781,7 +781,7 @@
       "peerDependencies": {
         "@effect/sql-pg": "4.1.1",
         "@effect/sql-sqlite-node": "4.1.1",
-        "@smthrs/platform-bun": "1.0.0-rc.17",
+        "@smthrs/platform-bun": "1.0.0-rc.18",
         "effect": "4.1.1",
         "electrobun": "1.18.1",
       },
@@ -792,38 +792,38 @@
     },
     "packages/smithers/agent": {
       "name": "@smthrs/agent",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/harness": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/memory": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/observability": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/plugin": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/std": "1.0.0-rc.17",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/harness": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/memory": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/observability": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/plugin": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/std": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/patterns": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/testing": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/patterns": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/testing": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -882,10 +882,10 @@
     },
     "packages/smithers/agent/evals": {
       "name": "@smthrs/evals",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/scorers": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/scorers": "1.0.0-rc.18",
         "devalue": "5.9.2",
       },
       "devDependencies": {
@@ -917,8 +917,8 @@
       "name": "@smthrs/fs",
       "version": "0.1.0",
       "dependencies": {
-        "@smthrs/build-cli": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
+        "@smthrs/build-cli": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
         "@smthrs/core": "workspace:*",
         "@smthrs/flow": "workspace:*",
         "@smthrs/registry": "workspace:*",
@@ -950,23 +950,23 @@
     },
     "packages/smithers/agent/harness": {
       "name": "@smthrs/harness",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@babel/parser": "8.0.4",
         "@babel/types": "8.0.4",
         "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
         "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
         "@smthrs/crypto": "workspace:*",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
         "@smthrs/plan": "workspace:*",
-        "@smthrs/registry": "1.0.0-rc.17",
+        "@smthrs/registry": "1.0.0-rc.18",
         "quickjs-emscripten-core": "0.32.0",
         "sucrase": "3.35.1",
       },
@@ -1045,16 +1045,16 @@
     },
     "packages/smithers/agent/integrations": {
       "name": "@smthrs/integrations",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/errors": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/errors": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "vibelang-runtime": "0.0.12",
       },
       "devDependencies": {
@@ -1062,10 +1062,10 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/platform-bun": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/platform-bun": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1090,12 +1090,12 @@
     },
     "packages/smithers/agent/memory": {
       "name": "@smthrs/memory",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/patterns": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/patterns": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1125,20 +1125,20 @@
     },
     "packages/smithers/agent/model": {
       "name": "@smthrs/model",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1200,11 +1200,11 @@
     },
     "packages/smithers/agent/plugin": {
       "name": "@smthrs/plugin",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1233,13 +1233,13 @@
     },
     "packages/smithers/agent/registry": {
       "name": "@smthrs/registry",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@mdx-js/mdx": "3.1.1",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "vibelang-runtime": "0.0.12",
         "yaml": "2.9.0",
       },
@@ -1248,12 +1248,12 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1303,12 +1303,12 @@
     },
     "packages/smithers/agent/scorers": {
       "name": "@smthrs/scorers",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1316,9 +1316,9 @@
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
         "@smthrs/flow": "workspace:*",
-        "@smthrs/kernel": "1.0.0-rc.17",
+        "@smthrs/kernel": "1.0.0-rc.18",
         "@smthrs/plan": "workspace:*",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1342,22 +1342,22 @@
     },
     "packages/smithers/agent/std": {
       "name": "@smthrs/std",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/patterns": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/patterns": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1381,16 +1381,19 @@
     },
     "packages/smithers/agent/triggers": {
       "name": "@smthrs/triggers",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
+        "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
+        "@smthrs/engine": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1414,11 +1417,11 @@
     },
     "packages/smithers/build": {
       "name": "@smthrs/build",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1447,25 +1450,25 @@
     },
     "packages/smithers/build/build-cli": {
       "name": "@smthrs/build-cli",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "bin": {
         "smithers-build": "./src/main.js",
       },
       "dependencies": {
         "@clack/prompts": "1.7.0",
-        "@smthrs/build": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/targets": "1.0.0-rc.17",
+        "@smthrs/build": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/targets": "1.0.0-rc.18",
         "@types/ws": "8.18.2",
         "ignore": "7.0.8",
         "incur": "0.5.1",
@@ -1483,7 +1486,7 @@
         "@effect/platform-node-shared": "4.1.1",
         "@eslint/js": "9.39.5",
         "@rsbuild/core": "2.2.3",
-        "@smthrs/kernel": "1.0.0-rc.17",
+        "@smthrs/kernel": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1514,15 +1517,15 @@
       "version": "0.1.0",
       "dependencies": {
         "@cloudflare/sandbox": "0.12.14",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/targets": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/targets": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
         "@cloudflare/workers-types": "5.20261019.1",
         "@effect/platform-node": "4.1.1",
-        "@smthrs/build-cli": "1.0.0-rc.17",
+        "@smthrs/build-cli": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "alchemy": "2.0.0-beta.85",
@@ -1539,15 +1542,15 @@
     },
     "packages/smithers/build/targets": {
       "name": "@smthrs/targets",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/build": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/triggers": "1.0.0-rc.17",
-        "@smthrs/views": "1.0.0-rc.17",
+        "@smthrs/build": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/triggers": "1.0.0-rc.18",
+        "@smthrs/views": "1.0.0-rc.18",
         "ignore": "7.0.8",
         "minimatch": "10.2.6",
         "yaml": "2.9.0",
@@ -1578,29 +1581,29 @@
     },
     "packages/smithers/control": {
       "name": "@smthrs/control",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/plan-store": "1.0.0-rc.17",
-        "@smthrs/step-cache": "1.0.0-rc.17",
-        "@smthrs/time-travel": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/plan-store": "1.0.0-rc.18",
+        "@smthrs/step-cache": "1.0.0-rc.18",
+        "@smthrs/time-travel": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1624,28 +1627,28 @@
     },
     "packages/smithers/flows": {
       "name": "@smthrs/flows",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/observability": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/plan-store": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/step-cache": "1.0.0-rc.17",
-        "@smthrs/sync": "1.0.0-rc.17",
-        "@smthrs/time-travel": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/observability": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/plan-store": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/step-cache": "1.0.0-rc.18",
+        "@smthrs/sync": "1.0.0-rc.18",
+        "@smthrs/time-travel": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1654,14 +1657,14 @@
         "@effect/sql-pg": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/patterns": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/targets": "1.0.0-rc.17",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/patterns": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/targets": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1685,9 +1688,9 @@
     },
     "packages/smithers/flows/artifacts": {
       "name": "@smthrs/artifacts",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/crypto": "1.0.0-rc.17",
+        "@smthrs/crypto": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1717,7 +1720,7 @@
     },
     "packages/smithers/flows/canonical": {
       "name": "@smthrs/canonical",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
@@ -1745,9 +1748,9 @@
     },
     "packages/smithers/flows/capability": {
       "name": "@smthrs/capability",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1777,12 +1780,12 @@
     },
     "packages/smithers/flows/core": {
       "name": "@smthrs/core",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1790,7 +1793,7 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/engine": "1.0.0-rc.17",
+        "@smthrs/engine": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1814,7 +1817,7 @@
     },
     "packages/smithers/flows/crypto": {
       "name": "@smthrs/crypto",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
@@ -1844,7 +1847,7 @@
     },
     "packages/smithers/flows/database": {
       "name": "@smthrs/database",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/sql-pg": "4.1.1",
@@ -1885,15 +1888,15 @@
     },
     "packages/smithers/flows/engine": {
       "name": "@smthrs/engine",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "vibelang-runtime": "0.0.12",
       },
       "devDependencies": {
@@ -1927,22 +1930,22 @@
     },
     "packages/smithers/flows/engine-store": {
       "name": "@smthrs/engine-store",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/plan-store": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/step-cache": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/plan-store": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/step-cache": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1950,8 +1953,8 @@
         "@effect/sql-pg": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -1976,13 +1979,13 @@
     },
     "packages/smithers/flows/flow": {
       "name": "@smthrs/flow",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2014,10 +2017,10 @@
     },
     "packages/smithers/flows/jj": {
       "name": "@smthrs/jj",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2047,16 +2050,16 @@
     },
     "packages/smithers/flows/journal": {
       "name": "@smthrs/journal",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/database": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/sql-sqlite-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/flow": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2081,19 +2084,19 @@
     },
     "packages/smithers/flows/kernel": {
       "name": "@smthrs/kernel",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/database": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2124,10 +2127,10 @@
     },
     "packages/smithers/flows/keys": {
       "name": "@smthrs/keys",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2160,15 +2163,15 @@
       "name": "@smthrs/merge-queue",
       "version": "0.1.0",
       "dependencies": {
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2192,12 +2195,12 @@
     },
     "packages/smithers/flows/observability": {
       "name": "@smthrs/observability",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@effect/opentelemetry": "4.1.1",
         "@opentelemetry/sdk-logs": "0.222.0",
         "@opentelemetry/sdk-metrics": "2.11.0",
-        "@smthrs/journal": "1.0.0-rc.17",
+        "@smthrs/journal": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2249,16 +2252,16 @@
     },
     "packages/smithers/flows/patterns": {
       "name": "@smthrs/patterns",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/core": "1.0.0-rc.17",
+        "@smthrs/core": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2282,11 +2285,11 @@
     },
     "packages/smithers/flows/plan": {
       "name": "@smthrs/plan",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2317,11 +2320,11 @@
     },
     "packages/smithers/flows/plan-store": {
       "name": "@smthrs/plan-store",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/keys": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/keys": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2351,22 +2354,22 @@
     },
     "packages/smithers/flows/platform-browser": {
       "name": "@smthrs/platform-browser",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@journeyapps/wa-sqlite": "1.7.2",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/std": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/std": "1.0.0-rc.18",
         "typescript": "5.9.3",
       },
       "devDependencies": {
@@ -2374,10 +2377,10 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/agent": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/observability": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
+        "@smthrs/agent": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/observability": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
         "@tanstack/browser-db-sqlite-persistence": "0.2.36",
         "@tanstack/db": "0.15.1",
         "@types/node": "26.4.1",
@@ -2408,12 +2411,12 @@
     },
     "packages/smithers/flows/platform-bun": {
       "name": "@smthrs/platform-bun",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
         "@types/ws": "8.18.2",
         "redis": "6.2.1",
         "undici": "8.12.4",
@@ -2428,9 +2431,9 @@
         "@effect/sql-pg": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2451,7 +2454,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/platform-node": "1.0.0-rc.18",
         "effect": "4.1.1",
         "electrobun": "1.18.1",
       },
@@ -2461,20 +2464,20 @@
     },
     "packages/smithers/flows/platform-cloudflare": {
       "name": "@smthrs/platform-cloudflare",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@effect/sql-sqlite-do": "4.1.1",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "5.20261019.1",
@@ -2482,8 +2485,8 @@
         "@effect/sql-pg": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/observability": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/observability": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2509,23 +2512,23 @@
     },
     "packages/smithers/flows/platform-node": {
       "name": "@smthrs/platform-node",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@effect/sql-sqlite-node": "4.1.1",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/sandbox": "1.0.0-rc.17",
-        "@smthrs/std": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/sandbox": "1.0.0-rc.18",
+        "@smthrs/std": "1.0.0-rc.18",
         "@types/ws": "8.18.2",
         "esbuild": "0.28.2",
         "redis": "6.2.1",
@@ -2539,7 +2542,7 @@
         "@effect/platform-node-shared": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/plan": "1.0.0-rc.17",
+        "@smthrs/plan": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2564,12 +2567,12 @@
     },
     "packages/smithers/flows/run-store": {
       "name": "@smthrs/run-store",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/observability": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/observability": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2598,12 +2601,12 @@
     },
     "packages/smithers/flows/sandbox": {
       "name": "@smthrs/sandbox",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
         "@smthrs/plan": "workspace:*",
       },
       "devDependencies": {
@@ -2611,10 +2614,10 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/platform-bun": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/std": "1.0.0-rc.17",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/platform-bun": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/std": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2666,10 +2669,10 @@
     },
     "packages/smithers/flows/step-cache": {
       "name": "@smthrs/step-cache",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/database": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/database": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2698,10 +2701,10 @@
     },
     "packages/smithers/flows/sync": {
       "name": "@smthrs/sync",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
         "yjs": "13.6.32",
       },
       "devDependencies": {
@@ -2709,9 +2712,9 @@
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/time-travel": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/time-travel": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2736,26 +2739,26 @@
     },
     "packages/smithers/flows/time-travel": {
       "name": "@smthrs/time-travel",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
-        "@smthrs/step-cache": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
+        "@smthrs/step-cache": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/artifacts": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/plan-store": "1.0.0-rc.17",
+        "@smthrs/artifacts": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/plan-store": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2779,14 +2782,14 @@
     },
     "packages/smithers/gateway": {
       "name": "@smthrs/gateway",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/control": "1.0.0-rc.17",
-        "@smthrs/engine-store": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
-        "@smthrs/sync": "1.0.0-rc.17",
+        "@smthrs/control": "1.0.0-rc.18",
+        "@smthrs/engine-store": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
+        "@smthrs/sync": "1.0.0-rc.18",
         "@types/ws": "8.18.2",
         "redis": "6.2.1",
         "undici": "8.12.4",
@@ -2799,12 +2802,12 @@
         "@effect/platform-node-shared": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/database": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/notifications": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/run-store": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/notifications": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/run-store": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2829,26 +2832,26 @@
     },
     "packages/smithers/mcp": {
       "name": "@smthrs/mcp",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/capability": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/harness": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/capability": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/harness": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/agent": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/flows": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
+        "@smthrs/agent": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/flows": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -2872,7 +2875,7 @@
     },
     "packages/smithers/migrate": {
       "name": "@smthrs/migrate",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "bin": {
         "smithers-migrate": "./dist/esm/flow/bin.js",
       },
@@ -2907,18 +2910,18 @@
         "vitest": "5.0.0",
       },
       "optionalDependencies": {
-        "@smthrs/agent": "1.0.0-rc.17",
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/harness": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/platform-node": "1.0.0-rc.17",
-        "@smthrs/registry": "1.0.0-rc.17",
+        "@smthrs/agent": "1.0.0-rc.18",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/harness": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/platform-node": "1.0.0-rc.18",
+        "@smthrs/registry": "1.0.0-rc.18",
       },
       "peerDependencies": {
         "effect": "4.1.1",
@@ -2926,17 +2929,17 @@
     },
     "packages/smithers/notifications": {
       "name": "@smthrs/notifications",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
         "@eslint/js": "9.39.5",
-        "@smthrs/database": "1.0.0-rc.17",
+        "@smthrs/database": "1.0.0-rc.18",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -3085,12 +3088,12 @@
     },
     "packages/smithers/ui/views": {
       "name": "@smthrs/views",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "dependencies": {
         "@babel/parser": "8.0.4",
-        "@smthrs/crypto": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
-        "@smthrs/harness": "1.0.0-rc.17",
+        "@smthrs/crypto": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
+        "@smthrs/harness": "1.0.0-rc.18",
         "quickjs-emscripten-core": "0.32.0",
         "sucrase": "3.35.1",
       },
@@ -3128,13 +3131,13 @@
     },
     "packages/smthrs-deprecation": {
       "name": "smthrs",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "bin": {
         "smithers": "./bin/smthrs.mjs",
         "smthrs": "./bin/smthrs.mjs",
       },
       "dependencies": {
-        "@smthrs/cli": "1.0.0-rc.17",
+        "@smthrs/cli": "1.0.0-rc.18",
       },
       "devDependencies": {
         "@eslint/js": "9.39.5",
@@ -3157,24 +3160,24 @@
     },
     "packages/testing": {
       "name": "@smthrs/testing",
-      "version": "1.0.0-rc.17",
+      "version": "1.0.0-rc.18",
       "bin": {
         "smthrs-model-server": "./bin/smthrs-model-server.mjs",
       },
       "dependencies": {
-        "@smthrs/canonical": "1.0.0-rc.17",
-        "@smthrs/core": "1.0.0-rc.17",
-        "@smthrs/engine": "1.0.0-rc.17",
-        "@smthrs/flow": "1.0.0-rc.17",
+        "@smthrs/canonical": "1.0.0-rc.18",
+        "@smthrs/core": "1.0.0-rc.18",
+        "@smthrs/engine": "1.0.0-rc.18",
+        "@smthrs/flow": "1.0.0-rc.18",
         "@smthrs/fuzz": "workspace:*",
-        "@smthrs/jj": "1.0.0-rc.17",
-        "@smthrs/journal": "1.0.0-rc.17",
-        "@smthrs/kernel": "1.0.0-rc.17",
-        "@smthrs/model": "1.0.0-rc.17",
-        "@smthrs/plan": "1.0.0-rc.17",
-        "@smthrs/platform-browser": "1.0.0-rc.17",
+        "@smthrs/jj": "1.0.0-rc.18",
+        "@smthrs/journal": "1.0.0-rc.18",
+        "@smthrs/kernel": "1.0.0-rc.18",
+        "@smthrs/model": "1.0.0-rc.18",
+        "@smthrs/plan": "1.0.0-rc.18",
+        "@smthrs/platform-browser": "1.0.0-rc.18",
         "@smthrs/platform-node": "workspace:*",
-        "@smthrs/scorers": "1.0.0-rc.17",
+        "@smthrs/scorers": "1.0.0-rc.18",
         "string-width": "7.2.0",
       },
       "devDependencies": {
@@ -4045,7 +4048,7 @@
 
     "@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.0.0-alpha.4", "", { "dependencies": { "zod": "4.6.7" } }, "sha512-/KEo3ZJ50HlagHp0lz2vPgfBZFtXHu6zTBXT9XqPc+4O9i4+IbBVWKq/a9yAfv/ifp0u3+mRo8SUk5kMKzhN8A=="],
 
-    "@mongodb-js/zstd": ["@mongodb-js/zstd@7.0.0", "", { "dependencies": { "node-addon-api": "^8.5.0", "prebuild-install": "^7.1.3" } }, "sha512-mQ2s0pYYiav+tzCDR05Zptem8Ey2v8s11lri5RKGhTtL4COVCvVCk5vtyRYNT+9L8qSfyOqqefF9UtnW8mC5jA=="],
+    "@mongodb-js/zstd": ["@mongodb-js/zstd@7.0.0", "", { "dependencies": { "node-addon-api": "8.9.2", "prebuild-install": "7.1.3" } }, "sha512-mQ2s0pYYiav+tzCDR05Zptem8Ey2v8s11lri5RKGhTtL4COVCvVCk5vtyRYNT+9L8qSfyOqqefF9UtnW8mC5jA=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
@@ -4727,7 +4730,7 @@
 
     "@tanstack/store": ["@tanstack/store@0.11.2", "", {}, "sha512-sJ4mjol8uQsHV0gOJzzjwXfh2Fwm+Sz0+8deqiTm4jGbMdjzNSW+xZCFm0kUa870uhd8yi+DpKnZb5Kc4apa0Q=="],
 
-    "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
+    "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "4.4.3", "token-types": "6.2.0" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
 
@@ -5039,9 +5042,9 @@
 
     "@xterm/xterm": ["@xterm/xterm@6.0.0", "", {}, "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg=="],
 
-    "@zenfs/core": ["@zenfs/core@2.9.0", "", { "dependencies": { "@types/node": "^26.6.0", "@zenfs/streams": "^1.0.2", "buffer": "^6.0.3", "eventemitter3": "^5.0.1", "kerium": "^1.5.0", "memium": "^1.1.0", "utilium": "^3.7.0" }, "bin": { "zci": "scripts/ci-cli.js", "make-index": "scripts/make-index.js", "zenfs-test": "scripts/test.js" } }, "sha512-CG22M9+1my323VjIxPS69zicW354WAHjhOPhMjSOvwyGayGe9Hlr1VcE2/qVxgXVXq7cX1cjeyu8WgpBu7IWVw=="],
+    "@zenfs/core": ["@zenfs/core@2.9.0", "", { "dependencies": { "@types/node": "26.6.6", "@zenfs/streams": "1.0.2", "buffer": "6.0.3", "eventemitter3": "5.0.4", "kerium": "1.5.0", "memium": "1.1.2", "utilium": "3.11.1" }, "bin": { "zci": "scripts/ci-cli.js", "make-index": "scripts/make-index.js", "zenfs-test": "scripts/test.js" } }, "sha512-CG22M9+1my323VjIxPS69zicW354WAHjhOPhMjSOvwyGayGe9Hlr1VcE2/qVxgXVXq7cX1cjeyu8WgpBu7IWVw=="],
 
-    "@zenfs/streams": ["@zenfs/streams@1.0.2", "", { "dependencies": { "@types/node": "^26.0.0", "buffer": "^6.0.3" } }, "sha512-qSq9tgDe7kG6i5L6IA9yVgKXjggO2tJb1SehQsSRnA7vP3VQqnyo7wNFK+DthEetM2dK+YXkqmgjrE67lQkoqg=="],
+    "@zenfs/streams": ["@zenfs/streams@1.0.2", "", { "dependencies": { "@types/node": "26.4.1", "buffer": "6.0.3" } }, "sha512-qSq9tgDe7kG6i5L6IA9yVgKXjggO2tJb1SehQsSRnA7vP3VQqnyo7wNFK+DthEetM2dK+YXkqmgjrE67lQkoqg=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "3.0.2", "negotiator": "1.1.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 
@@ -5157,7 +5160,7 @@
 
     "browserslist": ["browserslist@4.28.8", "", { "dependencies": { "baseline-browser-mapping": "2.11.20", "caniuse-lite": "1.0.30001810", "electron-to-chromium": "1.5.420", "node-releases": "2.0.54", "update-browserslist-db": "1.3.2" }, "bin": { "browserslist": "cli.js" } }, "sha512-V2NpofLblG64mfOtSgDhOJESZEGogzDMBv/q+W6oc4LXWP/q75eOXoOaaOu1EOadB9U4Bwx/e0yzbvwKH8zalA=="],
 
-    "buffer": ["buffer@6.0.3", "", { "dependencies": { "base64-js": "^1.3.1", "ieee754": "^1.2.1" } }, "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA=="],
+    "buffer": ["buffer@6.0.3", "", { "dependencies": { "base64-js": "1.5.1", "ieee754": "1.2.1" } }, "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA=="],
 
     "buffer-from": ["buffer-from@1.1.2", "", {}, "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ=="],
 
@@ -5375,7 +5378,7 @@
 
     "decode-named-character-reference": ["decode-named-character-reference@1.3.0", "", { "dependencies": { "character-entities": "2.0.2" } }, "sha512-GtpQYB283KrPp6nRw50q3U9/VfOutZOe103qlN7BPP6Ad27xYnOIWv4lPzo8HCAL+mMZofJ9KEy30fq6MfaK6Q=="],
 
-    "decompress-response": ["decompress-response@6.0.0", "", { "dependencies": { "mimic-response": "^3.1.0" } }, "sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ=="],
+    "decompress-response": ["decompress-response@6.0.0", "", { "dependencies": { "mimic-response": "3.1.0" } }, "sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ=="],
 
     "deep-extend": ["deep-extend@0.6.0", "", {}, "sha512-LOHxIOaPYdHlJRtCQfDIVZtfw/ufM8+rVj649RIHzcm/vGwQRXFt6OPqIFWsm2XEMrNIEtWR64sY1LEKD2vAOA=="],
 
@@ -5469,7 +5472,7 @@
 
     "encodeurl": ["encodeurl@2.0.0", "", {}, "sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg=="],
 
-    "end-of-stream": ["end-of-stream@1.4.5", "", { "dependencies": { "once": "^1.4.0" } }, "sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg=="],
+    "end-of-stream": ["end-of-stream@1.4.5", "", { "dependencies": { "once": "1.4.0" } }, "sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg=="],
 
     "enhanced-resolve": ["enhanced-resolve@5.24.5", "", { "dependencies": { "graceful-fs": "4.2.11", "tapable": "2.3.3" } }, "sha512-L1l8TNvomm6UVW5B253AGxQagSQr+vGwhMlrrfRS2qmhx46AMpMVJKQYLvWYbysTMY8VoicOvzHzoHMbyzB+4A=="],
 
@@ -5599,9 +5602,9 @@
 
     "fast-wrap-ansi": ["fast-wrap-ansi@0.2.2", "", { "dependencies": { "fast-string-width": "3.0.2" } }, "sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q=="],
 
-    "fast-xml-builder": ["fast-xml-builder@1.3.1", "", { "dependencies": { "path-expression-matcher": "^1.6.2", "xml-naming": "^0.3.0" } }, "sha512-pIM/1n3ntFXKYrUZwW7QCK0gAW7XY+wzj1YMIV3tLDvPj/V+zTGJK5e3/4WJfwj0qWw2ElNXiTixda/R+3YSug=="],
+    "fast-xml-builder": ["fast-xml-builder@1.3.1", "", { "dependencies": { "path-expression-matcher": "1.6.2", "xml-naming": "0.3.0" } }, "sha512-pIM/1n3ntFXKYrUZwW7QCK0gAW7XY+wzj1YMIV3tLDvPj/V+zTGJK5e3/4WJfwj0qWw2ElNXiTixda/R+3YSug=="],
 
-    "fast-xml-parser": ["fast-xml-parser@5.12.0", "", { "dependencies": { "@nodable/entities": "^3.1.0", "fast-xml-builder": "^1.3.1", "is-unsafe": "^2.0.3", "path-expression-matcher": "^1.6.2", "strnum": "^2.5.1", "xml-naming": "^0.3.0" }, "bin": { "fxparser": "src/cli/cli.js" } }, "sha512-/pXxRBtwxY9w8z7YbgsvIPPcPvFDsTbIkWwTQJhzNJPokj+TbN6ftmcv4j/pEQDvOCNnKGDzuk5Bo2oogIOiFg=="],
+    "fast-xml-parser": ["fast-xml-parser@5.12.0", "", { "dependencies": { "@nodable/entities": "3.1.0", "fast-xml-builder": "1.3.1", "is-unsafe": "2.0.3", "path-expression-matcher": "1.6.2", "strnum": "2.5.1", "xml-naming": "0.3.0" }, "bin": { "fxparser": "src/cli/cli.js" } }, "sha512-/pXxRBtwxY9w8z7YbgsvIPPcPvFDsTbIkWwTQJhzNJPokj+TbN6ftmcv4j/pEQDvOCNnKGDzuk5Bo2oogIOiFg=="],
 
     "fastdom": ["fastdom@1.0.12", "", { "dependencies": { "strictdom": "1.0.1" } }, "sha512-LB+xjSTEbjHE1cWsxu+tN2Xqr1kpi+V9aADI7sVM5ZMaXyYGPHULQMzpJMYqOTULK/73pUkWVzzObFRBkPr+hg=="],
 
@@ -5615,7 +5618,7 @@
 
     "file-entry-cache": ["file-entry-cache@8.0.0", "", { "dependencies": { "flat-cache": "4.0.1" } }, "sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ=="],
 
-    "file-type": ["file-type@21.3.4", "", { "dependencies": { "@tokenizer/inflate": "^0.4.1", "strtok3": "^10.3.4", "token-types": "^6.1.1", "uint8array-extras": "^1.4.0" } }, "sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g=="],
+    "file-type": ["file-type@21.3.4", "", { "dependencies": { "@tokenizer/inflate": "0.4.1", "strtok3": "10.7.0", "token-types": "6.2.0", "uint8array-extras": "1.6.0" } }, "sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g=="],
 
     "filelist": ["filelist@1.0.6", "", { "dependencies": { "minimatch": "5.1.9" } }, "sha512-5giy2PkLYY1cP39p17Ech+2xlpTRL9HLspOfEgm0L6CwBXBTgsK5ou0JtzYuepxkaQ/tvhCFIJ5uXo0OrM2DxA=="],
 
@@ -5959,11 +5962,11 @@
 
     "jsonpointer": ["jsonpointer@5.0.1", "", {}, "sha512-p/nXbhSEcu3pZRdkW1OfJhpsVtW1gd4Wa1fnQc9YLiTfAjn0312eMKimbdIQzuZl9aa9xUGaRlP9T/CJE/ditQ=="],
 
-    "just-bash": ["just-bash@3.6.0", "", { "dependencies": { "diff": "^8.0.4", "fast-xml-parser": "^5.10.1", "file-type": "^21.3.4", "guarded-fetch": "0.1.3", "ini": "^6.0.0", "modern-tar": "^0.7.7", "papaparse": "^5.6.0", "re2js": "^1.3.3", "run": "2.1.3", "seek-bzip": "^2.0.0", "smol-toml": "^1.9.0", "sprintf-js": "^1.1.3", "sql.js": "^1.14.1", "turndown": "^7.2.4", "typescript": "^5.9.3", "yaml": "^2.9.0" }, "optionalDependencies": { "@mongodb-js/zstd": "^7.0.0", "node-liblzma": "^2.2.0" }, "bin": { "just-bash": "dist/bin/just-bash.js", "just-bash-shell": "dist/bin/shell/shell.js" } }, "sha512-2COjEgcHdqKXeQSiNfPAHmpwQx4S8wATaIwog83g2t645U5tom6FED4CBBdr3M+0ioX4xZ26eODw3/nD6RQ6xw=="],
+    "just-bash": ["just-bash@3.6.0", "", { "dependencies": { "diff": "8.0.4", "fast-xml-parser": "5.12.0", "file-type": "21.3.4", "guarded-fetch": "0.1.3", "ini": "6.0.0", "modern-tar": "0.7.7", "papaparse": "5.7.0", "re2js": "1.3.3", "run": "2.1.3", "seek-bzip": "2.0.0", "smol-toml": "1.9.1", "sprintf-js": "1.1.3", "sql.js": "1.16.0", "turndown": "7.2.5", "typescript": "5.9.3", "yaml": "2.9.0" }, "optionalDependencies": { "@mongodb-js/zstd": "7.0.0", "node-liblzma": "2.2.0" }, "bin": { "just-bash": "dist/bin/just-bash.js", "just-bash-shell": "dist/bin/shell/shell.js" } }, "sha512-2COjEgcHdqKXeQSiNfPAHmpwQx4S8wATaIwog83g2t645U5tom6FED4CBBdr3M+0ioX4xZ26eODw3/nD6RQ6xw=="],
 
     "katex": ["katex@0.16.47", "", { "dependencies": { "commander": "8.3.0" }, "bin": { "katex": "cli.js" } }, "sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg=="],
 
-    "kerium": ["kerium@1.5.0", "", { "dependencies": { "utilium": "^3.0.0" } }, "sha512-HJMvcFmkMR92VU4KRnvoibz6amtfR3bDUVcW03iluragLB2DFvZUE2myyhipnrCnOqXRnVo/Y7RkXCI3Hc3odA=="],
+    "kerium": ["kerium@1.5.0", "", { "dependencies": { "utilium": "3.11.1" } }, "sha512-HJMvcFmkMR92VU4KRnvoibz6amtfR3bDUVcW03iluragLB2DFvZUE2myyhipnrCnOqXRnVo/Y7RkXCI3Hc3odA=="],
 
     "keyv": ["keyv@4.5.4", "", { "dependencies": { "json-buffer": "3.0.1" } }, "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw=="],
 
@@ -6083,7 +6086,7 @@
 
     "media-typer": ["media-typer@1.1.1", "", {}, "sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ=="],
 
-    "memium": ["memium@1.1.2", "", { "dependencies": { "kerium": "^1.4.0", "utilium": "^3.0.0" } }, "sha512-2hPA9BHUcZRAkyxp4TTN1mNUMV/FvAB1MiWvNCyCDv8iDzPaI2/TSqkdUygdBZEcXPhuOC+2ULjW3JMZBnofdw=="],
+    "memium": ["memium@1.1.2", "", { "dependencies": { "kerium": "1.5.0", "utilium": "3.11.1" } }, "sha512-2hPA9BHUcZRAkyxp4TTN1mNUMV/FvAB1MiWvNCyCDv8iDzPaI2/TSqkdUygdBZEcXPhuOC+2ULjW3JMZBnofdw=="],
 
     "merge-descriptors": ["merge-descriptors@2.0.0", "", {}, "sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g=="],
 
@@ -6221,7 +6224,7 @@
 
     "nlcst-to-string": ["nlcst-to-string@4.0.0", "", { "dependencies": { "@types/nlcst": "2.0.3" } }, "sha512-YKLBCcUYKAg0FNlOBT6aI91qFmSiFKiluk655WzPF+DDMA02qIyy8uiRqI8QXtcFpEvll12LpL5MXqEmAZ+dcA=="],
 
-    "node-abi": ["node-abi@3.101.0", "", { "dependencies": { "semver": "^7.3.5" } }, "sha512-bkb/RkuWCE64eWu1PCh3Fu2pGc9mKRs+kOE+FU2bGHRYlQa86/D321DSATV54AsCQMKz3/xSt9sRgraZTpqdhQ=="],
+    "node-abi": ["node-abi@3.101.0", "", { "dependencies": { "semver": "7.8.5" } }, "sha512-bkb/RkuWCE64eWu1PCh3Fu2pGc9mKRs+kOE+FU2bGHRYlQa86/D321DSATV54AsCQMKz3/xSt9sRgraZTpqdhQ=="],
 
     "node-addon-api": ["node-addon-api@8.9.2", "", {}, "sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg=="],
 
@@ -6231,7 +6234,7 @@
 
     "node-gyp-build": ["node-gyp-build@4.8.4", "", { "bin": { "node-gyp-build": "bin.js", "node-gyp-build-optional": "optional.js", "node-gyp-build-test": "build-test.js" } }, "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ=="],
 
-    "node-liblzma": ["node-liblzma@2.2.0", "", { "dependencies": { "node-addon-api": "^8.5.0", "node-gyp-build": "^4.8.4" }, "bin": { "nxz": "lib/cli/nxz.js" } }, "sha512-s0KzNOWwOJJgPG6wxg6cKohnAl9Wk/oW1KrQaVzJBjQwVcUGPQCzpR46Ximygjqj/3KhOrtJXnYMp/xYAXp75g=="],
+    "node-liblzma": ["node-liblzma@2.2.0", "", { "dependencies": { "node-addon-api": "8.9.2", "node-gyp-build": "4.8.4" }, "bin": { "nxz": "lib/cli/nxz.js" } }, "sha512-s0KzNOWwOJJgPG6wxg6cKohnAl9Wk/oW1KrQaVzJBjQwVcUGPQCzpR46Ximygjqj/3KhOrtJXnYMp/xYAXp75g=="],
 
     "node-mock-http": ["node-mock-http@1.0.5", "", {}, "sha512-KQyt/wLjG3TAc7DOUhpqWzgd4ERxR80JOlTK5VE5R1S12IaPVN5qkj4klBce9HPG1Njuup4Sb5bljaT34lIyjw=="],
 
@@ -6307,7 +6310,7 @@
 
     "pagefind": ["pagefind@1.5.2", "", { "optionalDependencies": { "@pagefind/darwin-arm64": "1.5.2", "@pagefind/darwin-x64": "1.5.2", "@pagefind/freebsd-x64": "1.5.2", "@pagefind/linux-arm64": "1.5.2", "@pagefind/linux-x64": "1.5.2", "@pagefind/windows-arm64": "1.5.2", "@pagefind/windows-x64": "1.5.2" }, "bin": { "pagefind": "lib/runner/bin.cjs" } }, "sha512-XTUaK0hXMCu2jszWE584JGQT7y284TmMV9l/HX3rnG5uo3rHI/uHU56XTyyyPFjeWEBxECbAi0CaFDJOONtG0Q=="],
 
-    "papaparse": ["papaparse@5.7.1", "", {}, "sha512-qOR+UDWv6D3hMxnWWOk0ZpBdCkd+kw5Yh7aXOaNSQU8A+73EA2bhW7EiUix/hY0yulUi5FRvt7PpYSI2VDvY0g=="],
+    "papaparse": ["papaparse@5.7.0", "", {}, "sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA=="],
 
     "parent-module": ["parent-module@1.0.1", "", { "dependencies": { "callsites": "3.1.0" } }, "sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g=="],
 
@@ -6377,7 +6380,7 @@
 
     "postcss-values-parser": ["postcss-values-parser@6.0.2", "", { "dependencies": { "color-name": "1.1.4", "is-url-superb": "4.0.0", "quote-unquote": "1.0.0" }, "peerDependencies": { "postcss": "^8.2.9" } }, "sha512-YLJpK0N1brcNJrs9WatuJFtHaV9q5aAOj+S4DI5S7jgHlRfm0PIbDCAFRYMQD5SHq7Fy6xsDhyutgS0QOAs0qw=="],
 
-    "prebuild-install": ["prebuild-install@7.1.3", "", { "dependencies": { "detect-libc": "^2.0.0", "expand-template": "^2.0.3", "github-from-package": "0.0.0", "minimist": "^1.2.3", "mkdirp-classic": "^0.5.3", "napi-build-utils": "^2.0.0", "node-abi": "^3.3.0", "pump": "^3.0.0", "rc": "^1.2.7", "simple-get": "^4.0.0", "tar-fs": "^2.0.0", "tunnel-agent": "^0.6.0" }, "bin": { "prebuild-install": "bin.js" } }, "sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug=="],
+    "prebuild-install": ["prebuild-install@7.1.3", "", { "dependencies": { "detect-libc": "2.1.2", "expand-template": "2.0.3", "github-from-package": "0.0.0", "minimist": "1.2.8", "mkdirp-classic": "0.5.3", "napi-build-utils": "2.0.0", "node-abi": "3.101.0", "pump": "3.0.4", "rc": "1.2.8", "simple-get": "4.0.1", "tar-fs": "2.1.5", "tunnel-agent": "0.6.0" }, "bin": { "prebuild-install": "bin.js" } }, "sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug=="],
 
     "precinct": ["precinct@12.3.2", "", { "dependencies": { "@dependents/detective-less": "5.0.3", "commander": "12.1.0", "detective-amd": "6.1.0", "detective-cjs": "6.1.1", "detective-es6": "5.0.2", "detective-postcss": "8.0.4", "detective-sass": "6.0.2", "detective-scss": "5.0.2", "detective-stylus": "5.0.1", "detective-typescript": "14.1.2", "detective-vue2": "2.3.0", "module-definition": "6.0.2", "node-source-walk": "7.0.2", "postcss": "8.5.31", "typescript": "5.9.3" }, "bin": { "precinct": "bin/cli.js" } }, "sha512-JbJevI1K80z8e/WIyDt/4vUN/4qcfBSKKqOjJA4mosPPPb7zODKRJQV7YN7apVWN3k58nZYm/vEsLgEGYmnxwg=="],
 
@@ -6433,7 +6436,7 @@
 
     "proxy-from-env": ["proxy-from-env@1.1.0", "", {}, "sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg=="],
 
-    "pump": ["pump@3.0.4", "", { "dependencies": { "end-of-stream": "^1.1.0", "once": "^1.3.1" } }, "sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA=="],
+    "pump": ["pump@3.0.4", "", { "dependencies": { "end-of-stream": "1.4.5", "once": "1.4.0" } }, "sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA=="],
 
     "punycode": ["punycode@2.3.1", "", {}, "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg=="],
 
@@ -6459,7 +6462,7 @@
 
     "rcedit": ["rcedit@4.0.1", "", { "dependencies": { "cross-spawn-windows-exe": "1.2.0" } }, "sha512-bZdaQi34krFWhrDn+O53ccBDw0MkAT2Vhu75SqhtvhQu4OPyFM4RoVheyYiVQYdjhUi6EJMVWQ0tR6bCIYVkUg=="],
 
-    "re2js": ["re2js@1.4.0", "", {}, "sha512-KTOIcZTSOpOxbu3i0+T6mFQ6tkxXKlTxfcMFs1trQbsMnG84qNq+DjXr8Afu+FEFjvF1NNlldpC7roPyazFI8g=="],
+    "re2js": ["re2js@1.3.3", "", {}, "sha512-s/I5zEAo79SUK0Qw4dpZKpiMwbQ6Gz0KU2NRr7eaO4x/p2g7Vvmn3hdeXDg8VsaUjfj/ora+e9oi27LX/C9+mw=="],
 
     "react": ["react@19.2.8", "", {}, "sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw=="],
 
@@ -6605,7 +6608,7 @@
 
     "scheduler": ["scheduler@0.27.0", "", {}, "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="],
 
-    "seek-bzip": ["seek-bzip@2.0.0", "", { "dependencies": { "commander": "^6.0.0" }, "bin": { "seek-bunzip": "bin/seek-bunzip", "seek-table": "bin/seek-bzip-table" } }, "sha512-SMguiTnYrhpLdk3PwfzHeotrcwi8bNV4iemL9tx9poR/yeaMYwB9VzR1w7b57DuWpuqR8n6oZboi0hj3AxZxQg=="],
+    "seek-bzip": ["seek-bzip@2.0.0", "", { "dependencies": { "commander": "6.2.1" }, "bin": { "seek-bunzip": "bin/seek-bunzip", "seek-table": "bin/seek-bzip-table" } }, "sha512-SMguiTnYrhpLdk3PwfzHeotrcwi8bNV4iemL9tx9poR/yeaMYwB9VzR1w7b57DuWpuqR8n6oZboi0hj3AxZxQg=="],
 
     "semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 
@@ -6651,7 +6654,7 @@
 
     "simple-concat": ["simple-concat@1.0.1", "", {}, "sha512-cSFtAPtRhljv69IK0hTVZQ+OfE9nePi/rtJmw5UjHeVyVroEqJXP1sFztKUy1qU+xvz3u/sfYJLa947b7nAN2Q=="],
 
-    "simple-get": ["simple-get@4.0.1", "", { "dependencies": { "decompress-response": "^6.0.0", "once": "^1.3.1", "simple-concat": "^1.0.0" } }, "sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA=="],
+    "simple-get": ["simple-get@4.0.1", "", { "dependencies": { "decompress-response": "6.0.0", "once": "1.4.0", "simple-concat": "1.0.1" } }, "sha512-brv7p5WgH0jmQJr1ZDDfKDOSeWWg+OVypG99A/5vYGPqJ6pxiaHLy8nxtFjBA7oMa01ebA9gfh1uMCFqOuXxvA=="],
 
     "sisteransi": ["sisteransi@1.0.5", "", {}, "sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg=="],
 
@@ -6733,9 +6736,9 @@
 
     "strip-json-comments": ["strip-json-comments@5.0.3", "", {}, "sha512-1tB5mhVo7U+ETBKNf92xT4hrQa3pm0MZ0PQvuDnWgAAGHDsfp4lPSpiS6psrSiet87wyGPh9ft6wmhOMQ0hDiw=="],
 
-    "strnum": ["strnum@2.5.1", "", { "dependencies": { "anynum": "^1.0.1" } }, "sha512-UM4nTLWzQiDBseVxUGxN0wJzIk0UU89Qi7pKXz9qISo+lhviJikTuikBsK/oFRlpvYHvSdz0TVoLyQ+sEpYwxA=="],
+    "strnum": ["strnum@2.5.1", "", { "dependencies": { "anynum": "1.0.1" } }, "sha512-UM4nTLWzQiDBseVxUGxN0wJzIk0UU89Qi7pKXz9qISo+lhviJikTuikBsK/oFRlpvYHvSdz0TVoLyQ+sEpYwxA=="],
 
-    "strtok3": ["strtok3@10.7.0", "", { "dependencies": { "@tokenizer/token": "^0.3.0" } }, "sha512-iAqrCpp7UXD2FZiHWhLXqdJ6CmNeVzRkkHAyyhhKMVtbVm2KtPX3D/bJNonvtcyLTHS4rwqP2pz9fsjK1K4z0Q=="],
+    "strtok3": ["strtok3@10.7.0", "", { "dependencies": { "@tokenizer/token": "0.3.0" } }, "sha512-iAqrCpp7UXD2FZiHWhLXqdJ6CmNeVzRkkHAyyhhKMVtbVm2KtPX3D/bJNonvtcyLTHS4rwqP2pz9fsjK1K4z0Q=="],
 
     "style-mod": ["style-mod@4.1.3", "", {}, "sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ=="],
 
@@ -6759,9 +6762,9 @@
 
     "tar": ["tar@7.5.22", "", { "dependencies": { "@isaacs/fs-minipass": "4.0.1", "chownr": "3.0.0", "minipass": "7.1.3", "minizlib": "3.1.0", "yallist": "5.0.0" } }, "sha512-MFO/QzvtAOmJbkhOaCTvbGcFN9L9b+JunIsDwaKljSOdcLMea3NJ1k9Usz/rjdfSXTq4dfzfeS7W4p4YOAAHeA=="],
 
-    "tar-fs": ["tar-fs@2.1.5", "", { "dependencies": { "chownr": "^1.1.1", "mkdirp-classic": "^0.5.2", "pump": "^3.0.0", "tar-stream": "^2.1.4" } }, "sha512-OboTd8mmMhZDNPV+UjQcK9yKAatXu2aJ+r1w4im1Otd4M4fl2hwvdoXUxIYHFTHWK/3y3FarBP70v3vwmGlOxw=="],
+    "tar-fs": ["tar-fs@2.1.5", "", { "dependencies": { "chownr": "1.1.4", "mkdirp-classic": "0.5.3", "pump": "3.0.4", "tar-stream": "2.2.0" } }, "sha512-OboTd8mmMhZDNPV+UjQcK9yKAatXu2aJ+r1w4im1Otd4M4fl2hwvdoXUxIYHFTHWK/3y3FarBP70v3vwmGlOxw=="],
 
-    "tar-stream": ["tar-stream@2.2.0", "", { "dependencies": { "bl": "^4.0.3", "end-of-stream": "^1.4.1", "fs-constants": "^1.0.0", "inherits": "^2.0.3", "readable-stream": "^3.1.1" } }, "sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ=="],
+    "tar-stream": ["tar-stream@2.2.0", "", { "dependencies": { "bl": "4.1.0", "end-of-stream": "1.4.5", "fs-constants": "1.0.0", "inherits": "2.0.4", "readable-stream": "3.6.2" } }, "sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ=="],
 
     "temp-dir": ["temp-dir@2.0.0", "", {}, "sha512-aoBAniQmmwtcKp/7BzsH8Cxzv8OL736p7v1ihGb5e9DJ9kTwGWHrQrVB5+lfVDzfGrdRzXch+ig7LHaY1JTOrg=="],
 
@@ -6795,7 +6798,7 @@
 
     "toidentifier": ["toidentifier@1.0.1", "", {}, "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA=="],
 
-    "token-types": ["token-types@6.2.0", "", { "dependencies": { "@borewit/text-codec": "^0.2.3", "@tokenizer/token": "^0.3.0", "ieee754": "^1.2.1" } }, "sha512-s9euYHM//T3loJtbNUYdbAzsMlvKBeRS+XCLFy+UGosMQH19Hwjap5k19i4PPAEJJBsVIpMpVTxl4fIqCuNfUg=="],
+    "token-types": ["token-types@6.2.0", "", { "dependencies": { "@borewit/text-codec": "0.2.3", "@tokenizer/token": "0.3.0", "ieee754": "1.2.1" } }, "sha512-s9euYHM//T3loJtbNUYdbAzsMlvKBeRS+XCLFy+UGosMQH19Hwjap5k19i4PPAEJJBsVIpMpVTxl4fIqCuNfUg=="],
 
     "tokenx": ["tokenx@1.6.0", "", {}, "sha512-CKTjk345ajvBAUp5xUI9a5KKN0zU0lBueVHQbCskH1Hp6WkUKsPW2qGCYNs0pxNyfzxfo+IIjdt2W4sMbw/qBw=="],
 
@@ -6821,9 +6824,9 @@
 
     "tsx": ["tsx@4.23.13", "", { "dependencies": { "esbuild": "0.28.2" }, "optionalDependencies": { "fsevents": "2.3.3" }, "bin": { "tsx": "dist/cli.mjs" } }, "sha512-BL5MGkRln6aDYhb0xbQlEAGw743BaZYWdbWtdJOBriYJboKgUUYCadFp2/FpBBZquBC/ezNBn7wMMPx7FDZUDw=="],
 
-    "tunnel-agent": ["tunnel-agent@0.6.0", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-McnNiV1l8RYeY8tBgEpuodCC1mLUdbSN+CYBL7kJsJNInOP8UjDDEwdk6Mw60vdLLrr5NHKZhMAOSrR2NZuQ+w=="],
+    "tunnel-agent": ["tunnel-agent@0.6.0", "", { "dependencies": { "safe-buffer": "5.2.1" } }, "sha512-McnNiV1l8RYeY8tBgEpuodCC1mLUdbSN+CYBL7kJsJNInOP8UjDDEwdk6Mw60vdLLrr5NHKZhMAOSrR2NZuQ+w=="],
 
-    "turndown": ["turndown@7.2.5", "", { "dependencies": { "@mixmark-io/domino": "^2.2.0" } }, "sha512-EKZvCCFHh8sWttpAMs10U6niZFJ2cpz8LkCPlylxoG4JcHF50J7EHnnBW3AY1qXtUMu7kDjCp7dnggB1sIbqEQ=="],
+    "turndown": ["turndown@7.2.5", "", { "dependencies": { "@mixmark-io/domino": "2.2.0" } }, "sha512-EKZvCCFHh8sWttpAMs10U6niZFJ2cpz8LkCPlylxoG4JcHF50J7EHnnBW3AY1qXtUMu7kDjCp7dnggB1sIbqEQ=="],
 
     "type-check": ["type-check@0.4.0", "", { "dependencies": { "prelude-ls": "1.2.1" } }, "sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew=="],
 
@@ -6921,7 +6924,7 @@
 
     "util-deprecate": ["util-deprecate@1.0.2", "", {}, "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw=="],
 
-    "utilium": ["utilium@3.11.1", "", { "dependencies": { "eventemitter3": "^5.0.1" }, "bin": { "lice": "scripts/lice.js" } }, "sha512-NkhCy5aIXcGL9MZuCaNvl6YjjIWMqwfYtYMntx/ZITQtsOYeKFNTvyQkNJ7zs65l4/Pwek4Bd0uDJOXFXN+nSg=="],
+    "utilium": ["utilium@3.11.1", "", { "dependencies": { "eventemitter3": "5.0.4" }, "bin": { "lice": "scripts/lice.js" } }, "sha512-NkhCy5aIXcGL9MZuCaNvl6YjjIWMqwfYtYMntx/ZITQtsOYeKFNTvyQkNJ7zs65l4/Pwek4Bd0uDJOXFXN+nSg=="],
 
     "uuid": ["uuid@14.0.2", "", { "bin": { "uuid": "dist-node/bin/uuid" } }, "sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ=="],
 
@@ -7273,9 +7276,7 @@
 
     "@vue/compiler-sfc/magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "1.6.0" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 
-    "@zenfs/core/@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
-
-    "@zenfs/streams/@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
+    "@zenfs/core/@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
 
     "ajv-draft-04/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "3.1.3", "fast-uri": "3.1.7", "json-schema-traverse": "1.0.0", "require-from-string": "2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
@@ -7360,8 +7361,6 @@
     "just-bash/diff": ["diff@8.0.4", "", {}, "sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw=="],
 
     "just-bash/smol-toml": ["smol-toml@1.9.1", "", {}, "sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ=="],
-
-    "just-bash/yaml": ["yaml@2.9.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw=="],
 
     "katex/commander": ["commander@8.3.0", "", {}, "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww=="],
 
@@ -7754,8 +7753,6 @@
     "@vue/compiler-sfc/@babel/parser/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "7.29.7", "@babel/helper-validator-identifier": "7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
     "@zenfs/core/@types/node/undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
-
-    "@zenfs/streams/@types/node/undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "ajv-draft-04/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 

@@ -11,7 +11,7 @@ then read the cause.
 These arrive as defects from `NodeDatabase.layer`, carrying
 `UnsupportedDatabase`. Narrow them with `isUnsupportedDatabase`.
 
-### `1.0.0-rc.17 runs the durable engine on Node.js >=22.19.0 only`
+### `1.0.0-rc.18 runs the durable engine on Node.js >=22.19.0 only`
 
 **Code:** `unsupported_runtime`.
 
@@ -20,7 +20,7 @@ touched, so nothing about your database path is implicated.
 
 **Fix:** run the durable engine on Node.js 22.19.0 or later. There is no flag.
 
-### `<path> is not a Smithers 1.0 database (1.0.0-rc.17 does not load a 0.x smithers.db)`
+### `<path> is not a Smithers 1.0 database (1.0.0-rc.18 does not load a 0.x smithers.db)`
 
 **Code:** `unsupported_database_file`.
 

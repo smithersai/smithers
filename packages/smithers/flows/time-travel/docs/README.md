@@ -28,7 +28,7 @@ stranding an effect that already crossed into the outside world.
 ## Install
 
 ```bash
-npm install @smthrs/time-travel@1.0.0-rc.17 effect
+npm install @smthrs/time-travel@1.0.0-rc.18 effect
 ```
 
 Beside [`@smthrs/flows`](/api/flows), install the same version as

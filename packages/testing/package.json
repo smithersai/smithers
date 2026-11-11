@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/testing",
   "type": "module",
-  "version": "1.0.0-rc.17",
+  "version": "1.0.0-rc.18",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -444,17 +444,17 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.17",
-    "@smthrs/engine": "1.0.0-rc.17",
-    "@smthrs/flow": "1.0.0-rc.17",
-    "@smthrs/jj": "1.0.0-rc.17",
-    "@smthrs/journal": "1.0.0-rc.17",
-    "@smthrs/kernel": "1.0.0-rc.17",
-    "@smthrs/model": "1.0.0-rc.17",
-    "@smthrs/plan": "1.0.0-rc.17",
-    "@smthrs/platform-browser": "1.0.0-rc.17",
-    "@smthrs/scorers": "1.0.0-rc.17",
-    "@smthrs/canonical": "1.0.0-rc.17",
+    "@smthrs/core": "1.0.0-rc.18",
+    "@smthrs/engine": "1.0.0-rc.18",
+    "@smthrs/flow": "1.0.0-rc.18",
+    "@smthrs/jj": "1.0.0-rc.18",
+    "@smthrs/journal": "1.0.0-rc.18",
+    "@smthrs/kernel": "1.0.0-rc.18",
+    "@smthrs/model": "1.0.0-rc.18",
+    "@smthrs/plan": "1.0.0-rc.18",
+    "@smthrs/platform-browser": "1.0.0-rc.18",
+    "@smthrs/scorers": "1.0.0-rc.18",
+    "@smthrs/canonical": "1.0.0-rc.18",
     "string-width": "7.2.0",
     "@smthrs/platform-node": "workspace:*",
     "@smthrs/fuzz": "workspace:*"

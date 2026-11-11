@@ -1208,7 +1208,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/flow
       '@types/node':
         specifier: 26.4.1
@@ -1608,7 +1608,7 @@ importers:
   packages/rpc:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/canonical
       string-width:
         specifier: 7.2.0
@@ -1666,115 +1666,115 @@ importers:
         specifier: 0.5.11
         version: 0.5.11(react-devtools-core@7.0.1)(react@19.2.8)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.22.0)
       '@smthrs/agent':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent
       '@smthrs/build-cli':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:build/build-cli
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/capability
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:control
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/database
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/engine
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/engine-store
       '@smthrs/evals':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/evals
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/flow
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows
       '@smthrs/gateway':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:gateway
       '@smthrs/harness':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/harness
       '@smthrs/integrations':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/integrations
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/kernel
       '@smthrs/mcp':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:mcp
       '@smthrs/memory':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/memory
       '@smthrs/migrate':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:migrate
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/model
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:notifications
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/observability
       '@smthrs/patterns':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/patterns
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/plan
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/platform-node
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/registry
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/run-store
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/sandbox
       '@smthrs/scorers':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/scorers
       '@smthrs/std':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/std
       '@smthrs/step-cache':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/step-cache
       '@smthrs/sync':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/sync
       '@smthrs/targets':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:build/targets
       '@smthrs/time-travel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/time-travel
       '@smthrs/triggers':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:agent/triggers
       '@types/ws':
         specifier: 8.18.2
@@ -1832,13 +1832,13 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/artifacts
       '@smthrs/platform-bun':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flows/platform-bun
       '@smthrs/testing':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../testing
       '@types/node':
         specifier: 26.4.1
@@ -1898,55 +1898,55 @@ importers:
   packages/smithers/agent:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/capability
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../control
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/core
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/harness':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:harness
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/kernel
       '@smthrs/memory':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:memory
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:model
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../notifications
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/observability
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/plan
       '@smthrs/plugin':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:plugin
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:registry
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/run-store
       '@smthrs/std':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:std
     devDependencies:
       '@effect/language-service':
@@ -1962,25 +1962,25 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/database
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/engine
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/jj
       '@smthrs/patterns':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/patterns
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/platform-node
       '@smthrs/testing':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../testing
       '@types/node':
         specifier: 26.4.1
@@ -2119,10 +2119,10 @@ importers:
   packages/smithers/agent/evals:
     dependencies:
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/scorers':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../scorers
       devalue:
         specifier: 5.9.2
@@ -2189,10 +2189,10 @@ importers:
   packages/smithers/agent/fs:
     dependencies:
       '@smthrs/build-cli':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../build/build-cli
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/core':
         specifier: workspace:*
@@ -2286,37 +2286,37 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/capability
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/crypto':
         specifier: workspace:*
         version: link:../../flows/crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../model
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../notifications
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../flows/plan
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../registry
       quickjs-emscripten-core:
         specifier: 0.32.0
@@ -2490,28 +2490,28 @@ importers:
   packages/smithers/agent/integrations:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../control
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/database
       '@smthrs/errors':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../../errors
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/jj
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../notifications
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
       vibelang-runtime:
         specifier: 0.0.12
@@ -2530,16 +2530,16 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/engine
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows
       '@smthrs/platform-bun':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-bun
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@types/node':
         specifier: 26.4.1
@@ -2596,16 +2596,16 @@ importers:
   packages/smithers/agent/memory:
     dependencies:
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/database
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/patterns':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/patterns
     devDependencies:
       '@effect/language-service':
@@ -2672,22 +2672,22 @@ importers:
   packages/smithers/agent/model:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/capability
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
     devDependencies:
       '@effect/language-service':
@@ -2700,7 +2700,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@types/node':
         specifier: 26.4.1
@@ -2848,13 +2848,13 @@ importers:
   packages/smithers/agent/plugin:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../registry
     devDependencies:
       '@effect/language-service':
@@ -2921,16 +2921,16 @@ importers:
         specifier: 3.1.1
         version: 3.1.1(supports-color@10.2.2)
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/artifacts
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
       vibelang-runtime:
         specifier: 0.0.12
@@ -2952,22 +2952,22 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/engine
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/engine-store
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/run-store
       '@types/node':
         specifier: 26.4.1
@@ -3079,16 +3079,16 @@ importers:
   packages/smithers/agent/scorers:
     dependencies:
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/database
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/journal
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/sandbox
     devDependencies:
       '@effect/language-service':
@@ -3107,13 +3107,13 @@ importers:
         specifier: workspace:*
         version: link:../../flows/flow
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../flows/plan
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@types/node':
         specifier: 26.4.1
@@ -3167,19 +3167,19 @@ importers:
   packages/smithers/agent/std:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/capability
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../control
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../model
     devDependencies:
       '@effect/language-service':
@@ -3195,13 +3195,13 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/patterns':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/patterns
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
       '@types/node':
         specifier: 26.4.1
@@ -3255,16 +3255,16 @@ importers:
   packages/smithers/agent/triggers:
     dependencies:
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../control
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/database
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
     devDependencies:
       '@effect/language-service':
@@ -3280,7 +3280,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/engine
       '@types/node':
         specifier: 26.4.1
@@ -3334,13 +3334,13 @@ importers:
   packages/smithers/build:
     dependencies:
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/plan
     devDependencies:
       '@effect/language-service':
@@ -3407,43 +3407,43 @@ importers:
         specifier: 1.7.0
         version: 1.7.0
       '@smthrs/build':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/core
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/crypto
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/engine
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/journal
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/keys
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/registry
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/sandbox
       '@smthrs/targets':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../targets
       '@types/ws':
         specifier: 8.18.2
@@ -3492,7 +3492,7 @@ importers:
         specifier: 2.2.3
         version: 2.2.3(core-js@3.40.0)
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/kernel
       '@types/node':
         specifier: 26.4.1
@@ -3549,13 +3549,13 @@ importers:
         specifier: 0.12.14
         version: 0.12.14(@xterm/xterm@6.0.0)
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/canonical
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/sandbox
       '@smthrs/targets':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../targets
     devDependencies:
       '@alchemy.run/cloudflare':
@@ -3568,7 +3568,7 @@ importers:
         specifier: 4.1.1
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@smthrs/build-cli':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../build-cli
       '@types/node':
         specifier: 26.4.1
@@ -3610,25 +3610,25 @@ importers:
   packages/smithers/build/targets:
     dependencies:
       '@smthrs/build':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/model
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/plan
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/platform-node
       '@smthrs/triggers':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/triggers
       '@smthrs/views':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../ui/views
       ignore:
         specifier: 7.0.8
@@ -3698,34 +3698,34 @@ importers:
   packages/smithers/control:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/database
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/model
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../notifications
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/plan
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/registry
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/run-store
     devDependencies:
       '@effect/language-service':
@@ -3738,22 +3738,22 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/core
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/engine-store
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/jj
       '@smthrs/plan-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/plan-store
       '@smthrs/step-cache':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/step-cache
       '@smthrs/time-travel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/time-travel
       '@types/node':
         specifier: 26.4.1
@@ -3807,64 +3807,64 @@ importers:
   packages/smithers/flows:
     dependencies:
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:artifacts
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:database
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:engine
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:flow
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:kernel
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:keys
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:observability
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:plan
       '@smthrs/plan-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:plan-store
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:run-store
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:sandbox
       '@smthrs/step-cache':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:step-cache
       '@smthrs/sync':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:sync
       '@smthrs/time-travel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:time-travel
     devDependencies:
       '@effect/language-service':
@@ -3886,28 +3886,28 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../control
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:core
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/model
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../notifications
       '@smthrs/patterns':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:patterns
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:platform-node
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/registry
       '@smthrs/targets':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../build/targets
       '@types/node':
         specifier: 26.4.1
@@ -3961,7 +3961,7 @@ importers:
   packages/smithers/flows/artifacts:
     dependencies:
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
     devDependencies:
       '@effect/language-service':
@@ -4088,7 +4088,7 @@ importers:
   packages/smithers/flows/capability:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
     devDependencies:
       '@effect/language-service':
@@ -4155,16 +4155,16 @@ importers:
   packages/smithers/flows/core:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       yaml:
         specifier: 2.9.0
@@ -4183,7 +4183,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@types/node':
         specifier: 26.4.1
@@ -4378,25 +4378,25 @@ importers:
   packages/smithers/flows/engine:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../keys
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       vibelang-runtime:
         specifier: 0.0.12
@@ -4475,46 +4475,46 @@ importers:
   packages/smithers/flows/engine-store:
     dependencies:
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../keys
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       '@smthrs/plan-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan-store
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../run-store
       '@smthrs/step-cache':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../step-cache
     devDependencies:
       '@effect/language-service':
@@ -4533,10 +4533,10 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../core
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../platform-node
       '@types/node':
         specifier: 26.4.1
@@ -4593,19 +4593,19 @@ importers:
   packages/smithers/flows/flow:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../keys
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
     devDependencies:
       '@effect/language-service':
@@ -4678,10 +4678,10 @@ importers:
   packages/smithers/flows/jj:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
     devDependencies:
       '@effect/language-service':
@@ -4748,7 +4748,7 @@ importers:
   packages/smithers/flows/journal:
     dependencies:
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
     devDependencies:
       '@effect/language-service':
@@ -4764,7 +4764,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@types/node':
         specifier: 26.4.1
@@ -4821,16 +4821,16 @@ importers:
   packages/smithers/flows/kernel:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
     devDependencies:
       '@effect/language-service':
@@ -4846,7 +4846,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@types/node':
         specifier: 26.4.1
@@ -4903,10 +4903,10 @@ importers:
   packages/smithers/flows/keys:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
     devDependencies:
       '@effect/language-service':
@@ -4976,10 +4976,10 @@ importers:
   packages/smithers/flows/merge-queue:
     dependencies:
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
     devDependencies:
       '@effect/language-service':
@@ -4992,10 +4992,10 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../platform-node
       '@types/node':
         specifier: 26.4.1
@@ -5058,7 +5058,7 @@ importers:
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
     devDependencies:
       '@effect/language-service':
@@ -5143,10 +5143,10 @@ importers:
   packages/smithers/flows/patterns:
     dependencies:
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
     devDependencies:
       '@effect/language-service':
@@ -5159,7 +5159,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../core
       '@types/node':
         specifier: 26.4.1
@@ -5213,13 +5213,13 @@ importers:
   packages/smithers/flows/plan:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../keys
     devDependencies:
       '@effect/language-service':
@@ -5289,13 +5289,13 @@ importers:
   packages/smithers/flows/plan-store:
     dependencies:
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/keys':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../keys
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
     devDependencies:
       '@effect/language-service':
@@ -5365,43 +5365,43 @@ importers:
         specifier: 1.7.2
         version: 1.7.2
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../run-store
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../sandbox
       '@smthrs/std':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/std
       typescript:
         specifier: 5.9.3
@@ -5420,16 +5420,16 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/agent':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/model
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../observability
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/registry
       '@tanstack/browser-db-sqlite-persistence':
         specifier: 0.2.36
@@ -5504,16 +5504,16 @@ importers:
   packages/smithers/flows/platform-bun:
     dependencies:
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../sandbox
       '@types/ws':
         specifier: 8.18.2
@@ -5553,13 +5553,13 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../platform-node
       '@types/node':
         specifier: 26.4.1
@@ -5622,37 +5622,37 @@ importers:
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../run-store
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../sandbox
     devDependencies:
       '@cloudflare/workers-types':
@@ -5671,10 +5671,10 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../observability
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       '@types/node':
         specifier: 26.4.1
@@ -5737,46 +5737,46 @@ importers:
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../crypto
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:..
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../run-store
       '@smthrs/sandbox':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../sandbox
       '@smthrs/std':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/std
       '@types/ws':
         specifier: 8.18.2
@@ -5813,7 +5813,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       '@types/node':
         specifier: 26.4.1
@@ -5870,16 +5870,16 @@ importers:
   packages/smithers/flows/run-store:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/observability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../observability
     devDependencies:
       '@effect/language-service':
@@ -5943,16 +5943,16 @@ importers:
   packages/smithers/flows/sandbox:
     dependencies:
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../capability
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/plan':
         specifier: workspace:*
@@ -5971,16 +5971,16 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@smthrs/platform-bun':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../platform-bun
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../platform-node
       '@smthrs/std':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/std
       '@types/node':
         specifier: 26.4.1
@@ -6094,10 +6094,10 @@ importers:
   packages/smithers/flows/step-cache:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../canonical
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
     devDependencies:
       '@effect/language-service':
@@ -6161,10 +6161,10 @@ importers:
   packages/smithers/flows/sync:
     dependencies:
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       yjs:
         specifier: 13.6.32
@@ -6183,13 +6183,13 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine-store
       '@smthrs/time-travel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../time-travel
       '@types/node':
         specifier: 26.4.1
@@ -6246,22 +6246,22 @@ importers:
   packages/smithers/flows/time-travel:
     dependencies:
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../database
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine-store
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../journal
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../run-store
       '@smthrs/step-cache':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../step-cache
     devDependencies:
       '@effect/language-service':
@@ -6277,22 +6277,22 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/artifacts':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../artifacts
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../engine
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flow
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../kernel
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan
       '@smthrs/plan-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../plan-store
       '@types/node':
         specifier: 26.4.1
@@ -6346,22 +6346,22 @@ importers:
   packages/smithers/gateway:
     dependencies:
       '@smthrs/control':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../control
       '@smthrs/engine-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/engine-store
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/registry
       '@smthrs/sync':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/sync
       '@types/ws':
         specifier: 8.18.2
@@ -6395,22 +6395,22 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/database
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/kernel
       '@smthrs/notifications':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../notifications
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/platform-node
       '@smthrs/run-store':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/run-store
       '@types/node':
         specifier: 26.4.1
@@ -6467,22 +6467,22 @@ importers:
   packages/smithers/mcp:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/canonical
       '@smthrs/capability':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/capability
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/core
       '@smthrs/harness':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/harness
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/kernel
     devDependencies:
       '@effect/language-service':
@@ -6498,22 +6498,22 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/agent':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/flows':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/model
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/platform-node
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/registry
       '@types/node':
         specifier: 26.4.1
@@ -6647,52 +6647,52 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
     optionalDependencies:
       '@smthrs/agent':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/canonical
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/core
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/engine
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/flow
       '@smthrs/harness':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/harness
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/kernel
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/model
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/plan
       '@smthrs/platform-node':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/platform-node
       '@smthrs/registry':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../agent/registry
 
   packages/smithers/notifications:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/canonical
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/crypto
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/journal
     devDependencies:
       '@effect/language-service':
@@ -6705,7 +6705,7 @@ importers:
         specifier: 9.39.5
         version: 9.39.5
       '@smthrs/database':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../flows/database
       '@types/node':
         specifier: 26.4.1
@@ -7011,13 +7011,13 @@ importers:
         specifier: 8.0.4
         version: 8.0.4
       '@smthrs/crypto':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/crypto
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../flows/flow
       '@smthrs/harness':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../../agent/harness
       quickjs-emscripten-core:
         specifier: 0.32.0
@@ -7108,7 +7108,7 @@ importers:
   packages/smthrs-deprecation:
     dependencies:
       '@smthrs/cli':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers
     devDependencies:
       '@eslint/js':
@@ -7163,43 +7163,43 @@ importers:
   packages/testing:
     dependencies:
       '@smthrs/canonical':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/canonical
       '@smthrs/core':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/core
       '@smthrs/engine':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/engine
       '@smthrs/flow':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/flow
       '@smthrs/fuzz':
         specifier: workspace:*
         version: link:../fuzz
       '@smthrs/jj':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/jj
       '@smthrs/journal':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/journal
       '@smthrs/kernel':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/kernel
       '@smthrs/model':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/agent/model
       '@smthrs/plan':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/plan
       '@smthrs/platform-browser':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/flows/platform-browser
       '@smthrs/platform-node':
         specifier: workspace:*
         version: link:../smithers/flows/platform-node
       '@smthrs/scorers':
-        specifier: 1.0.0-rc.17
+        specifier: 1.0.0-rc.18
         version: link:../smithers/agent/scorers
       string-width:
         specifier: 7.2.0

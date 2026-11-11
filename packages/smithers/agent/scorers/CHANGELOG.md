@@ -8,6 +8,8 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+## [1.0.0-rc.18] - 2026-11-11
+
 ### Fixed
 
 - A PostgreSQL score store that held observations when migration

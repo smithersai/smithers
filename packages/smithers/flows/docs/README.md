@@ -34,7 +34,7 @@ npm init -y && npm pkg set type=module
 npm install @smthrs/platform-node@next @smthrs/flows@next effect
 ```
 
-With pnpm 11, run `pnpm add @smthrs/platform-node@1.0.0-rc.17 @smthrs/flows@1.0.0-rc.17 effect` instead, then
+With pnpm 11, run `pnpm add @smthrs/platform-node@1.0.0-rc.18 @smthrs/flows@1.0.0-rc.18 effect` instead, then
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind.
 

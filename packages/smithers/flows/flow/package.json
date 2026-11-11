@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/flow",
   "type": "module",
-  "version": "1.0.0-rc.17",
+  "version": "1.0.0-rc.18",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -329,11 +329,11 @@
     "coverage": "vitest --coverage --coverage.reportsDirectory=coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.17",
-    "@smthrs/keys": "1.0.0-rc.17",
-    "@smthrs/plan": "1.0.0-rc.17",
-    "@smthrs/canonical": "1.0.0-rc.17",
-    "@smthrs/capability": "1.0.0-rc.17"
+    "@smthrs/crypto": "1.0.0-rc.18",
+    "@smthrs/keys": "1.0.0-rc.18",
+    "@smthrs/plan": "1.0.0-rc.18",
+    "@smthrs/canonical": "1.0.0-rc.18",
+    "@smthrs/capability": "1.0.0-rc.18"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

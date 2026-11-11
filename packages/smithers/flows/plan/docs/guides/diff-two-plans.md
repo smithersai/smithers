@@ -17,7 +17,7 @@ add this package and `@smthrs/flow` at the version of `@smthrs/flows` you have,
 plus the platform package:
 
 ```bash
-npm install @smthrs/plan@1.0.0-rc.17 @smthrs/flow@1.0.0-rc.17 @effect/platform-node
+npm install @smthrs/plan@1.0.0-rc.18 @smthrs/flow@1.0.0-rc.18 @effect/platform-node
 ```
 
 The outputs below are real output from the release that install line names.

@@ -47,4 +47,4 @@ export const effectPinFor = (field: string): string => field === "peerDependenci
  * @since 1.0.0-rc.0
  * @private
  */
-export const smithersVersion = "1.0.0-rc.17"
+export const smithersVersion = "1.0.0-rc.18"

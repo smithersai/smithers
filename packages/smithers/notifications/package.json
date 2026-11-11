@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/notifications",
   "type": "module",
-  "version": "1.0.0-rc.17",
+  "version": "1.0.0-rc.18",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -190,15 +190,15 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.17",
-    "@smthrs/crypto": "1.0.0-rc.17",
-    "@smthrs/journal": "1.0.0-rc.17"
+    "@smthrs/canonical": "1.0.0-rc.18",
+    "@smthrs/crypto": "1.0.0-rc.18",
+    "@smthrs/journal": "1.0.0-rc.18"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/database": "1.0.0-rc.17",
+    "@smthrs/database": "1.0.0-rc.18",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

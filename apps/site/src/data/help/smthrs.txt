@@ -1,4 +1,4 @@
-smthrs@1.0.0-rc.17 — Build workspace targets and operate durable agent flows
+smthrs@1.0.0-rc.18 — Build workspace targets and operate durable agent flows
 
 Usage: smthrs <command>
 

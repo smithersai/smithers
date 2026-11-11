@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/integrations",
   "type": "module",
-  "version": "1.0.0-rc.17",
+  "version": "1.0.0-rc.18",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -501,15 +501,15 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/control": "1.0.0-rc.17",
-    "@smthrs/database": "1.0.0-rc.17",
-    "@smthrs/errors": "1.0.0-rc.17",
-    "@smthrs/flow": "1.0.0-rc.17",
-    "@smthrs/notifications": "1.0.0-rc.17",
-    "@smthrs/canonical": "1.0.0-rc.17",
-    "@smthrs/plan": "1.0.0-rc.17",
+    "@smthrs/control": "1.0.0-rc.18",
+    "@smthrs/database": "1.0.0-rc.18",
+    "@smthrs/errors": "1.0.0-rc.18",
+    "@smthrs/flow": "1.0.0-rc.18",
+    "@smthrs/notifications": "1.0.0-rc.18",
+    "@smthrs/canonical": "1.0.0-rc.18",
+    "@smthrs/plan": "1.0.0-rc.18",
     "vibelang-runtime": "0.0.12",
-    "@smthrs/jj": "1.0.0-rc.17"
+    "@smthrs/jj": "1.0.0-rc.18"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -519,10 +519,10 @@
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/engine": "1.0.0-rc.17",
-    "@smthrs/flows": "1.0.0-rc.17",
-    "@smthrs/platform-bun": "1.0.0-rc.17",
-    "@smthrs/platform-node": "1.0.0-rc.17",
+    "@smthrs/engine": "1.0.0-rc.18",
+    "@smthrs/flows": "1.0.0-rc.18",
+    "@smthrs/platform-bun": "1.0.0-rc.18",
+    "@smthrs/platform-node": "1.0.0-rc.18",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
