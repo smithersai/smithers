@@ -20,7 +20,8 @@ import * as SessionStore from "../SessionStore.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
 import { afterBody } from "../WriteAdmission.ts"
 import { BranchRoles } from "../branch/Access.ts"
-import type * as RepoRoles from "../github/RepoRoles.ts"
+import { repositoryOf } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
@@ -529,8 +530,21 @@ describe("the repository's runners and agents", () => {
     expect(await Effect.runPromise(step({ attemptId: "a", repoId: REPO }))).toEqual({ agent })
   })
 
-  /** The Admin routes as `actor`, with flows run to their end on the Node host before the route answers. */
-  const adminRoutes = async (actor: Actor.Actor | null, repo = "acme/widgets") => {
+  /**
+   * `BranchRoles` as a deployed Worker without the App gives them: the real `RepoRoles` without `local` (a deploy never
+   * sets it), so the session's role holds only on `repository`, the deployment's own.
+   */
+  const deployedWithoutApp = (db: Layer.Layer<SqlClient.SqlClient, unknown>, repository = "acme/widgets") =>
+    Layer.unwrap(Effect.map(
+      RepoRoles.make(db, { repository: repositoryOf(repository), app: Option.none() }),
+      (roles) => BranchRoles.layer(roles),
+    ))
+
+  /**
+   * The Admin routes as `actor`, with flows run to their end on the Node host before the route answers; `roles` the
+   * harness's local development roles unless set.
+   */
+  const adminRoutes = async (actor: Actor.Actor | null, repo = "acme/widgets", roles = branchRoles) => {
     const db = await database()
     const scope = Effect.runSync(Scope.make())
     const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
@@ -547,7 +561,7 @@ describe("the repository's runners and agents", () => {
     const handler = HttpEffect.toWebHandler(api.admit(afterBody(api.fetch)).pipe(
       Effect.provideService(Flows.FlowStarter, starter),
       Effect.provide(actor === null ? signedOut : signedIn(actor)),
-      Effect.provide(branchRoles(db, "acme/widgets")),
+      Effect.provide(roles(db, "acme/widgets")),
     ))
     const send = async (path: string, method: string, body?: unknown) => {
       const response = await handler(new Request(`http://localhost/api/repos/${repo}/${path}`, {
@@ -1390,9 +1404,9 @@ describe("the repository's runners and agents", () => {
   })
 
   test("with a recorded installation, the role must be the one GitHub gives there, never the deployment's", async () => {
-    // The harness has no App to ask GitHub, so nobody holds a role on a repository other than the deployment's own.
+    // A deployment without the App has no GitHub to ask, so nobody holds a role on a repository other than its own.
     await recordInstallation("github/acme/private")
-    const asAdmin = await adminRoutes(admin, "acme/private")
+    const asAdmin = await adminRoutes(admin, "acme/private", deployedWithoutApp)
     try {
       expect((await asAdmin.send("runners/nyc-01", "PUT", { tokenSha256: "b".repeat(64), labels: [], capacity: 1 })).status)
         .toBe(403)
