@@ -335,3 +335,18 @@ describe("scoped target status", () => {
 /** Native test hosts inspect the arguments they actually execute. */
 const plainWord = (value: string | Redacted.Redacted<string>): string =>
   Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+describe("supervisor startup budget", () => {
+  it("bounds the start by the caller's budget, and a generous one starts the command", async () => {
+    const spawned = (startupTimeoutMs: number) =>
+      Effect.runPromiseExit(Effect.scoped(Effect.gen(function*() {
+        const handle = yield* ScopedProcess.spawn({ command: "/bin/sh", args: ["-c", "exit 0"], startupTimeoutMs })
+        return yield* ScopedProcess.status(handle)
+      })))
+    const starved = await spawned(1)
+    expect(Exit.isFailure(starved)).toBe(true)
+    expect(String(starved)).toContain("too busy to start the process within 0.001 s")
+    const started = await spawned(120_000)
+    expect(Exit.isSuccess(started), String(started)).toBe(true)
+  }, 60_000)
+})

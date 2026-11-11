@@ -1147,7 +1147,10 @@ const spawnTool = (
         stdin: "ignore",
         killSignal: "SIGKILL",
         forceKillAfter: 0,
-        windowsVerbatimArguments: shape.windowsVerbatimArguments
+        windowsVerbatimArguments: shape.windowsVerbatimArguments,
+        // The tool's own deadline bounds its start too: a busy machine that
+        // takes 6 s to start the supervisor still leaves a 5m tool its minutes.
+        ...(payload.timeoutMs === "unbounded" ? {} : { startupTimeoutMs: payload.timeoutMs })
       }).pipe(Effect.mapError((cause) => {
         // ENOENT can describe the cwd as well as the executable. Check the cwd
         // explicitly so the first-run diagnostic identifies the missing input.

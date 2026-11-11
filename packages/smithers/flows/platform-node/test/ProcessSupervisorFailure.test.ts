@@ -72,6 +72,8 @@ interface Settings {
   readonly endOnDisconnect?: boolean
   readonly slowDrainingSnapshot?: boolean
   readonly snapshotUnavailableAfterExitMs?: number
+  /** A loaded machine: the owner connects, then announces readiness this late. */
+  readonly readinessDelayMs?: number
 }
 
 /**
@@ -211,15 +213,21 @@ const fixture = (settings: Settings = {}) => {
               if (settings.endOnDisconnect !== false) endOwner()
             })
             await bounded(Promise.all([once(peer, "connect"), once(requestPeer, "connect")]))
-            if (settings.readiness === "malformed") peer.write("{invalid}\n")
-            else if (settings.readiness !== "silent") {
-              send({
-                type: "ready",
-                version: 1,
-                pid: settings.readiness === "wrong" ? 900_005 : 900_001,
-                created: "123456789012345678"
-              })
+            const connected = peer
+            const announce = () => {
+              if (settings.readiness === "malformed") connected.write("{invalid}\n")
+              else if (settings.readiness !== "silent") {
+                send({
+                  type: "ready",
+                  version: 1,
+                  pid: settings.readiness === "wrong" ? 900_005 : 900_001,
+                  created: "123456789012345678"
+                })
+              }
             }
+            // The spawn returns at once; only the readiness message is late.
+            if (settings.readinessDelayMs === undefined) announce()
+            else setTimeout(() => connected.destroyed || announce(), settings.readinessDelayMs)
             accepted.resolve()
           },
           catch: (cause) => Supervisor.failure("spawn", "test peer", cause)
@@ -291,7 +299,8 @@ const fixture = (settings: Settings = {}) => {
 const run = async (
   host: ReturnType<typeof fixture>,
   use: (handle: ReturnType<typeof makeHandle>) => Effect.Effect<unknown, unknown> = () => Effect.void,
-  options: ChildProcess.CommandOptions = {}
+  options: ChildProcess.CommandOptions = {},
+  startupBudgetMs?: number
 ) => {
   const ledger = await Effect.runPromise(
     ProcessLedger.makeMemory({ hostId: "failed-supervisor", ownerPid: process.pid })
@@ -314,6 +323,9 @@ const run = async (
         ))
       ),
       Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+      startupBudgetMs === undefined
+        ? (effect) => effect
+        : Effect.provideService(Supervisor.StartupBudget, startupBudgetMs),
       Effect.scoped,
       Effect.exit
     )
@@ -535,6 +547,53 @@ describe("failed process preparation", () => {
       expect(host.requests.map((frame) => frame.type)).toEqual(["stop"])
       expect(result.live).toEqual([])
       expect(host.rawKills).toBe(0)
+    } finally {
+      host.dispose()
+    }
+  }, 10_000)
+
+  it("fails an owner that announces readiness after the default 5 s", async () => {
+    const host = fixture({ readinessDelayMs: 5600 })
+    try {
+      const result = await run(host)
+      expect(Exit.isFailure(result.outcome)).toBe(true)
+      if (Exit.isFailure(result.outcome)) {
+        expect((Cause.squash(result.outcome.cause) as PlatformError.PlatformError).message).toContain(
+          "too busy to start the process within 5 s"
+        )
+      }
+      expect(result.live).toEqual([])
+    } finally {
+      host.dispose()
+    }
+  }, 15_000)
+
+  // A target declared `timeout: "5m"` grants its process minutes; a machine
+  // too busy to start the owner within 5 s spends some of them, nothing more.
+  it("starts the same late owner inside the budget its caller grants", async () => {
+    const host = fixture({ readinessDelayMs: 5600 })
+    try {
+      const result = await run(host, () => Effect.void, {}, 30_000)
+      expect(Exit.isSuccess(result.outcome), String(result.outcome)).toBe(true)
+      expect(host.requests.map((frame) => frame.type)).toContain("start")
+    } finally {
+      host.dispose()
+    }
+  }, 20_000)
+
+  it("bounds startup by a caller budget shorter than the default", async () => {
+    const host = fixture({ readiness: "silent" })
+    const started = Date.now()
+    try {
+      const result = await run(host, () => Effect.void, {}, 400)
+      expect(Exit.isFailure(result.outcome)).toBe(true)
+      if (Exit.isFailure(result.outcome)) {
+        expect((Cause.squash(result.outcome.cause) as PlatformError.PlatformError).message).toContain(
+          "too busy to start the process within 0.4 s"
+        )
+      }
+      expect(Date.now() - started).toBeLessThan(4000)
+      expect(result.live).toEqual([])
     } finally {
       host.dispose()
     }

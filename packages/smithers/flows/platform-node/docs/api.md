@@ -144,6 +144,7 @@ interface Options extends ChildProcess.KillOptions {
   readonly stdin?: "ignore" | "pipe" | undefined
   readonly windowsVerbatimArguments?: boolean | undefined
   readonly windowsHide?: boolean | undefined
+  readonly startupTimeoutMs?: number | undefined
 }
 
 interface Handle extends ChildProcessHandle {
@@ -166,6 +167,12 @@ environment; when omitted it inherits the host environment. The default
 termination policy is `SIGTERM`, then `SIGKILL` after 2,000 milliseconds.
 `windowsHide` defaults to true. Failed startup cleans up its child scope before
 returning an error.
+
+The supervisor must start, listen and report ready within `startupTimeoutMs`,
+5,000 milliseconds by default; otherwise `spawn` fails with a `TimedOut` reason,
+"The machine was too busy to start the process". A command with its own
+deadline passes it here, so a loaded machine spends that budget instead of
+failing early. Smithers build targets pass their `timeout`.
 
 On POSIX, `handle.pid` identifies the live supervisor and `targetPid` identifies
 the native target for diagnostics. `exitCode` describes the target;

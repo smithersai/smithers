@@ -10,7 +10,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
 import * as PipedProcess from "./internal/PipedProcess.ts"
-import { targetPidOf } from "./internal/ProcessSupervisor.ts"
+import { StartupBudget, targetPidOf } from "./internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "./ProcessReaper.ts"
 
 /**
@@ -26,6 +26,12 @@ export interface Options extends ChildProcess.KillOptions {
   readonly stdin?: "ignore" | "pipe" | undefined
   readonly windowsVerbatimArguments?: boolean | undefined
   readonly windowsHide?: boolean | undefined
+  /**
+   * Milliseconds the command may wait for its supervisor to start, 5000 by
+   * default. A command with its own deadline passes that deadline, so a
+   * loaded machine slows its start instead of failing it.
+   */
+  readonly startupTimeoutMs?: number | undefined
 }
 
 /**
@@ -88,7 +94,12 @@ export const spawn = (
             )
           }
           return Object.defineProperty(prepared.handle, "targetPid", { value: targetPid, enumerable: true }) as Handle
-        }).pipe(Scope.provide(scope))
+        }).pipe(
+          Scope.provide(scope),
+          options.startupTimeoutMs === undefined
+            ? (effect) => effect
+            : Effect.provideService(StartupBudget, options.startupTimeoutMs)
+        )
       ).pipe(
         Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause)))
       )

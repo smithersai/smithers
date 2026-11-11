@@ -7,6 +7,7 @@
 import type { Lifecycle } from "@smthrs/kernel/ContainedSpawner"
 import * as Channel from "effect/Channel"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -27,6 +28,22 @@ import { source } from "./SupervisorProgram.ts"
 import { resolveJobExecutable, WindowsProcessJob } from "./WindowsProcessJob.ts"
 
 const startupMs = 5000
+
+/**
+ * How long one spawn may wait for its owner process to start, listen and
+ * report ready: 5 s unless the caller says otherwise.
+ *
+ * The owner is a fresh runtime process, so on a loaded machine its startup
+ * alone can outlast 5 s. A caller whose command has its own deadline (a build
+ * target's `timeout: "5m"`) supplies that deadline here, so the machine being
+ * busy costs time inside the budget the caller already granted instead of
+ * failing a command that had minutes left.
+ * @private
+ * @since 1.0.0
+ */
+export const StartupBudget = Context.Reference<number>("@smthrs/platform-node/ProcessSupervisor/StartupBudget", {
+  defaultValue: () => startupMs
+})
 const deliveryMs = 500
 // SupervisorProgram sizes its ps bound so the two table observations of an
 // explicit stop fit inside this allowance. Change both together.
@@ -249,7 +266,10 @@ export class Control {
   private receivedStarted = false
   private withdrawn = false
 
-  constructor(transport: "native" | "tls" = "native") {
+  private readonly startup: number
+
+  constructor(transport: "native" | "tls" = "native", startup = startupMs) {
+    this.startup = startup
     this.key = transport === "tls" || process.platform === "win32" ? randomBytes(32) : undefined
     this.directory = mkdtempSync(this.key === undefined ? "/tmp/sm-p-" : join(tmpdir(), "sm-p-"))
     this.path = `${this.directory}/s`
@@ -284,7 +304,7 @@ export class Control {
     if (this.key === undefined) return createServer(accept)
     const server = Tls.createServer({
       ...tlsOptions,
-      handshakeTimeout: startupMs,
+      handshakeTimeout: this.startup,
       pskCallback: (_socket, identity) => identity === "smithers-owner" ? this.key! : null
     }, accept)
     server.on("connection", (socket) => {
@@ -511,6 +531,7 @@ export const prepare = (
 (command, spawn) =>
   Effect.gen(function*() {
     yield* refuseNul(command)
+    const startup = yield* StartupBudget
     const initial = yield* policy(command.options)
     const bun = process.versions.bun !== undefined
     const sea = bun ? false : (yield* Effect.tryPromise({
@@ -531,10 +552,13 @@ export const prepare = (
       }) :
       undefined
     const control = yield* Effect.acquireRelease(
-      Effect.try({ try: () => new Control(transport), catch: (cause) => failure("spawn", command.command, cause) }),
+      Effect.try({
+        try: () => new Control(transport, startup),
+        catch: (cause) => failure("spawn", command.command, cause)
+      }),
       (control) => Effect.sync(() => control.dispose())
     )
-    yield* bounded(wait(control.listening, "spawn", command.command), startupMs, "spawn", command.command)
+    yield* bounded(wait(control.listening, "spawn", command.command), startup, "spawn", command.command)
     const raw = yield* spawn(ChildProcess.make(process.execPath, [
       ...bootstrap,
       "-e",
@@ -708,11 +732,11 @@ export const prepare = (
     )
     const ready = yield* bounded(
       wait(control.ready.promise, "spawn", command.command),
-      startupMs,
+      startup,
       "spawn",
       command.command
     )
-    yield* bounded(wait(control.requestsReady.promise, "spawn", command.command), startupMs, "spawn", command.command)
+    yield* bounded(wait(control.requestsReady.promise, "spawn", command.command), startup, "spawn", command.command)
     yield* Effect.try({
       try: () => control.withdraw(ready, raw.pid),
       catch: (cause) => failure("spawn", command.command, cause)
@@ -722,7 +746,7 @@ export const prepare = (
         try: () => new WindowsProcessJob(raw.pid, control.ownerCreation, jobExecutable!),
         catch: (cause) => failure("spawn", command.command, cause)
       })
-      yield* bounded(wait(job.ready.promise, "spawn", command.command), startupMs, "spawn", command.command)
+      yield* bounded(wait(job.ready.promise, "spawn", command.command), startup, "spawn", command.command)
     }
     const acknowledgeCleanup = windows || transport === "tls"
     if (acknowledgeCleanup) {
@@ -780,7 +804,7 @@ export const prepare = (
         "spawn",
         command.command
       )
-      yield* bounded(wait(control.started.promise, "spawn", command.command), startupMs, "spawn", command.command)
+      yield* bounded(wait(control.started.promise, "spawn", command.command), startup, "spawn", command.command)
     }))
     const unref = Effect.gen(function*() {
       if (referenced) {
