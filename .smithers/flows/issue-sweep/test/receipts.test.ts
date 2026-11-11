@@ -1,4 +1,5 @@
 import { Effect, Exit } from "effect"
+import { KeyValueStore } from "effect/persistence"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { promises as fs } from "node:fs"
@@ -104,4 +105,19 @@ test("legacy values remain literal even when they resemble a versioned envelope"
   assert.deepEqual(await Effect.runPromise(store.keys), ["legacy"])
   assert.equal(await Effect.runPromise(store.size), 1)
   assert.equal(await Effect.runPromise(store.get("legacy")), "upgraded")
+})
+
+test("reopened prefix operations preserve other keys", async (t) => {
+  const root = await fs.mkdtemp(join(tmpdir(), "issue-sweep-keyed-receipts-"))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const directory = join(root, ".flows", "issue-sweep-jobs")
+  const store = await Effect.runPromise(make(directory))
+  for (const key of ["prefix/a", "prefix/b", "other"]) await Effect.runPromise(store.set(key, key))
+  const restored = await Effect.runPromise(make(directory))
+  const prefixed = KeyValueStore.prefix(restored, "prefix/")
+  assert.deepEqual([...await Effect.runPromise(prefixed.keys)].sort(), ["a", "b"])
+  await Effect.runPromise(prefixed.clear)
+  assert.deepEqual(await Effect.runPromise(restored.keys), ["other"])
+  assert.equal(await Effect.runPromise(restored.get("other")), "other")
+  assert.equal(await Effect.runPromise(restored.get("prefix/a")), undefined)
 })
