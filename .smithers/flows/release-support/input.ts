@@ -31,61 +31,25 @@ const requestedVersion = (input: Record<string, unknown>, current: string): stri
   return `${major}.${minor}.${patch}`
 }
 
-export const contentInput = (value: unknown, currentVersion: string): ContentInput => {
+/** The host's version normalization in front of the flow's own input decoding and defaults. */
+const decode = <S extends Schema.Struct<Schema.Struct.Fields>>(
+  schema: S,
+  value: unknown,
+  currentVersion: string
+): S["Type"] => {
   const input = record(value)
-  keys(input, [...Object.keys(ContentInput.fields), "bump"])
-  const resolvedVersion = requestedVersion(input, currentVersion)
+  keys(input, [...Object.keys(schema.fields), "bump"])
   const { bump: _bump, ...fields } = input
-  const channels = input.channels === undefined ? {} : record(input.channels)
-  keys(channels, ["changelog", "blog", "thread", "media"])
-  const decoded = Schema.decodeUnknownSync(ContentInput)({
-    from: "auto",
-    dryRun: true,
-    publish: false,
-    postX: false,
-    autoCommit: false,
-    recording: null,
-    title: "",
-    notes: "",
-    minScore: 0.86,
-    maxRevisions: 2,
-    maxTweets: 8,
-    maxTweetChars: 280,
+  const channels = input.channels === undefined ? undefined : record(input.channels)
+  if (channels) keys(channels, ["changelog", "blog", "thread", "media"])
+  return Schema.decodeUnknownSync(schema as Schema.Codec<S["Type"]>)({
     ...fields,
-    version: resolvedVersion,
-    channels: { changelog: true, blog: true, thread: true, media: true, ...channels }
+    version: requestedVersion(input, currentVersion)
   })
-  if (!decoded.channels.changelog && !decoded.channels.blog && !decoded.channels.thread) {
-    throw new Error("Enable at least one text channel")
-  }
-  if (decoded.postX && (!decoded.publish || !decoded.channels.thread)) {
-    throw new Error("postX requires publish=true and channels.thread=true")
-  }
-  if (decoded.autoCommit && !decoded.publish) throw new Error("autoCommit requires publish=true")
-  if (decoded.recording) {
-    const url = new URL(decoded.recording.url)
-    if (
-      !/^https?:$/.test(url.protocol) || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) || url.username ||
-      url.password
-    ) throw new Error("recording.url must be a local HTTP(S) origin without credentials")
-  }
-  return decoded
 }
 
-export const releaseInput = (value: unknown, currentVersion: string): ReleaseInput => {
-  const input = record(value)
-  keys(input, [...Object.keys(ReleaseInput.fields), "bump"])
-  const resolvedVersion = requestedVersion(input, currentVersion)
-  const { bump: _bump, ...fields } = input
-  const decoded = Schema.decodeUnknownSync(ReleaseInput)({
-    from: "auto",
-    phase: "prepare",
-    dryRun: true,
-    contentArtifact: "",
-    requireContentApproval: true,
-    provenance: true,
-    ...fields,
-    version: resolvedVersion
-  })
-  return decoded
-}
+export const contentInput = (value: unknown, currentVersion: string): ContentInput =>
+  decode(ContentInput, value, currentVersion)
+
+export const releaseInput = (value: unknown, currentVersion: string): ReleaseInput =>
+  decode(ReleaseInput, value, currentVersion)

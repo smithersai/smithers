@@ -19,13 +19,6 @@ export const Version = Schema.NonEmptyString.check(
   )
 )
 
-export const Channels = Schema.Struct({
-  changelog: Schema.Boolean,
-  blog: Schema.Boolean,
-  thread: Schema.Boolean,
-  media: Schema.Boolean
-})
-
 export const Recording = Schema.Struct({
   url: Schema.NonEmptyString,
   readySelector: Schema.NonEmptyString,
@@ -37,41 +30,90 @@ export const Recording = Schema.Struct({
 })
 export const RecordingAsset = Schema.Struct({ path: Schema.String, digest: Schema.String })
 
-/** Normalized at the entry point; the persisted payload contains every default. */
+/** An optional input key that decodes to `value` when the caller omits it. */
+const withDefault = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
+  Schema.optionalKey(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))
+
+const localOrigins = ["localhost", "127.0.0.1", "[::1]"]
+const isLocalOrigin = (value: string) => {
+  const url = URL.parse(value)
+  return url !== null && /^https?:$/.test(url.protocol) && localOrigins.includes(url.hostname) && url.username === "" &&
+    url.password === ""
+}
+
+/**
+ * The release-content flow's input. Every key but `version` has a default, so a
+ * run started with only a version is a dry-run preview of every channel.
+ */
 export const ContentInput = Schema.Struct({
   version: Version,
-  from: Schema.NonEmptyString,
-  dryRun: Schema.Boolean,
-  publish: Schema.Boolean,
-  postX: Schema.Boolean,
-  autoCommit: Schema.Boolean,
-  recording: Schema.NullOr(Recording),
-  channels: Channels,
-  title: Schema.String,
-  notes: Schema.String,
-  minScore: Schema.Finite.check(
-    Schema.isBetween({ minimum: 0, maximum: 1 }, { message: "minScore must be between 0 and 1" })
+  from: withDefault(Schema.NonEmptyString, "auto"),
+  dryRun: withDefault(Schema.Boolean, true),
+  publish: withDefault(Schema.Boolean, false),
+  postX: withDefault(Schema.Boolean, false),
+  autoCommit: withDefault(Schema.Boolean, false),
+  recording: withDefault(Schema.NullOr(Recording), null),
+  channels: withDefault(
+    Schema.Struct({
+      changelog: withDefault(Schema.Boolean, true),
+      blog: withDefault(Schema.Boolean, true),
+      thread: withDefault(Schema.Boolean, true),
+      media: withDefault(Schema.Boolean, true)
+    }),
+    { changelog: true, blog: true, thread: true, media: true }
   ),
-  maxRevisions: Schema.Int.check(
-    Schema.isBetween({ minimum: 0, maximum: 3 }, { message: "maxRevisions must be an integer from 0 to 3" })
+  title: withDefault(Schema.String, ""),
+  notes: withDefault(Schema.String, ""),
+  minScore: withDefault(
+    Schema.Finite.check(
+      Schema.isBetween({ minimum: 0, maximum: 1 }, { message: "minScore must be between 0 and 1" })
+    ),
+    0.86
   ),
-  maxTweets: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: 12 }, { message: "maxTweets must be an integer from 1 to 12" })
+  maxRevisions: withDefault(
+    Schema.Int.check(
+      Schema.isBetween({ minimum: 0, maximum: 3 }, { message: "maxRevisions must be an integer from 0 to 3" })
+    ),
+    2
   ),
-  maxTweetChars: Schema.Int.check(
-    Schema.isBetween({ minimum: 1, maximum: 280 }, { message: "maxTweetChars must be an integer from 1 to 280" })
+  maxTweets: withDefault(
+    Schema.Int.check(
+      Schema.isBetween({ minimum: 1, maximum: 12 }, { message: "maxTweets must be an integer from 1 to 12" })
+    ),
+    8
+  ),
+  maxTweetChars: withDefault(
+    Schema.Int.check(
+      Schema.isBetween({ minimum: 1, maximum: 280 }, { message: "maxTweetChars must be an integer from 1 to 280" })
+    ),
+    280
   )
-})
+}).check(
+  Schema.makeFilter((input) => input.channels.changelog || input.channels.blog || input.channels.thread, {
+    message: "Enable at least one text channel"
+  }),
+  Schema.makeFilter((input) => !input.postX || (input.publish && input.channels.thread), {
+    message: "postX requires publish=true and channels.thread=true"
+  }),
+  Schema.makeFilter((input) => !input.autoCommit || input.publish, { message: "autoCommit requires publish=true" }),
+  Schema.makeFilter((input) => input.recording === null || isLocalOrigin(input.recording.url), {
+    message: "recording.url must be a local HTTP(S) origin without credentials"
+  })
+)
 export type ContentInput = typeof ContentInput.Type
 
+/**
+ * The release flow's input. Every key but `version` has a default, so a run
+ * started with only a version is a dry-run preview of the prepare phase.
+ */
 export const ReleaseInput = Schema.Struct({
   version: Version,
-  from: Schema.NonEmptyString,
-  phase: Schema.Literals(["prepare", "publish"]),
-  dryRun: Schema.Boolean,
-  contentArtifact: Schema.String,
-  requireContentApproval: Schema.Boolean,
-  provenance: Schema.Boolean
+  from: withDefault(Schema.NonEmptyString, "auto"),
+  phase: withDefault(Schema.Literals(["prepare", "publish"]), "prepare"),
+  dryRun: withDefault(Schema.Boolean, true),
+  contentArtifact: withDefault(Schema.String, ""),
+  requireContentApproval: withDefault(Schema.Boolean, true),
+  provenance: withDefault(Schema.Boolean, true)
 })
 export type ReleaseInput = typeof ReleaseInput.Type
 

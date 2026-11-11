@@ -50,6 +50,46 @@ const waiting = (id: string) =>
     return Schema.decodeUnknownSync(DurableDeferred.Token)(row.value.token)
   })
 
+test("a flow started with only a version decodes every other input key to its preview default", () => {
+  assert.deepEqual(Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({ version: "1.0.0" }), {
+    version: "1.0.0",
+    from: "auto",
+    phase: "prepare",
+    dryRun: true,
+    contentArtifact: "",
+    requireContentApproval: true,
+    provenance: true
+  })
+  const content = Schema.decodeUnknownSync(ReleaseContent.payloadSchema)({
+    version: "1.0.0",
+    channels: { blog: false }
+  })
+  assert.equal(content.dryRun, true)
+  assert.equal(content.publish, false)
+  assert.equal(content.minScore, 0.86)
+  assert.deepEqual(content.channels, { changelog: true, blog: false, thread: true, media: true })
+  // The plan a version-only publish request builds is the full validation path, ending in a preview.
+  const calls = [...Graph.nodes(Graph.build(
+    ReleaseFlow,
+    Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({
+      version: "1.0.0",
+      phase: "publish"
+    })
+  ))].filter((node) => node.kind === "ActionCall").map((node) => (node.ast as { action: string }).action)
+  assert.equal(calls.includes("release/smoke"), true)
+  assert.equal(calls.includes("system/human-task"), false)
+  const refuse = (input: unknown, message: RegExp) =>
+    assert.throws(() => Schema.decodeUnknownSync(ReleaseContent.payloadSchema)(input), message)
+  refuse({}, /version/)
+  refuse({ version: "1.0.0", postX: true }, /postX requires publish=true/)
+  refuse({ version: "1.0.0", autoCommit: true }, /autoCommit requires publish=true/)
+  refuse({ version: "1.0.0", channels: { changelog: false, blog: false, thread: false } }, /at least one text channel/)
+  refuse(
+    { version: "1.0.0", recording: { url: "https://example.com", readySelector: "main", steps: [] } },
+    /local HTTP\(S\) origin/
+  )
+})
+
 test("planning contains the bounded revision loop and no disabled drafting stages", () => {
   const input = contentInput({ channels: { blog: false, thread: false }, maxRevisions: 2 }, evidence.version)
   const calls = [...Graph.nodes(Graph.build(ReleaseContent, input))]
