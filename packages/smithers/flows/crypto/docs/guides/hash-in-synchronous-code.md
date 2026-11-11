@@ -65,7 +65,7 @@ Without a separator, `("ab", "c")` and `("a", "bc")` hash identically. For
 structured values rather than two strings, canonicalize instead: see
 [hash a structured value](./hash-a-structured-value.md).
 
-## Use syncCrypto when the code already takes a Crypto service
+## Use syncCrypto when the code already takes a Digest service
 
 Sometimes the derivation you want to run synchronously is already written as
 an Effect that requires `EffectDigest.Digest`, because it is shared with the

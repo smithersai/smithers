@@ -14726,7 +14726,8 @@ schema-composition face of [`digest`](#digest).
 - Operational failures become `SchemaError` issues whose message is
   `[code] message` and whose annotations carry the stable `code` and the typed
   `Sha256Error` as `cause`.
-- The schema annotates `parseOptions: { reportInput: false }`, overriding
+- The schema owns its parsing boundary with `Schema.declareConstructor` and
+  passes `{ ...options, reportInput: false }` to the wrapped codec, disabling
   input reporting for its own node only. Enclosing Struct, Array, and Union
   issues use their own options and can retain the original input, including
   when a sibling field fails. Pass `reportInput: false` at the outermost
@@ -14810,9 +14811,9 @@ accept, are ordinary `SchemaError` validation failures rather than
 const syncCrypto: typeof EffectDigest.Digest.Service
 ```
 
-A synchronous, SHA-256-only Effect `Crypto` service backed by the same
+A synchronous, SHA-256-only Effect `Digest` service backed by the same
 package-owned implementation as `digestSync`. It exists for synchronous code
-that already consumes a `Crypto` service, and for tests that want real hashing
+that already consumes a `Digest` service, and for tests that want real hashing
 with no platform layer.
 
 - `digest(EffectDigest.sha256, input)` snapshots the input and returns the 32 raw bytes.
@@ -14825,7 +14826,7 @@ with no platform layer.
 - `digestHex(EffectDigest.sha256, input)` returns lowercase hexadecimal.
 - Randomness belongs to the separate `SecureRandom` service; this adapter exposes only digest operations.
 
-Normal application code should provide its platform `Crypto` layer, or
+Normal application code should provide its platform `Digest` layer, or
 [`WebCrypto.layer`](#webcryptolayer), instead.
 
 ### WebCrypto.make
@@ -14944,7 +14945,9 @@ could make two different functions share an identity.
   two locals' uses included, changes it. It cannot tell which outer binding a
   name reads beyond the pattern of its reads: `() => f(a, b)` and
   `() => f(b, a)` share it when `a` and `b` are declared outside the function.
-  A native or bound function has none.
+  Implicit `arguments` and recognized built-in and host names keep their
+  spelling; see [resume identity compatibility](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/contract.md#callback-resume-identity-compatibility)
+  for the behavior and upgrade constraints. A native or bound function has none.
 - **Throws** `TypeError("function identity requires a function")` for anything
   that is not a function.
 
@@ -15009,12 +15012,21 @@ interface FunctionIdentity {
   readonly digest: string
   readonly resumeDigest?: string | undefined
 }
-type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
 ```
 
 The serializable stand-in a node AST stores in place of the function itself. The
 algorithm tag is versioned, so a change to identity semantics re-keys what is
 derived from one rather than colliding with it.
+
+### Identity.Algorithm
+
+```ts
+type Algorithm = "sha256-source-ephemeral/v4" | "sha256-source-captures/v5"
+```
+
+The versioned tag distinguishing an ephemeral source identity from an identity
+with declared captures. See [`Identity.functionIdentity`](#identityfunctionidentity)
+for how each identity is constructed.
 
 ## Requirements and platform
 

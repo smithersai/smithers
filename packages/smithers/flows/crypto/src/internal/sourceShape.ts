@@ -14,7 +14,7 @@
  *   `let` and `const`, function and class names, and `catch` parameters, in
  *   function, block, `catch`, `for` and class-name scopes.
  * - A name the source reads but never declares is `$f` and its number in
- *   order of first use (except standard built-in globals, kept by name),
+ *   order of first use (except built-in and host names, kept by name),
  *   a label `$l` and its number, a private name `#` and its number.
  * - Literals, keywords and operators are kept verbatim, and so are a property
  *   name after `.` or `?.` and an object or class key. A shorthand member
@@ -94,7 +94,8 @@ const reserved = new Set([
 ])
 
 /**
- * Standard global names are semantic identities, never minifier bindings.
+ * Built-in and host names, including implicit arguments, are semantic identities,
+ * never minifier bindings.
  * Keep this explicit and host-independent: inspecting globalThis would make
  * the same callback's identity depend on the runtime building its plan.
  * Scope resolution runs first, so a local with any of these names still renames.
@@ -102,6 +103,7 @@ const reserved = new Set([
  */
 const builtinGlobals = new Set([
   "globalThis",
+  "arguments",
   "undefined",
   "NaN",
   "Infinity",
@@ -192,6 +194,22 @@ const builtinGlobals = new Set([
   "File",
   "FormData",
   "WebSocket",
+  "process",
+  "Buffer",
+  "require",
+  "window",
+  "self",
+  "document",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "caches",
+  "setImmediate",
+  "XMLHttpRequest",
+  "Worker",
+  "MessageChannel",
+  "BroadcastChannel",
   "console",
   "performance",
   "structuredClone",

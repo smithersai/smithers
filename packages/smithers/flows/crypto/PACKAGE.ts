@@ -116,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A host result branded as Digest without the Uint8Array check, copy, and exact 32-byte length check.",
         "A host throw or defect escaping as an untyped defect instead of Sha256Error digest_failed.",
-        "syncCrypto answering randomBytes or a non-SHA-256 algorithm instead of refusing."
+        "syncCrypto exposing anything beyond digest and digestHex, or accepting a non-SHA-256 algorithm."
       ],
       paths: ["src/Sha256.ts"]
     },

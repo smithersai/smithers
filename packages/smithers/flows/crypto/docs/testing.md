@@ -8,7 +8,7 @@ Hashing is deterministic, so the only question a test has to answer is which
 
 ## Hash without a platform layer
 
-`syncCrypto` is the package's own implementation wearing the `Crypto`
+`syncCrypto` is the package's own implementation wearing the Effect `Digest`
 interface. Provide it and the test hashes for real with no platform
 dependency:
 

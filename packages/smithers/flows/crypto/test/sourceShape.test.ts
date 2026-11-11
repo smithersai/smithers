@@ -15,6 +15,26 @@ import { describe, expect, it } from "vitest"
 import { functionIdentity } from "../src/Identity.ts"
 import { sourceShape } from "../src/internal/sourceShape.ts"
 
+const hostNames = [
+  "arguments",
+  "process",
+  "Buffer",
+  "require",
+  "window",
+  "self",
+  "document",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+  "caches",
+  "setImmediate",
+  "XMLHttpRequest",
+  "Worker",
+  "MessageChannel",
+  "BroadcastChannel"
+]
+
 describe("sourceShape: what an edit moves", () => {
   it("gives a renamed but equivalent callback the same shape", () => {
     expect(sourceShape("(value) => value + 1")).toBe("( $0 ) => $0 + 1")
@@ -44,7 +64,8 @@ describe("sourceShape: what an edit moves", () => {
       "Infinity",
       "URL",
       "crypto",
-      "setTimeout"
+      "setTimeout",
+      ...hostNames
     ]
     const shapes = names.map((name) => sourceShape(`() => ${name}(1)`))
     expect(new Set(shapes).size).toBe(names.length)
@@ -59,6 +80,28 @@ describe("sourceShape: what an edit moves", () => {
     )
     expect(sourceShape("() => { { let fetch = f; fetch(1) } return fetch(1) }")).toContain("return fetch ( 1 )")
     expect(sourceShape("() => [fetch(1), outer(2)]")).toBe(sourceShape("() => [fetch(1), renamed(2)]"))
+  })
+
+  it.each([
+    ["function () { return arguments[0] }", "function () { return settings[0] }"],
+    ["function () { return () => arguments[0] }", "function () { return () => settings[0] }"],
+    ["() => localStorage.clear()", "() => sessionStorage.clear()"],
+    ["() => process.exit(1)", "() => queue.exit(1)"],
+    ["() => class { value = 1\n reader = () => process }", "() => class { value = 1\n reader = () => queue }"]
+  ])("distinguishes %s from %s in resume identities", (before, after) => {
+    expect(sourceShape(before)).not.toBe(sourceShape(after))
+    const identity = (source: string) => functionIdentity(Function(`return (${source})`)()).resumeDigest
+    expect(identity(before)).not.toBe(identity(after))
+  })
+
+  it("keeps host names distinct from free bindings while renaming their explicit shadows", () => {
+    for (const name of hostNames) {
+      expect(sourceShape(`() => ${name}`), name).not.toBe(sourceShape("() => outer"))
+      expect(sourceShape(`(${name}) => ${name}`), name).toBe(sourceShape("(value) => value"))
+      expect(sourceShape(`() => { const ${name} = outer; return ${name} }`), name).toBe(
+        sourceShape("() => { const value = outer; return value }")
+      )
+    }
   })
 
   it("sees swapped arguments", () => {

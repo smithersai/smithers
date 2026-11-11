@@ -58,13 +58,16 @@ not exported and is reachable only through those two entry points.
 `digest` accepts a `Crypto` service that satisfies all of the following, and
 fails with a typed `Sha256Error` when one does not hold:
 
-| Requirement                                  | Failure when it does not hold                                       |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `digest("SHA-256", bytes)` returns an Effect | `digest_failed`, "returned a non-Effect SHA-256 operation"          |
-| That Effect succeeds                         | `digest_failed`, with the host failure or defect as `cause`         |
-| Its success value is a `Uint8Array`          | `invalid_digest`, "returned a non-Uint8Array SHA-256 digest"        |
-| Those bytes can be copied                    | `invalid_digest`, "returned SHA-256 bytes that could not be copied" |
-| There are exactly 32 of them                 | `invalid_digest`, naming the length it received                     |
+| Requirement                                            | Failure when it does not hold                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `digest(EffectDigest.sha256, bytes)` returns an Effect | `digest_failed`, "returned a non-Effect SHA-256 operation"          |
+| That Effect succeeds                                   | `digest_failed`, with the host failure or defect as `cause`         |
+| Its success value is a `Uint8Array`                    | `invalid_digest`, "returned a non-Uint8Array SHA-256 digest"        |
+| Those bytes can be copied                              | `invalid_digest`, "returned SHA-256 bytes that could not be copied" |
+| There are exactly 32 of them                           | `invalid_digest`, naming the length it received                     |
+
+The algorithm argument is Effect's `EffectDigest.sha256` value, whose `name`
+is `"SHA-256"`, rather than the string itself.
 
 A missing `Crypto` service is not on that list. It stays an unsatisfied Effect
 context requirement, which surfaces as `Service not found: effect/crypto/Digest` and
@@ -147,9 +150,10 @@ digests, and does nothing else.
 
 ## Callback resume identity compatibility
 
-Callback resume shapes preserve standard ECMAScript and web global names
-(for example `fetch`, `eval`, `JSON` and `globalThis`) after resolving local
-bindings. Local shadowing and minifier binding renames remain equivalent;
+Callback resume shapes preserve implicit `arguments` and standard ECMAScript,
+Node and browser host names (for example `fetch`, `eval`, `JSON`, `globalThis`,
+`process`, `Buffer`, `require`, `localStorage` and `sessionStorage`) after
+resolving explicit local bindings. Local shadowing and minifier binding renames remain equivalent;
 unrecognized outer bindings still use first-use numbering. This uses an
 explicit list, independent of which globals the current host installs.
 
