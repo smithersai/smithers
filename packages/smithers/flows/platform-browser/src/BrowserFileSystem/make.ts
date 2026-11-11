@@ -255,6 +255,11 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
       )
     },
     readDirectory: (path, options) => readDirectory(fs, path, options),
+    /** Names only; a caller classifies an entry with `stat` or `lstat`. */
+    readDirectoryEntries: (path) =>
+      readDirectory(fs, path).pipe(
+        Effect.map((names) => names.map((name) => ({ name, type: "Unknown" as const })))
+      ),
     stat: (path) =>
       Effect.flatMap(
         Effect.tryPromise({ try: () => fs.stat(path), catch: platformError("stat", path) }),

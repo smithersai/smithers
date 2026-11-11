@@ -639,6 +639,9 @@ describe("BrowserFileSystem ownership across the backend boundary", () => {
       const names = ["a", "b"]
       const fileSystem = BrowserFileSystem.make({ ...backend(), readdir: async () => names })
 
+      expect(yield* fileSystem.readDirectoryEntries("/d")).toEqual(
+        (yield* fileSystem.readDirectory("/d")).map((name) => ({ name, type: "Unknown" }))
+      )
       const first = yield* fileSystem.readDirectory("/d")
       first.push("c")
       const second = yield* fileSystem.readDirectory("/d")
