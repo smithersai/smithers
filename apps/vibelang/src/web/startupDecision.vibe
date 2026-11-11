@@ -73,3 +73,17 @@ export function modeName(mode: "mock" | "live"): string {
 export function modeSwitchLabel(mode: "mock" | "live"): string {
   return mode === "mock" ? "Mock mode: switch to live" : "Live mode: switch to Mock"
 }
+
+/** /history and every path under it is the mythical history's page; every other path is the chat. */
+//@ verify
+//@ ensures \result == (path == "/history" || path.startsWith("/history/"))
+export function historyPath(path: string): boolean {
+  return path === "/history" || path.startsWith("/history/")
+}
+
+/** The history page is live only when it may ask and the origin's health says live; otherwise the mock. */
+//@ verify
+//@ ensures \result == (!forceMock && agent == "live" ? "live" : "mock")
+export function historyMode(forceMock: boolean, agent: string): "live" | "mock" {
+  return !forceMock && agent === "live" ? "live" : "mock"
+}

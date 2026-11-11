@@ -238,3 +238,8 @@ scrollability and tracked-touch decisions now drive the host. The spotlight spec
 minimum dimensions over finite real coordinates; native IEEE subtraction remains outside that theorem.
 LemmaScript lowers real min/max and mixed real/integer conditionals with regression fixtures. The inventory
 distinguishes contracted functions from still-unproved logic; the proof gate checks those contracts independently.
+
+**Web views (0018, lane vl-proveall2, 2026-11-11).** The Actions, Sandboxes, account and wiki panes, the issues
+screen's request routing and the page entry choose every label, variant, button and body through proved decision
+modules; the views only build Html. LemmaScript gained string `lastIndexOf`. Html construction, Unicode casing,
+locale formatting and real division remain named boundaries.

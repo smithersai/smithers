@@ -1,0 +1,127 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as A from "../src/web/accountViewDecision.vibe"
+import * as I from "../src/web/issuesViewDecision.vibe"
+import { historyMode, historyPath } from "../src/web/startupDecision.vibe"
+import { minutesTone, sandboxPaneView } from "../src/web/viewDecision.vibe"
+import * as W from "../src/web/wikiViewDecision.vibe"
+
+describe("Sandboxes pane decisions", () => {
+  it("tones the minutes badge", () => {
+    expect([0, 1, 10, 11, 240].map(minutesTone)).toEqual(["destructive", "warning", "warning", "default", "default"])
+  })
+  it("shows starting, gates by role and names the failed operation", () => {
+    const starting = sandboxPaneView("pane", false, true, true, "contributor", "start", false)
+    expect(starting).toEqual({ open: true, starting: true, status: "Starting", gate: "ok", stopDisabled: true, startDisabled: true, error: "Couldn't start a sandbox", retry: "start" })
+    expect(sandboxPaneView("closed", false, false, true, "contributor", "", false).open).toBe(false)
+    expect(sandboxPaneView("", false, false, true, "contributor", "", false).open).toBe(false)
+    expect(sandboxPaneView("max", true, true, true, "maintainer", "command", false)).toMatchObject({ status: "Running", stopDisabled: false, error: "Command failed", retry: "none" })
+    expect(sandboxPaneView("pane", false, false, false, "viewer", "", false).gate).toBe("sign-in")
+    expect(sandboxPaneView("pane", false, false, false, "community", "", false).gate).toBe("contributor")
+    expect(sandboxPaneView("pane", false, false, false, "", "", false).gate).toBe("contributor")
+    expect(sandboxPaneView("pane", false, false, true, "contributor", "stop", true)).toMatchObject({ status: "Stopped", startDisabled: true, error: "Couldn't stop the sandbox", retry: "stop" })
+    expect(sandboxPaneView("pane", false, false, true, "contributor", "", false).error).toBe("Couldn't load the sandbox")
+  })
+})
+
+describe("account view decisions", () => {
+  it("names and badges roles and ranks them", () => {
+    expect(["viewer", "new", "community", "contributor", "maintainer"].map(A.roleName)).toEqual(["Viewer", "New", "Community", "Contributor", "Maintainer"])
+    expect(["maintainer", "contributor", "community", "new", "viewer"].map(A.roleBadge)).toEqual(["default", "success", "secondary", "outline", "outline"])
+    expect(["viewer", "new", "community", "contributor", "maintainer", "owner"].map(A.roleRank)).toEqual([0, 1, 2, 3, 4, -1])
+  })
+  it("chooses the identity tools", () => {
+    expect(A.identityTools("pending", "", false)).toEqual({ mode: false, visit: false, signIn: false, account: false, signInLabel: "Sign in" })
+    expect(A.identityTools("mock", "", true)).toEqual({ mode: true, visit: true, signIn: true, account: false, signInLabel: "Signing in…" })
+    expect(A.identityTools("live", "u1", false)).toMatchObject({ visit: false, signIn: false, account: true })
+    expect(["ArrowDown", "ArrowUp", "Tab"].map(A.menuKeyMoves)).toEqual([true, true, false])
+  })
+  it("gates the People pane and role changes", () => {
+    expect(A.peopleShown("pane", "u1")).toBe(true)
+    expect(A.peopleShown("closed", "u1")).toBe(false)
+    expect(A.peopleShown("max", "")).toBe(false)
+    expect(A.peopleToggleLabel("max")).toBe("Minimize People")
+    expect(A.peopleToggleLabel("pane")).toBe("Maximize People")
+    expect(A.canChangeRole("maintainer", "u2", "u1")).toBe(true)
+    expect(A.canChangeRole("maintainer", "u1", "u1")).toBe(false)
+    expect(A.canChangeRole("contributor", "u2", "u1")).toBe(false)
+    expect(A.roleOptionDisabled("new")).toBe(true)
+    expect([0, 5, 6, 13].map(A.avatarLane)).toEqual([0, 5, 0, 1])
+  })
+  it("words the role dialog and its failure", () => {
+    expect(A.roleDialog(true, "maintainer", "contributor", "u2", "")).toEqual({ verb: "Demote", consequence: "Contributors triage, run actions and start sandboxes.", open: true, retry: false, confirm: "Demote", toast: false })
+    expect(A.roleDialog(true, "community", "maintainer", "u2", "")).toMatchObject({ verb: "Promote", consequence: "Maintainers merge, promote and edit the wiki directly." })
+    expect(A.roleDialog(false, "", "community", "u2", "x")).toMatchObject({ verb: "Promote", consequence: "Community members participate.", retry: true, confirm: "Retry", toast: false })
+    expect(A.roleDialog(false, "", "community", "", "x")).toMatchObject({ open: false, toast: true })
+  })
+})
+
+describe("wiki pane decisions", () => {
+  it("reads the page a pane names and orders the list", () => {
+    expect(W.wikiPanePath("/wiki/index#top")).toBe("/wiki/index")
+    expect(W.wikiPanePath("/wiki/roadmap")).toBe("/wiki/roadmap")
+    expect(["index", "rulings", "roadmap", "decisions", "designs/index", "glossary"].map(W.wikiRank)).toEqual([0, 1, 2, 3, 4, 5])
+    expect(W.wikiListed(false, "roadmap", "")).toBe(true)
+    expect(W.wikiListed(false, "glossary", "")).toBe(false)
+    expect(W.wikiListed(false, "glossary", "glo")).toBe(true)
+    expect(W.wikiListed(true, "decisions/0018", "018")).toBe(false)
+  })
+  it("offers Edit only when editable and idle outside a tour", () => {
+    expect(W.wikiEditable(true, "index", true, true)).toBe(true)
+    expect(W.wikiEditable(true, "index", false, true)).toBe(true)
+    expect(W.wikiEditable(true, "index", false, false)).toBe(false)
+    expect(W.wikiEditable(true, "decisions", true, true)).toBe(false)
+    expect(W.wikiEditable(false, "", true, true)).toBe(false)
+    expect(W.wikiBar(true, "roadmap", false, false, false, true, false, false)).toEqual({ crumb: "page", edit: true, toggle: true })
+    expect(W.wikiBar(true, "index", false, true, false, true, false, false)).toEqual({ crumb: "root", edit: false, toggle: false })
+    expect(W.wikiBar(true, "decisions/0018-proofs", true, false, true, true, false, false)).toEqual({ crumb: "decision", edit: false, toggle: true })
+    expect(W.wikiBar(false, "", false, false, false, true, true, false).edit).toBe(false)
+  })
+  it("words the editor and chooses the content", () => {
+    expect(["Connect GitHub.", "Fork on GitHub.", "Install Smithers on your fork.", "Save failed."].map(W.wikiErrorAction)).toEqual(["connect", "fork", "install", "none"])
+    expect(W.wikiSubmitLabel(true, false, false)).toBe("Retry")
+    expect(W.wikiSubmitLabel(true, true, true)).toBe("Save")
+    expect(W.wikiSubmitLabel(false, false, false)).toBe("Propose")
+    expect(W.wikiContent(true, true, false, true)).toBe("loading")
+    expect(W.wikiContent(false, true, false, true)).toBe("error")
+    expect(W.wikiContent(false, false, false, true)).toBe("empty")
+    expect(W.wikiContent(false, false, true, true)).toBe("page")
+    expect(W.wikiContent(false, false, true, false)).toBe("none")
+    expect(W.wikiStatusClass("Accepted")).toBe("sui-badge sui-badge-success")
+    expect(W.wikiStatusClass("Proposed")).toBe("sui-badge sui-badge-outline")
+    expect(W.wikiUsesEmbedded(false, "", "a")).toBe(true)
+    expect(W.wikiUsesEmbedded(true, "a", "a")).toBe(true)
+    expect(W.wikiUsesEmbedded(true, "b", "a")).toBe(false)
+  })
+})
+
+describe("issues screen decisions", () => {
+  it("routes requests and plans each step", () => {
+    expect(I.issueRequestKind("retry", true)).toBe("retry")
+    expect(I.issueRequestKind("retry", false)).toBe("op")
+    expect(I.issueRequestKind("spec-review", true)).toBe("spec-review")
+    expect(I.issueRequestKind("spec-revise", false)).toBe("spec-revise")
+    expect(I.issueRequestKind("comment", false)).toBe("op")
+    expect(I.issueUpdatePlan("idle", true)).toBe("unchanged")
+    expect(I.issueUpdatePlan("none", true)).toBe("state")
+    expect(I.issueUpdatePlan("saved", true)).toBe("resend")
+    expect(I.issueUpdatePlan("saved", false)).toBe("send-kept")
+    expect(I.issueUpdatePlan("transient", true)).toBe("send")
+    expect(I.issueUpdatePlan("request", false)).toBe("send-kept")
+  })
+  it("keys a request by the session and the next serial", () => {
+    expect(I.issueKey("", 0)).toBe("1")
+    expect(I.issueKey("s-1", 4)).toBe("s-1-5")
+  })
+})
+
+describe("page entry decisions", () => {
+  it("routes /history and its subpaths to the history page", () => {
+    expect(["/history", "/history/", "/history/epic", "/historyx", "/", "/wiki/history"].map(historyPath)).toEqual([true, true, true, false, false, false])
+  })
+  it("chooses live only when the page may ask and health says live", () => {
+    expect(historyMode(false, "live")).toBe("live")
+    expect(historyMode(true, "live")).toBe("mock")
+    expect(historyMode(false, "mock")).toBe("mock")
+    expect(historyMode(false, "")).toBe("mock")
+  })
+})

@@ -1,0 +1,44 @@
+// How the issues screen turns a proved issueAction step into a request (issues.vibe), and what its views show
+// (issuesView.vibe).
+
+/** Which request an admitted action sends: the kept retry, a specification review, a specification revision (both
+ * carry the current revision), or the plain operation. */
+//@ verify
+//@ ensures action == "retry" && hasRetry ==> \result == "retry"
+//@ ensures !(action == "retry" && hasRetry) && action == "spec-review" ==> \result == "spec-review"
+//@ ensures !(action == "retry" && hasRetry) && action == "spec-revise" ==> \result == "spec-revise"
+//@ ensures !(action == "retry" && hasRetry) && action != "spec-review" && action != "spec-revise" ==> \result == "op"
+export function issueRequestKind(action: string, hasRetry: boolean): "retry" | "spec-review" | "spec-revise" | "op" {
+  if (action === "retry" && hasRetry) return "retry"
+  if (action === "spec-review") return "spec-review"
+  return action === "spec-revise" ? "spec-revise" : "op"
+}
+
+/** What one proved step does to the screen: nothing; the new state only; the new state and the kept retry sent again
+ * (a saved step); or the new state and a request, kept for retry unless the step is transient. */
+//@ verify
+//@ ensures request == "idle" ==> \result == "unchanged"
+//@ ensures request == "none" ==> \result == "state"
+//@ ensures request == "saved" && hasRetry ==> \result == "resend"
+//@ ensures request == "transient" ==> \result == "send"
+//@ ensures request != "idle" && request != "none" && !(request == "saved" && hasRetry) && request != "transient" ==> \result == "send-kept"
+export function issueUpdatePlan(request: string, hasRetry: boolean): "unchanged" | "state" | "resend" | "send" | "send-kept" {
+  if (request === "idle") return "unchanged"
+  if (request === "none") return "state"
+  if (request === "saved" && hasRetry) return "resend"
+  return request === "transient" ? "send" : "send-kept"
+}
+
+/** The next serial, as the key's text. */
+//@ verify
+export function issueSerial(serial: number): string {
+  return `${serial + 1}`
+}
+
+/** A request's idempotency key: the session's prefix and the next serial; without a session, the serial alone. */
+//@ verify
+//@ ensures prefix == "" ==> \result == issueSerial(serial)
+//@ ensures prefix != "" ==> \result == prefix + "-" + issueSerial(serial)
+export function issueKey(prefix: string, serial: number): string {
+  return prefix === "" ? issueSerial(serial) : prefix + "-" + issueSerial(serial)
+}

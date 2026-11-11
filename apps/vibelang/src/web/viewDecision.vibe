@@ -127,3 +127,49 @@ export interface MediaDecision {
 export function mediaDecision(hasPoster: boolean, reduced: boolean, controls: boolean): MediaDecision {
   return { video: hasPoster && (!reduced || controls), poster: hasPoster && reduced && !controls, autoplay: !reduced, kind: hasPoster ? "video" : "image" }
 }
+
+/** The minutes badge: none left is destructive, ten or fewer a warning. */
+//@ verify
+//@ ensures left == 0 ==> \result == "destructive"
+//@ ensures left != 0 && left <= 10 ==> \result == "warning"
+//@ ensures left > 10 ==> \result == "default"
+export function minutesTone(left: number): "destructive" | "warning" | "default" {
+  return left === 0 ? "destructive" : left <= 10 ? "warning" : "default"
+}
+
+/** What the Sandboxes pane shows for one state. */
+export interface SandboxPaneView {
+  readonly open: boolean
+  readonly starting: boolean
+  readonly status: "Starting" | "Running" | "Stopped"
+  readonly gate: "ok" | "sign-in" | "contributor"
+  readonly stopDisabled: boolean
+  readonly startDisabled: boolean
+  readonly error: string
+  readonly retry: "none" | "start" | "stop"
+}
+//@ verify
+//@ ensures \result.open == (pane != "" && pane != "closed")
+//@ ensures \result.starting == (busy && !running)
+//@ ensures \result.status == (busy && !running ? "Starting" : running ? "Running" : "Stopped")
+//@ ensures \result.gate == (permitted ? "ok" : role == "viewer" ? "sign-in" : "contributor")
+//@ ensures \result.stopDisabled == (busy && operation != "command")
+//@ ensures \result.startDisabled == (busy || empty)
+//@ ensures operation == "stop" ==> \result.error == "Couldn't stop the sandbox"
+//@ ensures operation == "command" ==> \result.error == "Command failed"
+//@ ensures operation == "start" ==> \result.error == "Couldn't start a sandbox"
+//@ ensures operation != "stop" && operation != "command" && operation != "start" ==> \result.error == "Couldn't load the sandbox"
+//@ ensures \result.retry == (operation == "stop" ? "stop" : operation == "start" ? "start" : "none")
+export function sandboxPaneView(pane: string, running: boolean, busy: boolean, permitted: boolean, role: string, operation: string, empty: boolean): SandboxPaneView {
+  const starting = busy && !running
+  return {
+    open: pane !== "" && pane !== "closed",
+    starting,
+    status: starting ? "Starting" : running ? "Running" : "Stopped",
+    gate: permitted ? "ok" : role === "viewer" ? "sign-in" : "contributor",
+    stopDisabled: busy && operation !== "command",
+    startDisabled: busy || empty,
+    error: operation === "stop" ? "Couldn't stop the sandbox" : operation === "command" ? "Command failed" : operation === "start" ? "Couldn't start a sandbox" : "Couldn't load the sandbox",
+    retry: operation === "stop" ? "stop" : operation === "start" ? "start" : "none",
+  }
+}

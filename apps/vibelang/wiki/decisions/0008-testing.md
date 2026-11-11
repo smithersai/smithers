@@ -473,3 +473,7 @@ has isolated durable storage; a fault control injects an IssueHost failure for t
 The product's unavailable routes remain unavailable on this test host. No requests are intercepted and no dependency
 was added. The focused API regression is `test/liveIssues.workerd.test.vibe`; browser journeys are
 `e2e/live-issues.spec.ts`. Counts and verification receipts belong to 0016 and the lane report.
+
+**View decision extraction (0018, lane vl-proveall2).** The existing pane, scene, role and wiki view tests pass
+unchanged over the extracted decisions; `test/actionViewDecision.test.vibe` and `test/paneViewDecisions.test.vibe`
+check each new decision's cases directly. No tool or dependency is added.

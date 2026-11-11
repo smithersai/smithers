@@ -1,0 +1,95 @@
+// What the wiki pane shows (wikiView.vibe): which page the pane names, the page list's order and filter, the bar's
+// controls, the editor's footer and error action, and whether a page shows its embedded or its observed rendering.
+/** The page a pane address names: the address before any `#`. */
+//@ verify
+//@ ensures pane.indexOf("#") < 0 ==> \result == pane
+//@ ensures pane.indexOf("#") >= 0 ==> \result == pane.slice(0, pane.indexOf("#"))
+export function wikiPanePath(pane: string): string {
+  const at = pane.indexOf("#")
+  return at < 0 ? pane : pane.slice(0, at)
+}
+
+/** The fixed order of the wiki's own pages; every other page ranks after them. */
+//@ verify
+//@ ensures id == "index" ==> \result == 0
+//@ ensures id == "rulings" ==> \result == 1
+//@ ensures id == "roadmap" ==> \result == 2
+//@ ensures id == "decisions" ==> \result == 3
+//@ ensures id == "designs/index" ==> \result == 4
+//@ ensures id != "index" && id != "rulings" && id != "roadmap" && id != "decisions" && id != "designs/index" ==> \result == 5
+export function wikiRank(id: string): number {
+  if (id === "index") return 0
+  if (id === "rulings") return 1
+  if (id === "roadmap") return 2
+  if (id === "decisions") return 3
+  if (id === "designs/index") return 4
+  return 5
+}
+
+/** The page list shows the wiki's own pages; a search shows every matching page that is not a decision. */
+//@ verify
+//@ ensures \result == (!decision && (wikiRank(id) < 5 || query.trim() != ""))
+export function wikiListed(decision: boolean, id: string, query: string): boolean {
+  return !decision && (wikiRank(id) < 5 || query.trim() !== "")
+}
+
+/** A page is editable by anyone who may save or propose (the proved wikiPermission), except the decisions index. */
+//@ verify
+//@ ensures \result == (found && id != "decisions" && (maySave || mayPropose))
+export function wikiEditable(found: boolean, id: string, maySave: boolean, mayPropose: boolean): boolean {
+  return found && id !== "decisions" && (maySave || mayPropose)
+}
+
+/** The bar: the breadcrumb's kind, Edit only when editable and idle outside a tour, the size toggle outside a tour. */
+export interface WikiBar {
+  readonly crumb: "root" | "decision" | "page"
+  readonly edit: boolean
+  readonly toggle: boolean
+}
+//@ verify
+//@ ensures \result.crumb == (!found || id == "index" ? "root" : decision ? "decision" : "page")
+//@ ensures \result.edit == (!tour && !editing && editable && !loading && !error)
+//@ ensures \result.toggle == !tour
+export function wikiBar(found: boolean, id: string, decision: boolean, tour: boolean, editing: boolean, editable: boolean, loading: boolean, error: boolean): WikiBar {
+  return { crumb: !found || id === "index" ? "root" : decision ? "decision" : "page", edit: !(tour || editing || !editable || loading || error), toggle: !tour }
+}
+
+/** The action an editor error offers: connect GitHub, fork, install the app, or none. */
+//@ verify
+//@ ensures error == "Connect GitHub." ==> \result == "connect"
+//@ ensures error == "Fork on GitHub." ==> \result == "fork"
+//@ ensures error == "Install Smithers on your fork." ==> \result == "install"
+//@ ensures error != "Connect GitHub." && error != "Fork on GitHub." && error != "Install Smithers on your fork." ==> \result == "none"
+export function wikiErrorAction(error: string): "connect" | "fork" | "install" | "none" {
+  return error === "Connect GitHub." ? "connect" : error === "Fork on GitHub." ? "fork" : error === "Install Smithers on your fork." ? "install" : "none"
+}
+
+/** The editor's submit button: Retry for a waiting submission once idle; else Save for whoever may save (the proved
+ * wikiPermission), Propose for others. */
+//@ verify
+//@ ensures submitted && !busy ==> \result == "Retry"
+//@ ensures !(submitted && !busy) && maySave ==> \result == "Save"
+//@ ensures !(submitted && !busy) && !maySave ==> \result == "Propose"
+export function wikiSubmitLabel(submitted: boolean, busy: boolean, maySave: boolean): string {
+  return submitted && !busy ? "Retry" : maySave ? "Save" : "Propose"
+}
+
+/** The content area: loading, the failure, no match, the page, or nothing. */
+//@ verify
+//@ ensures \result == (loading ? "loading" : error ? "error" : !matches ? "empty" : found ? "page" : "none")
+export function wikiContent(loading: boolean, error: boolean, matches: boolean, found: boolean): "loading" | "error" | "empty" | "page" | "none" {
+  return loading ? "loading" : error ? "error" : !matches ? "empty" : found ? "page" : "none"
+}
+
+//@ verify
+//@ ensures \result == (status == "Accepted" ? "sui-badge sui-badge-success" : "sui-badge sui-badge-outline")
+export function wikiStatusClass(status: string): string {
+  return status === "Accepted" ? "sui-badge sui-badge-success" : "sui-badge sui-badge-outline"
+}
+
+/** A page shows the build's rendering unless the repository holds a different copy of its source. */
+//@ verify
+//@ ensures \result == (!observed || observedSource == source)
+export function wikiUsesEmbedded(observed: boolean, observedSource: string, source: string): boolean {
+  return !observed || observedSource === source
+}

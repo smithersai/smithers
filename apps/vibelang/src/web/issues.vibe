@@ -2,6 +2,7 @@
 import { IssueRequest, IssuesState } from "../core/issueSchemas.vibe"
 import { issuePermission, type Role } from "../core/conversation.vibe"
 import * as IssueDecision from "./issueDecision.vibe"
+import * as V from "./issuesViewDecision.vibe"
 
 export schema IssuesUi {
   readonly keyPrefix: string
@@ -41,7 +42,7 @@ function issueNumber(text: string): number {
   return IssueDecision.issueParent(Number.isSafeInteger(number), number)
 }
 export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
-  return { op, number: ui.selected, parent: issueNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
+  return { op, number: ui.selected, parent: issueNumber(ui.parent), title: ui.title, text: IssueDecision.issueRequestText(op === "comment", ui.comment, ui.summary), example: ui.example, prior: ui.prior, assignee: ui.assignee, key: V.issueKey(ui.keyPrefix, ui.serial) }
 }
 /** The plain state the proved decisions in `issueDecision.vibe` read and return. */
 export function issueScreen(ui: IssuesUi): IssueDecision.IssueScreen {
@@ -66,19 +67,21 @@ function issueFacts(ui: IssuesUi, action: string, value: string): IssueDecision.
   }
 }
 function issueRequestFor(ui: IssuesUi, action: string, value: string, serial: number): IssueRequest {
-  if (action === "retry" && ui.retry !== undefined) return { ...ui.retry, recovery: `${ui.keyPrefix}-${serial}` }
-  if (action === "spec-review") return { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
+  const kind = V.issueRequestKind(action, ui.retry !== undefined)
+  if (kind === "retry" && ui.retry !== undefined) return { ...ui.retry, recovery: `${ui.keyPrefix}-${serial}` }
+  if (kind === "spec-review") return { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
   const op = action as IssueRequest["op"]
-  return { ...issueRequest(ui, op), ...(op === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
+  return { ...issueRequest(ui, op), ...(kind === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
 }
 export interface UiResult { readonly ui: IssuesUi; readonly request?: IssueRequest; readonly focusCommit?: boolean }
 export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiResult {
   const step = IssueDecision.issueAction(issueScreen(ui), action, value, issueFacts(ui, action, value))
-  if (step.request === "idle") return { ui }
+  const plan = V.issueUpdatePlan(step.request, ui.retry !== undefined)
+  if (plan === "unchanged") return { ui }
   const next: IssuesUi = { ...ui, ...step.state }
   const focus = step.focusCommit ? { focusCommit: true } : {}
-  if (step.request === "none") return { ui: next, ...focus }
-  if (step.request === "saved" && ui.retry !== undefined) return { ui: next, request: ui.retry, ...focus }
+  if (plan === "state") return { ui: next, ...focus }
+  if (plan === "resend" && ui.retry !== undefined) return { ui: next, request: ui.retry, ...focus }
   const request = issueRequestFor(ui, action, value, step.state.serial)
-  return { ui: step.request === "transient" ? next : { ...next, retry: request }, request, ...focus }
+  return { ui: plan === "send" ? next : { ...next, retry: request }, request, ...focus }
 }

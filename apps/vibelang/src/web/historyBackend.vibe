@@ -7,6 +7,7 @@ import { health } from "../core/LiveFactory.vibe"
 import { LiveMythical } from "../history/LiveMythical.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
+import { historyMode } from "./startupDecision.vibe"
 
 /** The chosen mode becomes a Foldkit message, independently of any read. */
 export service HistoryBackend {
@@ -21,7 +22,7 @@ export function BrowserMythical(origin: string, forceMock: boolean, principal: P
     let current: Mode | "pending" = "pending"
     const selected = try forkIn(Effect.interruptible(effect {
       const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
-      const mode: Mode = answer?.agent === "live" ? "live" : "mock"
+      const mode: Mode = historyMode(forceMock, answer?.agent ?? "")
       const layer = mode === "live"
         ? LiveMythical(origin)
         : (try promise(() => import("../history/MockMythical.vibe"))).MockMythical(principal)

@@ -1,0 +1,133 @@
+//@ safe-slice
+// What the identity tools, the People pane and the role dialog show (roleView.vibe, sandboxView.vibe).
+
+/** A role's name: its first letter capitalized. */
+//@ verify
+//@ ensures role == "viewer" ==> \result == "Viewer"
+//@ ensures role == "new" ==> \result == "New"
+//@ ensures role == "community" ==> \result == "Community"
+//@ ensures role == "contributor" ==> \result == "Contributor"
+//@ ensures role == "maintainer" ==> \result == "Maintainer"
+export function roleName(role: string): string {
+  return role.slice(0, 1).toUpperCase() + role.slice(1)
+}
+
+//@ verify
+//@ ensures role == "maintainer" ==> \result == "default"
+//@ ensures role == "contributor" ==> \result == "success"
+//@ ensures role == "community" ==> \result == "secondary"
+//@ ensures role != "maintainer" && role != "contributor" && role != "community" ==> \result == "outline"
+export function roleBadge(role: string): "default" | "success" | "secondary" | "outline" {
+  return role === "maintainer" ? "default" : role === "contributor" ? "success" : role === "community" ? "secondary" : "outline"
+}
+
+/** Where a role sits, viewer lowest; -1 for an unknown name. */
+//@ verify
+//@ ensures role == "viewer" ==> \result == 0
+//@ ensures role == "new" ==> \result == 1
+//@ ensures role == "community" ==> \result == 2
+//@ ensures role == "contributor" ==> \result == 3
+//@ ensures role == "maintainer" ==> \result == 4
+//@ ensures role != "viewer" && role != "new" && role != "community" && role != "contributor" && role != "maintainer" ==> \result == -1
+export function roleRank(role: string): number {
+  if (role === "viewer") return 0
+  if (role === "new") return 1
+  if (role === "community") return 2
+  if (role === "contributor") return 3
+  if (role === "maintainer") return 4
+  return -1
+}
+
+/** The header's identity tools: the mode switch once the mode is known, Visit as only in mock mode, Sign in only
+ * signed out and once the mode is known, the account menu only signed in. */
+export interface IdentityTools {
+  readonly mode: boolean
+  readonly visit: boolean
+  readonly signIn: boolean
+  readonly account: boolean
+  readonly signInLabel: string
+}
+//@ verify
+//@ ensures \result.mode == (mode != "pending")
+//@ ensures \result.visit == (mode == "mock")
+//@ ensures \result.signIn == (id == "" && mode != "pending")
+//@ ensures \result.account == (id != "")
+//@ ensures \result.signInLabel == (pending ? "Signing in…" : "Sign in")
+export function identityTools(mode: string, id: string, pending: boolean): IdentityTools {
+  return { mode: mode !== "pending", visit: mode === "mock", signIn: id === "" && mode !== "pending", account: id !== "", signInLabel: pending ? "Signing in…" : "Sign in" }
+}
+
+/** Up and down move between the account menu's two items. */
+//@ verify
+//@ ensures \result == (key == "ArrowDown" || key == "ArrowUp")
+export function menuKeyMoves(key: string): boolean {
+  return key === "ArrowDown" || key === "ArrowUp"
+}
+
+/** The People pane shows only when opened and signed in. */
+//@ verify
+//@ ensures \result == (people != "closed" && id != "")
+export function peopleShown(people: string, id: string): boolean {
+  return people !== "closed" && id !== ""
+}
+
+//@ verify
+//@ ensures people == "max" ==> \result == "Minimize People"
+//@ ensures people != "max" ==> \result == "Maximize People"
+export function peopleToggleLabel(people: string): string {
+  return people === "max" ? "Minimize People" : "Maximize People"
+}
+
+/** Only a maintainer changes a role, and never their own. */
+//@ verify
+//@ ensures \result == (role == "maintainer" && person != self)
+export function canChangeRole(role: string, person: string, self: string): boolean {
+  return role === "maintainer" && person !== self
+}
+
+/** No one is granted the New role by hand. */
+//@ verify
+//@ ensures \result == (role == "new")
+export function roleOptionDisabled(role: string): boolean {
+  return role === "new"
+}
+
+/** Avatars cycle through six lanes. */
+//@ verify
+//@ requires index >= 0
+//@ ensures 0 <= \result && \result < 6
+//@ ensures \result == index % 6
+export function avatarLane(index: number): number {
+  return index % 6
+}
+
+/** The role dialog for one target: demote when the new role ranks below the current one, the consequence of the new
+ * role, open while a target is chosen, and Retry after a failure; the toast shows a failure only with no dialog open. */
+export interface RoleDialog {
+  readonly verb: "Demote" | "Promote"
+  readonly consequence: string
+  readonly open: boolean
+  readonly retry: boolean
+  readonly confirm: string
+  readonly toast: boolean
+}
+//@ verify
+//@ ensures \result.verb == (found && roleRank(targetRole) < roleRank(personRole) ? "Demote" : "Promote")
+//@ ensures targetRole == "maintainer" ==> \result.consequence == "Maintainers merge, promote and edit the wiki directly."
+//@ ensures targetRole == "contributor" ==> \result.consequence == "Contributors triage, run actions and start sandboxes."
+//@ ensures targetRole != "maintainer" && targetRole != "contributor" ==> \result.consequence == "Community members participate."
+//@ ensures \result.open == (target != "")
+//@ ensures \result.retry == (error != "")
+//@ ensures \result.confirm == (error == "" ? \result.verb : "Retry")
+//@ ensures \result.toast == (error != "" && target == "")
+export function roleDialog(found: boolean, personRole: string, targetRole: string, target: string, error: string): RoleDialog {
+  const verb = found && roleRank(targetRole) < roleRank(personRole) ? "Demote" : "Promote"
+  return {
+    verb,
+    consequence: targetRole === "maintainer" ? "Maintainers merge, promote and edit the wiki directly." : targetRole === "contributor" ? "Contributors triage, run actions and start sandboxes." : "Community members participate.",
+    open: target !== "",
+    retry: error !== "",
+    confirm: error === "" ? verb : "Retry",
+    toast: error !== "" && target === "",
+  }
+}

@@ -2,8 +2,9 @@
 // chrome and navigation stay in Foldkit; Markdown is compiled at build time, edits render through the same renderer.
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { pages, wikiLink } from "../core/wiki.vibe"
-import { wikiPermission } from "../core/conversation.vibe"
 import { toHtml } from "./markdown.vibe"
+import * as W from "./wikiViewDecision.vibe"
+import { wikiPermission } from "../core/conversation.vibe"
 import { staleMark } from "./issuesView.vibe"
 import { accountOf, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<Message>
@@ -12,37 +13,35 @@ const min = "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"
 type WikiPage = (typeof pages)[number]
 /** Render the built wiki corpus; callers can supply a corpus containing archived decisions too. */
 export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> = pages): Html {
-  const page = documents.find(page => `/wiki/${page.id}` === model.client.conversation.pane.split("#")[0])
+  const page = documents.find(page => `/wiki/${page.id}` === W.wikiPanePath(model.client.conversation.pane))
   const loading = model.wikiStatus === "loading"
   const error = model.wikiStatus === "error"
   const editing = model.wikiEdit !== undefined && page !== undefined && model.wikiEdit.page === page.id ? model.wikiEdit : undefined
   const role = accountOf(model).identity.role
-  const canEdit = page !== undefined && page.id !== "decisions" && (wikiPermission(role, "save") || wikiPermission(role, "propose"))
+  const canEdit = W.wikiEditable(page !== undefined, page?.id ?? "", wikiPermission(role, "save"), wikiPermission(role, "propose"))
   const review = model.wikiReview !== undefined && page !== undefined && model.wikiReview.page === page.id ? model.wikiReview : undefined
   const query = model.wikiQuery ?? ""
   const filtered = documents.filter(page => `${page.label} ${page.title}`.toLowerCase().includes(query.toLowerCase()))
-  const order = ["index", "rulings", "roadmap", "decisions", "designs/index"]
-  const regular = filtered.filter(page => !page.decision && (order.includes(page.id) || query.trim() !== "")).sort((a, b) => {
-    const rank = (id: string) => order.includes(id) ? order.indexOf(id) : order.length
-    return rank(a.id) - rank(b.id)
-  })
+  const regular = filtered.filter(page => W.wikiListed(page.decision, page.id, query)).sort((a, b) => W.wikiRank(a.id) - W.wikiRank(b.id))
   const decisions = filtered.filter(page => page.decision).sort((a, b) => b.id.localeCompare(a.id))
   const maximized = model.docs === "max"
+  const content = W.wikiContent(loading, error, filtered.length !== 0, page !== undefined)
   const link = (id: string, label: string, decision = false) => h.a([
     h.Class("vl-wiki-page-link"), h.Href(`/wiki/${id}`), h.DataAttribute("kind", decision ? "decision" : "page"),
     ...(page?.id === id ? [h.AriaCurrent("page")] : []),
     h.OnClick(Message.ClickedWiki({ page: id }), { defaultAction: "Prevent" }),
   ], [label])
+  const bar = W.wikiBar(page !== undefined, page?.id ?? "", page?.decision === true, !!model.tour, editing !== undefined, canEdit, loading, error)
   const crumb = (id: string, label: string) => h.button([h.Type("button"), h.OnClick(Message.ClickedWiki({ page: id }))], [label])
   return h.section([h.Class("vl-wiki"), h.Id("vl-wiki"), h.AriaLabel("Wiki"), h.Tabindex(-1), h.DataAttribute("maximized", String(maximized)), h.AriaBusy(loading)], [
     h.div([h.Class("vl-wiki-bar")], [
       h.div([h.Class("vl-wiki-crumb")], [
-        ...((page === undefined || page.id === "index") ? [h.b([], ["Wiki"])] : [crumb("index", "Wiki"), "/"]),
-        ...(page?.decision ? [crumb("decisions", "Decisions"), "/", h.b([], [page.id.slice(10, 14)])] : page && page.id !== "index" ? [h.b([], [page.label])] : []),
+        ...(bar.crumb === "root" ? [h.b([], ["Wiki"])] : [crumb("index", "Wiki"), "/"]),
+        ...(bar.crumb === "decision" && page ? [crumb("decisions", "Decisions"), "/", h.b([], [page.id.slice(10, 14)])] : bar.crumb === "page" && page ? [h.b([], [page.label])] : []),
         ...(editing === undefined ? [] : [h.span([h.Class("vl-wiki-editing")], ["· editing"]), ...staleMark(h, editing.stale)]),
       ]),
-      ...(model.tour || editing !== undefined || !canEdit || loading || error ? [] : [h.button([h.Class("vl-wiki-edit"), h.Type("button"), h.OnClick(Message.ClickedEditWiki())], ["Edit"])]),
-      ...(model.tour ? [] : [h.button([h.Class("vl-wiki-toggle"), h.Type("button"), h.Disabled(loading), h.AriaLabel(maximized ? "Minimize the wiki" : "Maximize the wiki"), h.OnClick(Message.ClickedDocs())], [
+      ...(!bar.edit ? [] : [h.button([h.Class("vl-wiki-edit"), h.Type("button"), h.OnClick(Message.ClickedEditWiki())], ["Edit"])]),
+      ...(!bar.toggle ? [] : [h.button([h.Class("vl-wiki-toggle"), h.Type("button"), h.Disabled(loading), h.AriaLabel(maximized ? "Minimize the wiki" : "Maximize the wiki"), h.OnClick(Message.ClickedDocs())], [
         h.svg([h.Class("vl-icon"), h.ViewBox("0 0 24 24"), h.AriaHidden(true)], [h.path([h.D(maximized ? min : max)], [])]),
       ])]),
     ]),
@@ -53,10 +52,10 @@ export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> 
     ...(editing !== undefined ? [
       h.div([h.Class("vl-wiki-edit-body")], [
         h.textarea([h.Class("sui-textarea"), h.DataAttribute("code", "true"), h.Id("vl-wiki-editor"), h.AriaLabel(`Edit ${page!.label}`), h.Value(editing.text), h.Disabled(editing.busy || editing.submission !== undefined), h.OnInput(value => Message.UpdatedWikiEdit({ value }))]),
-        ...(editing.error === "" ? [] : [h.div([h.Role("alert"), h.Class("vl-wiki-edit-error")], [editing.error, ...(editing.error === "Connect GitHub." ? [h.form([h.Method("post"), h.Action(`/api/auth/connect?wiki-page=${editing.page}`)], [h.button([h.Class("sui-button"), h.Type("submit")], ["Connect GitHub"])])] : editing.error === "Fork on GitHub." ? [h.a([h.Class("sui-button"), h.Href("https://github.com/smithersai/smithers/fork")], ["Fork"])] : editing.error === "Install Smithers on your fork." ? [h.a([h.Class("sui-button"), h.Href("/api/auth/install")], ["Install"])] : [])])]),
+        ...(editing.error === "" ? [] : [h.div([h.Role("alert"), h.Class("vl-wiki-edit-error")], [editing.error, ...(W.wikiErrorAction(editing.error) === "connect" ? [h.form([h.Method("post"), h.Action(`/api/auth/connect?wiki-page=${editing.page}`)], [h.button([h.Class("sui-button"), h.Type("submit")], ["Connect GitHub"])])] : W.wikiErrorAction(editing.error) === "fork" ? [h.a([h.Class("sui-button"), h.Href("https://github.com/smithersai/smithers/fork")], ["Fork"])] : W.wikiErrorAction(editing.error) === "install" ? [h.a([h.Class("sui-button"), h.Href("/api/auth/install")], ["Install"])] : [])])]),
         h.div([h.Class("vl-wiki-edit-footer")], [
           h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(editing.busy || editing.submission !== undefined), h.OnClick(Message.CanceledWikiEdit())], ["Cancel"]),
-          h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(editing.busy), h.OnClick(Message.SubmittedWikiEdit())], [editing.submission !== undefined && !editing.busy ? "Retry" : wikiPermission(role, "save") ? "Save" : "Propose"]),
+          h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(editing.busy), h.OnClick(Message.SubmittedWikiEdit())], [W.wikiSubmitLabel(editing.submission !== undefined, editing.busy, wikiPermission(role, "save"))]),
         ]),
       ]),
     ] : [h.div([h.Class("vl-wiki-body")], [
@@ -68,11 +67,11 @@ export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> 
           ...decisions.map(page => link(page.id, page.label, true)),
         ]),
       ]),
-      h.div([h.Class("vl-wiki-content"), h.DataAttribute("scroll-surface", "true"), h.Tabindex(0)], loading ? [h.div([h.Class("sui-skeleton")], [])] : error ? [
+      h.div([h.Class("vl-wiki-content"), h.DataAttribute("scroll-surface", "true"), h.Tabindex(0)], content === "loading" ? [h.div([h.Class("sui-skeleton")], [])] : content === "error" ? [
         h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], ["The wiki didn't load"]), h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: model.wikiRequested ?? "index" }))], ["Retry"])]),
-      ] : filtered.length === 0 ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [`No pages match "${query}"`])])] : page ? [
+      ] : content === "empty" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [`No pages match "${query}"`])])] : content === "page" && page ? [
         ...(page.decision ? [h.div([h.Class("vl-wiki-meta")], [
-          h.span([h.Class(page.status === "Accepted" ? "sui-badge sui-badge-success" : "sui-badge sui-badge-outline")], [page.status]),
+          h.span([h.Class(W.wikiStatusClass(page.status))], [page.status]),
           h.time([], [page.date]),
           ...page.rulings.map(ruling => h.button([h.Class("sui-badge sui-badge-outline"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: `rulings#${ruling.toLowerCase()}` }))], [ruling])),
         ])] : []),
@@ -85,5 +84,5 @@ export function wikiPane(model: Model, h: H, documents: ReadonlyArray<WikiPage> 
 /** The page as observed in the repository, else the build's embedded rendering. */
 function observedHtml(model: Model, page: WikiPage, documents: ReadonlyArray<WikiPage>): string {
   const observed = model.wikiPages?.find(entry => entry.id === page.id)
-  return observed === undefined || observed.source === page.source ? page.html : toHtml(observed.source, href => wikiLink(page.id, href, documents.map(entry => entry.id)))
+  return W.wikiUsesEmbedded(observed !== undefined, observed?.source ?? "", page.source) || observed === undefined ? page.html : toHtml(observed.source, href => wikiLink(page.id, href, documents.map(entry => entry.id)))
 }

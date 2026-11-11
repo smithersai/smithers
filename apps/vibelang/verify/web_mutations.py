@@ -137,3 +137,50 @@ cases += [
 (M, 'runs-merge-order', 'mergeRuns', 'return newestFirst(result)', 'return result', 'runs are listed newest first'),
 (M, 'runs-merge-known', 'mergeRuns', 'result = mergeRunAt(result, index, incoming[k]!)', 'result = [...result, incoming[k]!]', 'a snapshot of a listed run replaces it, never adds a card'),
 ]
+
+# Web views batch 2: Sandboxes, account, wiki, issues screen and page entry.
+V = 'src/web/viewDecision.vibe'
+AC = 'src/web/accountViewDecision.vibe'
+WV = 'src/web/wikiViewDecision.vibe'
+IV = 'src/web/issuesViewDecision.vibe'
+SD = 'src/web/startupDecision.vibe'
+cases += [
+(V, 'minutes-zero', 'minutesTone', 'left === 0 ? "destructive"', 'left < 0 ? "destructive"', 'no minutes left is destructive'),
+(V, 'minutes-ten', 'minutesTone', 'left <= 10 ? "warning"', 'left < 10 ? "warning"', 'ten minutes left is a warning'),
+(V, 'sandbox-open', 'sandboxPaneView', 'open: pane !== "" && pane !== "closed"', 'open: pane !== "closed"', 'an unset pane is closed'),
+(V, 'sandbox-starting', 'sandboxPaneView', 'const starting = busy && !running', 'const starting = busy', 'a running sandbox is not starting'),
+(V, 'sandbox-gate', 'sandboxPaneView', 'role === "viewer" ? "sign-in"', 'role !== "viewer" ? "sign-in"', 'only a viewer is asked to sign in'),
+(V, 'sandbox-stop', 'sandboxPaneView', 'stopDisabled: busy && operation !== "command"', 'stopDisabled: busy', 'a running command never blocks Stop'),
+(V, 'sandbox-start', 'sandboxPaneView', 'startDisabled: busy || empty', 'startDisabled: busy', 'no minutes, no start'),
+(V, 'sandbox-retry', 'sandboxPaneView', 'operation === "start" ? "start" : "none"', 'operation === "command" ? "start" : "none"', 'only a failed start or stop offers Retry'),
+(V, 'sandbox-error-command', 'sandboxPaneView', 'operation === "command" ? "Command failed"', 'operation === "start" ? "Command failed"', 'each failed operation is named'),
+(AC, 'role-name-case', 'roleName', 'role.slice(0, 1).toUpperCase() + role.slice(1)', 'role.slice(0, 1) + role.slice(1)', 'role names are capitalized'),
+(AC, 'role-badge-community', 'roleBadge', 'role === "community" ? "secondary"', 'role === "new" ? "secondary"', 'community is secondary, new is plain'),
+(AC, 'role-rank-contributor', 'roleRank', 'if (role === "contributor") return 3', 'if (role === "contributor") return 4', 'contributors rank below maintainers'),
+(AC, 'identity-signin-pending', 'identityTools', 'signIn: id === "" && mode !== "pending"', 'signIn: id === ""', 'no Sign in before the mode is known'),
+(AC, 'identity-visit', 'identityTools', 'visit: mode === "mock"', 'visit: mode !== "pending"', 'Visit as only in mock mode'),
+(AC, 'menu-key-up', 'menuKeyMoves', 'key === "ArrowDown" || key === "ArrowUp"', 'key === "ArrowDown"', 'Up moves too'),
+(AC, 'people-shown', 'peopleShown', 'people !== "closed" && id !== ""', 'people !== "closed"', 'People needs a signed-in person'),
+(AC, 'role-change-self', 'canChangeRole', 'role === "maintainer" && person !== self', 'role === "maintainer"', 'a maintainer never changes their own role'),
+(AC, 'avatar-lane', 'avatarLane', 'return index % 6', 'return index % 7', 'six avatar lanes'),
+(AC, 'dialog-demote', 'roleDialog', 'roleRank(targetRole) < roleRank(personRole)', 'roleRank(targetRole) <= roleRank(personRole)', 'the same rank is not a demotion'),
+(AC, 'dialog-toast', 'roleDialog', 'toast: error !== "" && target === ""', 'toast: error !== ""', 'an open dialog shows the failure itself'),
+(AC, 'dialog-confirm', 'roleDialog', 'confirm: error === "" ? verb : "Retry"', 'confirm: verb', 'a failure offers Retry'),
+(WV, 'wiki-path-anchor', 'wikiPanePath', 'return at < 0 ? pane : pane.slice(0, at)', 'return pane', 'an anchor does not change the page'),
+(WV, 'wiki-rank-decisions', 'wikiRank', 'if (id === "decisions") return 3', 'if (id === "decisions") return 4', 'the decisions index follows the roadmap'),
+(WV, 'wiki-listed-query', 'wikiListed', 'wikiRank(id) < 5 || query.trim() !== ""', 'wikiRank(id) < 5', 'a search lists every page'),
+(WV, 'wiki-listed-decision', 'wikiListed', 'return !decision && (', 'return (', 'decisions are listed under their own heading'),
+(WV, 'wiki-editable-index', 'wikiEditable', 'found && id !== "decisions" && ', 'found && ', 'the decisions index is never edited'),
+(WV, 'wiki-bar-tour', 'wikiBar', 'edit: !(tour || editing', 'edit: !(editing', 'no Edit during a tour'),
+(WV, 'wiki-bar-crumb', 'wikiBar', '!found || id === "index" ? "root"', '!found ? "root"', 'the index is the root crumb'),
+(WV, 'wiki-error-install', 'wikiErrorAction', 'error === "Install Smithers on your fork." ? "install"', 'error === "Fork on GitHub." ? "install"', 'the install error offers Install'),
+(WV, 'wiki-submit-busy', 'wikiSubmitLabel', 'submitted && !busy ? "Retry"', 'submitted ? "Retry"', 'Retry only once idle'),
+(WV, 'wiki-content-order', 'wikiContent', 'loading ? "loading" : error ? "error"', 'error ? "error" : loading ? "loading"', 'loading shows before a stale failure'),
+(WV, 'wiki-embedded-copy', 'wikiUsesEmbedded', '!observed || observedSource === source', '!observed', 'a changed repository copy renders'),
+(IV, 'issue-kind-retry', 'issueRequestKind', 'if (action === "retry" && hasRetry) return "retry"', 'if (action === "retry") return "retry"', 'retry needs a kept request'),
+(IV, 'issue-plan-saved', 'issueUpdatePlan', 'if (request === "saved" && hasRetry) return "resend"', 'if (request === "saved") return "resend"', 'a save resends only a kept request'),
+(IV, 'issue-plan-transient', 'issueUpdatePlan', 'return request === "transient" ? "send" : "send-kept"', 'return "send-kept"', 'a transient request is not kept'),
+(IV, 'issue-key-prefix', 'issueKey', 'return prefix === "" ? issueSerial(serial)', 'return prefix !== "" ? issueSerial(serial)', 'a session prefixes its keys'),
+(SD, 'history-path-prefix', 'historyPath', 'path === "/history" || path.startsWith("/history/")', 'path.startsWith("/history")', '/historyx is not the history page'),
+(SD, 'history-mode-forced', 'historyMode', '!forceMock && agent === "live"', 'agent === "live"', 'a forced mock stays mock'),
+]
