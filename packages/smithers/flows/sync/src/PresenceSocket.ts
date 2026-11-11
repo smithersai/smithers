@@ -8,6 +8,9 @@
  * - **Only the latest state is kept.** `set` remembers it and sends it while
  *   open, and again after every reconnect, since a fresh connection joins
  *   with no state. A state the room already holds is not sent again.
+ * - **States are paced.** At most one state goes out per
+ *   `PresenceProtocol.stateIntervalMs`; a state set sooner waits until the
+ *   interval has passed, and only the latest by then is sent.
  * - **Reconnects follow the protocol.** A final close
  *   (`PresenceProtocol.isFinal`) never redials. Any other close redials after
  *   `PresenceProtocol.reconnectDelay(attempt)` on Effect's clock, until the
@@ -22,6 +25,7 @@
  * @since 1.0.0-rc.17
  */
 
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as PubSub from "effect/PubSub"
@@ -37,7 +41,8 @@ import {
   isFinal,
   maxStateBytes,
   type Participant,
-  reconnectDelay
+  reconnectDelay,
+  stateIntervalMs
 } from "./PresenceProtocol.ts"
 
 /**
@@ -68,7 +73,8 @@ export type Status =
  */
 export interface Connection {
   /**
-   * Keeps `state` as this participant's latest; sends it now when open and
+   * Keeps `state` as this participant's latest; sends it when open, no sooner
+   * than `PresenceProtocol.stateIntervalMs` after the last state sent, and
    * again after every reconnect. Only the latest is ever sent. A state over
    * `PresenceProtocol.maxStateBytes` is the caller's bug and dies.
    */
@@ -117,15 +123,35 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
       open: boolean
       state: string | null
       sent: string | null
-    } = { socket: undefined, open: false, state: null, sent: null }
+      sentAt: number
+    } = { socket: undefined, open: false, state: null, sent: null, sentAt: Number.NEGATIVE_INFINITY }
 
-    /** Sends the latest state once open, unless the room already holds it. */
-    const writeState = () => {
+    /** Wakes the pacer: a state is waiting for its interval to pass. */
+    const pending = yield* Queue.sliding<void>(1)
+
+    /**
+     * Sends the latest state once open, unless the room already holds it; one
+     * due before `stateIntervalMs` has passed waits for the pacer instead.
+     */
+    const writeState = Effect.gen(function*() {
       const { open, sent, socket, state } = live
       if (socket === undefined || !open || state === sent) return
+      const now = yield* Clock.currentTimeMillis
+      if (now < live.sentAt + stateIntervalMs) {
+        Queue.offerUnsafe(pending, undefined)
+        return
+      }
       live.sent = state
+      live.sentAt = now
       socket.send(encodeClientFrame({ type: "state", state }))
-    }
+    })
+
+    /** Sends a waiting state once its interval has passed. */
+    const pace = Effect.forever(Effect.gen(function*() {
+      yield* Queue.take(pending)
+      yield* Effect.sleep(Math.max(live.sentAt + stateIntervalMs - (yield* Clock.currentTimeMillis), 0))
+      yield* writeState
+    }))
 
     /** Opens one socket whose events land in `events`; returns its hang-up. */
     const dial = (events: Queue.Queue<Event>): () => void => {
@@ -176,7 +202,7 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
         if (!opened) {
           opened = true
           live.open = true
-          writeState()
+          yield* writeState
           yield* SubscriptionRef.set(status, { _tag: "Open", self: frame.self })
         }
       }
@@ -196,6 +222,7 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
       }
     })
     yield* Effect.forkScoped(run)
+    yield* Effect.forkScoped(pace)
 
     return {
       set: (state) =>
@@ -207,10 +234,12 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
               description: `state over ${maxStateBytes} bytes`
             })
           )
-          : Effect.sync(() => {
-            live.state = state
-            writeState()
-          }),
+          : Effect.andThen(
+            Effect.sync(() => {
+              live.state = state
+            }),
+            writeState
+          ),
       roster: SubscriptionRef.changes(roster),
       status: SubscriptionRef.changes(status)
     }

@@ -15,6 +15,14 @@
   command payload, and `BranchProjection` carries it on every message, command,
   and field, so a command is attributed to the capability that sent it rather
   than to the `participantId` the client claimed.
+- `PresenceRoom.receive` sends no roster for a state the connection already
+  holds, and closes a connection that sends more than
+  `PresenceProtocol.maxStatesPerSecond` (20) frames in one second with the
+  new retryable `CloseCode.tooFast` (4029). One participant, read-only
+  included, could loop one frame and make the room resend the whole roster to
+  every socket each time. `PresenceSocket` sends at most one state per
+  `PresenceProtocol.stateIntervalMs` (100 ms), the latest, so a page stays
+  under the bound.
 - **Breaking.** `TestSync.layerWorkspaceAuth` is renamed
   `TestSync.layerTrustAllAsOwner` so a composition that trusts every
   connection as the owner says so where it is wired.

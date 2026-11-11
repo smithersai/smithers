@@ -12,6 +12,10 @@
  *   page's frame at most {@link maxFrameBytes}, in UTF-8 bytes. A frame over
  *   the cap closes the socket with {@link CloseCode.tooBig}; a binary or
  *   malformed frame with {@link CloseCode.unsupported}.
+ * - **Frames are paced.** A page sends at most one state per
+ *   {@link stateIntervalMs}. The room accepts at most
+ *   {@link maxStatesPerSecond} frames from one connection in a second and
+ *   closes a faster one with {@link CloseCode.tooFast}.
  * - **Close codes say whether to come back.** {@link isFinal} is true for a
  *   close that ends the connection for good; any other close reconnects after
  *   {@link reconnect}'s backoff.
@@ -60,6 +64,27 @@ export const maxParticipants = 256
 export const maxDataBytes = 512
 
 /**
+ * The shortest time between two states a page sends: 100 ms. A page holds a
+ * newer state back until it has passed, then sends only the latest.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const stateIntervalMs = 100
+
+/**
+ * The most state frames the room accepts from one connection in one second:
+ * 20, twice what {@link stateIntervalMs} lets a page send, so ordinary network
+ * jitter never trips it. One more closes the socket with
+ * {@link CloseCode.tooFast}; a page whose frames bunch up after a stall of
+ * over a second reconnects and sends its latest state again.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
+export const maxStatesPerSecond = 20
+
+/**
  * The close codes the room uses.
  *
  * - `left` (1000): the page left, or the room closed normally; final.
@@ -71,6 +96,8 @@ export const maxDataBytes = 512
  *   the page reconnects and joins as the new one.
  * - `full` (1013): the room holds {@link maxParticipants} already; the page
  *   reconnects later.
+ * - `tooFast` (4029): over {@link maxStatesPerSecond} frames in one second;
+ *   the page reconnects later.
  *
  * A connection that drops without a close frame arrives as 1006 and
  * reconnects too.
@@ -84,7 +111,8 @@ export const CloseCode = {
   noAccess: 1008,
   tooBig: 1009,
   changed: 1012,
-  full: 1013
+  full: 1013,
+  tooFast: 4029
 } as const
 
 /**

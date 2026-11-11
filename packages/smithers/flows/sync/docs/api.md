@@ -290,30 +290,31 @@ design; this section lists the exports.
 
 `PresenceProtocol` is pure:
 
-| Export                                                | What it is                                                                                    |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `maxStateBytes`, `maxFrameBytes`                      | 1024 and 2048 UTF-8 bytes: one participant's state, and one frame from a page.                |
-| `maxParticipants`, `maxDataBytes`                     | 256 connections per room, and 512 UTF-8 bytes of host-only data per connection.               |
-| `Access`, `Participant`, `ClientFrame`, `ServerFrame` | The wire's types. A participant is `{ id, principal, name, access, state }`.                  |
-| `CloseCode`                                           | `left` 1000, `unsupported` 1003, `noAccess` 1008, `tooBig` 1009, `changed` 1012, `full` 1013. |
-| `isFinal(code)`                                       | True for `left`, `unsupported`, `noAccess` and `tooBig`.                                      |
-| `reconnect`, `reconnectDelay(attempt)`                | 1 s doubling to 30 s, at most 10 attempts; `undefined` once they are spent.                   |
-| `encodeClientFrame`, `decodeClientFrame`              | A page's `state` frame. Decoding answers `undefined` for anything over a limit or malformed.  |
-| `encodeServerFrame`, `decodeServerFrame`              | The room's `roster` frame, with `self`.                                                       |
+| Export                                                | What it is                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `maxStateBytes`, `maxFrameBytes`                      | 1024 and 2048 UTF-8 bytes: one participant's state, and one frame from a page.                                |
+| `maxParticipants`, `maxDataBytes`                     | 256 connections per room, and 512 UTF-8 bytes of host-only data per connection.                               |
+| `stateIntervalMs`, `maxStatesPerSecond`               | 100 ms between two states a page sends, and 20 frames per connection per second the room accepts.             |
+| `Access`, `Participant`, `ClientFrame`, `ServerFrame` | The wire's types. A participant is `{ id, principal, name, access, state }`.                                  |
+| `CloseCode`                                           | `left` 1000, `unsupported` 1003, `noAccess` 1008, `tooBig` 1009, `changed` 1012, `full` 1013, `tooFast` 4029. |
+| `isFinal(code)`                                       | True for `left`, `unsupported`, `noAccess` and `tooBig`.                                                      |
+| `reconnect`, `reconnectDelay(attempt)`                | 1 s doubling to 30 s, at most 10 attempts; `undefined` once they are spent.                                   |
+| `encodeClientFrame`, `decodeClientFrame`              | A page's `state` frame. Decoding answers `undefined` for anything over a limit or malformed.                  |
+| `encodeServerFrame`, `decodeServerFrame`              | The room's `roster` frame, with `self`.                                                                       |
 
 `PresenceRoom` runs over a `RoomHost<S, R>`, whose `sockets` are every
 `RoomSocket<R>` the host holds open. It keeps nothing in memory: each
 connection lives in its socket's attachment.
 
-| Export                                 | Answers              | Behavior                                                                                                                          |
-| -------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `join(host, socket, identity)`         | `"joined" \| "full"` | Keeps a fresh id, the `Identity` and a `null` state, then sends everyone the roster. At the cap it closes the socket with `full`. |
-| `receive(host, socket, message)`       | `void`               | A state goes to everyone. Binary or malformed closes with `unsupported`, oversized with `tooBig`.                                 |
-| `leave(host, socket)`                  | `void`               | Forgets a closed or failed socket and tells the others. Idempotent.                                                               |
-| `close(host, socket, code)`            | `void`               | Closes one connection with `code`, forgets it, and tells the others.                                                              |
-| `evict(host, principal, code?)`        | `number`             | Closes every connection of `principal` (`noAccess` by default) and tells the others once.                                         |
-| `connections(host)`                    | `Connection<S>[]`    | Every joined connection in join order, with its `participant` and host-only `data`.                                               |
-| `joins`, `frames`, `evictions`, `open` | metrics              | `smithers_presence_joins`, `_frames`, `_evictions` and `_open`; counts only.                                                      |
+| Export                                 | Answers              | Behavior                                                                                                                                                                    |
+| -------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `join(host, socket, identity)`         | `"joined" \| "full"` | Keeps a fresh id, the `Identity` and a `null` state, then sends everyone the roster. At the cap it closes the socket with `full`.                                           |
+| `receive(host, socket, message)`       | `void`               | A new state goes to everyone, an unchanged one to no one. Binary or malformed closes with `unsupported`, oversized with `tooBig`, past `maxStatesPerSecond` with `tooFast`. |
+| `leave(host, socket)`                  | `void`               | Forgets a closed or failed socket and tells the others. Idempotent.                                                                                                         |
+| `close(host, socket, code)`            | `void`               | Closes one connection with `code`, forgets it, and tells the others.                                                                                                        |
+| `evict(host, principal, code?)`        | `number`             | Closes every connection of `principal` (`noAccess` by default) and tells the others once.                                                                                   |
+| `connections(host)`                    | `Connection<S>[]`    | Every joined connection in join order, with its `participant` and host-only `data`.                                                                                         |
+| `joins`, `frames`, `evictions`, `open` | metrics              | `smithers_presence_joins`, `_frames`, `_evictions` and `_open`; counts only.                                                                                                |
 
 None of them fails. A send or close that fails or throws marks that socket
 gone. `Identity.data` over `maxDataBytes`, or joining one socket twice, dies.

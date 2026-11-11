@@ -129,19 +129,42 @@ describe("PresenceSocket", () => {
       ])
     }).pipe(Effect.scoped))
 
-  it.effect("sends each new state at once, and never one the room already holds", () =>
+  it.effect("sends each new state, and never one the room already holds", () =>
     Effect.gen(function*() {
       const { dials, layer } = yield* fake
       const connection = yield* PresenceSocket.connect(url).pipe(Effect.provide(layer))
       const socket = yield* Queue.take(dials)
       socket.roster("me", [participant("me")])
       yield* reach(connection, "Open")
-      yield* connection.set(null)
-      yield* connection.set("a")
-      yield* connection.set("a")
-      yield* connection.set(null)
-      yield* connection.set("€".repeat(341))
+      for (const state of [null, "a", "a", null, "€".repeat(341)]) {
+        yield* connection.set(state)
+        yield* TestClock.adjust(PresenceProtocol.stateIntervalMs)
+      }
       expect(socket.states()).toEqual(["a", null, "€".repeat(341)])
+    }).pipe(Effect.scoped))
+
+  it.effect("sends at most one state per interval, the latest when it has passed", () =>
+    Effect.gen(function*() {
+      const { dials, layer } = yield* fake
+      const connection = yield* PresenceSocket.connect(url).pipe(Effect.provide(layer))
+      const socket = yield* Queue.take(dials)
+      socket.roster("me", [participant("me")])
+      yield* reach(connection, "Open")
+      yield* connection.set("a")
+      expect(socket.states()).toEqual(["a"])
+      for (let move = 0; move < 50; move++) yield* connection.set(`b${move}`)
+      yield* TestClock.adjust(PresenceProtocol.stateIntervalMs - 1)
+      expect(socket.states()).toEqual(["a"])
+      yield* TestClock.adjust(1)
+      expect(socket.states()).toEqual(["a", "b49"])
+      // Back where the room already holds it: nothing to send when the interval passes.
+      yield* connection.set("c")
+      yield* connection.set("b49")
+      yield* TestClock.adjust(PresenceProtocol.stateIntervalMs)
+      expect(socket.states()).toEqual(["a", "b49"])
+      // A state after a quiet interval goes at once.
+      yield* connection.set("d")
+      expect(socket.states()).toEqual(["a", "b49", "d"])
     }).pipe(Effect.scoped))
 
   it.effect("dies on a state over 1024 bytes of UTF-8", () =>

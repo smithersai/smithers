@@ -27,12 +27,21 @@ room makes for each connection, so one person on two devices appears twice
 with one `principal`. `access` is `read` or `write`, as the host decides; the
 room reports it and enforces nothing with it.
 
-| Limit                              | Value | Measured in |
-| ---------------------------------- | ----- | ----------- |
-| `PresenceProtocol.maxStateBytes`   | 1024  | UTF-8 bytes |
-| `PresenceProtocol.maxFrameBytes`   | 2048  | UTF-8 bytes |
-| `PresenceProtocol.maxParticipants` | 256   | connections |
-| `PresenceProtocol.maxDataBytes`    | 512   | UTF-8 bytes |
+| Limit                                 | Value | Measured in                                             |
+| ------------------------------------- | ----- | ------------------------------------------------------- |
+| `PresenceProtocol.maxStateBytes`      | 1024  | UTF-8 bytes                                             |
+| `PresenceProtocol.maxFrameBytes`      | 2048  | UTF-8 bytes                                             |
+| `PresenceProtocol.maxParticipants`    | 256   | connections                                             |
+| `PresenceProtocol.maxDataBytes`       | 512   | UTF-8 bytes                                             |
+| `PresenceProtocol.stateIntervalMs`    | 100   | ms between two states a page sends                      |
+| `PresenceProtocol.maxStatesPerSecond` | 20    | frames the room accepts from one connection in a second |
+
+A state the connection already holds changes nothing and sends no roster. A
+page sends at most one state per `stateIntervalMs`, the latest when the
+interval has passed. The room counts every frame, unchanged ones included,
+and closes the connection that sends more than `maxStatesPerSecond` in one
+second with `tooFast`, so no participant, read-only or not, can make the room
+resend the roster faster than that.
 
 ## Close codes
 
@@ -44,6 +53,7 @@ room reports it and enforces nothing with it.
 | `tooBig`      | 1009 | A frame over `maxFrameBytes`.                                 | No              |
 | `changed`     | 1012 | The host changed this connection's identity or access.        | Yes             |
 | `full`        | 1013 | The room already holds `maxParticipants` connections.         | Yes             |
+| `tooFast`     | 4029 | More than `maxStatesPerSecond` frames in one second.          | Yes             |
 
 `PresenceProtocol.isFinal(code)` is the "No" column. Any other close, including
 1006 for a connection that dropped, reconnects after
@@ -67,14 +77,14 @@ attachment of another kind, is not part of the room.
 The room authenticates no one. The host decides who a socket is before it
 calls `join`, and calls `evict` when someone loses access.
 
-| Function                         | What it does                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `join(host, socket, identity)`   | Joins an accepted socket and sends everyone the roster. Answers `full`, after closing the socket, at the cap. |
-| `receive(host, socket, message)` | A valid state goes to everyone. A bad frame closes the socket, and the others hear without it.                |
-| `leave(host, socket)`            | After the socket closed or failed: forgets it and tells the others. Idempotent.                               |
-| `close(host, socket, code)`      | Closes one connection with `code` and tells the others.                                                       |
-| `evict(host, principal, code?)`  | Closes every connection of `principal`, `noAccess` by default, tells the others once, answers the count.      |
-| `connections(host)`              | Every joined connection in join order, with the host-only `data`.                                             |
+| Function                         | What it does                                                                                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `join(host, socket, identity)`   | Joins an accepted socket and sends everyone the roster. Answers `full`, after closing the socket, at the cap.                                         |
+| `receive(host, socket, message)` | A new state goes to everyone; the one it already holds goes to no one. A bad or too frequent frame closes the socket, and the others hear without it. |
+| `leave(host, socket)`            | After the socket closed or failed: forgets it and tells the others. Idempotent.                                                                       |
+| `close(host, socket, code)`      | Closes one connection with `code` and tells the others.                                                                                               |
+| `evict(host, principal, code?)`  | Closes every connection of `principal`, `noAccess` by default, tells the others once, answers the count.                                              |
+| `connections(host)`              | Every joined connection in join order, with the host-only `data`.                                                                                     |
 
 `Identity.data` is the host's own note on a connection, at most
 `maxDataBytes`, such as the session it authenticated. It never reaches a page.
@@ -143,8 +153,9 @@ export const follow = Effect.gen(function*() {
   empty while the connection is not open.
 - **State.** Only the latest state is kept. It goes out once the connection
   opens and again after every reconnect, because a fresh connection joins with
-  a `null` state. A state the room already holds is not sent again. A state
-  over `maxStateBytes` is the caller's bug and dies with a `PlatformError`
+  a `null` state. A state the room already holds is not sent again. At most
+  one state goes out per `stateIntervalMs`; a state set sooner waits, and
+  only the latest by then is sent. A state over `maxStateBytes` is the caller's bug and dies with a `PlatformError`
   whose reason is `BadArgument`.
 - **Scope.** Closing the scope closes the socket with 1000 and stops
   redialing.
@@ -157,11 +168,11 @@ The socket comes from Effect's `Socket.WebSocketConstructor`. In a browser,
 Spans, metrics and logs carry connection ids and counts only, never a state, a
 name or host data.
 
-| Name                          | Kind                | Attributes                                   |
-| ----------------------------- | ------------------- | -------------------------------------------- |
-| `presence.join`               | span                | outcome, connection id, participant count    |
-| `presence.evict`              | span                | close code, evicted count                    |
-| `smithers_presence_joins`     | counter             | `outcome`: `joined`, `full`                  |
-| `smithers_presence_frames`    | counter             | `outcome`: `state`, `unsupported`, `too_big` |
-| `smithers_presence_evictions` | counter             | none                                         |
-| `smithers_presence_open`      | up and down counter | none                                         |
+| Name                          | Kind                | Attributes                                                            |
+| ----------------------------- | ------------------- | --------------------------------------------------------------------- |
+| `presence.join`               | span                | outcome, connection id, participant count                             |
+| `presence.evict`              | span                | close code, evicted count                                             |
+| `smithers_presence_joins`     | counter             | `outcome`: `joined`, `full`                                           |
+| `smithers_presence_frames`    | counter             | `outcome`: `state`, `unchanged`, `unsupported`, `too_big`, `too_fast` |
+| `smithers_presence_evictions` | counter             | none                                                                  |
+| `smithers_presence_open`      | up and down counter | none                                                                  |

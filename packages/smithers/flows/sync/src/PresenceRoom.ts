@@ -11,7 +11,8 @@
  * - **{@link join}** admits an accepted socket with the identity the host's
  *   authentication gave it, and sends everyone the new roster.
  * - **{@link receive}** handles a page's frame: a new state is relayed to
- *   everyone; a binary, malformed or oversized frame closes that socket.
+ *   everyone, the state it already holds to no one; a binary, malformed,
+ *   oversized or too frequent frame closes that socket.
  * - **{@link leave}** forgets a socket the host saw close or fail.
  * - **{@link close}** and **{@link evict}** let the host remove a connection,
  *   or every connection of one principal, with a close code.
@@ -23,6 +24,7 @@
  * @since 1.0.0-rc.17
  */
 
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
@@ -37,6 +39,7 @@ import {
   maxDataBytes,
   maxFrameBytes,
   maxParticipants,
+  maxStatesPerSecond,
   type Participant
 } from "./PresenceProtocol.ts"
 
@@ -104,8 +107,9 @@ export const joins = Metric.counter("smithers_presence_joins", {
 })
 
 /**
- * Frames from pages, by `outcome`: `state`, `unsupported` or `too_big`. A
- * count, never content.
+ * Frames from pages, by `outcome`: `state`, `unchanged` (the state the
+ * connection already holds), `unsupported`, `too_big` or `too_fast`. A count,
+ * never content.
  *
  * @category metrics
  * @since 1.0.0-rc.17
@@ -137,7 +141,11 @@ export const open = Metric.counter("smithers_presence_open", {
   description: "Presence connections joined right now"
 })
 
-/** What a socket keeps through hibernation. `presence` marks it as this room's. */
+/**
+ * What a socket keeps through hibernation. `presence` marks it as this room's.
+ * `windowStart` and `windowFrames` count the frames of the current second, for
+ * `maxStatesPerSecond`.
+ */
 const Attachment = Schema.Struct({
   presence: Schema.Literal(1),
   id: Schema.String,
@@ -146,7 +154,9 @@ const Attachment = Schema.Struct({
   access: Schema.Literals(["read", "write"]),
   state: Schema.NullOr(Schema.String),
   data: Schema.optionalKey(Schema.String),
-  seq: Schema.Number
+  seq: Schema.Number,
+  windowStart: Schema.Number,
+  windowFrames: Schema.Number
 })
 
 type Attachment = typeof Attachment.Type
@@ -312,7 +322,9 @@ export const join = <S extends RoomSocket<R>, R = never>(
       access: identity.access,
       state: null,
       ...(identity.data === undefined ? {} : { data: identity.data }),
-      seq: joined.reduce((last, { attachment }) => Math.max(last, attachment.seq), 0) + 1
+      seq: joined.reduce((last, { attachment }) => Math.max(last, attachment.seq), 0) + 1,
+      windowStart: yield* Clock.currentTimeMillis,
+      windowFrames: 0
     }
     socket.serializeAttachment(attachment)
     yield* opened(1)
@@ -328,10 +340,13 @@ export const join = <S extends RoomSocket<R>, R = never>(
 
 /**
  * Handles one message from a page. A valid `state` frame becomes this
- * connection's state and everyone receives the roster. A binary or malformed
- * frame closes this socket with `CloseCode.unsupported`, and one over
- * `maxFrameBytes` with `CloseCode.tooBig`; the others then receive the
- * roster without it. A socket that has not joined, or has left, is ignored.
+ * connection's state and everyone receives the roster; a frame repeating the
+ * state the connection holds changes nothing and sends nothing. A binary or
+ * malformed frame closes this socket with `CloseCode.unsupported`, one over
+ * `maxFrameBytes` with `CloseCode.tooBig`, and the frame past
+ * `maxStatesPerSecond` in one second with `CloseCode.tooFast`; the others then
+ * receive the roster without it. A socket that has not joined, or has left, is
+ * ignored.
  *
  * @category operations
  * @since 1.0.0-rc.17
@@ -344,7 +359,7 @@ export const receive = <S extends RoomSocket<R>, R = never>(
   Effect.gen(function*() {
     const attachment = attachmentOf(socket)
     if (attachment === undefined) return
-    const refuse = (code: number, outcome: "unsupported" | "too_big") =>
+    const refuse = (code: number, outcome: "unsupported" | "too_big" | "too_fast") =>
       Effect.andThen(
         Metric.update(Metric.withAttributes(frames, { outcome }), 1),
         remove(host, socket, code)
@@ -353,9 +368,15 @@ export const receive = <S extends RoomSocket<R>, R = never>(
     if (!fits(message, maxFrameBytes)) return yield* refuse(CloseCode.tooBig, "too_big")
     const frame = decodeClientFrame(message)
     if (frame === undefined) return yield* refuse(CloseCode.unsupported, "unsupported")
-    socket.serializeAttachment({ ...attachment, state: frame.state })
-    yield* Metric.update(Metric.withAttributes(frames, { outcome: "state" }), 1)
-    yield* publish(host, new Set())
+    const now = yield* Clock.currentTimeMillis
+    const window = now - attachment.windowStart < 1_000
+      ? { windowStart: attachment.windowStart, windowFrames: attachment.windowFrames + 1 }
+      : { windowStart: now, windowFrames: 1 }
+    if (window.windowFrames > maxStatesPerSecond) return yield* refuse(CloseCode.tooFast, "too_fast")
+    const unchanged = frame.state === attachment.state
+    socket.serializeAttachment({ ...attachment, ...window, state: frame.state })
+    yield* Metric.update(Metric.withAttributes(frames, { outcome: unchanged ? "unchanged" : "state" }), 1)
+    if (!unchanged) yield* publish(host, new Set())
   })
 
 /**

@@ -92,7 +92,13 @@ describe("PresenceProtocol", () => {
       true,
       true
     ])
-    expect([CloseCode.changed, CloseCode.full, 1006, 1011].map(isFinal)).toEqual([false, false, false, false])
+    expect([CloseCode.changed, CloseCode.full, CloseCode.tooFast, 1006, 1011].map(isFinal)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false
+    ])
   })
 
   it("backs off from 1 s, doubling to 30 s, for ten attempts", () => {

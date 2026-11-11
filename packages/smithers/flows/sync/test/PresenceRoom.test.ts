@@ -11,6 +11,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
+import * as TestClock from "effect/testing/TestClock"
 import * as PresenceProtocol from "../src/PresenceProtocol.ts"
 import * as PresenceRoom from "../src/PresenceRoom.ts"
 import { hostOver, makeHost, type TestSocket } from "./presenceHost.ts"
@@ -228,6 +229,63 @@ describe("PresenceRoom", () => {
         expect((yield* Metric.value(PresenceRoom.open)).count).toBe(1)
       }))
   )
+
+  it.effect("sends nothing for a state the connection already holds, for a read-only one too", () =>
+    isolated(Effect.gen(function*() {
+      const room = makeHost()
+      const ada = room.accept()
+      const bob = room.accept()
+      yield* PresenceRoom.join(room.host, ada, person("ada"))
+      yield* PresenceRoom.join(room.host, bob, person("bob", "read"))
+      yield* PresenceRoom.receive(room.host, bob, stateFrame(null))
+      expect([ada.raw.sent.length, bob.raw.sent.length]).toEqual([2, 1])
+      yield* PresenceRoom.receive(room.host, bob, stateFrame("{\"path\":\"a.ts\"}"))
+      expect([ada.raw.sent.length, bob.raw.sent.length]).toEqual([3, 2])
+      for (let frame = 0; frame < 5; frame++) {
+        yield* PresenceRoom.receive(hostOver(room.raws), bob, stateFrame("{\"path\":\"a.ts\"}"))
+      }
+      expect([ada.raw.sent.length, bob.raw.sent.length]).toEqual([3, 2])
+      expect(lastRoster(ada)?.participants.map((participant) => participant.state)).toEqual([
+        null,
+        "{\"path\":\"a.ts\"}"
+      ])
+      expect((yield* Metric.value(Metric.withAttributes(PresenceRoom.frames, { outcome: "unchanged" }))).count).toBe(6)
+      expect((yield* Metric.value(Metric.withAttributes(PresenceRoom.frames, { outcome: "state" }))).count).toBe(1)
+    })))
+
+  it.effect("closes a connection past 20 frames in one second with tooFast, and the others hear without it", () =>
+    isolated(Effect.gen(function*() {
+      const room = makeHost()
+      const [ada, bob] = yield* joinAll(room, ["ada", "bob"])
+      // Unchanged frames count too: a page cannot loop on its own state.
+      for (let frame = 0; frame < PresenceProtocol.maxStatesPerSecond; frame++) {
+        yield* PresenceRoom.receive(hostOver(room.raws), bob!, stateFrame("same"))
+      }
+      expect(bob!.raw.closed).toBeUndefined()
+      yield* TestClock.adjust(999)
+      yield* PresenceRoom.receive(hostOver(room.raws), bob!, stateFrame("one more"))
+      expect(bob!.raw.closed?.code).toBe(CloseCode.tooFast)
+      expect(bob!.raw.attachment).toBeNull()
+      expect(namesSeenBy(ada!)).toEqual(["ada"])
+      expect(PresenceProtocol.isFinal(CloseCode.tooFast)).toBe(false)
+      expect((yield* Metric.value(Metric.withAttributes(PresenceRoom.frames, { outcome: "too_fast" }))).count).toBe(1)
+      expect((yield* Metric.value(PresenceRoom.open)).count).toBe(1)
+    })))
+
+  it.effect("counts frames per connection, and a new second starts the count afresh", () =>
+    Effect.gen(function*() {
+      const room = makeHost()
+      const [ada, bob] = yield* joinAll(room, ["ada", "bob"])
+      for (let second = 0; second < 3; second++) {
+        for (let frame = 0; frame < PresenceProtocol.maxStatesPerSecond; frame++) {
+          yield* PresenceRoom.receive(room.host, ada!, stateFrame(`ada ${second} ${frame}`))
+          yield* PresenceRoom.receive(room.host, bob!, stateFrame(`bob ${second} ${frame}`))
+        }
+        yield* TestClock.adjust(1_000)
+      }
+      expect([ada!.raw.closed, bob!.raw.closed]).toEqual([undefined, undefined])
+      expect(lastRoster(ada!)?.participants.map((participant) => participant.state)).toEqual(["ada 2 19", "bob 2 19"])
+    }))
 
   it.effect("ignores every message from a socket that has not joined or has left", () =>
     Effect.gen(function*() {
