@@ -61,9 +61,9 @@
       "document": ".smithers/wiki/pages/runtime.md",
       "inputs": [
         "packages/smithers/flows/docs/concepts/runtime-portability.md",
-        "packages/smithers/flows/src/Runtime.ts",
+        "packages/smithers/flows/src/Runtime.vibe",
         "packages/smithers/flows/platform-node/src/NodeRuntime.ts",
-        "packages/smithers/flows/platform-bun/src/BunRuntime.ts",
+        "packages/smithers/flows/platform-bun/src/BunRuntime.vibe",
         "packages/smithers/flows/platform-bun/test/NativeRuntimeParity.test.ts"
       ],
       "related": [

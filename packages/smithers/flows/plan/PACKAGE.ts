@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FileSet.vibe",
         "src/internal/EffectCandidates.vibe",
-        "src/internal/ConflictAnnotation.ts",
+        "src/internal/ConflictAnnotation.vibe",
         "src/Effects.vibe",
         "src/internal/effects.ts"
       ]
