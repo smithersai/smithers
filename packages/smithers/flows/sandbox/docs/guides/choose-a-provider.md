@@ -12,18 +12,18 @@ stop a running command, and what the provider costs to run.
 
 ## The ten, side by side
 
-| Provider              | A machine is                                                         | Needs                                            | Byte-exact command output | Declares `kill` |
-| --------------------- | -------------------------------------------------------------------- | ------------------------------------------------ | ------------------------- | --------------- |
-| `DirectorySandbox`    | one host directory                                                   | nothing beyond host services                     | yes                       | yes             |
-| `JustBashSandbox`     | one directory in a shared virtual filesystem, interpreted in process | a just-bash instance                             | no                        | no              |
-| `CommandSandbox`      | whatever an argv prefix reaches: `ssh`, `docker exec -i`, or `[]`    | the prefix's CLI; the guest's `sh` and `base64`  | yes                       | yes             |
-| `ContainerSandbox`    | one container held on `sleep infinity`                               | a Docker-compatible CLI                          | yes                       | yes             |
-| `KubernetesSandbox`   | one Pod held on `sleep infinity`                                     | `kubectl` and a cluster                          | yes                       | yes             |
-| `MicrosandboxSandbox` | one local microVM                                                    | a Microsandbox host                              | yes                       | yes             |
-| `VercelSandbox`       | one persistent Vercel sandbox                                        | Vercel credentials                               | no                        | no              |
-| `DaytonaSandbox`      | one named Daytona sandbox                                            | a Daytona client                                 | no                        | no              |
-| `AwsSandbox`          | one Fargate task                                                     | ECS, the `aws` CLI, and `session-manager-plugin` | no                        | yes             |
-| `CloudflareSandbox`   | one Sandbox Durable Object                                           | a Worker binding                                 | no                        | no              |
+| Provider              | A machine is                                                         | Needs                                               | Byte-exact command output | Declares `kill` |
+| --------------------- | -------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | --------------- |
+| `DirectorySandbox`    | one host directory                                                   | nothing beyond host services                        | yes                       | yes             |
+| `JustBashSandbox`     | one directory in a shared virtual filesystem, interpreted in process | a just-bash instance                                | no                        | no              |
+| `CommandSandbox`      | whatever an argv prefix reaches: `ssh`, `docker exec -i`, or `[]`    | the prefix's CLI; the guest's `sh` and `base64`     | yes                       | yes             |
+| `ContainerSandbox`    | one container held on `sleep infinity`                               | a Docker-compatible CLI                             | yes                       | yes             |
+| `KubernetesSandbox`   | one Pod held on `sleep infinity`                                     | `kubectl` and a cluster                             | yes                       | yes             |
+| `MicrosandboxSandbox` | one local microVM                                                    | a Microsandbox host                                 | yes                       | yes             |
+| `VercelSandbox`       | one persistent Vercel sandbox                                        | Vercel credentials                                  | no                        | no              |
+| `DaytonaSandbox`      | one named Daytona sandbox                                            | a Daytona client                                    | no                        | no              |
+| `AwsSandbox`          | one Fargate task                                                     | ECS, the `aws` CLI, and `session-manager-plugin`    | no                        | yes             |
+| `CloudflareSandbox`   | one Sandbox Durable Object of a declared instance type               | a Worker binding, or one per declared instance type | no                        | no              |
 
 "Byte-exact command output" is about a command's own `stdout` and `stderr`.
 File transfer is byte exact on all ten, so a caller that needs bytes out of a

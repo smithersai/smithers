@@ -9572,7 +9572,7 @@
         "CiJob/index.d.ts": "d131ebc7ed8221be746b5d7ed751db3843fe9a08af210e7c6e9b6eadedfdd5b7",
         "CloudflareSandbox/Sdk.d.ts": "d6a4eec7e55b8d680d9c6dd5042ada6449f78dd8088312d448264c7f4c070a23",
         "CloudflareSandbox/index.d.ts": "d11742a7327592870cb0d1e912ad1d5d3ed400b8ca59e6dfc693a60cbc204485",
-        "CloudflareSandbox/make.d.ts": "152130d979685b2c7312f03f1f1fb849c7a773c27b8f5157c3a7ad04f87136f7",
+        "CloudflareSandbox/make.d.ts": "fe63c4184c235e2477f00af8855c2993bcbe9939ee4e1f911c2568354f63d28a",
         "CommandSandbox/index.d.ts": "0841c3ad4d99c01606e775d7c97471e05cd31d6badc02648f48f24ed0628e217",
         "CommandSandbox/make.d.ts": "e2bbd943423fd624ad4868b8f8023777d15e5cbb6f7ec84b9f0cbce2d7c1c76c",
         "ContainerSandbox/existing.d.ts": "bd8f54f55cf74c49562a6b22c6574097e1ccbf27f43ecc8b0a09668cc9cc313c",

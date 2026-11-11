@@ -59,15 +59,16 @@ from `make`, before any machine exists, rather than hand out a machine without
 it. A neutral ceiling beside the provider's own name for it (`cpu`,
 `resources.limits.cpu`, `maxDurationSecs`, `timeoutMs`) throws as ambiguous.
 
-| Provider                                                                                   | `cpus`                                  | `memoryMib`                             | `timeoutSecs`                                         |
-| ------------------------------------------------------------------------------------------ | --------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
-| `ContainerSandbox`                                                                         | `--cpus`                                | `--memory <n>m`                         | `sleep <n>` holds the container instead of `infinity` |
-| `KubernetesSandbox`                                                                        | `resources.limits.cpu`                  | `resources.limits.memory` in `Mi`       | Pod `activeDeadlineSeconds`                           |
-| `MicrosandboxSandbox`                                                                      | `cpus`                                  | `memoryMib`                             | `maxDurationSecs`                                     |
-| `VercelSandbox`                                                                            | `resources.vcpus`, whole vCPUs          | must be 2048 × vCPUs; alone, sizes them | the `timeoutMs` lifetime                              |
-| `AwsSandbox` (image)                                                                       | task `cpu`, 1024 units per vCPU         | task `memory`                           | `sleep <n>` in the essential container                |
-| `DaytonaSandbox`                                                                           | refused: snapshot create cannot size it | refused, same reason                    | `ttlMinutes`; whole minutes only                      |
-| `AwsSandbox` (task definition), `CloudflareSandbox`, `DirectorySandbox`, `JustBashSandbox` | refused                                 | refused                                 | refused                                               |
+| Provider                                                                                               | `cpus`                                                              | `memoryMib`                             | `timeoutSecs`                                         |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
+| `ContainerSandbox`                                                                                     | `--cpus`                                                            | `--memory <n>m`                         | `sleep <n>` holds the container instead of `infinity` |
+| `KubernetesSandbox`                                                                                    | `resources.limits.cpu`                                              | `resources.limits.memory` in `Mi`       | Pod `activeDeadlineSeconds`                           |
+| `MicrosandboxSandbox`                                                                                  | `cpus`                                                              | `memoryMib`                             | `maxDurationSecs`                                     |
+| `VercelSandbox`                                                                                        | `resources.vcpus`, whole vCPUs                                      | must be 2048 × vCPUs; alone, sizes them | the `timeoutMs` lifetime                              |
+| `AwsSandbox` (image)                                                                                   | task `cpu`, 1024 units per vCPU                                     | task `memory`                           | `sleep <n>` in the essential container                |
+| `DaytonaSandbox`                                                                                       | refused: snapshot create cannot size it                             | refused, same reason                    | `ttlMinutes`; whole minutes only                      |
+| `CloudflareSandbox` (`instances`)                                                                      | selects the smallest declared instance type with at least this many | selects the same way                    | refused: `sleepAfter` is an idle timeout              |
+| `AwsSandbox` (task definition), `CloudflareSandbox` (`binding`), `DirectorySandbox`, `JustBashSandbox` | refused                                                             | refused                                 | refused                                               |
 
 The limits enter `ContainerSandbox`, `KubernetesSandbox`, and `AwsSandbox`
 configuration fingerprints, so a leftover machine created under other limits
@@ -103,7 +104,7 @@ ignores `--cpus` and `--memory`.
 | `VercelSandbox`       | Vercel's sandbox tenancy                                                                | `runtime`, `timeoutMs`, `maxDurationMs`, `network`                                                            |
 | `DaytonaSandbox`      | Daytona's sandbox tenancy                                                               | `startTimeoutSeconds`, `deleteTimeoutSeconds`, `network`                                                      |
 | `AwsSandbox`          | the Fargate task, its task role, and its security groups                                | `image` or `taskDefinition`, `taskRoleArn`, `securityGroups`, `subnets`, `assignPublicIp`, `cpu`, `memory`    |
-| `CloudflareSandbox`   | the Durable Object and its container, deployed by you                                   | `sleepAfter`, `keepAlive`                                                                                     |
+| `CloudflareSandbox`   | the Durable Object and its container, deployed by you                                   | `instances`, `sleepAfter`, `keepAlive`                                                                        |
 
 The first two rows say there is no confinement deliberately. `DirectorySandbox`
 is a trusted local workspace backend and the conformance reference; its child

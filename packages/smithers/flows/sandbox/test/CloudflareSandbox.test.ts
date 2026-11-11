@@ -296,7 +296,251 @@ const output = (
     code: process.exitCode
   })
 
+const sizes = (bindingOf: (name: string) => Binding) =>
+  [
+    { name: "standard-2", cpus: 1, memoryMib: 6144, binding: bindingOf("standard-2") },
+    { name: "standard-4", cpus: 4, memoryMib: 12288, binding: bindingOf("standard-4") },
+    { name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: bindingOf("standard-1") },
+    { name: "standard-3", cpus: 2, memoryMib: 8192, binding: bindingOf("standard-3") }
+  ] as const
+
 describe("CloudflareSandbox", () => {
+  it("requires exactly one of binding and instances, before touching its dependencies", () => {
+    const deps = untouchable<never>()
+    const instances = [{ name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: deps.value }]
+    expect(() => CloudflareSandbox.make({ sdk: deps.value }))
+      .toThrow(new TypeError("cloudflare-sandbox: pass exactly one of `binding` and `instances`"))
+    expect(() => CloudflareSandbox.make({ sdk: deps.value, binding: deps.value, instances }))
+      .toThrow(new TypeError("cloudflare-sandbox: pass exactly one of `binding` and `instances`"))
+    expect(() => CloudflareSandbox.make({ sdk: deps.value, instances })).not.toThrow()
+    expect(deps.touched).toEqual([])
+  })
+
+  it("refuses malformed instance declarations", () => {
+    const deps = untouchable<never>()
+    const instance = { name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: deps.value }
+    for (
+      const [instances, message] of [
+        [[], "instances must declare at least one instance type"],
+        [[instance, { ...instance, cpus: 1 }], "instances declare standard-1 twice"],
+        [[{ ...instance, name: "" }], "instance names must match [A-Za-z0-9._-]+: \"\""],
+        [[{ ...instance, name: "standard 1" }], "instance names must match [A-Za-z0-9._-]+: \"standard 1\""],
+        [[{ ...instance, cpus: 0 }], "instance standard-1 cpus must be a positive number: 0"],
+        [
+          [{ ...instance, cpus: Number.POSITIVE_INFINITY }],
+          "instance standard-1 cpus must be a positive number: Infinity"
+        ],
+        [[{ ...instance, memoryMib: 4096.5 }], "instance standard-1 memoryMib must be a positive integer: 4096.5"],
+        [[{ ...instance, memoryMib: -1 }], "instance standard-1 memoryMib must be a positive integer: -1"]
+      ] as const
+    ) {
+      expect(() => CloudflareSandbox.selectInstance(instances)).toThrow(
+        new TypeError(`cloudflare-sandbox: ${message}`)
+      )
+      expect(() => CloudflareSandbox.make({ sdk: deps.value, instances })).toThrow(
+        new TypeError(`cloudflare-sandbox: ${message}`)
+      )
+    }
+    expect(deps.touched).toEqual([])
+  })
+
+  it("selects the first declared instance without a size, else the smallest that holds it", () => {
+    const declared = sizes(() => binding())
+    const select = (limits?: CloudflareSandbox.CloudflareSandboxOptions<Binding>["limits"]) =>
+      CloudflareSandbox.selectInstance(declared, limits).name
+    expect(select()).toBe("standard-2")
+    expect(select({})).toBe("standard-2")
+    expect(select({ cpus: 0.25 })).toBe("standard-1")
+    expect(select({ memoryMib: 4097 })).toBe("standard-2")
+    expect(select({ cpus: 1 })).toBe("standard-2")
+    expect(select({ cpus: 1.5 })).toBe("standard-3")
+    expect(select({ cpus: 2, memoryMib: 8192 })).toBe("standard-3")
+    expect(select({ cpus: 2, memoryMib: 8193 })).toBe("standard-4")
+    expect(select({ cpus: 4, memoryMib: 12288 })).toBe("standard-4")
+    // Equal CPU counts order by memory, whatever the declaration order.
+    const equalCpus = [
+      { name: "large", cpus: 1, memoryMib: 2048, binding: binding() },
+      { name: "small", cpus: 1, memoryMib: 1024, binding: binding() }
+    ]
+    expect(CloudflareSandbox.selectInstance(equalCpus, { cpus: 1 }).name).toBe("small")
+    expect(CloudflareSandbox.selectInstance(equalCpus, { memoryMib: 1025 }).name).toBe("large")
+  })
+
+  it("refuses a size no declared instance holds, a lifetime, and malformed limits", () => {
+    const deps = untouchable<never>()
+    const instances = [
+      { name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: deps.value },
+      { name: "standard-4", cpus: 4, memoryMib: 12288, binding: deps.value }
+    ]
+    for (
+      const [limits, message] of [
+        [
+          { cpus: 8 },
+          "no declared instance has at least 8 cpus; declared: standard-1 (0.5 cpus, 4096 MiB), standard-4 (4 cpus, 12288 MiB)"
+        ],
+        [
+          { cpus: 1, memoryMib: 16384 },
+          "no declared instance has at least 1 cpus and 16384 MiB; declared: standard-1 (0.5 cpus, 4096 MiB), standard-4 (4 cpus, 12288 MiB)"
+        ],
+        [
+          { memoryMib: 16384 },
+          "no declared instance has at least 16384 MiB; declared: standard-1 (0.5 cpus, 4096 MiB), standard-4 (4 cpus, 12288 MiB)"
+        ],
+        [
+          { cpus: 1, timeoutSecs: 60 },
+          "cannot enforce limits.timeoutSecs; `sleepAfter` is an idle timeout, not a lifetime"
+        ],
+        [{ memoryMib: 1.5 }, "limits.memoryMib must be a positive integer: 1.5"]
+      ] as const
+    ) {
+      expect(() => CloudflareSandbox.make({ sdk: deps.value, instances, limits })).toThrow(
+        new TypeError(`cloudflare-sandbox: ${message}`)
+      )
+    }
+    expect(deps.touched).toEqual([])
+  })
+
+  it.effect("acquires on the selected instance's binding and names the instance in the remote id", () =>
+    Effect.gen(function*() {
+      const bindings = new Map<string, Binding>()
+      const instances = sizes((name) => {
+        const created = binding()
+        bindings.set(name, created)
+        return created
+      })
+      const provider = CloudflareSandbox.make({
+        sdk,
+        instances,
+        limits: { cpus: 2, memoryMib: 8193 },
+        workdir: join(root, "instances-ws")
+      })
+      const remoteId = yield* acquired(provider, (session) =>
+        Effect.gen(function*() {
+          const result = yield* Effect.scoped(Effect.flatMap(session.spawn("printf sized", {}), output))
+          expect(result).toEqual({ stdout: "sized", stderr: "", code: 0 })
+          return session.remoteId
+        }))
+      expect(remoteId).toMatch(/^standard-4-session-key-[0-9a-f]{16}$/)
+      const selected = bindings.get("standard-4")!
+      expect(selected.resolutions.map(({ id }) => id)).toEqual([remoteId])
+      expect(selected.instances[0]!.destroyed).toBe(true)
+      for (const name of ["standard-1", "standard-2", "standard-3"]) {
+        expect(bindings.get(name)!.resolutions).toEqual([])
+      }
+      expect(provider.retained).toBeUndefined()
+      expect(provider.attach).toBeUndefined()
+      expect(provider.destroy).toBeUndefined()
+    }))
+
+  for (const declared of ["binding", "instances"] as const) {
+    it.effect(`retains the ${declared} sandbox, attaches without provisioning, and destroys it idempotently`, () =>
+      Effect.gen(function*() {
+        const workerBinding = binding()
+        const workdir = join(root, `retained-${declared}-ws`)
+        const provider = CloudflareSandbox.make({
+          sdk,
+          ...declared === "binding"
+            ? { binding: workerBinding }
+            : { instances: [{ name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: workerBinding }] },
+          workdir,
+          keepAlive: true,
+          retained: true
+        })
+        expect(provider.retained).toBe(true)
+        const identity = yield* acquired(
+          provider,
+          (session) =>
+            Effect.as(session.writeFile(`${workdir}/kept.txt`, encoder.encode("kept")), {
+              id: session.id,
+              remoteId: session.remoteId
+            })
+        )
+        expect(identity.remoteId).toMatch(
+          declared === "binding" ? /^session-key-[0-9a-f]{16}$/ : /^standard-1-session-key-[0-9a-f]{16}$/
+        )
+        const machine = workerBinding.instances[0]!
+        expect(machine.destroyed).toBe(false)
+        expect(machine.events).not.toContain("destroy")
+
+        const before = machine.events.length
+        const attached = yield* Effect.scoped(
+          Effect.flatMap(provider.attach!(identity), (session) =>
+            Effect.gen(function*() {
+              expect(session).toMatchObject({ id: "session/key", remoteId: identity.remoteId, workdir })
+              const result = yield* Effect.scoped(Effect.flatMap(session.spawn("cat kept.txt", {}), output))
+              yield* session.ping!
+              return result
+            }))
+        )
+        expect(attached).toEqual({ stdout: "kept", stderr: "", code: 0 })
+        expect(workerBinding.instances).toHaveLength(1)
+        expect(machine.events.slice(before).some((event) => event.startsWith("mkdir:"))).toBe(false)
+        expect(machine.destroyed).toBe(false)
+        expect(workerBinding.resolutions.map(({ id, options }) => ({ id, options }))).toEqual([
+          { id: identity.remoteId, options: { enableDefaultSession: false, keepAlive: true } },
+          { id: identity.remoteId, options: { enableDefaultSession: false, keepAlive: true } }
+        ])
+
+        yield* provider.destroy!(identity)
+        expect(machine.destroyed).toBe(true)
+        yield* provider.destroy!(identity)
+        expect(workerBinding.resolutions.map(({ id }) => id)).toEqual(Array(4).fill(identity.remoteId))
+      }))
+  }
+
+  it.effect("refuses a retained identity this provider did not derive, and maps vendor failures", () =>
+    Effect.gen(function*() {
+      const workerBinding = binding()
+      const provider = CloudflareSandbox.make({
+        sdk,
+        instances: [{ name: "standard-1", cpus: 0.5, memoryMib: 4096, binding: workerBinding }],
+        workdir: join(root, "retained-failure-ws"),
+        retained: true
+      })
+      // The same key acquired through another instance type lives in another
+      // Durable Object namespace; attaching here would boot an empty machine.
+      const foreign = { id: "session/key", remoteId: "standard-4-session-key-0000000000000000" }
+      const attachRefusal = yield* Effect.flip(Effect.scoped(provider.attach!(foreign)))
+      expect(attachRefusal).toMatchObject({ code: "spawn_error" })
+      expect(attachRefusal.message).toBe(
+        "cloudflare sandbox: standard-4-session-key-0000000000000000 is not this provider's sandbox for session/key"
+      )
+      const destroyRefusal = yield* Effect.flip(provider.destroy!(foreign))
+      expect(destroyRefusal).toMatchObject({ code: "spawn_error", message: attachRefusal.message })
+      expect(workerBinding.resolutions).toEqual([])
+
+      const identity = yield* acquired(
+        provider,
+        (session) => Effect.succeed({ id: session.id, remoteId: session.remoteId })
+      )
+      workerBinding.instances[0]!.failDestroy = new Error("destroy failed")
+      expect(yield* Effect.flip(provider.destroy!(identity))).toMatchObject({ code: "unavailable" })
+
+      workerBinding.resolveFailure = new Error("binding unavailable")
+      expect(yield* Effect.flip(Effect.scoped(provider.attach!(identity)))).toMatchObject({ code: "unavailable" })
+      expect(yield* Effect.flip(provider.destroy!(identity))).toMatchObject({ code: "unavailable" })
+    }))
+
+  it.effect("leaves a retained sandbox whose preparation failed for explicit destruction", () =>
+    Effect.gen(function*() {
+      const workerBinding = binding()
+      const failingSdk = {
+        getSandbox(target: Binding, id: string, options?: SandboxOptions) {
+          const sandbox = sdk.getSandbox(target, id, options)
+          sandbox.failMkdir = new Error("mkdir failed")
+          return sandbox
+        }
+      } satisfies CloudflareSandbox.Sdk<Binding>
+      const provider = CloudflareSandbox.make({
+        sdk: failingSdk,
+        binding: workerBinding,
+        workdir: join(root, "retained-setup-ws"),
+        retained: true
+      })
+      expect(yield* Effect.flip(Effect.scoped(provider.acquire("key")))).toMatchObject({ code: "unavailable" })
+      expect(workerBinding.instances[0]!.events).not.toContain("destroy")
+    }))
+
   it("refuses every resource limit at construction, before touching its dependencies", () => {
     const deps = untouchable<never>()
     for (

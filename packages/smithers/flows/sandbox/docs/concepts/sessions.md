@@ -55,12 +55,13 @@ the finalizer does:
 | `VercelSandbox`       | `getOrCreate` with `persistent` and `resume`                    | the persistent sandbox, stopped                                      |
 | `DaytonaSandbox`      | `get(name)` before `create`                                     | nothing; teardown deletes the sandbox                                |
 | `AwsSandbox`          | `ListTasks` by the `startedBy` tag adopts a leftover            | nothing; `StopTask` runs on the scope                                |
-| `CloudflareSandbox`   | the Durable Object id is derived from the key                   | nothing; the object is destroyed                                     |
+| `CloudflareSandbox`   | the Durable Object id is derived from the key                   | nothing; the object is destroyed, unless `retained` keeps it running |
 | `JustBashSandbox`     | not applicable, the session is in process                       | nothing; the directory is removed                                    |
 
 Read the middle column as crash recovery, not as storage. Only
-`MicrosandboxSandbox` with `persistence: "sticky"` and `VercelSandbox` are
-designed to be there after a clean release, and only the first is running.
+`MicrosandboxSandbox` with `persistence: "sticky"`, `CloudflareSandbox` with
+`retained: true`, and `VercelSandbox` are designed to be there after a clean
+release, and only the first two are running.
 
 To keep what a body changed in a checkout, capture it before release:
 `Sandbox.run` returns it as `Work`, which an action journals and

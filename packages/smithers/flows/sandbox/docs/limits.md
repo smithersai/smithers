@@ -44,6 +44,14 @@ atomic append, exclusive creation, or creation permission operation. Native
 write overrides in `Session.files` receive the options unchanged and may
 support these operations.
 
+## Machine size
+
+Each provider forwards `limits: { cpus, memoryMib, timeoutSecs }` to its own
+mechanism or refuses it at construction. `CloudflareSandbox` sizes a machine
+only through declared `instances`: one Worker binding per deployed instance
+type, from which `cpus` and `memoryMib` select the smallest that holds both.
+With a single `binding` it refuses every ceiling.
+
 ## Read next
 
 - [Resource limits](./concepts/isolation.md#resource-limits): the neutral
