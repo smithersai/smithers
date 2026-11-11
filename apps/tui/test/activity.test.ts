@@ -44,6 +44,55 @@ describe("the shared terminal monitor", () => {
     expect(Transcript.user(transcript, "steer", true, 100).activity).toBe(activity)
   })
 
+  test("an aborted activity records its failure endpoint exactly once", () => {
+    const aborted = Activity.apply(
+      Activity.empty,
+      { _tag: "aborted", eventType: "flows.harness.aborted.v1", reason: "Model unavailable" },
+      100
+    )
+    expect(aborted.status).toBe("failed")
+    expect(aborted.records.at(-1)?.kind).toBe("control.agent.aborted")
+    const failed = Activity.finish(aborted, "failed", 101, "Model unavailable")
+    expect(failed.records.at(-1)).toEqual({
+      sequence: aborted.records.length + 1,
+      kind: "control.run.failed",
+      occurredAt: 101,
+      payload: { cause: "Model unavailable" }
+    })
+    expect(Scrubber.event(failed)).toMatchObject({ label: "Failed", tone: "danger" })
+    expect(Scrubber.event(failed, aborted.records.at(-1)!.sequence)).toMatchObject({
+      label: "Working",
+      tone: "text"
+    })
+    expect(Activity.finish(failed, "failed", 102, "Model unavailable")).toBe(failed)
+  })
+
+  test("an aborted turn and its restored session retain the failed timeline endpoint", () => {
+    const event: AgentEvent = { _tag: "aborted", eventType: "flows.harness.aborted.v1", reason: "Model unavailable" }
+    const failed = Transcript.apply(Transcript.user(Transcript.empty, "help", false, 0), event, 100)
+    const restored = Session.restore([{ type: "event", event, at: 100 }]).transcript
+    for (const transcript of [failed, restored]) {
+      expect(transcript.items.at(-1)).toMatchObject({ kind: "error", text: "Model unavailable" })
+      const activity = transcript.activity!
+      expect(activity.status).toBe("failed")
+      expect(activity.records.map((record) => record.kind)).toEqual([
+        "control.agent.aborted",
+        "control.run.failed"
+      ])
+      expect(Scrubber.event(activity)).toMatchObject({ label: "Failed", tone: "danger" })
+    }
+  })
+
+  test.each(["completed", "failed", "cancelled"] as const)(
+    "%s keeps its terminal record when finished again",
+    (status) => {
+      const finished = Activity.finish(Activity.empty, status, 100, "outcome")
+      expect(finished.records).toHaveLength(1)
+      expect(finished.records[0]?.kind).toBe(`control.run.${status}`)
+      expect(Activity.finish(finished, status, 200, "outcome")).toBe(finished)
+    }
+  )
+
   test("failure and cancellation retain their real endpoints", () => {
     const failed = Activity.finish(Activity.empty, "failed", 100, "broken")
     const stopped = Activity.finish(Activity.empty, "cancelled", 200, "Stopped")

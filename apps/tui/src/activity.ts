@@ -88,7 +88,7 @@ export const finish = (
   at: number,
   message: string
 ): Activity => {
-  if (activity.status === status) return activity
+  if (activity.records.at(-1)?.kind === `control.run.${status}`) return activity
   return {
     status,
     records: [...activity.records, {
