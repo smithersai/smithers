@@ -333,11 +333,11 @@ const DRAFT_STATUSES = new Map([
  */
 export const draftRecords = (source, drafts, { unformatted = false } = {}) => {
   const { oneLine, body } = formatting(unformatted)
-  return drafts.map((draft) => {
+  return drafts.map((draft, index) => {
     const key = `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`
     const value = draft.status === undefined ? (draft.state === undefined ? "open" : draft.state) : draft.status
     const status = typeof value === "string" ? DRAFT_STATUSES.get(value.toLowerCase()) : undefined
-    if (status === undefined) throw new Error(`${key} has unknown status ${JSON.stringify(value)}`)
+    if (status === undefined) throw new Error(`row ${index + 1}: unknown-status`)
     const duplicateOf = draft.duplicate_of_draft ?? draft.duplicate_of_title ?? draft.duplicate_of
     const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
     const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`

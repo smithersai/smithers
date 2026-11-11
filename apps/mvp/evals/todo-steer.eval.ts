@@ -33,6 +33,7 @@ import { runFlow } from "../worker/test/flowHost.ts"
 import { testFile } from "../worker/test/harness.ts"
 import { machines } from "../worker/test/todoMachines.ts"
 import { defaultModel } from "./session"
+import { todoSteerLines } from "./todoSteer.ts"
 
 const NAME = "todo-steer"
 const only = (process.env.EVAL_ONLY ?? "").split(",").filter((name) => name !== "")
@@ -51,6 +52,7 @@ interface Trial {
   readonly asked: number
   readonly todoLine: boolean
   readonly steeredLine: boolean
+  readonly orderedLines: boolean
   /** Whether a model request after the first carried the steer: the queue delivered it. */
   readonly delivered: boolean
   /** The merged README, to read what the agent did. */
@@ -149,8 +151,7 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
       word,
       exit: Exit.isSuccess(ran.exit) && (ran.exit.value as { state?: string }).state === "merged" ? "merged" : "other",
       asked,
-      todoLine: merged.includes(word),
-      steeredLine: merged.includes(`steered ${word}`),
+      ...todoSteerLines(merged, word),
       delivered,
       readme: merged,
       ms: Date.now() - started,
@@ -175,6 +176,6 @@ test.skipIf(only.length > 0 && !only.includes(NAME))(
       `${JSON.stringify({ eval: NAME, model: real.modelId, trials }, null, 2)}\n`,
     )
     // Every trial merged with the TODO's line and the steered one: the newer instruction won.
-    expect(trials.map((t) => [t.exit, t.todoLine, t.steeredLine])).toEqual(trials.map(() => ["merged", true, true]))
+    expect(trials.map((t) => [t.exit, t.todoLine, t.steeredLine, t.orderedLines])).toEqual(trials.map(() => ["merged", true, true, true]))
   },
 )

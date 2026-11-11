@@ -201,13 +201,15 @@ const queue = queuePlan(remote.filter((row) => row.kind === "queue").map((row) =
 const replaced = new Set(values["replace-findings"])
 // Drafts and findings are parsed unformatted, so validation sees the original text before any clipping.
 const unformatted = { unformatted: true }
-let draftRows
-try {
-  draftRows = draftInputs.flatMap(({ source, drafts }) => draftRecords(source, drafts, unformatted))
-} catch (error) {
-  console.error(error.message)
-  process.exit(2)
-}
+const draftRows = draftInputs.flatMap(({ source, drafts }, position) => {
+  try {
+    return draftRecords(source, drafts, unformatted)
+  } catch (error) {
+    // Positions only: a draft's source name, identity and status value may carry credentials.
+    console.error(`draft ${position + 1} ${error.message}`)
+    process.exit(2)
+  }
+})
 const statuses = { open: 0, fixed: 0, nonbug: 0, duplicate: 0, closed: 0 }
 for (const row of draftRows) statuses[row.status]++
 const skipped = draftRows.filter((row) => row.status !== "open").map(({ key, status, duplicate_of }) => ({
@@ -258,13 +260,17 @@ for (const record of records) {
 const byTitle = new Map()
 const unique = []
 for (const record of byKey.values()) {
-  const title = `${record.repo}\n${record.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`
-  const first = byTitle.get(title)
-  if (first !== undefined) {
-    duplicates.push({ key: record.key, of: first.key })
-    continue
+  const normalizedTitle = record.title.toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim()
+  // An empty normalized title provides no evidence that two records are the same issue.
+  if (normalizedTitle !== "") {
+    const title = `${record.repo}\n${normalizedTitle}`
+    const first = byTitle.get(title)
+    if (first !== undefined) {
+      duplicates.push({ key: record.key, of: first.key })
+      continue
+    }
+    byTitle.set(title, record)
   }
-  byTitle.set(title, record)
   unique.push(record)
 }
 

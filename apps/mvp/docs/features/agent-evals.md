@@ -317,6 +317,14 @@ Across the instructions' last three revisions, 1 trial of 36 failed `implement` 
 EVAL_ONLY=todo-lint EVAL_K=3 pnpm eval evals/todo-lint.eval.ts
 ```
 
+## todo-steer
+
+`evals/todo-steer.eval.ts` holds the TODO agent to a person's steer (ruling TODO-3, [steering](runs.md#steering)): the TODO asks for one line that says a word and "Change nothing else", and while the agent's first turn is in flight the person asks for a second line, `steered <word>`, right after it. The real `todo` flow runs on the Node host's engine with the scripted GitHub and the real model; only the steer is scripted. Every trial must merge, and the merged README must hold the word on a line of its own with `steered <word>` on the next line (`evals/todoSteer.ts`, whitespace around a line aside): the steered line alone, either line inside other text, the two lines apart or in the other order fail the trial. Each trial's record keeps the merged README.
+
+```sh
+EVAL_ONLY=todo-steer EVAL_K=3 pnpm eval evals/todo-steer.eval.ts
+```
+
 ## Tests
 
 | Test | Proves |
@@ -325,6 +333,7 @@ EVAL_ONLY=todo-lint EVAL_K=3 pnpm eval evals/todo-lint.eval.ts
 | `evals/cases.test.ts` | Every case, with every answer's checks, passes what the agent should do and fails what it might do instead (among them each finding's old behavior); each safety case fails its unsafe trial; cases are plain data |
 | `evals/judge.test.ts` | With a scripted judge (the model is the only seam): the questions, what the judge sees, one reading per trial with the seat note, the score as the share of trials whose every question holds, a reading's usage, a judge that can't judge, and no reading for a refused provider's trial |
 | `evals/todoLint.test.ts` | todo-lint's repository: its lint fails the TODO's file at both annotations and passes the fix, its typecheck and `tsc` catch a wrong fix, the fix is the TODO's own, the scripts need `tsc` without their tools, the declared checks install first; which commands are wide, which files a command writes, which writes stray, which checks passed on the package after the last write, and production's time |
+| `evals/todoSteer.test.ts` | todo-steer's check: the word on its own line with the steered line right after passes, with either line ending and whitespace around a line; the steered line alone, either line inside other text, the other order or a line between fail |
 | `evals/report.test.ts` | The endpoint's spend by role at list price, the judge's at its reported price, the table |
 
 Run them with `pnpm exec vitest run evals`. The live run is `pnpm eval`.

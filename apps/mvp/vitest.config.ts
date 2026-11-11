@@ -232,6 +232,7 @@ export default defineConfig({
         // evals/agent.eval.ts are the program, which `pnpm eval` runs against the real model.
         "evals/cases.ts",
         "evals/checks.ts",
+        "evals/todoSteer.ts",
         "evals/judge.ts",
         "evals/report.ts",
         // What the timeline eval judges each phase on, and the bars every fixture must clear.

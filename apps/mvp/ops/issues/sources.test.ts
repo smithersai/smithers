@@ -124,9 +124,9 @@ describe("the importer's records", () => {
     expect(rows[0]).toMatchObject({ key: "draft:spec:status", status: expected })
   })
 
-  test.each(["maybe", "", 7, null])("drafts: refuses unknown status %s with its key and value", (status) => {
+  test.each(["maybe", "", 7, null])("drafts: refuses unknown status %s with the row's position alone", (status) => {
     expect(() => draftRecords("spec", [{ draft_id: "unknown", title: "Unknown", status }]))
-      .toThrow(`draft:spec:unknown has unknown status ${JSON.stringify(status)}`)
+      .toThrow("row 1: unknown-status")
   })
 
   test("drafts: a repository's tracking draft becomes its tree node's issue, not a child of it", () => {

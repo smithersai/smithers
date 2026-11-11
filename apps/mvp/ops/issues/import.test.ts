@@ -168,19 +168,68 @@ describe("the importer's CLI", () => {
     ])
   })
 
-  test("unknown status refuses the entire import with exit 2 and its draft key, without writing outputs", () => {
+  const token = `ghp_${"X".repeat(36)}`
+  test.each([
+    ["t3code", { draft_id: "bad", status: "maybe" }],
+    ["t3code", { draft_id: token, status: "maybe" }],
+    [token, { draft_id: "bad", status: "maybe" }],
+    ["t3code", { draft_id: "bad", status: token }],
+    ["t3code", { draft_id: "bad", state: token }],
+    ["t3code", { draft_id: "bad", status: { access_token: token } }],
+  ])("unknown status refuses the entire import with exit 2 and the row's position alone, without writing outputs: %s %j", (source, bad) => {
     const { file, run, privateRepos } = setup()
-    const drafts = file("unknown.json", JSON.stringify([
-      { draft_id: "good", title: "Open" },
-      { draft_id: "bad", title: "Unknown", status: "maybe" },
-    ]))
-    const { status, stderr, stdout, out, calls } = run(["--draft", `t3code=${drafts}`, "--private-repos", privateRepos], { FAKE_FAIL: "1" })
+    const drafts = file("unknown.json", JSON.stringify([{ draft_id: "good", title: "Open" }, { title: "Unknown", ...bad }]))
+    const { status, stderr, stdout, out, calls, fetchCalls } = run(["--draft", `${source}=${drafts}`, "--private-repos", privateRepos], { FAKE_FAIL: "1" })
     expect(status).toBe(2)
-    expect(stderr).toContain('draft:t3code:bad has unknown status "maybe"')
+    expect(stderr).toBe("draft 1 row 2: unknown-status\n")
     expect(stdout).toBe("")
     expect(calls).toEqual([])
+    expect(fetchCalls).toEqual([])
     expect(existsSync(out)).toBe(false)
     expect(existsSync(`${out}.skipped.jsonl`)).toBe(false)
+  })
+
+  test("an unknown status names its draft file by the position of its --draft option", () => {
+    const { file, run, privateRepos } = setup()
+    const first = file("good.json", JSON.stringify([{ draft_id: "good", title: "Open" }]))
+    const second = file("bad.json", JSON.stringify([{ draft_id: "bad", title: "Unknown", status: "maybe" }]))
+    const { status, stderr } = run(["--draft", `t3code=${first}`, "--draft", `t3code=${second}`, "--private-repos", privateRepos], { FAKE_FAIL: "1" })
+    expect({ status, stderr }).toEqual({ status: 2, stderr: "draft 2 row 1: unknown-status\n" })
+  })
+
+  test.each([
+    ["类型检查崩溃", "格式化错误"],
+    ["Parser 类型检查崩溃", "Parser 格式化错误"],
+    ["Ошибка типов", "Ошибка форматирования"],
+    ["क", "कि"],
+    ["!!!", "???"],
+    ["🐛", "🎉"],
+  ])("plans two issues for titles that differ only outside ASCII letters and digits: %j and %j", (first, second) => {
+    const { file, run, privateRepos } = setup()
+    const drafts = file("titles.json", JSON.stringify([{ draft_id: "first", title: first }, { draft_id: "second", title: second }]))
+    const publicRepos = file("public-repos.txt", "smithersai/vibelang\nsmithersai/smithers\n")
+    const { status, stderr, plan, fetchCalls, calls } = run(["--draft", `t3code=${drafts}`, "--private-repos", privateRepos, "--public-repos", publicRepos], { FAKE_FAIL: "1" })
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" })
+    expect(fetchCalls).toEqual([])
+    expect(calls).toEqual([])
+    expect(plan.filter((row) => row.type === "issue").map((row) => row.title)).toEqual([first, second])
+    expect(plan.filter((row) => row.type === "duplicate")).toEqual([])
+  })
+
+  test.each([
+    ["Parser: fails", "PARSER fails"],
+    ["Ошибка: типов", "ОШИБКА типов"],
+    ["类型:检查", "类型 检查"],
+  ])("still plans one issue for titles equal but for case and punctuation in any script: %j and %j", (first, second) => {
+    const { file, run, privateRepos } = setup()
+    const drafts = file("titles.json", JSON.stringify([{ draft_id: "first", title: first }, { draft_id: "second", title: second }]))
+    const publicRepos = file("public-repos.txt", "smithersai/vibelang\nsmithersai/smithers\n")
+    const { status, stderr, plan, fetchCalls, calls } = run(["--draft", `t3code=${drafts}`, "--private-repos", privateRepos, "--public-repos", publicRepos], { FAKE_FAIL: "1" })
+    expect({ status, stderr }).toEqual({ status: 0, stderr: "" })
+    expect(fetchCalls).toEqual([])
+    expect(calls).toEqual([])
+    expect(plan.filter((row) => row.type === "issue").map((row) => row.title)).toEqual([first])
+    expect(plan.filter((row) => row.type === "duplicate")).toHaveLength(1)
   })
 
   test("draft mode refuses a host:path draft and a run without private repository names, before any gh or ssh", () => {
@@ -606,7 +655,7 @@ test("refuses a credential-named property without probing its values or destinat
   ]))}`])
   expect(result.status).toBe(0)
   expect(result.plan.filter((row) => row.type === "issue")).toEqual([])
-  expect(result.summary.repositories.some((entry) => entry.repo === "stranger/open")).toBe(false)
+  expect(result.summary.repositories.some((entry: { repo: string }) => entry.repo === "stranger/open")).toBe(false)
 })
 
 describe("GitHub empty-port URLs", () => {
@@ -675,7 +724,7 @@ describe("complete destinations and source provenance", () => {
     ]))}`])
     expect(result.status).toBe(0)
     expect(JSON.stringify(result.fetchCalls)).not.toContain("repos/a/")
-    expect(result.summary.repositories.some((entry) => entry.repo.startsWith("a/"))).toBe(false)
+    expect(result.summary.repositories.some((entry: { repo: string }) => entry.repo.startsWith("a/"))).toBe(false)
     expect(readFileSync(result.reposFile, "utf8")).not.toContain("a/babc")
   })
 })
