@@ -688,7 +688,7 @@ describe("Otlp", () => {
         expect(logs.flatMap(logRecords).map((record) => record.body.stringValue)).toEqual(["before", "after"])
       }))
 
-    it.effect("answers a refused part for the whole batch, so the exporter sends it again", () =>
+    it.effect("stops a batch at a refused part and resumes there on retry, sending no accepted part again", () =>
       Effect.gen(function*() {
         let answered = 0
         const collector = recordingFetch(() =>
@@ -701,16 +701,145 @@ describe("Otlp", () => {
             })
             yield* TestClock.adjust("1 second")
             yield* TestClock.adjust("10 seconds")
+            expect((yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count).toBe(0)
           }),
-          Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 second", maxRecords: 3 }),
+          Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 second", maxRecords: 2 }),
           collector.fetch
         ).pipe(Effect.provide(Logger.layer([])))
         const delivered = collector.requests.filter((request) => request.url.endsWith("/v1/logs")).map((request) =>
           logRecords(request).map((record) => record.body.stringValue)
         )
-        expect(delivered.slice(0, 2)).toEqual([["record 0", "record 1", "record 2"], ["record 3", "record 4"]])
-        expect(delivered.flat()).toEqual(expect.arrayContaining(["record 3", "record 4"]))
-        expect(delivered.length).toBeGreaterThan(2)
+        expect(delivered).toEqual([
+          ["record 0", "record 1"],
+          ["record 2", "record 3"],
+          ["record 2", "record 3"],
+          ["record 4"]
+        ])
+      }))
+  })
+
+  describe("a lost export", () => {
+    interface Warning {
+      readonly message: unknown
+      readonly annotations: Readonly<Record<string, unknown>>
+    }
+    const failsLogs = (respond: () => Promise<Response>) => {
+      const logPosts: Array<string> = []
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        if (!String(input).endsWith("/v1/logs")) return Promise.resolve(new Response("{}"))
+        logPosts.push(new TextDecoder().decode(init?.body as Uint8Array))
+        return respond()
+      }
+      return { logPosts, fetch }
+    }
+
+    it.effect.each([
+      {
+        label: "a 401",
+        respond: () => Promise.resolve(new Response("revoked", { status: 401 })),
+        posts: 1,
+        loss: { reason: "refused", status: 401 }
+      },
+      {
+        label: "a 404",
+        respond: () => Promise.resolve(new Response("no route", { status: 404 })),
+        posts: 1,
+        loss: { reason: "refused", status: 404 }
+      },
+      {
+        label: "a 503 on every retry",
+        respond: () => Promise.resolve(new Response("down", { status: 503 })),
+        posts: 4,
+        loss: { reason: "refused", status: 503 }
+      },
+      {
+        label: "a transport failure on every retry",
+        respond: () => Promise.reject(new TypeError("network down")),
+        posts: 4,
+        loss: { reason: "failed" }
+      },
+      {
+        label: "a transform that throws",
+        respond: () => Promise.resolve(new Response("{}")),
+        posts: 0,
+        loss: { reason: "transform" },
+        transform: (payload: unknown) => {
+          if (typeof payload === "object" && payload !== null && "resourceLogs" in payload) {
+            throw new Error("PRIVATE_POLICY_BUG")
+          }
+          return payload
+        }
+      },
+      {
+        label: "a transform that returns nothing",
+        respond: () => Promise.resolve(new Response("{}")),
+        posts: 0,
+        loss: { reason: "transform" },
+        transform: (payload: unknown) =>
+          typeof payload === "object" && payload !== null && "resourceLogs" in payload ? undefined : payload
+      }
+    ])(
+      "counts and warns once for a batch lost to $label",
+      ({ respond, posts, loss, transform }) =>
+        Effect.gen(function*() {
+          const collector = failsLogs(respond)
+          const warnings: Array<Warning> = []
+          const ambient = Logger.make((options) => {
+            if (options.logLevel === "Warn") {
+              warnings.push({
+                message: options.message,
+                annotations: options.fiber.getRef(References.CurrentLogAnnotations)
+              })
+            }
+          })
+          const dropped = yield* runExportingTimed(
+            Effect.gen(function*() {
+              yield* Effect.logInfo("PRIVATE_RECORD")
+              for (let second = 0; second < 10; second++) {
+                yield* TestClock.adjust("1 second")
+                yield* settle
+              }
+              return (yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count
+            }),
+            Otlp.layerFetch({
+              baseUrl: "http://collector.invalid:4318",
+              exportInterval: "1 second",
+              shutdownTimeout: "1 second",
+              ...(transform === undefined ? {} : { transform })
+            }),
+            collector.fetch
+          ).pipe(Effect.provide(Logger.layer([ambient])))
+          expect(collector.logPosts).toHaveLength(posts)
+          expect(dropped).toBe(1)
+          expect(warnings).toHaveLength(1)
+          expect(warnings[0]).toMatchObject({
+            message: ["An OTLP export batch was discarded"],
+            annotations: { code: "otlp_export_discarded", ...loss, dropped: 1 }
+          })
+          if (!("status" in loss)) expect(warnings[0]!.annotations).not.toHaveProperty("status")
+          expect(JSON.stringify(warnings)).not.toContain("PRIVATE_")
+        })
+    )
+
+    it.effect("counts nothing for a transient refusal the exporter's retry delivers", () =>
+      Effect.gen(function*() {
+        let answered = 0
+        const collector = failsLogs(() => Promise.resolve(new Response(null, { status: answered++ < 3 ? 503 : 200 })))
+        const dropped = yield* runExportingTimed(
+          Effect.gen(function*() {
+            yield* Effect.logInfo("delivered on the last retry")
+            for (let second = 0; second < 10; second++) {
+              yield* TestClock.adjust("1 second")
+              yield* settle
+            }
+            return (yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count
+          }),
+          Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 second" }),
+          collector.fetch
+        ).pipe(Effect.provide(Logger.layer([])))
+        expect(collector.logPosts).toHaveLength(4)
+        expect(collector.logPosts[3]).toContain("delivered on the last retry")
+        expect(dropped).toBe(0)
       }))
   })
 

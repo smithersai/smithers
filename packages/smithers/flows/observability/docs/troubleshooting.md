@@ -69,8 +69,9 @@ by default.
 2. **Is the base URL what you think?** Signals post below it, so
    `http://collector:4318` posts to `http://collector:4318/v1/traces`. If your
    collector expects a prefix, include it in `baseUrl`.
-3. **Is the collector answering?** Run at `Debug`. The exporter logs
-   `Disabling exporter for 60 seconds` when it gives up after three retries.
+3. **Is the collector answering?** Keep a sink at `Warn`: a refused or failed
+   batch logs `otlp_export_discarded` with reason `refused` or `failed`. The
+   exporter then pauses that signal for 60 seconds.
 4. **Is the layer actually provided?** A composition that swapped in
    `Otlp.layerNoop` behaves exactly like a healthy one that delivers nothing.
 
@@ -80,8 +81,12 @@ A `Warn` record with code `otlp_export_discarded` means the transport discarded
 a record too large for one request (`oversized`: over 1 MiB, or
 `Options.maxRequestBytes`, on its own; a larger batch is split, not
 discarded), stalled for ten seconds
-(`stalled`), or found all four request slots occupied (`saturated`). The
-`flows_observability_otlp_dropped` counter records every discarded batch. The
+(`stalled`), or found all four request slots occupied (`saturated`), that the
+application's `transform` threw on a batch (`transform`), or that the
+exporter gave a batch up: the collector refused it (`refused`, with its
+`status`) or the transport failed (`failed`), at once for a status such as 401
+or 404, after three retries for a 408, 429, 500, 502, 503, 504 or a network failure. The
+`flows_observability_otlp_dropped` counter records every lost batch. The
 warning carries the request byte size, limit and running drop count, and is
 limited to one per minute per transport.
 
@@ -91,6 +96,9 @@ or lower: it remains useful even when the drop counter cannot reach the
 collector. An empty ambient logger set or a higher minimum level suppresses
 warnings. Reduce unusually large records or metric cardinality for oversized
 batches; check collector availability and latency for stalls and saturation.
+For `refused`, the status names the cause: 401 or 403 a credential, 404 the
+base URL, 413 a body limit to pass as `Options.maxRequestBytes`. For
+`transform`, make the application policy total over every OTLP/JSON payload.
 The resource budget reserves 888 KiB for ordinary batches, but cannot bound
 application record sizes.
 

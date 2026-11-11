@@ -29,6 +29,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Headers from "effect/http/Headers"
 import type * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
+import type * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
@@ -114,7 +115,24 @@ export const maximumEnvelopeBytes = 8 * 1024
  */
 export const reservedBatchBytes = maxRequestBytes - Resource.maximumResourceBytes - maximumEnvelopeBytes
 
-type DiscardReason = "oversized" | "stalled" | "saturated"
+/** Why a batch, or a record in it, never reached the collector. */
+type LossReason = "oversized" | "stalled" | "saturated" | "transform" | "refused" | "failed"
+
+// Effect's OTLP exporter sends a batch once and retries a transient failure
+// three times (`HttpClient.retryTransient({ times: 3 })`) before giving it up.
+const exporterAttempts = 4
+
+/**
+ * One exporter batch across its attempts: the requests it was split into,
+ * encoded once, and how many of them the collector has accepted, so a retry
+ * resumes at the refused part and an accepted part is not sent again.
+ */
+interface Batch {
+  readonly parts: ReadonlyArray<Uint8Array>
+  readonly bytes: number
+  attempts: number
+  accepted: number
+}
 
 /** What one export request may carry: its encoded bytes and its records. */
 interface Limits {
@@ -171,14 +189,14 @@ const boundedClient = (limits: Limits, transform?: (payload: unknown) => unknown
       // The counter lives with the transport it describes.
       const droppedExports = Metric.counter("flows_observability_otlp_dropped")
       let nextDiagnosticAt = -Infinity
-      // A local discard is terminal, so the upstream retry loop must not retain
-      // or retry its payload, and the counter records batches, not records. The
-      // warning is the diagnostic the counter cannot be: the counter is exported
-      // through this same transport and shares every outage with it. One
-      // warning per minute keeps a sustained outage from flooding the ambient
-      // loggers; the running total in its annotations carries the volume.
-      // Replace ambient annotations and log spans to bound the diagnostic itself.
-      const discard = (reason: DiscardReason, request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+      // The counter records losses, not records: each oversized record set,
+      // stalled part, and batch discarded or given up counts once. The warning is
+      // the diagnostic the counter cannot be: the counter is exported through
+      // this same transport and shares every outage with it. One warning per
+      // minute keeps a sustained outage from flooding the ambient loggers; the
+      // running total in its annotations carries the volume. Replace ambient
+      // annotations and log spans to bound the diagnostic itself.
+      const report = (reason: LossReason, bytes: number, status?: number) =>
         Metric.update(droppedExports, 1).pipe(
           Effect.andThen(Effect.suspend(() => {
             const now = clock.currentTimeMillisUnsafe()
@@ -191,6 +209,7 @@ const boundedClient = (limits: Limits, transform?: (payload: unknown) => unknown
                   Effect.provideService(References.CurrentLogAnnotations, {
                     code: "otlp_export_discarded",
                     reason,
+                    ...(status === undefined ? {} : { status }),
                     bytes,
                     limit: limits.maxRequestBytes,
                     dropped: dropped.count
@@ -199,9 +218,14 @@ const boundedClient = (limits: Limits, transform?: (payload: unknown) => unknown
               ),
               Effect.provideService(Logger.CurrentLoggers, ambientLoggers)
             )
-          })),
-          Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+          }))
         )
+      const noContent = (request: HttpClientRequest.HttpClientRequest) =>
+        HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }))
+      // A local discard is terminal, so it answers success: the upstream retry
+      // loop must not retain or retry its payload.
+      const discard = (reason: LossReason, request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+        Effect.as(report(reason, bytes), noContent(request))
       // Fetch must expose redirects before any credential or signal body
       // leaves the configured endpoint, even when the caller enables follow.
       const confined = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -216,56 +240,96 @@ const boundedClient = (limits: Limits, transform?: (payload: unknown) => unknown
         (request: HttpClientRequest.HttpClientRequest, bytes: number) =>
         <E, R>(effect: Effect.Effect<HttpClientResponse.HttpClientResponse, E, R>) =>
           Effect.timeoutOrElse(effect, { duration: requestTimeout, orElse: () => discard("stalled", request, bytes) })
-      // Sends the parts in order and answers the first refusal, which the
-      // upstream exporter retries as one batch: a part already accepted is then
-      // sent again, never lost.
-      const sendParts = (request: HttpClientRequest.HttpClientRequest, bytes: number) =>
-        Effect.suspend(() => {
-          const body = (request.body as HttpBody.Uint8Array).body
-          const { requests, oversized } = Split.split(body, limits.maxRequestBytes, limits.maxRecords)
-          const loss = oversized === 0 ? Effect.void : discard("oversized", request, bytes)
-          const each = Effect.forEach(requests, (part) =>
-            Effect.suspend(() => {
-              const one = HttpClientRequest.bodyUint8Array(request, part, "application/json")
-              return confined(client.execute(one)).pipe(deadline(one, part.byteLength))
-            }))
-          return Effect.map(Effect.andThen(loss, each), (answers) =>
-            answers.find((answer) => answer.status < 200 || answer.status >= 300)
-              ?? answers[answers.length - 1]
-              ?? HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
-        })
-      return HttpClient.mapRequest(
-        HttpClient.transform(client, (requestEffect, request) =>
-          Effect.suspend(() => {
-            // layerJson always supplies a Uint8Array body with a byte length.
-            const bytes = (request.body as HttpBody.Uint8Array).contentLength
-            const whole = bytes <= limits.maxRequestBytes && limits.maxRecords === Infinity
-            const sent = whole ? confined(requestEffect).pipe(deadline(request, bytes)) : sendParts(request, bytes)
-            return sent.pipe(
-              permits.withPermitsIfAvailable(1),
-              Effect.flatMap(Option.match({
-                onNone: () =>
-                  discard("saturated", request, bytes),
-                onSome: Effect.succeed
-              }))
-            )
-          })),
-        (request) => {
-          // Sanitize the encoded boundary, including upstream log-to-span events
-          // and attributes supplied when a span was created. Size/split checks
-          // must see the redacted bytes, which can grow for short secrets.
-          const body = (request.body as HttpBody.Uint8Array).body
-          return HttpClientRequest.bodyUint8Array(
-            request,
-            ExportRedaction.redact(
-              transform === undefined
-                ? body
-                : new TextEncoder().encode(JSON.stringify(transform(JSON.parse(new TextDecoder().decode(body)))))
-            ),
-            "application/json"
-          )
+      const accepted = (answer: HttpClientResponse.HttpClientResponse) => answer.status >= 200 && answer.status < 300
+      // Sanitize the encoded boundary, including upstream log-to-span events
+      // and attributes supplied when a span was created. Size/split checks
+      // must see the redacted bytes, which can grow for short secrets. Only
+      // the application's policy can throw.
+      const encode = (body: Uint8Array): Uint8Array | undefined => {
+        let policed = body
+        if (transform !== undefined) {
+          try {
+            const json: string | undefined = JSON.stringify(transform(JSON.parse(new TextDecoder().decode(body))))
+            if (json === undefined) return undefined
+            policed = new TextEncoder().encode(json)
+          } catch {
+            return undefined
+          }
         }
-      )
+        return ExportRedaction.redact(policed)
+      }
+      // The exporter retries a batch by sending the same body again, so the
+      // body names the batch across its attempts.
+      const batches = new WeakMap<Uint8Array, Batch>()
+      const prepare = (request: HttpClientRequest.HttpClientRequest) =>
+        Effect.suspend((): Effect.Effect<Batch | undefined> => {
+          // layerJson always supplies a Uint8Array body.
+          const body = (request.body as HttpBody.Uint8Array).body
+          const known = batches.get(body)
+          if (known !== undefined) return Effect.succeed(known)
+          const encoded = encode(body)
+          if (encoded === undefined) return Effect.as(report("transform", body.byteLength), undefined)
+          const bytes = encoded.byteLength
+          const { requests, oversized } = bytes <= limits.maxRequestBytes && limits.maxRecords === Infinity
+            ? { requests: [encoded], oversized: 0 }
+            : Split.split(encoded, limits.maxRequestBytes, limits.maxRecords)
+          const batch: Batch = { parts: requests, bytes, attempts: 0, accepted: 0 }
+          batches.set(body, batch)
+          return oversized === 0 ? Effect.succeed(batch) : Effect.as(report("oversized", bytes), batch)
+        })
+      // Sends the parts the collector has not accepted, in order, and stops at
+      // the first refusal, which answers for the batch.
+      const sendFrom = (
+        batch: Batch,
+        request: HttpClientRequest.HttpClientRequest
+      ): Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError> =>
+        Effect.suspend(() => {
+          const part = batch.parts[batch.accepted]
+          if (part === undefined) return Effect.succeed(noContent(request))
+          const one = HttpClientRequest.bodyUint8Array(request, part, "application/json")
+          return confined(client.execute(one)).pipe(
+            deadline(one, part.byteLength),
+            Effect.flatMap((answer) => {
+              if (!accepted(answer)) return Effect.succeed(answer)
+              batch.accepted++
+              return batch.accepted === batch.parts.length ? Effect.succeed(answer) : sendFrom(batch, request)
+            })
+          )
+        })
+      // A refusal or failure the exporter retries leaves the batch to its next
+      // attempt. Any other, and the last transient one, loses the batch: it
+      // counts as a discard, and the exporter still receives it.
+      const attempt = (batch: Batch, request: HttpClientRequest.HttpClientRequest) => {
+        batch.attempts++
+        const retried = (transient: boolean) => transient && batch.attempts < exporterAttempts
+        const settle = (reason?: LossReason, status?: number) =>
+          Effect.andThen(
+            Effect.sync(() => batches.delete((request.body as HttpBody.Uint8Array).body)),
+            reason === undefined ? Effect.void : report(reason, batch.bytes, status)
+          )
+        return sendFrom(batch, request).pipe(
+          permits.withPermitsIfAvailable(1),
+          Effect.flatMap(Option.match({
+            onNone: () => Effect.andThen(settle(), discard("saturated", request, batch.bytes)),
+            onSome: (answer) =>
+              accepted(answer)
+                ? Effect.as(settle(), answer)
+                : retried(HttpClient.isTransientResponse(answer))
+                ? Effect.succeed(answer)
+                : Effect.as(settle("refused", answer.status), answer)
+          })),
+          Effect.tapCause((cause) =>
+            Cause.hasInterruptsOnly(cause) || retried(HttpClient.isTransientError(Cause.squash(cause)))
+              ? Effect.void
+              : settle("failed")
+          )
+        )
+      }
+      return HttpClient.transform(client, (_, request) =>
+        Effect.flatMap(prepare(request), (batch) =>
+          batch === undefined
+            ? Effect.succeed(noContent(request))
+            : attempt(batch, request)))
     })
   )
 
@@ -413,7 +477,12 @@ export interface Options {
    * would drop.
    */
   readonly spans?: ReadonlyArray<string> | undefined
-  /** Application privacy policy on OTLP/JSON, before credential redaction, splitting and transport. */
+  /**
+   * Application privacy policy on OTLP/JSON, before credential redaction,
+   * splitting and transport. It runs once per batch. A batch it throws on, or
+   * whose result `JSON.stringify` cannot encode as JSON, is discarded and counted with
+   * reason `transform`.
+   */
   readonly transform?: ((payload: unknown) => unknown) | undefined
   /**
    * The largest export request the collector accepts, in encoded bytes, at
@@ -437,14 +506,19 @@ export interface Options {
  * defaults, JSON-serialized. Exports share a four-request limit with no waiting
  * queue. A batch larger than 1 MiB, or than {@link Options.maxRequestBytes}
  * or {@link Options.maxRecords}, is split into requests under both limits and
- * sent in order under one of those four; a refused part answers for the whole
- * batch, which the exporter retries, so a part may arrive twice but none is
- * lost. A record too large for a request on its own, and a request stalled
- * for ten seconds, are discarded;
- * `flows_observability_otlp_dropped` counts discarded batches, and at most
- * once a minute a `Warn` record with code `otlp_export_discarded` names the
- * reason, the request size, and the running total through the loggers that
- * were installed when the layer was acquired, never through this exporter.
+ * sent in order under one of those four. Sending stops at the first refused
+ * part, which answers for the whole batch, and the exporter's retry resumes
+ * at that part, so a part the collector accepted is not sent again. The
+ * exporter retries a 408, 429, 500, 502, 503 or 504 answer and a transport
+ * failure three times, and nothing else. Lost, and counted, are a record too large for a
+ * request on its own, a request stalled for ten seconds, a batch finding all
+ * four requests in flight, a batch whose {@link Options.transform} throws, and
+ * a batch the collector refused or the transport failed once the exporter
+ * stops retrying it. `flows_observability_otlp_dropped` counts lost batches,
+ * and at most once a minute a `Warn` record with code `otlp_export_discarded`
+ * names the reason, the collector's status when it answered, the request
+ * size, and the running total through the loggers that were installed when
+ * the layer was acquired, never through this exporter.
  * A collector's response body is never read: the exporter acts on the status
  * and the `retry-after` header, and the exchange ends when they arrive.
  * With {@link Options.spans}, only the spans it names are exported.

@@ -10,5 +10,5 @@
   requests when they must be.
 - **Only an oversized record is discarded.** A record too large for a request on its own is left out and counted
   `oversized`; the rest of its batch is sent. Before, the whole batch was discarded.
-- **At least once.** A refused part answers for the whole batch, which the exporter retries, so a part may arrive
-  twice but none is lost.
+- **Resumes at a refused part.** Sending stops at the first refused part, which answers for the whole batch, and the
+  exporter's retry resumes there, so a part the collector accepted is not sent again.

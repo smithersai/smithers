@@ -30655,14 +30655,27 @@ cannot add unvalidated metadata to these explicit resources.
 A batch over `Options.maxRequestBytes` or `Options.maxRecords` is split into
 requests under both, in order, each record with its own resource and scope; a
 metric's data points are spread over requests when they must be. The parts go
-one after another under one of the four request slots. A refused part answers
-for the whole batch, which the exporter retries, so a part may arrive twice
-but none is lost. A record too large for any request on its own, a request
-stalled for ten seconds, and a batch finding all four slots occupied are
-discarded locally. Each discard increments
-`flows_observability_otlp_dropped`. A `Warn` diagnostic with code
-`otlp_export_discarded` reports `reason` (`oversized`, `stalled`, or `saturated`),
-`bytes`, `limit`, and cumulative `dropped` at most once per minute per transport.
+one after another under one of the four request slots. Sending stops at the
+first refused part, which answers for the whole batch, and the exporter's
+retry resumes at that part, so a part the collector accepted is not sent
+again. The exporter retries a 408, 429, 500, 502, 503 or 504 answer and a
+transport failure three times, and nothing else.
+
+These batches are lost, and each increments
+`flows_observability_otlp_dropped`:
+
+- a record too large for any request on its own (`oversized`);
+- a request stalled for ten seconds (`stalled`);
+- a batch finding all four slots occupied (`saturated`);
+- a batch whose `Options.transform` throws (`transform`);
+- a batch the collector refused once the exporter stops retrying it
+  (`refused`), such as a 401, a 404, or a 503 after three retries;
+- a batch whose transport failed once the exporter stops retrying it
+  (`failed`).
+
+A `Warn` diagnostic with code `otlp_export_discarded` reports `reason`, the
+collector's `status` for `refused`, `bytes`, `limit`, and cumulative
+`dropped` at most once per minute per transport.
 It uses the logger set captured before this exporter is installed, so it cannot
 re-enter this exporter. Request bodies, headers, URLs, and ambient log
 annotations are omitted. Keep an ambient sink outside OTLP at level `Warn` or
