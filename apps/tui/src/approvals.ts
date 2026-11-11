@@ -28,6 +28,7 @@ import { accessSync, constants, lstatSync, readFileSync, readlinkSync, realpathS
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import * as Changes from "./changes.ts"
 import type * as Monitors from "./monitors.ts"
+import * as Timer from "./timer.ts"
 
 /** `ask` waits for y/n, `all` asks nothing, `deny` refuses every consequential call. */
 export type Mode = "ask" | "all" | "deny"
@@ -1087,8 +1088,7 @@ export const poll = (read: () => Promise<unknown>, ms = pollMs): () => void => {
     })
   }
   tick()
-  const timer = setInterval(tick, ms)
-  return () => clearInterval(timer)
+  return Timer.every(ms, tick)
 }
 
 /**

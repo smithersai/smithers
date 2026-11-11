@@ -4,6 +4,7 @@
  * `spawn` exposes stdout as a web stream with an `exited` status like
  * `Bun.spawn`.
  */
+import { Effect } from "effect"
 import { spawn as spawnChild } from "node:child_process"
 import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
@@ -27,7 +28,7 @@ export const stopGroup = async (pid: number, graceMs = 1000): Promise<void> => {
       signal("SIGKILL")
       return
     }
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await Effect.runPromise(Effect.sleep(20))
   }
 }
 

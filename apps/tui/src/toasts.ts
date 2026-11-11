@@ -6,6 +6,7 @@ import * as Lifecycle from "./lifecycle.ts"
 import type { TextSearch } from "./picker.ts"
 import { flowGlyph, tabTitle } from "./surfaces.ts"
 import * as Tabs from "./tabs.ts"
+import * as Timer from "./timer.ts"
 import type { Tab } from "./workspace.ts"
 
 export interface Toast {
@@ -102,8 +103,7 @@ export const useToast = () => {
     if (toast === undefined) return
     const delay = noticeDismissDelay(toast.tone === "danger" ? "failed" : "ok")
     if (delay === undefined) return
-    const timer = setTimeout(() => setToast(undefined), delay)
-    return () => clearTimeout(timer)
+    return Timer.after(delay, () => setToast(undefined))
   }, [toast])
   return { toast, setStatus, clearFailure }
 }

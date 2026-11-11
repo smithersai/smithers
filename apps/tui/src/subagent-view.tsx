@@ -12,6 +12,7 @@ import * as Subagents from "./subagents.ts"
 import { tabTitle } from "./surfaces.ts"
 import * as Tabs from "./tabs.ts"
 import { color } from "./theme.ts"
+import * as Timer from "./timer.ts"
 import { TranscriptRail } from "./transcript-rail.tsx"
 import type * as Transcript from "./transcript.ts"
 import * as Tree from "./tree.ts"
@@ -303,7 +304,7 @@ export function GraphView(props: {
 }) {
   const box = useRef<ScrollBoxRenderable>(null)
   // The scroll for a selection waits for layout; a person's own scroll before it lands supersedes it.
-  const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const pending = useRef<Timer.Cancel | undefined>(undefined)
   // The clock redraws the app ten times a second; the forest is drawn again only when it changes.
   const shape = JSON.stringify(props.root)
   const drawn = useMemo(
@@ -318,7 +319,7 @@ export function GraphView(props: {
   )
   if (props.scrollRef !== undefined) {
     props.scrollRef.current = (direction) => {
-      clearTimeout(pending.current)
+      pending.current?.()
       box.current?.scrollBy(direction * 0.5, "viewport")
     }
   }
@@ -327,11 +328,11 @@ export function GraphView(props: {
   // After layout: before it the view has no size and clamps the scroll to 0. A new forest's size counts too.
   useEffect(() => {
     if (at === undefined) return
-    pending.current = setTimeout(
-      () => box.current?.scrollTo({ x: Math.max(0, at.x - 2), y: Math.max(0, at.y - 1) }),
-      0
+    pending.current = Timer.after(
+      0,
+      () => box.current?.scrollTo({ x: Math.max(0, at.x - 2), y: Math.max(0, at.y - 1) })
     )
-    return () => clearTimeout(pending.current)
+    return () => pending.current?.()
   }, [props.selected, at?.x, at?.y, drawn.rows.length])
   return (
     <scrollbox ref={box} scrollX scrollY style={{ flexGrow: 1, scrollbarOptions: { visible: false } }}>

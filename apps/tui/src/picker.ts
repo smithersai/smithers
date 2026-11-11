@@ -14,6 +14,7 @@ import * as Search from "./search.ts"
 import * as Session from "./session.ts"
 import { color } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
+import * as Timer from "./timer.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
 import type { Tab } from "./workspace.ts"
@@ -226,7 +227,7 @@ export const useSearch = (options: {
     setSearch(undefined)
     if (textQuery === undefined) return
     let running: ReturnType<typeof Search.run> | undefined
-    const timer = setTimeout(() => {
+    const cancel = Timer.after(150, () => {
       running = Search.run({
         cwd,
         query: textQuery.query,
@@ -248,9 +249,9 @@ export const useSearch = (options: {
         setSearch(undefined)
         setStatus(Failures.line("search", Search.failure(outcome)), "danger")
       })
-    }, 150)
+    })
     return () => {
-      clearTimeout(timer)
+      cancel()
       running?.cancel()
     }
   }, [textKey, cwd])

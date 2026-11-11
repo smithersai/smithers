@@ -24,6 +24,7 @@ import * as Session from "./session.ts"
 import * as Steering from "./steering.ts"
 import * as Summary from "./summary.ts"
 import { TabError } from "./tab-error.ts"
+import * as Timer from "./timer.ts"
 import * as Transcript from "./transcript.ts"
 import * as Tree from "./tree.ts"
 import * as Undo from "./undo.ts"
@@ -739,7 +740,7 @@ export class Workspace {
           this.tabs.get(tab.id)?.status === "requested" || this.tabs.get(tab.id)?.status === "waiting")
       ) this.relaunch(tab)
     }
-    if (tab.status === "parked" && (tab.wakeAt ?? 0) > Date.now()) setTimeout(resume, tab.wakeAt! - Date.now())
+    if (tab.status === "parked" && (tab.wakeAt ?? 0) > Date.now()) Timer.after(tab.wakeAt! - Date.now(), resume)
     else queueMicrotask(resume)
   }
   /** Launches a requested tab; an agent's body is read first. */
@@ -1677,12 +1678,12 @@ export class Workspace {
     const wakeAt = Math.max(Date.now(), tab.wakeAt ?? Date.now() + 15 * 60_000)
     // The user chose this wait, so the resumed run gets a fresh park budget.
     const waiting = this.tabs.move({ ...tab, wakeAt, endedAt: undefined, parks: undefined }, "sleep")!
-    setTimeout(() => {
+    Timer.after(wakeAt - Date.now(), () => {
       const current = this.tabs.get(id)
       if (
         current?.status === "parked" && current.file === tab.file && current.continuationId === tab.continuationId
       ) this.relaunch(waiting)
-    }, wakeAt - Date.now())
+    })
   }
   dispose = (): void => {
     this.unsubscribeAsks()

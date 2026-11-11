@@ -8,6 +8,7 @@
  *
  * @since 1.0.0
  */
+import { ImportRules } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { Package as cli } from "../../packages/smithers/PACKAGE.ts"
 
@@ -67,6 +68,35 @@ const e2eTests = Smithers.NodeTest({
   srcs: sources,
   deps: [cli.nativeSources],
   cwd
+})
+
+/**
+ * Fails when an app source starts a host timer or hand-rolls a retry. UI
+ * timing goes through `src/timer.ts`, whose fibers are interrupted on cleanup;
+ * a retry or backoff belongs to the flow engine.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const importRules = ImportRules({
+  cwd,
+  rules: [
+    {
+      kind: "forbidCalls",
+      files: ["src/**"],
+      callees: [
+        "setTimeout",
+        "setInterval",
+        "Effect.retry",
+        "Stream.retry",
+        "Schedule.exponential",
+        "Schedule.fibonacci"
+      ],
+      because: "durable.no-hand-rolled-durability: a timer is an Effect fiber from src/timer.ts, interrupted " +
+        "when its owner closes, and retries come from the @smthrs/flow engine, never app code. See " +
+        "\"Everything is a durable flow\" in the root AGENTS.md."
+    }
+  ]
 })
 
 /**
@@ -271,5 +301,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, unitTests, e2eTests, lint, fmt, ...securityReview }
+  targets: { check, unitTests, e2eTests, importRules, lint, fmt, ...securityReview }
 })

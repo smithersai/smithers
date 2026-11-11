@@ -12,6 +12,7 @@ import * as Failures from "./failures.ts"
 import type { FlowDiscoveryFailed } from "./flows.ts"
 import * as Log from "./log.ts"
 import type { Failure as MonitorFailure } from "./monitors.ts"
+import * as Timer from "./timer.ts"
 
 export interface Watcher {
   readonly dispose: () => void
@@ -71,7 +72,7 @@ const initial = (directory: string): Snapshot => {
 /** Calls `refresh` once per burst of changes under `<cwd>/.smithers/flows`, including its creation. */
 export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): Watcher => {
   const directory = join(cwd, projectFlowsDirectory)
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let timer: Timer.Cancel | undefined
   let tree: FSWatcher | undefined
   let parent: FSWatcher | undefined
   let closed = false
@@ -120,11 +121,11 @@ export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): 
   }
   const changed = () => {
     if (closed) return
-    if (timer !== undefined) clearTimeout(timer)
-    timer = setTimeout(() => {
+    timer?.()
+    timer = Timer.after(debounce, () => {
       timer = undefined
       if (!closed) refresh()
-    }, debounce)
+    })
   }
   const open = (root: string | undefined) => {
     if (closed || attached === root) return
@@ -244,12 +245,12 @@ export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): 
     if (!missing(error)) observerFailed(error)
   }
   open(baseline?.root)
-  const interval = setInterval(reconcile, reconcileMs)
+  const interval = Timer.every(reconcileMs, reconcile)
   return {
     dispose: () => {
       closed = true
-      clearInterval(interval)
-      if (timer !== undefined) clearTimeout(timer)
+      interval()
+      timer?.()
       tree?.close()
       parent?.close()
     }

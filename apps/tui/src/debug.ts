@@ -16,6 +16,7 @@
  */
 import { appendFileSync } from "node:fs"
 import { join } from "node:path"
+import * as Timer from "./timer.ts"
 
 /** What asked for a render: a streamed worker or model event, the person's input, or anything else. */
 export type Kind = "stream" | "input" | "other"
@@ -292,7 +293,7 @@ const tracker = make({
     }
   },
   schedule: (flush) => {
-    setTimeout(flush, 250).unref()
+    Timer.after(250, flush)
   }
 })
 
@@ -316,11 +317,11 @@ const lagEvery = 20
 export const install = (): void => {
   if (!tracker.enabled) return
   let last = performance.now()
-  setInterval(() => {
+  Timer.every(lagEvery, () => {
     const at = performance.now()
     const late = at - last - lagEvery
     last = at
     if (late > slowMs) blocked(late)
-  }, lagEvery).unref()
+  })
   process.on("exit", finish)
 }

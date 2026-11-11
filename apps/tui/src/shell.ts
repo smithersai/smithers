@@ -12,6 +12,7 @@ import { delimiter, join } from "node:path"
 import * as Log from "./log.ts"
 import * as Output from "./shell-output.ts"
 import { stopGroup } from "./subprocess.ts"
+import * as Timer from "./timer.ts"
 
 /** The kept tail, and past it the full output goes to a file (pi's limits). */
 export const maxLines = 2000
@@ -111,7 +112,7 @@ export const run = (options: {
   let spill: string | undefined
   let unwritable = false
   let pending = ""
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let timer: Timer.Cancel | undefined
   let cancelled = false
   let settled = false
   let stopping: Promise<void> | undefined
@@ -126,7 +127,7 @@ export const run = (options: {
     }
   }
   const flush = () => {
-    if (timer !== undefined) clearTimeout(timer)
+    timer?.()
     timer = undefined
     if (pending === "") return
     const text = pending
@@ -147,7 +148,7 @@ export const run = (options: {
     kept = (kept + text).slice(-memory)
     if (kept.charCodeAt(0) >= 0xdc00 && kept.charCodeAt(0) <= 0xdfff) kept = kept.slice(1)
     pending += text
-    timer ??= setTimeout(flush, flushMs)
+    timer ??= Timer.after(flushMs, flush)
   }
   const redactor = Output.redactor(env)
   for (const pipe of [child.stdout, child.stderr]) {

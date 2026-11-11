@@ -15,6 +15,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Data, Effect } from "effect"
 import * as Failures from "./failures.ts"
 import type * as Session from "./session.ts"
+import * as Timer from "./timer.ts"
 
 export type Source =
   /** A background worker tab's transcript. */
@@ -224,26 +225,23 @@ export class Monitors {
     this.disarm(monitor.id)
     this.bump(monitor.id)
     if (monitor.trigger.kind === "interval") {
-      const every = this.ports.every ?? ((ms, run) => {
-        const timer = setInterval(run, ms)
-        return () => clearInterval(timer)
-      })
+      const every = this.ports.every ?? Timer.every
       const stop = every(monitor.trigger.seconds * 1000, () => void this.tick(monitor.id))
       this.stops.set(monitor.id, stop)
       // The first tick records the baseline, so the first change is judged against now.
       queueMicrotask(() => void this.tick(monitor.id))
       return
     }
-    let pending: ReturnType<typeof setTimeout> | undefined
+    let pending: Timer.Cancel | undefined
     const unsubscribe = this.ports.subscribe(monitor.source, () => {
       if (pending !== undefined) return
-      pending = setTimeout(() => {
+      pending = Timer.after(this.ports.settleMs ?? 2000, () => {
         pending = undefined
         void this.tick(monitor.id)
-      }, this.ports.settleMs ?? 2000)
+      })
     })
     this.stops.set(monitor.id, () => {
-      if (pending !== undefined) clearTimeout(pending)
+      pending?.()
       unsubscribe()
     })
     queueMicrotask(() => void this.tick(monitor.id))

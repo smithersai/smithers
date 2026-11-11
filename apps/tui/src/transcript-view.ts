@@ -16,6 +16,7 @@ import * as Subagents from "./subagents.ts"
 import { tabTitle } from "./surfaces.ts"
 import { lane as laneColor } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
+import * as Timer from "./timer.ts"
 import type * as Transcript from "./transcript.ts"
 import type { Tab } from "./workspace.ts"
 
@@ -181,13 +182,12 @@ export const useTranscriptView = (options: {
     if (box === null) return
     box.scrollTop = position.scrollTop
     // Native layout settles after React has mounted a returned tab.
-    const timer = setTimeout(() => {
+    return Timer.after(60, () => {
       if (restore.current !== position) return
       restore.current = undefined
       const returned = viewport()
       if (returned !== null) returned.scrollTop = position.scrollTop
-    }, 60)
-    return () => clearTimeout(timer)
+    })
   }, [surface, inspection])
   useLayoutEffect(() => {
     if (liveEdge === 0) return
@@ -202,21 +202,20 @@ export const useTranscriptView = (options: {
       if (message !== undefined) box.scrollChildIntoView(`${message.id}:text`)
     }
     follow()
-    const timer = setTimeout(() => {
+    return Timer.after(60, () => {
       follow()
       setLiveEdge(0)
-    }, 60)
-    return () => clearTimeout(timer)
+    })
   }, [liveEdge, surface])
   const pendingReveal = useRef<
     {
       inspection: NonNullable<typeof inspection>
-      timer: ReturnType<typeof setTimeout>
+      timer: Timer.Cancel
     } | undefined
   >(undefined)
   const cancelReveal = useCallback(() => {
     if (pendingReveal.current === undefined) return
-    clearTimeout(pendingReveal.current.timer)
+    pendingReveal.current.timer()
     pendingReveal.current = undefined
   }, [])
   useLayoutEffect(() => cancelReveal, [cancelReveal])
@@ -333,11 +332,11 @@ export const useTranscriptView = (options: {
     const key = Timeline.key(id)
     reveal(key)
     // Layout may settle after the inspected row changes; aim again then.
-    const timer = setTimeout(() => {
+    const timer = Timer.after(60, () => {
       if (pendingReveal.current?.timer !== timer) return
       pendingReveal.current = undefined
       reveal(key)
-    }, 60)
+    })
     pendingReveal.current = { inspection: nextInspection, timer }
   }
   const followLive = () => {

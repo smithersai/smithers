@@ -12,6 +12,7 @@ import { constants, realpathSync } from "node:fs"
 import { open, stat } from "node:fs/promises"
 import { isAbsolute, relative, resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
+import * as Timer from "./timer.ts"
 
 export interface Patch {
   readonly path: string
@@ -149,7 +150,7 @@ const command = async (
       cwd,
       env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", ...env }
     })
-    const timer = setTimeout(() => child.kill(), 5000)
+    const stop = Timer.after(5000, () => child.kill())
     try {
       const decoder = new TextDecoder()
       let output = ""
@@ -166,7 +167,7 @@ const command = async (
       output += decoder.decode()
       return await child.exited === 0 ? output : undefined
     } finally {
-      clearTimeout(timer)
+      stop()
     }
   } catch (error) {
     Log.write("changes.command", error)

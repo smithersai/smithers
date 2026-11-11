@@ -79,6 +79,7 @@
   "src/target-approvals.ts",
   "src/theme.ts",
   "src/timeline.ts",
+  "src/timer.ts",
   "src/toasts.ts",
   "src/transcript-rail.tsx",
   "src/transcript-view.ts",

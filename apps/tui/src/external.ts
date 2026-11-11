@@ -2,6 +2,7 @@
  * Leaving the TUI for another program: Ctrl+G's external editor, and the
  * bounded wait on quit.
  */
+import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -123,11 +124,6 @@ export const quitMs = 3000
 
 /** Settles when `work` does or after `ms`, whichever is first: a hung close never keeps the process alive. */
 export const bounded = (work: Promise<unknown>, ms = quitMs): Promise<void> =>
-  new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    const done = () => {
-      clearTimeout(timer)
-      resolve()
-    }
-    work.then(done, done)
-  })
+  Effect.runPromise(
+    Effect.promise(() => work.then(() => undefined, () => undefined)).pipe(Effect.timeoutOption(ms), Effect.asVoid)
+  )

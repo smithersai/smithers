@@ -4,6 +4,7 @@ import { parseArgs } from "@smthrs/ui/flow-arguments"
 import { NOTICE_SETTLE_MS } from "@smthrs/ui/notification-policy"
 import * as Failures from "./failures.ts"
 import * as Log from "./log.ts"
+import * as Timer from "./timer.ts"
 /**
  * The terminal UI: a transcript of cells above a composer.
  *
@@ -264,11 +265,11 @@ export function App(props: AppProps) {
         run: flows.read,
         shell: (command, signal) => {
           const running = Shell.run({ command, cwd: props.host.cwd, onOutput: () => {} })
-          const timer = setTimeout(running.cancel, 30_000)
+          const deadline = Timer.after(30_000, running.cancel)
           signal?.addEventListener("abort", running.cancel, { once: true })
           if (signal?.aborted) running.cancel()
           return running.done.finally(() => {
-            clearTimeout(timer)
+            deadline()
             signal?.removeEventListener("abort", running.cancel)
           })
         }
@@ -384,9 +385,9 @@ export function App(props: AppProps) {
     }), [contributions])
   useEffect(() => {
     runs.refresh()
-    const warm = setTimeout(() => runs.warm(), 0)
+    const warm = Timer.after(0, () => runs.warm())
     return () => {
-      clearTimeout(warm)
+      warm()
       void runs.dispose()
     }
   }, [runs])
@@ -648,10 +649,10 @@ export function App(props: AppProps) {
       }
     }
     void read()
-    const timer = setInterval(() => void read(), 30_000)
+    const stop = Timer.every(30_000, () => void read())
     return () => {
       controller.abort()
-      clearInterval(timer)
+      stop()
     }
   }, [smithersShown, factoryRepo])
   const smithersPanel = homeApps.length === 0 && factoryRepo === undefined
@@ -1197,8 +1198,7 @@ export function App(props: AppProps) {
   }, [props.targets, setStatus])
   useEffect(() => {
     readTargets()
-    const timer = setInterval(readTargets, 10_000)
-    return () => clearInterval(timer)
+    return Timer.every(10_000, readTargets)
   }, [readTargets])
 
   const quitting = useRef(false)
