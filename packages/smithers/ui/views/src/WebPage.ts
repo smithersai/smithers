@@ -101,7 +101,7 @@ export const REASONS = [
 export type Reason = (typeof REASONS)[number]
 
 /**
- * The longest title a preview keeps, in characters.
+ * The longest title a preview keeps, in UTF-16 code units.
  *
  * @category constants
  * @since 0.1.0
@@ -109,7 +109,7 @@ export type Reason = (typeof REASONS)[number]
 export const MAX_TITLE = 200
 
 /**
- * The longest description a preview keeps, in characters.
+ * The longest description a preview keeps, in UTF-16 code units.
  *
  * @category constants
  * @since 0.1.0
@@ -117,7 +117,7 @@ export const MAX_TITLE = 200
 export const MAX_DESCRIPTION = 300
 
 /**
- * The longest icon URL a preview keeps, in characters.
+ * The longest icon URL a preview keeps, in UTF-16 code units.
  *
  * @category constants
  * @since 0.1.0
@@ -327,12 +327,18 @@ const decodeEntities = (text: string): string =>
     return code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff) ? String.fromCodePoint(code) : match
   })
 
-/** Whitespace collapsed, at most `max` characters, cut with an ellipsis; nothing when empty. */
+/** Whitespace collapsed, at most `max` UTF-16 code units, cut between code points with an ellipsis; nothing when empty. */
 const clean = (text: string | undefined, max: number): string | undefined => {
   if (text === undefined) return undefined
-  const collapsed = [...decodeEntities(text).replace(/\s+/g, " ").trim()]
+  const collapsed = decodeEntities(text).replace(/\s+/g, " ").trim()
   if (collapsed.length === 0) return undefined
-  return collapsed.length <= max ? collapsed.join("") : `${collapsed.slice(0, max - 1).join("").trimEnd()}…`
+  if (collapsed.length <= max) return collapsed
+  let kept = ""
+  for (const point of collapsed) {
+    if (kept.length + point.length > max - 1) break
+    kept += point
+  }
+  return `${kept.trimEnd()}…`
 }
 
 /** One tag's attributes, names lowercased, values decoded; a repeated name keeps its first value. */
@@ -380,14 +386,14 @@ const iconUrl = (href: string, base: URL): string | undefined => {
  *   kept.
  *
  * Text is decoded, whitespace collapsed, and cut to {@link MAX_TITLE} and
- * {@link MAX_DESCRIPTION} characters. The scan is linear in the input.
+ * {@link MAX_DESCRIPTION} UTF-16 code units without splitting a code point.
+ * The scan is linear in the input.
  *
  * @category previews
  * @since 0.1.0
  */
 export const preview = (html: string, pageUrl: string): Preview => {
   const page = new URL(pageUrl)
-  const lower = html.toLowerCase()
   const meta = new Map<string, string>()
   let title: string | undefined
   let base = page
@@ -396,13 +402,13 @@ export const preview = (html: string, pageUrl: string): Preview => {
   while (cursor < html.length) {
     const open = html.indexOf("<", cursor)
     if (open === -1) break
-    if (lower.startsWith("<!--", open)) {
-      const end = lower.indexOf("-->", open + 4)
+    if (html.startsWith("<!--", open)) {
+      const end = html.indexOf("-->", open + 4)
       if (end === -1) break
       cursor = end + 3
       continue
     }
-    const name = /^<\/?([a-z][a-z0-9-]*)/.exec(lower.slice(open, open + 32))?.[1]
+    const name = /^<\/?([a-z][a-z0-9-]*)/i.exec(html.slice(open, open + 32))?.[1]?.toLowerCase()
     if (name === undefined) {
       cursor = open + 1
       continue
@@ -410,11 +416,13 @@ export const preview = (html: string, pageUrl: string): Preview => {
     // Every scan for `>` starts past the last one, so the whole pass stays linear.
     const close = html.indexOf(">", open + 1)
     if (close === -1) break
-    if (lower[open + 1] === "/" ? name === "head" : name === "body") break
+    if (html[open + 1] === "/" ? name === "head" : name === "body") break
     cursor = close + 1
-    if (lower[open + 1] === "/") continue
+    if (html[open + 1] === "/") continue
     if (name === "title" || RAW_TEXT.has(name)) {
-      const end = lower.indexOf(`</${name}`, cursor)
+      const closing = new RegExp(`</${name}`, "gi")
+      closing.lastIndex = cursor
+      const end = closing.exec(html)?.index ?? -1
       if (name === "title") title ??= html.slice(cursor, end === -1 ? html.length : end)
       if (end === -1) break
       cursor = end

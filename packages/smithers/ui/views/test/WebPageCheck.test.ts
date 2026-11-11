@@ -8,6 +8,7 @@
 import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 import * as Tracer from "effect/Tracer"
 import { createServer, type IncomingHttpHeaders, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -42,6 +43,13 @@ const HEAD = `<title>Frames welcome</title><meta name="description" content="A p
 
 const routes: Record<string, (response: ServerResponse) => void> = {
   "/allows": page(200, {}, `<!doctype html><html><head>${HEAD}</head><body>Hello</body></html>`),
+  "/unicode": page(
+    200,
+    {},
+    `<head><title>İstanbul ${"🙂".repeat(200)}</title>` +
+      `<meta name="description" content="🎉 ${"Big savings on everything this week. ".repeat(10)}">` +
+      `<link rel="icon" href="https://cdn.example.com/i.png"></head>`
+  ),
   "/deny": page(200, { "x-frame-options": "DENY" }, `<head><title>Refuses</title></head>`),
   "/csp": page(200, { "content-security-policy": "frame-ancestors 'self'" }, `<title>Self only</title>`),
   "/pdf": page(200, {}, "%PDF-1.7", "application/pdf"),
@@ -135,6 +143,18 @@ describe("WebPage.check: framing and previews", () => {
       description: "A page that lets others frame it.",
       icon: "https://cdn.example.com/icon.png"
     })
+  })
+
+  it("returns a Unicode preview that survives the consumer's JSON schema decoder", async () => {
+    const checked = await check(`${origin}/unicode`)
+    expect(checked).toMatchObject({
+      framing: "allowed",
+      status: 200,
+      title: `İstanbul ${"🙂".repeat(95)}…`,
+      description: `🎉 ${"Big savings on everything this week. ".repeat(10).slice(0, 296).trimEnd()}…`,
+      icon: "https://cdn.example.com/i.png"
+    })
+    expect(Schema.decodeUnknownSync(Schema.fromJsonString(WebPage.Checked))(JSON.stringify(checked))).toEqual(checked)
   })
 
   it("sends the request a frame sends: no cookies, a declared agent", async () => {

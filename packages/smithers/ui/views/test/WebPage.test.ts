@@ -4,6 +4,8 @@
  * that request a page run against a real HTTP server in
  * `WebPageCheck.test.ts`.
  */
+import * as Schema from "effect/Schema"
+import * as fc from "fast-check"
 import { describe, expect, it } from "vitest"
 import { WebPage } from "../src/index.ts"
 
@@ -219,13 +221,87 @@ describe("WebPage.preview", () => {
     })
   })
 
-  it("cuts a long title and description with an ellipsis, by character", () => {
+  it("cuts a long title and description with an ellipsis without splitting a code point", () => {
     const long = page(`<title>${"é".repeat(500)}</title><meta name="description" content="${"🙂".repeat(500)}">`)
     expect([...long.title!]).toHaveLength(WebPage.MAX_TITLE)
     expect(long.title!.endsWith("é…")).toBe(true)
-    expect([...long.description!]).toHaveLength(WebPage.MAX_DESCRIPTION)
+    expect(long.description).toBe(`${"🙂".repeat(149)}…`)
+    expect(Schema.is(WebPage.Preview)(long)).toBe(true)
     const exact = page(`<title>${"a".repeat(WebPage.MAX_TITLE)}</title>`)
     expect(exact.title).toBe("a".repeat(WebPage.MAX_TITLE))
+  })
+
+  it.each(
+    [
+      ["title", WebPage.MAX_TITLE],
+      ["description", WebPage.MAX_DESCRIPTION]
+    ] as const
+  )("bounds %s by its schema's UTF-16 length and keeps whole code points", (field, max) => {
+    const cases = [
+      ["a".repeat(max), "a".repeat(max)],
+      ["a".repeat(max - 2) + "🙂", "a".repeat(max - 2) + "🙂"],
+      ["a".repeat(max - 1) + "🙂", "a".repeat(max - 1) + "…"],
+      ["a".repeat(max - 2) + "🙂x", "a".repeat(max - 2) + "…"],
+      ["🙂".repeat(max), "🙂".repeat((max - 2) / 2) + "…"],
+      ["🙂 " + "a".repeat(max), "🙂 " + "a".repeat(max - 4) + "…"],
+      ["a".repeat(max - 2) + " " + "🙂", "a".repeat(max - 2) + "…"],
+      ["&#x1F642;".repeat(max), "🙂".repeat((max - 2) / 2) + "…"]
+    ]
+    for (const [input, expected] of cases) {
+      const found = page(`<meta property="og:${field}" content="${input}">`)
+      expect(found[field]).toBe(expected)
+      expect(Schema.is(WebPage.Preview)(found)).toBe(true)
+      const checked = { framing: "allowed", status: 200, ...found }
+      expect(Schema.decodeUnknownSync(Schema.fromJsonString(WebPage.Checked))(JSON.stringify(checked))).toEqual(
+        checked
+      )
+    }
+  })
+
+  it("keeps title, description and icon offsets after Unicode case expansion", () => {
+    for (const prefix of ["", "İ", "<meta name=\"keywords\" content=\"İİİ\">", "<!-- İ -->"]) {
+      expect(
+        page(
+          `${prefix}<TiTlE>İstanbul Rehberi</tItLe><META NAME="description" CONTENT="Gezi İ">` +
+            `<LINK REL="icon" HREF="/i.png">`
+        )
+      ).toEqual({
+        title: "İstanbul Rehberi",
+        description: "Gezi İ",
+        icon: "https://docs.example.com/i.png"
+      })
+    }
+  })
+
+  it("skips mixed-case raw text and stops at the head boundary after Unicode case expansion", () => {
+    const hidden = `<meta name="description" content="Hidden"><link rel="icon" href="/hidden.png">`
+    const raw = ["script", "style", "noscript", "template", "textarea", "xmp"].map((name) =>
+      `<${name.toUpperCase()}>İ${hidden}</${name.toUpperCase()}>`
+    ).join("")
+    for (const end of ["</HeAd>", "<BoDy>"]) {
+      expect(
+        WebPage.preview(`İ${raw}<TiTlE>İstanbul</TiTlE><!-- İ -->${end}${hidden}`, PAGE)
+      ).toEqual({ title: "İstanbul", icon: "https://docs.example.com/favicon.ico" })
+    }
+  })
+
+  it("returns schema-valid previews for arbitrary Unicode heads", () => {
+    const text = fc.oneof(
+      fc.string({ unit: "binary", maxLength: 500 }),
+      fc.array(fc.constantFrom("🙂", "İ", "a", "é", " ", "&#x1F642;"), { minLength: 100, maxLength: 400 })
+        .map((parts) => parts.join(""))
+    )
+    const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll("\"", "&quot;")
+    fc.assert(
+      fc.property(text, text, (title, description) => {
+        const found = page(
+          `<title>${escape(title)}</title><meta name="description" content="${escape(description)}">`
+        )
+        expect(Schema.is(WebPage.Preview)(found)).toBe(true)
+        expect(Schema.is(WebPage.Checked)({ framing: "allowed", status: 200, ...found })).toBe(true)
+      }),
+      { numRuns: 300, seed: 4932 }
+    )
   })
 
   it("takes the first icon link, else an apple-touch-icon, resolved against the page, https only", () => {

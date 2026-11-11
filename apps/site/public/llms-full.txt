@@ -48253,7 +48253,7 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 | `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                                        |
 | `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                                            |
 | `HeaderRecord`                                 | response headers by name, in any case                                                                                                                            |
-| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 characters                                                                                                                                    |
+| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 UTF-16 code units                                                                                                                             |
 
 ---
 

@@ -60,14 +60,17 @@ a frame sits inside another frame, each must be admitted.
 For an HTML page, `check` reads the head, up to `</head>`, `maxBytes` or
 `headTimeout`, whichever comes first, and `WebPage.preview` reads:
 
-- `title`: `og:title`, else `<title>`, at most 200 characters;
+- `title`: `og:title`, else `<title>`, at most 200 UTF-16 code units;
 - `description`: `og:description`, else `description`, else
-  `twitter:description`, at most 300 characters;
+  `twitter:description`, at most 300 UTF-16 code units;
 - `icon`: the first `rel="icon"` link, else the first `apple-touch-icon`,
   resolved against `<base href>` or the page; `/favicon.ico` for an `https:`
   page with neither. Only an `https:` URL with no user or password is kept.
 
-Text is decoded and its whitespace collapsed. Comments and the contents of
+Text is decoded and its whitespace collapsed. Long text ends in an ellipsis
+without splitting a Unicode code point, within the same limits as the
+`Preview` and `Checked` schemas. Tag names are case-insensitive; Unicode
+text keeps its original spelling. Comments and the contents of
 scripts, styles and templates are skipped. The scan is linear in its input,
 so a hostile page can't slow it down.
 
