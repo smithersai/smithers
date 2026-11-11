@@ -1,0 +1,171 @@
+// The live Factory's conversation, sandbox and account clients (src/core/LiveFactory.vibe, LiveAccounts.vibe) against
+// any reply a deliberately faulty Effect HttpClient gives: every status, body shape and transport failure. No request
+// is intercepted; the transport is the injected service.
+import { it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { Factory, SandboxSnapshot } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { Identity } from "../src/core/roles.vibe"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { Health } from "../src/core/wire.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const CONVERSATION_OPS = ["post", "openWiki", "controlTour", "tour", "endTour"] as const
+const OPS = [...CONVERSATION_OPS, "read", "events", "sandbox", "startSandbox", "stopSandbox", "sandboxCommand"] as const
+const OTHER_OPS = ["health"] as const
+const ACCOUNT_OPS = ["current", "members", "grant", "signOut", "choose", "signInAgent", "participated", "accountEvents"] as const
+const Input = Schema.Struct({
+  op: Schema.Literals([...OPS, ...ACCOUNT_OPS, ...OTHER_OPS]),
+  /** `fit` answers 200 with the body the operation expects, `refused` 403 or 409 with a refusal, `broken` 500, `odd` 200 with a body of the wrong shape. */
+  shape: Schema.Literals(["fit", "refused", "broken", "odd", "any"]),
+  conversation: Schema.Literals(["fuzz", "", "a b/c"]),
+  transport: Schema.Boolean,
+  status: Schema.Literals([200, 204, 400, 403, 409, 429, 500, 502]),
+  body: Schema.Literals(["sandbox", "identity", "members", "refusal", "text-refusal", "reasoned-refusal", "output", "event", "health", "other-json", "not-json", "number", "null", "empty-object", "number-output"]),
+  word: Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying", "full", "forbidden"]),
+  sandbox: SandboxSnapshot, identity: Identity, event: EventSchema, health: Health, text: Text, step: Int,
+})
+type Input = typeof Input.Type
+
+/** Marks reply text that a failure must never repeat. */
+const MARK = "zq9-"
+
+const FITS: Record<string, Input["body"]> = {
+  read: "other-json", events: "event", sandbox: "sandbox", startSandbox: "sandbox", stopSandbox: "sandbox", sandboxCommand: "output",
+  current: "identity", members: "members", accountEvents: "event", health: "health",
+}
+/** Steers a generated reply to one the operation can accept or one that refuses it. */
+function shaped(input: Input): Input {
+  if (input.shape === "fit") return { ...input, transport: false, status: 200, body: FITS[input.op] ?? "other-json" }
+  if (input.shape === "refused") return { ...input, transport: false, status: input.step % 2 === 0 ? 403 : 409, body: (["refusal", "text-refusal", "reasoned-refusal"] as const)[input.step % 3]! }
+  if (input.shape === "broken") return { ...input, transport: false, status: 500, body: "other-json" }
+  if (input.shape === "odd") return { ...input, transport: false, status: 200, body: (["number", "null", "empty-object", "number-output"] as const)[input.step % 4]! }
+  return input
+}
+
+function bodyOf(input: Input): unknown {
+  switch (input.body) {
+    case "sandbox": return input.sandbox
+    case "identity": return input.identity
+    case "members": return [input.identity, input.identity]
+    case "refusal": return { refusal: input.word }
+    case "text-refusal": return { refusal: MARK + input.text }
+    case "reasoned-refusal": return { refusal: input.word, reason: "budget" }
+    case "output": return { output: input.text }
+    case "event": return input.event
+    case "health": return input.health
+    case "number": return 5
+    case "null": return null
+    case "empty-object": return {}
+    case "number-output": return { output: 5 }
+    default: return { unexpected: MARK + input.text }
+  }
+}
+
+/** The live Factory always binds accounts and tour control; their absence fails the property. */
+error Missing
+
+effect function call(input: Input) {
+  const factory = try Factory
+  const accounts = factory.accounts
+  const controlTour = factory.controlTour
+  if (accounts === undefined || controlTour === undefined) throw new Missing()
+  const c = input.conversation
+  switch (input.op) {
+    case "post": return try factory.post(c, "c1", "Guest", input.text)
+    case "openWiki": return try factory.openWiki(c, "index")
+    case "controlTour": return try controlTour(c, "seek", input.step)
+    case "tour": return try factory.tour(c)
+    case "endTour": return try factory.endTour(c)
+    case "read": return try factory.read(c, input.step)
+    case "events": return try Stream.runDrain(factory.events(c, input.step))
+    case "sandbox": return try factory.sandbox(c)
+    case "startSandbox": return try factory.startSandbox(c, "op-1")
+    case "stopSandbox": return try factory.stopSandbox(c, "op-1", input.step)
+    case "sandboxCommand": return try factory.sandboxCommand(c, "op-1", "pwd", input.step)
+    case "current": return try accounts.current()
+    case "members": return try accounts.members()
+    case "grant": return try accounts.grant("2", "contributor")
+    case "signOut": return try accounts.signOut()
+    case "choose": return try accounts.choose("maintainer")
+    case "signInAgent": return try accounts.signInAgent()
+    case "participated": return try accounts.participated()
+    case "health": return try health("http://fault.invalid")
+    default: return try Stream.runDrain(accounts.events(input.step))
+  }
+}
+
+/**
+ * What the protocol (0010, wire.vibe) promises for each reply: 2xx accepts a conversation intent, 409 carries the
+ * sequencer's refusal; a sandbox write's 403 or 409 carries its refusal and reason; a read succeeds only with 200 and
+ * a body of its schema; an account read refused by role is Denied; anything else is Unavailable, never a defect.
+ */
+it.live("clients/live-replies", () => run("clients/live-replies", Schema.Struct({ walk: Schema.Boolean, input: Input }), ({ walk, input }) => effect {
+  // A walk sends every operation a fitting and a refusing reply, then the generated one, so no arm depends on the draw.
+  const all = [...OPS, ...ACCOUNT_OPS, ...OTHER_OPS]
+  const inputs = walk ? [...all.flatMap((op) => (["fit", "refused", "broken", "odd"] as const).map((shape) => ({ ...input, op, shape, conversation: "fuzz" as const }))), input] : [input]
+  for (const each of inputs) if (!(try reply(shaped(each)))) return false
+  return true
+}))
+
+effect function reply(input: Input) {
+  let sent = 0
+  const json = input.body !== "not-json"
+  const client = HttpClient.make((request) => {
+    sent++
+    if (input.transport) return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) }))
+    const stream = request.headers["accept"] === "text/event-stream" || request.url.includes("/events")
+    const raw = json ? JSON.stringify(bodyOf(input)) : "{" + MARK + input.text
+    const text = stream ? `data: ${raw.replaceAll("\n", " ")}\n\n` : raw
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status: input.status, contentType: stream ? "text/event-stream" : "application/json" }))))
+  })
+  const transport = Layer.succeed(HttpClient.HttpClient, client)
+  const result = try exit(Effect.provide(call(input), Layer.merge(LiveFactory("http://fault.invalid").pipe(Layer.provide(transport)), transport)))
+  if (result._tag === "Failure" && (Cause.hasDies(result.cause) || Cause.hasInterrupts(result.cause))) return false
+  const failure = result._tag === "Failure" ? Cause.squash(result.cause) as { readonly _tag: string; readonly refusal?: string; readonly reason?: string } : undefined
+  const ok = !input.transport
+  const status = input.status
+  if (input.op === "health") {
+    if (result._tag === "Success") return ok && status === 200 && input.body === "health" && json
+    return failure?._tag === "Unavailable" && !(failure.reason ?? "").includes(MARK)
+  }
+  const accountOp = (ACCOUNT_OPS as ReadonlyArray<string>).includes(input.op)
+  if (accountOp) {
+    if (input.op === "participated") return result._tag === "Success" && sent === 0
+    if (input.op === "choose" || input.op === "signInAgent") return failure?._tag === "AccountUnavailable" && sent === 0
+    if (result._tag === "Success") {
+      if (!ok) return false
+      if (input.op === "current") return status === 200 && input.body === "identity" && json
+      if (input.op === "members") return status === 200 && input.body === "members" && json
+      if (input.op === "accountEvents") return status === 200 && input.body === "event" && json
+      return status === 200 || status === 204
+    }
+    // A role refusal is Denied, except the session read, which signs out as unavailable.
+    if (ok && status === 403 && (input.op === "members" || input.op === "grant")) return failure?._tag === "Denied"
+    return failure?._tag === "AccountUnavailable"
+  }
+  // An identifier the protocol cannot carry is refused before any request.
+  if (input.conversation === "") return failure?._tag === "Unavailable" && failure.reason === "invalid conversation" && sent === 0
+  if (sent !== 1) return false
+  const conversationOp = (CONVERSATION_OPS as ReadonlyArray<string>).includes(input.op)
+  const sandboxWrite = input.op === "startSandbox" || input.op === "stopSandbox" || input.op === "sandboxCommand"
+  // The conversation protocol's refusals are its six reasons; a sandbox refusal is any text, with an optional reason.
+  const worded = input.body === "refusal" || input.body === "reasoned-refusal"
+  const refusal = json && (conversationOp ? worded && input.word !== "forbidden" : worded || input.body === "text-refusal")
+  if (ok && refusal && (conversationOp ? status === 409 : sandboxWrite && (status === 403 || status === 409))) {
+    const reason = input.body === "reasoned-refusal" && sandboxWrite ? "budget" : undefined
+    const expected = input.body === "text-refusal" ? MARK + input.text : input.word
+    return failure?._tag === "Refused" && failure.refusal === expected && failure.reason === reason
+  }
+  if (result._tag === "Failure") {
+    if (failure?._tag !== "Unavailable") return false
+    // A failure's reason names what failed; it never carries the reply's body.
+    return !(failure.reason ?? "").includes(MARK)
+  }
+  if (!ok) return false
+  if (conversationOp) return status >= 200 && status <= 299
+  if (input.op === "read") return status === 200 && json
+  if (input.op === "events") return status === 200 && input.body === "event" && json
+  if (input.op === "sandboxCommand") return status === 200 && input.body === "output" && json && result.value === input.text
+  return status === 200 && input.body === "sandbox" && json
+}

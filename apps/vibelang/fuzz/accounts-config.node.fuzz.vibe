@@ -1,0 +1,122 @@
+// The Accounts host's boundaries that need no GitHub: its configuration (worker/Accounts.vibe `configured`), the
+// sandbox principal it gives the container objects, and the session cookie rules (src/core/accountCookieDecision.vibe,
+// accountCookies.vibe), each held to its stated rule.
+import { it } from "@effect/vitest"
+import { FetchHttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
+import { configured, sandboxPrincipal } from "../worker/Accounts.vibe"
+import { cookieAccepted, cookieName, localOrigin, presentedSession, signInCookieName } from "../src/core/accountCookieDecision.vibe"
+import { validSessionCookie } from "../src/core/accountCookies.vibe"
+import type { Identity } from "../src/core/roles.vibe"
+import { run } from "./run.vibe"
+
+const ORIGINS = ["https://factory.example", "http://127.0.0.1:8787", "http://localhost:5178", "http://[::1]:1337", "http://factory.example", "https://factory.example/path", "not-a-url", "HTTPS://Factory.example"] as const
+const Value = <const L extends ReadonlyArray<string>>(values: L) => Schema.Union([Schema.Null, Schema.Literals(values)])
+const ConfigInput = Schema.Struct({
+  id: Value(["Iv1.fixture"]), secret: Value(["fixture-only"]),
+  signing: Value(["fixture-only-signing-secret-32-chars", "short"]),
+  encryption: Value(["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "invalid"]),
+  origin: Value(ORIGINS), initial: Value(["1", "", "will", "01", "123456789012345678901", "12345678901234567890"]),
+  apiBase: Value(["https://api.github.test"]), brokerOrigin: Value(["https://broker.example"]),
+  brokerSecret: Value(["fixture-only-broker-site-secret-32"]), appSlug: Value(["vibelang-fixture"]),
+})
+
+/** Absent or weak credentials disable sign-in: a setup exists only with every credential, a 32-character signing
+ * secret, a numeric maintainer id, a valid encryption key, and a canonical HTTPS or loopback HTTP origin. */
+const VALID: typeof ConfigInput.Type = {
+  id: "Iv1.fixture", secret: "fixture-only", signing: "fixture-only-signing-secret-32-chars", encryption: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  origin: "https://factory.example", initial: "1", apiBase: null, brokerOrigin: null, brokerSecret: null, appSlug: null,
+}
+/** The valid configuration with every optional value, then each required value missing or weak, one at a time. */
+const WALK: ReadonlyArray<typeof ConfigInput.Type> = [
+  VALID, { ...VALID, apiBase: "https://api.github.test", brokerOrigin: "https://broker.example", brokerSecret: "fixture-only-broker-site-secret-32", appSlug: "vibelang-fixture" },
+  { ...VALID, origin: "http://127.0.0.1:8787" }, { ...VALID, initial: "12345678901234567890" },
+  { ...VALID, id: null }, { ...VALID, secret: null }, { ...VALID, signing: "short" }, { ...VALID, encryption: "invalid" },
+  { ...VALID, origin: "http://factory.example" }, { ...VALID, origin: "https://factory.example/path" }, { ...VALID, origin: "not-a-url" }, { ...VALID, initial: "01" },
+]
+
+it.live("accounts/config", () => run("accounts/config", Schema.Struct({ walk: Schema.Boolean, input: ConfigInput }), ({ walk, input }) => effect {
+  for (const each of walk ? [...WALK, input] : [input]) if (!(try configuredAs(each))) return false
+  return true
+}))
+
+effect function configuredAs(input: typeof ConfigInput.Type) {
+  const values: Record<string, string> = {}
+  const names = { id: "GITHUB_CLIENT_ID", secret: "GITHUB_CLIENT_SECRET", signing: "SESSION_SECRET", encryption: "SESSION_ENCRYPTION_KEY", origin: "VIBELANG_ORIGIN", initial: "VIBELANG_INITIAL_MAINTAINER_ID", apiBase: "GITHUB_API_URL", brokerOrigin: "AUTH_BROKER_ORIGIN", brokerSecret: "AUTH_BROKER_SITE_SECRET", appSlug: "GITHUB_APP_SLUG" } as const
+  for (const [key, name] of Object.entries(names)) {
+    const value = input[key as keyof typeof names]
+    if (value !== null) values[name] = value
+  }
+  const setup = try scoped(configured().pipe(Effect.provide(FetchHttpClient.layer), Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values)))))
+  const origin = input.origin
+  const canonical = origin === "https://factory.example" || origin === "http://127.0.0.1:8787" || origin === "http://localhost:5178" || origin === "http://[::1]:1337"
+  const valid = input.id !== null && input.secret !== null && input.signing === "fixture-only-signing-secret-32-chars"
+    && input.encryption === "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" && canonical && (input.initial === "1" || input.initial === "12345678901234567890")
+  if (setup === undefined) return !valid
+  if (!valid || setup.origin !== origin || setup.initialMaintainer !== input.initial || setup.clientId !== input.id) return false
+  if (setup.broker?.origin !== (input.brokerOrigin ?? "https://smithers.sh")) return false
+  if ((setup.broker?.secret === undefined) !== (input.brokerSecret === null)) return false
+  return setup.appSlug === (input.appSlug ?? undefined)
+}
+
+const PrincipalInput = Schema.Struct({
+  origin: Schema.Literals(["https://factory.example", "http://127.0.0.1:8787"]),
+  method: Schema.Literals(["GET", "POST"]),
+  sameOrigin: Schema.Boolean,
+  host: Schema.Union([Schema.Null, Schema.Literals(["h1"])]), plain: Schema.Union([Schema.Null, Schema.Literals(["p1"])]),
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  allowed: Schema.Boolean,
+})
+
+/** Only a verified session names an owner; a write also needs the browser's own Origin; an unadmitted person is a viewer. */
+it.live("accounts/sandbox-principal", () => run("accounts/sandbox-principal", PrincipalInput, (input) => effect {
+  const cookies = [...(input.host === null ? [] : [`__Host-vibelang-session=${input.host}`]), ...(input.plain === null ? [] : [`vibelang-session=${input.plain}`])]
+  let request = HttpClientRequest.make(input.method)(`${input.origin}/api/sandboxes/c1`)
+  if (input.sameOrigin) request = HttpClientRequest.setHeader(request, "origin", input.origin)
+  if (cookies.length > 0) request = HttpClientRequest.setHeader(request, "cookie", cookies.join("; "))
+  const web = try HttpClientRequest.toWeb(request)
+  const seen: Array<string | undefined> = []
+  const current = effect (signed: string | undefined) => {
+    seen.push(signed)
+    const person: Identity = signed === undefined ? { id: "", login: "", role: "viewer" } : { id: `person-${signed}`, login: "ada", role: input.role }
+    return person
+  }
+  let principal: { readonly owner: string; readonly role: string }
+  provide HttpServerRequest.HttpServerRequest = HttpServerRequest.fromWeb(web) {
+    principal = try sandboxPrincipal(current, effect () => input.allowed)
+  }
+  if (input.method !== "GET" && !input.sameOrigin) return principal.owner === "" && principal.role === "viewer" && seen.length === 0
+  // HTTPS presents only the host-prefixed cookie; loopback HTTP prefers the plain one.
+  const presented = input.origin.startsWith("https:") ? input.host ?? undefined : input.plain ?? input.host ?? undefined
+  if (seen.length !== 1 || seen[0] !== presented) return false
+  const owner = presented === undefined ? "" : `person-${presented}`
+  return principal.owner === owner && principal.role === (input.allowed ? (presented === undefined ? "viewer" : input.role) : "viewer")
+}))
+
+const CookieInput = Schema.Struct({
+  flags: Schema.Array(Schema.Boolean).check(Schema.isMinLength(5), Schema.isMaxLength(5)),
+  hostname: Schema.Literals(["localhost", "127.0.0.1", "[::1]", "factory.example", ""]),
+  origin: Schema.Literals(ORIGINS),
+  cookie: Schema.Literals(["__Host-vibelang-session=abc", "vibelang-session=abc", "__Host-vibelang-session=", "vibelang-session=a b", "other=abc"]),
+})
+
+/** The cookie rules against their contracts; an HTTPS deployment never accepts the plain cookie. */
+it.live("decisions/account-cookies", () => run("decisions/account-cookies", CookieInput, (input) => {
+  const [secure, http, hostCookie, plainCookie, canonical] = input.flags as unknown as readonly [boolean, boolean, boolean, boolean, boolean]
+  if (cookieName(secure) !== (secure ? "__Host-vibelang-session" : "vibelang-session")) return false
+  if (signInCookieName(secure) !== (secure ? "__Host-vibelang-sign-in" : "vibelang-sign-in")) return false
+  const local = localOrigin(http, input.hostname)
+  if (local !== (http && (input.hostname === "localhost" || input.hostname === "127.0.0.1" || input.hostname === "[::1]"))) return false
+  const accepted = cookieAccepted(canonical, secure, local, hostCookie, plainCookie)
+  if (accepted !== (canonical && (secure || local) && (hostCookie || (local && plainCookie))) || (accepted && !local && !hostCookie)) return false
+  const host = hostCookie ? "h" : undefined
+  const plain = plainCookie ? "p" : undefined
+  const presented = presentedSession(secure, host, plain)
+  if (presented !== (secure ? host : plain ?? host)) return false
+  // The URL-level rule: a canonical HTTPS origin takes only the host cookie; a canonical loopback origin also the plain one.
+  const valid = validSessionCookie(input.origin, input.cookie)
+  const https = input.origin === "https://factory.example"
+  const loopback = input.origin === "http://127.0.0.1:8787" || input.origin === "http://localhost:5178" || input.origin === "http://[::1]:1337"
+  const hostShaped = input.cookie === "__Host-vibelang-session=abc"
+  const plainShaped = input.cookie === "vibelang-session=abc"
+  return valid === ((https && hostShaped) || (loopback && (hostShaped || plainShaped)))
+}))

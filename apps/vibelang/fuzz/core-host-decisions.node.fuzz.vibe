@@ -1,0 +1,74 @@
+// Verified decisions of the issue, sandbox, budget and reply hosts on arbitrary arguments, each against its contract:
+// the hosts reach them only with what they hold, so only arbitrary input reaches every guard.
+import { it } from "@effect/vitest"
+import { fixtureDraft, fixtureErrorReason, fixtureFailure, fixtureParticipation } from "../src/core/issueFixtureDecision.vibe"
+import { requestKey, timelineText } from "../src/core/issueHostDecision.vibe"
+import { decideSandbox, distinctFrom, emptySandboxLedger, runningCountPrefix, validSandboxes, type SandboxEntry } from "../src/core/sandboxDecision.vibe"
+import { historyReply } from "../src/core/mockReplies.vibe"
+import { canCharge, chargeKeyOf } from "../worker/budgetDecision.vibe"
+import { finishDispatch, probeDispatch } from "../worker/liveDispatchDecision.vibe"
+import { completion } from "../worker/replyProgressDecision.vibe"
+import { run, Int } from "./run.vibe"
+
+const OPS = ["new", "propose", "split", "link", "commit", "comment", "accept", "decline", "uncommit"] as const
+const Input = Schema.Struct({
+  op: Schema.Literals(OPS), flags: Schema.Array(Schema.Boolean).check(Schema.isMinLength(9), Schema.isMaxLength(9)),
+  draft: Schema.Array(Schema.Literals(["", "x"])).check(Schema.isMinLength(4), Schema.isMaxLength(4)),
+  tag: Schema.Literals(["@smthrs/flow/StoreUnavailable", "@smthrs/flow/ExecutionIdentityConflict", "Other", ""]),
+  event: Schema.Literals(["labeled", "unlabeled", "assigned", "unassigned", "closed", "reopened", "commented"]),
+  key: Schema.Literals(["", "k1", "a-B-9", "no space", "x".repeat(101), "é"]),
+  entries: Schema.Array(Schema.Struct({ id: Schema.Literals(["", "s1", "s2"]), conversation: Schema.Literals(["", "c1", "c2"]), running: Schema.Boolean })).check(Schema.isMaxLength(4)),
+  a: Int, b: Int,
+})
+
+it.live("decisions/host-rules", () => run("decisions/host-rules", Input, (input) => {
+  const [creating, known, titleBlank, incomplete, linkAllowed, open, assigneeBlank, textBlank, reviewing] = input.flags as unknown as ReadonlyArray<boolean>
+  const op = input.op
+  // The fixture repository refuses in the GitHub host's order.
+  const refusal = fixtureFailure(op, creating!, known!, titleBlank!, incomplete!, linkAllowed!, open!, assigneeBlank!, textBlank!, reviewing!)
+  const expected = !creating && !known ? "missing" : creating && titleBlank ? "title" : op === "propose" && incomplete ? "incomplete" : op === "split" && !known ? "missing"
+    : op === "link" && !linkAllowed ? "tree" : op === "commit" && (!open || assigneeBlank) ? "assignee" : op === "comment" && textBlank ? "empty"
+    : (op === "accept" || op === "decline") && !reviewing ? "review" : ""
+  if (refusal !== expected) return false
+  const [title, summary, example, prior] = input.draft as unknown as readonly [string, string, string, string]
+  const drafted = fixtureDraft(title, summary, example, prior)
+  if ((title !== "" && drafted.title !== title) || (title === "" && drafted.title === "") || (summary === "" && drafted.summary === "") || (example === "" && drafted.example === "") || (prior === "" && drafted.prior === "")) return false
+  if (fixtureParticipation(op) !== (op === "new" || op === "comment")) return false
+  if (fixtureErrorReason(input.tag) !== (input.tag === "@smthrs/flow/StoreUnavailable" ? "unavailable" : input.tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed")) return false
+  const text = timelineText(input.event, creating!, "bug", known!, "ada")
+  const timeline = input.event === "labeled" ? (creating ? "added the bug label" : "") : input.event === "unlabeled" ? (creating ? "removed the bug label" : "")
+    : input.event === "assigned" ? (known ? "assigned ada" : "") : input.event === "unassigned" ? (known ? "unassigned ada" : "") : input.event === "closed" ? "closed this issue" : input.event === "reopened" ? "reopened this issue" : ""
+  if (text !== timeline) return false
+  if (requestKey(input.key) !== /^[A-Za-z0-9-]{1,100}$/.test(input.key)) return false
+  // Sandbox ledgers: a count of running entries, distinct identities, and the refusals before any accounting.
+  const entries: ReadonlyArray<SandboxEntry> = input.entries
+  const end = input.a % (entries.length + 1)
+  if (runningCountPrefix(entries, end) !== entries.slice(0, end).filter((entry) => entry.running).length) return false
+  if (distinctFrom(entries, "s1", "c1", end) !== entries.slice(0, end).every((entry) => entry.id !== "s1" && entry.conversation !== "c1")) return false
+  const valid = entries.every((entry, i) => entry.id !== "" && entry.conversation !== "" && entries.slice(0, i).every((other) => other.id !== entry.id && other.conversation !== entry.conversation))
+  if (validSandboxes(entries) !== valid) return false
+  const ledger = { ...emptySandboxLedger("p1", "contributor", input.b * 60_000, 0, 0), usedMilliseconds: input.a * 60_000, sandboxes: valid ? entries : [] }
+  const intent = { type: op === "new" ? "start" as const : op === "link" ? "stop" as const : "meter" as const, owner: open ? "p1" : "p2", role: "contributor" as const, allowanceMilliseconds: input.b * 60_000,
+    conversation: textBlank ? "" : "c1", sandboxId: titleBlank ? "" : "s9", operationId: "o1", now: 0, month: 0 }
+  const decision = decideSandbox(ledger, intent)
+  if (intent.type !== "meter" && intent.conversation === "") { if (decision.ok || decision.refusal !== "invalid") return false }
+  else if (intent.owner !== "p1") { if (decision.ok || decision.refusal !== "forbidden") return false }
+  else if (intent.type === "start" && input.a >= input.b) { if (decision.ok || decision.refusal !== "out-of-minutes") return false }
+  else if (intent.type === "stop" && !ledger.sandboxes.some((entry) => entry.conversation === "c1" && entry.running)) { if (decision.ok || decision.refusal !== "stopped") return false }
+  else if (intent.type === "start" && !ledger.sandboxes.some((entry) => entry.conversation === "c1") && (titleBlank || ledger.sandboxes.some((entry) => entry.id === "s9"))) { if (decision.ok || decision.refusal !== "invalid") return false }
+  // The day's ledger charges inside the safe integers only; one conversation's key is its host and reply.
+  const spent = creating ? -1 : input.a * 1e15
+  const used = known ? -1 : input.b * 1e15
+  if (canCharge(spent, used) !== (spent >= 0 && used >= 0 && used <= Number.MAX_SAFE_INTEGER - spent) || chargeKeyOf("h", "r") !== "h:r") return false
+  // Dispatch reads exactly the current mark, then makes one start attempt.
+  const posts = ["m1", "m2"].slice(0, input.a % 3)
+  const scan = { index: input.b % 3 > posts.length ? posts.length : input.b % 3, phase: creating ? "scan" as const : known ? "attempt" as const : "done" as const, post: "", started: false }
+  const probed = probeDispatch(scan, posts, open!)
+  const probedOk = scan.phase !== "scan" ? probed === scan : scan.index === posts.length ? probed.phase === "done" : open ? probed.index === scan.index + 1 && probed.phase === "scan" : probed.phase === "attempt" && probed.post === posts[scan.index]
+  const finished = finishDispatch(scan, reviewing!)
+  if (!probedOk || (scan.phase !== "attempt" ? finished !== scan : finished.phase !== "done" || finished.started !== reviewing)) return false
+  if (completion(incomplete!, linkAllowed!, assigneeBlank!) !== (incomplete || !linkAllowed ? "failed" : assigneeBlank ? "answered" : "empty")) return false
+  // The mock's history answer names open work, or says there is none.
+  const outline = { main: "main", epics: [{ title: "Epic", commits: 2 }], open: open ? [{ id: "w1", title: "Work", state: "running" }] : [] } as unknown as Parameters<typeof historyReply>[0]
+  return historyReply(outline).endsWith(open ? "Open work: `w1` Work (running)" : "No open work.")
+}))

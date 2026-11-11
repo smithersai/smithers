@@ -109,7 +109,9 @@ effect function scripted(
   if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
   // An explicit wiki request wins over action words inside its page title.
   // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
-  const specificationReview = page !== undefined ? undefined : try requestedSpecificationReview(issues, prompt, `${conversation}-${post}-specification`)
+  // A refused review is answered in words, as a refused draft is; it must not fail the reply step.
+  const specificationReview = page !== undefined ? undefined : (requestedSpecificationReview(issues, prompt, `${conversation}-${post}-specification`)
+    catch (error) => error.reason === "forbidden" ? "Only contributors can request a specification review." : "Couldn't request that review.")
   const kind = replyKind(
     specificationReview !== undefined,
     page !== undefined,

@@ -1,0 +1,53 @@
+// Small verified decisions and helpers the product reaches only on its lawful paths, on arbitrary input, each against
+// its contract: the agent's tool refusal code (toolRefusal.vibe), the sequencer's attempt count and reply ids
+// (sequencerDecision.vibe, tourDecision.vibe), the tour stop clamp (walkthroughSteps.vibe) and the sandbox command's
+// receipt text (machineDecision.vibe).
+import { it } from "@effect/vitest"
+import type { Event } from "../src/core/conversation.vibe"
+import { commandOutput, receiptText } from "../src/core/machineDecision.vibe"
+import { attemptOf, restartsBefore } from "../src/core/sequencerDecision.vibe"
+import { toolRefusal } from "../src/core/toolRefusal.vibe"
+import { replyIdOf } from "../src/core/tourDecision.vibe"
+import { WALKTHROUGH, walkthroughStop } from "../src/core/walkthroughSteps.vibe"
+import { run, Int } from "./run.vibe"
+
+const TAGS = ["Unavailable", "WikiFailure", "IssueFailure", "Refused", "ActionFailure", "Other", ""] as const
+const Field = Schema.Union([Schema.Literals(["forbidden", "rate-limited", "x".repeat(41), "Forbidden", "409", "no space", ""]), Schema.Number, Schema.Null])
+const RefusalInput = Schema.Struct({ shape: Schema.Literals(["object", "null", "string", "number"]), tag: Schema.Literals(TAGS), field: Field })
+
+/** Only a product error's code-shaped refusal reaches the agent; anything else stays opaque. */
+it.live("decisions/tool-refusal", () => run("decisions/tool-refusal", RefusalInput, ({ shape, tag, field }) => {
+  const error = shape === "null" ? null : shape === "string" ? "forbidden" : shape === "number" ? 409
+    : { ...(tag === "" ? {} : { _tag: tag }), reason: field, refusal: field, code: field }
+  const code = toolRefusal(error)
+  if (shape !== "object") return code === undefined
+  const carried = tag === "Unavailable" ? "unavailable" : tag === "WikiFailure" || tag === "IssueFailure" || tag === "Refused" || tag === "ActionFailure" ? field : undefined
+  const expected = typeof carried === "string" && /^[a-z][a-z0-9_-]{0,39}$/.test(carried) ? carried : undefined
+  return code === expected
+}))
+
+const LogInput = Schema.Struct({
+  log: Schema.Array(Schema.Struct({ restart: Schema.Boolean, mine: Schema.Boolean })).check(Schema.isMaxLength(12)),
+  end: Int, post: Schema.Literals(["", "m", "m7", "x12", "m7b"]), step: Schema.Union([Schema.Number, Schema.Literals(["nan"])]),
+  stdout: Schema.Literals(["", "out"]), stderr: Schema.Literals(["", "err"]), truncated: Schema.Boolean, failed: Schema.Boolean, output: Schema.Union([Schema.Null, Schema.Literals(["", "done"])]),
+})
+
+it.live("decisions/sequencer-helpers", () => run("decisions/sequencer-helpers", LogInput, (input) => {
+  const log = input.log.map((entry, index): Event => entry.restart
+    ? { type: "ReplyRestarted", seq: index + 1, id: entry.mine ? "r1" : "r2" } as unknown as Event
+    : { type: "ReplyAppended", seq: index + 1, id: "r1", text: "x" } as unknown as Event)
+  const end = input.end % (log.length + 1)
+  const counted = input.log.slice(0, end).filter((entry) => entry.restart && entry.mine).length
+  if (restartsBefore(log, "r1", end) !== counted) return false
+  const attempt = attemptOf(log, "r1")
+  if (attempt !== 1 + input.log.filter((entry) => entry.restart && entry.mine).length || attempt < 1 || attempt > log.length + 1) return false
+  const id = replyIdOf(input.post)
+  if (id !== (input.post.length === 0 ? "r" : "r" + input.post.slice(1)) || id.length !== Math.max(1, input.post.length)) return false
+  // The nearest stop, clamped to the first and last; NaN is the first.
+  const step = input.step === "nan" ? Number.NaN : input.step
+  const stop = walkthroughStop(step)
+  const whole = Number.isNaN(step) ? 1 : Math.round(step)
+  if (stop !== WALKTHROUGH[Math.min(Math.max(whole, 1), WALKTHROUGH.length) - 1]) return false
+  if (receiptText(input.output) !== (input.output ?? "")) return false
+  return commandOutput(input.stdout, input.stderr, input.truncated, input.failed, "3") === input.stdout + input.stderr + (input.truncated ? "\n[truncated]" : "") + (input.failed ? "\nExit 3" : "")
+}))

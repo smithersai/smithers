@@ -1,0 +1,68 @@
+// conversation.vibe's verified helpers on arbitrary arguments, lawful or not, each held to its stated rule: the
+// sequencer and the client reach them only with the states they keep, so only arbitrary input reaches their guards.
+import { it } from "@effect/vitest"
+import {
+  applyWikiEdits, declineVip, empty, failPost, hasClientId, holdRemaining, mayRun, newClient, pendingCount, receive, recordSpecificationReview,
+  resume, reviseSpecificationUnder, tourWalkthrough, type Conversation, type Event, type IssueRecord,
+} from "../src/core/conversation.vibe"
+import { fixtureSpecification } from "../src/core/specification.vibe"
+import { run, Int } from "./run.vibe"
+
+const REVIEWERS = ["astra", "sol", "fable", "opus", "other"] as const
+const Input = Schema.Struct({
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  flags: Schema.Array(Schema.Boolean).check(Schema.isMinLength(6), Schema.isMaxLength(6)),
+  clientId: Schema.Literals(["", "c1", "c2"]), reason: Schema.Literals(["", "busy"]),
+  a: Int, b: Int, c: Int,
+  reviewer: Schema.Literals(REVIEWERS), principal: Schema.Literals(REVIEWERS),
+  verdict: Schema.Literals(["", "LGTM"]), link: Schema.Literals(["", "#r"]),
+  vip: Schema.Literals(["", "In review", "Accepted", "Declined"]),
+  text: Schema.Literals(["same", "new text"]), policy: Schema.Literals(["keep", "reset"]),
+})
+
+it.live("conversation/helpers", () => run("conversation/helpers", Input, (input) => {
+  const [tour, maintainer, internal, gap, walk, own] = input.flags as unknown as readonly [boolean, boolean, boolean, boolean, boolean, boolean]
+  const role = input.role
+  // An internal action never runs; a tour runs for anyone; otherwise contributors run, and maintainer-only actions need a maintainer.
+  if (mayRun(role, tour, maintainer, internal) !== (!internal && (tour || ((role === "maintainer" || role === "contributor") && (!maintainer || role === "maintainer"))))) return false
+  const entries = [{ id: "m1", author: "person", name: "Guest", text: "x", seq: 1, clientId: "c1", inReplyTo: "", done: true, error: "" }] as unknown as Conversation["entries"]
+  if (hasClientId(entries, input.clientId) !== (input.clientId === "c1")) return false
+  // A failed post keeps its text and shows a reason, "failed" when none is given.
+  const client = { ...newClient, gap, pending: [{ clientId: "c1", text: "x", error: "" }, { clientId: "c2", text: "y", error: "" }] }
+  const failed = failPost(client, input.clientId, input.reason)
+  if (failed.pending.some((p, i) => p.clientId === input.clientId ? p.error !== (input.reason === "" ? "failed" : input.reason) : p !== client.pending[i])) return false
+  if (pendingCount(client.pending, input.clientId, input.a % 3) !== client.pending.slice(0, input.a % 3).filter((p) => p.clientId !== input.clientId).length) return false
+  // A stale event changes nothing; one ahead of the next marks a gap once; resuming clears it.
+  const ahead = { type: "Posted", seq: 2 + input.b, id: "m9", name: "Guest", text: "x", clientId: "c9" } as unknown as Event
+  const received = receive(client, ahead)
+  if (received !== (gap ? client : received) || !received.gap || (receive(client, { ...ahead, seq: 0 } as Event) !== client)) return false
+  if (resume(client).gap || (!gap && resume(client) !== client)) return false
+  // The hold left: never negative; all of it before the start; what remains after the time elapsed.
+  const remaining = walk ? -1 - input.a : input.a * 100
+  const started = input.b * 100
+  const now = input.c * 100
+  const held = holdRemaining(remaining, started, now)
+  if (held !== (remaining < 0 ? 0 : now <= started ? remaining : now - started >= remaining ? 0 : remaining - (now - started))) return false
+  // A tour's walkthrough is the running tour's, driven after it started.
+  const touring: Conversation = { ...empty, seq: 5, agent: "working", replying: "t1",
+    entries: [{ id: "t1", author: "agent", name: "Agent", text: "", seq: 2, clientId: "", inReplyTo: own ? "" : "m1", done: false, error: "" }] as unknown as Conversation["entries"],
+    ...(walk ? { walkthrough: { step: 1, target: "a", paused: false, revision: 1 + input.a % 4, remaining: 0, at: 0 } } : {}) } as Conversation
+  const shown = tourWalkthrough(touring)
+  if (shown !== (walk && own && 1 + input.a % 4 > 2 ? touring.walkthrough : null)) return false
+  // Only a VIP in review can be declined, and declining closes it.
+  const issue = { number: 1, githubId: 1, title: "", body: "", author: "", age: "", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: input.vip, review: "", path: "", comments: 0, notes: [] } as IssueRecord
+  const declined = declineVip(issue)
+  if (input.vip === "In review" ? declined.vip !== "Declined" || declined.state !== "closed" : declined !== issue) return false
+  // A review counts only from its own reviewer, for the current revision, with a verdict and a link.
+  const spec = fixtureSpecification
+  const review = { verdict: input.verdict, grade: "A", revision: input.c % 2 === 0 ? spec.revision : spec.revision - 1, link: input.link } as typeof spec.astra
+  const recorded = recordSpecificationReview(spec, input.reviewer, input.principal, review)
+  const counts = input.principal === input.reviewer && review.revision === spec.revision && review.verdict !== "" && review.link !== "" && input.reviewer !== "other"
+  if (counts ? recorded[input.reviewer as "astra"] !== review : recorded !== spec) return false
+  const revised = reviseSpecificationUnder(spec, input.text === "same" ? spec.text : input.text, input.policy)
+  if (input.text === "same" ? revised !== spec : revised.revision !== spec.revision + 1 || (input.policy === "reset") !== (revised.opus.verdict === "")) return false
+  // Wiki observations apply in order; a stale or early one changes nothing.
+  const edits = { seq: input.a, pages: [] }
+  const observed = applyWikiEdits(edits, { type: "WikiEditsObserved", seq: input.a + (input.b % 3), pages: [] })
+  return input.b % 3 === 1 ? observed.seq === input.a + 1 : observed === edits
+}))

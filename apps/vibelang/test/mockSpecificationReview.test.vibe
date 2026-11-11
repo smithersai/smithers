@@ -1,0 +1,28 @@
+// The mock agent's specification review request by each role (src/core/MockFactory.vibe `scripted`). A role that may
+// not request a review is answered in words at once; before this, the refusal died inside the reply step and the
+// reply stayed working until the engine's 5-minute reply deadline (vl-fuzz2, `mock/scripted-actions`).
+import { describe, expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+
+effect function reviewReply(role: "viewer" | "community" | "contributor") {
+  provide mockFactoryFor(role) {
+    const factory = try Factory
+    try factory.post("review", "c0", "Guest", "Ask Claude Opus to review the specification")
+    const events = try timeout(Stream.runCollect(factory.events("review", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"))), "20 seconds")
+    return Array.from(events).reduce(apply, empty).entries.find((entry) => entry.author === "agent")
+  }
+}
+
+describe("the mock agent's specification review", () => {
+  it.live.each(["viewer", "community"] as const)("tells a %s that only contributors request reviews", (role) => effect {
+    const reply = try reviewReply(role)
+    try Effect.try(() => expect([reply?.done, reply?.error, reply?.text]).toEqual([true, "", "Only contributors can request a specification review."]))
+  }, 30_000)
+
+  it.live("records a contributor's requested review", () => effect {
+    const reply = try reviewReply("contributor")
+    try Effect.try(() => expect(reply?.text).toMatch(/^Claude Opus · LGTM · A- · r2$/))
+  }, 30_000)
+})

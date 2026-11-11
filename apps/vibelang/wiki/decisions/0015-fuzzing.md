@@ -955,3 +955,27 @@ Product flows call them only in lawful order, so only arbitrary input reaches th
 `leaseFor`'s `id.split("/")[0] ?? ""` had an arm no input reaches (`split` returns at least one element); it is
 `split("/")[0]!` now. Findings so far: two oracle errors, fixed in the targets (a signed-out read answers the empty
 snapshot, not 503; a link climbing to `..` ends in `/..`). No product bug.
+
+Second part, same lane and day:
+
+| Target | Exercises |
+| --- | --- |
+| `clients/live-replies` | Every `LiveFactory` and `LiveAccounts` operation against any reply of an injected `HttpClient`, walked per execution with a fitting, a refusing, a broken (500) and an odd-shaped (200) reply, then a generated one. Oracles: 2xx accepts a conversation intent and 409 carries its refusal; a sandbox write's 403 or 409 carries its refusal and reason; a read succeeds only with 200 and a body of its schema; a role refusal on an account read is `Denied`; anything else is `Unavailable`, whose reason never repeats the reply's text; an identifier the protocol can't carry sends no request |
+| `accounts/config` | `configured()`: a setup exists only with every credential, a 32-character signing secret, a numeric maintainer id, a valid encryption key and a canonical HTTPS or loopback origin; a walk breaks each value once |
+| `accounts/sandbox-principal` | Only a verified session names an owner; a write needs the browser's own Origin; HTTPS presents only the host cookie |
+| `decisions/account-cookies` | The cookie decisions and `validSessionCookie` against their contracts |
+| `accounts/broker-sequences` | `worker/Accounts.vibe` with the real smithers.sh broker in process (VL-33) or GitHub's own OAuth: sign-in (tampered state, cookie, code, replay, expired record, null and foreign origins), Connect GitHub (every query form, consent and cancel, a failing credential custodian), device sessions, roles, events, issues and wiki writes, drafts, participation, oversized bodies. Oracles: sign-in names exactly GitHub's person, once; a tampered handoff never signs in; Connect needs a person's own session and stores a delegation only after consent; a device session stays an agent; no 500 |
+| `mock/scripted-actions` | The mock agent's action replies (wiki page, draft, issue, split, sandbox, specification review, history) by each role, walked per execution |
+| `decisions/issue-graph` | `issueGraphDecision.vibe` on generated forests and malformed graphs; each specification-only lemma runs where its premises hold and its claim is checked with `issueAncestorAt` |
+| `issues/specification-transitions` | `performSpecification` and `revisedSpecificationState` with no reviewer, a scripted one, or an injected reviewer that answers, answers stale, answers without a link, or fails |
+| `decisions/tool-refusal`, `decisions/sequencer-helpers`, `decisions/wiki-pages`, `conversation/helpers`, `decisions/host-rules` | The remaining verified helpers against their contracts |
+| `objects/startup` | `ObjectStartup.make` with an initializer that succeeds, fails, dies, hangs past its deadline, fails once, or is interrupted by its host scope, in virtual time |
+
+Finding (product): in mock mode, a viewer's, new person's or community member's request for a specification review
+("Ask Claude Opus to review the specification") left the reply working until the engine's 5-minute reply deadline:
+the refused `spec-review` died inside the reply step (`Effect.orDie`). It is now answered in words, as a refused draft
+is ("Only contributors can request a specification review."). Regression: `test/mockSpecificationReview.test.vibe`,
+which failed first (two 20-second timeouts), and the saved value in `fuzz/__fuzz__/mock-scripted-actions-*`.
+
+Two more unreachable arms removed: `src/core/wiki.vibe`'s `raw ?? ""` and `split("#")[0] ?? ""` (`split` returns at
+least one element).

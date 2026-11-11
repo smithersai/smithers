@@ -7,7 +7,7 @@ export { pages }
 export function wikiPath(page: string): string | undefined {
   const normalized = page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"
   const [raw, hash] = normalized.split("#")
-  const id = pageIdOf(raw ?? "")
+  const id = pageIdOf(raw!)
   if (pageIndex(pages, id) < 0) return undefined
   if (hash !== undefined && !/^[a-z0-9-]+$/.test(hash)) return undefined
   return wikiHref(id, hash ?? "")

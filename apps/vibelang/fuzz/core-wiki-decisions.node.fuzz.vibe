@@ -1,0 +1,55 @@
+// The wiki's verified decisions (src/core/wikiPageDecision.vibe) on arbitrary ids, texts and flags, each held to its
+// contract, and the page lookups built on them (src/core/wiki.vibe) against the generated pages.
+import { it } from "@effect/vitest"
+import { pages, requestedWiki, wikiEditable, wikiPage, wikiPath } from "../src/core/wiki.vibe"
+import {
+  editable, firstWithPrefix, fixtureVerdict, longestIncluded, pageIdOf, pageIndex, reviewNumber, wikiHref, wikiRefusalStatus, wikiRequest, wikiUnwritten,
+} from "../src/core/wikiPageDecision.vibe"
+import { run, Int } from "./run.vibe"
+
+const WORDS = ["", "a", "ab", "b", "decisions", "designs", "designs/index", "index", "rulings", "a/b"] as const
+const REASONS = ["forbidden", "sign-in", "connect", "missing", "unknown", "conflict", "empty", "invalid", "fork", "install", "busy", ""] as const
+const Word = Schema.Literals(WORDS)
+const Input = Schema.Struct({
+  ids: Schema.Array(Word).check(Schema.isMaxLength(6)), id: Word, text: Schema.Literals(["", "open ab", "the rulings and a/b", "designs/index please", "b"]),
+  flags: Schema.Array(Schema.Boolean).check(Schema.isMinLength(6), Schema.isMaxLength(6)),
+  op: Schema.Literals(["read", "draft", "save", "propose"]), reason: Schema.Literals(REASONS), hash: Schema.Literals(["", "sec-1"]), reviews: Int,
+})
+
+it.live("decisions/wiki-pages", () => run("decisions/wiki-pages", Input, (input) => {
+  const ids = input.ids
+  const list = ids.map((id) => ({ id }))
+  const [a, b, c, d, e, f] = input.flags as unknown as readonly [boolean, boolean, boolean, boolean, boolean, boolean]
+  const index = pageIndex(list, input.id)
+  if (index !== ids.indexOf(input.id)) return false
+  if (editable(list, input.id) !== (input.id !== "decisions" && ids.includes(input.id))) return false
+  if (pageIdOf(input.id) !== (input.id === "designs" ? "designs/index" : input.id)) return false
+  if (wikiHref(input.id, input.hash) !== "/wiki/" + input.id + (input.hash === "" ? "" : "#" + input.hash)) return false
+  // The longest contained id, the earliest of its length.
+  const best = longestIncluded(ids, input.text)
+  const contained = ids.map((id, i) => [id, i] as const).filter(([id]) => input.text.includes(id))
+  const longest = contained.reduce((top, [id, i]) => top < 0 || id.length > ids[top]!.length ? i : top, -1)
+  if (best !== longest) return false
+  const prefixed = firstWithPrefix(ids, input.id)
+  if (prefixed !== ids.findIndex((id) => id.startsWith(input.id))) return false
+  const request = wikiRequest(a, b, c, d)
+  if (request !== (!a ? "none" : b ? "direct" : c ? "designs" : d ? "decision" : "index")) return false
+  if (wikiUnwritten(a, b, input.reason) !== (a && !b && (input.reason === "conflict" || input.reason === "empty" || input.reason === "connect"))) return false
+  const verdict = fixtureVerdict(input.op, a, b, c, d, e)
+  const expected = input.op === "read" ? (a ? "read" : "missing") : b ? "invalid" : !a ? "missing" : c ? "empty" : input.op === "draft" ? "draft" : d ? "conflict" : e ? "empty" : "write"
+  if (verdict !== expected) return false
+  if (reviewNumber(input.reviews) !== 1001 + input.reviews) return false
+  const status = wikiRefusalStatus(input.reason)
+  const named = { forbidden: 403, "sign-in": 401, connect: 401, missing: 404, unknown: 409, conflict: 409, empty: 400, invalid: 400, fork: 400, install: 400 } as Record<string, number>
+  if (status !== (named[input.reason] ?? 503)) return false
+  // The generated pages: a known page's path and lookup, an unknown one's absence, and the scripted agent's request.
+  const page = pages[input.reviews % pages.length]!
+  const path = wikiPath(f ? `/wiki/${page.id}.md` : page.id + (input.hash === "" ? "" : "#" + input.hash))
+  if (path !== wikiHref(page.id, f ? "" : input.hash)) return false
+  if (wikiPath(`/wiki/${page.id}#Bad Hash`) !== undefined || wikiPath("/wiki/no-such-page") !== undefined || wikiPath("/wiki/") !== wikiHref("index", "")) return false
+  if (wikiPage(`/wiki/${page.id}#x`) !== page || wikiPage(page.id) !== undefined || wikiPage("/wiki/no-such-page") !== undefined) return false
+  if (wikiEditable(page.id) !== (page.id !== "decisions")) return false
+  const asked = requestedWiki(f ? `Open the wiki page ${page.id}` : e ? "Open the wiki designs" : d ? "Open wiki decision 0015" : c ? "open the wiki 9999" : "Open the wiki")
+  if (asked === undefined && !(c && !f && !e && !d)) return false
+  return requestedWiki("no request here") === undefined
+}))

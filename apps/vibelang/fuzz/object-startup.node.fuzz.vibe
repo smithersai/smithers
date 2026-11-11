@@ -1,0 +1,62 @@
+// A Durable Object's bounded start-up (worker/ObjectStartup.vibe) with an initializer that succeeds, fails, dies, hangs
+// past its 5-second deadline, fails once and then succeeds, or is interrupted when the host scope closes, in virtual
+// time. Oracle: health names the outcome and the last step; a ready object serves its members; a failed one refuses
+// calls and answers fetch with 503; the next call after a failure retries; unknown properties are absent.
+import { it } from "@effect/vitest"
+import { HttpServerResponse } from "effect/http"
+import { make, step } from "../worker/ObjectStartup.vibe"
+import type { ObjectState } from "../worker/apiObjects.vibe"
+import { run, stepped, Int } from "./run.vibe"
+
+const Input = Schema.Struct({
+  outcome: Schema.Literals(["ok", "fail", "die", "hang", "slow", "flaky", "interrupted"]),
+  step: Schema.Literals(["storage", "sequencer", "bootstrap", "accounts"]),
+  patience: Schema.Union([Schema.Null, Schema.Literals(["1 second", "10 seconds"])]),
+  value: Int,
+})
+
+error InitFailed
+
+it.live("objects/startup", () => run("objects/startup", Input, (input) => stepped(scoped(effect {
+  // Outside start-up a step only runs its program.
+  if ((try step(input.step, succeed(input.value))) !== input.value) return false
+  let attempts = 0
+  const service = { get: effect (n: number) => n + input.value, fetch: succeed(HttpServerResponse.text("ok", { status: 200 })) }
+  const program = effect {
+    attempts++
+    return try step(input.step, effect {
+      if (input.outcome === "fail" || (input.outcome === "flaky" && attempts === 1)) throw new InitFailed()
+      if (input.outcome === "die") return try Effect.die("broken")
+      if (input.outcome === "hang" || input.outcome === "interrupted") try Effect.never
+      if (input.outcome === "slow") try sleep("3 seconds")
+      return service
+    })
+  }
+  const state = { id: { toString: () => "object-1" } } as unknown as ObjectState
+  const host = try Scope.make()
+  const api = try Effect.provideService(make("Fuzzed", state, program, { get: true, fetch: true }), Scope.Scope, host)
+  if (input.outcome === "interrupted") {
+    try sleep("100 millis")
+    try Scope.close(host, Exit.void)
+    try sleep("100 millis")
+    const status = try api.health()
+    return status.startup === "failed" && status.step === input.step
+  }
+  const status = try api.health(input.patience ?? "10 seconds")
+  const ready = input.outcome === "ok" || input.outcome === "slow"
+  // A second's patience reports a start-up still running as starting.
+  const early = input.patience === "1 second" && (input.outcome === "slow" || input.outcome === "hang")
+  const expected = early ? "starting" : ready ? "ready" : "failed"
+  if (status.startup !== expected || status.objectClass !== "Fuzzed" || status.objectId !== "object-1" || status.step !== input.step) return false
+  // An unknown property, a thenable probe and a symbol are absent, so the object is never awaited by mistake.
+  const loose = api as unknown as Record<string | symbol, unknown>
+  if (loose["missing"] !== undefined || loose["then"] !== undefined || loose[Symbol.iterator] !== undefined) return false
+  const called = try exit(api.get(1))
+  const fetched = try api.fetch
+  if (ready) return called._tag === "Success" && called.value === 1 + input.value && fetched.status === 200
+  // A failed start-up refuses the call; the next call after a failure is the explicit retry, which a flaky start passes.
+  if (input.outcome === "flaky") return called._tag === "Success" && called.value === 1 + input.value && attempts === 2 && (try api.health()).startup === "ready"
+  // The fetch's own 5-second wait and a hanging initializer's 5-second deadline end on the same tick, so health may
+  // still say starting; it never says ready.
+  return called._tag === "Failure" && fetched.status === 503 && (try api.health()).startup !== "ready"
+}), 60)))

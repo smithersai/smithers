@@ -1,0 +1,97 @@
+// The issue graph's verified decisions (src/core/issueGraphDecision.vibe) on generated forests and malformed graphs,
+// each held to its `//@ ensures` contract. The specification-only lemmas never run in the product; here each runs
+// whenever its premises hold, and its claim is checked with `issueAncestorAt`, so a lemma whose statement is false at
+// run time would fail even if its proof were vacuous.
+import { it } from "@effect/vitest"
+import type { IssueOperation, IssueRecord } from "../src/core/conversation.vibe"
+import {
+  canLinkIssues, editedIssue, issueAddAcyclic, issueAddFrame, issueAncestorAt, issueAncestorJoin, issueAncestorStep, issueAvoids,
+  issueCreates, issueFirstNumbered, issueLinkAcyclic, issueLinkChildFree, issueLinkFrame, issueMissingStays, issueRootedExists,
+  issueRootStays, issueSameEdges, issuesAfter, nextIssueNumber, type IssueEdit,
+} from "../src/core/issueGraphDecision.vibe"
+import { run } from "./run.vibe"
+
+const OPS = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"] as const satisfies ReadonlyArray<IssueOperation>
+const Small = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9 }))
+const Input = Schema.Struct({
+  /** Each issue's parent, as an index below it (a forest) or any index or a missing number (a malformed graph). */
+  parents: Schema.Array(Small).check(Schema.isMaxLength(8)),
+  forest: Schema.Boolean,
+  duplicate: Schema.Boolean,
+  op: Schema.Literals(OPS),
+  child: Small, parent: Small, start: Small, steps: Small, more: Small,
+  vip: Schema.Literals(["", "In review", "Accepted", "Declined"]),
+  role: Schema.Literals(["viewer", "maintainer"]),
+  kind: Schema.Literals(["person", "agent"]),
+})
+
+function issue(number: number, parent: number, vip: IssueRecord["vip"]): IssueRecord {
+  return { number, githubId: number, title: `#${number}`, body: "", author: "a", age: "", state: "open", labels: [], parent, task: "", assignee: "", vip, review: "", path: "", comments: 0, notes: [] }
+}
+const forestOf = (items: ReadonlyArray<IssueRecord>) => items.every((item) => item.number > 0)
+  && items.every((item) => item.parent === 0 || items.some((other) => other.number === item.parent))
+  && items.every((item) => Array.from({ length: items.length + 2 }, (_, k) => k + 1).every((k) => issueAncestorAt(items, item.number, k) !== item.number))
+/** The walk from `start` reaches the root within `bound` links without standing on `avoid`. */
+const reachesRoot = (items: ReadonlyArray<IssueRecord>, start: number, avoid: number, bound: number) => {
+  for (let k = 0; k <= bound; k++) {
+    const at = issueAncestorAt(items, start, k)
+    if (at === 0) return true
+    if (at === avoid) return false
+  }
+  return false
+}
+
+it.live("decisions/issue-graph", () => run("decisions/issue-graph", Input, (input) => {
+  // Issues 1..n; in a forest each parent is an earlier issue or the root.
+  const items = input.parents.map((p, index) => issue(index + 1, input.forest ? (p > index ? 0 : p) : p === 9 ? 42 : p, input.vip))
+  const graph = input.duplicate && items.length > 1 ? [...items, issue(1, 0, "")] : items
+  const n = graph.length
+  const { start, steps } = input
+  // issueAncestorAt: zero links is the start; past the root stays the root; a missing node is -1.
+  const before = steps === 0 ? start : issueAncestorAt(graph, start, steps - 1)
+  const at = issueAncestorAt(graph, start, steps)
+  const found = graph.find((item) => item.number === before)
+  if (steps === 0 ? at !== start : before === 0 ? at !== 0 : found === undefined ? at !== -1 : at !== found.parent) return false
+  // canLinkIssues accepts only a link to an existing child whose parent's walk reaches the root without the child.
+  const linkable = canLinkIssues(graph, input.child, input.parent)
+  const sound = input.child > 0 && input.parent > 0 && input.child !== input.parent && graph.some((item) => item.number === input.child) && reachesRoot(graph, input.parent, input.child, n + 1)
+  if (linkable !== sound) return false
+  if (nextIssueNumber(graph) !== Math.max(0, ...graph.map((item) => item.number)) + 1) return false
+  // issuesAfter keeps a forest a forest under every write the host accepts.
+  const op = input.op
+  const created = issue(nextIssueNumber(graph), 0, "In review")
+  const number = op === "link" ? input.child : input.start
+  const edit: IssueEdit = { op, number, parent: input.parent, assignee: op === "commit" ? "agent" : "", text: "t", note: "n", actor: "1", role: input.role, kind: input.kind, at: "2026-11-10T00:00:00Z" }
+  const after = issuesAfter(graph, created, edit)
+  if (issueCreates(op) !== (op === "new" || op === "propose" || op === "split")) return false
+  if (issueCreates(op) ? after.length !== n + 1 || after[0]!.number !== created.number || after[0]!.parent !== (op === "split" ? number : 0) || after.slice(1).some((item, i) => item !== graph[i])
+    : after.length !== n || after.some((item, i) => item.number !== graph[i]!.number || item.parent !== (graph[i]!.number === number && op === "link" ? input.parent : graph[i]!.parent))) return false
+  const accepted = (op !== "split" || graph.some((item) => item.number === number)) && (op !== "link" || sound)
+  if (forestOf(graph) && accepted && !forestOf(after)) return false
+  // editedIssue changes only what its write names; an operation that edits nothing returns the issue itself.
+  const target = issue(3, 1, input.vip)
+  const edited = editedIssue(target, edit)
+  if (edited.number !== 3 || edited.parent !== (op === "link" ? input.parent : 1)) return false
+  if (!["comment", "commit", "uncommit", "link", "accept", "decline"].includes(op) && edited !== target) return false
+  // The lemmas, each where its premises hold.
+  if (!issueFirstNumbered(graph, number, Math.min(steps, n))) return false
+  if (!issueAncestorStep(graph, start, steps) || issueAncestorAt(graph, start, steps + 1) !== issueAncestorAt(graph, issueAncestorAt(graph, start, steps), 1)) return false
+  if (!issueAncestorJoin(graph, start, steps, input.more) || issueAncestorAt(graph, start, steps + input.more) !== issueAncestorAt(graph, issueAncestorAt(graph, start, steps), input.more)) return false
+  if (!issueRootStays(graph, steps) || issueAncestorAt(graph, 0, steps) !== 0) return false
+  if (graph.every((item) => item.number > 0) && (!issueMissingStays(graph, steps) || issueAncestorAt(graph, -1, steps) !== -1)) return false
+  const fresh = 100 + input.more
+  if (start !== fresh && (!issueAvoids(graph, start, fresh, steps) || issueAncestorAt(graph, start, steps) === fresh)) return false
+  if (start > 0 && issueAncestorAt(graph, start, steps) === 0 && (!issueRootedExists(graph, start, steps) || !graph.some((item) => item.number === start))) return false
+  const relinked = graph.map((item) => item.number === input.child ? { ...item, parent: input.parent } : item)
+  const avoided = Array.from({ length: steps }, (_, t) => t).every((t) => issueAncestorAt(graph, start, t) !== input.child || issueAncestorAt(relinked, start, t) !== input.child)
+  if (!issueLinkFrame(graph, relinked, input.child, input.parent, start, steps) || (avoided && issueAncestorAt(relinked, start, steps) !== issueAncestorAt(graph, start, steps))) return false
+  const added = [created, ...graph]
+  const unseen = Array.from({ length: steps }, (_, t) => t).every((t) => issueAncestorAt(graph, start, t) !== created.number)
+  if (!issueAddFrame(graph, added, start, steps) || (unseen && issueAncestorAt(added, start, steps) !== issueAncestorAt(graph, start, steps))) return false
+  if (!issueSameEdges(graph, graph.map((item) => ({ ...item, title: "x" })), start, steps)) return false
+  if (sound && steps >= 1) {
+    if (!issueLinkChildFree(graph, relinked, input.child, input.parent, n + 1, steps) || issueAncestorAt(relinked, input.child, steps) === input.child) return false
+    if (forestOf(graph) && (!issueLinkAcyclic(graph, relinked, input.child, input.parent, n + 1) || !forestOf(relinked))) return false
+  }
+  return !forestOf(graph) || (issueAddAcyclic(graph, added) && forestOf(added))
+}))

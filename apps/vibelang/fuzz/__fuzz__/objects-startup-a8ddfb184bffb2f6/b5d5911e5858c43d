@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 39
+bias 5
+null-prototype false
+key 1168690452
+tape Out_j93jKFXiKHXYEC6pFyEKjLnkN2jC
+schedule-key 1498820150
+schedule 
+signature "ReturnedFalse"
+path 0
+codec "json"
+value "{\"outcome\":\"hang\",\"step\":\"sequencer\",\"patience\":\"1 second\",\"value\":0}"
+# ReturnedFalse
+# {"outcome":"hang","step":"sequencer","patience":"1 second","value":0}

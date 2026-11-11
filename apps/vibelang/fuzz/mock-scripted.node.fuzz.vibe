@@ -1,0 +1,86 @@
+// The mock Factory's scripted agent (src/core/MockFactory.vibe `scripted`) on the requests it answers with a product
+// action rather than a canned reply: a wiki page, a wiki draft, an issue, a split, a sandbox, the mythical history and
+// a specification review, posted by each mock role. Oracle: the reply names what happened, a maintainer's request
+// succeeds, a viewer's write is refused in words, and every reply ends. Found: a refused specification review died
+// inside the reply step and kept the reply working until the 5-minute deadline (test/mockSpecificationReview.test.vibe).
+import { it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory, mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { run, Int } from "./run.vibe"
+
+const PROMPTS = {
+  wiki: "Open the wiki rulings page",
+  draft: "Draft an edit to the wiki roadmap",
+  issue: "File an issue: Module cycles crash the checker",
+  split: "Split #38 into three children, linked under it.",
+  sandbox: "Please start a sandbox for this",
+  history: "Show me the mythical history",
+  review: "Ask Claude Opus to review the specification",
+  action: "run /history",
+} as const
+const Input = Schema.Struct({
+  walk: Schema.Boolean,
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  kinds: Schema.Array(Schema.Literals(["wiki", "draft", "issue", "split", "sandbox", "history", "review", "action"])).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+  room: Int,
+})
+
+/** A refuted check names itself, never a value. */
+error Refuted {
+  check: number
+  get message() { return `check ${this.check}` }
+}
+
+/** What each request's reply may say; a maintainer's reply is the first form. */
+function expected(kind: keyof typeof PROMPTS, text: string, maintainer: boolean, viewer: boolean, contributes: boolean): boolean {
+  switch (kind) {
+    case "wiki": return text === "Opened rulings."
+    case "draft": return text.startsWith("Drafted an edit to ") ? !viewer : text === "Only contributors can draft wiki edits." ? !maintainer : text === "Couldn't draft that edit." && !maintainer
+    case "issue": return /^Filed #[0-9]+\.\n\n\[Open issue\]\(#issue-[0-9]+\)$/.test(text) ? !viewer : text === "No issue filed." && !maintainer
+    case "split": return text === "Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)" ? !viewer : /^Filed [0-2] children\.\n\n\[Open #38\]\(#issue-38\)$/.test(text) && !maintainer
+    case "sandbox": return text.startsWith("Started ") ? !viewer : text === "Couldn't start a sandbox" && !maintainer
+    case "history": return text.trim() !== ""
+    // The agent's slash command runs as an action it requested, or is unavailable to the role.
+    case "action": return /^[a-z-]+ requested\.$/.test(text) || (text === "Action unavailable." && !maintainer)
+    default: return contributes ? /^Claude Opus · LGTM · [A-F][+-]? · r[0-9]+$/.test(text) : text === "Only contributors can request a specification review."
+  }
+}
+
+it.live("mock/scripted-actions", () => run("mock/scripted-actions", Input, ({ walk, role, kinds: drawn, room }) => effect {
+  // A walk asks for every action kind once, so none depends on the draw. History, whose first read imports the large
+  // seed module, is drawn only; other targets reach its reply.
+  const kinds = walk ? ["wiki", "draft", "issue", "split", "sandbox", "review", "action"] as const : drawn
+  // The app binds its actions service for the agent; the mock's actions run over their own mock Factory.
+  const actions = Context.get(try Layer.build(MockActions({ role, actor: "agent" }).pipe(Layer.provide(MockFactory))), Actions)
+  provide mockFactoryFor(role), AgentActions = { actions } {
+    const factory = try Factory
+    const conversation = `scripted-${room}`
+    let ended = 0
+    const following = fork Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => {
+      if (event.type === "ReplyFinished" || event.type === "ReplyFailed") ended++
+      return ended === kinds.length
+    })))
+    for (const [index, kind] of kinds.entries()) {
+      try factory.post(conversation, `c${index}`, "Guest", PROMPTS[kind])
+      // One reply at a time: the next post waits until this one ends, so each reply answers its own request.
+      let waited = 0
+      while (ended <= index && waited++ < 3000) try sleep("20 millis")
+      if (ended <= index) throw new Refuted({ check: 17 })
+    }
+    const state = Array.from(try timeout(Fiber.join(following), "60 seconds")).reduce(apply, empty)
+    if (state.agent !== "idle") throw new Refuted({ check: 20 })
+    for (const post of state.entries.filter((entry) => entry.author === "person")) {
+      const kind = kinds[Number(post.clientId.slice(1))]!
+      const reply = state.entries.find((entry) => entry.author === "agent" && entry.inReplyTo === post.id)
+      if (reply === undefined || !reply.done) throw new Refuted({ check: 24 })
+      // Every request is answered in words, a refused one included; no reply fails.
+      if (reply.error !== "") throw new Refuted({ check: 26 })
+      if (!expected(kind, reply.text, role === "maintainer", role === "viewer", role === "contributor" || role === "maintainer")) throw new Refuted({ check: 1000 * (Object.keys(PROMPTS).indexOf(kind) + 1) + 27 })
+    }
+    return true
+  }
+}), 300_000)

@@ -1,0 +1,388 @@
+// The Accounts object's brokered sign-in, Connect GitHub, device and role routes (worker/Accounts.vibe) with the real
+// smithers.sh broker (VL-33) in the same process: the browser keeps one cookie jar per origin and follows each
+// redirect, and the site reaches the broker through an injected HttpClient that serves the broker's routes. GitHub is
+// the injected token service (one person per numeric code) and the credential custodian is an injected service that
+// may fail. Nothing intercepts a request.
+import { it } from "@effect/vitest"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Core, GitHub } from "@smthrs/integrations"
+import { Node } from "@smthrs/plan"
+import * as Accounts from "../worker/Accounts.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { run, Int } from "./run.vibe"
+
+const SITE = "https://factory.example"
+const BROKER = "https://broker.example"
+const SECRET = Redacted.make("fixture-only-broker-site-secret-32-chars")
+const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+const STATE = "__Host-vibelang-sign-in"
+
+const Op = Schema.Struct({
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere"]),
+  person: Schema.Literals(["1", "2", "7", "0"]),
+  tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired"]),
+  query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
+  answer: Schema.Literals(["connect", "cancel"]),
+  install: Schema.Boolean,
+  role: Schema.Literals(["new", "community", "contributor", "maintainer", "owner"]),
+  body: Schema.Literals(["valid", "malformed", "large", "empty"]),
+  n: Int,
+})
+const Input = Schema.Struct({ walk: Schema.Boolean, slug: Schema.Boolean, brokered: Schema.Boolean, named: Schema.Boolean, ops: Schema.Array(Op).check(Schema.isMaxLength(12)) })
+type Op = typeof Op.Type
+
+/** GitHub with one person per numeric code; code 0 has no account. */
+const github: GitHub.Auth.GitHubAuth["Service"] = {
+  authorizeUrl: ({ state, redirectUri }) => `https://github.test/login?state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+  exchange: ({ code }) => succeed({ accessToken: Redacted.make(Redacted.value(code)), expiresAt: null, refreshToken: null }),
+  refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+  user: (token) => /^[1-9][0-9]*$/.test(Redacted.value(token)) ? succeed({ id: Number(Redacted.value(token)), login: `p${Redacted.value(token)}` }) : fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" })),
+  permission: () => succeed("read"),
+  revoke: () => Effect.void,
+  deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+  deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+}
+
+const BrokerStep = Flow.make("fuzz/AccountsBroker", { payload: {}, success: Schema.Null, body: () => Node.succeed(null) })
+/** One broker step in a real engine, as the production host runs it. */
+const inFlow = <R>(body: string!GitHub.Auth.Broker.BrokerRefused!R) => scoped(effect {
+  const runtime = try FlowRuntime.FlowRuntime
+  const outcome = try Ref.make<Exit.Exit<string, GitHub.Auth.Broker.BrokerRefused>>(Exit.succeed(""))
+  try runtime.register(BrokerStep, () => effect { try Ref.set(outcome, try exit(body as string!GitHub.Auth.Broker.BrokerRefused)); return null })
+  try Effect.orDie(runtime.execute(BrokerStep, { executionId: try Effect.orDie(Core.Pkce.createCodeVerifier()), payload: {} }))
+  return try (try Ref.get(outcome))
+}).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)))
+
+interface Answer { readonly status: number; readonly location: string; readonly text: string; readonly cookies: ReadonlyArray<string> }
+type Jar = Map<string, string>
+
+effect function world(slug: boolean, brokered: boolean, named: boolean) {
+  const storage = try Effect.try(() => objectStorage())
+  const keys = try Core.CookieKeys.make({ primary: Redacted.make("fixture-only-broker-cookie-key-32-chars") }, "primary")
+  let custodian = true
+  const broker = try GitHub.Auth.Broker.make({
+    origin: BROKER, keys, github, store: try GitHub.Auth.Broker.memoryStore(), sites: [{ origin: SITE, secret: SECRET }], encryptionKey: KEY,
+    connections: { install: (input) => custodian ? succeed({ delegation: `d-${input.person}`, expires: Date.now() + 3_600_000 }) : fail(new GitHub.Auth.Broker.BrokerRefused()) },
+  })
+  const durable = { ...broker, callback: (...args: Parameters<typeof broker.callback>) => inFlow(broker.callback(...args)), consent: (...args: Parameters<typeof broker.consent>) => inFlow(broker.consent(...args)) }
+  const serveBroker = GitHub.Auth.Broker.serve(durable, BROKER)
+  // The site's own HttpClient: smithers.sh's routes, served in process; anything else is unreachable.
+  const client = HttpClient.make((request) => effect {
+    const response = try Effect.provideService(serveBroker, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromClientRequest(request))
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(response))
+  })
+  const accounts = try Effect.provideService(Accounts.make("accounts-broker-fuzz", storage as unknown as Storage, {
+    origin: SITE, initialMaintainer: "1", clientId: "fixture-client-id", github, signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+    encryptionKey: KEY, ...(brokered ? { broker: { origin: BROKER, secret: SECRET } } : named ? { broker: { origin: BROKER } } : {}), ...(slug ? { appSlug: "vibelang fixture" } : {}),
+  }), HttpClient.HttpClient, client)
+  const jars = new Map<string, Jar>([[SITE, new Map()], [BROKER, new Map()]])
+  /** One browser request: the origin's cookies, then the response's Set-Cookie into that jar. */
+  effect function ask(url: string, options: { readonly method?: "GET" | "POST"; readonly origin?: string; readonly site?: string; readonly body?: string; readonly cookies?: Jar; readonly stream?: boolean; readonly form?: boolean; readonly url?: string } = {}) {
+    const target = new URL(url).origin
+    const jar = options.cookies ?? jars.get(target) ?? new Map()
+    let request = HttpClientRequest.make(options.method ?? "GET")(url)
+    if (options.origin !== undefined) request = HttpClientRequest.setHeader(request, "origin", options.origin)
+    if (options.site !== undefined) request = HttpClientRequest.setHeader(request, "sec-fetch-site", options.site)
+    if (jar.size > 0) request = HttpClientRequest.setHeader(request, "cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
+    if (options.body !== undefined) request = HttpClientRequest.bodyText(request, options.body, options.form === true ? "application/x-www-form-urlencoded" : "application/json")
+    const parsed = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
+    // A platform that hands the object an absolute URL for another host.
+    const server = options.url === undefined ? parsed : parsed.modify({ url: options.url })
+    const response = target === BROKER ? try Effect.provideService(serveBroker, HttpServerRequest.HttpServerRequest, server)
+      : try Effect.provideService(accounts.fetch, HttpServerRequest.HttpServerRequest, server)
+    const web = HttpServerResponse.toWeb(response)
+    const cookies = web.headers.getSetCookie()
+    if (options.cookies === undefined) for (const cookie of cookies) {
+      const pair = cookie.split(";")[0]!
+      const at = pair.indexOf("=")
+      if (pair.slice(at + 1) === "") jar.delete(pair.slice(0, at))
+      else jar.set(pair.slice(0, at), pair.slice(at + 1))
+    }
+    // An event stream never ends; its body is not read.
+    const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => web.text()) : ""
+    return { status: response.status, location: web.headers.get("location") ?? "", text, cookies } satisfies Answer
+  }
+  return { storage, accounts, ask, jars, setCustodian: (healthy: boolean) => { custodian = healthy } }
+}
+type World = Effect.Success<ReturnType<typeof world>>
+
+/** Where the last trip stopped, for a refuted check. */
+let tripStage = 0
+
+/** The browser's trip from the site through the broker and GitHub to the handoff fragment the page posts back. */
+effect function trip(w: World, start: Answer, code: string, answer: "connect" | "cancel") {
+  if (!start.location.startsWith(BROKER)) { tripStage = 1; return undefined }
+  const atBroker = try w.ask(start.location)
+  const authorize = new URL(atBroker.location)
+  if (authorize.origin !== "https://github.test") { tripStage = 2; return undefined }
+  const back = try w.ask(`${authorize.searchParams.get("redirect_uri") ?? ""}?state=${authorize.searchParams.get("state") ?? ""}&code=${code}`)
+  let location = back.location
+  if (location.startsWith(BROKER + GitHub.Auth.Broker.CONSENT)) {
+    const consent = new URL(location).searchParams.get("consent") ?? ""
+    const page = try w.ask(location)
+    if (page.status !== 200) { tripStage = 3; return undefined }
+    const answered = try w.ask(BROKER + GitHub.Auth.Broker.CONSENT, { method: "POST", origin: BROKER, site: "same-origin", body: new URLSearchParams({ consent, answer }).toString(), form: true })
+    location = answered.location
+    // A cancelled consent returns the browser to the site's front page with nothing to hand back.
+    if (answer === "cancel" && answered.status === 303 && location === SITE + "/") return "cancelled" as const
+  }
+  if (!location.startsWith(SITE + Accounts.CALLBACK + "#")) { tripStage = 4; return undefined }
+  const fragment = new URLSearchParams(new URL(location).hash.slice(1))
+  return { code: fragment.get("code") ?? "", state: fragment.get("state") ?? "" }
+}
+
+/** What the site says the browser is. */
+effect function who(w: World) {
+  const answer = try w.ask(SITE + "/api/auth/session")
+  return (try parsed(answer.text)) as { readonly id: string; readonly agent?: boolean; readonly available?: boolean }
+}
+effect function parsed(text: string) {
+  return try Effect.orDie(Effect.try(() => JSON.parse(text) as unknown))
+}
+
+error Refuted {
+  kind: string
+  check: number
+  get message() { return `${this.kind} check ${this.check}` }
+}
+
+const ALLOWED = new Set([200, 204, 302, 303, 400, 401, 403, 404, 405, 408, 413, 503])
+
+/** A sign-in signs in exactly the person GitHub named, once; a tampered handoff never does; Connect needs a person's
+ * own session and stores a delegation only after consent; a device session stays an agent; nothing answers 500. */
+it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Input, (input) => scoped(effect {
+  // The walk runs in the brokered world and in GitHub's own OAuth, so neither depends on the draw; drawn ops run in
+  // the drawn world.
+  if (input.walk && !(try play(input, true, false, true))) return false
+  if (input.walk && !(try play(input, false, false, true))) return false
+  return try play(input, input.brokered, !input.brokered && input.named, false)
+})), 120_000)
+
+effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean) {
+  const w = try world(input.slug, brokered, named)
+  const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
+  const walk: ReadonlyArray<Op> = walking ? [
+    { ...base, kind: "sign-in" }, { ...base, kind: "connect" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect", answer: "cancel" },
+    { ...base, kind: "connect", install: false }, { ...base, kind: "connect", query: "?resume-op=new&resume-key=k1&resume-recovery=r1" },
+    { ...base, kind: "sign-in", tamper: "code" }, { ...base, kind: "sign-in", tamper: "replay" }, { ...base, kind: "sign-in", tamper: "expired" },
+    { ...base, kind: "device" }, { ...base, kind: "connect" }, { ...base, kind: "device", body: "malformed" }, { ...base, kind: "device", person: "0" },
+    { ...base, kind: "grant" }, { ...base, kind: "members" }, { ...base, kind: "events" }, { ...base, kind: "install" }, { ...base, kind: "handoff" },
+    { ...base, kind: "sign-out" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect" }, { ...base, kind: "sign-in", person: "1", tamper: "null-same" },
+    { ...base, kind: "grant", role: "maintainer", n: 2 }, { ...base, kind: "members" }, { ...base, kind: "foreign" },
+    { ...base, kind: "draft-wiki" }, { ...base, kind: "draft-wiki", person: "1" }, { ...base, kind: "participation" }, { ...base, kind: "roles-large" },
+    { ...base, kind: "sign-out" }, { ...base, kind: "issues" }, { ...base, kind: "wiki" }, { ...base, kind: "roles-large" }, { ...base, kind: "participation" },
+    { ...base, kind: "device-id" }, { ...base, kind: "elsewhere" }, { ...base, kind: "abandon" }, { ...base, kind: "sign-in" }, { ...base, kind: "expire" },
+    { ...base, kind: "sign-in" }, { ...base, kind: "expire", n: 1 },
+  ] : []
+  // The model: whose session the browser holds, and whether it is the person's agent.
+  let signedIn: { readonly id: string; readonly agent: boolean } | undefined
+  // A refuted check fails naming its step kind and check, never a value.
+  const refute = effect (kind: string, check: number) => {
+    throw new Refuted({ kind, check })
+    return false
+  }
+  for (const op of walking ? walk : input.ops) {
+    w.setCustodian(op.install)
+    const statuses: Array<number> = []
+    const seen = effect (answer: Answer) => { statuses.push(answer.status); return answer }
+    switch (op.kind) {
+      case "sign-in": {
+        const start = try seen(try w.ask(SITE + "/api/auth/sign-in"))
+        if (named) { if (start.status !== 503) return try refute(op.kind, 4); break }
+        if (!brokered) {
+          // GitHub's own OAuth: the site keeps the PKCE verifier and GitHub returns the code to its callback.
+          const authorize = new URL(start.location)
+          if (start.status !== 302 || authorize.origin !== "https://github.test") return try refute(op.kind, 1)
+          const state = op.tamper === "state" ? "y".repeat(43) : authorize.searchParams.get("state") ?? ""
+          const jar = w.jars.get(SITE)!
+          const cookies = op.tamper === "cookie" ? new Map([...jar, [STATE, (jar.get(STATE) ?? "") + "0"]]) : undefined
+          const back = try seen(try w.ask(`${SITE}${Accounts.CALLBACK}?state=${state}&code=${op.tamper === "code" ? "x".repeat(5000) : op.person}`, cookies === undefined ? {} : { cookies }))
+          const replayed = op.tamper === "replay" ? try seen(try w.ask(`${SITE}${Accounts.CALLBACK}?state=${state}&code=${op.person}`)) : undefined
+          const honest = (op.tamper !== "state" && op.tamper !== "cookie" && op.tamper !== "code") && op.person !== "0"
+          if (honest) {
+            if (back.status !== 302 || back.location !== SITE + "/" || (replayed !== undefined && replayed.status !== 400)) return try refute(op.kind, 2)
+            signedIn = { id: op.person, agent: false }
+          } else if (back.location === SITE + "/") return try refute(op.kind, 3)
+          break
+        }
+        if (start.status !== 302) return try refute(op.kind, 21)
+        const handed = try trip(w, start, op.person, op.answer)
+        // GitHub has no account for code 0, so the broker never hands the browser back.
+        if (handed === undefined || handed === "cancelled") { if (op.person !== "0") return try refute(op.kind, 2400 + tripStage); break }
+        if (op.tamper === "expired") {
+          const key = `broker/${handed.state}`
+          const record = (try promise(() => w.storage.get(key))) as { readonly claims: Record<string, unknown> } | undefined
+          if (record !== undefined) try promise(() => w.storage.put(key, { ...record, claims: { ...record.claims, expires: 1 } }))
+        }
+        const body = JSON.stringify({ code: op.tamper === "code" ? "z".repeat(43) : handed.code, state: op.tamper === "state" ? "y".repeat(43) : handed.state })
+        const jar = w.jars.get(SITE)!
+        const cookies = op.tamper === "cookie" ? new Map([...jar, [STATE, (jar.get(STATE) ?? "") + "0"]]) : undefined
+        const origin = op.tamper === "null-same" || op.tamper === "null-cross" ? "null" : op.tamper === "foreign-origin" ? "https://evil.example" : SITE
+        const site = op.tamper === "null-same" ? "same-origin" : op.tamper === "null-cross" ? "cross-site" : undefined
+        const accepted = try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin, ...(site === undefined ? {} : { site }), body, ...(cookies === undefined ? {} : { cookies }) }))
+        const replayed = op.tamper === "replay" ? try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body })) : undefined
+        const honest = op.tamper === "none" || op.tamper === "replay" || op.tamper === "null-same"
+        const person = op.person !== "0"
+        if (honest && person) {
+          if (accepted.status !== 200 || (replayed !== undefined && replayed.status !== 400)) return try refute(op.kind, 40)
+          signedIn = { id: op.person, agent: false }
+        } else if (accepted.status === 200) return try refute(op.kind, 42)
+        break
+      }
+      case "connect": {
+        const press = try seen(try w.ask(SITE + "/api/auth/connect" + op.query, { method: "POST", origin: SITE }))
+        const valid = !["?wiki-page=../x", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"].includes(op.query)
+        if (signedIn === undefined) { if (press.status !== 401) return try refute(op.kind, 48); break }
+        if (signedIn.agent) { if (press.status !== 403) return try refute(op.kind, 49); break }
+        if (valid && !brokered) { if (press.status !== 503) return try refute(op.kind, 49); break }
+        if (!valid) { if (press.status !== 400) return try refute(op.kind, 50); break }
+        if (press.status !== 303) return try refute(op.kind, 51)
+        const handed = try trip(w, press, signedIn.id, op.answer)
+        // A custodian that fails refuses the consent at the broker, which keeps the browser there.
+        if (handed === undefined) { if (op.answer === "connect" && !op.install) break; return try refute(op.kind, 5400 + tripStage) }
+        if (handed === "cancelled") { if (op.answer !== "cancel") return try refute(op.kind, 55); break }
+        const accepted = try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body: JSON.stringify(handed) }))
+        const stored = (try promise(() => w.storage.get(`delegation/${signedIn!.id}`))) as { readonly delegation?: string } | undefined
+        // Consent with a working custodian is the only way here, and it installs a delegation for the same person.
+        const delegated = op.answer === "connect" && op.install
+        if (!delegated || accepted.status !== 200 || stored?.delegation !== `d-${signedIn.id}`) return try refute(op.kind, 59)
+        if (delegated) {
+          const location = ((try parsed(accepted.text)) as { readonly location?: string }).location ?? ""
+          const expected = op.query === "?wiki-page=index" ? "/wiki/index" : op.query.startsWith("?resume-op") ? "/?issues=1&" + op.query.slice(1) : "/?issues=1"
+          if (location !== expected) return try refute(op.kind, 63)
+        }
+        break
+      }
+      case "disconnect": {
+        const answer = try seen(try w.ask(SITE + "/api/auth/disconnect", { method: "POST", origin: SITE }))
+        if (signedIn === undefined ? answer.status !== 401 : answer.status !== 303 || (try promise(() => w.storage.get(`delegation/${signedIn!.id}`))) !== undefined) return try refute(op.kind, 69)
+        break
+      }
+      case "device": {
+        const body = op.body === "valid" ? JSON.stringify({ token: op.person }) : op.body === "malformed" ? "{" : op.body === "empty" ? JSON.stringify({ token: "" }) : JSON.stringify({ token: "x".repeat(3000) })
+        const answer = try seen(try w.ask(SITE + "/api/auth/device", { method: "POST", origin: SITE, body }))
+        const expected = op.body === "large" ? 413 : op.body !== "valid" ? 400 : op.person === "0" ? 401 : 200
+        if (answer.status !== expected) return try refute(op.kind, 76)
+        if (answer.status === 200) {
+          // The CLI keeps the returned cookie; this browser takes it as its session.
+          const cookie = ((try parsed(answer.text)) as { readonly cookie: string }).cookie
+          const at = cookie.indexOf("=")
+          w.jars.get(SITE)!.set(cookie.slice(0, at), cookie.slice(at + 1))
+          signedIn = { id: op.person, agent: true }
+        }
+        break
+      }
+      case "sign-out": {
+        const answer = try seen(try w.ask(SITE + "/api/auth/sign-out", { method: "POST", origin: SITE }))
+        if (answer.status !== 204) return try refute(op.kind, 88)
+        signedIn = undefined
+        break
+      }
+      case "grant": {
+        const role = op.role
+        const body = op.body === "malformed" ? "{" : JSON.stringify({ id: String(op.n + 1), role })
+        const answer = try seen(try w.ask(SITE + "/api/roles", { method: "POST", origin: SITE, body }))
+        if (signedIn === undefined ? answer.status !== 403 : ![200, 400, 403].includes(answer.status)) return try refute(op.kind, 96)
+        if ((role === "owner" || op.body === "malformed") && signedIn !== undefined && answer.status !== 400) return try refute(op.kind, 97)
+        break
+      }
+      case "members": case "events": {
+        const answer = try seen(try w.ask(SITE + (op.kind === "members" ? "/api/roles" : `/api/roles/events?after=${op.n === 0 ? "x" : "0"}`), { stream: op.kind === "events" }))
+        if (![200, 400, 403].includes(answer.status) || (signedIn === undefined && answer.status !== 403)) return try refute(op.kind, 102)
+        break
+      }
+      case "install": {
+        const answer = try seen(try w.ask(SITE + "/api/auth/install"))
+        if (input.slug ? answer.status !== 302 || !answer.location.startsWith("https://github.com/apps/vibelang%20fixture/") : answer.status !== 503) return try refute(op.kind, 107)
+        break
+      }
+      case "handoff": {
+        const answer = try seen(try w.ask(SITE + Accounts.CALLBACK))
+        if (answer.status !== 200 || answer.text !== GitHub.Auth.Broker.HANDOFF_PAGE) return try refute(op.kind, 112)
+        break
+      }
+      case "issues": case "wiki": {
+        // Signed out, a write is asked to sign in before any GitHub request; every answer is a typed status.
+        const write = op.body !== "malformed"
+        const path = op.kind === "issues" ? "/api/issues" : "/api/wiki"
+        const body = op.kind === "issues"
+          ? JSON.stringify({ op: "new", number: 0, parent: 0, title: "Fuzzed", text: "Fuzzed", assignee: "", example: "", prior: "", key: `k${op.n}` })
+          : JSON.stringify({ op: "draft", page: "index", base: "", text: "ask", key: `k${op.n}` })
+        const answer = try seen(write ? try w.ask(SITE + path, { method: "POST", origin: SITE, body }) : try w.ask(SITE + path + (op.kind === "wiki" ? "?page=index" : "")))
+        if (answer.status === 500 || answer.status > 503) return try refute(op.kind, 140)
+        if (write && signedIn === undefined && answer.status !== 401) return try refute(op.kind, 141)
+        break
+      }
+      case "draft-wiki": {
+        // The conversation host's server-only draft: an owner with no role is refused; the bootstrap maintainer is not.
+        const owner = op.person === "1" ? "1" : "99"
+        const reason = try w.accounts.draftWiki(owner, "index", "ask", `draft-${op.n}`)
+        if (owner === "99" ? reason !== "forbidden" : reason === "forbidden") return try refute(op.kind, 150)
+        break
+      }
+      case "participation": {
+        const jar = w.jars.get(SITE)!
+        try w.accounts.participation(jar.get(Accounts.SESSION))
+        const role = ((try parsed((try w.ask(SITE + "/api/auth/session")).text)) as { readonly role?: string }).role
+        // Taking part makes a signed-in person at least a community member; a visitor stays a viewer.
+        if ((signedIn === undefined) !== (role === "viewer")) return try refute(op.kind, 160)
+        break
+      }
+      case "roles-large": {
+        const answer = try seen(try w.ask(SITE + "/api/roles", { method: "POST", origin: SITE, body: "x".repeat(3000) }))
+        if (answer.status !== (signedIn === undefined ? 403 : 413)) return try refute(op.kind, 170)
+        break
+      }
+      case "expire": {
+        // A stored session that expired, or that no longer decodes, is a visitor's.
+        for (const key of (try promise(() => w.storage.list({ prefix: "session/" }))).keys()) {
+          try promise(() => w.storage.put(key, op.n % 2 === 0 ? { id: "1", login: "x", expires: 1 } : { broken: true }))
+        }
+        signedIn = undefined
+        break
+      }
+      case "abandon": {
+        // Sign-ins nobody finished: the next start deletes every expired row, and keeps a live one.
+        try promise(() => w.storage.put("sign-in/stale", { expires: 1, verifier: { nonce: "n", ciphertext: "c" } }))
+        try promise(() => w.storage.put("broker/stale", { claims: { expires: "never" } }))
+        try promise(() => w.storage.put("sign-in/live", { expires: Number.MAX_SAFE_INTEGER, verifier: { nonce: "n", ciphertext: "c" } }))
+        try seen(try w.ask(SITE + "/api/auth/sign-in"))
+        if (named) break
+        const rows = [...(try promise(() => w.storage.list({ prefix: "sign-in/" }))).keys(), ...(try promise(() => w.storage.list({ prefix: "broker/" }))).keys()]
+        if (rows.includes("sign-in/stale") || rows.includes("broker/stale") || !rows.includes("sign-in/live")) return try refute(op.kind, 190)
+        break
+      }
+      case "device-id": {
+        const answer = try seen(try w.ask(SITE + "/api/auth/device"))
+        if (answer.status !== 200 || ((try parsed(answer.text)) as { readonly clientId?: string }).clientId !== "fixture-client-id") return try refute(op.kind, 200)
+        break
+      }
+      case "elsewhere": {
+        const answer = try seen(try w.ask(SITE + "/api/auth/session", { url: "https://evil.example/api/auth/session" }))
+        if (answer.status !== 403) return try refute(op.kind, 210)
+        break
+      }
+      case "foreign": {
+        // A write without the site's Origin is refused before any route.
+        const write = try seen(try w.ask(SITE + "/api/auth/sign-out", { method: "POST", origin: "https://evil.example" }))
+        const unsigned = try seen(try w.ask(SITE + "/api/roles", { method: "POST", body: "{}" }))
+        if (write.status !== 403 || unsigned.status !== 403) return try refute(op.kind, 119)
+        break
+      }
+      default: {
+        const answer = try seen(try w.ask(SITE + "/api/auth/unknown"))
+        if (answer.status !== 404) return try refute(op.kind, 124)
+      }
+    }
+    if (statuses.some((status) => !ALLOWED.has(status))) return try refute(op.kind, 127)
+    // The session the site reports is the model's.
+    const current = try who(w)
+    if (signedIn === undefined ? current.id !== "" : current.id !== signedIn.id || (current.agent === true) !== signedIn.agent) return try refute(op.kind, 130)
+    if (current.available !== !named) return try refute(op.kind, 131)
+  }
+  return true
+}

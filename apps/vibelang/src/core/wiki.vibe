@@ -5,7 +5,7 @@ import { pageIndex } from "./wikiPageDecision.vibe"
 export { pages }
 export { requestedWiki, wikiEditable, wikiPath } from "./wikiIndex.vibe"
 export function wikiPage(url: string) {
-  const base = url.split("#")[0] ?? ""
+  const base = url.split("#")[0]!
   const index = base.startsWith("/wiki/") ? pageIndex(pages, base.slice("/wiki/".length)) : -1
   return index < 0 ? undefined : pages[index]
 }

@@ -57,6 +57,7 @@ it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(e
   const lifecycle: ReadonlyArray<Step> = input.prefix ? [
     { ...clean, kind: "start" }, { ...clean, kind: "alarm" }, { ...clean, kind: "sweep" }, { ...clean, kind: "sweep" }, { ...clean, kind: "sweep", binding: false },
     { ...clean, kind: "sweep", owner: "none" }, { ...clean, kind: "lease", owner: "person" },
+    { ...clean, kind: "sweep", owner: "past" }, { ...clean, kind: "read", owner: "none" },
   ] : []
   let generation = 0
   let operation = 0

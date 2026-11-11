@@ -1,0 +1,72 @@
+// The specification's revise and review transitions (src/core/specification.vibe `performSpecification`,
+// `revisedSpecificationState`) on any state and request, with no reviewer service, a scripted one, or an injected
+// reviewer that answers, answers a stale revision, or fails. Oracle: specificationDecision.vibe's contracts, written
+// again here; a refused request writes nothing and says why; an accepted review is recorded for its own reviewer only.
+import { it } from "@effect/vitest"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { emptySpecification, fixtureSpecification, fixtureSpecificationHistory, performSpecification, revisedSpecificationState, SpecificationReviewers } from "../src/core/specification.vibe"
+import { reviewAnswerAccepted, scriptedGrade, specificationRefusal } from "../src/core/specificationDecision.vibe"
+import { run } from "./run.vibe"
+
+const REVIEWERS = ["astra", "sol", "fable", "opus"] as const
+const Input = Schema.Struct({
+  spec: Schema.Literals(["none", "empty", "fixture", "capacity"]),
+  history: Schema.Boolean,
+  revise: Schema.Boolean,
+  key: Schema.Literals(["", "k1"]),
+  revision: Schema.Literals(["current", "stale", "absent"]),
+  text: Schema.Literals(["", "  ", "# Spec\n\nNew text.", "same"]),
+  reviewer: Schema.Union([Schema.Null, Schema.Literals(REVIEWERS)]),
+  provider: Schema.Literals(["absent", "answers", "stale", "unlinked", "fails"]),
+  scripted: Schema.Boolean,
+  policy: Schema.Literals(["keep", "reset"]),
+})
+
+it.live("issues/specification-transitions", () => run("issues/specification-transitions", Input, (input) => effect {
+  const spec = input.spec === "none" ? undefined : input.spec === "empty" ? emptySpecification : input.spec === "fixture" ? fixtureSpecification : { ...fixtureSpecification, revision: Number.MAX_SAFE_INTEGER }
+  const before = { seq: 3, items: [], ...(spec === undefined ? {} : { specification: spec }), ...(input.history ? { specificationHistory: fixtureSpecificationHistory } : {}) }
+  const current = (spec ?? emptySpecification).revision
+  const text = input.text === "same" ? (spec ?? emptySpecification).text : input.text
+  const requested = input.revision === "current" ? current : input.revision === "stale" ? current - 1 : undefined
+  const request: IssueRequest = {
+    op: input.revise ? "spec-revise" : "spec-review", key: input.key, number: 0, parent: 0, title: "", text, example: "", prior: "", assignee: "",
+    ...(requested === undefined ? {} : { revision: requested }), ...(input.reviewer === null ? {} : { reviewer: input.reviewer }),
+  }
+  const answered = input.provider === "stale" ? current - 1 : current
+  const reviewers = Layer.succeed(SpecificationReviewers, {
+    review: (reviewer) => input.provider === "fails" ? fail(new IssueFailure({ reason: "no-model", unwritten: true }))
+      : succeed({ verdict: "LGTM" as const, grade: "A", revision: answered, link: input.provider === "unlinked" ? "" : `#review-${reviewer}`, review: "Reviewed" }),
+  })
+  const performed = performSpecification(before, request, input.scripted) as unknown as Effect.Effect<typeof before, IssueFailure>
+  const result = try Effect.result(input.provider === "absent" ? performed : Effect.provide(performed, reviewers))
+  // The refusal contract, before any work.
+  const refusal = input.key === "" || requested !== current ? "review"
+    : input.revise ? (text.trim() === "" || current >= Number.MAX_SAFE_INTEGER ? "invalid" : "") : input.reviewer === null || current === 0 ? "invalid" : ""
+  if (specificationRefusal(input.revise, input.key, requested, current, text.trim() === "", input.reviewer !== null) !== refusal) return false
+  if (refusal !== "") return result._tag === "Failure" && result.failure.reason === refusal && result.failure.unwritten === true
+  if (input.revise) {
+    if (result._tag === "Failure") return false
+    const after = result.success
+    // An unchanged text is no revision; a new one is the next revision with one history entry.
+    if (text === (spec ?? emptySpecification).text) return after === before
+    const reset = revisedSpecificationState(before, text, "2026-11-10T00:00:00Z", input.policy)
+    const next = reset.specification!
+    if (next.revision !== current + 1 || next.text !== text || (input.policy === "reset" && REVIEWERS.some((r) => next[r].verdict !== ""))) return false
+    if (input.policy === "keep" && REVIEWERS.some((r) => next[r] !== (spec ?? emptySpecification)[r])) return false
+    return after.specification?.revision === current + 1 && after.seq === before.seq + 1 && (after.specificationHistory?.length ?? 0) === (input.history ? fixtureSpecificationHistory.length : 0) + 1
+  }
+  const reviewer = input.reviewer!
+  const base = spec ?? emptySpecification
+  const provided = input.provider !== "absent"
+  if (provided && input.provider === "fails") return result._tag === "Failure" && result.failure.reason === "no-model"
+  if (!provided && !input.scripted) return result._tag === "Failure" && result.failure.reason === "no-model"
+  const accepted = provided ? reviewAnswerAccepted(answered, current, "LGTM", input.provider === "unlinked" ? "" : "x") : true
+  if (accepted !== (!provided || (answered === current && input.provider !== "unlinked"))) return false
+  if (!accepted) return result._tag === "Failure" && result.failure.reason === "review" && result.failure.unwritten === true
+  if (result._tag === "Failure") return false
+  const recorded = result.success.specification!
+  // Only the named reviewer's seat changes; a scripted Opus answers B+ until it has a verdict.
+  if (REVIEWERS.some((r) => r !== reviewer && recorded[r] !== base[r]) || recorded[reviewer].revision !== current || recorded[reviewer].verdict !== "LGTM") return false
+  const grade = provided ? "A" : scriptedGrade(reviewer, base.opus.verdict, fixtureSpecification[reviewer].grade)
+  return recorded[reviewer].grade === grade && grade === (provided ? "A" : reviewer === "opus" && base.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade)
+}))
