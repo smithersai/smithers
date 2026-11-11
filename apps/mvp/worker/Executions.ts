@@ -2,7 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
-import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
+import { Cause, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
@@ -68,6 +68,8 @@ export interface FlowExecutionShape {
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
   readonly repositoryRun: () => Effect.Effect<RepoRuns.Admitted | null, never, RuntimeContext>
   readonly signal: (deferredName: string) => Effect.Effect<void, never, RuntimeContext>
+  /** Records a person's answer for the open attempt of a human task its run is parked on: whether the run took it. */
+  readonly answer: (task: string, value: typeof Schema.Json.Type) => Effect.Effect<boolean, never, RuntimeContext>
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
   readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
   readonly alarm: () => Effect.Effect<void, never, RuntimeContext>
@@ -108,6 +110,29 @@ export const starter = (objects: Objects) =>
                 : new Flows.StartUnavailable({ errorCode: codeOf(error) })
             )
           })
+        )
+    })
+  })
+
+/** What `answerer` reaches an execution's object through: the namespace, from ChatApi. */
+export interface Answerers {
+  readonly getByName: (executionId: string) => {
+    readonly answer: FlowExecutionShape["answer"]
+  }
+}
+
+/**
+ * Where a person's answer reaches a remote run parked on a human task (worker/Flows.ts `TaskAnswers`): the execution's
+ * own Durable Object, with the runtime of the request that builds it. A failed RPC is `AnswerUnavailable` with its code.
+ */
+export const answerer = (objects: Answerers) =>
+  Effect.gen(function*() {
+    const runtime = yield* RuntimeContext
+    return Flows.TaskAnswers.of({
+      answer: (executionId, task, value) =>
+        objects.getByName(executionId).answer(task, value).pipe(
+          Effect.provideService(RuntimeContext, runtime),
+          Effect.catchCause((cause) => Effect.fail(new Flows.AnswerUnavailable({ errorCode: codeOf(Cause.squash(cause)) })))
         )
     })
   })
@@ -361,7 +386,9 @@ const object = <E, R>(
         // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
         // started through this alarm's runtime.
         const raiser = Effect.map(flowStarter, FleetAlert.startWith)
-        const base = ExecutionHost.withFeedRedaction(
+        // An agent's question to one person waits on its own object for their answer
+        // (docs/features/agent-status.md#addressed-waits).
+        const base = ExecutionHost.withAsks(ExecutionHost.withFeedRedaction(
           ExecutionHost.withFleet(
             ExecutionHost.withRunners(
               ExecutionHost.withCiJobs(
@@ -399,7 +426,7 @@ const object = <E, R>(
             alertChannels
           ),
           appDatabase
-        )
+        ), appDatabase)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
@@ -526,6 +553,7 @@ const object = <E, R>(
         return {
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
           signal: (deferredName: string) => host.signal(deferredName).pipe(Effect.provide(logs)),
+          answer: (task: string, value: typeof Schema.Json.Type) => host.answer(task, value).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
           repositoryRun: () => host.repositoryRun.pipe(Effect.map(Option.getOrNull), Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),

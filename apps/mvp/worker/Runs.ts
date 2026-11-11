@@ -13,9 +13,11 @@ import {
   RunAnswer as RunAnswerSchema,
 } from "../src/features/status/schema.ts"
 import { type Actor, boundTo, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { askingOnAnswer } from "./branch/Access.ts"
+import { askingOnAnswer, BranchRoles } from "./branch/Access.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
+import { TaskAnswers } from "./Flows.ts"
+import { ASK_TASK } from "./flows/Ask.ts"
 import { withAnswerConversation } from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RunCredentials from "./RunCredentials.ts"
@@ -31,10 +33,13 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   `409 not_writable` with `reason` `settled` or `other_launcher`.
 // - `POST /api/runs/<id>/answer`: the person answers the open question `version` names. The first accepted answer
 //   settles it; the same answer again is taken as landed; anything else is `409 not_open`. Only the person answers:
-//   anyone acting for them is `403 person_only`.
+//   anyone acting for them is `403 person_only`. A row addressed to a person (`addressed_to`, an agent's `queue/ask`)
+//   is answered by that person alone, while they are a Maintainer or Admin of its repository; the answer goes to the
+//   parked run first (`TaskAnswers`), then onto the row.
 // - `POST /api/runs/<run>/credential {flow, ceiling?}`: the run credential of run `<run>` (its execution id,
 //   percent-encoded), minted for the person's session or, nested, for the caller's credential (worker/RunCredentials.ts).
-// - `GET /api/shapes/runs`: the signed-in person's rows, without `launched_by`. Signed out, no rows.
+// - `GET /api/shapes/runs`: the signed-in person's rows and the rows addressed to them, without `launched_by`. Signed
+//   out, no rows.
 //
 // A run credential reports and answers only for the run its chain started from: any other is `403 other_run`.
 //
@@ -56,6 +61,7 @@ export const shapes = Metric.counter("smithers_run_shape_requests", {
 /**
  * The `runs` columns a device syncs: `launched_by`, which the shape filters on, never. `conversation_id` is where the
  * run works: a device shows its wait only while that conversation's repository may show (decision 0110, the data gate).
+ * `repo_id` is the repository a row addressed to the person asks about: such a row has no conversation.
  */
 export const SYNCED_RUN_COLUMNS = [
   "id",
@@ -69,6 +75,7 @@ export const SYNCED_RUN_COLUMNS = [
   "created_at",
   "updated_at",
   "conversation_id",
+  "repo_id",
 ]
 
 /** The flow of every run that reports in this slice: an agent's answer. */
@@ -167,18 +174,26 @@ const unwrittenBecause = (runId: string, launchedBy: string) =>
     return row!.reason ?? undefined
   })
 
+/** A run's row as the answer route reads it. `execution` is the run its open question waits in. */
+interface RunRow {
+  readonly launchedBy: string
+  readonly addressedTo: string | null
+  readonly repoId: string
+  readonly execution: string
+  readonly status: string
+  readonly version: number
+  readonly kind: string | null
+  readonly answer: { readonly value: unknown } | null
+}
+
 /** The run's row as the answer route reads it. */
 const runOf = (runId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{
-      readonly launchedBy: string
-      readonly status: string
-      readonly version: number
-      readonly kind: string | null
-      readonly answer: { readonly value: unknown } | null
-    }>`
-      SELECT launched_by AS "launchedBy", status, version, wait->>'kind' AS kind, answer FROM runs WHERE id = ${runId}`
+    const [row] = yield* sql<RunRow>`
+      SELECT launched_by AS "launchedBy", addressed_to AS "addressedTo", COALESCE(repo_id, '') AS "repoId",
+        COALESCE(wait->>'execution', '') AS execution, status, version, wait->>'kind' AS kind, answer
+      FROM runs WHERE id = ${runId}`
     return row
   })
 
@@ -219,6 +234,20 @@ const applyAnswer = (runId: string, launchedBy: string, answer: RunAnswer) =>
     return row === undefined ? undefined : Number(row.txid)
   })
 
+/**
+ * Records the answer the parked run took on the row addressed to `person`, for the question `version` names: its
+ * transaction, or `undefined` when the row holds an answer already (the run's own settle may have written it first).
+ */
+const applyAddressedAnswer = (runId: string, person: string, version: number, value: RunAnswer["value"]) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly txid: string }>`
+      UPDATE runs SET answer = jsonb_build_object('value', ${JSON.stringify(value)}::jsonb), answered_at = now(),
+        updated_at = now()
+      WHERE id = ${runId} AND addressed_to = ${person} AND version = ${version} AND answer IS NULL
+      RETURNING pg_current_xact_id()::xid::text AS txid`
+    return row === undefined ? undefined : Number(row.txid)
+  })
 
 /**
  * Runs `write` and, when it wrote, the feed's fold of the run (worker/Notifications.ts), in one transaction: the run's
@@ -276,15 +305,61 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         return refusal(409, "not_writable", { reason })
       })
 
+    /**
+     * `POST /api/runs/<id>/answer` on a row addressed to a person: `actor` must be that person, a Maintainer or Admin of
+     * the row's repository. The parked run takes the answer first; then the row records it. A run that can't take it
+     * while its row is still open is not parked yet, or took it already and is settling: `503`, sent again later.
+     */
+    const addressedAnswer = (row: RunRow, runId: string, actor: Actor, answer: RunAnswer, fields: Fields) =>
+      Effect.gen(function* () {
+        fields.addressed = true
+        if (row.addressedTo !== actor.subject.id) {
+          fields.errorCode = "not_addressee"
+          return refusal(403, "forbidden")
+        }
+        // The role is GitHub's on the row's repository, read now, as a feed's answer reads it (worker/feeds/Api.ts).
+        const roles = yield* BranchRoles
+        const role = yield* Effect.result(
+          roles.repoRoleOn === undefined
+            ? Effect.succeed(null)
+            : Effect.map(roles.repoRoleOn(actor, row.repoId), (resolved) => resolved.role),
+        )
+        if (Result.isFailure(role)) {
+          fields.errorCode = role.failure.code
+          return refusal(503, "unavailable")
+        }
+        if (role.success !== "maintainer" && role.success !== "admin") {
+          fields.errorCode = "not_maintainer"
+          return refusal(403, "forbidden")
+        }
+        if (!fits(row.kind, answer.value)) return refusal(400, "invalid")
+        const value = kept(answer.value)
+        const open = row.status === "needs_you" && row.version === answer.version && row.answer === null
+        if (open && (yield* (yield* TaskAnswers).answer(row.execution, ASK_TASK, value))) {
+          const txid = yield* applyAddressedAnswer(runId, actor.subject.id, answer.version, value)
+          if (txid !== undefined) return ok(txid)
+        }
+        const now = (yield* runOf(runId))!
+        if (now.version === answer.version && same(now.answer?.value, value)) {
+          fields.existing = true
+          return ok(null)
+        }
+        if (open && now.status === "needs_you" && now.answer === null) {
+          fields.errorCode = "not_waiting"
+          return refusal(503, "unavailable")
+        }
+        return refusal(409, "not_open")
+      })
+
     /** `POST /api/runs/<id>/answer`: the person answers the open question. */
     const answer = (
       request: HttpServerRequest.HttpServerRequest,
       runId: string,
-      actorId: string,
-      login: string | undefined,
+      actor: Actor,
       fields: Fields,
     ) =>
       Effect.gen(function* () {
+        const actorId = actor.subject.id
         const body = yield* readBounded(request, MAX_RUN_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(Effect.result)
         if (body._tag === "Failure") {
           return body.failure.reason === "too_large" ? refusal(413, "too_large") : refusal(400, "invalid")
@@ -294,13 +369,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         fields.version = decoded.value.version
         const row = yield* runOf(runId)
         if (row === undefined) return refusal(404, "not_found")
+        if (row.addressedTo !== null) return yield* addressedAnswer(row, runId, actor, decoded.value, fields)
         if (row.launchedBy !== actorId) {
           fields.errorCode = "not_launcher"
           return refusal(403, "forbidden")
         }
         if (!fits(row.kind, decoded.value.value)) return refusal(400, "invalid")
         // An answered question closes for every recipient in the answer's transaction.
-        const txid = yield* withFold(applyAnswer(runId, actorId, decoded.value), runId, login)
+        const txid = yield* withFold(applyAnswer(runId, actorId, decoded.value), runId, actor.login)
         if (txid !== undefined) return ok(txid)
         if (row.version === decoded.value.version && same(row.answer?.value, kept(decoded.value.value))) {
           fields.existing = true
@@ -347,7 +423,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (!boundTo(actor.value, id)) return refusal(403, "other_run")
           const handled = kind === "report"
             ? report(request, id, actor.value.subject.id, actor.value.login, fields)
-            : answer(request, id, actor.value.subject.id, actor.value.login, fields)
+            : answer(request, id, actor.value, fields)
           return yield* handled.pipe(Effect.provide(database))
         }).pipe(
           Effect.catchCause((cause) =>
@@ -425,13 +501,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         )
       })
 
-    /** `GET /api/shapes/runs`: the signed-in person's rows; signed out, none; sessions unreadable, 503 (ShapeAccess). */
+    /**
+     * `GET /api/shapes/runs`: the signed-in person's rows and those addressed to them; signed out, none; sessions
+     * unreadable, 503 (ShapeAccess).
+     */
     const shape = ShapeProxy.make({
       ...connection,
       shape: Effect.map(ShapeAccess.actor, (actor) => ({
         table: RUNS_TABLE,
         // A repository's runs are its own list's (docs/features/actions.md), not the person's agent's.
-        where: "launched_by = $1 AND execution IS NULL",
+        // An addressed row's launcher is a machine (`machine:<agent>/<lane>`), never a person, so it reaches its
+        // addressee alone.
+        where: "(launched_by = $1 AND execution IS NULL) OR addressed_to = $1",
         params: { "1": Option.match(actor, { onNone: () => NOBODY, onSome: (actor) => actor.subject.id }) },
         columns: SYNCED_RUN_COLUMNS,
       })),

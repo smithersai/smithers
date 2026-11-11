@@ -4,7 +4,7 @@
 // command gives them no power they lack, while a token it makes can do only the acts in its scope, for 7 days at most.
 //
 //   cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/machine-token/issue.ts --project <neon id> --by <name> \
-//     --repo <owner>/<name> --agent <agent> --lane <lane> --out <file> [--scope issue/create,issue/comment,...] [--days 7]
+//     --repo <owner>/<name> --agent <agent> --lane <lane> --out <file> [--scope issue/create,ask/create,...] [--days 7]
 //     [--revoke <digest>] [--stage prod]
 //
 // The raw token goes to `--out`, created mode 600, and never to argv, stdout or a log. One audit JSON line goes to stdout
@@ -22,7 +22,10 @@ import { neonUri, scrub } from "../feed-barrier/confirm.ts"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 const PREFIX = "smm_"
-const SCOPES = ["issue/create", "issue/update", "issue/comment", "issue/relate", "work/link"]
+/** The scopes a token is issued with unless `--scope` names others. */
+const DEFAULT_SCOPES = ["issue/create", "issue/update", "issue/comment", "issue/relate", "work/link"]
+/** Every scope a token may hold: asking a person (`ask/create`) only when `--scope` names it. */
+const SCOPES = [...DEFAULT_SCOPES, "ask/create"]
 export const MAX_DAYS = 7
 
 /** A new token: `smm_` and 32 random bytes. */
@@ -43,7 +46,7 @@ export const requestOf = (values: {
     if (value === undefined || !/^[\w.:-]{1,100}$/.test(value)) throw new Error(`--${name} is required: letters, digits and . : - _`)
   }
   if (values.by === undefined || !/^[\w.:/-]{1,100}$/.test(values.by)) throw new Error("--by is required: letters, digits and . : / - _")
-  const scope = (values.scope ?? SCOPES.join(",")).split(",")
+  const scope = (values.scope ?? DEFAULT_SCOPES.join(",")).split(",")
   for (const act of scope) if (!SCOPES.includes(act)) throw new Error(`--scope names ${act}; a machine may hold ${SCOPES.join(", ")}`)
   const days = Number(values.days ?? MAX_DAYS)
   if (!Number.isFinite(days) || days <= 0 || days > MAX_DAYS) throw new Error(`--days is above 0 and at most ${MAX_DAYS}`)

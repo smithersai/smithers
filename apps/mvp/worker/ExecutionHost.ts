@@ -1,6 +1,7 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
+import { DurableDeferred, type Flow, FlowRuntime, HumanTask, WaitFor } from "@smthrs/flow"
+import { EngineStore } from "@smthrs/flows"
 import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import { CiJob } from "@smthrs/sandbox"
@@ -10,6 +11,7 @@ import type { SqlClient } from "effect/sql"
 import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as RepoRuns from "./RepoRuns.ts"
+import * as Ask from "./flows/Ask.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as HyperdrivePool from "./HyperdrivePool.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -343,6 +345,18 @@ export const withFeedRedaction = <ROut, E, R, DE, DR>(
 })
 
 /**
+ * `flows`, plus `queue/ask` over the app's tables: an agent's question to one person, waiting for their answer
+ * (docs/features/agent-status.md#addressed-waits).
+ */
+export const withAsks = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+) => ({
+  flows: [...flows.flows, Ask.Ask],
+  registration: Layer.merge(flows.registration, Ask.registration(database)),
+})
+
+/**
  * `flows`, plus `model/Put`, `model/Delete` and `model/CodexLink` over the app's tables: a person's own model, its key sealed before it
  * reaches either (docs/features/personal-model.md#saving).
  */
@@ -485,6 +499,44 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
       yield* ExecutionObject.wake(storage)
     })).pipe(Effect.orDie),
 
+    /**
+     * Records `value` as the answer of human task `task`'s open attempt, when the execution is parked on it, then wakes
+     * the object: whether the run took it. The attempt is the one the engine's waiting row names, never one counted
+     * here. No execution, a flow this host doesn't run, a run not parked on that task, or a value the task's boundary
+     * refuses takes nothing. The answer is durable before the wake, so a host replaced after it still resumes the run.
+     */
+    answer: (task: string, value: typeof Schema.Json.Type) => Effect.scoped(Effect.gen(function* () {
+      const raw = yield* storage.get<string>(ExecutionObject.intentKey)
+      if (raw === undefined) return false
+      const intent = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+      const flow = flows.find((candidate) => candidate._tag === intent.flow)
+      if (flow === undefined) return false
+      const { executionId } = intent
+      const taken = yield* Effect.gen(function* () {
+        const waiting = yield* (yield* EngineStore.DurableEngineState.DurableEngineState).waiting(executionId)
+        if (Option.isNone(waiting) || waiting.value.reason !== "approval" || waiting.value.token === null) return false
+        const parked = waiting.value.token
+        // The token names its wait point, `WaitFor/<task>#<attempt>`: the attempt open now. One that names another task
+        // gives no attempt, and the token rebuilt from it is not the one parked.
+        const { deferredName } = yield* DurableDeferred.TokenParsed.parse(parked)
+        const prefix = WaitFor.deferred(`${task}#`).name
+        const attempt = deferredName.startsWith(prefix) ? Number(deferredName.slice(prefix.length)) : 0
+        const token = DurableDeferred.tokenFromExecutionId(HumanTask.deferred(task, attempt), { flow, executionId })
+        if (token !== parked) return false
+        yield* HumanTask.answer({ token, value })
+        return true
+      }).pipe(
+        // An answer the task's boundary refuses, or that lost a race with another, is not taken.
+        Effect.orElseSucceed(() => false),
+        Effect.provide(CloudflareRuntime.layer(
+          { hostId: options.hostId, executionId, flow: intent.flow }, registration,
+        ).pipe(Layer.provide(options.database))),
+      )
+      if (taken) yield* ExecutionObject.wake(storage)
+      yield* Effect.logInfo("flow.answer").pipe(Effect.annotateLogs({ executionId, task, outcome: taken ? "taken" : "not_waiting" }))
+      return taken
+    })).pipe(Effect.orDie),
+
     alarm: () =>
       Effect.gen(function* () {
         const settled = options.settled
@@ -500,3 +552,4 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
 }
 
 const decodeIntent = Schema.decodeUnknownOption(Schema.fromJsonString(ExecutionObject.Intent))
+

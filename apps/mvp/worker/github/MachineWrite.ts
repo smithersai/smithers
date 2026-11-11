@@ -31,8 +31,11 @@ import { attribution, contentProblem, escapeMarkdown, fitsGitHub, titleProblem }
 /** What a machine token's prefix says: only such a bearer ever costs a lookup. */
 export const TOKEN_PREFIX = "smm_"
 
-/** The acts a machine token may be scoped to. Everything else on smithers.sh never reads one: no session, 401. */
-export const MACHINE_SCOPES = ["issue/create", "issue/update", "issue/comment", "issue/relate", "work/link"] as const
+/**
+ * The acts a machine token may be scoped to: the writes and work-links routes', and the asks route's `ask/create`
+ * (worker/Asks.ts). Everything else on smithers.sh never reads one: no session, 401.
+ */
+export const MACHINE_SCOPES = ["issue/create", "issue/update", "issue/comment", "issue/relate", "work/link", "ask/create"] as const
 export type MachineScope = (typeof MACHINE_SCOPES)[number]
 
 const SPACING_MS = 7_500

@@ -477,6 +477,7 @@ The `FlowExecution` Durable Object ([remote-flows.md](features/remote-flows.md))
 | `durable_object.handler.failed` | a `FlowExecution` alarm that threw, which Cloudflare then retries ([worker/DurableObjectFailure.ts](../worker/DurableObjectFailure.ts)) | Warn when Cloudflare marks the error `retryable`, Error otherwise | `object`, `handler`, `errorTag` (the error's class when `KNOWN_CLASSES` has it, else `unknown`), `category` (`connection-lost`, `reset`, `instance-inactive`, `overloaded`, `memory-limit`, `cpu-limit`, `storage-timeout`, `internal`, `other`; never the message), `retryable`, `overloaded`, `remote`, `durationMs` |
 | `repo.run.settle` | an alarm that finds a repository's run settled ([actions.md](features/actions.md)) | Info; Warn when the row couldn't be written | `runId`, `outcome` (`done`, `failed`, `stopped`, or `failed` with `errorCode`) |
 | `probe.mark` | each step of `probe/Pause` | Info | `label` |
+| `flow.answer` | each answer given to a parked run's human task ([remote-flows.md](features/remote-flows.md#answers)) | Info | `executionId`, `task`, `outcome` (`taken`, `not_waiting`); never the answer |
 | `chat.answer.expire` | each step of `chat/Expire` that decided or failed ([agent.md](features/agent.md#settling)) | Info `abandoned`, `settled`, `missing`, and `waiting` (a round that found the queue moved, so the next round waits again); Warn `failed` (one attempt) | `answerId`, `outcome`; `errorCode` (`sql:<reason>`) when it failed |
 
 Spans `cloudflare.execution.start` and `cloudflare.execution.alarm` carry `smithers.execution.id`, `smithers.flow` and the outcome as `smithers.execution.start` or `smithers.execution.alarm`; a retrying alarm adds `error.type` and `smithers.execution.attempt`. Each `chat/Expire` step attempt is a `chat.answer.expire` span with `smithers.chat.answer_id`. The engine adds its own spans and SQL statement spans inside the alarm.
@@ -632,7 +633,7 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 
 ### Agent status
 
-What the agent's runs report, and what the person does about a question ([agent-status.md](features/agent-status.md#observability)). No record carries a question, an option or an answer.
+What the agent's runs report, what the person does about a question, and an agent's questions to one person ([agent-status.md](features/agent-status.md#observability)). No record carries a question, an option, an answer, an addressee's login or a token.
 
 | Record | Kind | Where | Fields |
 |---|---|---|---|
@@ -647,6 +648,12 @@ What the agent's runs report, and what the person does about a question ([agent-
 | `smithers_agent_status_answers` | counter | engine worker | `outcome` |
 | `agent.status.shown` | log | tab | `runId`, `version`, `surface` |
 | `smithers_agent_status_shown` | counter | tab | `surface` |
+| `agent.status.answer` on an addressed wait | log | ChatApi | the fields above and `addressed: true`; `errorCode` `not_addressee`, `not_maintainer`, `not_waiting` or the role's refusal code |
+| `queue.ask.request`, `queue.ask.read` | log | ChatApi, the asks routes ([agent-status.md](features/agent-status.md#addressed-waits)) | `op` (`create`, `read`), `repoId`, `askId`, `agent`, `lane`, `outcome` (`started`, `open`, `answered`, `closed`, or the refusal's code), `status`, `durationMs`, `bytes`, `errorCode` |
+| `queue.ask.request` | span | ChatApi | `op`, `outcome`, `http.response.status_code` |
+| `smithers_ask_requests` | counter | ChatApi | `op`, `outcome` |
+| `queue.ask.open`, `queue.ask.settle` | log, span | `FlowExecution`, `queue/ask`'s steps | `runId` (the execution id), `outcome` (`opened`, `existing`; `done`, `failed`; `unavailable` with `errorCode`) |
+| `smithers_ask_writes` | counter | `FlowExecution` | `op` (`open`, `settle`), `outcome` |
 
 ### Conversation timeline
 

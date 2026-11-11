@@ -44,13 +44,35 @@ Migration `0013_runs`: decision 0009's `runs`, with the columns this slice needs
 | `wait` | the run's latest question: `{ execution, kind, prompt, options }`, kept after it closes so the card shows what was answered |
 | `version` | how many questions the run asked; an answer names the one it answers |
 | `answer`, `answered_at` | the accepted answer, `{ value }`: words, `true` or `false`, or `{ approved, note }` |
-| `launched_by` | the asker's person id: never synced; the shape filters on it |
+| `launched_by` | the asker's person id, or `machine:<agent>/<lane>` for an [addressed wait](#addressed-waits): never synced; the shape filters on it |
+| `addressed_to` | the person an addressed wait asks (migration `0117_wait_address`): never synced; the shape filters on it |
+| `repo_id` | the repository the run works in; for an addressed wait, the one it asks about |
 
 CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; `needs_you` has a `wait`; `answer` and `answered_at` go together.
 
 ## Answers
 
 A question takes words or one of its options. An approval takes `true` (Approve) or `false` (Deny), or `{ approved, note }`, the needs-you queue's Approve and Changes with the person's note (`Decision`, at most 8,000 characters). The route keeps words and notes trimmed; an empty note is a decision without one, and the agent hears `{ answered: true, approved }`.
+
+## Addressed waits
+
+An agent with no person behind it asks one person, and its run waits for their answer, for days if need be (decision [0031](../decisions/0031-review-queue.md) §6).
+
+```
+agent ─ Bearer smm_… (ask/create) ─ POST /api/repos/<o>/<n>/asks { id, to, prompt, options? } ─▶ 202 { runId }
+  queue/ask on FlowExecution, one per repository and id (queue/ask:<o>/<n>:<id>)
+    queue/ask/open   ─ runs row: needs_you, addressed_to the person, launched_by machine:<agent>/<lane>
+    HumanTask (ask)  ─ parks; no deadline
+    queue/ask/settle ─ done with the answer; failed when the task failed
+the person's devices ◀─ /api/shapes/runs (addressed_to = them)
+the person ─ POST /api/runs/<runId>/answer ─▶ the run's object takes the answer ─▶ the row records it ─▶ the run resumes
+agent ─ GET /api/repos/<o>/<n>/asks/<id> ─▶ { status: open | answered | closed, answer?, answeredAt? }
+```
+
+- **Who answers.** Only the person the row names, in person, while they are a Maintainer or Admin of its repository. Their role is read from GitHub at the answer, as a feed's answer reads it ([feeds.md](feeds.md)).
+- **Delivery first.** The answer route gives the answer to the parked run (`TaskAnswers`, [remote-flows.md](remote-flows.md#answers)), then records it on the row. The run's settle step writes the answer too, so an answer the row missed still lands. The same answer again is taken; another is `409 not_open`.
+- **No conversation.** The row has no `conversation_id` and no `execution`, so it is never a repository's run and never folds into the feed.
+- **One attempt.** The route sends only words, which an `ask` task always takes, so the task never refuses an answer.
 
 ## core/waits
 
@@ -72,9 +94,11 @@ A question takes words or one of its options. An approval takes `true` (Approve)
 | Route | Answers |
 |---|---|
 | `POST /api/runs/<id>` `{ status, waiting?, wait? }` | `200 { txid }`; `200 { txid: null }` for a repeat on a writable run from the same launcher: the same status or question, including that question after it was answered. `409 { code: "not_writable", reason }` when it cannot write: `settled` or `other_launcher`. A question with a new `execution` bumps `version` and clears the answer |
-| `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question; `403 { code: "person_only" }` for anyone acting for the person |
+| `POST /api/runs/<id>/answer` `{ version, value }` | `200 { txid }` for the first answer to the open question; `200 { txid: null }` for the same answer again; `409 { code: "not_open" }` once it is answered, closed or replaced; `400` for words to an approval or a decision to a question; `403 { code: "person_only" }` for anyone acting for the person. On an addressed wait: `403 { code: "forbidden" }` for anyone but its person (logged `not_addressee`) or a person who isn't a Maintainer or Admin of its repository (`not_maintainer`); `503 { code: "unavailable" }` when the role can't be read (its refusal code), the run's object can't be reached, or the run isn't parked on the question yet (`not_waiting`) |
 | `POST /api/runs/<run>/credential` `{ flow, ceiling? }` | a run's credential ([run credentials](sign-in.md#run-credentials)) |
-| `GET /api/shapes/runs` | Electric's `runs` where `launched_by` is the signed-in person, without that column. Signed out, no one's rows; when sessions can't be read, `503` with `Retry-After: 5`, so the device keeps its rows and retries |
+| `POST /api/repos/<owner>/<name>/asks` `{ id, to, prompt, options? }` | with a machine token holding `ask/create` on the repository ([machine-tokens.md](machine-tokens.md)): `202 { runId }`, and the same body again answers the same. `id` is `[a-z0-9][a-z0-9._-]{0,63}`; `to` a GitHub login of someone who has signed in; `prompt` and `options` take a question's limits. `401 authentication`, `403 forbidden` without the scope, `400 invalid`, `413 too_large` over 16 KiB, `422 unknown_person`, `409 conflict` for another question under the id, `503 unavailable` (`worker/Asks.ts`) |
+| `GET /api/repos/<owner>/<name>/asks/<id>` | the same token: `200 { status: "open" }`, `{ status: "answered", answer, answeredAt }` or `{ status: "closed" }`; `404 not_found` for another lane's ask, or before the run wrote its row |
+| `GET /api/shapes/runs` | Electric's `runs` where `launched_by` is the signed-in person (outside a repository's runs) or `addressed_to` is, without either column. Signed out, no one's rows; when sessions can't be read, `503` with `Retry-After: 5`, so the device keeps its rows and retries |
 | all | `401` signed out; `403 { code: "forbidden" }` for a Guest, no role, or anyone but the asker (logged `not_launcher`); `403 { code: "other_run" }` for a run credential of another run; `404` for an id that isn't an answer or a run; `405` for another method; `413` over 16 KiB; `503 { code: "unavailable" }` when Postgres can't be reached |
 
 ## Flows
@@ -123,6 +147,13 @@ The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`
 | `agent.status.answer`, `agent.status.deliver` | log, engine | `outcome` |
 | `smithers_agent_status_answers` | counter, engine | `outcome`: `recorded`, `not_open`, `refused`, `unrecorded`, `delivered`, `not_here`, `closed` |
 | `agent.status.shown`, `smithers_agent_status_shown` | log and counter, tab | `runId`, `version`, `surface` (`title`: the tab's title counts it) |
+| `agent.status.answer` on an addressed wait | log, ChatApi | the fields above and `addressed: true`; `errorCode` `not_addressee`, `not_maintainer`, `not_waiting` or the role's refusal code |
+| `queue.ask.request`, `queue.ask.read` | log, ChatApi | `op` (`create`, `read`), `repoId`, `askId`, `agent`, `lane`, `outcome` (`started`, `open`, `answered`, `closed`, or the refusal's code), `status`, `durationMs`, `bytes`, `errorCode` |
+| `queue.ask.request` | span, ChatApi | `op`, `outcome`, `http.response.status_code` |
+| `smithers_ask_requests` | counter, ChatApi | `op`, `outcome` |
+| `queue.ask.open`, `queue.ask.settle` | log and span, `FlowExecution` | `runId` (the execution id), `outcome` (`opened`, `existing`; `done`, `failed`; `unavailable` with `errorCode`) |
+| `smithers_ask_writes` | counter, `FlowExecution` | `op` (`open`, `settle`), `outcome` |
+| `flow.answer` | log, `FlowExecution` | `executionId`, `task`, `outcome` (`taken`, `not_waiting`) |
 
 No record carries a question, an option or an answer (tests read the logs for them).
 
@@ -131,7 +162,7 @@ No record carries a question, an option or an answer (tests read the logs for th
 - **Ten minutes to answer.** A question closes after `ASK_WITHIN_MS`, inside `chat/Expire`'s 25 minutes; a longer one needs `chat/Expire` to read the run's row (0015 phase 2).
 - **A run awaiting a person keeps its turn**, even after `ANSWER_TURN_LIVE_SECONDS`, until it resumes and settles ([0030](../decisions/0030-worker-admission-consistency.md)).
 - **A tab closed while a question is open costs one model call.** The frame that asked was in flight, so the next tab's engine asks its model again; the call it makes joins the question already parked (`flows.test.ts`).
-- **Only the asker answers**, and only their own runs sync. Other people see a run on their branch through the feed ([notifications.md](notifications.md)).
+- **Only the asker answers** a chat run, and only their own runs sync; an addressed wait syncs to and is answered by its person alone. Other people see a run on their branch through the feed ([notifications.md](notifications.md)).
 - **No browser notification yet**: 0015 phase 2. A failed answer toasts for 4 s through the feed.
 
 ## Tests
@@ -149,6 +180,8 @@ committed records; the crashed incarnation cannot flush pending records into it.
 | `src/features/status/faults.test.ts` | Injected `RunsClient` faults: a question reported again, a delivery before the question parks, an approval refused, an answer sent again, refusals final |
 | `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
 | `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |
+| `worker/Asks.test.ts` | With a real machine token, the real runs routes and `queue/ask` on the object's handlers: the person answers and the same run resumes and settles, the asker reads `answered`; the row syncs to its person only; the asks routes' refusals, idempotency and lanes; someone else, a non-maintainer, an agent acting for the person, a stale version, a second answer, an unreadable role, a run not parked yet and an unreachable object |
+| `worker/flows/Ask.test.ts` | `queue/ask` parks with its row, takes an answer before or after its object's handlers are replaced, settles `done` or `failed`, writes its row once, and takes nothing for another task, a run not parked on a person, or an answer past the task's bounds |
 | `packages/smithers/ui/tests/agent-status.test.tsx` | The pill, the card, the toasts and the title |
 | `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, the top bar's bell, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and a real-model run on two devices, locally or on the deployment's own branch: card, toast, bell and title on both, Hide on B clears both toasts while entries stay listed, and answering teal on B resumes A's run |
 

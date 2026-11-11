@@ -63,6 +63,7 @@ export const forRequest = (url: string) => Effect.gen(function* () {
   if (path === "/api/sandbox/calls") return MAX_CALL_BODY_BYTES
   if (path === "/api/repos" || path === "/api/repos/launch") return MAX_REQUEST_BYTES
   if (/^\/api\/repos\/[^/]+\/[^/]+\/writes$/.test(path)) return MAX_WRITE_BYTES
+  if (/^\/api\/repos\/[^/]+\/[^/]+\/asks$/.test(path)) return MAX_RUN_BODY_BYTES
   if (/^\/api\/repos\/[^/]+\/[^/]+\/issues\/[^/]+\/links$/.test(path)) return MAX_POST_BYTES
   if (/^\/api\/repos\/[^/]+\/[^/]+\/pulls\/[^/]+\/review$/.test(path)) return MAX_REVIEW_BYTES
   if (/^\/api\/repos\/[^/]+\/[^/]+\/stack$/.test(path)) return MAX_STACK_BODY_BYTES

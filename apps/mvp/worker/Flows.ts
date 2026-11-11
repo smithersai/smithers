@@ -29,6 +29,28 @@ export class FlowStarter extends Context.Service<
   }
 >()("@smthrs/mvp/flows/FlowStarter") {}
 
+/** The remote host couldn't take an answer now: the person's answer may be sent again. */
+export class AnswerUnavailable extends Schema.TaggedError<AnswerUnavailable>()("@smthrs/mvp/flows/AnswerUnavailable", {
+  errorCode: Schema.String,
+}) {}
+
+/**
+ * Where a person's answer reaches a remote run parked on a human task (docs/features/remote-flows.md#answers): `answer`
+ * records `value` for the open attempt of task `task` on execution `executionId`, and wakes it. It answers whether the
+ * run took it: `false` when the run isn't parked on that task. A Durable Object in ChatApi (worker/ExecutionHost.ts
+ * `answer`); the same handler over a test's storage in a test.
+ */
+export class TaskAnswers extends Context.Service<
+  TaskAnswers,
+  {
+    readonly answer: (
+      executionId: string,
+      task: string,
+      value: typeof Schema.Json.Type,
+    ) => Effect.Effect<boolean, AnswerUnavailable>
+  }
+>()("@smthrs/mvp/flows/TaskAnswers") {}
+
 /** A window of time in epoch milliseconds: from its start, up to its end. */
 export interface Window {
   readonly from: number

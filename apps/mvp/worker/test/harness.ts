@@ -120,6 +120,11 @@ interface HarnessOptions {
   /** Where ChatApi starts a remote flow: one that records each start in `starts` unless set. */
   readonly starter?: Flows.FlowStarter["Service"]
   /**
+   * Where an answer reaches a remote run parked on a human task: unless set, a deployment where none is parked, so
+   * nothing takes one. A test that drives a real run passes its execution host's (worker/test/executions.ts).
+   */
+  readonly answers?: Flows.TaskAnswers["Service"]
+  /**
    * The fetch ChatApi calls Electric, the model's provider and outside pages with: the global one unless set. A test
    * that checks pages passes `outsideWeb` (worker/test/pages.ts), so it never reaches the internet.
    */
@@ -251,6 +256,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     observed(
       afterBody(routed).pipe(
         Effect.provideService(Flows.FlowStarter, starter),
+        Effect.provideService(Flows.TaskAnswers, options.answers ?? Flows.TaskAnswers.of({ answer: () => Effect.succeed(false) })),
         Effect.provide(docsSource),
         Effect.provide(
           options.sessions ?? (options.actor === undefined ? signedOut : signedIn(options.actor)),

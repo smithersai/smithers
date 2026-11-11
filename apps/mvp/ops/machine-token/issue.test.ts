@@ -36,6 +36,12 @@ test("refuses a scope outside a machine's, a longer life, and an unnamed agent",
   expect(() => requestOf({ ...base, agent: "a", lane: "b/c" })).toThrow("--lane")
 })
 
+test("asking a person is a scope a token holds only when named", () => {
+  const base = { repo: "acme/widgets", agent: "fixer", lane: "lane-1", by: "ops" }
+  expect(requestOf(base).scope).not.toContain("ask/create")
+  expect(requestOf({ ...base, scope: "ask/create,issue/comment" }).scope).toEqual(["ask/create", "issue/comment"])
+})
+
 test("the file is created mode 600 and never overwrites", () => {
   const path = join(mkdtempSync(join(tmpdir(), "machine-")), "token")
   writeToken(path, "smm_secret")

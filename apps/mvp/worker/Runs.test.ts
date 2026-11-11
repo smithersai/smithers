@@ -348,7 +348,7 @@ describe("GET /api/shapes/runs", () => {
     expect(Object.fromEntries(upstream[0]!.searchParams)).toEqual({
       offset: "-1",
       table: "runs",
-      where: "launched_by = $1 AND execution IS NULL",
+      where: "(launched_by = $1 AND execution IS NULL) OR addressed_to = $1",
       "params[1]": "person-member",
       columns: Runs.SYNCED_RUN_COLUMNS.join(","),
     })
