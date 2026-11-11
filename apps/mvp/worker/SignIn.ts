@@ -754,7 +754,8 @@ export const make = <E, R>(
       }
       const { keys, github } = setup.value
       const confirming = request.method === "POST"
-      if (confirming && !(request.headers.origin === undefined
+      // The no-referrer confirmation form posts Origin: null; Fetch Metadata must still prove it came from here.
+      if (confirming && !(request.headers.origin === undefined || request.headers.origin === "null"
         ? request.headers["sec-fetch-site"] === "same-origin"
         : request.headers.origin === origin)) {
         yield* record("handoff", { outcome: "refused", reason: "cross_site" })

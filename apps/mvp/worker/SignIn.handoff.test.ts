@@ -86,11 +86,15 @@ const harness = async (
     (await (await h.at(`${origin}/api/auth/session`, { headers: { cookie: cookie(cookies) } })).json()) as SessionState
 
   /** The person pressing Continue on home's page for a custom domain, whose form posts `request`. */
-  const confirm = (request: string, cookies: Record<string, string>, origin = HOME) =>
+  const confirm = (request: string, cookies: Record<string, string>, origin: string | null = "null", site: string | null = "same-origin") =>
     h.at(`${HOME}/api/auth/handoff`, {
       method: "POST",
       body: new URLSearchParams({ request }).toString(),
-      headers: { "content-type": "application/x-www-form-urlencoded", origin, cookie: cookie(cookies) },
+      headers: {
+        "content-type": "application/x-www-form-urlencoded", cookie: cookie(cookies),
+        ...(origin === null ? {} : { origin }),
+        ...(site === null ? {} : { "sec-fetch-site": site }),
+      },
     })
 
   /**
@@ -320,6 +324,36 @@ describe("signing in at an alias", () => {
     const pending = await h.press("http://pending.test")
     expect(new URL(pending.location).origin).toBe("https://github.test")
     expect(new URL(pending.location).searchParams.get("redirect_uri")).toBe("http://pending.test/api/auth/callback")
+  })
+
+  test.each(["null", null, HOME])("Continue checks the confirmation POST origin %j before issuing a sign-in code", async (origin) => {
+    const h = await harness()
+    await sql((client) => client`
+      INSERT INTO domains (hostname, repo_id, poll_id, state, verification, certificate, updated_by)
+      VALUES ('custom.test', 'acme/widgets', 'poll', 'active', 'active', 'active', 'p')`)
+    const home = (await h.signInAs()).cookies
+    const pressed = await h.press(CUSTOM)
+    const page = await h.handOff(pressed.location, home)
+    expect(page.status).toBe(200)
+    expect(page.headers.get("referrer-policy")).toBe("no-referrer")
+    const request = new URL(pressed.location).searchParams.get("request")!
+    if (origin !== HOME) {
+      // An opaque or absent Origin needs same-origin Fetch Metadata, never just a valid signed request and cookie.
+      for (const site of ["cross-site", "same-site", "none", null]) {
+        const refused = await h.confirm(request, home, origin, site)
+        expect(refused.status).toBe(403)
+        expect(refused.headers.get("location")).toBeNull()
+        expect(await sql((client) => client`SELECT 1 FROM sign_in_handoffs`)).toEqual([])
+      }
+      expect(h.count({ route: "handoff", reason: "cross_site" })).toBe(4)
+    }
+    const confirmed = await h.confirm(request, home, origin)
+    expect(confirmed.status).toBe(303)
+    const arrived = await h.arrive(h.codeOf(confirmed), pressed.cookies, CUSTOM)
+    expect(arrived.status).toBe(303)
+    expect(await h.sessionAt(CUSTOM, values(arrived))).toMatchObject({
+      signedIn: true, personId: personOf(await h.sessionAt(HOME, home)),
+    })
   })
 
   test("without APP_DOMAIN, or with workers.dev, every host signs in through GitHub as before", async () => {
