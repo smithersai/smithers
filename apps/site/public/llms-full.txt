@@ -24022,7 +24022,7 @@ the lease lives and how the fence is checked at commit time.
 | `Service.activate`                                                                              | `(runId, owner: OwnerId, grantedAtMs, nowMs) => Effect<ActivateOutcome, ConsensusError>`                                                        |
 | `Service.heartbeat`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`                                                                    |
 | `Service.reconfirm`                                                                             | `(runId, owner: OwnerId, nowMs) => Effect<HeartbeatOutcome, ConsensusError>`; renews only while the owner matches and no claim is pending       |
-| `Service.release`                                                                               | `(runId, owner: OwnerId) => Effect<void, ConsensusError>`                                                                                       |
+| `Service.release`                                                                               | `(runId, owner: OwnerId, claimedAtMs?) => Effect<void, ConsensusError>`; with `claimedAtMs`, clears only that claim                             |
 | `Service.steal`                                                                                 | `(runId, claimant: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<ClaimOutcome, ConsensusError>`                                         |
 | `Service.recover`                                                                               | `(runId, staleClaimant: OwnerId, grantedAtMs, observer: OwnerId, nowMs, evidence: LivenessEvidence) => Effect<RecoverOutcome, ConsensusError>`  |
 | `Service.guard`                                                                                 | `(runId, owner: OwnerId) => Effect<void, ConsensusError>`; fails `fence_lost` unless `owner` holds the run                                      |
@@ -24041,7 +24041,9 @@ the lease lives and how the fence is checked at commit time.
 The claim lifecycle is two-phase: `claim` (or `steal`, its evidence-gated
 form) reserves the run and returns the grant timestamp, `activate` presents
 that grant to take ownership, and `release` clears whichever of the caller's
-claim or ownership still stands. `recover` clears a third party's stale claim
+claim or ownership still stands. Given the claim's grant timestamp, `release`
+clears only that claim, so an owner that claimed its own stale run keeps its
+ownership. `recover` clears a third party's stale claim
 after its claimant was proven dead. Every operation takes the caller's clock
 reading, so staleness is judged against the reading the caller observed.
 Heartbeats and lease state never enter the journal.

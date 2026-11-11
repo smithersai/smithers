@@ -240,7 +240,11 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const release: Service["release"] = Effect.fn("Consensus.release")((runId: string, owner: OwnerId) =>
+  const release: Service["release"] = Effect.fn("Consensus.release")((
+    runId: string,
+    owner: OwnerId,
+    claimedAtMs?: number
+  ) =>
     write(
       runId,
       Effect.gen(function*() {
@@ -251,16 +255,21 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND claim_host_id = ${owner.hostId}
           AND claim_pid = ${owner.pid}
           AND claim_nonce = ${owner.nonce}
+          AND ${claimedAtMs === undefined ? sql`TRUE` : sql`claimed_at_ms = ${claimedAtMs}`}
       `
-        yield* sql`
-        UPDATE flows_consensus_leases
-        SET owner_host_id = NULL, owner_pid = NULL, owner_nonce = NULL,
-          granted_at_ms = NULL, heartbeat_at_ms = NULL
-        WHERE run_id = ${runId}
-          AND owner_host_id = ${owner.hostId}
-          AND owner_pid = ${owner.pid}
-          AND owner_nonce = ${owner.nonce}
-      `
+        // A supplied grant releases that claim alone: the caller may also be
+        // the recorded owner, whose lease outlives the claim it dropped.
+        if (claimedAtMs === undefined) {
+          yield* sql`
+          UPDATE flows_consensus_leases
+          SET owner_host_id = NULL, owner_pid = NULL, owner_nonce = NULL,
+            granted_at_ms = NULL, heartbeat_at_ms = NULL
+          WHERE run_id = ${runId}
+            AND owner_host_id = ${owner.hostId}
+            AND owner_pid = ${owner.pid}
+            AND owner_nonce = ${owner.nonce}
+        `
+        }
         yield* prune(runId)
       })
     )

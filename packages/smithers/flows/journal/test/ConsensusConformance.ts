@@ -270,6 +270,41 @@ export const conformance = (
         })
       })))
 
+    it.effect("release with a grant clears only that claim and keeps the caller's ownership (#4647)", () =>
+      withStack(Effect.gen(function*() {
+        const consensus = yield* Consensus
+        yield* consensus.claim("run-release-grant", ownerA, 0)
+        yield* consensus.activate("run-release-grant", ownerA, 0, 0)
+        const stale = staleAfterMs + 1
+        // The owner claims its own stale run, the way a lease-expired steal does.
+        expect(
+          yield* consensus.steal("run-release-grant", ownerA, stale, {
+            expectedOwner: ownerA,
+            checkedAtMs: stale,
+            kind: "lease-expired"
+          })
+        ).toEqual({ _tag: "Claimed", grantedAtMs: stale })
+        // Another grant's timestamp releases nothing.
+        yield* consensus.release("run-release-grant", ownerA, stale - 1)
+        expect(yield* consensus.claim("run-release-grant", ownerB, stale)).toEqual({
+          _tag: "Rejected",
+          reason: "already_claimed"
+        })
+        yield* consensus.release("run-release-grant", ownerA, stale)
+        yield* consensus.guard("run-release-grant", ownerA)
+        expect(yield* consensus.heartbeat("run-release-grant", ownerA, stale)).toEqual({
+          _tag: "Renewed",
+          heartbeatAtMs: stale
+        })
+        const later = 2 * stale + 1
+        expect(yield* consensus.steal("run-release-grant", ownerB, later, evidence(ownerA, ownerB, later))).toEqual({
+          _tag: "Claimed",
+          grantedAtMs: later
+        })
+        // A grant on a run with no lease is a no-op.
+        yield* consensus.release("run-release-grant-missing", ownerA, 0)
+      })))
+
     it.effect("steals only a stale owner's run, and only with matching evidence (R5)", () =>
       withStack(Effect.gen(function*() {
         const consensus = yield* Consensus

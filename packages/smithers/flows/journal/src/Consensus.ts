@@ -433,6 +433,9 @@ export class ConsensusError extends Schema.TaggedError<ConsensusError>()("@smthr
  * `claim` (or `steal`, its evidence-gated form) reserves the run and returns
  * the grant timestamp, `activate` presents that grant to take ownership, and
  * `release` clears whichever of the caller's claim or ownership still stands.
+ * Given the claim's grant timestamp, `release` clears only that claim: an
+ * owner that claimed its own stale run keeps its ownership when it drops the
+ * claim.
  * `recover` clears a *third party's* stale claim after its claimant was proven
  * dead — the relocated `recoverClaim` mechanic. `guard` is the commit-time
  * admission check (R3) `Journal.emitDurable`, `checkpoint`, and `compact`
@@ -479,7 +482,11 @@ export interface Service {
     owner: OwnerId,
     nowMs: number
   ) => Effect.Effect<HeartbeatOutcome, ConsensusError>
-  readonly release: (runId: string, owner: OwnerId) => Effect.Effect<void, ConsensusError>
+  /**
+   * Clears the caller's claim and ownership, or only the claim granted at
+   * `claimedAtMs` when that grant is supplied.
+   */
+  readonly release: (runId: string, owner: OwnerId, claimedAtMs?: number) => Effect.Effect<void, ConsensusError>
   readonly steal: (
     runId: string,
     claimant: OwnerId,
@@ -639,14 +646,18 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
         return ({ _tag: "Renewed", heartbeatAtMs: lease.owner.heartbeatAtMs } satisfies Renewed)
       })
     ),
-    release: Effect.fn("Consensus.release")((runId: string, owner: OwnerId) =>
+    release: Effect.fn("Consensus.release")((runId: string, owner: OwnerId, claimedAtMs?: number) =>
       Effect.sync(() => {
         const lease = leases.get(runId)
         if (lease === undefined) return
-        if (lease.claim !== undefined && sameOwner(lease.claim.id, owner)) {
+        if (
+          lease.claim !== undefined &&
+          sameOwner(lease.claim.id, owner) &&
+          (claimedAtMs === undefined || lease.claim.claimedAtMs === claimedAtMs)
+        ) {
           lease.claim = undefined
         }
-        if (lease.owner !== undefined && sameOwner(lease.owner.id, owner)) {
+        if (claimedAtMs === undefined && lease.owner !== undefined && sameOwner(lease.owner.id, owner)) {
           lease.owner = undefined
         }
         prune(runId, lease)

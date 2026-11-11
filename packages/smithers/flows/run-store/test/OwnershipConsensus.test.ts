@@ -256,6 +256,58 @@ const suite = (name: string, strategy: Strategy) => {
         expect(yield* holds("run-taken-whole", ownerB)).toBe(true)
       })))
 
+    it.effect("keeps the owner's lease when its claim on its own stale run is dropped (#4647)", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        const selfSteal = (runId: string, snapshot: RunSnapshot) =>
+          Effect.gen(function*() {
+            const nowMs = yield* Clock.currentTimeMillis
+            expect(
+              yield* store.steal(runId, snapshot, ownerA, nowMs, {
+                expectedOwner: ownerA,
+                checkedAtMs: nowMs,
+                kind: "lease-expired"
+              })
+            ).toEqual({ _tag: "Claimed", claimedAtMs: nowMs })
+            return nowMs
+          })
+        // The dropped claim leaves the owner renewing, and a later peer
+        // takeover still finds the lease to claim.
+        const stillOwned = (runId: string, claimedAtMs: number) =>
+          Effect.gen(function*() {
+            expect((yield* store.get(runId)).claim).toBeNull()
+            expect(yield* holds(runId, ownerA)).toBe(true)
+            expect(yield* store.heartbeat(runId, ownerA, claimedAtMs)).toEqual({ _tag: "Updated" })
+            yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+            const laterMs = yield* Clock.currentTimeMillis
+            const staleAgain: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: claimedAtMs }
+            expect(yield* store.steal(runId, staleAgain, ownerB, laterMs, evidence(ownerA, ownerB, laterMs))).toEqual({
+              _tag: "Claimed",
+              claimedAtMs: laterMs
+            })
+          })
+
+        yield* store.create("run-self-abandon", "{}")
+        expect(yield* store.claimAndOwn("run-self-abandon", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        const abandonedAtMs = yield* selfSteal("run-self-abandon", stale)
+        expect(yield* store.abandonClaim("run-self-abandon", ownerA, abandonedAtMs)).toEqual({ _tag: "Abandoned" })
+        yield* stillOwned("run-self-abandon", abandonedAtMs)
+
+        const startMs = yield* Clock.currentTimeMillis
+        yield* store.create("run-self-moved", "{}")
+        expect(yield* store.claimAndOwn("run-self-moved", pending, ownerA, startMs)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const staleMoved: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: startMs }
+        const movedAtMs = yield* selfSteal("run-self-moved", staleMoved)
+        const moved: RunSnapshot = { ...staleMoved, heartbeatAtMs: startMs - 1 }
+        expect(yield* store.activate("run-self-moved", ownerA, movedAtMs, moved)).toEqual({
+          _tag: "SnapshotChanged"
+        })
+        yield* stillOwned("run-self-moved", movedAtMs)
+      })))
+
     it.effect("frees the lease claim when a claim is abandoned or recovered", () =>
       run(Effect.gen(function*() {
         const store = yield* RunStore

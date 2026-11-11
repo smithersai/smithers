@@ -1716,7 +1716,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               // The claim is intact but the guarded snapshot moved on: clear
               // the claim, exactly as the compare-and-swap always did, and
               // release the strategy's matching claim so the two stay aligned.
-              yield* consensus.release(runId, claimant)
+              // Only the claim: a claimant re-claiming its own stale run is
+              // still the owner.
+              yield* consensus.release(runId, claimant, claimedAtMs)
               yield* recordTransition(runId, "released", claimant, claimedAtMs)
               yield* clearClaim
               return snapshotChanged
@@ -1784,7 +1786,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           RETURNING run_id AS "runId"
         `
             if (rows.length === 0) return claimLost
-            yield* consensus.release(runId, claimant)
+            // Only the claim: a claimant that stole its own stale run keeps
+            // the ownership it never gave up.
+            yield* consensus.release(runId, claimant, claimedAtMs)
             yield* recordTransition(runId, "released", claimant, claimedAtMs)
             return abandoned
           })
