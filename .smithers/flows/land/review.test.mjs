@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { jj } from "./numbering.mjs"
-import { diffHash, overrideInbox, requiredMatcher, requireReviews, reviewModel, runReview, verdictOf } from "./review.mjs"
+import { diffHash, main, overrideInbox, requiredMatcher, requireReviews, reviewModel, runFlowReview, runReview, verdictOf } from "./review.mjs"
 import { createWorkspace, landWorkspace as land, syncWorkspace } from "./workspace.mjs"
 
 const fakeCodex = `#!/usr/bin/env node
@@ -27,8 +27,30 @@ writeFileSync(directory + "/rollout-2026-11-02T00-00-00-" + id + ".jsonl", rows.
 console.error("session id: " + id)
 process.exit(Number(process.env.FAKE_EXIT ?? 0))
 `
+// A stand-in for the two smthrs commands the gate runs, as the fake codex stands in for codex exec. It keeps each
+// project's runs outside the project, under FAKE_RUNS, so a run leaves no file in the change it reviewed.
+const fakeSmthrs = `#!/usr/bin/env node
+const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs")
+const { randomUUID } = require("node:crypto")
+const args = process.argv.slice(2)
+const option = (name) => args[args.indexOf(name) + 1]
+const runs = process.env.FAKE_RUNS + "/" + Buffer.from(option("--root")).toString("hex")
+if (args.slice(0, 3).join(" ") === "flow start review" && args.includes("--wait")) {
+  if (process.env.FAKE_FLOW_EXIT) { console.error("the run failed"); process.exit(Number(process.env.FAKE_FLOW_EXIT)) }
+  const input = JSON.parse(option("--data"))
+  const runId = "run-" + randomUUID()
+  const value = { verdict: process.env.FAKE_FLOW_VERDICT ?? "pass", target: { mode: "commit", ref: process.env.FAKE_FLOW_REF ?? input.commit, repoDir: input.repo } }
+  mkdirSync(runs, { recursive: true })
+  writeFileSync(runs + "/" + runId + ".json", JSON.stringify({ nodeId: "result", flowName: process.env.FAKE_FLOW_NAME ?? "review", outcome: "success", input, value }))
+  console.log(JSON.stringify({ runId, status: "completed" }))
+} else if (args.slice(0, 2).join(" ") === "runs output" && args[3] === "result") {
+  const file = runs + "/" + args[2] + ".json"
+  if (!existsSync(file)) { console.error("Run not found"); process.exit(1) }
+  process.stdout.write(readFileSync(file, "utf8"))
+} else { console.error("unexpected: " + args.join(" ")); process.exit(64) }
+`
 const LIST = ".smithers/flows/land/review-required.txt"
-const environment = ["SMITHERS_REVIEWS_DIR", "SMITHERS_REVIEW_CODEX_HOME", "SMITHERS_CODEX", "FAKE_ANSWER", "FAKE_EXIT", "FAKE_INCOMPLETE", "FAKE_MODEL"]
+const environment = ["SMITHERS_REVIEWS_DIR", "SMITHERS_REVIEW_CODEX_HOME", "SMITHERS_CODEX", "SMITHERS_SMTHRS", "FAKE_ANSWER", "FAKE_EXIT", "FAKE_INCOMPLETE", "FAKE_MODEL", "FAKE_RUNS", "FAKE_FLOW_VERDICT", "FAKE_FLOW_EXIT", "FAKE_FLOW_NAME", "FAKE_FLOW_REF"]
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "land-review-"))
@@ -55,6 +77,12 @@ function fixture(t) {
   chmodSync(fake, 0o755)
   const reviews = join(directory, "reviews"), home = join(directory, "codex-home")
   mkdirSync(home)
+  const smthrs = join(directory, "smthrs")
+  writeFileSync(smthrs, fakeSmthrs)
+  chmodSync(smthrs, 0o755)
+  process.env.SMITHERS_SMTHRS = smthrs
+  process.env.FAKE_RUNS = join(directory, "runs")
+  for (const name of ["FAKE_FLOW_VERDICT", "FAKE_FLOW_EXIT", "FAKE_FLOW_NAME", "FAKE_FLOW_REF"]) delete process.env[name]
   process.env.SMITHERS_CODEX = fake
   process.env.SMITHERS_REVIEWS_DIR = reviews
   process.env.SMITHERS_REVIEW_CODEX_HOME = home
@@ -79,8 +107,9 @@ test("land refuses a required path with no receipt, and names the review and its
   const { lane, landing, onMain, change } = fixture(t)
   change("secure/a.txt", "a\n")
   await assert.rejects(landing(), (error) => {
-    assert.match(error.message, /Astra review required/)
-    assert.match(error.message, /no Astra review receipt/)
+    assert.match(error.message, /Review required; nothing pushed/)
+    assert.match(error.message, /no review receipt/)
+    assert.match(error.message, /review\.mjs --flow --rev '[k-z]+'/)
     assert.match(error.message, /review\.mjs --rev '[k-z]+' --prompt-file/)
     assert.match(error.message, /secure\/a\.txt/)
     return true
@@ -283,7 +312,7 @@ test("every commit of a stack is checked, not only its tip", async (t) => {
   change("secure/a.txt", "a\n")
   jj(lane, ["commit", "-m", "lower"])
   change("elsewhere.txt", "tip outside the list\n")
-  await assert.rejects(landing(), /no Astra review receipt/)
+  await assert.rejects(landing(), /no review receipt/)
   assert.equal(onMain(), "base")
 })
 
@@ -297,7 +326,7 @@ test("the override lands, and records who and why in the land log", async (t) =>
   assert.equal(entry.outcome, "override")
   assert.equal(entry.reason, "only a comment moved")
   assert.deepEqual(entry.paths, ["secure/a.txt"])
-  assert.equal(entry.instead, "it has no Astra review receipt")
+  assert.equal(entry.instead, "it has no review receipt")
   assert.equal(entry.workspace, lane)
   assert.ok(entry.who.includes("@"))
   const landed = jj(lane, ["log", "--ignore-working-copy", "-r", "main@origin", "--no-graph", "-T", "commit_id"])
@@ -348,7 +377,7 @@ test("a lane cannot exempt itself: the list comes from main", async (t) => {
   const { lane, landing, onMain, change } = fixture(t)
   change("secure/a.txt", "a\n")
   writeFileSync(join(lane, LIST), "nothing/**\n")
-  await assert.rejects(landing(), /no Astra review receipt/)
+  await assert.rejects(landing(), /no review receipt/)
   assert.equal(onMain(), "base")
 })
 
@@ -560,6 +589,118 @@ test("a receipt copied from another change with the same diff does not pass", (t
   mkdirSync(join(reviews, changeId))
   writeFileSync(join(reviews, changeId, `${copied.sessionId}.json`), JSON.stringify(copied), { mode: 0o600 })
   assert.throws(() => requireReviews(lane, "@"), /was issued for change/)
+})
+
+const runFile = (receiptFile) => {
+  const { projectRoot, runId } = JSON.parse(readFileSync(receiptFile, "utf8"))
+  return join(process.env.FAKE_RUNS, Buffer.from(projectRoot).toString("hex"), `${runId}.json`)
+}
+
+test("the review flow runs once per commit, writes a private receipt each, and the land passes and records the runs", async (t) => {
+  const { lane, reviews, landing, onMain, change, landLog } = fixture(t)
+  change("secure/a.txt", "a\n")
+  jj(lane, ["commit", "-m", "lower"])
+  change("secure/b.txt", "b\n")
+  const results = runFlowReview(lane, "main@origin..@")
+  assert.deepEqual(results.map((result) => result.verdict), ["PASS", "PASS"])
+  const [lower, upper] = results
+  assert.notEqual(lower.runId, upper.runId)
+  const receipt = JSON.parse(readFileSync(upper.receipt, "utf8"))
+  assert.equal(statSync(upper.receipt).mode & 0o777, 0o600)
+  assert.equal(dirname(upper.receipt), join(reviews, at(lane, "change_id")))
+  assert.deepEqual({ ...receipt, time: undefined }, {
+    kind: "flow", flow: "review", runId: upper.runId, projectRoot: lane, repository: upper.repository, commitId: at(lane, "commit_id"), changeId: at(lane, "change_id"), diffHash: diffHash(lane, "@"), time: undefined, verdict: "PASS"
+  })
+  // The run reviewed the pinned commit, with verification on and narration off.
+  assert.deepEqual(JSON.parse(readFileSync(runFile(upper.receipt), "utf8")).input, { repo: lane, commit: at(lane, "commit_id"), verify: true, narrate: false })
+  await landing()
+  assert.equal(onMain(), "fix: a lane")
+  assert.deepEqual(landLog().map((row) => [row.outcome, row.runId, row.sessionId]).sort(), [["receipt", lower.runId, undefined], ["receipt", upper.runId, undefined]].sort())
+})
+
+test("a flow FAIL refuses the land and outranks a Codex PASS of the same diff", async (t) => {
+  const { lane, landing, onMain, change } = fixture(t)
+  change("secure/a.txt", "a\n")
+  process.env.FAKE_FLOW_VERDICT = "fail"
+  const [failed] = runFlowReview(lane, "@")
+  assert.equal(failed.verdict, "FAIL")
+  assert.equal(runReview(lane, "@", "Check.").verdict, "PASS")
+  await assert.rejects(landing(), new RegExp(`answered FAIL in review run ${failed.runId}`))
+  assert.equal(onMain(), "base")
+})
+
+test("a review that does not complete, or answers incomplete, writes no receipt", (t) => {
+  const { lane, reviews, change } = fixture(t)
+  change("secure/a.txt", "a\n")
+  process.env.FAKE_FLOW_VERDICT = "incomplete"
+  const [incomplete] = runFlowReview(lane, "@")
+  assert.equal(incomplete.verdict, "incomplete")
+  assert.match(incomplete.problem, /answered incomplete for [0-9a-f]{40}; no receipt written/)
+  process.env.FAKE_FLOW_VERDICT = "pass"
+  process.env.FAKE_FLOW_REF = "0".repeat(40)
+  assert.match(runFlowReview(lane, "@")[0].problem, new RegExp(`answered pass for ${"0".repeat(40)}; no receipt written`))
+  delete process.env.FAKE_FLOW_REF
+  process.env.FAKE_FLOW_EXIT = "1"
+  const [failed] = runFlowReview(lane, "@")
+  assert.deepEqual([failed.verdict, failed.runId, failed.problem], ["incomplete", undefined, "smthrs flow start exited 1 with no run: the run failed"])
+  assert.equal(existsSync(join(reviews, at(lane, "change_id"))), false)
+})
+
+test("a flow receipt proves itself against its run: a gone run, another flow, an edited verdict or commit, moved content", async (t) => {
+  const { lane, landing, onMain, change } = fixture(t)
+  change("old.txt", "reviewed earlier\n")
+  jj(lane, ["commit", "-m", "old"])
+  change("secure/a.txt", "a\n")
+  jj(lane, ["status"])
+  const [result] = runFlowReview(lane, "@")
+  const receipt = JSON.parse(readFileSync(result.receipt, "utf8"))
+  const run = readFileSync(runFile(result.receipt), "utf8")
+  const refused = async (pattern) => { await assert.rejects(landing(), pattern); assert.equal(onMain(), "base") }
+
+  rmSync(runFile(result.receipt))
+  await refused(new RegExp(`does not prove itself: run ${result.runId} has no result in ${lane}`))
+  writeFileSync(runFile(result.receipt), JSON.stringify({ ...JSON.parse(run), flowName: "other" }))
+  await refused(new RegExp(`does not prove itself: run ${result.runId} is not a completed review run`))
+  writeFileSync(runFile(result.receipt), JSON.stringify({ ...JSON.parse(run), value: { ...JSON.parse(run).value, verdict: "fail" } }))
+  await refused(/does not prove itself: run .* answered fail, not PASS/)
+  writeFileSync(runFile(result.receipt), run)
+
+  // An earlier run's commit and this content's hash: the run reviewed other content.
+  const [old] = runFlowReview(lane, "@-")
+  writeFileSync(result.receipt, JSON.stringify({ ...JSON.parse(readFileSync(old.receipt, "utf8")), changeId: receipt.changeId, diffHash: receipt.diffHash }), { mode: 0o600 })
+  await refused(new RegExp(`does not prove itself: ${old.commitId}'s diff is ${old.diffHash}, not ${receipt.diffHash}`))
+  writeFileSync(result.receipt, JSON.stringify({ ...receipt, commitId: old.commitId }), { mode: 0o600 })
+  await refused(new RegExp(`does not prove itself: run ${result.runId} reviewed ${receipt.commitId}, not ${old.commitId}`))
+  writeFileSync(result.receipt, JSON.stringify({ ...receipt, runId: undefined }), { mode: 0o600 })
+  await refused(/does not prove itself: it names no review run/)
+
+  writeFileSync(result.receipt, JSON.stringify(receipt), { mode: 0o600 })
+  await landing()
+  assert.equal(onMain(), "fix: a lane")
+})
+
+test("a flow receipt whose run can't be read refuses a normal land", async (t) => {
+  const { lane, landing, onMain, change } = fixture(t)
+  change("secure/a.txt", "a\n")
+  runFlowReview(lane, "@")
+  process.env.SMITHERS_SMTHRS = join(lane, "no-such-smthrs")
+  await assert.rejects(landing(), /does not prove itself: its run cannot be checked: smthrs did not run/)
+  assert.equal(onMain(), "base")
+})
+
+test("review.mjs --flow exits 0 on PASS, 2 on FAIL, 1 when not completed, and takes one reviewer kind", (t) => {
+  const { lane, change } = fixture(t)
+  change("secure/a.txt", "a\n")
+  const quiet = t.mock.method(console, "log", () => {})
+  assert.equal(main(["--flow", "--rev", "@"], lane), 0)
+  process.env.FAKE_FLOW_VERDICT = "fail"
+  assert.equal(main(["--rev", "@", "--flow"], lane), 2)
+  process.env.FAKE_FLOW_VERDICT = "incomplete"
+  assert.equal(main(["--flow", "--rev", "@"], lane), 1)
+  assert.match(quiet.mock.calls.at(-1).arguments[0], /VERDICT incomplete run run-.*\nNOT COMPLETED: run .* answered incomplete/)
+  for (const args of [["--flow"], ["--flow", "--rev", "@", "--prompt-file", "x"], ["--flow", "--rev", "@", "--model", reviewModel], ["--rev", "@"]]) {
+    assert.throws(() => main(args, lane), /Usage: .*--rev <revset> \(--flow \| --prompt-file <file>/)
+  }
 })
 
 test("the shipped list covers the access areas and spares tests, generated files and other code", () => {

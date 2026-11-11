@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /**
- * Review receipts: a land needs proof that Codex Astra passed the exact change, not a lane's prose.
+ * Review receipts: a land needs proof that a reviewer passed the exact change, not a lane's prose.
  *
- * `main` below runs the review. The land tool calls `requireReviews`. A receipt is checked against
- * the Codex session's rollout, which is what stops a hand-written JSON file. This is not
- * cryptographic: someone who can also forge a rollout file can forge a receipt.
+ * `main` below runs a review. The land tool calls `requireReviews`. A receipt is one of two kinds, and
+ * each is checked against the record of the review that wrote it, which is what stops a hand-written
+ * JSON file:
+ * - a Codex receipt (`--prompt-file`) against the Codex session's rollout;
+ * - a flow receipt (`--flow`) against the `review` flow run's result, read through `smthrs runs output`.
+ * This is not cryptographic: someone who can also forge a rollout or a run record can forge a receipt.
  */
 import { spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
@@ -21,11 +24,14 @@ export const requiredPathsFile = ".smithers/flows/land/review-required.txt"
 const manifestMark = "Review-Manifest: "
 const generated = new Set([".smithers/target-index.json", "apps/mvp/db/MigrationManifest.ts", "apps/mvp/src/device/schemas.lock.json"])
 const reviewTimeoutMs = 40 * 60 * 1000
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
 /** Where an override is announced. A test sets `path`; no environment variable can, so a land can't hide its line. */
 export const overrideInbox = { path: join(userInfo().homedir, ".vibe-orch/proxy/inbox.md") }
 
 export const reviewsDirectory = () => process.env.SMITHERS_REVIEWS_DIR ?? join(homedir(), "smithers-builders/reviews")
+/** The `smthrs` that runs the review flow and reads its runs back; a test points it at a fixture. */
+export const smthrsCommand = () => process.env.SMITHERS_SMTHRS ?? "smthrs"
 export const reviewCodexHome = () => process.env.SMITHERS_REVIEW_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".smithers/accounts/codex-2")
 
 const ownIdentity = /^(?:apps\/mvp\/db\/migrations|apps\/mvp\/docs\/decisions)\/(\d{4,})[_-](.+?)(?:\.md|\.ts)$/
@@ -233,10 +239,52 @@ const repositoryOf = (root) => {
   return `sha256:${createHash("sha256").update(origin?.slice("origin ".length).trim() ?? "no-origin").digest("hex").slice(0, 32)}`
 }
 
-/** The reason a receipt fails to prove itself, or undefined when its session backs every claim. */
-export const receiptProblem = (receipt, file, read = readRollout) => {
+const reviewFlow = "review"
+/** The review flow's verdicts that decide a land; `incomplete` decides nothing and writes no receipt. */
+const flowVerdicts = { pass: "PASS", fail: "FAIL" }
+
+/**
+ * A `review` run's answer through the documented door: `runs output <run> result`, the typed result a
+ * completed run committed, with the flow's id and input. Undefined when the project holds no such run
+ * or the run has no result: it failed, is still running, or its state is gone.
+ */
+export const readReviewRun = (projectRoot, runId) => {
+  const run = spawnSync(smthrsCommand(), ["runs", "output", runId, "result", "--root", projectRoot, "--format", "json"], {
+    cwd: projectRoot, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"]
+  })
+  if (run.error) throw new Error(`smthrs did not run: ${run.error.message}`)
+  if (run.status !== 0) return undefined
+  const node = JSON.parse(run.stdout)
+  return isObject(node) ? node : undefined
+}
+
+/** Why a flow receipt's run does not back it, or undefined when the run proves every claim. */
+const flowProblem = (receipt, root) => {
+  const { runId, projectRoot } = receipt
+  if (typeof runId !== "string" || typeof projectRoot !== "string") return "it names no review run"
+  const run = readReviewRun(projectRoot, runId)
+  if (run === undefined) return `run ${runId} has no result in ${projectRoot}`
+  if (run.flowName !== reviewFlow || run.outcome !== "success") return `run ${runId} is not a completed ${reviewFlow} run`
+  const reviewed = run.value?.target?.ref
+  if (reviewed !== receipt.commitId) return `run ${runId} reviewed ${reviewed ?? "no commit"}, not ${receipt.commitId}`
+  const verdict = flowVerdicts[run.value?.verdict]
+  if (verdict !== receipt.verdict) return `run ${runId} answered ${run.value?.verdict ?? "no verdict"}, not ${receipt.verdict}`
+  const hash = diffHash(root, receipt.commitId)
+  if (hash !== receipt.diffHash) return `${receipt.commitId}'s diff is ${hash}, not ${receipt.diffHash}`
+  return undefined
+}
+
+/** Where a receipt's verdict came from, for a reader. */
+const sourceOf = (receipt) => receipt.kind === "flow" ? `review run ${receipt.runId}` : `session ${receipt.sessionId}`
+
+/**
+ * The reason a receipt fails to prove itself, or undefined when its review's record backs every claim.
+ * A flow receipt also recomputes its commit's diff hash in `root`, the repository being gated.
+ */
+export const receiptProblem = (receipt, file, read = readRollout, root) => {
   if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) return "it is not a receipt object"
   if ((statSync(file).mode & 0o077) !== 0) return "its file is not private (mode 600)"
+  if (receipt.kind === "flow") return flowProblem(receipt, root)
   const { sessionId, codexHome, rolloutPath } = receipt
   if (typeof sessionId !== "string" || typeof codexHome !== "string" || typeof rolloutPath !== "string") return "it names no Codex session"
   if (!existsSync(rolloutPath)) return `session ${sessionId} has no rollout file`
@@ -252,23 +300,22 @@ export const receiptProblem = (receipt, file, read = readRollout) => {
   return undefined
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
 /**
  * Reads the store once per gate. Each receipt proves itself at most once, and each rollout is parsed once,
  * when a judgment first needs it. Any error becomes a refusal reason the audited override can pass.
  */
-const openStore = () => {
-  const root = reviewsDirectory()
+const openStore = (root) => {
+  const directory = reviewsDirectory()
   const entries = []
   const rollouts = new Map()
   const read = (path) => { if (!rollouts.has(path)) rollouts.set(path, readRollout(path)); return rollouts.get(path) }
   try {
-    if (existsSync(root)) for (const folder of readdirSync(root, { withFileTypes: true })) {
+    if (existsSync(directory)) for (const folder of readdirSync(directory, { withFileTypes: true })) {
       if (!folder.isDirectory() || folder.name === "logs") continue
-      for (const name of readdirSync(join(root, folder.name))) {
+      for (const name of readdirSync(join(directory, folder.name))) {
         if (!name.endsWith(".json")) continue
-        const file = join(root, folder.name, name)
+        const file = join(directory, folder.name, name)
         let receipt = {}, unreadable, cached
         try {
           const parsed = JSON.parse(readFileSync(file, "utf8"))
@@ -277,8 +324,8 @@ const openStore = () => {
         } catch (error) { unreadable = `it cannot be read: ${error.message}` }
         const problem = () => {
           if (cached === undefined) {
-            try { cached = unreadable ?? (receipt.changeId === folder.name ? receiptProblem(receipt, file, read) : `it was issued for change ${receipt.changeId}`) ?? null }
-            catch (error) { cached = `its session cannot be checked: ${error.message}` }
+            try { cached = unreadable ?? (receipt.changeId === folder.name ? receiptProblem(receipt, file, read, root) : `it was issued for change ${receipt.changeId}`) ?? null }
+            catch (error) { cached = `its ${receipt.kind === "flow" ? "run" : "session"} cannot be checked: ${error.message}` }
           }
           return cached ?? undefined
         }
@@ -299,14 +346,14 @@ const openStore = () => {
 const judge = (store, repository, changeId, hash) => {
   if (store.broken) return { problem: store.broken }
   const failed = store.entries.find((entry) => entry.receipt.verdict === "FAIL" && entry.receipt.repository === repository && entry.receipt.diffHash === hash && !entry.problem())
-  if (failed) return { problem: `the reviewer answered FAIL in session ${failed.receipt.sessionId}; see ${failed.file}` }
+  if (failed) return { problem: `the reviewer answered FAIL in ${sourceOf(failed.receipt)}; see ${failed.file}` }
   const receipts = store.entries.filter((entry) => entry.folder === changeId)
   const proven = receipts.filter((entry) => !entry.problem() && entry.receipt.repository === repository)
   const passed = proven.find((entry) => entry.receipt.diffHash === hash && entry.receipt.verdict === "PASS")
   if (passed) return { receipt: passed.receipt }
   if (proven.length) return { problem: `its receipts cover different content (${hash} now, reviewed ${proven.at(-1).receipt.diffHash})` }
   const bad = receipts.find((entry) => entry.problem())
-  return { problem: bad ? `receipt ${bad.file} does not prove itself: ${bad.problem()}` : "it has no Astra review receipt" }
+  return { problem: bad ? `receipt ${bad.file} does not prove itself: ${bad.problem()}` : "it has no review receipt" }
 }
 
 const needReason = (override) => {
@@ -322,12 +369,16 @@ const assertInbox = () => {
   catch { throw new Error(`--no-review-needed refused: cannot write ${overrideInbox.path}, and a use must never go unseen. Get a review receipt, or land on the host that has this inbox.`) }
 }
 
-const refusal = (entries) => [
-  "Astra review required; nothing pushed.",
-  ...entries.map((entry) => `  ${entry.commitId.slice(0, 12)} ${entry.changeId.slice(0, 12)}: ${entry.problem}. Touches ${entry.paths.join(", ")}`),
-  `Review: node .smithers/flows/land/review.mjs --rev '${entries.map((entry) => entry.changeId.slice(0, 12)).join(" | ")}' --prompt-file <what to check>`,
-  'False positive: --no-review-needed "<reason>", recorded in the land log and the proxy inbox.'
-].join("\n")
+const refusal = (entries) => {
+  const revset = entries.map((entry) => entry.changeId.slice(0, 12)).join(" | ")
+  return [
+    "Review required; nothing pushed.",
+    ...entries.map((entry) => `  ${entry.commitId.slice(0, 12)} ${entry.changeId.slice(0, 12)}: ${entry.problem}. Touches ${entry.paths.join(", ")}`),
+    `Review with the review flow: node .smithers/flows/land/review.mjs --flow --rev '${revset}'`,
+    `  or with Codex: node .smithers/flows/land/review.mjs --rev '${revset}' --prompt-file <what to check>`,
+    'False positive: --no-review-needed "<reason>", recorded in the land log and the proxy inbox.'
+  ].join("\n")
+}
 
 /**
  * Throws unless every commit in the revset that touches a required path has a PASS receipt for its
@@ -339,7 +390,7 @@ export const requireReviews = (root, revset, { base = "main@origin", override } 
   const required = requiredMatcher(base === null ? bundledList() : listOnMain(root, base))
   const rows = jj(root, ["log", "--ignore-working-copy", "--no-graph", "-r", revset, "-T", 'commit_id ++ " " ++ change_id ++ "\\n"'])
   const checked = []
-  const store = openStore()
+  const store = openStore(root)
   for (const row of rows.split("\n").filter(Boolean)) {
     const [commitId, changeId] = row.split(" ")
     const paths = changedPaths(root, commitId).filter(required)
@@ -358,7 +409,7 @@ export const requireReviewsGit = (paths, listText, override) => {
   needReason(override)
   const hit = [...new Set(paths)].filter(requiredMatcher(listText ?? bundledList()))
   if (!hit.length) return { reviewed: [], overridden: [] }
-  if (override === undefined) throw new Error(`Astra review required; nothing pushed. A Git checkout cannot hold a receipt. Land from a jj workspace, or pass --no-review-needed "<reason>": ${hit.join(", ")}`)
+  if (override === undefined) throw new Error(`Review required; nothing pushed. A Git checkout cannot hold a receipt. Land from a jj workspace, or pass --no-review-needed "<reason>": ${hit.join(", ")}`)
   assertInbox()
   return { reviewed: [], overridden: [{ paths: hit, reason: override, problem: "Git checkout" }] }
 }
@@ -384,7 +435,7 @@ export const logLanding = (root, tip, { reviewed, overridden, gate }) => {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "land-log.jsonl")
     if (incomplete) appendFileSync(file, line({ outcome: "gate", gate: "incomplete", stage: gate.stage, proven: gate.proven }), { mode: 0o600 })
-    for (const entry of reviewed) appendFileSync(file, line({ outcome: "receipt", commitId: entry.commitId, changeId: entry.changeId, diffHash: entry.diffHash, sessionId: entry.receipt.sessionId }), { mode: 0o600 })
+    for (const entry of reviewed) appendFileSync(file, line({ outcome: "receipt", commitId: entry.commitId, changeId: entry.changeId, diffHash: entry.diffHash, ...entry.receipt.kind === "flow" ? { runId: entry.receipt.runId } : { sessionId: entry.receipt.sessionId } }), { mode: 0o600 })
     for (const entry of overridden) appendFileSync(file, line({ outcome: "override", commitId: entry.commitId, changeId: entry.changeId, paths: entry.paths, reason: entry.reason, instead: entry.problem }), { mode: 0o600 })
     chmodSync(file, 0o600)
   } catch (error) {
@@ -413,9 +464,8 @@ const findRollout = (codexHome, sessionId) => {
   return name && join(sessions, name)
 }
 
-/** Runs one Astra session over the revset's commits and writes one receipt per commit. Exit 0 only on PASS. */
-export const runReview = (root, revset, request, { model = reviewModel } = {}) => {
-  if (!approvedReviewers.includes(model)) throw new Error(`${model} is not an approved reviewer: ${approvedReviewers.join(", ")}`)
+/** The revset's non-empty commits, oldest first, each with what its receipt names. */
+const reviewTargets = (root, revset) => {
   jj(root, ["status"])
   const rows = jj(root, ["log", "--ignore-working-copy", "--no-graph", "--reversed", "-r", `(${revset}) ~ empty()`, "-T", 'commit_id ++ " " ++ change_id ++ " " ++ description.first_line() ++ "\\n"'])
   const repository = repositoryOf(root)
@@ -424,6 +474,13 @@ export const runReview = (root, revset, request, { model = reviewModel } = {}) =
     return { commitId, changeId, title: title.join(" "), diffHash: diffHash(root, commitId), repository }
   })
   if (!targets.length) throw new Error(`No non-empty commit in ${revset}`)
+  return targets
+}
+
+/** Runs one Astra session over the revset's commits and writes one receipt per commit. Exit 0 only on PASS. */
+export const runReview = (root, revset, request, { model = reviewModel } = {}) => {
+  if (!approvedReviewers.includes(model)) throw new Error(`${model} is not an approved reviewer: ${approvedReviewers.join(", ")}`)
+  const targets = reviewTargets(root, revset)
   const directory = reviewsDirectory()
   const logs = join(directory, "logs")
   mkdirSync(logs, { recursive: true, mode: 0o700 })
@@ -450,26 +507,67 @@ export const runReview = (root, revset, request, { model = reviewModel } = {}) =
     const folder = join(directory, target.changeId)
     mkdirSync(folder, { recursive: true, mode: 0o700 })
     const file = join(folder, `${sessionId}.json`)
-    writeFileSync(file, `${JSON.stringify({ sessionId, model, codexHome, rolloutPath, repository, commitId: target.commitId, changeId: target.changeId, diffHash: target.diffHash, time: new Date().toISOString(), verdict: answer.verdict, findings: answer.findings, logPath }, null, 2)}\n`, { mode: 0o600 })
+    writeFileSync(file, `${JSON.stringify({ sessionId, model, codexHome, rolloutPath, repository: target.repository, commitId: target.commitId, changeId: target.changeId, diffHash: target.diffHash, time: new Date().toISOString(), verdict: answer.verdict, findings: answer.findings, logPath }, null, 2)}\n`, { mode: 0o600 })
     return file
   })
   return { verdict: answer.verdict, sessionId, logPath, receipts: written }
 }
 
+/**
+ * Runs the `review` flow once per commit of the revset, in this project, and writes a receipt for each
+ * run that answered pass or fail. An `incomplete` answer, or a run that did not complete, writes none.
+ * The flow's seats come from the caller's environment (`SMITHERS_SEATS`).
+ */
+export const runFlowReview = (root, revset) => {
+  const targets = reviewTargets(root, revset)
+  const directory = reviewsDirectory()
+  return targets.map((target) => {
+    const data = JSON.stringify({ repo: root, commit: target.commitId, verify: true, narrate: false })
+    const start = spawnSync(smthrsCommand(), ["flow", "start", reviewFlow, "--wait", "--root", root, "--data", data, "--format", "json"], {
+      cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"], timeout: reviewTimeoutMs
+    })
+    if (start.error) return { ...target, verdict: "incomplete", problem: `smthrs did not finish: ${start.error.message}` }
+    let runId
+    try { runId = JSON.parse(start.stdout).runId } catch { runId = undefined }
+    if (typeof runId !== "string") return { ...target, verdict: "incomplete", problem: `smthrs flow start exited ${start.status} with no run: ${start.stderr.trim().split("\n").at(-1)}` }
+    const run = readReviewRun(root, runId)
+    const verdict = flowVerdicts[run?.value?.verdict]
+    if (run?.flowName !== reviewFlow || run.value?.target?.ref !== target.commitId || verdict === undefined) {
+      return { ...target, runId, verdict: "incomplete", problem: `run ${runId} ${run === undefined ? "did not complete" : `answered ${run.value?.verdict ?? "no verdict"} for ${run.value?.target?.ref ?? "no commit"}`}; no receipt written` }
+    }
+    const folder = join(directory, target.changeId)
+    mkdirSync(folder, { recursive: true, mode: 0o700 })
+    const file = join(folder, `flow-${randomUUID()}.json`)
+    writeFileSync(file, `${JSON.stringify({ kind: "flow", flow: reviewFlow, runId, projectRoot: root, repository: target.repository, commitId: target.commitId, changeId: target.changeId, diffHash: target.diffHash, time: new Date().toISOString(), verdict }, null, 2)}\n`, { mode: 0o600 })
+    return { ...target, runId, verdict, receipt: file }
+  })
+}
+
+const usage = `Usage: node .smithers/flows/land/review.mjs --rev <revset> (--flow | --prompt-file <file> [--model ${approvedReviewers.join(" | ")}])
+--flow runs the review flow once per commit, on the seats SMITHERS_SEATS pins, and writes a receipt per run that answered.
+--prompt-file runs Codex read-only over the commits, Astra unless named, and writes a receipt per commit.
+Exit 0 when every commit passes, 2 on a FAIL, 1 when a review did not complete.`
+
 export function main(args = process.argv.slice(2), cwd = process.cwd()) {
-  let rev, promptFile, model
+  let rev, promptFile, model, flow = false
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === "--rev") rev = args[i + 1]
     else if (args[i] === "--prompt-file") promptFile = args[i + 1]
     else if (args[i] === "--model") model = args[i + 1]
+    else if (args[i] === "--flow") { flow = true; i-- }
     else throw new Error(`Unknown option: ${args[i]}`)
   }
-  if (!rev || !promptFile) throw new Error(`Usage: node .smithers/flows/land/review.mjs --rev <revset> --prompt-file <file> [--model ${approvedReviewers.join(" | ")}]\nRuns the reviewer read-only over the commits, Astra unless named, and writes a receipt per commit. Exit 0 on PASS, 2 on FAIL.`)
+  if (!rev || flow === (promptFile !== undefined) || (flow && model !== undefined)) throw new Error(usage)
   let root = realpathSync(cwd)
   while (!existsSync(join(root, ".jj"))) {
     const parent = dirname(root)
     if (parent === root) throw new Error("Run in a jj workspace")
     root = parent
+  }
+  if (flow) {
+    const results = runFlowReview(root, rev)
+    for (const result of results) console.log(`${result.commitId.slice(0, 12)} VERDICT ${result.verdict}${result.runId ? ` run ${result.runId}` : ""}${result.receipt ? `\nreceipt ${result.receipt}` : ""}${result.problem ? `\nNOT COMPLETED: ${result.problem}` : ""}`)
+    return results.some((result) => result.verdict === "FAIL") ? 2 : results.every((result) => result.verdict === "PASS") ? 0 : 1
   }
   const result = runReview(root, rev, readFileSync(promptFile, "utf8"), { model })
   console.log(`VERDICT ${result.verdict} session ${result.sessionId}\nlog ${result.logPath}\n${result.receipts.map((file) => `receipt ${file}`).join("\n")}`)

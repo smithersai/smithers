@@ -114,11 +114,16 @@ review.mjs --rev <revset> --prompt-file <f>
   ~/smithers-builders/reviews/<change-id>/<session>.json one per commit, mode 600
   ~/smithers-builders/reviews/logs/<session>.log
 
+review.mjs --flow --rev <revset>
+  per commit: smthrs flow start review --wait            {repo, commit, verify: true, narrate: false}
+    smthrs runs output <run> result                      verdict pass | fail; incomplete writes nothing
+  ~/smithers-builders/reviews/<change-id>/flow-<uuid>.json  mode 600, names the run and its project
+
 land
   every non-empty commit in main@origin..@
     touches review-required.txt (read from main@origin)? if not, no review needed
-    a receipt for its change id and diff hash, proven by its rollout?
-      any FAIL: refuse     a PASS: land     neither: refuse, naming the command
+    a receipt for its change id and diff hash, proven by its rollout or its run?
+      any FAIL: refuse     a PASS: land     neither: refuse, naming both commands
   land-log.jsonl records each receipt and override before the push
 ```
 
@@ -133,10 +138,22 @@ snapshot between it and the push. The verdict is the
 answer's last line only; prose never counts, and a session that ends without it
 writes no receipt.
 
+**What the land tool checks for a flow receipt.** The project root it names must
+still hold the run, and `smthrs runs output <run> result` must answer a completed
+`review` run whose pinned target commit is the receipt's commit and whose verdict
+is the receipt's (`pass` is PASS, `fail` is FAIL). The tool recomputes the
+commit's diff hash from the repository being landed, so a receipt that moves an
+old run onto new content refuses. Run state lives in the project's `.flows/`, so
+a flow receipt proves itself only while the workspace that ran it exists: review
+and land from the same workspace. `runs output` does not name the model that
+reviewed, so the receipt records none and the gate checks none; the operator's
+`SMITHERS_SEATS` chose it, and only the run's raw `runs logs` events show it.
+
 **Reviewers.** Astra by default. `--model gpt-6.1-sol` when Astra is unavailable; the
 receipt records the model the session ran. Fable is not accepted: a Claude session
 has no read-only sandbox record and a different format. With both Codex models out,
-use the override.
+use the override, or the review flow (`--flow`) on the seats `SMITHERS_SEATS`
+pins.
 
 **What it doesn't prove.** This is not cryptographic. Someone who forges a
 rollout file too can forge a receipt, and someone who deletes a FAIL receipt
