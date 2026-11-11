@@ -100,14 +100,21 @@ const locations = (root: JsonSchema, fixture: unknown): { objects: ObjectLocatio
   return { objects, enums }
 }
 
-// Every string and number a story carries, as the View could print it; matching ignores case so a View may
-// capitalize a carried word. The system actor is labeled "Install event".
-const strings = (value: unknown): string[] => {
-  if (typeof value === "string") return [value.toLowerCase()]
-  if (typeof value === "number") return [String(value)]
+// Every string and number a story carries, as the View could print it. The system actor is labeled "Install event".
+const carried = (value: unknown): Array<string | number> => {
+  if (typeof value === "string" || typeof value === "number") return [value]
   if (value === null || typeof value !== "object") return []
-  return Object.values(value).flatMap(strings)
+  return Object.values(value).flatMap(carried)
 }
+
+/**
+ * Whether `text` is one of the carried values: inside a carried string, ignoring case so a View may capitalize a
+ * carried word, or a whole carried number, so "20" is not satisfied by 734003200.
+ */
+export const carries = (values: ReadonlyArray<string | number>, text: string): boolean =>
+  values.some((value) =>
+    typeof value === "number" ? String(value) === text : value.toLowerCase().includes(text.toLowerCase())
+  )
 
 /** Schema-free story checks, also used by plain TypeScript card props. */
 export const storyContract = (
@@ -130,13 +137,13 @@ export const storyContract = (
       })
       test(`expects only strings the ${state} story carries`, () => {
         // The model, plus the labels, disabled reasons and form fields of the actions the story passes.
-        const carried = [...strings(fixture), ...strings(story.actions), ...strings(story.gestures)]
-        if (strings(fixture).some((text) => text.length > 0)) expect(story.expect.length).toBeGreaterThan(0)
+        const values = [...carried(fixture), ...carried(story.actions), ...carried(story.gestures)]
+        if (carried(fixture).some((value) => String(value).length > 0)) expect(story.expect.length).toBeGreaterThan(0)
         // The third model role shows as "Decisions"; UI copy never shows its internal id (mvp.md §6.5).
         expect(story.expect.filter((text) => /jev/i.test(text)), `${name}.${state}`).toEqual([])
         for (const text of story.expect) {
           expect(text.trim().length, `${name}.${state}`).toBeGreaterThan(0)
-          expect(carried.some((value) => value.includes(text.toLowerCase())), `${name}.${state}: ${text}`).toBe(true)
+          expect(carries(values, text), `${name}.${state}: ${text}`).toBe(true)
         }
       })
     }

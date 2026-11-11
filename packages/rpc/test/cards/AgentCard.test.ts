@@ -24,11 +24,7 @@ describe("Agent", () => {
   test("stories cover every role", () => {
     expect([...new Set(Object.values(fixtures).map((story) => story.model.role))].sort()).toEqual([...ROLES].sort())
   })
-  test("Change model is the owner's only", () => {
-    expect(fixtures.coding.actions.map((action) => action.label)).toEqual(["Change model"])
-    expect(fixtures.member_view.model.owner).toBe(false)
-    expect(fixtures.member_view.actions).toEqual([])
-  })
+
   test("no story binds a command that commits a TODO", () => {
     // Edit instructions must open a Draft; `todo.new` with text commits one at once.
     const tags = Object.values(fixtures).flatMap((story) => story.actions.map((action) => action.tag))

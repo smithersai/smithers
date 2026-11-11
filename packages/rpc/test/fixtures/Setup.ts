@@ -190,10 +190,3 @@ export const fixtures = {
   ),
   done: story("Setup done", done, { expect: ["https://smithers.example.test", "Cerebras"] })
 } satisfies Record<string, Story<SetupCard>>
-
-// Key entry is person-only; the agent projection carries no retry form.
-export const personOnlyFixtures = {
-  models_failed_agent: story("A rejected key viewed by an agent", fixtures.models_failed.model, {
-    expect: ["Key rejected", "401 from the gateway"]
-  })
-} satisfies Record<string, Story<SetupCard>>

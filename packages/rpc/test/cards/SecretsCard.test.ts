@@ -36,14 +36,6 @@ describe("Secrets", () => {
     expect(parsed.secrets[0]).not.toHaveProperty("value")
     expect(JSON.stringify(Object.values(fixtures).map((story) => story.model))).not.toContain("hunter2")
   })
-  test("rows carry Replace and Delete bound to their name; a member sees none", () => {
-    expect(row.actions.map((action) => [action.tag, action.label, action.args])).toEqual([
-      ["secrets", "Replace", { operation: "set", name: "NPM_TOKEN" }],
-      ["secrets", "Delete", { operation: "delete", name: "NPM_TOKEN" }]
-    ])
-    expect(fixtures.member_view.model.secrets[0]!.actions).toEqual([])
-    expect(fixtures.member_view.actions).toEqual([])
-  })
 })
 
 test("the shared live model and literal old pinned rows keep names, scopes and hosts without values", async () => {

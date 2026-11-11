@@ -3325,7 +3325,7 @@ describe("pinned historical storage", () => {
     for (const kind of [...current, ...LEGACY_CARD_KINDS]) expect(pinned).toContain(kind)
   })
 
-  test.each(legacyCards)("stored $row.kind preserves its literal title and decode outcome", (fixture) => {
+  test.each(legacyCards)("stored $row.kind preserves its literal title, payload and decode outcome", (fixture) => {
     const decoded = CardSchema.parse(fixture.row)
     expect(decoded.kind).toBe(fixture.expectedKind)
     expect(decoded.title).toBe(fixture.expectedTitle)
@@ -3342,6 +3342,9 @@ describe("pinned historical storage", () => {
               : fixture.row.payload
           }
       )
+    } else {
+      // Zod strips undeclared keys, so a schema that stops declaring a stored field would drop it here.
+      expect(decoded.payload).toEqual(fixture.row.payload)
     }
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
