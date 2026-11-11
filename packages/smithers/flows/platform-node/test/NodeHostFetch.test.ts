@@ -93,3 +93,73 @@ it("providerFetch names each request's origin in a debug log, never its path or 
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+it.each(["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"])(
+  "builds every host bundle and reaches loopback with an invalid %s",
+  async (variable) => {
+    const { server, url } = await listen()
+    const keys = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "no_proxy", "NO_PROXY"] as const
+    const previous = keys.map((key) => [key, process.env[key]] as const)
+    const ledger = ProcessLedger.layerMemory({ hostId: "invalid-proxy", ownerPid: process.pid })
+    try {
+      for (const key of keys) delete process.env[key]
+      for (
+        const value of [
+          "proxy.internal:3128",
+          "not a url",
+          "http://[unterminated",
+          "socks5://proxy.internal:1080",
+          "http://%:password@proxy.internal:3128",
+          "http://user:%@proxy.internal:3128",
+          "http://%FF:password@proxy.internal:3128",
+          "http://proxy.internal:3128/proxy",
+          "http://proxy.internal:3128/?key=fixture-secret",
+          "http://proxy.internal:3128/#fragment"
+        ]
+      ) {
+        process.env[variable] = value
+        const hosts = [
+          NodeHost.layer,
+          NodeHost.layerAt(process.cwd()),
+          NodeHost.layerContained().pipe(Layer.provide(ledger)),
+          NodeHost.layerContainedAt(process.cwd()).pipe(Layer.provide(ledger))
+        ]
+        for (const host of hosts) {
+          const answered = await Effect.runPromise(
+            Effect.gen(function*() {
+              const client = yield* HttpClient
+              const response = yield* client.get(url)
+              return yield* response.text
+            }).pipe(Effect.provide(host))
+          )
+          expect(answered).toBe("network")
+        }
+      }
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  }
+)
+
+it("providerFetch builds with an invalid proxy, reaches loopback and rejects other origins without its value", async () => {
+  const { server, url } = await listen()
+  const value = "http://secret:password@[unterminated"
+  try {
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const fetch = yield* EgressHttpClient.providerFetch({ HTTPS_PROXY: value })
+      const response = yield* Effect.promise(() => fetch(url))
+      expect(yield* Effect.promise(() => response.text())).toBe("network")
+      const refused = yield* Effect.tryPromise(() => fetch("https://remote.invalid/blocked")).pipe(Effect.flip)
+      expect(refused).toMatchObject({
+        cause: { cause: { message: "Invalid HTTPS_PROXY: expected an HTTP or HTTPS proxy URL" } }
+      })
+      expect(String(refused)).not.toContain("password")
+    })))
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})

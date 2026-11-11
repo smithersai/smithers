@@ -88,6 +88,33 @@ const loopback = ["localhost", "127.0.0.1", "::1"] as const
 const exclusions = (declared: string): string =>
   declared === "*" ? declared : [declared, ...loopback].filter((entry) => entry !== "").join(",")
 
+/** The selected variable whose value Undici cannot use, never the value itself. */
+const invalidProxyVariable = (environment: Readonly<Record<string, string | undefined>>): string | undefined => {
+  for (const [lower, upper] of [["http_proxy", "HTTP_PROXY"], ["https_proxy", "HTTPS_PROXY"]] as const) {
+    const variable = environment[lower] === undefined ? upper : lower
+    const proxy = environment[variable]
+    if (!proxy) continue
+    try {
+      const url = new URL(proxy)
+      if (
+        !["http:", "https:"].includes(url.protocol) ||
+        url.pathname !== "/" || url.search !== "" || url.hash !== ""
+      ) return variable
+      // Undici decodes credentials when a username is present. URL parsing
+      // alone accepts malformed percent escapes that would throw there.
+      if (url.username) {
+        decodeURIComponent(url.username)
+        decodeURIComponent(url.password)
+      }
+      continue
+    } catch {
+      // URL parser errors can contain credentials; only the variable is reported.
+    }
+    return variable
+  }
+  return undefined
+}
+
 // Split ESM bundles expose CommonJS Undici through default, without synthetic
 // named exports. Node and Bun also expose its constructors through default.
 // Its typings declare `default` as a namespace without them, and `bundler`
@@ -121,6 +148,10 @@ export interface PoolOptions {
  * acquired in the caller's scope and destroyed with it, so a composition that
  * builds several still owns every pool it opened.
  *
+ * Invalid proxy URLs do not prevent construction. The pool still reaches
+ * loopback, but refuses other origins with an error naming the selected
+ * variable, never its value. {@link layer} reports it as a `TransportError`.
+ *
  * `options` reach Undici's pool as they are: `allowH2: false` keeps it on
  * HTTP/1.1 (see {@link providerFetch}), and `connect` carries TLS options such
  * as a private `ca`. Without them the pool is Undici's default.
@@ -138,6 +169,7 @@ export const dispatcher = (
     const httpProxy = environment.http_proxy ?? environment.HTTP_PROXY ?? ""
     const httpsProxy = environment.https_proxy ?? environment.HTTPS_PROXY ?? ""
     const noProxy = exclusions(environment.no_proxy ?? environment.NO_PROXY ?? "")
+    const invalidProxy = invalidProxyVariable(environment)
     // Explicit empty values prevent Undici from falling back to a different
     // ambient environment. Each replacement pool uses the same proxy policy.
     //
@@ -151,14 +183,27 @@ export const dispatcher = (
     return Effect.acquireRelease(
       Effect.map(
         loadUndici,
-        (undici) =>
-          new undici.EnvHttpProxyAgent({
-            httpProxy,
-            httpsProxy,
+        (undici) => {
+          const pool = new undici.EnvHttpProxyAgent({
+            httpProxy: invalidProxy === undefined ? httpProxy : "",
+            httpsProxy: invalidProxy === undefined ? httpsProxy : "",
             noProxy,
             ...(options.allowH2 === undefined ? {} : { allowH2: options.allowH2 }),
             ...(options.connect === undefined ? {} : { connect: options.connect })
           })
+          if (invalidProxy === undefined) return pool
+          // Never let a broken proxy configuration silently enable direct
+          // egress. Only the fixed loopback exemption may use this direct pool.
+          return pool.compose((dispatch) => (request, handler) => {
+            const hostname = new URL(String(request.origin)).hostname
+            if (hostname === "[::1]" || loopback.some((name) => hostname === name)) {
+              return dispatch(request, handler)
+            }
+            // Undici's request/fetch APIs turn a dispatch refusal into a
+            // rejected request, which the Effect client maps to TransportError.
+            throw new Error(`Invalid ${invalidProxy}: expected an HTTP or HTTPS proxy URL`)
+          })
+        }
       ),
       (dispatcher) => Effect.promise(() => dispatcher.destroy())
     )
@@ -339,22 +384,9 @@ const pinnedClient = (
               })
             )
           }
-          const proxies = [
-            environment.http_proxy ?? environment.HTTP_PROXY,
-            environment.https_proxy ?? environment.HTTPS_PROXY
-          ]
-          // The record is read per request, and a live one such as NodeHost's
-          // `process.env` can name an unparsable proxy after the shared pool
-          // was built from it; that is a refusal here, never a thrown URL error.
-          const validProxies = proxies.every((proxy) => {
-            if (!proxy) return true
-            try {
-              return ["http:", "https:"].includes(new URL(proxy).protocol)
-            } catch {
-              return false
-            }
-          })
-          if (!validProxies) {
+          // A live environment can change after the shared pool was built.
+          // Pinned requests apply the same validation to their fresh dispatcher.
+          if (invalidProxyVariable(environment) !== undefined) {
             return yield* Effect.fail(
               new HttpClientError.HttpClientError({
                 reason: new HttpClientError.TransportError({

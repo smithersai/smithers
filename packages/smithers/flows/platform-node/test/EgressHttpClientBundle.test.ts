@@ -138,6 +138,30 @@ describe("Node executes the bundled egress client", () => {
     }
   })
 
+  it.each([
+    { HTTP_PROXY: "proxy.internal:3128" },
+    { HTTPS_PROXY: "not a url" },
+    { http_proxy: "http://secret:password@[unterminated" },
+    { https_proxy: "socks5://proxy.internal:1080" }
+  ])("builds with an invalid proxy, preserves loopback and refuses external access: %j", async (environment) => {
+    const origin = await listener((_, response) => response.end("local body"))
+    try {
+      expect(
+        await run({
+          environment,
+          urls: [`${origin.url}/local`, "http://remote.invalid/blocked"]
+        }, () => drained(origin.sockets))
+      ).toEqual([
+        { outcome: "success", status: 200, text: "local body" },
+        { outcome: "failure", tag: "HttpClientError" }
+      ])
+      expect(origin.requests.map((request) => request.path)).toEqual(["/local"])
+      await drained(origin.sockets)
+    } finally {
+      await origin.close()
+    }
+  })
+
   it("uses the environment proxy for an unresolvable host", async () => {
     const proxy = await listener((_, response) => response.end("proxy body"))
     try {

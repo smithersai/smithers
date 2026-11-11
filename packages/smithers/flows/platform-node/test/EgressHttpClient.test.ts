@@ -90,6 +90,100 @@ const reach = (environment: Readonly<Record<string, string | undefined>>, url: s
     )
   )
 
+const invalidProxyEnvironments = ["http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"].flatMap((variable) =>
+  [
+    "proxy.internal:3128",
+    "not a url",
+    "http://secret:password@[unterminated",
+    "socks5://proxy.internal:1080",
+    "http://%:password@proxy.internal:3128",
+    "http://user:%@proxy.internal:3128",
+    "http://%FF:password@proxy.internal:3128",
+    "http://proxy.internal:3128/proxy",
+    "http://proxy.internal:3128/?key=fixture-secret",
+    "http://proxy.internal:3128/#fragment"
+  ].map((value) => ({
+    variable,
+    value
+  }))
+)
+
+describe("invalid proxy configuration at layer construction", () => {
+  it.each(invalidProxyEnvironments)("keeps loopback reachable and refuses other origins for $variable=$value", async ({
+    variable,
+    value
+  }) => {
+    const origin = await listen()
+    const ipv6 = await listen(undefined, "::1")
+    try {
+      await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const client = yield* HttpClient.HttpClient
+          for (const url of [origin.url, `http://localhost:${origin.port}`, ipv6.url]) {
+            const local = yield* client.get(`${url}/local`)
+            expect(local.status).toBe(204)
+          }
+          for (const hostname of ["remote.invalid", "127.0.0.2", "localhost.invalid"]) {
+            const refused = yield* Effect.result(client.get(`http://${hostname}/blocked`))
+            expect(refused).toMatchObject({
+              _tag: "Failure",
+              failure: {
+                _tag: "HttpClientError",
+                reason: {
+                  _tag: "TransportError",
+                  cause: { message: `Invalid ${variable}: expected an HTTP or HTTPS proxy URL` }
+                }
+              }
+            })
+            expect(JSON.stringify(refused)).not.toContain(value)
+            expect(JSON.stringify(refused)).not.toContain("password")
+          }
+        })).pipe(Effect.provide(EgressHttpClient.layer({ [variable]: value })))
+      )
+      expect(origin.seen).toEqual(["GET /local", "GET /local"])
+      expect(ipv6.seen).toEqual(["GET /local"])
+    } finally {
+      await origin.close()
+      await ipv6.close()
+    }
+  })
+
+  it("preserves encoded proxy credentials", async () => {
+    let authorization: string | undefined
+    const proxy = await listen((request, response) => {
+      authorization = request.headers["proxy-authorization"]
+      response.writeHead(204).end()
+    })
+    try {
+      const url = new URL(proxy.url)
+      url.username = "user%40example"
+      url.password = "pass%3Aword"
+      const answered = await reach({ HTTP_PROXY: url.href }, "http://remote.invalid/auth")
+      expect(answered._tag).toBe("Success")
+      expect(proxy.seen).toEqual(["GET http://remote.invalid/auth"])
+      expect(authorization).toBe(`Basic ${Buffer.from("user@example:pass:word").toString("base64")}`)
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("validates the lowercase value that takes precedence and keeps explicit empty values", async () => {
+    const origin = await listen()
+    try {
+      for (const http_proxy of ["", origin.url]) {
+        const environment = { http_proxy, HTTP_PROXY: "invalid", https_proxy: "", HTTPS_PROXY: "invalid" }
+        const local = await reach(environment, `${origin.url}/local`)
+        expect(local._tag).toBe("Success")
+      }
+      const proxy = await reach({ http_proxy: origin.url, HTTP_PROXY: "invalid" }, "http://remote.invalid/proxied")
+      expect(proxy._tag).toBe("Success")
+      expect(origin.seen).toEqual(["GET /local", "GET /local", "GET http://remote.invalid/proxied"])
+    } finally {
+      await origin.close()
+    }
+  })
+})
+
 describe("the outbound client a Node process should use", () => {
   it("opens the tunnel through the proxy the lowercase variables name", async () => {
     const proxy = await listen()
