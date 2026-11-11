@@ -49,6 +49,16 @@ RUN_TMP=$(mktemp -d "$FARM/s$SLOT.XXXXXX") || exit 3
 CLEAN=(env -i HOME="$HOME" USER="$USER" LOGNAME="$USER" SHELL=/bin/bash TERM=dumb LANG=en_US.UTF-8 TMPDIR="$RUN_TMP"
   PATH="$NODE_BIN:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PASS[@]+"${PASS[@]}"}" VITEST_MAX_WORKERS="${VITEST_MAX_WORKERS:-2}")
 cd "$DIR" || exit 3
+# Preparation runs in its own recorded process group, like the command: the EOF watcher and finish stop it,
+# the client keeps the reservation while it lives, and `wait` lets this script's TERM trap run at once.
+grouped() {
+  set -m
+  "$@" &
+  local group=$!
+  set +m
+  echo "$group" >>"$GROUPS_FILE"
+  wait "$group"
+}
 now() { perl -MTime::HiRes=time -e 'printf "%.1f", time'; }
 dt() { perl -e 'printf "%.1f", $ARGV[1] - $ARGV[0]' "$1" "$2"; }
 
@@ -64,7 +74,7 @@ if [ "$(cat "$stamp" 2>/dev/null)" != "$hash" ]; then
   rm -f "$stamp"
 # pnpm's optimistic repeat install answers "Already up to date" from mtimes, which rsync preserves, and links nothing new.
   t=$(now); say "slot $SLOT: dependencies changed; pnpm install --frozen-lockfile --prefer-offline"
-  if ! "${CLEAN[@]}" pnpm install --frozen-lockfile --prefer-offline --config.optimistic-repeat-install=false --reporter=append-only >"$FARM/slot$SLOT.install.log" 2>&1; then
+  if ! grouped "${CLEAN[@]}" pnpm install --frozen-lockfile --prefer-offline --config.optimistic-repeat-install=false --reporter=append-only >"$FARM/slot$SLOT.install.log" 2>&1; then
     tail -40 "$FARM/slot$SLOT.install.log" >&2; say "install failed; full log on the mini at $FARM/slot$SLOT.install.log"; exit 4
   fi
   echo "$hash" >"$stamp"; say "slot $SLOT: installed in $(dt "$t" "$(now)") s"
@@ -80,7 +90,7 @@ done
 up() { nc -z 127.0.0.1 54321 && nc -z 127.0.0.1 54322 && nc -z 127.0.0.1 30001; } 2>/dev/null
 if [ "$SERVICES" = 1 ] && ! up; then
   say "starting the compose Postgres, PgBouncer and Electric"
-  lockf -t 300 "$FARM/compose.lock" "${CLEAN[@]}" docker compose -f "$DIR/apps/mvp/docker-compose.yml" up -d --wait \
+  grouped lockf -t 300 "$FARM/compose.lock" "${CLEAN[@]}" docker compose -f "$DIR/apps/mvp/docker-compose.yml" up -d --wait \
     >"$FARM/compose.log" 2>&1 || { tail -20 "$FARM/compose.log" >&2; say "docker compose up failed"; exit 5; }
 fi
 # Unit/integration harnesses use the existing shared scratch-schema services.
@@ -147,10 +157,10 @@ if [ "$E2E" = 1 ]; then
   # closed local port, so the dev server starts and a spec that calls the model fails fast instead of spending.
   CLEAN+=(CHAT_MODEL='{"protocol":"openai-chat","baseUrl":"http://127.0.0.1:9","modelId":"no-model-on-the-mini","credential":"MINI_FARM_NO_MODEL"}'
     SMITHERS_MODEL_KEY_MINI_FARM_NO_MODEL=none SMITHERS_MODEL_KEY_MINI_FARM_NO_MODEL_ORIGIN=http://127.0.0.1:9)
-  (cd apps/mvp && "${CLEAN[@]}" pnpm -s db:migrate >"$FARM/slot$SLOT.migrate.log" 2>&1) || { cat "$FARM/slot$SLOT.migrate.log" >&2; say "db:migrate failed"; exit 6; }
+  grouped bash -c 'cd apps/mvp && exec "$@"' _ "${CLEAN[@]}" pnpm -s db:migrate >"$FARM/slot$SLOT.migrate.log" 2>&1 || { cat "$FARM/slot$SLOT.migrate.log" >&2; say "db:migrate failed"; exit 6; }
   # A cold slot's first `pnpm dev` packs the CLI closure, which outlasts the ready wait below: do it before that clock.
   t=$(now)
-  (cd apps/mvp && "${CLEAN[@]}" node infra/sandbox/pack-cli.mjs --if-missing >"$FARM/slot$SLOT.pack.log" 2>&1) || { tail -30 "$FARM/slot$SLOT.pack.log" >&2; say "pack-cli failed"; exit 6; }
+  grouped bash -c 'cd apps/mvp && exec "$@"' _ "${CLEAN[@]}" node infra/sandbox/pack-cli.mjs --if-missing >"$FARM/slot$SLOT.pack.log" 2>&1 || { tail -30 "$FARM/slot$SLOT.pack.log" >&2; say "pack-cli failed"; exit 6; }
   say "slot $SLOT: sandbox CLI pack ready in $(dt "$t" "$(now)") s"
   # The dev server, started here rather than by Playwright: Playwright waits only for the site, and ChatApi answers
   # about 30 s later on the mini, so the first specs would see 503s. Playwright reuses this server.

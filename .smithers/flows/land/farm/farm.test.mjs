@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert"
-import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, statSync, writeFileSync, rmSync, mkdirSync, readdirSync } from "node:fs"
+import { spawn, spawnSync } from "node:child_process"
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync, rmSync, mkdirSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { test } from "node:test"
@@ -48,6 +48,37 @@ test("mini-run's admission starts after a slow health check and always sweeps th
   })
   assert.doesNotMatch(result.stderr, /CAPACITY_TIMEOUT/)
   assert.match(result.stderr, /\[mini-run\] slot 1;/)
+})
+
+test("mini cancellation during dependency installation stops the installer before the helper exits", async (t) => {
+  const home = mkdtempSync(join(tmpdir(), "devx-farm-install-cancel-"))
+  const pidFile = join(home, "installer.pid")
+  const installer = () => Number(readFileSync(pidFile, "utf8"))
+  const alive = (pid) => { try { process.kill(pid, 0); return true } catch { return false } }
+  t.after(() => {
+    if (existsSync(pidFile) && alive(installer())) process.kill(installer(), "SIGKILL")
+    rmSync(home, { recursive: true, force: true })
+  })
+  const bin = join(home, ".nvm/versions/node", process.version, "bin")
+  mkdirSync(bin, { recursive: true }); mkdirSync(join(home, "smithers-mirror/slot1"), { recursive: true })
+  writeFileSync(join(home, "smithers-mirror/slot1/package.json"), "{}\n")
+  writeFileSync(join(bin, "node"), "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  // A cold slot's installer that outlives any cancellation unless its process group is stopped.
+  writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho $$ > "$HOME/installer.pid"\nexec sleep 60\n`, { mode: 0o755 })
+  const helper = spawn("bash", [join(here, "mini-remote.sh"), "1", process.version, ".", "0", "0", "--", "true"],
+    { env: { ...process.env, HOME: home }, stdio: ["pipe", "ignore", "pipe"] })
+  let stderr = ""
+  helper.stderr.on("data", (chunk) => { stderr += chunk })
+  const exited = new Promise((resolve) => helper.once("close", resolve))
+  for (let i = 0; i < 100 && !existsSync(pidFile); i++) await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.ok(existsSync(pidFile), stderr)
+  assert.match(readFileSync(join(home, "smithers-mirror/.farm/slot1.groups"), "utf8"), /^\d+\n$/)
+  helper.stdin.end()
+  let timer
+  const status = await Promise.race([exited, new Promise((resolve) => { timer = setTimeout(() => resolve("still running"), 8000) })])
+  clearTimeout(timer)
+  assert.equal(status, 143, stderr)
+  assert.equal(alive(installer()), false)
 })
 
 test("clients reject malformed input and credentials before any SSH or reservation", () => {
