@@ -930,6 +930,17 @@
     },
     {
       "name": "@smthrs/harness",
+      "subpath": "./Intake",
+      "development": "./src/Intake.ts",
+      "published": {
+        "types": "./dist/esm/Intake.d.ts",
+        "import": "./dist/esm/Intake.js",
+        "require": "./dist/cjs/Intake.js"
+      },
+      "reason": "Jev screen of an inbound repository event's author text, moved from the retired repository flow pack so every host shares one implementation (#4597)."
+    },
+    {
+      "name": "@smthrs/harness",
       "subpath": "./FailedCall",
       "development": "./src/FailedCall.ts",
       "published": {

@@ -40,6 +40,7 @@ importable as `@smthrs/harness/<Module>`.
 | `Monitor` | `Kind`, `Common`, `Questioned`, `Derived`, `Monitor`, `Budget`, `Input`, `budgets`, `idPattern`, `questionId`, `make`, `InvalidMonitor`, `validate`, `lint`, `paranoidText`, `carefulText`, `stepBackText`, `clarifyText`, `moods`, `defaults`, `skillText`, `skills`, `useJevText`, `useJev`, `questions`, `Row`, `Candidate`, `Evaluation`, `evaluate`, `Entry`, `Ledger`, `fresh`, `Gated`, `gate` | What one supervisor reading can put in front of the run, and when. |
 | `Judgement` | `Unjudged`, `unconfigured`, `Asked`, `Read`, `measured`, `read`, `maxStateBytes`, `ItemQuestions`, `ItemAnswers`, `PerItemOptions`, `ItemState`, `ItemsRead`, `PerItem`, `perItem`, `decision`, `unjudgedEvent`, `Recorded`, `recorded`, `emitRecorded`, `taskBytes`, `task` | The one way this package asks Jev a question. |
 | `Relevance` | `Kind`, `Item`, `Context`, `withholdAt`, `itemBytes`, `reader`, `Verdict`, `Reading`, `judge`, `settled`, `flowItem`, `Document`, `Chunk`, `chunks`, `render` | What a run is shown of the human-provided items it could be shown. |
+| `Intake` | `withheldPlaceholder`, `ignoreConfidence`, `injectionProbability`, `maximumStateBytes`, `maximumStates`, `Source`, `State`, `classifier`, `Text`, `texts`, `redact`, `Answer`, `Screening`, `Coverage`, `Screened`, `Unscreened`, `screen` | What an agent is shown of an inbound repository event's author text. |
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
 | `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
@@ -768,6 +769,32 @@ The one way this package asks Jev a question.
 | `emitRecorded` | const | conversions | Journals a recorded reading: its decisions in order, then its unjudged row. |
 | `taskBytes` | const | constants | The most of a run's task one reading carries, in UTF-8 bytes. |
 | `task` | const | conversions | The task as a reading carries it, both ends kept. |
+
+## Intake
+
+`import * as Intake from "@smthrs/harness/Intake"`
+
+What an agent is shown of an inbound repository event's author text.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `withheldPlaceholder` | const | constants | What replaces a text the screen withheld. |
+| `ignoreConfidence` | const | constants | How sure the `kind` answer must be before a spam or irrelevant event is ignored. |
+| `injectionProbability` | const | constants | How probable the `injection` answer must be before a text is withheld. |
+| `maximumStateBytes` | const | constants | The most UTF-8 bytes one JSON-encoded state may take. |
+| `maximumStates` | const | constants | The most texts one event may carry into one screen. |
+| `Source` | const | schemas | Which part of an event a text is. |
+| `State` | const, type | schemas, models | One text of an inbound event, as the classifier sees it. |
+| `classifier` | const | constructors | The one classifier, `intake/event`, every inbound text is judged by. |
+| `Text` | interface | models | One text of an event: its state and where in the payload it is. |
+| `texts` | const | constructors | The texts of a GitHub-shaped event payload. |
+| `redact` | const | conversions | The payload with the named texts replaced by the placeholder. |
+| `Answer` | const, type | schemas, models | Jev's answers about one text. |
+| `Screening` | const, type | schemas, models | What one screen decided. |
+| `Coverage` | const, type | schemas, models | What a screen read: every text's id, encoded size, and whether Jev answered it. |
+| `Screened` | interface | models | A screened event. |
+| `Unscreened` | class | errors | The screen could not answer every text, so no model may read the event. |
+| `screen` | const | constructors | Screens one event's texts with Jev, in one batch. |
 
 ## Relevance
 

@@ -39,6 +39,7 @@ export * as Monitor from "./Monitor.ts"
  * @category controls
  * @since 1.0.0-rc.0
  */
+export * as Intake from "./Intake.ts"
 export * as Judgement from "./Judgement.ts"
 
 /**

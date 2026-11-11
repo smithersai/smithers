@@ -51,6 +51,7 @@
     "./ExternalTranscript": "./src/ExternalTranscript.ts",
     "./FlowBinding": "./src/FlowBinding.ts",
     "./HarnessError": "./src/HarnessError.ts",
+    "./Intake": "./src/Intake.ts",
     "./Judgement": "./src/Judgement.ts",
     "./Monitor": "./src/Monitor.ts",
     "./NarrowedCheck": "./src/NarrowedCheck.ts",
@@ -245,6 +246,16 @@
         "require": {
           "types": "./dist/cjs/HarnessError.d.ts",
           "default": "./dist/cjs/HarnessError.js"
+        }
+      },
+      "./Intake": {
+        "import": {
+          "types": "./dist/esm/Intake.d.ts",
+          "default": "./dist/esm/Intake.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Intake.d.ts",
+          "default": "./dist/cjs/Intake.js"
         }
       },
       "./Judgement": {

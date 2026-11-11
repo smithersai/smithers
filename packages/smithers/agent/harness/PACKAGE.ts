@@ -144,6 +144,7 @@ const securityReview = Smithers.SecurityReview({
         "src/NarrowedCheck.ts",
         "src/Compaction.ts",
         "src/Relevance.ts",
+        "src/Intake.ts",
         "src/Supervisor.ts",
         "src/Steering.ts",
         "src/Monitor.ts",
