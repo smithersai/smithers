@@ -6,7 +6,6 @@
 
 import { z } from "zod"
 import { AGENT_ROLES, AgentRoleModelSchema } from "./AgentRoles.ts"
-import { BillingPlanSchema, SandboxEntitlementSchema } from "./BillingPlans.ts"
 import {
   ChangeAnalyzerRunSchema,
   ChangeCheckSchema,
@@ -50,6 +49,49 @@ import { GraphNodeSchema } from "./TargetGraph.ts"
 import { TaskMetaSchema } from "./Threads.ts"
 import { type TodoCard, TodoCardSchema } from "./TodoCard.ts"
 import { HttpUrlSchema, RelativeUrlPathSchema } from "./WebUrl.ts"
+
+/**
+ * What one account's sandbox plan entitles and how much of it is spent. The
+ * usage fields are observations, never a grant: the server decides admission.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+const SandboxEntitlementSchema = z.object({
+  concurrentSandboxes: z.number().int(),
+  concurrentInUse: z.number().int().nonnegative(),
+  idleTimeoutSecs: z.number().int().nonnegative(),
+  hoursPerDay: z.number().int(),
+  secondsUsedToday: z.number().nonnegative(),
+  dayResetsAt: z.string()
+})
+/**
+ * One purchasable plan as the billing service states it: its key, its price, and
+ * the caps it carries. `checkout_available` is false when the plan exists but
+ * this account cannot buy it here.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+const BillingPlanSchema = z.object({
+  key: z.enum(["free", "pro", "max"]),
+  display_name: z.string(),
+  price_cents: z.number().int().nonnegative(),
+  interval: z.string(),
+  limits: z.object({
+    concurrent_sandboxes: z.number().int(),
+    idle_timeout_secs: z.number().int().nonnegative(),
+    hours_per_day: z.number().int(),
+    private_repos: z.number(),
+    storage_bytes: z.number(),
+    ci_minutes: z.number(),
+    agent_runs: z.number(),
+    seats: z.number(),
+    /** Model credit the plan grants each billing month, integer cents. */
+    monthly_credit_cents: z.number().int().nonnegative().optional()
+  }),
+  checkout_available: z.boolean()
+})
 
 /*
  * The targets card's table state: the filter

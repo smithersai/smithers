@@ -50,6 +50,19 @@ export const TODO_NEW_COMMAND = {
 } as const satisfies AgentCommand
 
 /**
+ * Stack placement for scratch adoption: choose `after` or `before`, or let the stack choose the default.
+ * TODO creation uses only `before` and otherwise appends.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const TodoPlacementSchema = z.object({
+  after: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  before: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional()
+}).refine((input) => input.after === undefined || input.before === undefined, {
+  message: "Choose after or before"
+})
+
+/**
  * `/todo.new`'s declared input. Without `cardId` it opens a Draft with the TODO's text, title, acceptance and place
  * (`before` a TODO, else appended); with a Draft's `cardId` it commits that Draft. `idempotencyKey` is the Commit's.
  * @since 1.0.0
@@ -59,7 +72,7 @@ export const TodoNewInputSchema = z.object({
   text: z.string().optional(),
   title: z.string().min(1).optional(),
   acceptance: z.array(z.string()).optional(),
-  before: z.number().int().positive().optional(),
+  before: TodoPlacementSchema.shape.before,
   cardId: z.string().optional(),
   idempotencyKey: z.string().min(1).optional()
 })

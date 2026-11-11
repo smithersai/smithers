@@ -28,11 +28,6 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "digestSync explicitly documents TypeError for text UTF-8 cannot represent; Sha256.test.ts pins that contract."
   ],
   [
-    "src/ApplicationTarget.ts",
-    "const document = ApplicationTargetDocumentSchema.parse(input)",
-    "Deployment document decoding retains Zod validation; ApplicationTargetRefused classifies valid but forbidden combinations."
-  ],
-  [
     "src/ContextPreflight.ts",
     "const parsed = ContextPreflightFrameSchema.parse(frame)",
     "docs/context-preflight.md distinguishes malformed-frame schema validation from tagged page-sequence rejection."
@@ -80,7 +75,6 @@ describe("raw failure sites under src", () => {
   it("scans the sources it guards", () => {
     expect(sources(sourceRoot).map((path) => relative(packageRoot, path))).toEqual(
       expect.arrayContaining([
-        join("src", "ApplicationTarget.ts"),
         join("src", "AgentTurnJournal.ts"),
         join("src", "AgentRoles.ts")
       ])

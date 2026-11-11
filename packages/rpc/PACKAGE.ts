@@ -25,9 +25,6 @@ const failureCodes = [
   Smithers.glob("//packages/rpc/scripts/*.mjs")
 ]
 
-/** Frozen released-client input contracts read by the compatibility suite. */
-const releasedContracts = Smithers.glob("//packages/rpc/contracts/*.json")
-
 /**
  * Checks the contract against its own tsconfig.
  *
@@ -56,7 +53,6 @@ const unitTests = Smithers.Vitest({
     Smithers.glob("test/**/*.{ts,json,snap}"),
     Smithers.glob("testdata/**"),
     ...failureCodes,
-    releasedContracts,
     // The coverage gate's global setup, which vitest.config.ts names.
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs")
@@ -93,8 +89,7 @@ const fmt = Smithers.Dprint({
 
 /**
  * Security review of the wire contracts and the few runtime guards this
- * package ships: the browser tool's SSRF guard, model-credential origin
- * pinning, deployment origin policy, local-session capabilities, the agent
+ * package ships: model-credential origin pinning, journal capabilities, the agent
  * context prompt, card URLs, and the failure-code generator.
  *
  * @since 1.0.0
@@ -104,31 +99,6 @@ const securityReview = Smithers.SecurityReview({
   cwd,
   include: ["src/**", "scripts/**"],
   checks: [
-    {
-      id: "browser-fetch-ssrf",
-      title: "The browser tool reads only public https hosts, pinned after DNS, on every hop",
-      threat:
-        "A model or chat user makes the host fetch cloud metadata, loopback services, or the private network and returns their contents.",
-      lookFor: [
-        "An IPv4, IPv6, IPv4-mapped, 6to4 (2002::/16), Teredo (2001::/32) or NAT64 form that isPublicAddress accepts but that routes to a private or loopback host.",
-        "A redirect Location followed without re-running guardTarget and re-pinning the resolved address.",
-        "A fetchImpl path that resolves the hostname again instead of connecting to the guarded address (DNS rebinding).",
-        "A hostname with a trailing dot or alternate spelling (localhost., 0x7f.1) that skips isBlockedHostname and reaches a private address."
-      ],
-      paths: ["src/BrowserFetch.ts"]
-    },
-    {
-      id: "browser-fetch-bounds",
-      title: "One browser fetch is bounded in time, bytes, redirects and parse work",
-      threat:
-        "A hostile page ties up the Worker or host with an endless body, a redirect loop, or HTML that makes text extraction quadratic.",
-      lookFor: [
-        "A body read, DNS query or redirect hop not covered by the shared AbortSignal deadline.",
-        "readCapped buffering more than BROWSER_FETCH_MAX_BYTES before it stops.",
-        "An extractReadableText or frameability loop that rescans from an unmatched opener on each iteration."
-      ],
-      paths: ["src/BrowserFetch.ts"]
-    },
     {
       id: "model-credential-origin-pinning",
       title: "A model credential travels only to its pinned origin over https or loopback http",
@@ -147,42 +117,25 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A renderer script, log reader or browser storage reader obtains an API key, bearer, owner token or journal capability.",
       lookFor: [
-        "A response or listing schema (ModelCredentialListing, ModelCredentialResult, ModelCredentialPending, cloud session answer) that admits a value or token field.",
+        "A response or listing schema (ModelCredentialListing, ModelCredentialResult, ModelCredentialPending) that admits a value or token field.",
         "A .passthrough() or loose object on a reply schema that lets unknown secret fields reach the renderer.",
         "A failure constructor that copies a caught exception or provider body into user-visible text."
       ],
       paths: [
         "src/ConfiguredModel.ts",
-        "src/ApplicationAuth.ts",
-        "src/ApplicationTarget.ts",
-        "src/CloudTunnel.ts",
         "src/AgentTurnJournal.ts",
         "src/Refusal.ts"
       ]
     },
     {
-      id: "application-target-origin-policy",
-      title: "Deployment targets refuse cross-origin API use unless explicitly opted in with token auth",
-      threat:
-        "A malicious deployment document or page origin points the app's credentialed requests at another origin.",
-      lookFor: [
-        "normalizedOrigin accepting a non-HTTP(S) scheme, userinfo, a path, a query or a fragment.",
-        "resolveApplicationTarget allowing credentialed CORS or session auth to an external origin.",
-        "An owner-backend mode accepting Plue bearer auth."
-      ],
-      paths: ["src/ApplicationTarget.ts"]
-    },
-    {
       id: "local-session-capability",
-      title: "Local-origin and journal capabilities are unguessable and never ride a URL",
-      threat:
-        "A web page or local process on the machine drives the local Smithers host or reads another run's turn journal.",
+      title: "Journal capabilities are unguessable and never ride a URL",
+      threat: "A web page or local process reads another run's turn journal.",
       lookFor: [
         "A token format shorter than 256 bits or a validator regex that admits non-base64url or shorter values.",
-        "A route contract that carries the local session token or journal read token in a query string.",
-        "A WebSocket route that authorizes without the local-session subprotocol."
+        "A journal read token carried in a query string."
       ],
-      paths: ["src/CloudTunnel.ts", "src/AgentTurnJournal.ts", "src/AgentApiRoutes.ts"]
+      paths: ["src/AgentTurnJournal.ts"]
     },
     {
       id: "agent-context-prompt-injection",
@@ -203,15 +156,13 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A url, htmlUrl, avatarUrl, iconUrl, installUrl or streamUrl field typed z.string() with no scheme refinement.",
         "A link schema in RepositoryHome that accepts a scheme other than http or https.",
-        "MythicalIssueSchema.url or MythicalPullRequestSchema.url typed bare z.string() and rendered as an issue or pull request link.",
-        "CloudAuthStartResponseSchema.url typed bare z.string() so a hostile or spoofed backend answer opens a non-https sign-in URL."
+        "MythicalIssueSchema.url or MythicalPullRequestSchema.url typed bare z.string() and rendered as an issue or pull request link."
       ],
       paths: [
         "src/Cards.ts",
         "src/SubagentCard.ts",
         "src/RepositoryHome.ts",
         "src/Mythical.ts",
-        "src/CloudTunnel.ts",
         "src/WebUrl.ts"
       ]
     },

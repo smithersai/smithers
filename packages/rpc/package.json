@@ -6,7 +6,7 @@
     "group": "tooling"
   },
   "type": "module",
-  "description": "Contract modules shared by the Smithers app (apps/mvp), the terminal app (apps/tui), the model host and the site: zod schemas, route constants, and RPC types, plus BrowserFetch, the browser-tool fetch handler",
+  "description": "Contract modules shared by the Smithers app (apps/mvp), the terminal app (apps/tui), the model host and the site: zod schemas, route constants, and RPC types",
   "exports": {
     "./package.json": "./package.json",
     ".": {

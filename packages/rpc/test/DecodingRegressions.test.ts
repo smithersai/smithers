@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest"
-import { publicRepoActivityPath } from "../src/AgentApiRoutes.ts"
 import { decodeCommandsCall } from "../src/AgentCommands.ts"
 import { CardSchema, LEGACY_CARD_KINDS } from "../src/Cards.ts"
 import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
@@ -7,23 +6,6 @@ import { AgentTurnFrameSchema } from "../src/NativeAgent.ts"
 const base = { id: "recorded", title: "Recorded", status: "active", createdAt: 1, ordinal: 0 }
 
 describe("RPC decoding regressions", () => {
-  test.each([
-    "owner/repo?query",
-    "owner/repo#fragment",
-    "owner/repo/extra",
-    "owner/..",
-    "../repo",
-    "owner/.",
-    "owner/",
-    "/repo",
-    "owner",
-    "owner/repo\\escape",
-    "owner/%2e%2e",
-    "owner/repo\n"
-  ])("activity paths reject malformed repository %j", (repo) => {
-    expect(() => publicRepoActivityPath(repo)).toThrow()
-  })
-
   test.each([
     { action: "list", namespace: 7 },
     { action: "list", namespace: null },

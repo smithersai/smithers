@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest"
 import { CardSchema, WorkspaceDesktopSchema, WorkspaceServiceSchema } from "../src/Cards.ts"
-import { CloudAuthStartResponseSchema } from "../src/CloudTunnel.ts"
 import { MythicalIssueSchema, MythicalPullRequestSchema } from "../src/Mythical.ts"
 import { SettingsCardSchema } from "../src/SettingsCard.ts"
 import { PersonaRefSchema, TaskMetaSchema } from "../src/Threads.ts"
@@ -89,14 +88,11 @@ describe("URL contracts", () => {
     }
   })
 
-  test("Mythical issue and pull request links and the cloud sign-in URL are http(s)", () => {
+  test("Mythical issue and pull request links are http(s)", () => {
     for (const url of hostile) {
       expect(MythicalIssueSchema.safeParse({ number: 1, title: "t", url }).success).toBe(false)
       expect(MythicalPullRequestSchema.safeParse({ number: 1, url, state: "open" }).success).toBe(false)
-      expect(CloudAuthStartResponseSchema.safeParse({ url }).success).toBe(false)
     }
-    expect(CloudAuthStartResponseSchema.safeParse({ url: "http://127.0.0.1:4000/api/auth/github/cli" }).success)
-      .toBe(true)
   })
 
   test("workspace service and desktop stream URLs refuse script and cross-host forms", () => {

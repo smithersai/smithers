@@ -13,12 +13,13 @@ const implementations = readdirSync(join(packageRoot, "src"))
   .map((file) => file.replace(/\.ts$/, ""))
 
 describe("package description", () => {
-  test("finds the network implementations it must disclose", () => {
-    expect(implementations).toContain("BrowserFetch")
+  test("contract modules perform no network I/O", () => {
+    expect(implementations).toEqual([])
   })
 
-  test.each(implementations)("names %s in package.json and README", (module) => {
-    expect(manifest.description).toContain(module)
-    expect(readme).toContain(`\`${module}\``)
+  test("describes the contracts without an unmounted fetch handler", () => {
+    expect(manifest.description).toContain("zod schemas")
+    expect(manifest.description).not.toContain("BrowserFetch")
+    expect(readme).not.toContain("BrowserFetch")
   })
 })

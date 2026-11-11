@@ -11,6 +11,7 @@ import type { ModelProtocol } from "./ConfiguredModel.ts"
 import { ConfirmRevisionSchema } from "./ConfirmCard.ts"
 import { DraftIdSchema } from "./DraftCard.ts"
 import type { SetupStepId } from "./SetupCard.ts"
+import { TodoPlacementSchema } from "./TodoCommands.ts"
 import type { TodoNewInputSchema as TodoCommandNewInputSchema } from "./TodoCommands.ts"
 /**
  * The failure codes and fault classes shared by refusal boundaries.
@@ -246,25 +247,6 @@ export const ConfirmCancelInputSchema = z.object({ confirmation: z.string().min(
 export const SettingsModelSetInputSchema = z.object({ role: ModelRoleIdSchema, model: ModelIdSchema })
 
 /**
- * Shared TODO placement; omission lets the stack choose the source-based default.
- * @since 1.0.0
- * @category schemas
- */
-export const TodoPlacementSchema = z.object({
-  after: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-  before: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional()
-}).refine((input) => input.after === undefined || input.before === undefined, {
-  message: "Choose after or before"
-})
-
-/**
- * The TODO creation and scratch adoption commands share one placement contract.
- * @since 1.0.0
- * @category schemas
- */
-export const TodoNewInputSchema = TodoPlacementSchema.safeExtend({ text: z.string().trim().min(1) })
-
-/**
  * Forks accept main, an item or a scratch branch; awake sources are captured.
  * @since 1.0.0
  * @category schemas
@@ -283,7 +265,7 @@ export const BranchForkInputSchema = z.strictObject({
  * @since 1.0.0
  * @category schemas
  */
-export const BranchAddToStackInputSchema = TodoNewInputSchema.strict()
+export const BranchAddToStackInputSchema = TodoPlacementSchema.safeExtend({ text: z.string().trim().min(1) }).strict()
 
 /**
  * An outside-push answer binds the displayed wait and sha; branch is the dispatch subject.

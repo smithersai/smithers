@@ -7,9 +7,7 @@ const sourceDir = join(packageRoot, "src")
 
 /*
  * README.md "Route ownership": each row maps route families to the one module
- * that declares their constants. A route belongs to the longest family it
- * falls under, so `/api/cloud-ws/…` is the tunnel's while `/api/cloud-auth/…`
- * is its own family.
+ * that declares their constants.
  */
 const table = readFileSync(join(packageRoot, "README.md"), "utf8")
   .split("\n")

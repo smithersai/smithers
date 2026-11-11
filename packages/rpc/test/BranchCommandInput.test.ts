@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest"
 import {
   BranchAddToStackInputSchema,
   BranchForeignAnswerInputSchema,
-  BranchForkInputSchema,
-  TodoNewInputSchema
+  BranchForkInputSchema
 } from "../src/CardAction.ts"
 
 describe("branch command payloads", () => {
@@ -28,9 +27,9 @@ describe("branch command payloads", () => {
   })
 
   test.each([{ text: "Try retry" }, { text: "Try retry", after: 2 }, { text: "Try retry", before: 3 }])(
-    "adopts with the same TODO placement: %j",
+    "adopts with the requested placement: %j",
     (input) => {
-      expect(BranchAddToStackInputSchema.parse(input)).toEqual(TodoNewInputSchema.parse(input))
+      expect(BranchAddToStackInputSchema.parse(input)).toEqual(input)
     }
   )
 
