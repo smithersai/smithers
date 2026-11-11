@@ -18,6 +18,10 @@
 
 ### Changed
 
+- Approval replies now report that a resource cannot form an exact grant,
+  including filesystem paths with dot segments, instead of incorrectly blaming
+  glob characters for every refusal.
+
 - `ChildProcessSpawner.layer` and `Path.layer` now require `Workspace`. A
   command with no or a relative `cwd` runs in `Workspace.root`, and relative
   paths resolve there, instead of in `process.cwd()`. The grant check sees the

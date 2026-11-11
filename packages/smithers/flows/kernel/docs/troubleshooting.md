@@ -142,11 +142,12 @@ silently widen access.
 **What to change.** Supply a pattern within the request's own action and tier,
 or omit it and let the exact capability derive one.
 
-## invalid_resolution: the requested resource contains glob metacharacters
+## invalid_resolution: the requested resource cannot be represented by an exact grant pattern
 
 **What happened.** A `"run"` or `"remembered"` reply with no explicit pattern,
-for a resource containing `*` or `?`. There is no unambiguous pattern to
-derive.
+for a resource containing `*` or `?`, or a filesystem resource such as
+`./src`, `src/./a`, or `a/../b` whose literal pattern cannot match both
+its written text and lexical normal form. There is no exact pattern to derive.
 
 **What to change.** Supply an explicit pattern, as the message says, or resolve
 `once`.

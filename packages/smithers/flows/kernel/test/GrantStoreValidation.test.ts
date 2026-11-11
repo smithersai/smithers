@@ -282,7 +282,7 @@ describe("GrantStore.reply", () => {
         expect(failure).toMatchObject({
           code: "invalid_resolution",
           message:
-            "the requested resource contains glob metacharacters; supply an explicit grant pattern or resolve once"
+            "the requested resource cannot be represented by an exact grant pattern; supply an explicit grant pattern or resolve once"
         })
         expect(yield* store.list).toHaveLength(1)
 
@@ -290,6 +290,36 @@ describe("GrantStore.reply", () => {
         yield* Fiber.join(waiter)
       })
     ))
+
+  for (const resolution of ["run", "remembered"] as const) {
+    for (const resource of ["./src", "src/./a", "a/../b"]) {
+      itEffect(
+        `refuses an unrepresentable dot-segment ${resolution} grant for ${resource} and permits once`,
+        () =>
+          Effect.scoped(
+            Effect.gen(function*() {
+              const store = yield* make({ planDigest: "plan-1" })
+              const waiter = yield* store.check(capability("fs:read", resource)).pipe(
+                Effect.forkChild({ startImmediately: true })
+              )
+              const [pending] = yield* awaitPending(store, 1)
+
+              const failure = yield* Effect.flip(store.reply(pending!.requestId, resolution))
+              expect(failure).toMatchObject({
+                code: "invalid_resolution",
+                message:
+                  "the requested resource cannot be represented by an exact grant pattern; supply an explicit grant pattern or resolve once"
+              })
+              expect(yield* store.list).toHaveLength(1)
+
+              yield* store.reply(pending!.requestId, "once")
+              yield* Fiber.join(waiter)
+              expect(yield* store.list).toHaveLength(0)
+            })
+          )
+      )
+    }
+  }
 
   itEffect("rejects a supplied pattern that merely restates a metacharacter resource", () =>
     Effect.scoped(

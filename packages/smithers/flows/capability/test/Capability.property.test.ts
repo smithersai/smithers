@@ -77,6 +77,7 @@ const literalUnit = FastCheck.constantFrom(
 // Glob-free pattern text: either drawn from the special-character alphabet or
 // arbitrary binary text (lone surrogates included) with globs stripped.
 const globFreePattern = FastCheck.oneof(
+  FastCheck.constantFrom("./src", "src/./a", "a/../b", ".", "./", "../outside", "/workspace/../outside"),
   FastCheck.string({ unit: literalUnit, minLength: 1, maxLength: 24 }),
   FastCheck.string({ unit: "binary", minLength: 1, maxLength: 24 }).map((text) => text.replaceAll(/[*?]/g, ""))
 ).filter((text) => text.length > 0)
@@ -87,22 +88,64 @@ const hostileResource = FastCheck.oneof(
 )
 
 describe("Capability properties", () => {
-  it("a glob-free pattern matches exactly its own literal resource and nothing one character away", () => {
+  it("derives a matching exact grant for glob-free text or refuses it, without selecting a one-character mutation", () => {
     FastCheck.assert(
       FastCheck.property(
-        textualActionArb,
+        actionArb,
         globFreePattern,
         FastCheck.nat({ max: 1023 }),
         digitArb,
         (action, resource, rawIndex, digit) => {
+          const request = capability(action, resource)
           const selectedPattern = pattern(action, resource)
-          expect(Capability.matches(selectedPattern, capability(action, resource))).toBe(true)
+          const derived = Capability.patternFromCapability(request)
+          expect(Option.isSome(derived)).toBe(Capability.matches(selectedPattern, request))
+          if (Option.isSome(derived)) {
+            expect(derived.value).toEqual(selectedPattern)
+            expect(Capability.matches(derived.value, request)).toBe(true)
+          }
 
           const index = rawIndex % resource.length
           // A digit substitution is always a distinct UTF-16 code unit.
           const replacement = resource[index] === digit ? (digit === "0" ? "1" : "0") : digit
           const mutated = resource.slice(0, index) + replacement + resource.slice(index + 1)
           expect(Capability.matches(selectedPattern, capability(action, mutated))).toBe(false)
+        }
+      ),
+      params
+    )
+  })
+
+  it("refuses exact filesystem grants across relative dot-segment spellings", () => {
+    const segment = FastCheck.string({
+      unit: FastCheck.constantFrom("a", "b", "Z", "0", "_", "-"),
+      minLength: 1,
+      maxLength: 8
+    })
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.constantFrom("fs:read", "fs:write"),
+        FastCheck.array(segment, { minLength: 1, maxLength: 5 }),
+        segment,
+        (action, segments, discarded) => {
+          const normal = segments.join("/")
+          for (
+            const resource of [
+              `./${normal}`,
+              `${normal}/./${discarded}`,
+              `${discarded}/../${normal}`
+            ]
+          ) {
+            expect(Capability.patternFromCapability(capability(action, resource))).toStrictEqual(Option.none())
+          }
+
+          const request = capability(action, normal)
+          const derived = Option.getOrThrow(Capability.patternFromCapability(request))
+          expect(Capability.matches(derived, request)).toBe(true)
+          for (const otherAction of ["net:get", "proc:spawn"] as const) {
+            const other = capability(otherAction, `./${normal}`)
+            expect(Capability.matches(Option.getOrThrow(Capability.patternFromCapability(other)), other)).toBe(true)
+          }
         }
       ),
       params

@@ -46,7 +46,10 @@ reject or summarize it there, where the value is understood.
 **What happened.** The resource contains `*` or `?`, or it is overlong. The
 glob grammar has no escape, so any pattern derived from such a resource would
 grant more than the request. A URL with a query string (`/v1?k=1`) is the
-common case.
+common case. A filesystem resource is also refused when its literal pattern
+cannot pass the path checks: `./src`, `src/./a`, and `a/../b` have
+different written and normalized forms; `../outside` escapes its start.
+The resource `.` remains representable.
 
 **What to change.** Ask again next time, canonicalize the resource before you
 build the `Capability`, or widen deliberately. The procedure is in

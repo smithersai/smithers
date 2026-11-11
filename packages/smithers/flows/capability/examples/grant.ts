@@ -12,7 +12,7 @@ import { Option } from "effect"
  * express the resource without widening it.
  *
  * @param request - The capability a person approved.
- * @returns The grant pattern, or `Option.none()` for a resource with `*` or `?`.
+ * @returns The grant pattern, or `Option.none()` when no matching exact pattern can be derived.
  * @since 1.0.0
  */
 export const exactGrant = (request: Capability.Capability): Option.Option<Capability.CapabilityPattern> =>

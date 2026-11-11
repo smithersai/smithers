@@ -941,7 +941,7 @@ export const make = (
             const derived = patternFromCapability(entry.capability)
             if (Option.isNone(derived)) {
               throw invalid(
-                "the requested resource contains glob metacharacters; supply an explicit grant pattern or resolve once"
+                "the requested resource cannot be represented by an exact grant pattern; supply an explicit grant pattern or resolve once"
               )
             }
             return snapshotPattern(derived.value)

@@ -36,10 +36,15 @@ resource are fine.
 
 ## Handle the refusal
 
-`patternFromCapability` returns `Option.none()` in two cases: the resource is
-longer than `Capability.maxResourceLength`, or it contains `*` or `?`. The
-grammar has no escape for those characters, so any pattern the function could
-return would grant more than the request. Refusing is the only honest answer.
+`patternFromCapability` returns `Option.none()` when the resource is longer
+than `Capability.maxResourceLength`, contains `*` or `?`, or cannot be
+selected by its literal pattern under the filesystem path checks. The grammar
+has no escape for glob metacharacters, so copying them would grant more than
+the request. Filesystem paths such as `./src`, `src/./a`, and `a/../b`
+need a pattern to select both their written text and lexical normal form;
+no literal pattern can select both. The resource `.` is accepted because its
+normal form is identical. Paths rejected by the matcher, such as `../outside`
+or `/workspace/../outside`, cannot produce an exact grant either.
 
 When you get `Option.none()`, do one of these:
 

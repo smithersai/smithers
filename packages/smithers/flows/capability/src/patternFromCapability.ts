@@ -8,6 +8,7 @@ import { Option } from "effect"
 import { CapabilityPattern } from "./CapabilityPattern.ts"
 import type { Capability } from "./ExactCapability.ts"
 import { isLiteralResource } from "./isLiteralResource.ts"
+import { matches } from "./matches.ts"
 import { maxResourceLength } from "./maxResourceLength.ts"
 
 /**
@@ -17,15 +18,23 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * The function returns `Option.none()` when the resource is longer than
  * {@link maxResourceLength} or contains `*` or `?`. The grammar has no escape
  * for those metacharacters, so returning a pattern would silently widen the
- * grant. Quotes, newlines, and other literal text are accepted. The derived
- * pattern matches that resource and nothing else because the matcher neither
- * normalizes text nor folds case.
+ * grant. It also refuses filesystem resources when the literal
+ * pattern cannot select both the written text and its lexical normal form,
+ * or when the matcher rejects the path. For example, `./src`, `src/./a`,
+ * and `a/../b` are refused; `.` is accepted.
+ *
+ * Quotes, newlines, and other literal text are accepted. Every returned
+ * pattern matches the request and nothing else; resource text and case are
+ * preserved.
  *
  * @since 0.1.0
  * @category constructors
  * @slop
  */
-export const patternFromCapability = (capability: Capability): Option.Option<CapabilityPattern> =>
-  capability.resource.length > maxResourceLength || !isLiteralResource(capability.resource)
-    ? Option.none()
-    : Option.some(new CapabilityPattern({ action: capability.action, resource: capability.resource }))
+export const patternFromCapability = (capability: Capability): Option.Option<CapabilityPattern> => {
+  if (capability.resource.length > maxResourceLength || !isLiteralResource(capability.resource)) {
+    return Option.none()
+  }
+  const pattern = new CapabilityPattern({ action: capability.action, resource: capability.resource })
+  return matches(pattern, capability) ? Option.some(pattern) : Option.none()
+}

@@ -122,7 +122,10 @@ else.
 granted exactly, so `net:get:https://api.test/v1?k=1` reads as an exact URL and
 is a one-character wildcard. Never build a pattern by concatenating
 agent-supplied text. `patternFromCapability` derives the exact grant and returns
-`Option.none()` for a resource the grammar cannot express.
+`Option.none()` for a resource the grammar cannot express or whose literal
+pattern fails the filesystem path checks. Relative paths such as `./src`,
+`src/./a`, and `a/../b` cannot be granted exactly; canonicalize them in the
+adapter before constructing the request. The resource `.` remains accepted.
 
 **Paths and case.** Matching compares the pattern against the whole resource
 byte-exactly over UTF-16 code units. It performs no path normalization and no

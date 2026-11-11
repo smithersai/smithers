@@ -27,7 +27,10 @@ exact `Capability` at compile time, and `new Rule` requires a constructed
 answers "is this one in that set". Use `Capability.patternFromCapability` to
 convert an exact request into a grant; it refuses resources containing `*` or
 `?`, including query-string URLs, because those characters would widen the
-grant. Operators can explicitly construct or parse authored patterns. See
+grant. It also refuses filesystem resources such as `./src`, `src/./a`,
+and `a/../b` whose literal pattern cannot match both the written text and
+lexical normal form; `.` remains representable. Operators can explicitly
+construct or parse authored patterns. See
 [Grant a capability safely](../guides/grant-a-capability-safely.md).
 
 Brands do not add wire fields. Schema decoding still accepts the existing

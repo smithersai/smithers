@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed exact grant derivation returning unusable grants for filesystem paths
+  such as `./src`, `src/./a`, and `a/../b`. It now returns `Option.none()`
+  when the literal pattern cannot match the request; `.` remains accepted.
+
 - **Security.** An `fs:*` capability whose absolute resource has a `.` or
   `..` segment, or whose relative resource climbs above its start, is matched
   by no pattern, `Permission.evaluate` returns `deny` for it, and `subsumes`

@@ -184,6 +184,52 @@ describe("Capability", () => {
     expect(Option.isSome(Capability.patternFromCapability(capability("fs:read", "quoted\"\nname")))).toBe(true)
   })
 
+  describe.each(["fs:read", "fs:write"] as const)("exact grants for %s", (action) => {
+    it.each([
+      "./src",
+      "src/./a",
+      "a/../b",
+      "./",
+      "./.",
+      "src//./out",
+      "src//out",
+      "../outside",
+      "src/../../outside",
+      "/workspace/../outside",
+      "C:/workspace/./file",
+      "~user/./file",
+      "src\\part/./file"
+    ])("refuses an unrepresentable path resource %s", (resource) => {
+      const request = capability(action, resource)
+
+      expect(Capability.matches(pattern(action, resource), request)).toBe(false)
+      expect(Capability.patternFromCapability(request)).toStrictEqual(Option.none())
+    })
+
+    it.each([".", "src", "src/out", "src/.hidden", "src/.../out"])(
+      "keeps an exact grant for the literal resource %s",
+      (resource) => {
+        const request = capability(action, resource)
+        const derived = Option.getOrThrow(Capability.patternFromCapability(request))
+
+        expect(derived).toEqual(pattern(action, resource))
+        expect(Capability.matches(derived, request)).toBe(true)
+        expect(Capability.matches(derived, capability(action, resource + "x"))).toBe(false)
+      }
+    )
+  })
+
+  it.each(["./src", "src/./a", "a/../b", "../outside", "/workspace/../outside"])(
+    "keeps dot segments literal outside filesystem actions: %s",
+    (resource) => {
+      const request = capability("proc:spawn", resource)
+      const derived = Option.getOrThrow(Capability.patternFromCapability(request))
+
+      expect(derived).toEqual(pattern("proc:spawn", resource))
+      expect(Capability.matches(derived, request)).toBe(true)
+    }
+  )
+
   it("derives an exact grant for drive-shaped resource text", () => {
     const exact = capability("fs:read", "A:/x")
     const derived = Option.getOrThrow(Capability.patternFromCapability(exact))

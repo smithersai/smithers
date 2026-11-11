@@ -217,8 +217,14 @@ const patternFromCapability: (capability: Capability) => Option.Option<Capabilit
 Derives the exact pattern for a request. Returns `Option.none()` when the
 resource is overlong or contains `*` or `?`, because the grammar has no escape
 for those characters and any pattern returned would silently widen the grant.
-Quotes, spaces, and newlines are accepted. The derived pattern matches that
-resource and nothing else. This is the only safe conversion from a request to a
+Filesystem resources with dot or empty path segments are also refused when
+the literal pattern cannot select both the written text and its lexical normal form, or
+when the matcher rejects the path. For example, `./src`, `src/./a`, and
+`a/../b` return `Option.none()`; `.` is accepted. Canonicalize paths in the
+adapter before constructing the request.
+
+Quotes, spaces, and newlines are accepted. Every returned pattern matches the
+request and nothing else. This is the only safe conversion from a request to a
 grant; see [Grant a capability safely](./guides/grant-a-capability-safely.md).
 
 ### Capability.matches

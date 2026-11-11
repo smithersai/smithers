@@ -85,8 +85,10 @@ yield * store.reply(
 ```
 
 Without one, the pattern is derived from the exact capability. A resource that
-contains glob metacharacters has no unambiguous derived pattern, so the reply
-fails and tells you to supply one or resolve `once`.
+contains glob metacharacters, or a filesystem resource such as `./src`,
+`src/./a`, or `a/../b` whose literal pattern fails the path checks, has no
+exact derived pattern. The reply fails and tells you to supply one or resolve
+`once`. The resource `.` remains representable.
 
 A supplied pattern is checked before it is stored. It cannot name a different
 action, reach a more dangerous effect tier than the request displayed, or be a
