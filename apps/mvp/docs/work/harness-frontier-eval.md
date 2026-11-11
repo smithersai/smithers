@@ -61,7 +61,38 @@ overfitting to the benchmark.
   flows and the `worker` flow.
 - The long tasks ended in 5 to 27 minutes of an eight-hour limit. The model
   declared each done; no run was cut off. Whether more of the limit would
-  have been used well is not known.
+  have been used well is not known. Passing trials on the board take a
+  median 30 to 96 minutes on the five long tasks we failed that the board
+  passes more than once, on slower models.
+- **Second attempt at the 17 failures, 2026-11-11 07:07 to 09:28 PST**, on
+  the build with the timeout fix (`smithers-failures-rerun-1` and `-2`). It is
+  a second attempt, so it is not added to the 45:
+  - 3 now pass: `schemelike-metacircular-eval`, `batched-eval-parity`,
+    `vpp-loss-divergence`. None of the three hit a time limit this time, so
+    they show run-to-run variance, not the fix.
+  - 10 fail again: `make-doom-for-mips`, `vulnerable-secret`,
+    `filter-js-from-html`, `foodstuff-beta-activity`, `freecad-impeller`,
+    `glycan-ms2-elucidation`, `bun-sourcemap-leak`, `cargo-flight-dispatch`,
+    `gsea-proteomics`, `music-harmony`. The board passes seven of these in
+    under 7% of trials and has no trial of two (`foodstuff-beta-activity`,
+    `music-harmony`). It passes `vulnerable-secret` in 98%; ours is the
+    provider's refusal.
+  - `mvcc-lsm-compaction` is a real failure behind its verifier timeout.
+    Run on this Mac against the solution the agent left, the hidden suite
+    fails 4 of 15 tests (the prepared-version publication cases) and takes
+    441 s, 187 s of it in one interleaving test. On Runta the reference
+    solution passes all 15 in 728 s of the verifier's 900 (`oracle-mvcc-1`),
+    so a slower solution runs out before pytest reports.
+  - 4 have no verdict: `mvcc-lsm-compaction` (verifier timeout again),
+    `ontology-kg-querying` (Runta answered HTTP 525 after the agent
+    finished), `intrastat-meldung` and `roy-polymorph-cn` (the Codex seat
+    reached its weekly limit).
+  - The first pass lost ten trials to Docker Hub: Runta's image pulls were
+    answered 429 Too Many Requests from 07:38 PST. Three of them had already
+    run the agent and lost the verifier image. Pulls worked again by 08:06.
+- No seat serves `gpt-6.1-sol` until `codex-6` resets at 21:09 PST on
+  2026-11-11. A second attempt at all 62 tasks on one build (`2ee6ec6b`) is
+  queued behind that reset (`smithers-all-2`).
 - The Codex CLI and Claude Code arms have not run. They run inside the
   sandbox, so they upload a subscription login to Runta; that waits on Will.
 
@@ -99,6 +130,7 @@ needs Smithers on one of the five models; Kimi-K3 is first.
 | A script could not call the agent itself | Markdown children on the native host; the adapter ships a `worker` flow |
 | File flows made one remote exec per filesystem method: 523 execs, about 1,260 s of the batch's 9,896 s | A host that batches (`Read.Batched`) answers a whole snapshot or commit in one exec: `read` 6.4 s to 2.9, `edit` 32.9 to 5.5, `apply_patch` 24.8 to 5.6, `write` 30.5 to 5.2, `ls` 9.8 to 2.6 on Runta (`diag-tools-2`) |
 | A `bash` call that hit its time limit returned none of its output, and in a container the command kept running | The failure carries the output (`error.output`); the container enforces the deadline in the same exec and stops the command's process group |
+| `shell_command` and `test` also answered a time limit with no output | `shell_command` prints it after Codex's `command timed out after` line; `test` carries the end of each stream as `error.output` (`2ee6ec6b`) |
 | A patch of several files failed on a BusyBox guest: its `head -c` reads past the bytes it keeps | Several writes are cut from standard input spooled once; pinned against real Alpine |
 
 ## Open
@@ -107,17 +139,31 @@ needs Smithers on one of the five models; Kimi-K3 is first.
   the first in 6 and only printing again in 10. All blocks run as one
   program, so 14 calls ran twice. It is 6% of the visible output.
 - `console.log(result)` prints the whole result object as JSON, with
-  bookkeeping fields and escaped newlines.
+  bookkeeping fields and escaped newlines. Measured on the long batch and
+  the first rerun: 13% of printed characters are whole result objects, and
+  the bookkeeping fields are about 1% of what is printed. Not worth a change.
 - Rule 5's `git status` guard fails in a directory that is not a repository,
-  and in a container with no `git`.
+  and in a container with no `git`: 48 of the 62 tasks. It cut an `&&` chain
+  short in 4 of 1,143 calls. Not worth a change.
 - A provider content refusal ends the run.
 - The harness runs on the host and pays Runta's 2.3 s for each exec; an
   agent installed in the sandbox does not.
-- Rerun the 17 failures on the build with the timeout fix; rerun the first
-  two batches on it for a one-build score.
+- One attempt a task is noisy: 3 of 13 failures passed on a second attempt.
+  The board uses four attempts.
+- Hypothesis, not tested: on the long tasks the agent finishes at its first
+  green check. Rules 7 to 9 teach one proof, "failed before, passes after",
+  in the fewest frames. Five long failures passed the agent's own check and
+  failed a wider hidden one (`mvcc-lsm-compaction`, `vpp-loss-divergence`,
+  `batched-eval-parity`, `roy-polymorph-cn`, and `schemelike` at 60 of 63).
+  A rule that asks for the neighbouring cases of a fix would cost frames on
+  easy tasks, so it needs both this benchmark at several attempts a task and
+  the SWE-bench rig before it lands.
+- Smithers on a Claude model needs no upload: the CLI's `claude-code:opus`
+  seat runs the user's signed-in Claude Code from the host
+  (`-m claude-code/opus` with `CLAUDE_CONFIG_DIR`). Not run: on 2026-11-11
+  one Claude account outside the lead's had weekly capacity left.
 - A like-for-like place on the board needs Smithers on one of its models
   (Kimi-K3 first). Which key to use is Will's call.
-- `shell_command` and the `test` flow still answer a timeout with no output.
 
 ## Review
 
@@ -127,7 +173,10 @@ widen its caller's authority three ways (pattern admission, the `authorize`
 hook, and services it was meant to lose), two concurrent batched commits
 could lose an edit, a path ending in a newline was redirected, a foreign-owned
 file could not be written, the adapter ignored child runs, and the compact
-catalog type could drop a constraint. Not yet rerun on the benchmark.
+catalog type could drop a constraint. Fable then read the fix diffs (the deadline wrapper,
+the batched commit script, the lock handling, exec capture and capability
+admission), ran the wrapper in real Alpine and Debian containers, and found
+no further defect.
 
 ## Reds on `main` this work did not cause (2026-11-11, base `7df5839aef01`)
 
