@@ -47,6 +47,7 @@ import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
 import { BrowserAnalytics } from "./infra/BrowserAnalytics.ts"
 import { Databases } from "./infra/ChatDatabase.ts"
+import { reconciledState } from "./infra/deploy/DeploymentState.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
 import { aliasesBinding, AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
 import * as Electric from "./infra/Electric.ts"
@@ -61,7 +62,7 @@ import DevChatApi from "./worker/DevChatApi.ts"
 
 // Local dev keeps state in .alchemy/ with no Cloudflare account; deploys keep it in the account's state store.
 const stateFor = (dev: boolean): Layer.Layer<State, never, Alchemy.StackServices> =>
-  dev ? Alchemy.localState() : Cloudflare.state()
+  dev ? Alchemy.localState() : reconciledState(Cloudflare.state())
 const state = Layer.unwrap(Effect.gen(function*() {
   return stateFor(yield* Alchemy.ALCHEMY_DEV)
 })).pipe(Layer.orDie)
