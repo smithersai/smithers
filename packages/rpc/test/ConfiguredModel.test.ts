@@ -50,7 +50,6 @@ import {
   modelOriginOf,
   ModelRecordIdSchema,
   ModelsCardPayloadSchema,
-  modelSeat,
   modelSeatsOf,
   ModelStateFieldSchema,
   modelStateFieldsOf,
@@ -63,7 +62,6 @@ import {
   planModelBinding,
   resolveModelEndpoint,
   scrubModelSample,
-  seatAccepts,
   SeatAssignmentSchema,
   SeatIdSchema,
   servableModels
@@ -79,31 +77,6 @@ import type {
 } from "../src/ConfiguredModel.ts"
 import { PLUE_FAULTS } from "../src/PlueFailureCodes.ts"
 import { WORKER_FAILURE_CODES } from "../src/WorkerFailureCodes.ts"
-
-describe("public JavaScript model-seat compatibility behavior", () => {
-  // Existing fallback characterization, separate from a validation promise.
-  test("an unknown JavaScript seat keeps the current chat fallback without changing the catalog", () => {
-    const before = structuredClone(MODEL_SEATS)
-    expect(Reflect.apply(modelSeat, undefined, ["not-a-seat"])).toEqual({
-      id: "chat",
-      label: "Chat",
-      kind: "generation",
-      hosts: ["local"]
-    })
-    expect(MODEL_SEATS).toEqual(before)
-  })
-
-  test("a known cloud decision seat keeps its own row", () => {
-    const before = structuredClone(MODEL_SEATS)
-    expect(modelSeat("recommend")).toEqual({
-      id: "recommend",
-      label: "Recommendations",
-      kind: "decision",
-      hosts: ["cloud"]
-    })
-    expect(MODEL_SEATS).toEqual(before)
-  })
-})
 
 const LOOPBACK = "http://127.0.0.1:4010"
 
@@ -475,14 +448,6 @@ describe("seats", () => {
     expect(modelSeatsOf("cloud")).toEqual(["recommend"])
     expect(SeatIdSchema.safeParse("front-door").success).toBe(false)
     expect(SeatIdSchema.safeParse("role:ui").success).toBe(false)
-  })
-
-  test("a seat takes only a model of its kind", () => {
-    const accepted = MODEL_SEATS.map((seat) => MODEL_PROTOCOLS.filter((protocol) => seatAccepts(seat.id, protocol)))
-    expect(accepted).toEqual([
-      ["anthropic-messages", "openai-responses", "openai-responses-chatgpt", "openai-chat"],
-      ["evaluation"]
-    ])
   })
 
   test("an assignment names one seat and one record", () => {

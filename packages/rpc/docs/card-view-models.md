@@ -111,7 +111,3 @@ inventory; unit tests never read the product spec. Retained card schemas in
 ```bash
 pnpm --filter @smthrs/rpc test
 ```
-
-## File projection failures
-
-`FileWrittenSchema` decodes immediate disk-write hints. `branchFileRows` reads the row projection; `projectBranchFiles` replaces snapshots or applies a changed row while clearing superseded outside-change markers. Malformed row updates throw `FileDeltaRejected` with `invalid_delta` or `invalid_rows`.

@@ -597,13 +597,6 @@ export const MODEL_SEATS = [
   { id: "recommend", label: "Recommendations", kind: "decision", hosts: ["cloud"] }
 ] as const satisfies ReadonlyArray<ModelSeat>
 /**
- * One seat's row.
- *
- * @since 1.0.0
- * @category accessors
- */
-export const modelSeat = (id: SeatId): ModelSeat => MODEL_SEATS.find((seat) => seat.id === id) ?? MODEL_SEATS[0]
-/**
  * The seat ids a host resolves, which is what its catalog lists.
  *
  * @since 1.0.0
@@ -611,15 +604,6 @@ export const modelSeat = (id: SeatId): ModelSeat => MODEL_SEATS.find((seat) => s
  */
 export const modelSeatsOf = (host: ModelHost): ReadonlyArray<SeatId> =>
   MODEL_SEATS.filter((seat) => (seat.hosts as ReadonlyArray<ModelHost>).includes(host)).map((seat) => seat.id)
-/**
- * The one rule the assign flow, the reducer and the consumers share: a seat
- * takes only a model of its kind.
- *
- * @since 1.0.0
- * @category guards
- */
-export const seatAccepts = (seat: SeatId, protocol: ModelProtocol): boolean =>
-  modelSeat(seat).kind === modelKindOf(protocol)
 
 /**
  * Validates a seat assignment. The row key is the seat: one model per seat,
