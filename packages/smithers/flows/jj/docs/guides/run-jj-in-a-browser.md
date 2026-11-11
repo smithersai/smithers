@@ -178,8 +178,9 @@ namespace coordinates, so `/repo/../outside` is correctly outside `/repo`.
 The shipped `wasm32-wasip1` reactor cannot safely snapshot real symlinks: its
 fallback reads target bytes instead of link text. `BrowserJj` rejects real
 symlinks with a `JjError` (`code: "unknown"`) before `snapshot`, `status`,
-`diff`, `restore`, or `workspaceAdd` enters the reactor. All five operations
-can snapshot the working copy, including reads of existing revisions.
+`diff`, `restore`, `workspaceAdd`, or `opRestore` enters the reactor. All six
+operations can snapshot the working copy, including reads of existing
+revisions.
 
 The check walks the workspace using link metadata without opening targets.
 It includes ignored directories and dangling links, skips `.jj` and `.git`

@@ -512,7 +512,7 @@ const create = (options: BrowserJjOptions): {
             try {
               // Keep the guard and the synchronous ABI call in one turn under
               // the permit, before even auto-init can write repository state.
-              if (["snapshot", "status", "diff", "restore", "workspaceAdd"].includes(method)) {
+              if (["snapshot", "status", "diff", "restore", "workspaceAdd", "opRestore"].includes(method)) {
                 assertNoSymlinks(host.fs, String(request.root))
               }
               // Older shipped reactors auto-initialize on reads. Refuse missing

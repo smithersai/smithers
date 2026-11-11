@@ -349,7 +349,7 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
             const secretPath = join(host, "repo", target)
             fsModule.mkdirSync(dirname(secretPath), { recursive: true })
             fsModule.writeFileSync(secretPath, "SYNTHETIC_PRIVATE_TOKEN_314159\n")
-            const { commitId: before } = yield* jj.snapshot("before link")
+            const { commitId: before, operationId } = yield* jj.snapshot("before link")
             const metadata = join(host, "repo", ".jj")
             // Compare every durable file, including unreachable objects: a clean
             // diff alone would miss target bytes written before a failed commit.
@@ -369,7 +369,8 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj edge cases over flows_jj.was
               ["status", jj.status()],
               ["diff", jj.diff(before, "@")],
               ["restore", jj.restore(before)],
-              ["workspaceAdd", jj.workspaceAdd("lane", "/lane")]
+              ["workspaceAdd", jj.workspaceAdd("lane", "/lane")],
+              ["opRestore", jj.opRestore!(operationId!)]
             ] as const
             for (const [method, operation] of operations) {
               const error = yield* flip(operation)
