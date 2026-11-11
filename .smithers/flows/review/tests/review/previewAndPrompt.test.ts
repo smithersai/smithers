@@ -160,6 +160,29 @@ describe("previewSnapshot + promptSnapshot (real git)", () => {
     expect(app?.willReview).toBe(true)
   }, GIT_TIMEOUT_MS)
 
+  test("a VibeLang source change enters the review plan; its tests stay default-excluded", async () => {
+    const dir = initRepo()
+    write(join(dir, "src/Route.vibe"), "export const route = 1\n")
+    write(join(dir, "test/Route.test.vibe"), "export const t = 1\n")
+    write(join(dir, "test/Route.spec.vibe"), "export const s = 1\n")
+    git(dir, ["add", "."])
+    git(dir, ["commit", "-m", "init"])
+    write(join(dir, "src/Route.vibe"), "export const route = 2\n")
+    write(join(dir, "test/Route.test.vibe"), "export const t = 2\n")
+    write(join(dir, "test/Route.spec.vibe"), "export const s = 2\n")
+
+    const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir })
+    const route = preview.entries.find((e) => e.path === "src/Route.vibe")
+    expect([route?.willReview, route?.excludeReason]).toEqual([true, ""])
+    for (const path of ["test/Route.test.vibe", "test/Route.spec.vibe"]) {
+      const entry = preview.entries.find((e) => e.path === path)
+      expect([path, entry?.willReview, entry?.excludeReason]).toEqual([path, false, "default_path"])
+    }
+    const prompt = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview)
+    expect(prompt.shouldReview).toBe(true)
+    expect(prompt.files.map((f) => f.path)).toEqual(["src/Route.vibe"])
+  }, GIT_TIMEOUT_MS)
+
   test("promptSnapshot short-circuits when runReview is false or nothing is reviewable", async () => {
     const dir = initRepo()
     write(join(dir, "README.md"), "# only docs\n")
