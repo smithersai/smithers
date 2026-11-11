@@ -452,3 +452,40 @@ test("render after resize refreshes computed block geometry while retaining its 
     expect(parseFloat(lens.style.top) + parseFloat(lens.style.height)).toBeLessThanOrEqual(parseFloat(clip.style.height));
   } finally { driver.dispose(); host.remove(); }
 });
+
+for (const control of [".sui-tl-thumb", ".sui-tl-dot", "[data-lens]"]) test(`new entries are laid out while dragging ${control}`, async () => {
+  const { timelineDriver } = await import("../src/chat/timelineDriver");
+  const { host, viewport, rail, box, mount } = minimap([0, 1, 2].map(row => rowHtml(row)).join(""),
+    '<div class="sui-tl-lv" data-level="1"><div class="sui-tl-clip"><div class="sui-tl-inner"><ol><li data-block="0"><i class="sui-tl-sm" data-start="0" data-end="3"></i></li></ol><div data-lens="1"></div></div></div></div>');
+  const ids = [0, 1, 2].map(row => `incoming-${row}`);
+  for (const [row, id] of ids.entries()) mount(id, row * 100, (row + 1) * 100);
+  const driver = timelineDriver(rail, box);
+  const sync = () => driver.sync({ ids: [...ids], asks: [], levels: 2,
+    spans: [{ id: "conversation", start: 0, end: ids.length }], arcs: [] });
+  const style = (row: number) => box.querySelector<HTMLElement>(`[data-row="${row}"]`)!.style;
+  try {
+    sync();
+    box.querySelector(control)!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
+    expect(rail.hasAttribute("data-dragging")).toBe(true);
+    for (const row of [3, 4]) {
+      const id = `incoming-${row}`;
+      ids.push(id);
+      mount(id, row * 100, (row + 1) * 100);
+      box.querySelector("[data-level='0'] ol")!.insertAdjacentHTML("beforeend", rowHtml(row));
+      box.querySelector<HTMLElement>(".sui-tl-sm")!.dataset.end = String(ids.length);
+      sync();
+      expect(rail.hasAttribute("data-dragging")).toBe(true);
+      expect(Number.isFinite(parseFloat(style(row).top))).toBe(true);
+      expect(parseFloat(style(row).top)).toBeGreaterThan(parseFloat(style(row - 1).top));
+      expect(parseFloat(style(row).height)).toBeGreaterThan(0);
+      expect(style(row).zIndex).toBe("1");
+    }
+    box.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientY: 100 }));
+    expect(rail.dataset.dragStage).toBe("moving");
+    expect(viewport.scrollTop).toBeGreaterThan(0);
+    box.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
+    expect(rail.hasAttribute("data-dragging")).toBe(false);
+    expect(style(4).top).toBe("240px");
+    expect(style(4).height).toBe("60px");
+  } finally { driver.dispose(); host.remove(); }
+});

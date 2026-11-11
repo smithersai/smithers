@@ -71,9 +71,9 @@ export const timelineDriver = (rail: HTMLElement, box: HTMLElement, scrollByRead
   const clip = (n: number) => level(n)?.querySelector<HTMLElement>(".sui-tl-clip") ?? null;
   const inner = (n: number) => level(n)?.querySelector<HTMLElement>(".sui-tl-inner") ?? null;
 
-  /** Rebuilds the position scale. Held during a drag: the thumb must not move under the pointer. */
+  /** Rebuilds the position scale. Hold it during a drag unless the entry count changes. */
   const scaleUp = () => {
-    if (drag !== undefined) return;
+    if (drag !== undefined && model.ids.length === sizes.length) return;
     const next = model.ids.map((id, row) => known.get(id) ?? timelineEstimate(model.lengths?.[row] ?? 0));
     if (next.length === sizes.length && next.every((size, row) => Math.abs(size.height - sizes[row]!.height) < .5 && Math.abs(size.advance - sizes[row]!.advance) < .5)) return;
     sizes = next; offsets = timelineOffsets(next); stale = true;
