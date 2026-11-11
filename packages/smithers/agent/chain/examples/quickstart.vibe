@@ -1,0 +1,58 @@
+import { Author, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
+
+/** The bootstrap script: search, then ask the author for a successor. */
+const l1 = [
+  "```flow",
+  `const hits = await ctx.call("grep", { pattern: "TODO" })`,
+  `const s = await ctx.call("author", { context: [hits.files.join("\\n")] })`,
+  "return to(s)",
+  "```"
+].join("\n")
+
+/** The successor script: edit, then finish. */
+const l2 = [
+  "```flow",
+  `await ctx.call("edit", { file: "a.ts" })`,
+  "return done({ patched: true })",
+  "```"
+].join("\n")
+
+const grep: Catalog.Entry = {
+  name: "grep",
+  description: "Search the workspace for a pattern",
+  handler: () => succeed({ files: ["a.ts", "b.ts", "c.ts"] })
+}
+
+const edit: Catalog.Entry = {
+  name: "edit",
+  description: "Apply a patch to one file",
+  handler: () => succeed({ ok: true })
+}
+
+const entries = Catalog.withSystem([grep, edit])
+
+/** Runs the chain live with a scripted author and returns its outcome and journal. */
+export effect function runChain() {
+  provide Layer.mergeAll(
+    Journal.layerMemory(),
+    Author.layerMock([l1, l2]),
+    QuickJsRunner.layer(),
+    Catalog.layer(entries)
+  ) {
+    const outcome = try Chain.run({ goal: "fix TODOs" })
+    const events = try (try Journal.Journal).read
+    return { events, outcome }
+  }
+}
+
+/** Replays a finished journal: no author output and a runner that cannot execute. */
+export effect function replayChain(events: ReadonlyArray<Event.Event>) {
+  provide Layer.mergeAll(
+    Journal.layerMemory(events),
+    Author.layerMock([]),
+    ScriptRunner.layerNoop(),
+    Catalog.layer(entries)
+  ) {
+    return try Chain.run({ goal: "fix TODOs" })
+  }
+}

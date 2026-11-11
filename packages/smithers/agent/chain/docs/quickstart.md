@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs a two-link chain to `done` without a model account: a
 scripted author stands in for the model, an in-memory journal holds the
 events, and the production QuickJS runner executes the scripts. By the end
-you have a terminal outcome and the journal that produced it.
+you have a terminal outcome and the journal that produced it. Each step below
+is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs steps
+2 to 6 as Effect code.
 
 ## 1. Get the package
 
@@ -148,6 +150,78 @@ const again = await Effect.runPromise(
 executing anything, and a half-finished link replays its settled calls by
 ordinal before running live. For the re-keying rules and the failures that
 guard them, see [Resume and replay](./guides/resume-and-replay.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the run and the replay
+are `effect` functions: a `provide` block supplies the journal, author, runner
+and catalog layers, and `try` runs `Chain.run` and reads the journal where the
+TypeScript writes `yield*`. The replay provides the same catalog with an empty
+author and `ScriptRunner.layerNoop()`, so it can only answer from the journal.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+````vibe
+import { Author, Catalog, Chain, type Event, Journal, QuickJsRunner, ScriptRunner } from "@smthrs/chain"
+
+/** The bootstrap script: search, then ask the author for a successor. */
+const l1 = [
+  "```flow",
+  `const hits = await ctx.call("grep", { pattern: "TODO" })`,
+  `const s = await ctx.call("author", { context: [hits.files.join("\\n")] })`,
+  "return to(s)",
+  "```"
+].join("\n")
+
+/** The successor script: edit, then finish. */
+const l2 = [
+  "```flow",
+  `await ctx.call("edit", { file: "a.ts" })`,
+  "return done({ patched: true })",
+  "```"
+].join("\n")
+
+const grep: Catalog.Entry = {
+  name: "grep",
+  description: "Search the workspace for a pattern",
+  handler: () => succeed({ files: ["a.ts", "b.ts", "c.ts"] })
+}
+
+const edit: Catalog.Entry = {
+  name: "edit",
+  description: "Apply a patch to one file",
+  handler: () => succeed({ ok: true })
+}
+
+const entries = Catalog.withSystem([grep, edit])
+
+/** Runs the chain live with a scripted author and returns its outcome and journal. */
+export effect function runChain() {
+  provide Layer.mergeAll(
+    Journal.layerMemory(),
+    Author.layerMock([l1, l2]),
+    QuickJsRunner.layer(),
+    Catalog.layer(entries)
+  ) {
+    const outcome = try Chain.run({ goal: "fix TODOs" })
+    const events = try (try Journal.Journal).read
+    return { events, outcome }
+  }
+}
+
+/** Replays a finished journal: no author output and a runner that cannot execute. */
+export effect function replayChain(events: ReadonlyArray<Event.Event>) {
+  provide Layer.mergeAll(
+    Journal.layerMemory(events),
+    Author.layerMock([]),
+    ScriptRunner.layerNoop(),
+    Catalog.layer(entries)
+  ) {
+    return try Chain.run({ goal: "fix TODOs" })
+  }
+}
+````
 
 ## 7. Drive it with a model
 

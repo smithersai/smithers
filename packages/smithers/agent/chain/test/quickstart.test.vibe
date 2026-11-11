@@ -1,0 +1,24 @@
+import { expect, it } from "@effect/vitest"
+import { replayChain, runChain } from "../examples/quickstart.vibe"
+
+it.effect("runs the two-link chain to Done and journals ten events in order", effect () => {
+  const { events, outcome } = try runChain()
+  expect(outcome).toEqual({ _tag: "Done", value: { patched: true } })
+  expect(events.map((event) => event._tag)).toEqual([
+    "ChainStarted",
+    "CallSettled",
+    "LinkAuthored",
+    "LinkEnded",
+    "CallSettled",
+    "CallSettled",
+    "LinkAuthored",
+    "LinkEnded",
+    "CallSettled",
+    "LinkEnded"
+  ])
+})
+
+it.effect("replays the finished journal to the same Done without running anything", effect () => {
+  const { events, outcome } = try runChain()
+  expect(try replayChain(events)).toEqual(outcome)
+})
