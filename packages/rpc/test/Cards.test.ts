@@ -759,7 +759,7 @@ const statusRollup = (subjectId: string, state: string, activity: string) => ({
 })
 
 /*
- * Repository setup (src/RepositorySetup.ts). A draft is a required payload
+ * Repository setup, a legacy card kind (`LEGACY_CARD_KINDS`). A draft is a required payload
  * field, so both fixtures carry one; `choreEvent` is stated because it is
  * defaulted, and a fixture that left it out would not equal what decoding
  * produces. `setupReceipt` is the host's evidence for one executed operation.
