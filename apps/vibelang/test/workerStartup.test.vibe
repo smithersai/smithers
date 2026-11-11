@@ -1,0 +1,53 @@
+// @vitest-environment node
+// The deploy gate for the API Worker's startup (wiki/decisions/0033-worker-startup.md). Cloudflare refuses an upload
+// whose global scope takes more than 1 second of CPU to parse and execute: "A Worker must parse and execute its global
+// scope (top-level code outside of handlers) within 1 second", error 10021 "Script startup exceeded CPU time limit"
+// (https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time, read 2026-11-10). On 2026-11-10 it
+// refused main 90f526f0, whose 12.45 MB main module measured ~880 ms here, and accepted 5e37278e at 11.99 MB and
+// ~840 ms: this measurement tracks Cloudflare's to within its noise, so each budget sits well below that line.
+import { describe, expect, it } from "@effect/vitest"
+import { deployBuild, startupSample, type DeployBuild, type StartupSample } from "./support/workerStartup.ts"
+
+/** Cloudflare's startup limit, in milliseconds of CPU. */
+const CLOUDFLARE_LIMIT_MS = 1_000
+/**
+ * The startup budget: the fastest of RUNS startups, in workerd's CPU milliseconds (Linux) or profiled milliseconds
+ * elsewhere. The refused build's fastest was 650 ms or more; the fixed one's is about 150 ms. CPU time and the fastest
+ * run both discard time a loaded host spends on other work.
+ */
+const STARTUP_BUDGET_MS = 400
+/** The main module's budget, its deterministic proxy: 12 MB was refused; 2.9 MB of code still cost ~570 ms. */
+const MAIN_MODULE_BUDGET_BYTES = 1024 * 1024
+const RUNS = 5
+
+describe("the API Worker's startup, built and measured as Cloudflare accepts a deploy", () => {
+  let build: DeployBuild | undefined
+  const built = effect {
+    build ??= try promise(() => deployBuild())
+    return build
+  }
+
+  it.live("keeps the main module under its budget", () => effect {
+    const { modules } = try built
+    const main = modules[0]!
+    try Effect.logInfo("vibelang.worker.startup").pipe(Effect.annotateLogs({ step: "build", main: main.name, mainBytes: main.bytes, modules: modules.length }))
+    try Effect.try(() => {
+      expect(main.name).toBe("Api.js")
+      expect(main.bytes, `main module ${main.bytes} bytes; budget ${MAIN_MODULE_BUDGET_BYTES}`).toBeLessThanOrEqual(MAIN_MODULE_BUDGET_BYTES)
+    })
+  }, 300_000)
+
+  it.live("starts within its budget, well below Cloudflare's limit", () => effect {
+    const deployed = try built
+    const samples: Array<StartupSample> = []
+    for (let run = 0; run < RUNS; run++) samples.push(try promise(() => startupSample(deployed)))
+    const measured = samples.every((sample) => sample.cpuMs !== undefined) ? "cpu" : "profiled"
+    const fastest = Math.min(...samples.map((sample) => measured === "cpu" ? sample.cpuMs! : sample.activeMs))
+    try Effect.logInfo("vibelang.worker.startup").pipe(Effect.annotateLogs({ step: "profile", runs: RUNS, measured, fastestMs: Math.round(fastest), cpuMs: samples.map((sample) => sample.cpuMs ?? -1).join(","), activeMs: samples.map((sample) => Math.round(sample.activeMs)).join(","), budgetMs: STARTUP_BUDGET_MS }))
+    try Effect.try(() => {
+      expect(samples.every((sample) => sample.evaluated)).toBe(true)
+      expect(STARTUP_BUDGET_MS).toBeLessThan(CLOUDFLARE_LIMIT_MS / 2)
+      expect(fastest, `startup ${fastest.toFixed(0)} ms (${measured}); budget ${STARTUP_BUDGET_MS} ms; Cloudflare's limit ${CLOUDFLARE_LIMIT_MS} ms`).toBeLessThanOrEqual(STARTUP_BUDGET_MS)
+    })
+  }, 300_000)
+})

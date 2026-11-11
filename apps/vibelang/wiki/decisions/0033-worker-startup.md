@@ -69,9 +69,12 @@ the main module reaches is parsed but its modules run only when called.
 | Check | Budget | Now | Refused build |
 | --- | --- | --- | --- |
 | Main module bytes (deterministic proxy) | 1 MiB | 127 KB | 12.45 MB |
-| Fastest of 5 profiled startups | 400 ms | ~150 ms | 595 ms or more |
+| Fastest of 5 startups: workerd CPU time on Linux, profiled time elsewhere | 400 ms | 150–180 ms | 595 ms or more |
 | Cloudflare's limit | 1,000 ms | | |
 
-The fastest run discards time a loaded host spends on other work. 400 ms is under half of Cloudflare's limit and about
-60% of the refused build's fastest run, so the gate fails long before Cloudflare would. Raising a budget needs a new
-measurement against Cloudflare, recorded here.
+Profiled time is wall time between samples, so it also counts time workerd waits for a CPU. On Linux the gate reads
+workerd's own CPU time from `/proc` instead. On nyc-01 at load 220 on 32 cores, unfixed main measured 1,040–1,190 ms
+of CPU (profiled 2,205–3,595 ms) and this decision's build 180–310 ms of CPU (profiled 504–1,000 ms); a profiled-time
+gate failed the fixed build there. The fastest of 5 runs discards the rest of the host's noise. 400 ms is under half
+of Cloudflare's limit and about 60% of the refused build's fastest run, so the gate fails long before Cloudflare
+would. Raising a budget needs a new measurement against Cloudflare, recorded here.
