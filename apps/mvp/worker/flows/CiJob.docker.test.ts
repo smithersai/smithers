@@ -8,7 +8,8 @@ import { Node } from "@smthrs/plan"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Exit, Layer, Schema } from "effect"
 import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
-import { afterAll, describe, expect, test } from "vitest"
+import { asPerson } from "../test/sandboxPersons.ts"
+import { afterAll, describe, expect } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
 import { checkoutArgv } from "../branch/Checkout.ts"
 import { noCommands } from "../test/commands.ts"
@@ -25,6 +26,8 @@ const image = sandboxImage
 const BOX_USER = "104242:2000"
 const docker = (args: ReadonlyArray<string>) => spawnSync("docker", args, { encoding: "utf8" })
 const present = docker(["--version"]).status === 0
+/** A case whose steps run as `BOX_USER`: broken where Docker can't run that uid (worker/test/sandboxPersons.ts). */
+const jobTest = asPerson("docker", BOX_USER, present)
 
 /** A public repository and a commit of it that no branch of it may still point at. */
 const REPO = "roninjin10/smithers-github-tests"
@@ -110,7 +113,7 @@ const Pipeline = Flow.make("ci/docker-pipeline", {
 })
 
 describe.skipIf(!present)("CI jobs in real containers", () => {
-  test("two jobs on two machines at once: node and pnpm at the commit pass, a job that exits 1 fails", async () => {
+  jobTest("two jobs on two machines at once: node and pnpm at the commit pass, a job that exits 1 fails", async () => {
     const target: CiJob.Target = { run: `ci:docker-${Date.now()}`, repo: REPO, sha, ref: "refs/heads/main" }
     const registration = Layer.mergeAll(
       Interpreter.layerWithImplementations(CiJob.CiJob, CiJob.layer),

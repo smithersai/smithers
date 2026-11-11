@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
+import { asPerson } from "../test/sandboxPersons.ts"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { CONTAINER_CA, SETUP, TRUST } from "./SandboxEgress.ts"
 
@@ -21,6 +22,8 @@ const PERSON = "585780777:2000"
 const docker = (args: ReadonlyArray<string>, input?: string) =>
   spawnSync("docker", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(input === undefined ? {} : { input }) })
 const present = docker(["version", "--format", "{{.Server.Version}}"]).status === 0
+/** A case with a login shell as `PERSON`: broken where Docker can't run that uid (worker/test/sandboxPersons.ts). */
+const personTest = asPerson("docker", PERSON, present)
 
 /** Runs `argv` with Docker and answers its output; throws with what it printed when it fails. */
 const must = (args: ReadonlyArray<string>, input?: string) => {
@@ -64,13 +67,13 @@ describe.skipIf(!present)("the egress setup in a real container", () => {
     if (scratch !== "") rmSync(scratch, { recursive: true, force: true })
   })
 
-  test("a login shell gets the placeholders and Node's CA, the CA is trusted, and nothing is printed", () => {
+  personTest("a login shell gets the placeholders and Node's CA, the CA is trusted, and nothing is printed", () => {
     expect(machine.setup(SETUP, `DEMO_TOKEN=${PLACEHOLDER}\n`)).toEqual({ status: 0, printed: "" })
     expect(machine.login(`printf '%s|%s' "$DEMO_TOKEN" "$NODE_EXTRA_CA_CERTS"`).stdout).toBe(`${PLACEHOLDER}|${CONTAINER_CA}`)
     expect(machine.root("test -e /etc/ssl/certs/cloudflare-containers-ca.pem").status).toBe(0)
   }, 60_000)
 
-  test("a CA that can't be trusted is exit 2, still prints nothing, and the placeholders still reach a shell", () => {
+  personTest("a CA that can't be trusted is exit 2, still prints nothing, and the placeholders still reach a shell", () => {
     machine.root("rm -rf /usr/local/share/ca-certificates && touch /usr/local/share/ca-certificates")
     expect(machine.setup(SETUP, `OTHER_TOKEN=${PLACEHOLDER}\n`)).toEqual({ status: 2, printed: "" })
     expect(machine.login(`printf '%s' "$OTHER_TOKEN"`).stdout).toBe(PLACEHOLDER)
@@ -139,7 +142,7 @@ describe.skipIf(!present)("the trust setup of a box without secrets in a real co
   }, 300_000)
   afterAll(() => machine?.remove())
 
-  test("the image carries Go, Python and a C toolchain on the default PATH", () => {
+  personTest("the image carries Go, Python and a C toolchain on the default PATH", () => {
     // beforeAll built a Go program and made a venv with them.
     const tools = machine.login("go version && command -v go gofmt gcc g++ make python3 && python3 -m pip --version")
     expect(tools.status).toBe(0)
@@ -149,7 +152,7 @@ describe.skipIf(!present)("the trust setup of a box without secrets in a real co
     expect(tools.stdout).toMatch(/^pip \d+/m)
   }, 60_000)
 
-  test("without the container's CA it changes nothing, and nothing in the box trusts the server", () => {
+  personTest("without the container's CA it changes nothing, and nothing in the box trusts the server", () => {
     expect(machine.setup(TRUST)).toEqual({ status: 0, printed: "" })
     expect(machine.root("test -e /etc/profile.d/smithers-trust.sh").status).toBe(1)
     const untrusted = fetched()
@@ -159,7 +162,7 @@ describe.skipIf(!present)("the trust setup of a box without secrets in a real co
     expect(untrusted.pip).toContain("CERTIFICATE_VERIFY_FAILED")
   }, 120_000)
 
-  test("with it, curl, Node, Go and pip trust the server; the box gets no environment file, and nothing is printed", () => {
+  personTest("with it, curl, Node, Go and pip trust the server; the box gets no environment file, and nothing is printed", () => {
     machine.root(`mkdir -p /etc/cloudflare/certs && cp /root/tls/ca.crt ${CONTAINER_CA}`)
     expect(machine.setup(TRUST)).toEqual({ status: 0, printed: "" })
     const trusted = fetched()

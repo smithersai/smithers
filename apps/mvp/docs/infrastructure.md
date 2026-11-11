@@ -117,7 +117,12 @@ What a host needs besides Docker and Node:
   1,073,841,823 (`worker/branch/Users.ts`). Rootless Docker maps only the user's `/etc/subuid` and `/etc/subgid`
   ranges, 65,536 ids by default, so those commands fail with `unable to setup user: chown /dev/stdout: invalid
   argument` or `install: cannot change owner and permissions of '/workspace/home': Invalid argument`. Use rootful
-  Docker, or give the rootless user ranges of at least 1,073,841,824 ids.
+  Docker, or give the rootless user ranges of at least 1,073,841,824 ids. On a host whose engine runs the image as
+  root but not as a suite's person uid, that suite marks its cases that run as the person broken (TEST-5,
+  `worker/test/sandboxPersons.ts`): they still run and are expected to fail, their names say why, and one that
+  passes there fails the run. A rootless engine's `host-gateway` doesn't reach the host either, so
+  `worker/personal/AgentCli.docker.test.ts` needs `SANDBOX_TEST_HOST_NETWORK=1` there (rootless Docker 29.8.2,
+  2026-11-11).
 - Browser tests launch Playwright's Chromium and WebKit: `pnpm exec playwright install --with-deps chromium webkit`.
   Without WebKit's system libraries, WebKit cases fail at `browser.newPage` with `Target page, context or browser
   has been closed`.

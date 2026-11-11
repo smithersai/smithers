@@ -7,7 +7,8 @@ import { execFile, spawnSync } from "node:child_process"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { sandboxImage } from "../test/sandboxImage.globalSetup.ts"
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { asPerson } from "../test/sandboxPersons.ts"
+import { afterAll, beforeAll, describe, expect } from "vitest"
 import * as Agents from "./Agents.ts"
 
 const image = sandboxImage
@@ -18,11 +19,13 @@ const OWNER = PERSON.split(":")
 const HOME = "/workspace/home"
 
 const CONTAINERS = process.env["SANDBOX_TEST_ENGINE"] ?? "docker"
-/** Rootless Podman can't reach the host through `host-gateway`: `SANDBOX_TEST_HOST_NETWORK=1` shares the host's network. */
+/** A rootless engine (Podman, Docker) can't reach the host through `host-gateway`: `SANDBOX_TEST_HOST_NETWORK=1` shares the host's network. */
 const HOST_NETWORK = process.env["SANDBOX_TEST_HOST_NETWORK"] === "1"
 const VENDOR_HOST = HOST_NETWORK ? "127.0.0.1" : "host.docker.internal"
 const docker = (args: ReadonlyArray<string>) => spawnSync(CONTAINERS, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
 const present = docker(["version", "--format", "{{.Server.Version}}"]).status === 0
+/** A case run as `PERSON`: broken where the engine can't run that uid (worker/test/sandboxPersons.ts). */
+const personTest = asPerson(CONTAINERS, PERSON, present)
 
 const must = (args: ReadonlyArray<string>) => {
   const run = docker(args)
@@ -126,12 +129,22 @@ describe.skipIf(!present)("a subscription's agent in a real box", () => {
       },
     )
 
+  let owned = false
+  /**
+   * Makes the person's home and checkout, once, from the first case: where the engine can't map the person's uid, root
+   * can't give them to it, and each case fails there as its mark expects.
+   */
+  const own = () => {
+    if (owned) return
+    must(["exec", "--user", "0:0", id, "sh", "-c", `install -d -o ${OWNER[0]} -g ${OWNER[1]} ${HOME} /workspace/repo && cd /workspace/repo && git init -q && chown -R ${OWNER[0]}:${OWNER[1]} .`])
+    owned = true
+  }
+
   beforeAll(async () => {
     server = createServer(vendor)
     await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve))
     port = (server.address() as AddressInfo).port
     id = must(["run", "-d", "--rm", ...(HOST_NETWORK ? ["--network", "host"] : ["--add-host", "host.docker.internal:host-gateway"]), image]).trim()
-    must(["exec", "--user", "0:0", id, "sh", "-c", `install -d -o ${OWNER[0]} -g ${OWNER[1]} ${HOME} /workspace/repo && cd /workspace/repo && git init -q && chown -R ${OWNER[0]}:${OWNER[1]} .`])
   }, 900_000)
 
   afterAll(async () => {
@@ -139,7 +152,8 @@ describe.skipIf(!present)("a subscription's agent in a real box", () => {
     await new Promise<void>((resolve) => server?.close(() => resolve()))
   })
 
-  test("Claude Code holds a placeholder, sends it to its host alone, writes the checkout and reports", async () => {
+  personTest("Claude Code holds a placeholder, sends it to its host alone, writes the checkout and reports", async () => {
+    own()
     seen.length = 0
     const environment = Agents.environment("claude-code", PLACEHOLDER, {
       baseUrl: `http://${VENDOR_HOST}:${port}`,
@@ -155,7 +169,8 @@ describe.skipIf(!present)("a subscription's agent in a real box", () => {
     expect(new Set(messages.map((request) => request.authorization))).toEqual(new Set([`Bearer ${PLACEHOLDER}`]))
   }, 180_000)
 
-  test("Codex reads its placeholder from auth.json, sends it to its host alone and reports", async () => {
+  personTest("Codex reads its placeholder from auth.json, sends it to its host alone and reports", async () => {
+    own()
     seen.length = 0
     const environment = Agents.environment("codex", PLACEHOLDER, {
       account: { accountId: "acct-1", planType: "pro" },
