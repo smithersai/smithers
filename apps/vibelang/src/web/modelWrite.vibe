@@ -4,6 +4,7 @@ import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
 import type { EscapeRoute, EscapeStep } from "./updateDecision.vibe"
+import type { TourEnd, TourStarted } from "./tourDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen } from "./screenRead.vibe"
 
@@ -66,4 +67,25 @@ export function escapeWrite(model: Model, account: AccountState, actions: Action
 export function escapeWritesIssues(model: Model, account: AccountState, actions: ActionView, route: EscapeRoute, wikiPane: boolean): boolean {
   const kind = pressedEscape(escapeScreen(model, account, actions), route, wikiPane).kind
   return kind === "issue-dialog" || kind === "issues"
+}
+
+/** The Model after a tour ends: the ended screen's tour flags, surface, palette, draft, docs and sandbox pane; the
+ *  issues list's open flag over `issues`; the slash menu and panel size over `actions`; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issues, open: ended.issuesOpen }, actions: { ...actions, slash: ended.slash, maximized: ended.maximized } }
+export function tourEndWrite(model: Model, issues: NonNullable<Model["issues"]>, actions: ActionView, ended: TourEnd): Model {
+  return { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issues, open: ended.issuesOpen }, actions: { ...actions, slash: ended.slash, maximized: ended.maximized } }
+}
+
+/** The Model after Learn more starts a tour: the started screen's fields; the theatre's step, pause and target; a
+ *  fresh tour client; the conversation's client fresh exactly when the step resets it; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tour: step.state.tour, toured: step.state.toured, tourDismissed: step.state.tourDismissed, autoTour: step.state.autoTour, surface: step.state.surface, palette: step.state.palette, docs: step.state.docs, tourError: step.state.tourError, conversation: step.state.conversation, client: step.resetClient ? fresh : model.client, wikiAfter: step.state.wikiAfter, wikiStatus: step.state.wikiStatus, tourClient: fresh, theatre: { ...model.theatre, step: step.state.step, paused: step.state.paused, target: step.state.target }, epoch: step.state.epoch, from: step.state.from, stream: step.state.stream }
+export function tourStartWrite(model: Model, step: TourStarted, fresh: Model["client"]): Model {
+  const started = step.state
+  return { ...model, tour: started.tour, toured: started.toured, tourDismissed: started.tourDismissed, autoTour: started.autoTour, surface: started.surface, palette: started.palette, docs: started.docs, tourError: started.tourError, conversation: started.conversation,
+    client: step.resetClient ? fresh : model.client, wikiAfter: started.wikiAfter, wikiStatus: started.wikiStatus,
+    tourClient: fresh, theatre: { ...model.theatre, step: started.step, paused: started.paused, target: started.target },
+    epoch: started.epoch, from: started.from, stream: started.stream,
+  }
 }

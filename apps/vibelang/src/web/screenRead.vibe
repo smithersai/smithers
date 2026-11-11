@@ -4,7 +4,7 @@ import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
 import type { EscapeScreen } from "./updateDecision.vibe"
-import type { StreamScreen } from "./tourDecision.vibe"
+import type { StreamScreen, TourEnd, TourStart } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import type { WikiDraft } from "./wikiEditorDecision.vibe"
 import type { WikiRequest } from "../core/wikiSchemas.vibe"
@@ -86,4 +86,20 @@ export function wikiDraft(request: WikiRequest | undefined): WikiDraft {
 export function wikiRequest(draft: WikiDraft): WikiRequest {
   const { recovery, ...request } = draft
   return recovery === "" ? request : { ...request, recovery }
+}
+
+/** What ending a tour reads: the tour flags (no dismissal read as not dismissed), the screen, the draft, the sandbox
+ *  pane (none read as closed), whether the issues list is open, and the actions panel's slash menu and size. */
+//@ verify
+//@ ensures \result == { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
+export function tourEndScreen(model: Model, issues: NonNullable<Model["issues"]>, actions: ActionView): TourEnd {
+  return { tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issues.open, slash: actions.slash, maximized: actions.maximized }
+}
+
+/** What Learn more reads: the tour flags (an absent one read as false), the screen, the conversation, the wiki's
+ *  return page and status (absent: none, ready), the theatre's step, pause and target, and the stream. */
+//@ verify
+//@ ensures \result == { tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }
+export function tourStartScreen(model: Model): TourStart {
+  return { tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }
 }

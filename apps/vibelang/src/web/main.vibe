@@ -679,15 +679,10 @@ function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model
 export function walkthroughSession(model: Model) { return model.tutorialSession ?? model.session }
 function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const conversation = `demo-${walkthroughSession(model)}`
-  const step = TourDecision.startedTour({ tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }, conversation)
+  const step = TourDecision.startedTour(ScreenRead.tourStartScreen(model), conversation)
   if (!step.started) return { model }
-  const started = step.state
   return {
-    model: { ...model, tour: started.tour, toured: started.toured, tourDismissed: started.tourDismissed, autoTour: started.autoTour, surface: started.surface, palette: started.palette, docs: started.docs, tourError: started.tourError, conversation: started.conversation,
-      client: step.resetClient ? Machine.newClient : model.client, wikiAfter: started.wikiAfter, wikiStatus: started.wikiStatus,
-      tourClient: Machine.newClient, theatre: { ...model.theatre, step: started.step, paused: started.paused, target: started.target },
-      epoch: started.epoch, from: started.from, stream: started.stream,
-    },
+    model: ModelWrite.tourStartWrite(model, step, Machine.newClient),
     commands: [...(model.palette ? [ClosePalette({ dock: false })] : []), StartTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), PresentTour({ step: 1, sound: model.theatre.sound, active: true, paused: false })],
   }
 }
@@ -701,8 +696,10 @@ function touringHere(model: Model): boolean {
   return Machine.isTouring(conversation, conversation.replying)
 }
 function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
-  const ended = TourDecision.endedTour({ tour: model.tour, tourDismissed: model.tourDismissed === true, surface: model.surface, palette: model.palette, draft: model.draft, docs: model.docs, sandboxPane: model.sandboxPane ?? "closed", issuesOpen: issueStateOf(model).open, slash: actionsOf(model).slash, maximized: actionsOf(model).maximized })
-  return { model: { ...model, tour: ended.tour, tourDismissed: ended.tourDismissed, surface: ended.surface, palette: ended.palette, draft: ended.draft, docs: ended.docs, sandboxPane: ended.sandboxPane, issues: { ...issueStateOf(model), open: ended.issuesOpen }, actions: { ...actionsOf(model), slash: ended.slash, maximized: ended.maximized } }, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})] }
+  const issues = issueStateOf(model)
+  const actions = actionsOf(model)
+  const ended = TourDecision.endedTour(ScreenRead.tourEndScreen(model, issues, actions))
+  return { model: ModelWrite.tourEndWrite(model, issues, actions, ended), commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})] }
 }
 function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, Message, Factory | Actions> {
   const previous = model.tourClient ?? Machine.newClient
