@@ -166,6 +166,7 @@ describe("AnthropicMessages streaming", () => {
   it("parses text and settles exactly once", () => {
     const events = run("text")
     expect(events).toEqual([
+      { type: "usage", inputTokens: 12, outputTokens: 0, totalTokens: 12 },
       { type: "text-start", id: "text-0" },
       { type: "text-delta", id: "text-0", text: "Hello" },
       { type: "text-delta", id: "text-0", text: ", world" },
@@ -183,6 +184,7 @@ describe("AnthropicMessages streaming", () => {
   it("accumulates fragmented tool arguments", () => {
     const events = run("tool-call")
     expect(events).toEqual([
+      { type: "usage", inputTokens: 18, outputTokens: 0, totalTokens: 18 },
       { type: "tool-call-start", id: "toolu_01", name: "weather" },
       { type: "tool-call-delta", id: "toolu_01", arguments: "{\"city\":" },
       { type: "tool-call-delta", id: "toolu_01", arguments: "\"Paris\"}" },
@@ -311,6 +313,57 @@ describe("AnthropicMessages streaming", () => {
     ])
   })
 
+  it("reports message_start usage for a call cut short before message_delta", () => {
+    const events = replay([
+      "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_cut\",\"usage\":{\"input_tokens\":21,\"cache_read_input_tokens\":8,\"cache_creation_input_tokens\":5,\"output_tokens\":1}}}",
+      "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+      "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}}"
+    ], true)
+
+    expect(events[0]).toEqual({
+      type: "usage",
+      inputTokens: 34,
+      outputTokens: 1,
+      cachedInputTokens: 8,
+      cacheWriteTokens: 5,
+      totalTokens: 35
+    })
+    expect(ModelEvent.settledMessage(events).usage).toMatchObject({ inputTokens: 34, cachedInputTokens: 8 })
+  })
+
+  it.each(
+    [
+      ["at its stop", false],
+      ["when the stream halts", true]
+    ] as const
+  )("never replays thinking that ends %s with only the empty placeholder signature", (_, halts) => {
+    const events = replay([
+      "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"Inspect\",\"signature\":\"\"}}",
+      ...(halts ? [] : [
+        "{\"type\":\"content_block_stop\",\"index\":0}",
+        "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}",
+        "{\"type\":\"message_stop\"}"
+      ])
+    ], halts)
+    expect(events.filter((event) => event.type === "thinking-start")).toEqual([
+      { type: "thinking-start", id: "thinking-0", signature: undefined }
+    ])
+
+    const { message } = ModelEvent.settledMessage(events)
+    const followUp = ModelRequest.make({
+      modelId: "claude-sonnet-4-5",
+      system: [],
+      messages: [
+        Message.user("Think"),
+        { ...message, stopReason: "length" },
+        Message.user("Go on")
+      ],
+      tools: [],
+      params: GenerationParams.make()
+    })
+    expect(CanonicalJson.stringify(body(followUp).messages)).not.toContain("\"thinking\"")
+  })
+
   it("attaches a late signature to the complete thinking block", () => {
     const data = [
       "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}",
@@ -401,6 +454,14 @@ describe("AnthropicMessages streaming", () => {
       {
         type: "usage",
         inputTokens: 34,
+        outputTokens: 0,
+        cachedInputTokens: 8,
+        cacheWriteTokens: 5,
+        totalTokens: 34
+      },
+      {
+        type: "usage",
+        inputTokens: 34,
         outputTokens: 4,
         cachedInputTokens: 8,
         cacheWriteTokens: 5,
@@ -421,6 +482,8 @@ describe("AnthropicMessages streaming", () => {
   it("flushes an open tool call without settling an interrupted stream", () => {
     const events = run("abort-mid-stream", true)
     expect(events).toEqual([
+      // What `message_start` billed survives the interruption.
+      { type: "usage", inputTokens: 7, outputTokens: 0, totalTokens: 7 },
       { type: "tool-call-start", id: "toolu_abort", name: "lookup" },
       { type: "tool-call-delta", id: "toolu_abort", arguments: "{\"query\":\"par" },
       { type: "tool-call-end", id: "toolu_abort", arguments: "{\"query\":\"par" }
@@ -621,6 +684,7 @@ describe("AnthropicMessages streaming", () => {
       "{\"type\":\"message_start\",\"message\":{\"usage\":{\"cache_read_input_tokens\":6,\"cache_creation_input_tokens\":null}}}",
       "{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":4}}"
     ])).toEqual([
+      { type: "usage", inputTokens: 6, cachedInputTokens: 6, totalTokens: 6 },
       { type: "usage", inputTokens: 6, outputTokens: 4, cachedInputTokens: 6, totalTokens: 10 }
     ])
 
@@ -629,7 +693,7 @@ describe("AnthropicMessages streaming", () => {
     expect(replay([
       "{\"type\":\"message_start\",\"message\":{\"usage\":{}}}",
       "{\"type\":\"message_delta\",\"usage\":{}}"
-    ])).toEqual([{ type: "usage" }])
+    ])).toEqual([{ type: "usage" }, { type: "usage" }])
   })
 
   it("carries a response id forward and settles a stream only once", () => {
@@ -642,6 +706,8 @@ describe("AnthropicMessages streaming", () => {
     ])
 
     expect(events).toEqual([
+      { type: "usage", inputTokens: 1, totalTokens: 1 },
+      { type: "usage", inputTokens: 1, outputTokens: 2, totalTokens: 3 },
       { type: "usage", inputTokens: 1, outputTokens: 2, totalTokens: 3 },
       { type: "settle", stopReason: "unknown", responseId: "msg_dup" }
     ])
@@ -934,6 +1000,7 @@ describe("AnthropicMessages body lowering", () => {
         Message.assistant([
           ThinkingPart.make({ text: "complete", signature: "signed" }),
           ThinkingPart.make({ text: "incomplete" }),
+          ThinkingPart.make({ text: "placeholder", signature: "" }),
           { type: "text", text: "answer" }
         ], { stopReason: "stop" })
       ],

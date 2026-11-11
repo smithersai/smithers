@@ -1,3 +1,4 @@
+import { Capability, Permission } from "@smthrs/capability"
 import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
@@ -223,6 +224,25 @@ const success = <A, E>(result: Result.Result<A, E>): A => {
 }
 
 describe("Evaluator.layerVercelGateway", () => {
+  it("fails a refused model:call grant as unconfigured, not as an outage", async () => {
+    const denied = Permission.PermissionDenied.new({
+      capability: Capability.make("model:call", "google/gemini-3-flash"),
+      reason: "denied by policy"
+    })
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(
+        Layer.succeed(KernelHttpClient.HttpClient)(
+          HttpClient.make((request) => Effect.fail(KernelHttpClient.toHttpClientError({ request, error: denied })))
+        )
+      )
+    )
+
+    const error = failure(await evaluate(layer))
+
+    expect(error).toMatchObject({ code: "unconfigured", message: Permission.formatError(denied) })
+    expect(Evaluator.faults[error.code]).toBe("policy")
+  })
+
   it("speaks the recorded wire protocol and answers the recorded body", async () => {
     const sent: Array<Sent> = []
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("vck_test") }).pipe(

@@ -1,3 +1,4 @@
+import { Capability, Permission } from "@smthrs/capability"
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
@@ -97,6 +98,22 @@ describe("subscription seat evaluator", () => {
       run(Model.make({ stream: () => Stream.fail(new ModelError({ code: "no_route", message: "secret-token" })) }))
     )
       .rejects.toMatchObject({ code: "unreachable", message: Evaluator.unreachableMessage })
+  })
+  it("fails a pending model:call grant and a rejected credential as unconfigured", async () => {
+    const required = Permission.PermissionRequired.new({
+      requestId: "permission-judge-1",
+      capability: Capability.make("model:call", "gpt-6.1-sol"),
+      tier: "sealed",
+      meta: {}
+    })
+    await expect(run(Model.make({ stream: () => Stream.fail(required) })))
+      .rejects.toMatchObject({ code: "unconfigured", message: Permission.formatError(required) })
+    await expect(
+      run(
+        Model.make({ stream: () => Stream.fail(new ModelError({ code: "authentication", message: "secret-token" })) })
+      )
+    )
+      .rejects.toMatchObject({ code: "unconfigured", message: Evaluator.unconfiguredMessage })
   })
   it("rejects non-JSON evidence before contacting the seat", async () => {
     let called = false

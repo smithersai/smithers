@@ -12,6 +12,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { Permission } from "@smthrs/capability"
 import { Fault, SpanFailure } from "@smthrs/flow"
 import { HttpClient as KernelHttpClient } from "@smthrs/kernel"
 import * as Clock from "effect/Clock"
@@ -23,6 +24,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -38,7 +40,9 @@ import { ModelRequest } from "./ModelRequest.ts"
 /**
  * The failure vocabulary shared by the transport and the classifier above it.
  *
- * `unconfigured` needs a gateway key or a signed-in subscription;
+ * `unconfigured` needs a gateway key, a signed-in subscription, a credential
+ * the provider accepts, or a `model:call` grant the kernel refused or holds
+ * pending;
  * `unreachable` is a transport that answered nothing; `refused` is a gateway
  * status other than 200, carried in `status`; `empty` is a 200 whose body
  * held no answers; `timeout` is this call's own deadline; `invalid_answer` is
@@ -792,7 +796,15 @@ export function layerVercelGateway(
               timing.onTry({ type: "failed", sentAt, at: clock.currentTimeMillisUnsafe(), code, httpStatus })
             return http.execute(wire).pipe(
               KernelHttpClient.withModelCall(model),
-              Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message })),
+              Effect.mapError((error) => {
+                // A refused or pending `model:call` grant is not an outage: as
+                // `unreachable` it would send the question to a backup model
+                // on another credential.
+                const permission = KernelHttpClient.fromHttpClientError(error)
+                return Option.isSome(permission)
+                  ? new EvaluatorError({ code: "unconfigured", message: Permission.formatError(permission.value) })
+                  : new EvaluatorError({ code: "unreachable", message: error.message })
+              }),
               Effect.tapError((error) => Effect.sync(() => failed(error.code))),
               Effect.tap((response) =>
                 Effect.sync(() =>
@@ -987,6 +999,18 @@ export const layerFromSeat = (
                     message: usageLimitMessage(resetAtEpochMillis),
                     ...paid()
                   })
+                }
+                // A refused grant or a rejected credential is a setup fault,
+                // never an outage a backup model may answer.
+                if (!(error instanceof ModelError)) {
+                  return yield* new EvaluatorError({
+                    code: "unconfigured",
+                    message: Permission.formatError(error),
+                    ...paid()
+                  })
+                }
+                if (error.code === "authentication") {
+                  return yield* new EvaluatorError({ code: "unconfigured", message: unconfiguredMessage, ...paid() })
                 }
                 return yield* new EvaluatorError({ code: "unreachable", message: unreachableMessage, ...paid() })
               })

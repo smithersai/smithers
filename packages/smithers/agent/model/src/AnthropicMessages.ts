@@ -251,7 +251,6 @@ interface State {
   readonly blocks: ReadonlyArray<Block>
   readonly tools: ToolStream.State
   readonly usage: Usage | undefined
-  readonly usageEmitted: boolean
   readonly stopReason: StopReason | undefined
   readonly settled: boolean
   readonly responseId: string | undefined
@@ -262,7 +261,6 @@ const initial = (): State => ({
   blocks: [],
   tools: ToolStream.initial(),
   usage: undefined,
-  usageEmitted: false,
   stopReason: undefined,
   settled: false,
   responseId: undefined,
@@ -313,7 +311,9 @@ const lowerAssistant = (
       }
       if (part.type === "thinking") {
         // Only a complete signed block may be replayed as Anthropic thinking.
-        if (part.signature === undefined) continue
+        // An empty signature is Anthropic's unsigned placeholder, which a
+        // transcript recorded before #4727 may still hold.
+        if (part.signature === undefined || part.signature === "") continue
         if (part.signature.startsWith(REDACTED_THINKING_PREFIX)) {
           // A turn whose reasoning was redacted still has to be replayed with
           // its tool calls, or the next request fails with "Expected thinking
@@ -669,15 +669,21 @@ const mergeUsage = (left: Usage | undefined, right: Usage | undefined): Usage | 
   }
 }
 
-const onMessageStart = (state: State, event: AnthropicEvent): StepResult => ({
-  state: {
-    ...state,
-    usage: mergeUsage(state.usage, mapUsage(event.message?.usage)),
-    responseId: event.message?.id ?? state.responseId,
-    servedTier: event.message?.usage?.service_tier ?? state.servedTier
-  },
-  events: []
-})
+const onMessageStart = (state: State, event: AnthropicEvent): StepResult => {
+  const usage = mergeUsage(state.usage, mapUsage(event.message?.usage))
+  return {
+    state: {
+      ...state,
+      usage,
+      responseId: event.message?.id ?? state.responseId,
+      servedTier: event.message?.usage?.service_tier ?? state.servedTier
+    },
+    // The input and cache counts are billed from here, so a call cut short
+    // before `message_delta` still reports them. `message_delta` reports the
+    // merged counts again with the output tokens.
+    events: event.message?.usage === undefined || usage === undefined ? [] : [ModelEvent.Usage(usage)]
+  }
+}
 
 const onContentBlockStart = (state: State, event: AnthropicEvent): StepResult | ModelError => {
   const index = event.index
@@ -706,7 +712,9 @@ const onContentBlockStart = (state: State, event: AnthropicEvent): StepResult | 
         type: "thinking",
         index,
         id,
-        signature: content.signature,
+        // An empty placeholder stays unsigned even if the block closes
+        // without a signature, so the turn never replays it as signed.
+        signature: started ? content.signature : undefined,
         started,
         fragments: started || content.thinking === undefined || content.thinking === ""
           ? Chunk.empty()
@@ -901,7 +909,6 @@ const onMessageDelta = (state: State, event: AnthropicEvent): StepResult => {
       ...state,
       usage,
       servedTier: event.usage?.service_tier ?? state.servedTier,
-      usageEmitted: state.usageEmitted || hasUsage,
       stopReason: event.delta?.stop_reason === undefined
         ? state.stopReason
         : mapStopReason(event.delta.stop_reason)
@@ -949,9 +956,6 @@ const onMessageStop = (state: State): Result.Result<StepResult, ModelError> =>
       events: [
         ...closed.events,
         ...finalize(closed.state),
-        ...(state.usage === undefined || state.usageEmitted
-          ? []
-          : [ModelEvent.Usage(state.usage)]),
         ModelEvent.Settle({
           type: "settle",
           stopReason: state.stopReason ?? "unknown",

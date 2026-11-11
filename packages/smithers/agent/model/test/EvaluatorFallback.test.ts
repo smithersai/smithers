@@ -1,3 +1,4 @@
+import { Capability, Permission } from "@smthrs/capability"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
@@ -47,6 +48,24 @@ const answered = (calls: Array<Evaluator.Request>): Evaluator.Evaluator => ({
     calls.push(input)
     return Effect.succeed({ answers, latencyMs: 4 })
   }
+})
+
+describe("EvaluatorBackup.withFallback permission failures", () => {
+  it("never asks the backup to answer a call the primary was refused", async () => {
+    const calls: Array<Evaluator.Request> = []
+    const refused = seat(Model.make({
+      stream: () =>
+        Stream.fail(Permission.PermissionDenied.new({
+          capability: Capability.make("model:call", "fixture/judge"),
+          reason: "denied by policy"
+        }))
+    }))
+
+    const result = await run(EvaluatorBackup.withFallback(refused, answered(calls)))
+
+    expect(Result.isFailure(result) && result.failure.code).toBe("unconfigured")
+    expect(calls).toHaveLength(0)
+  })
 })
 
 describe("EvaluatorBackup.fromModel judgment boundaries", () => {

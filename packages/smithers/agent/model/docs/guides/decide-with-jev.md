@@ -106,7 +106,8 @@ body, so it has the request's stages and no stream stages.
 
 Jev refusals and invalid answers fail with a typed `ClassifierError`. A configured
 backup is used only when Jev is unreachable, times out, or refuses with a 5xx or
-429. A missing `AI_GATEWAY_API_KEY` is a setup fault: it fails with a typed
+429. A missing `AI_GATEWAY_API_KEY`, a credential the provider rejected, and a
+refused or pending `model:call` grant are setup faults: each fails with a typed
 `unconfigured` error and never falls back to the backup. Backup answers receive
 the same question validation; a malformed answer still fails.
 
