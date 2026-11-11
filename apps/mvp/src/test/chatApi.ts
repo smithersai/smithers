@@ -599,7 +599,7 @@ export class TestChatApi extends Context.Service<
         const feeds = yield* FeedsApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         const fleet = yield* FleetApi.make(roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
-        const home = HomeApi.make({ roles, mayRead: github.mayRead, maySync: github.maySync, ...(options.homes === undefined ? {} : { files: options.homes }) })
+        const home = HomeApi.make({ roles, mayRead: github.mayRead, mayBrowse: github.mayBrowse, maySync: github.maySync, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
         // a test gives, read from the scripted outside web, the home from what GitHub says of it (RepoApi's about read).
         // A `docs` view reads its page through the same source.

@@ -61,6 +61,7 @@ interface RouteOptions {
   /** Which repositories the deployment syncs (worker/github/Api.ts `maySync`); unset, the answer doesn't say. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
   readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable>
+  readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable>
 }
 
 /**
@@ -94,6 +95,7 @@ const route = async (options: RouteOptions = {}) => {
       ...(options.files === undefined ? {} : { files: options.files }),
       ...(options.maySync === undefined ? {} : { maySync: options.maySync }),
       ...(options.mayRead === undefined ? {} : { mayRead: options.mayRead }),
+      ...(options.mayBrowse === undefined ? {} : { mayBrowse: options.mayBrowse }),
     }).fetch.pipe(
       Effect.provide(options.sessions ?? Actor.signedOut),
       Effect.provideService(Tracer.Tracer, tracer),
@@ -544,6 +546,27 @@ test("a readable check that couldn't decide answers 503 unavailable with its wai
   expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "7", { code: "unavailable" }])
   const fallback = await route({ sessions: signedIn(person("member")), mayRead: () => Effect.succeed({ unavailable: true } as const) })
   expect((await fallback.get("/api/repos/acme/widgets/role")).headers.get("retry-after")).toBe("5")
+})
+
+// Lead decision 2026-11-11 (rulings GH-4 and AUTH-1): a public repository's home shows to anyone though the App is
+// absent there; `public` says so beside the shapes' `readable: false`, and is asked only when the shapes refuse.
+test("public is asked only when the shapes refuse, and a check that couldn't decide answers 503", async () => {
+  let asked = 0
+  const browse = (answer: Readable) => () => Effect.sync(() => { asked++; return answer })
+  const body = async (options: RouteOptions) => {
+    const response = await (await route({ sessions: signedIn(person("member")), ...options })).get("/api/repos/acme/widgets/role")
+    return [response.status, response.headers.get("retry-after"), await response.json()]
+  }
+  expect(await body({ mayRead: () => Effect.succeed(false), mayBrowse: browse(true) }))
+    .toEqual([200, null, { role: null, workspaceRole: "member", own: false, readable: false, public: true }])
+  expect(await body({ mayRead: () => Effect.succeed(false), mayBrowse: browse(false) }))
+    .toEqual([200, null, { role: null, workspaceRole: "member", own: false, readable: false }])
+  expect(await body({ mayRead: () => Effect.succeed(false), mayBrowse: browse({ unavailable: true, retryAfterSeconds: 3 }) }))
+    .toEqual([503, "3", { code: "unavailable" }])
+  expect(asked).toBe(3)
+  expect(await body({ mayRead: () => Effect.succeed(true), mayBrowse: browse(true) }))
+    .toEqual([200, null, { role: null, workspaceRole: "member", own: false, readable: true }])
+  expect(asked).toBe(3)
 })
 
 test("a public-read receipt stays separate from GitHub authority and the workspace-copy role", async () => {

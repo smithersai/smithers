@@ -1,6 +1,7 @@
 import { createElement } from "react"
 import { HomePage } from "../src/features/home/components/HomePage"
 import { RepoHeader } from "../src/features/repo/components/RepoHeader"
+import { repoGated } from "../src/features/repo/components/RepoGate"
 import { createMemoryHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router"
 import { Context, Effect, Layer, Scope, Exit, Option } from "effect"
 import { SqlClient } from "effect/sql"
@@ -49,10 +50,12 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
     const api = await app.runPromise(Effect.service(TestChatApi))
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('github/smithersai/vibelang', now() + interval '1 hour')`)))
+    // GitHub shows smithersai/vibelang to anyone, so its home shows to a person with no role there (rulings GH-4, AUTH-1).
+    api.github.scripted.publicElsewhere.add("smithersai/vibelang")
     const vibelangIssues = await app.runPromise(Effect.flatMap(Effect.service(IssuesStore), (store) => store.forRepo("github/smithersai/vibelang")))
     // GitHub has answered what it says of the repository. The test's GitHub is offline, so a read of its own would fail,
     // and a failed About hides the header's sections until metadata recovers (docs/features/repo.md): pages raced it.
-    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", state: "ready", about: vibelangAbout, message: null }))
+    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", repoId: "github/smithersai/vibelang", state: "ready", about: vibelangAbout, message: null }))
     services.repo.actions.openRoute("tree", { owner: "smithersai", repo: "vibelang" }, {})
     // Every page renders after About has settled, the interleaving that failed when the read was the test's own.
     await vi.waitFor(async () => {
@@ -106,7 +109,7 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
     }
     // Clone admission follows this repository's role, even when the session is an Admin elsewhere.
     await app.runPromise(repo.view.update("view", row => { row.answered = true; row.signedIn = true }))
-    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", state: "loading", about: null, message: null }))
+    await app.runPromise(put(repo.abouts, "github/smithersai/vibelang", { key: "github/smithersai/vibelang", repoId: "github/smithersai/vibelang", state: "loading", about: null, message: null }))
     const homeRoot = createRootRoute()
     const homeRoute = createRoute({ getParentRoute: () => homeRoot, path: "/$owner/$repo", component: RepoHeader })
     const homeRouter = createRouter({ routeTree: homeRoot.addChildren([homeRoute]), history: createMemoryHistory({ initialEntries: ["/smithersai/vibelang"] }) })
@@ -191,6 +194,66 @@ test("direct feature pages keep navigation, fence the deployment's own repositor
       })
     }
 
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)); await app.dispose() }
+}, 90_000)
+
+// Lead decision 2026-11-11 (rulings GH-4 and AUTH-1): with the App absent from both, a public repository's home shows to a
+// person with no role there, signed in or out, and a private one says what is true: Not found, or Sign in, with none of
+// the other repository's home. Each role row here is ChatApi's own answer, from GitHub's metadata.
+test("a public repository's home shows without a role, signed in or out; a private one shows none of it", async () => {
+  const app = openTestApp({ sessionLifecycle: false })
+  const scope = await Effect.runPromise(Scope.make())
+  try {
+    const homeContext = await app.runPromise(Layer.buildWithScope(HomeStore.layer, scope))
+    const home = Context.get(homeContext, HomeStore)
+    const homeView = await app.runPromise(Effect.service(Home).pipe(Effect.provide(Home.layer), Effect.provideContext(homeContext)))
+    const services = { ...await app.runPromise(appViews), home: homeView }
+    const [repo, auth] = await app.runPromise(Effect.all([Effect.service(RepoStore), Effect.service(AuthStore)]))
+    const api = await app.runPromise(Effect.service(TestChatApi))
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO repo_about (repo_id, app_absent_until) VALUES
+        ('github/smithersai/vibelang', now() + interval '1 hour'), ('github/smithersai/hidden', now() + interval '1 hour')`)))
+    // GitHub shows smithersai/vibelang to anyone; smithersai/hidden is private, so its metadata answers 404.
+    api.github.scripted.publicElsewhere.add("smithersai/vibelang")
+    await app.runPromise(Effect.all([
+      home.current.update("current", row => { row.owner = "smithersai"; row.name = "vibelang"; row.repoId = "github/smithersai/vibelang"; row.answering = false; row.defaultBranch = "main"; row.curatedDocs = "docs/index.md" }),
+      home.curated.insert({ key: "github/smithersai/vibelang", state: "declared", defaultBranch: "main", sections: [{ audience: "everyone", blocks: [{ type: "text", text: "VibeLang" }] }] }),
+    ]))
+    for (const query of [services.repo.queries.view, services.repo.queries.roles, services.home.queries.home, services.auth.queries.session, services.auth.queries.confirmed, services.chat.queries.connection, services.attention.queries.unread, services.attention.queries.needs, services.attention.queries.panel]) query.startSyncImmediate()
+    const page = async (name: string) => {
+      const root = createRootRoute()
+      const route = createRoute({ getParentRoute: () => root, path: "/$owner/$repo", component: repoGated(() => createElement(HomePage, { tree: null })) })
+      const router = createRouter({ routeTree: root.addChildren([route]), history: createMemoryHistory({ initialEntries: [`/smithersai/${name}`] }) })
+      await router.load()
+      return router
+    }
+    for (const signedIn of [true, false]) {
+      await app.runPromise(auth.session.update("session", (row) => {
+        if (signedIn) { row.status = "signed_in"; row.role = "admin"; row.login = "reader" } else { row.status = "signed_out"; row.role = null; row.login = null; row.available = true }
+      }))
+      for (const name of ["vibelang", "hidden"]) {
+        const id = `github/smithersai/${name}`
+        if (Option.isSome(await app.runPromise(repo.roles.get(id)))) await app.runPromise(repo.roles.delete(id))
+        services.repo.actions.role("smithersai", name)
+        await vi.waitFor(async () => expect(Option.isSome(await app.runPromise(repo.roles.get(id)))).toBe(true), { timeout: 30_000 })
+        const answer = Option.getOrThrow(await app.runPromise(repo.roles.get(id)))
+        // The App is absent from both, so their shapes refuse everyone; only GitHub's metadata tells them apart.
+        expect([answer.role, answer.readable, answer.synced, answer.public]).toEqual([null, false, false, name === "vibelang" ? true : undefined])
+        const router = await page(name)
+        await vi.waitFor(() => {
+          const html = renderRepositoryPages(router, services)
+          if (name === "vibelang") {
+            expect(html).toContain("VibeLang")
+            expect(html).not.toContain(">Not found<")
+            expect(html).not.toContain("Sign in with GitHub")
+          } else {
+            expect(html).toContain("smithersai / hidden")
+            expect(html).toContain(signedIn ? "Not found" : "Sign in with GitHub")
+            expect(html).not.toContain("VibeLang")
+          }
+        }, { timeout: 10_000 })
+      }
+    }
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)); await app.dispose() }
 }, 90_000)
 

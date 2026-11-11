@@ -85,6 +85,11 @@ export const RepoRoleAnswer = Schema.Struct({
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),
+  /**
+   * `true`: GitHub says the repository is public, so anyone may browse its home, though the App is absent there and its
+   * shapes refuse everyone (`readable: false`, `synced: false`). Rulings GH-4 and AUTH-1.
+   */
+  public: Schema.optional(Schema.Boolean),
   /** `false`: the deployment doesn't sync the repository's issues and pull requests (decision 0079 slice 1b). */
   synced: Schema.optional(Schema.Boolean),
 })
@@ -106,6 +111,8 @@ export const RepoRole = Schema.Struct({
   own: Schema.Boolean,
   /** Repository shapes may be read; with no role this is an explicit public-read receipt. */
   readable: Schema.optional(Schema.Boolean),
+  /** `true`: anyone may browse the repository's home, though its shapes refuse everyone (`RepoRoleAnswer.public`). */
+  public: Schema.optional(Schema.Boolean),
   /** `false`: the deployment doesn't sync the repository's issues and pull requests, so its pages show GitHub's. */
   synced: Schema.optional(Schema.Boolean),
 })

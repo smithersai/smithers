@@ -442,6 +442,14 @@ A GitHub metadata 404 denies public readability for 60 seconds, equally for an
 absent repository and a private repository the read cannot access. It does not
 identify which. The role route and notification gate reuse this negative receipt;
 5xx responses, transport failures, timeouts and rate limits remain retryable.
+
+Without the Smithers App, a public repository's home still shows to anyone: a
+signed-in person with no role there, or a signed-out visitor (rulings GH-4 and
+AUTH-1). Its shapes refuse everyone, so the role route answers `readable: false`
+and `synced: false`, and adds `public: true` when GitHub's current metadata says
+the repository is public. A private or gone one gets no `public`, and its page says
+`Not found`, or offers Sign in, and shows nothing of another repository
+(`tests/RepositoryPages.test.ts`).
 Visibility refusals name the `metadata` stage and upstream status in correlated
 logs. Metrics carry bounded outcome/status dimensions, never repository names.
 

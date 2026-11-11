@@ -265,6 +265,8 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     fetch,
     /** Whether the deployment syncs a repository's issues and pull requests, as the role route answers it. */
     maySync: (target: Repository) => runtime.runPromise(routes.maySync(target)),
+    /** Whether anyone may browse a repository's home where the App is absent, as the role route's `public` answers it. */
+    mayBrowse: (target: Repository) => runtime.runPromise(routes.mayBrowse(target)),
     /** Whether the request may read a repository's content, as the role route's `readable` answers it. */
     mayRead: (target: Repository, headers: Record<string, string> = {}) =>
       runtime.runPromise(observed(routes.mayRead(target).pipe(

@@ -84,6 +84,11 @@ export interface Options<R> {
    * decide, which the route answers 503 with a wait, never `readable: false` (a refusal to the client's data gate).
    */
   readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable, never, R | Sessions>
+  /**
+   * Whether anyone may browse the repository's home though the deployment syncs none of it (worker/github/Api.ts
+   * `mayBrowse`): asked only when `mayRead` refuses. `unavailable` when GitHub's metadata couldn't say now.
+   */
+  readonly mayBrowse?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable, never, R>
   /** Whether the deployment syncs the repository's issues and pull requests (decision 0079 slice 1b), for anyone. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean, never, R>
   /** The curated homes: worker/home/curated/ unless a test gives its own. */
@@ -99,7 +104,7 @@ interface Decided {
 }
 
 /** The routes. They read who is asking from `Sessions`. */
-export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Options<R>) => {
+export const make = <R>({ roles, files = Curated.files, mayRead, mayBrowse, maySync }: Options<R>) => {
   /**
    * The person's role on `target`: none signed out, or where the deployment can't act; a role GitHub or Postgres can't
    * say now is the refusal, never a guess.
@@ -245,18 +250,26 @@ export const make = <R>({ roles, files = Curated.files, mayRead, maySync }: Opti
     const readable = mayRead === undefined ? undefined
       : decided.success.role !== null ? true
       : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`))
-    if (typeof readable === "object") {
-      return yield* record(
+    const undecided = (check: Exclude<Readable, boolean>) =>
+      record(
         HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
           status: 503,
-          headers: { ...headers, "retry-after": String(readable.retryAfterSeconds ?? 5) },
+          headers: { ...headers, "retry-after": String(check.retryAfterSeconds ?? 5) },
         }),
         { outcome: "readable_unavailable", own, ...decided.success },
       )
-    }
+    if (typeof readable === "object") return yield* undecided(readable)
+    // A public repository's home shows to anyone, signed in with no role or signed out, though the App is absent there
+    // and its shapes refuse everyone (rulings GH-4 and AUTH-1; lead decision 2026-11-11 on RepositoryPages). GitHub's
+    // current metadata says so (`public`); `readable` stays the shapes' answer.
+    const browsable = readable === false && mayBrowse !== undefined
+      ? yield* mayBrowse(repositoryOf(`${target.owner}/${target.name}`))
+      : false
+    if (typeof browsable === "object") return yield* undecided(browsable)
     const answer: RepoRoleAnswer = { role: decided.success.role, own,
       ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
       ...(readable === undefined ? {} : { readable }),
+      ...(browsable === true ? { public: true } : {}),
       ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
     }
     return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success })

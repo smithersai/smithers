@@ -101,7 +101,7 @@ const refusable = <A extends object>(
       // Each answer that grants something, by what it grants: Member to Maintainer starts machines again.
       Stream.map((row) => row === undefined || row.refused !== undefined || row.failure !== undefined
         ? undefined
-        : `${row.role}|${row.own}|${row.workspaceRole ?? ""}|${row.readable ?? ""}`),
+        : `${row.role}|${row.own}|${row.workspaceRole ?? ""}|${row.readable ?? ""}|${row.public ?? ""}`),
       Stream.changes,
       Stream.filter((granted) => granted !== undefined),
       Stream.runForEach(() => again),

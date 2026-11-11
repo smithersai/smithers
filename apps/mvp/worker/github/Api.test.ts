@@ -1248,6 +1248,37 @@ describe("the shapes", () => {
       }
     })
 
+    // Lead decision 2026-11-11 (rulings GH-4 and AUTH-1): a public repository's home shows to anyone though the App is
+    // absent there. The shapes still refuse everyone (`mayRead`); the role route's `public` is GitHub's current metadata.
+    test("the role route's public: where an About read found the App absent, GitHub's current metadata decides", async () => {
+      const gadgetsRepo = { owner: "acme", name: "gadgets", id: GADGETS } as const
+      const h = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null })
+      const leftOut = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id]) })
+      // The App not found absent, the deployment's own, or a repository it doesn't act on: false, asking GitHub nothing.
+      const before = h.github.calls.length + leftOut.github.calls.length
+      expect([await h.mayBrowse(OWN), await h.mayBrowse(gadgetsRepo), await leftOut.mayBrowse(gadgetsRepo)]).toEqual([false, false, false])
+      expect(h.github.calls.length + leftOut.github.calls.length).toBe(before)
+      await sql(runtime, `INSERT INTO repo_about (repo_id, app_absent_until) VALUES ('${GADGETS}', now() + interval '1 hour')`)
+      try {
+        // Public: its home may show, though its shapes refuse everyone.
+        expect([await h.mayBrowse(gadgetsRepo), await h.mayRead(gadgetsRepo)]).toEqual([true, false])
+        expect(h.github.calls.filter((call) => call.path === "/repos/acme/gadgets")).toHaveLength(1)
+        // Private or gone: GitHub's metadata answers 404, the same for both.
+        const hidden = gadgets()
+        hidden.private = true
+        expect(await (await githubHarness(runtime, { own: OWN, github: hidden, actor: null })).mayBrowse(gadgetsRepo)).toBe(false)
+        // GitHub failing, or Postgres not answering: unavailable, never false.
+        const failing = gadgets()
+        failing.faults.push({ match: (_, path) => path === "/repos/acme/gadgets", status: 502 })
+        expect(await (await githubHarness(runtime, { own: OWN, github: failing, actor: null })).mayBrowse(gadgetsRepo))
+          .toMatchObject({ unavailable: true })
+        const offline = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, database: unreachable })
+        expect(await offline.mayBrowse(gadgetsRepo)).toMatchObject({ unavailable: true })
+      } finally {
+        await sql(runtime, `TRUNCATE repo_about`)
+      }
+    })
+
     test("local development's synced repository is synced and keeps its issue only without the App; otherwise nothing changes", async () => {
       // worker/DevChatApi.ts names octocat/Spoon-Knife; acme/strangers stands in for it, so no other test's rows meet it.
       const strangers = { owner: "acme", name: "strangers", id: "github/acme/strangers" } as const

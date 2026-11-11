@@ -346,13 +346,15 @@ const readRole = (owner: string, name: string, id: string) =>
       )
     }
     const { role: held, workspaceRole, own, readable, synced } = result.success
+    const browsable = result.success.public
     // Counted before the row changes, so a stack refused under the last answer reads this one.
     yield* store.answered(id)
-    // Only an affirmative read grant clears the refusal mark: a role, or a public read. One that grants nothing (a 200
+    // Only an affirmative read grant clears the refusal mark: a role, or a public read (of the shapes or the home). One
+    // that grants nothing (a 200
     // with no role and no public read) keeps it: the row stays the refusal, and the gate stays closed (Astra on
     // c64fd4bc). `own` says only that the repository is the deployment's own (worker/home/Api.ts), never that this
     // person may read it (Astra on b978c783).
-    if (held !== null || readable === true) {
+    if (held !== null || readable === true || browsable === true) {
       if (!(yield* store.clearRefusal(id, marks)) || store.fenceOf(id) !== fence) return
     }
     else if (store.isRefused(id)) {
@@ -365,6 +367,7 @@ const readRole = (owner: string, name: string, id: string) =>
       own,
       ...(workspaceRole === undefined ? {} : { workspaceRole }),
       ...(readable === undefined ? {} : { readable }),
+      ...(browsable === undefined ? {} : { public: browsable }),
       ...(synced === undefined ? {} : { synced }),
     })
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1)

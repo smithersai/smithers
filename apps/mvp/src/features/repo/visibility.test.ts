@@ -20,11 +20,12 @@ const session = (status: Session["status"], unverifiable: boolean | undefined): 
 /** Every role row the rule reads: none, and each combination of the fields it looks at. */
 const rows = (): ReadonlyArray<RepoRole | undefined> => {
   const out: Array<RepoRole | undefined> = [undefined]
-  for (const role of [null, ...ROLES]) for (const readable of [undefined, false, true]) {
+  for (const role of [null, ...ROLES]) for (const readable of [undefined, false, true]) for (const browsable of [undefined, true]) {
     for (const refused of [undefined, "authentication", "forbidden"] as const) for (const failure of [undefined, "unavailable"]) {
       out.push({
         id: "github/acme/repo", role, own: false,
         ...(readable === undefined ? {} : { readable }),
+        ...(browsable === undefined ? {} : { public: browsable }),
         ...(refused === undefined ? {} : { refused }),
         ...(failure === undefined ? {} : { failure }),
       })
@@ -37,11 +38,12 @@ const rows = (): ReadonlyArray<RepoRole | undefined> => {
 const expected = (s: Session, row: RepoRole | undefined) => {
   if (row?.refused === "forbidden") return "refused"
   if (s.status === "signed_out" && row?.refused === "authentication") return "sign_in"
-  // An answer: no role, and no public read.
-  if (row !== undefined && row.failure === undefined && row.refused === undefined && row.role === null && row.readable !== true) {
+  // An answer: no role, and no public read of the shapes or the home.
+  const anyone = row?.readable === true || row?.public === true
+  if (row !== undefined && row.failure === undefined && row.refused === undefined && row.role === null && !anyone) {
     return s.status === "signed_out" ? "sign_in" : "refused"
   }
-  const publicRead = row !== undefined && row.role === null && row.readable === true && row.refused === undefined
+  const publicRead = row !== undefined && row.role === null && anyone && row.refused === undefined
   return s.status === "unreachable" && s.unverifiable === true && !publicRead ? "unverified" : "show"
 }
 
@@ -52,7 +54,7 @@ test("the rule over every session state and every role row it reads", () => {
       .toEqual([status, unverifiable, row, expected(session(status, unverifiable), row)])
     cases++
   }
-  expect(cases).toBe(STATUSES.length * 3 * (1 + 5 * 3 * 3 * 2))
+  expect(cases).toBe(STATUSES.length * 3 * (1 + 5 * 3 * 2 * 3 * 2))
   // The cases the decision names, spelled out.
   const member: RepoRole = { id: "r", role: "member", own: false }
   expect(repoVisibility(session("unreachable", false), member)).toBe("show")
@@ -66,6 +68,16 @@ test("the rule over every session state and every role row it reads", () => {
   expect(repoVisibility(session("signed_in", undefined), { id: "r", role: null, own: true })).toBe("refused")
   expect(repoVisibility(session("signed_out", undefined), { id: "r", role: null, own: false, readable: false })).toBe("sign_in")
   expect(repoVisibility(session("signed_in", undefined), { id: "r", role: null, own: false, readable: true })).toBe("show")
+  // A public repository's home shows to anyone, though the App is absent there and its shapes refuse everyone
+  // (rulings GH-4 and AUTH-1; lead decision 2026-11-11): a person with no role, signed in or out, or unverified.
+  const publicHome: RepoRole = { id: "r", role: null, own: false, readable: false, public: true, synced: false }
+  expect(repoVisibility(session("signed_in", undefined), publicHome)).toBe("show")
+  expect(repoVisibility(session("signed_out", undefined), publicHome)).toBe("show")
+  expect(repoVisibility(session("unreachable", true), publicHome)).toBe("show")
+  expect(repoVisibility(session("signed_in", undefined), { ...publicHome, refused: "forbidden" })).toBe("refused")
+  // A private one, or one GitHub says is gone, the same answer without `public`: nothing shows.
+  expect(repoVisibility(session("signed_in", undefined), { id: "r", role: null, own: false, readable: false, synced: false })).toBe("refused")
+  expect(repoVisibility(session("signed_out", undefined), { id: "r", role: null, own: false, readable: false, synced: false })).toBe("sign_in")
   // No answer yet, or a failed read, still shows (decision 0110).
   expect(repoVisibility(session("signed_in", undefined), undefined)).toBe("show")
   expect(repoVisibility(session("signed_in", undefined), { id: "r", role: null, own: false, failure: "unavailable" })).toBe("show")

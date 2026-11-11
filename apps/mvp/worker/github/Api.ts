@@ -1539,5 +1539,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         : proof.status === 503 ? { unavailable: true as const, retryAfterSeconds: proof.retryAfterSeconds }
         : false)
 
-    return { fetch, mayRead, maySync }
+    /**
+     * The role route's `public` (worker/home/Api.ts): whether anyone may browse `target`'s home where an About read found
+     * the App absent, so its shapes refuse everyone (`404 app_not_installed`) and `mayRead` is `false`. GitHub's current
+     * metadata decides, as for a visitor (decision 0012; rulings GH-4 and AUTH-1): public is `true`; private or gone,
+     * `false`. Metadata that couldn't say, or Postgres not answering, is `unavailable`, never `false`. GitHub is asked
+     * only for a repository the deployment acts on, and never for its own.
+     */
+    const mayBrowse = (target: Repository) =>
+      Effect.gen(function* () {
+        if (target.id === repository.id || !mayAct(target.id)) return false
+        const absent = yield* Store.appAbsent(target.id).pipe(Effect.provide(database), Effect.option)
+        if (Option.isNone(absent)) return { unavailable: true as const }
+        if (!absent.value) return false
+        const current = yield* visibility(target)
+        return Option.isNone(current) ? { unavailable: true as const } : current.value
+      })
+
+    return { fetch, mayRead, mayBrowse, maySync }
   })
