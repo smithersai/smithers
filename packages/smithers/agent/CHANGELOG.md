@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- `fail-only-report` retains commands that cannot start, exceed the output buffer,
+  or terminate by signal as failed results for the analyzer, instead
+  of dropping them and claiming the remaining commands all passed. Captured
+  output and measured duration reach the analyzer, and quiet summaries claim
+  success only when every requested command has a successful result.
+
 - `EventSink` and its docs said model deltas reach a sink only after the
   provider stream settles. They arrive live, while the provider is still
   streaming, and a replay emits the recorded events. The docs now say so, and

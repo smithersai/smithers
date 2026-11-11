@@ -2,9 +2,9 @@
  * Run commands, and ask for a root-cause report only when a result is notable.
  *
  * Port of the 0.x `fail-only-report.jsx`. Each command (by default pytest,
- * ruff and tsc) runs, up to four at a time, and a command that never reaches
- * an exit code drops only its own result. An analyzer agent reads every
- * result and decides whether any is notable. Only a notable analysis reaches
+ * ruff and tsc) runs, up to four at a time. A command that never reaches
+ * an exit code is retained as a failed result with exit code 125. An analyzer
+ * agent reads every result and decides whether any is notable. Only a notable analysis reaches
  * the report agent and a `reported` sink row; a quiet one settles with a
  * `quiet` row and no further model call.
  *
@@ -73,7 +73,10 @@ export const Sink = Schema.Struct({
 /** A command did not run to an exit code: it never started, or it died some other way than its timeout. */
 export class RunFailed extends Schema.TaggedError<RunFailed>()("examples/FailOnlyReport/RunFailed", {
   command: Schema.String,
-  message: Schema.String
+  message: Schema.String,
+  stdout: Schema.optional(Schema.String),
+  stderr: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number)
 }) {}
 
 type RunResult = typeof RunResult.Type
@@ -100,14 +103,15 @@ export const RunCommand = Action.make("examples/FailOnlyReport/Run", {
  *
  * Every exit code is a result, and so is the timeout. Anything else (a
  * missing directory, output past the buffer, a death by another signal) fails
- * the run with {@link RunFailed}.
+ * the step with {@link RunFailed}; the flow retains its message as a failed
+ * result with exit code 125. Each output stream is bounded to 1 MiB.
  */
 export const runCommand = (
   { command, directory, timeoutMs }: typeof RunCommand.payloadSchema.Type
 ): Effect.Effect<RunResult, RunFailed> =>
   Effect.callback<RunResult, RunFailed>((resume, signal) => {
     const startedAt = Date.now()
-    exec(command, { cwd: directory, timeout: timeoutMs, signal }, (error, stdout, stderr) => {
+    exec(command, { cwd: directory, timeout: timeoutMs, maxBuffer: 1024 * 1024, signal }, (error, stdout, stderr) => {
       const durationMs = Date.now() - startedAt
       // Node puts the exit code here, a system error name when the command
       // never started, and null when a signal ended it.
@@ -124,7 +128,15 @@ export const runCommand = (
           durationMs
         }))
       }
-      return resume(Effect.fail(new RunFailed({ command, message: error?.message ?? "no exit code" })))
+      return resume(Effect.fail(
+        new RunFailed({
+          command,
+          message: error?.signal ? `Signal ${error.signal}: ${command}` : error?.message ?? "no exit code",
+          stdout,
+          stderr,
+          durationMs
+        })
+      ))
     })
   })
 
@@ -181,28 +193,46 @@ const reported = ({ destination, summary }: { readonly destination: string; read
   summary
 })
 
-/** The sink row when nothing was notable. 0.x counts the results that came back. */
-const quiet = ({ destination, runs }: { readonly destination: string; readonly runs: ReadonlyArray<RunResult> }) => ({
+/** The sink row when no requested command was notable. */
+const quiet = (
+  { destination, commandCount, runs }: {
+    readonly destination: string
+    readonly commandCount: number
+    readonly runs: ReadonlyArray<RunResult>
+  }
+) => ({
   status: "quiet" as const,
   destination,
-  summary: `All ${runs.length} commands passed — no report needed`
+  summary: runs.length === commandCount && runs.every((run) => run.exitCode === 0)
+    ? `All ${commandCount} commands passed — no report needed`
+    : `Not all ${commandCount} commands passed — no report requested`
 })
 
-/** Every command, `concurrency` at a time; a command that does not run to an exit code drops only its own result. */
+/** Every command, `concurrency` at a time, retaining runner failures without failing siblings. */
 const runAll = (
   commands: ReadonlyArray<typeof Command.Type>,
   options: { readonly directory: string; readonly timeoutMs: number; readonly concurrency: number }
 ): Node.Node<ReadonlyArray<RunResult>, never, Action.Requirement<"examples/FailOnlyReport/Run">> => {
   if (commands.length === 0) return Node.succeed([])
-  // 0.x `continueOnFail`: a run that fails settles as null instead of failing its siblings.
+  // A runner failure remains visible to the analyzer without failing its siblings.
   const members = Object.fromEntries(commands.map(({ cmd }, index) => [
     `${index}`,
     Node.catch(RunCommand.call({ command: cmd, directory: options.directory, timeoutMs: options.timeoutMs }), {
-      onFailure: () => Node.succeed(null)
+      onFailure: (failure) =>
+        Node.map(Node.succeed(failure), (error): RunResult => ({
+          command: cmd,
+          // Runner failures use the conventional exit code 125.
+          exitCode: 125,
+          stdout: error.stdout ?? "",
+          stderr: error.stderr ?
+            `${error.message}\n${error.stderr}` :
+            error.message,
+          durationMs: error.durationMs ?? 0
+        }))
     })
   ]))
   const joined = Bounded.all(members, { concurrency: options.concurrency })
-  return Node.map(joined, (ran) => Object.values(ran).filter(Schema.is(RunResult)))
+  return Node.map(joined, (ran) => Object.values(ran))
 }
 
 const Positive = Schema.Int.check(Schema.isGreaterThan(0))
@@ -233,7 +263,7 @@ export const FailOnlyReport = Flow.make("examples/FailOnlyReport", {
               }),
               (report) => Node.map(Node.succeed({ destination: sink, summary: report.overallSummary }), reported)
             ),
-          else: () => Node.map(Node.succeed({ destination: sink, runs }), quiet)
+          else: () => Node.map(Node.succeed({ destination: sink, commandCount: commands.length, runs }), quiet)
         })
     )
 })
