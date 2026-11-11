@@ -757,12 +757,101 @@ const failureLintTests = Smithers.NodeTest({
   cwd
 })
 
+/**
+ * What the app's typecheck, lint and suites read: every app file but its docs, and the workspace packages whose
+ * sources the app imports. A glob here cannot reach another package's files, so each package comes in as a target:
+ * its `lib`, or, for the packages that ship their sources (`@smthrs/rpc` and the UI kit), their `check` and
+ * `sourceFiles`. The unit suite reads three documents, named in `testDocuments`; any other docs-only change leaves
+ * these targets' keys unchanged, so the result cache answers them.
+ */
+const appFiles = [
+  Smithers.glob("**/*", { exclude: ["docs/**", "node_modules/**", "AGENTS.md"] }),
+  Smithers.Target.subtree("//packages/...", "lib"),
+  Smithers.Target.subtree("//packages/rpc/...", "check"),
+  Smithers.Target.subtree("//packages/smithers/ui/...", "check"),
+  Smithers.Target.subtree("//packages/smithers/ui/...", "sourceFiles")
+]
+
+/** The docs the unit suite reads: the bug disclosure page, the bindings table and the home view's fixture. */
+const testDocuments = [
+  Smithers.file("docs/features/bugs.md"),
+  Smithers.file("docs/infrastructure.md"),
+  Smithers.file("docs/design/repo-home/vibelang.home.json")
+]
+
+/**
+ * `pnpm typecheck`: the browser app, the Workers, the infrastructure and the evals, with the VibeLang compiler.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const typecheck = Smithers.Shell.Test({
+  summary: "Typecheck the app, its Workers, its infrastructure and its evals with the VibeLang compiler.",
+  shell: "cd apps/mvp && pnpm typecheck",
+  data: appFiles,
+  timeout: "20m"
+})
+
+/**
+ * `pnpm lint`: ESLint over the app with no warnings allowed.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const lint = Smithers.Shell.Test({
+  summary: "Lint the app with ESLint, failing on any warning.",
+  shell: "cd apps/mvp && pnpm lint",
+  data: appFiles,
+  timeout: "20m"
+})
+
+/**
+ * `pnpm test`: the Vitest suite in Node, on its own Postgres, PgBouncer and Electric. `db/test.sh` starts them with
+ * Docker Compose for the run and removes them after it, so the target needs Docker and reaches its socket: it runs
+ * unconfined, and its result stays in the local cache.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const test = Smithers.Shell.Test({
+  summary: "Run the app's Vitest suite, with its coverage thresholds, on a Postgres, PgBouncer and Electric it owns.",
+  shell: "cd apps/mvp && pnpm test",
+  data: [appFiles, testDocuments],
+  sandbox: "none",
+  timeout: "120m"
+})
+
+/**
+ * `pnpm test:stack`: the database stack's own regression. It starts the owned stack inside a farm slot's environment
+ * and checks the command sees only the stack's endpoints, an empty catalog and a tmpfs data directory with fsync on,
+ * that a second stack beside it gets its own listeners, and that a failed or cancelled command still removes it.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const testStack = Smithers.Shell.Test({
+  summary: "Check the suite's owned database stack: isolated endpoints, durable settings, and cleanup after a failure.",
+  shell: "cd apps/mvp && pnpm test:stack",
+  data: [
+    Smithers.glob("db/test-stack*"),
+    Smithers.file("docker-compose.yml"),
+    Smithers.file("docker-compose.test.yml"),
+    Smithers.file("package.json")
+  ],
+  sandbox: "none",
+  timeout: "10m"
+})
+
 export const Package = Smithers.Package({
   targets: {
     deploymentSources,
     issueFileTreeSources,
     workerIoLintTests,
     failureLintTests,
+    typecheck,
+    lint,
+    test,
+    testStack,
     importRules: importRulesTarget,
     jevRules: jevRulesTarget,
     reviewDocsAgainstCode
