@@ -49,6 +49,7 @@ const bounded = (text: string, limit = 2_048) => {
 const jjMinutes = 2, gitMinutes = 5, ghMinutes = 2
 /** Stack rows one `jj log` answers within the process output limit. */
 const stackPage = 1_000
+type StackRow = { readonly commitId: string; readonly changeId: string }
 /** `gh pr view --json`; only the fields a receipt needs. */
 const PullView = Schema.Struct({
   number: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -67,8 +68,8 @@ const CheckRows = Schema.Array(Schema.Struct({ name: Schema.String, bucket: Sche
 /** A stack commit's slow-check verdict: no receipt, or only an outage, is `unknown`. */
 export type Verdict = "passed" | "failed" | "unknown"
 /**
- * The newest commit of `stack` (oldest first) that passed with no failed
- * commit at or below it. An untested commit inherits nothing and blocks
+ * The newest commit of `stack` (the line main fast-forwards along, oldest
+ * first) that passed with no failed commit at or below it. An untested commit inherits nothing and blocks
  * nothing: a pass above it covered its tree too.
  */
 export const greenPrefix = (
@@ -160,6 +161,29 @@ export const make = (options: Options) =>
             ? Effect.succeed(found[0]!)
             : Effect.fail(invalid(`${what} must resolve to one revision (${found.length} found)`))
         })
+      )
+    /** One page of stack commits, newest first. */
+    const stackRows = (revset: string) =>
+      jj([
+        "log",
+        "--no-graph",
+        "--limit",
+        String(stackPage),
+        "-r",
+        revset,
+        "-T",
+        "commit_id ++ \" \" ++ change_id ++ \"\\n\""
+      ]).pipe(
+        Effect.flatMap((listed) =>
+          listed.stdout.truncated
+            ? Effect.fail(invalid("The stack listing was truncated"))
+            : Effect.succeed(
+              lines(listed.stdout.text).map((line): StackRow => {
+                const [commitId = "", changeId = ""] = line.split(" ")
+                return { commitId, changeId }
+              })
+            )
+        )
       )
     const readMain = one(target, "commit_id", `The ${target} bookmark`).pipe(
       Effect.flatMap((id) => commit.test(id) ? Effect.succeed(id) : Effect.fail(invalid(`${target} is not a commit`)))
@@ -285,43 +309,44 @@ export const make = (options: Options) =>
             message: `The stack tip ${tip} does not descend from ${target} ${main}; ${target} only fast-forwards`
           })
         }
-        // A process answers at most 128 KiB, so a long stack is read newest first, a page at a time.
-        const newestFirst: Array<{ commitId: string; changeId: string; parents: Array<string> }> = []
-        for (let cursor = tip; cursor !== main;) {
-          const listed = yield* jj([
-            "log",
-            "--no-graph",
-            "--limit",
-            String(stackPage),
-            "-r",
-            `${main}..${cursor}`,
-            "-T",
-            "commit_id ++ \" \" ++ change_id ++ \" \" ++ parents.map(|p| p.commit_id()).join(\",\") ++ \"\\n\""
-          ])
-          if (listed.stdout.truncated) return yield* invalid("The stack listing was truncated")
-          const page = lines(listed.stdout.text).map((line) => {
-            const [commitId = "", changeId = "", parents = ""] = line.split(" ")
-            return { commitId, changeId, parents: parents.split(",").filter((id) => id !== "") }
-          })
+        // The line main may fast-forward along: the tip's first-parent ancestors that descend from main. A merge
+        // stays on it; what a merge brought in is never a place for main to stop. A process answers at most
+        // 128 KiB, so the line is read newest first, a page at a time; commit IDs are immutable, so every page
+        // continues the same line even while the stack is rewritten.
+        const newestFirst: Array<StackRow> = []
+        for (let from = tip, skip = main, more = true; more;) {
+          const page = yield* stackRows(`first_ancestors(${from}) & ${main}::${tip} ~ (${main} | ${skip})`)
           newestFirst.push(...page)
-          const parent = page.at(-1)?.parents
-          if (parent?.length !== 1) {
-            return yield* invalid(`The stack from ${target} to ${tip} is not one line of commits`)
-          }
-          cursor = parent[0]!
+          more = page.length === stackPage
+          if (more) from = skip = page.at(-1)!.commitId
         }
-        const rows = newestFirst.reverse()
-        // The mythical history is one line: each commit's sole parent is the one below it.
-        const linear = rows.every((row, index) =>
-          commit.test(row.commitId) && change.test(row.changeId) && row.parents.length === 1 &&
-          row.parents[0] === (index === 0 ? main : rows[index - 1]!.commitId)
-        )
-        if (!linear) return yield* invalid(`The stack from ${target} to ${tip} is not one line of commits`)
-        const read = rows.length === 0 ? undefined : yield* native.read(rows.map((row) => row.changeId)).pipe(
+        const rows = newestFirst.reverse(), stack = rows.map((row) => row.commitId)
+        // A failed commit a merge brought in fails the line commit that carries it into main.
+        const offLine = [
+          ...new Set(
+            input.receipts.filter((receipt) =>
+              receipt.tier !== "fast" && receipt.status === "failed" && receipt.fault === undefined &&
+              input.required.includes(receipt.checkId) && commit.test(receipt.commitId) &&
+              !stack.includes(receipt.commitId)
+            ).map((receipt) => receipt.commitId)
+          )
+        ]
+        const merged: Array<StackRow> = [], carriers = new Set<string>()
+        for (let at = 0; at < offLine.length; at += stackPage) {
+          const named = offLine.slice(at, at + stackPage).map((id) => `present(${id})`).join(" | ")
+          const found = yield* stackRows(`(${named}) & ${main}..${tip}`)
+          if (found.length === 0) continue
+          merged.push(...found)
+          const under = found.map((row) => row.commitId).join(" | ")
+          const [carrier] = yield* stackRows(`roots(first_ancestors(${tip}) & ${main}::${tip} & (${under})::${tip})`)
+          carriers.add(carrier!.commitId)
+        }
+        const tested = [...rows, ...merged]
+        const read = tested.length === 0 ? undefined : yield* native.read(tested.map((row) => row.changeId)).pipe(
           Effect.mapError((error) => unavailable(`The stack could not be read: ${error.message}`))
         )
         const trees = new Map<string, string>()
-        for (const row of rows) {
+        for (const row of tested) {
           const found = read?.revisions.find((entry) => entry.changeId === row.changeId)
           if (found === undefined || found.kind !== "resolved" || found.commitId !== row.commitId) {
             return yield* invalid(`The stack commit ${row.commitId} is not one resolved revision`)
@@ -330,14 +355,18 @@ export const make = (options: Options) =>
         }
         const verdicts = verdictsOf(input.receipts, trees, input.required)
         if (verdicts instanceof CodingError) return yield* verdicts
-        const stack = rows.map((row) => row.commitId)
+        for (const carrier of carriers) verdicts.set(carrier, "failed")
         const green = greenPrefix(stack, verdicts)
         if (green === undefined) {
           const failed = stack.find((commitId) => verdicts.get(commitId) === "failed")
           return {
             status: "unchanged" as const,
             main,
-            reason: failed === undefined ? `no passed commit above ${target}` : `${failed} failed above ${target}`
+            reason: failed === undefined
+              ? `no passed commit above ${target}`
+              : carriers.has(failed)
+              ? `${failed} merged a failed commit above ${target}`
+              : `${failed} failed above ${target}`
           }
         }
         // The stack may be rewritten while it is read: move only to a visible commit still under the tip.

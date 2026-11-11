@@ -169,7 +169,7 @@ export const GreenPrefixInput = Schema.Struct({
   receipts: Schema.Array(Receipt).check(Schema.isMaxLength(65_536))
 })
 export type GreenPrefixInput = typeof GreenPrefixInput.Type
-/** Main moved `from` one commit `to` a newer one, leaving `above` stack commits over it; or it stayed, and why. */
+/** Main moved `from` one commit `to` a newer one, leaving `above` first-parent stack commits over it; or it stayed, and why. */
 export const GreenPrefixOutcome = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("advanced"),

@@ -165,7 +165,7 @@ const AdvanceGreenPrefixStep = Action.make("coding/advance-green-prefix", {
   error: CodingError,
   nondeterministic: true
 })
-/** Fast-forward main to the newest stack commit whose slow checks passed with no failed commit below it. */
+/** Fast-forward main along the stack's first-parent line to the newest commit whose slow checks passed with no failed commit below it. */
 export const AdvanceGreenPrefix = Flow.make("coding/AdvanceGreenPrefix", {
   description:
     "Fast-forward main to the newest commit on the mythical stack whose slow checks passed with no failed commit between it and main; never backwards.",

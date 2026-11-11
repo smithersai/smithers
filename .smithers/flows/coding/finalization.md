@@ -315,20 +315,20 @@ automation jobs land only through the backend adapter and see no local lander.
 
 ## Fast-forward main along a stack's green prefix
 
-A host that keeps a mythical stack above `main` (a line of Changes whose tip is
-a bookmark such as `vibe`) runs its slow and delivery checks on stack commits,
+A host that keeps a mythical stack above `main` (Changes whose tip is a
+bookmark such as `vibe`) runs its slow and delivery checks on stack commits,
 not on one candidate. `coding/AdvanceGreenPrefix` moves `main` to the newest
 stack commit those checks passed on with no failed commit between it and
 `main`. Its payload is the stack `tip` (a bookmark or commit ID), the
 `required` check IDs, and the check `receipts`; it runs on the
 `"fast-forward"` lander only (`advanceGreenPrefix` in `local-landing.ts`).
 
-The lander lists `main..tip` and refuses unless it is one line of commits whose
-first parent is `main` (`stale_revision` when the tip does not descend from
-`main`). Each receipt must name its commit's exact tree, or the call refuses
-with `invalid_receipt`. Only slow and delivery receipts of a required check
-count; fast, superseded and unrequired receipts, and receipts for commits
-outside the range, are ignored. A commit's verdict:
+The lander refuses a tip that does not descend from `main` (`stale_revision`).
+`main` moves along the stack's line: the tip's first-parent ancestors that
+descend from `main`. Each receipt must name its commit's exact tree, or the
+call refuses with `invalid_receipt`. Only slow and delivery receipts of a
+required check count; fast, superseded and unrequired receipts, and receipts
+for commits outside `main..tip`, are ignored. A commit's verdict:
 
 | Receipts of its required checks                        | Verdict |
 | ------------------------------------------------------ | ------- |
@@ -346,16 +346,31 @@ main ── c1 ── c2 ── c3 ── c4 (vibe)
 ```
 
 An untested commit inherits nothing and blocks nothing: a pass above it was a
-pass on its tree too. Before it moves, the lander checks that the green commit
+pass on its tree too.
+
+A stack may hold merges: a merge queue merges each entry, and `main`'s own
+commits are merged back into the stack. A merge stays on the line. The commits
+it brought in are never a place for `main` to stop, even when they passed,
+because they are not on the line. A real failure on one of them fails the line
+commit that carries it into `main`, until its receipt is `superseded`:
+
+```
+base ── s1 ── s2 ── M ── c1 ── c2 (vibe)      line: M, c1, c2
+   └── m1 (main) ───┘
+              s2 pass, c1 pass     main → c1: s2 is not on the line
+              s1 fail, c1 pass     main stays: M merged a failed commit
+```
+
+Before it moves, the lander checks that the green commit
 is still visible under the tip, so a stack rewritten while it was read is
 `evicted`, never landed. The move is `jj bookmark set`, which refuses a
 backwards or sideways move. When another advance already moved `main` past the
 green commit, the call answers `unchanged`; a `main` that moved elsewhere is
 `evicted`, and any other jj refusal is `unavailable`. A
 replay after the move recomputes the range above the new `main` and answers
-`unchanged` with the reason (`no passed commit above main` or `<commit> failed
-above main`). `advanced` names `from`, `to`, and how many stack commits stay
-`above` the new `main`. The move is local; publishing `main` and the rewritten
+`unchanged` with the reason (`no passed commit above main`, `<commit> failed
+above main` or `<commit> merged a failed commit above main`). `advanced` names
+`from`, `to`, and how many line commits stay `above` the new `main`. The move is local; publishing `main` and the rewritten
 stack is separate: see [Publish a rewritten stack](#publish-a-rewritten-stack).
 
 ## Publish a rewritten stack
