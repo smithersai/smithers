@@ -35,23 +35,14 @@ smthrs init hello
 
 `init` creates workspace declarations, a package manifest when absent, and
 `.smithers/flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
-`flow.vibe`, `flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
+`flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
 It adds `.flows/` to `.gitignore` in a repository; execution databases are acquired by runtime
 commands, not by generating a flow.
-
-Use `smthrs init hello --vibe` to create `flow.vibe` instead. The generated
-VibeLang entry keeps its prompt inline and uses the same model seat and durable graph declaration
-as the TypeScript starter. Graph callbacks build `Node` values; use `effect`
-functions in action implementations that run Effects. TypeScript remains the default.
-A project running VibeLang entries needs `vibelang` and `vibelang-runtime` installed; the CLI
-loads it when executing the entry. Listing flows only reads metadata.
 
 For an existing npm or Bun workspace, use the supported flow-only path:
 
 ```bash
 smthrs generate flow hello
-# Or create a VibeLang entry:
-smthrs generate flow hello --vibe
 ```
 
 This preserves `packageManager` and adds the flow without inventing an npm

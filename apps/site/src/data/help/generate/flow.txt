@@ -1,4 +1,4 @@
-smthrs generate flow — Create a tagged TypeScript or VibeLang flow without replacing an existing flow
+smthrs generate flow — Create a tagged TypeScript flow without replacing an existing flow
 
 Usage: smthrs generate flow <name> [options]
 
@@ -7,7 +7,6 @@ Arguments:
 
 Options:
   --root <string>  Project directory
-  --vibe           Create flow.vibe instead of flow.ts
   --verbose        Show redacted diagnostic details
 
 Custom Global Options:

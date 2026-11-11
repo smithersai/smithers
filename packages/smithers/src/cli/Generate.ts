@@ -31,10 +31,7 @@ export const scaffolded: Presentation.FollowUps = Presentation.runs({
 const safe = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
   Presentation.guard(context, body, { next: scaffolded })
 
-const localOptions = z.object({
-  root: z.string().optional().describe("Project directory"),
-  vibe: z.boolean().default(false).describe("Create flow.vibe instead of flow.ts")
-})
+const localOptions = z.object({ root: z.string().optional().describe("Project directory") })
 
 /**
  * Initialize without replacing an existing workspace, package declaration, or flow.
@@ -44,8 +41,7 @@ const localOptions = z.object({
 export const initialize = async (
   root: string,
   name: string,
-  environment: Readonly<Record<string, string | undefined>>,
-  options: { readonly vibe?: boolean } = {}
+  environment: Readonly<Record<string, string | undefined>>
 ) => {
   const problem = Init.nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
@@ -127,7 +123,7 @@ export const initialize = async (
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"\n\nexport const Package = S.Package({\n  targets: {\n    sources: S.Filegroup({ srcs: S.glob(["src/**"]), summary: "Project source files" })\n  }\n})\n`
   )
-  const flow = Init.scaffold(root, name, environment, options)
+  const flow = Init.scaffold(root, name, environment)
   return { root, created, retained, flow, next: ["smthrs targets", `smthrs flow plan ${name}`] }
 }
 
@@ -199,7 +195,7 @@ const generateTarget = async (
 export const createGenerateCli = (config: RuntimeConfig = {}) =>
   Cli.create("generate", { description: "Scaffold flows, packages, and CI configuration" })
     .command("flow", {
-      description: "Create a tagged TypeScript or VibeLang flow without replacing an existing flow",
+      description: "Create a tagged TypeScript flow without replacing an existing flow",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ name: z.string().min(1) }),
       options: localOptions,
@@ -210,8 +206,7 @@ export const createGenerateCli = (config: RuntimeConfig = {}) =>
           return Init.scaffold(
             Project.root(c.options.root, process.cwd()),
             c.args.name,
-            config.environment ?? process.env,
-            { vibe: c.options.vibe }
+            config.environment ?? process.env
           )
         })
     })

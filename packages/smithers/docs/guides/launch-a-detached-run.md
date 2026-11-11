@@ -119,7 +119,7 @@ always-run cleanup step.
 
 A module flow launched this way settles at `accepted` with
 `waitingReason: "executor"` and stays there, because the CLI's agent host
-drives prompt flows and a flow whose body is a module (`flow.ts` or `flow.vibe`) is driven by
+drives prompt flows and a flow whose body is a module (`flow.ts`) is driven by
 the host program that registers its delegates. That is a real wait for a real
 external executor, so the run is not a bug and does not time out.
 

@@ -196,7 +196,7 @@ and the feed and toasts ([decision 0009](apps/mvp/docs/decisions/0009-notificati
 
 `@smthrs/flow` is the fundamental library; every other flow API is a thin wrapper over it. Never add a second node or graph model. A prompt flow is a kind of code flow, not a second model (Will, 2026-10-20, FLOW-2).
 
-One shape, everywhere: a file flow lives at `.smithers/flows/<name>/flow.ts` or `flow.vibe` (mvp.md M-49; never a root `flows/`) and its `export default` is `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?, payload, success, error?, body })` from `@smthrs/flow`. The tag is the first argument and is required, so a flow is never anonymous; a file flow declares the name its path derives.
+One shape, everywhere: a file flow lives at `.smithers/flows/<name>/flow.ts` (mvp.md M-49; never a root `flows/`) and its `export default` is `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?, payload, success, error?, body })` from `@smthrs/flow`. The tag is the first argument and is required, so a flow is never anonymous; a file flow declares the name its path derives.
 
 Anything a person can do, the agent can do, through the same flows (FLOW-3). The agent acts; it never answers with steps for the person to do (FLOW-5).
 

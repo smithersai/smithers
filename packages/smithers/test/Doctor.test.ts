@@ -395,12 +395,11 @@ describe("the report", () => {
   })
 
   it("renders one line per check", () => {
-    const root = project()
-    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "20.0.0" })
+    const report = Doctor.inspect({ root: "/work", environment: {}, nodeVersion: "20.0.0" })
     const rendered = Doctor.render(report)
 
     expect(rendered.split("\n")).toHaveLength(report.checks.length + 1)
-    expect(rendered).toContain(`Diagnostics: ${root}`)
+    expect(rendered).toContain("Diagnostics: /work")
     expect(rendered).toContain("fail node:")
     expect(rendered).toContain("warn registry:")
     expect(rendered).toContain("ok   state:")

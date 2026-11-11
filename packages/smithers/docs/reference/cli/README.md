@@ -28,7 +28,7 @@ run-kind targets; `flow start` starts durable flows.
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny/grant` | Inspect pending decisions, answer them, or grant a build target's revision. |
 | `approvals trigger-plan/grant-trigger/revoke-trigger` | Prepare, grant or revoke the standing approval that lets a trigger run unattended. |
-| `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. Use `--vibe` with `init` or `generate flow` for `flow.vibe`. |
+| `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `cache steps`, `clean [patterns...]`, `gc` | Maintain target results, step results, declared cleanup targets, or terminal run history. |
 | `environment add/list/view/remove/exec/shell/forward` | Save an execution location and run commands there. |

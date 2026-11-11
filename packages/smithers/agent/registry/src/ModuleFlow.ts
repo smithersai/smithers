@@ -1,5 +1,5 @@
 /**
- * Module flows: a `flow.ts` or `flow.vibe` whose default export is `Flow.make("<tag>", { ... })`,
+ * Module flows: a `flow.ts` whose default export is `Flow.make("<tag>", { ... })`,
  * read from its source text without importing it.
  *
  * Discovery reads every module entry through {@link fromModule}, and a host

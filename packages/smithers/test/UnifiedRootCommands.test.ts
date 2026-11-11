@@ -214,9 +214,7 @@ describe("unified root command dispatch", () => {
   it("passes explicit initialization names, resolved roots and caller environment", async () => {
     const environment = { INIT_MARKER: "caller" }
     const result = await invoke(["init", "sample", "--root", "relative-project", "--json"], { environment })
-    expect(ports.initialize).toHaveBeenCalledExactlyOnceWith(resolve("relative-project"), "sample", environment, {
-      vibe: false
-    })
+    expect(ports.initialize).toHaveBeenCalledExactlyOnceWith(resolve("relative-project"), "sample", environment)
     const output = JSON.parse(result.stdout)
     expect(output).toMatchObject({ result: "initialized" })
     expect(output.cta.commands.map((action: { command: string }) => action.command)).toEqual([
@@ -228,9 +226,7 @@ describe("unified root command dispatch", () => {
 
   it("derives omitted initialization arguments from the current project", async () => {
     await invoke(["init", "--json"], { environment: undefined })
-    expect(ports.initialize).toHaveBeenCalledExactlyOnceWith(process.cwd(), expect.any(String), process.env, {
-      vibe: false
-    })
+    expect(ports.initialize).toHaveBeenCalledExactlyOnceWith(process.cwd(), expect.any(String), process.env)
     expect(ports.initialize.mock.calls[0]![1].length).toBeGreaterThan(0)
   })
 

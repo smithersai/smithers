@@ -24,15 +24,14 @@ own flows and `pack:<name>` for the flows a pack contributed.
 
 ## One directory, one flow
 
-The scan walks the root and, in each directory, looks for one entry file. Four
+The scan walks the root and, in each directory, looks for one entry file. Three
 names are recognized, in this order of precedence:
 
-| File        | What it is                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------- |
-| `flow.ts`   | A module flow. Its metadata is parsed out of the default `Flow.make` value without evaluating the module. |
-| `flow.vibe` | A VibeLang module flow. Its metadata is read from the same literal `Flow.make` declaration.               |
-| `flow.mdx`  | A markdown flow. Its metadata is the YAML frontmatter.                                                    |
-| `SKILL.md`  | The Agent Skills spelling of a markdown flow.                                                             |
+| File       | What it is                                                                                                |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| `flow.ts`  | A module flow. Its metadata is parsed out of the default `Flow.make` value without evaluating the module. |
+| `flow.mdx` | A markdown flow. Its metadata is the YAML frontmatter.                                                    |
+| `SKILL.md` | The Agent Skills spelling of a markdown flow.                                                             |
 
 A directory holding more than one of them uses the first and reports
 `multiple_entry_files`. Directories named `.git` and `node_modules`, and any
@@ -43,12 +42,6 @@ are the host's own directories rather than flows.
 Nothing stops a directory from holding both an entry file and further
 subdirectories: `.smithers/flows/review/flow.mdx` and `.smithers/flows/review/read-pr/flow.ts` are
 two flows, `review` and `review/read-pr`.
-
-Module entries use the host's VibeLang loader when their extension is `.vibe`; metadata discovery itself needs no compiler or module import. A `flow.ts` entry keeps precedence over `flow.vibe`.
-
-VibeLang helpers may use explicit `.vibe`, extensionless, directory-index,
-or emitted `.js` imports. Discovery pins the source file the VibeLang loader
-selects, including when TypeScript and VibeLang entries share a directory.
 
 Module metadata accepts line and block comments inside the `Flow.make` object
 and its literal arrays. Comments do not change declared capabilities. Dynamic

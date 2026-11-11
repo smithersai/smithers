@@ -28,19 +28,19 @@ and interpreters, see the [`@smthrs/flow` reference](/docs/reference/api/flow/).
 declaration values a discovered body carries, see the
 [`@smthrs/core` reference](/docs/reference/api/core/).
 
-| Module                                    | What it owns                                                                       |
-| ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| [`Descriptor`](#descriptor)               | The serializable `FlowDescriptor` and every value it is built from.                |
-| [`Discovery`](#discovery)                 | The service that walks one source root and returns a `SourceScan`.                 |
-| [`MarkdownFlow`](#markdownflow)           | Markdown and Agent Skills compatibility.                                           |
-| [`ModuleFlow`](#moduleflow)               | A `flow.ts` or `flow.vibe` module's descriptor and tag, read without importing it. |
-| [`Registry`](#registry)                   | The refreshable, first-found-wins catalog and its layers.                          |
-| [`Disclosure`](#disclosure)               | The compact projections a model and an autocomplete list are shown.                |
-| [`Executable`](#executable)               | Turning a descriptor into a runnable `@smthrs/flow` value.                         |
-| [`ExecutionSnapshot`](#executionsnapshot) | Durable admitted source closures and approved descriptor restoration.              |
-| [`Pack`](#pack)                           | Manifests, content addresses, compatibility ranges, and merge precedence.          |
-| [`RegistryError`](#registryerror)         | The typed failures and their constructors.                                         |
-| [`Prompt`](#prompt)                       | Compiles typed MDX prompts to Markdown text components.                            |
+| Module                                    | What it owns                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| [`Descriptor`](#descriptor)               | The serializable `FlowDescriptor` and every value it is built from.       |
+| [`Discovery`](#discovery)                 | The service that walks one source root and returns a `SourceScan`.        |
+| [`MarkdownFlow`](#markdownflow)           | Markdown and Agent Skills compatibility.                                  |
+| [`ModuleFlow`](#moduleflow)               | A `flow.ts` module's descriptor and tag, read without importing it.       |
+| [`Registry`](#registry)                   | The refreshable, first-found-wins catalog and its layers.                 |
+| [`Disclosure`](#disclosure)               | The compact projections a model and an autocomplete list are shown.       |
+| [`Executable`](#executable)               | Turning a descriptor into a runnable `@smthrs/flow` value.                |
+| [`ExecutionSnapshot`](#executionsnapshot) | Durable admitted source closures and approved descriptor restoration.     |
+| [`Pack`](#pack)                           | Manifests, content addresses, compatibility ranges, and merge precedence. |
+| [`RegistryError`](#registryerror)         | The typed failures and their constructors.                                |
+| [`Prompt`](#prompt)                       | Compiles typed MDX prompts to Markdown text components.                   |
 
 ## Example
 
@@ -694,7 +694,7 @@ const flow = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descripto
 
 ## ModuleFlow
 
-Discovery for `flow.ts` and `flow.vibe` modules, whose default export is `Flow.make("<tag>", { ... })`.
+Discovery for `flow.ts` modules, whose default export is `Flow.make("<tag>", { ... })`.
 
 ### ModuleFlow.fromModule
 
@@ -721,7 +721,7 @@ const fromModule: (options: FromModuleOptions) => FromModuleResult
 ```
 
 Derives a module flow descriptor from already-read source text without
-importing or evaluating it. `Discovery` calls it for every `flow.ts` or `flow.vibe` entry with
+importing or evaluating it. `Discovery` calls it for every `flow.ts` entry with
 a metadata prefix, the digest of the whole file and the module's closure; a
 host that keeps a flow's source outside a file system, such as a database row
 or an editor buffer, calls it with the complete text, and the digest of `text`
@@ -891,7 +891,7 @@ their range is checked against.
 
 A project with no `.smithers/flows/` directory has no project entries. The
 source stays configured with `optionalRoot: true`, so every `refresh()` checks
-it again. Creating the first `.smithers/flows/<id>/flow.mdx`, `flow.ts` or `flow.vibe` makes
+it again. Creating the first `.smithers/flows/<id>/flow.mdx` or `flow.ts` makes
 it discoverable on refresh in the same session. Removing `.smithers/flows/`
 empties the project entries on refresh; recreating it makes them discoverable
 again. Flows in a root `flows/` never load; each scan reports one
@@ -1017,7 +1017,7 @@ One discovered flow, made runnable. `flow` is tagged with the descriptor's
 registry name and `layer` registers it with the runtime.
 
 `delegate` is the registered flow this descriptor hands its work to, and
-`undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` or `flow.vibe` that
+`undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` that
 `export default`s a `@smthrs/flow` flow runs its own body, so its body is the
 plan rather than one delegating node. The distinction is an authority one. A
 delegate is host-registered code the descriptor never measured, so an approved

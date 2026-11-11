@@ -10,7 +10,7 @@ lookups it needs to list a catalog, show it to a model, and execute one entry
 by name.
 
 A flow lives on disk as a directory holding one entry file: a markdown
-`flow.mdx`, its Agent Skills spelling `SKILL.md`, a TypeScript `flow.ts`, or a VibeLang `flow.vibe`.
+`flow.mdx`, its Agent Skills spelling `SKILL.md`, or a TypeScript `flow.ts`.
 Scanning one produces a `FlowDescriptor`, a plain value you can journal, send
 over a wire, or compare against another.
 

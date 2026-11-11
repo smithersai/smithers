@@ -100,7 +100,7 @@ export const shipped: ReadonlyArray<Verb> = [
   verb("output", "Print one registered node output"),
   verb("down", "Cancel every non-terminal run"),
   driver("serve", "Host the control server for this project", ["gateway"]),
-  verb("init", "Scaffold .smithers/flows/<name>/flow.ts (--vibe: flow.vibe) and ignore .flows/"),
+  verb("init", "Scaffold .smithers/flows/<name>/flow.ts and ignore .flows/"),
   verb("suggest", "Read the project, stream how Smithers can help, and implement the one you pick"),
   verb("doctor", "Report registry, database, runtime, and provider readiness"),
   verb("migrate", "Convert a Smithers 0.x project to the 1.0 authoring model"),
