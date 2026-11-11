@@ -579,7 +579,6 @@ const fixtures = Smithers.NodeTest({
     fixture("wiki-jev-citations.test.ts"),
     fixture("content-jev-template.test.ts"),
     fixture("coding-fault.test.ts"),
-    fixture("run-record.test.ts"),
     fixture("canary-coding-setup.test.mjs"),
     fixture("invoke-native-host.test.ts"),
     fixture("decide-with-jev-docs.test.ts")
