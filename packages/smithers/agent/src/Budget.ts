@@ -943,9 +943,34 @@ interface State {
   readonly largestUsd: number
   /** The first counted step with no price, which leaves a USD ceiling's spend unknown. */
   readonly unpriced: string | undefined
-  readonly counted: ReadonlyMap<string, Charge>
+  readonly counted: ReadonlyMap<string, Counted>
   readonly latched: BudgetExceeded | undefined
 }
+
+/**
+ * A charge this account counted. A step this process recorded keeps the
+ * fingerprint of the usage it was priced from; a charge recovered from a
+ * durable record has none, because the record keeps the price, not the usage.
+ */
+interface Counted extends Charge {
+  readonly fingerprint?: string | undefined
+}
+
+/**
+ * What a replay of one step must repeat exactly: the model and its raw usage,
+ * before any host weight or price is applied to them.
+ */
+const fingerprintOf = (usage: ModelEvent.Usage, modelId: string | undefined): string =>
+  [
+    modelId,
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.reasoningTokens,
+    usage.cachedInputTokens,
+    usage.cacheWriteTokens,
+    usage.totalTokens,
+    usage.costUsd
+  ].map(String).join(",")
 
 /** Dollars to the micro-dollar, without a float's tail. */
 const dollars = (value: number): string => `$${Number(value.toFixed(6))}`
@@ -1419,7 +1444,7 @@ export const make = (
         usd: 0,
         largestUsd: 0,
         unpriced: undefined,
-        counted: new Map<string, Charge>(),
+        counted: new Map<string, Counted>(),
         latched: undefined
       })
       const recovery = yield* Semaphore.make(1)
@@ -1493,19 +1518,28 @@ export const make = (
      * call down does so exactly when the accumulator took it. Recovery holds
      * the recovery permit. Live writes normally hold admission; an existing
      * transaction can account synchronously without waiting on another writer.
+     *
+     * A step is priced once, when it is first counted. A replay with the same
+     * usage fingerprint keeps that charge even when the rate card, a dated
+     * successor or the host's weights now price it differently, and a replay
+     * of a step recovered from a durable record keeps the recorded charge.
+     * Only different usage, or two durable records that disagree, conflicts.
      */
     const account = (
       run: RunAccount,
       runId: string,
       stepKey: string,
-      charge: Charge,
+      charge: Counted,
       pending?: AccountingUnavailable
     ): Effect.Effect<boolean, AccountingUnavailable> =>
       Ref.modify(run.state, (current): readonly [Result.Result<boolean, AccountingUnavailable>, State] => {
         const { spent, costUsd } = charge
         const previous = current.counted.get(stepKey)
         if (previous !== undefined) {
-          const conflict = previous.spent === spent && previous.costUsd === costUsd
+          const agrees = charge.fingerprint === undefined
+            ? previous.spent === spent && previous.costUsd === costUsd
+            : previous.fingerprint === undefined || previous.fingerprint === charge.fingerprint
+          const conflict = agrees
             ? undefined
             : unavailable("record", runId, "a model step was recorded with conflicting usage")
           if (pending !== undefined && conflict !== undefined) run.pending.set(stepKey, conflict)
@@ -1917,10 +1951,11 @@ export const make = (
             const spent = tokensOf(usage, weights)
             const priced = Pricing.cost(usage, modelId, { table: prices, at })
             const unreported = quality?.unreported !== true && reportsTokens(usage) ? {} : { unreported: true as const }
-            const charge: Charge = {
+            const charge: Counted = {
               spent,
               ...(priced === undefined ? {} : { costUsd: priced.costUsd }),
-              ...unreported
+              ...unreported,
+              fingerprint: fingerprintOf(usage, modelId)
             }
             // What the controller said this call was for, read where the call
             // is made. It labels the record and decides nothing.

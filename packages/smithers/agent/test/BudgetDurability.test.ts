@@ -1,7 +1,9 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import * as Pricing from "@smthrs/model/Pricing"
 import { Deferred, Effect, Exit, Fiber } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 
@@ -158,11 +160,51 @@ describe("budget usage durability", () => {
         yield* budget.record("paid", usage, "gpt-6.1-sol")
         yield* budget.record("paid", usage, "gpt-6.1-sol")
         expect((yield* budget.usage).tokens).toBe(730)
-        const restarted = yield* Budget.make({})
+        // A resume replays the sealed step on a host whose weights changed.
+        const restarted = yield* Budget.make({ weights: { "gpt-6.1-sol": { ...weights["gpt-6.1-sol"], output: 9 } } })
+        yield* restarted.record("paid", usage, "gpt-6.1-sol")
         expect(yield* restarted.usage).toEqual(yield* budget.usage)
+        expect((yield* restarted.check("next"))._tag).toBe("proceed")
         expect(yield* records(yield* Journal.Journal, "weighted")).toHaveLength(1)
         expect(Number.isNaN(Budget.tokensOf({ totalTokens: 100 }, weights["gpt-6.1-sol"]))).toBe(true)
       })
+    ))
+  })
+
+  it("keeps a replayed step's first price after its rate changes", async () => {
+    // A dated successor row: the price a step was charged at expires while
+    // the run is parked, and the resume replays the step after `nextFrom`.
+    const dated = Object.entries(Pricing.table).flatMap(([id, price]) =>
+      "nextFrom" in price && price.nextFrom !== undefined ? [{ id, from: Date.parse(String(price.nextFrom)) }] : []
+    )
+    const { from, id: modelId } = dated[0]!
+    const before = from - 3_600_000
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000 }
+    expect(Pricing.cost(usage, modelId, { at: before })).not.toEqual(Pricing.cost(usage, modelId, { at: from }))
+    await run(inRun(
+      "repriced",
+      Effect.gen(function*() {
+        yield* TestClock.setTime(before)
+        const budget = yield* Budget.make({})
+        yield* budget.record("paid", usage, modelId)
+        const charged = yield* budget.usage
+        yield* TestClock.adjust("2 hours")
+        yield* budget.record("paid", usage, modelId)
+        const restarted = yield* Budget.make({})
+        yield* restarted.record("paid", usage, modelId)
+        expect((yield* restarted.check("next"))._tag).toBe("proceed")
+        expect(yield* restarted.usage).toEqual(charged)
+        // A host that edits its price rows replays the same step at the first price.
+        const edited = yield* Budget.make({
+          prices: { [modelId]: { input: 99, cacheRead: 0, cacheWrite: 0, output: 99 } }
+        })
+        yield* edited.record("paid", usage, modelId)
+        expect(yield* edited.usage).toEqual(charged)
+        expect(yield* records(yield* Journal.Journal, "repriced")).toHaveLength(1)
+        // Different usage under the same step is still a conflict.
+        const result = yield* budget.record("paid", { ...usage, outputTokens: 1 }, modelId).pipe(Effect.exit)
+        expect(JSON.stringify(result)).toContain("conflicting usage")
+      }).pipe(Effect.provide(TestClock.layer()))
     ))
   })
 
