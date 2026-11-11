@@ -23,6 +23,13 @@ import { afterAll, vi } from "vitest"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
+const processEventTypes = [
+  ProcessLedger.SpawnedEventType,
+  ProcessLedger.ExitedEventType,
+  ProcessLedger.ReapedEventType,
+  ProcessLedger.SkippedEventType
+]
+
 const directory = mkdtempSync(join(tmpdir(), "flows-reaper-"))
 
 const run = <A, E>(effect: Effect.Effect<A, E, Journal | Scope.Scope>) =>
@@ -269,6 +276,7 @@ describe("ProcessReaper", () => {
           const journal = yield* Journal
           const page = yield* journal.entries({
             runId: ProcessLedger.hostRunId("reaped-host"),
+            eventTypes: processEventTypes,
             limit: 16
           })
           // A third incarnation must not try the same kill again.
@@ -878,7 +886,11 @@ describe("ProcessReaper", () => {
             }
           }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, current))
           const journal = yield* Journal
-          const page = yield* journal.entries({ runId: ProcessLedger.hostRunId("pre-boot-host"), limit: 16 })
+          const page = yield* journal.entries({
+            runId: ProcessLedger.hostRunId("pre-boot-host"),
+            eventTypes: processEventTypes,
+            limit: 16
+          })
           const third = yield* ProcessLedger.make({ hostId: "pre-boot-host", ownerPid: process.pid })
           return { reaped, types: page.entries.map((row) => row.eventType), remaining: yield* third.orphans }
         })
@@ -950,7 +962,11 @@ describe("ProcessReaper", () => {
             }
           }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, current))
           const journal = yield* Journal
-          const page = yield* journal.entries({ runId: ProcessLedger.hostRunId("stubborn-host"), limit: 16 })
+          const page = yield* journal.entries({
+            runId: ProcessLedger.hostRunId("stubborn-host"),
+            eventTypes: processEventTypes,
+            limit: 16
+          })
           const third = yield* ProcessLedger.make({ hostId: "stubborn-host", ownerPid: process.pid })
           return { reaped, types: page.entries.map((row) => row.eventType), remaining: yield* third.orphans }
         })

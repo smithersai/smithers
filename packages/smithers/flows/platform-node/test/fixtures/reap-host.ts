@@ -81,4 +81,4 @@ const program = Host.execute({ what: "spawn" }, { executionId }).pipe(
   Effect.scoped
 )
 
-await Effect.runPromise(Effect.exit(program))
+await Effect.runPromise(program)

@@ -153,17 +153,21 @@ diagnosed in [Troubleshooting](./troubleshooting.md).
 
 ### Options and models
 
-| Export              | Shape                                                                                                                                                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OverflowPolicy`    | `"reject" \| "drop-newest" \| "drop-oldest"`                                                                                                                                                                   |
-| `StreamOptions`     | `{ runId, afterSequence? }`                                                                                                                                                                                    |
-| `EntriesOptions`    | `{ runId, after?, eventTypes?, limit }`, `limit` in `1..maxEntriesLimit`; optional nonempty list of up to 64 exact types is filtered before pagination. Cursors stay canonical; compaction checks still apply. |
-| `EntriesPage`       | `{ entries: ReadonlyArray<Entry>, hasMore: boolean }`                                                                                                                                                          |
-| `CheckpointOptions` | `{ runId, seq, state }`                                                                                                                                                                                        |
-| `Checkpoint`        | `{ runId, seq, state, createdAtMs, compactedAtMs }`, the last null until a compaction truncated below it                                                                                                       |
-| `CompactOptions`    | `{ runId, upTo? }`, defaulting to the run's latest checkpoint                                                                                                                                                  |
-| `Compacted`         | `{ runId, checkpointSeq, deleted }`, `deleted: 0` for a retried compaction                                                                                                                                     |
-| `maxEntriesLimit`   | `10_000`, the largest page `entries` reads                                                                                                                                                                     |
+| Export              | Shape                                                                                                                                                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OverflowPolicy`    | `"reject" \| "drop-newest" \| "drop-oldest"`                                                                                                                                                                           |
+| `StreamOptions`     | `{ runId, afterSequence? }`                                                                                                                                                                                            |
+| `EntriesOptions`    | `{ runId, after?, eventTypes?, order?, limit }`, `limit` in `1..maxEntriesLimit`; optional nonempty list of up to 64 exact types is filtered before pagination. Cursors stay canonical; compaction checks still apply. |
+| `EntriesPage`       | `{ entries: ReadonlyArray<Entry>, hasMore: boolean }`                                                                                                                                                                  |
+| `CheckpointOptions` | `{ runId, seq, state }`                                                                                                                                                                                                |
+| `Checkpoint`        | `{ runId, seq, state, createdAtMs, compactedAtMs }`, the last null until a compaction truncated below it                                                                                                               |
+| `CompactOptions`    | `{ runId, upTo? }`, defaulting to the run's latest checkpoint                                                                                                                                                          |
+| `Compacted`         | `{ runId, checkpointSeq, deleted }`, `deleted: 0` for a retried compaction                                                                                                                                             |
+| `maxEntriesLimit`   | `10_000`, the largest page `entries` reads                                                                                                                                                                             |
+
+`entries({ runId, order: "desc", limit: 1 })` reads the newest entry.
+The default `order` is `"asc"`. Both orders keep `after` as an exclusive
+lower sequence bound, so it selects a suffix rather than a reverse paging cursor.
 
 ### Constructors and layers
 

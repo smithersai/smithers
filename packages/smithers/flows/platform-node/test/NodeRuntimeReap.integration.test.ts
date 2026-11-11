@@ -33,6 +33,13 @@ import * as NodeHost from "../src/NodeHost.ts"
 import * as NodeRuntime from "../src/NodeRuntime.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 
+const processEventTypes = [
+  ProcessLedger.SpawnedEventType,
+  ProcessLedger.ExitedEventType,
+  ProcessLedger.ReapedEventType,
+  ProcessLedger.SkippedEventType
+]
+
 const directory = mkdtempSync(join(tmpdir(), "flows-reap-host-"))
 const fixture = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "reap-host.ts")
 
@@ -127,9 +134,9 @@ const journalOf = (filename: string, hostId: string) =>
   readBack(filename, (database) =>
     database
       .prepare(
-        "SELECT event_type, json_extract(payload_json, '$.reason') AS reason FROM flows_journal_events WHERE run_id = ? ORDER BY seq"
+        "SELECT event_type, json_extract(payload_json, '$.reason') AS reason FROM flows_journal_events WHERE run_id = ? AND event_type IN (?, ?, ?, ?) ORDER BY seq"
       )
-      .all(`flows.host:${hostId}`)
+      .all(`flows.host:${hostId}`, ...processEventTypes)
       .map((row) => row.reason === null ? { event_type: row.event_type } : row))
 
 /** A second incarnation of the SAME host over the SAME database, handed nothing about the dead one but its id. */

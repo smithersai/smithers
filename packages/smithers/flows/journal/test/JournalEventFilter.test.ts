@@ -64,6 +64,24 @@ describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) 
             5,
             6
           ])
+          const newest = yield* journal.entries({ runId, eventTypes: ["wanted"], limit: 1, order: "desc" })
+          expect(newest.entries.map((row) => row.seq)).toEqual([4])
+          expect(newest.hasMore).toBe(true)
+          expect((yield* journal.entries({ runId, after: newest.entries[0]!.seq, limit: 2, order: "desc" }))
+            .entries.map((row) => row.seq)).toEqual([6, 5])
+          expect(
+            (yield* journal.entries({
+              runId,
+              eventTypes: ["wanted"],
+              after: newest.entries[0]!.seq,
+              limit: 2,
+              order: "desc"
+            })).entries
+          ).toEqual([])
+          expect(
+            (yield* journal.entries({ runId, limit: 1, order: "sideways" as "asc" })
+              .pipe(Effect.flip)).code
+          ).toBe("invalid_event")
           const combined = yield* journal.entries({ runId, eventTypes: ["second", "wanted", "wanted"], limit: 3 })
           expect(combined.entries.map((row) => row.seq)).toEqual([1, 3, 4])
           expect(combined.hasMore).toBe(true)

@@ -252,7 +252,9 @@ export const maxEntriesLimit = 10_000
  * `limit` is at most `maxEntriesLimit` (10,000 entries). Optional `eventTypes`
  * selects a nonempty list of at most 64 exact types before pagination; cursors remain canonical run
  * sequences and `hasMore` describes matching entries. Omit it for the full run.
- * Filtering does not bypass the run's compaction floor.
+ * Filtering does not bypass the run's compaction floor. `order: "desc"`
+ * reads the newest matching entries first; the default is `"asc"`. In either
+ * order, `after` is an exclusive lower sequence bound, not a reverse cursor.
  *
  * @category models
  * @since 0.1.0
@@ -260,6 +262,7 @@ export const maxEntriesLimit = 10_000
 export const EntriesOptions = Schema.Struct({
   runId: RunId,
   after: Schema.optionalKey(Seq),
+  order: Schema.optionalKey(Schema.Literals(["asc", "desc"])),
   eventTypes: Schema.optionalKey(
     Schema.Array(Entry.fields.eventType).check(Schema.isMinLength(1), Schema.isMaxLength(64))
   ),

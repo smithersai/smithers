@@ -185,6 +185,7 @@ it("reaps the process group a killed host left running", async () => {
   // group is spawned and then reaped on their shared journal run.
   expect(summary.hostEvents).toEqual([
     "flows.host.process-spawned.v1",
+    "flows.host.process-snapshot.v1",
     "flows.host.process-reaped.v1"
   ])
 }, 120_000)

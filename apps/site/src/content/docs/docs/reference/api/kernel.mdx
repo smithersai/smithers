@@ -1191,6 +1191,15 @@ the records whose `ownerPid` or `incarnation` differs from this ledger's. The
 nonce is what lets a successor that was given the pid of the host that died
 inherit that host's records.
 
+Every 256 committed process events, and after a complete replay, the ledger saves an ownerless `flows.host.process-snapshot.v1` entry
+containing the live set and the last folded sequence. Later replays read the
+newest snapshot and subsequent process events, excluding telemetry. Original
+entries remain readable; a failed snapshot write warns without failing replay,
+and an invalid snapshot falls back to the full history. The cursor is the last
+folded sequence, so a concurrent spawn before the snapshot write is still read.
+Snapshot publication checks the latest cursor in the host's write transaction,
+so a delayed replay cannot replace a newer snapshot.
+
 ### ProcessLedger.Options
 
 ```ts

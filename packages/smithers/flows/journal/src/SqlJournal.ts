@@ -1463,6 +1463,7 @@ export const make = (
         yield* Effect.annotateCurrentSpan({
           runId: options.runId,
           limit: options.limit,
+          order: options.order ?? "asc",
           ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
           ...(options.after === undefined ? {} : { after: options.after })
         })
@@ -1486,7 +1487,7 @@ export const make = (
               event_type, payload_json, meta_json
             FROM flows_journal_events
             WHERE run_id = ${options.runId} AND seq > ${after}
-            ORDER BY seq ASC
+            ORDER BY seq ${options.order === "desc" ? sql.literal("DESC") : sql.literal("ASC")}
             LIMIT ${options.limit + 1}
           ` :
           sql<JournalRow>`
@@ -1494,7 +1495,7 @@ export const make = (
               event_type, payload_json, meta_json
             FROM flows_journal_events ${Dialect.indexHint(sql, "flows_journal_events_run_event_type_idx")}
             WHERE run_id = ${options.runId} AND ${sql.in("event_type", options.eventTypes)} AND seq > ${after}
-            ORDER BY seq ASC
+            ORDER BY seq ${options.order === "desc" ? sql.literal("DESC") : sql.literal("ASC")}
             LIMIT ${options.limit + 1}
           `).pipe(
             Effect.mapError((cause) => error("read_failed", "durable journal read failed", cause))

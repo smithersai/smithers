@@ -300,41 +300,63 @@ const apply = (live: Map<string, ProcessRecord>, entry: JournalEvent.Entry): Jou
 
 const PAGE = 256
 
-const journalSink = (options: Options, journal: JournalModule.Service): Sink => ({
-  append: (eventType, record, extra) =>
-    journal.emitDurableUnfenced(
-      new JournalEvent.Input({
-        runId: hostRunId(options.hostId),
-        sourceId: sourceId as JournalEvent.SourceId,
-        eventType,
-        payload: extra === undefined ? encodeRecord(record) : { ...encodeRecord(record), ...extra }
-      })
-    ).pipe(
-      // The failure is REPORTED, not logged away. A swallowed write leaves a
-      // child that no incarnation of this host can discover, which is the one
-      // outcome containment exists to prevent; the caller decides what to do
-      // about it, and every caller in this repository declines to pretend the
-      // process was recorded.
-      Effect.tapCause((cause) => Effect.logWarning(`process ledger could not journal ${eventType}`, cause)),
-      Effect.asVoid
-    ),
-  replay: Effect.gen(function*() {
+// An immutable snapshot is ownerless, like the records it summarizes. Its
+// cursor names the last folded event, NOT the snapshot event: another writer
+// may append a spawn between the read and this write.
+const snapshotEventType = "flows.host.process-snapshot.v1"
+const Snapshot = Schema.Struct({
+  through: JournalEvent.Seq,
+  records: Schema.Array(ProcessRecord)
+})
+const decodeSnapshot = Schema.decodeUnknownResult(Snapshot)
+const snapshotState = (entry: JournalEvent.Entry | undefined) => {
+  if (entry === undefined || entry.sourceId !== sourceId || entry.eventType !== snapshotEventType) return undefined
+  const decoded = decodeSnapshot(entry.payload)
+  return decoded._tag === "Success" && decoded.success.through < entry.seq ? decoded.success : undefined
+}
+const processEventTypes = [SpawnedEventType, ExitedEventType, ReapedEventType, SkippedEventType]
+
+const journalSink = (options: Options, journal: JournalModule.Service): Sink => {
+  let sinceSnapshot = 0
+  const replay = Effect.gen(function*() {
     const live = new Map<string, ProcessRecord>()
+    const runId = hostRunId(options.hostId)
+    const unreadable = (cause: JournalError) =>
+      new ProcessLedgerReplayError({
+        code: "journal_unreadable",
+        message: `process ledger could not read the history of host ${options.hostId}`,
+        cause
+      })
+    const latest = yield* journal.entries({
+      runId,
+      eventTypes: [snapshotEventType],
+      order: "desc",
+      limit: 1
+    }).pipe(Effect.mapError(unreadable))
     let after: JournalEvent.Seq | undefined
+    const snapshot = latest.entries[0]
+    const restored = snapshotState(snapshot)
+    if (restored !== undefined) {
+      after = restored.through
+      for (const record of restored.records) live.set(identity(record), record)
+    } else if (snapshot !== undefined) {
+      yield* Effect.logWarning(`process ledger ignored an invalid snapshot at seq ${snapshot.seq}`)
+    }
+    const startedAfter = after
+    let replayed = 0
     for (;;) {
       const page = yield* journal.entries({
-        runId: hostRunId(options.hostId),
+        runId,
+        // A multi-type index scan sorts the matching suffix. Bootstrap has
+        // no bound yet, so keep its original linear run/sequence scan on
+        // EVERY page; snapshots bound the filtered tail on later replays.
+        ...(startedAfter === undefined ? {} : { eventTypes: processEventTypes }),
         limit: PAGE,
         ...(after === undefined ? {} : { after })
       }).pipe(
-        Effect.mapError((cause) =>
-          new ProcessLedgerReplayError({
-            code: "journal_unreadable",
-            message: `process ledger could not read the history of host ${options.hostId}`,
-            cause
-          })
-        )
+        Effect.mapError(unreadable)
       )
+      replayed += page.entries.length
       for (const entry of page.entries) {
         const malformed = apply(live, entry)
         if (malformed !== undefined) {
@@ -344,7 +366,10 @@ const journalSink = (options: Options, journal: JournalModule.Service): Sink => 
         }
       }
       const last = page.entries.at(-1)
-      if (!page.hasMore) break
+      if (!page.hasMore) {
+        if (last !== undefined) after = last.seq
+        break
+      }
       // An empty page that reports more names no cursor to continue from, and
       // stopping there would report a partial history as whole.
       if (last === undefined) {
@@ -369,9 +394,72 @@ const journalSink = (options: Options, journal: JournalModule.Service): Sink => 
       }
       after = last.seq
     }
-    return [...live.values()]
+    const records = [...live.values()]
+    if (after !== undefined && after !== startedAfter) {
+      const through = after
+      yield* journal.transact(
+        Effect.gen(function*() {
+          // Serialize the check and append with this host's writers. An older
+          // replay finishing late must not replace a newer folded cursor.
+          const newest = yield* journal.entries({ runId, eventTypes: [snapshotEventType], order: "desc", limit: 1 })
+          const current = snapshotState(newest.entries[0])
+          if (current !== undefined && current.through >= through) return
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId,
+              sourceId: sourceId as JournalEvent.SourceId,
+              eventType: snapshotEventType,
+              payload: { through, records: records.map((record) => encodeRecord(record)) }
+            })
+          )
+        }),
+        { partition: runId }
+      ).pipe(
+        // This is a replay optimization, not a process transition. A failed
+        // snapshot leaves all original records readable on the next start.
+        Effect.catch((cause) => Effect.logWarning("process ledger could not save its replay snapshot", cause))
+      )
+    }
+    yield* Effect.logDebug("process ledger replay completed", {
+      replayed,
+      live: records.length,
+      after,
+      startedAfter
+    })
+    return records
   })
-})
+  return {
+    append: (eventType, record, extra) =>
+      journal.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId: hostRunId(options.hostId),
+          sourceId: sourceId as JournalEvent.SourceId,
+          eventType,
+          payload: extra === undefined ? encodeRecord(record) : { ...encodeRecord(record), ...extra }
+        })
+      ).pipe(
+        // The failure is REPORTED, not logged away. A swallowed write leaves a
+        // child that no incarnation of this host can discover, which is the one
+        // outcome containment exists to prevent; the caller decides what to do
+        // about it, and every caller in this repository declines to pretend the
+        // process was recorded.
+        Effect.tapCause((cause) => Effect.logWarning(`process ledger could not journal ${eventType}`, cause)),
+        Effect.tap(() =>
+          Effect.suspend(() => {
+            sinceSnapshot += 1
+            if (sinceSnapshot < PAGE) return Effect.void
+            sinceSnapshot = 0
+            return replay.pipe(
+              Effect.catch((cause) => Effect.logWarning("process ledger could not checkpoint its event tail", cause)),
+              Effect.asVoid
+            )
+          })
+        ),
+        Effect.asVoid
+      ),
+    replay
+  }
+}
 
 const memorySink: Sink = {
   append: () => Effect.void,

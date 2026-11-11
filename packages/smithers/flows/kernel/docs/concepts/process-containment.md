@@ -64,6 +64,22 @@ whose owner pid is not this incarnation's. `ProcessLedger.layerMemory` keeps
 only the current incarnation's bookkeeping, with no journal and nothing
 inherited.
 
+Every 256 committed process events, and after a complete replay, the ledger saves the live set and its last folded
+sequence in an ownerless `flows.host.process-snapshot.v1` entry. The next
+replay reads the newest snapshot and only later spawn, exit, reap, and skip
+events; unrelated host telemetry adds no replay pages. Existing histories need
+one full replay to create their first snapshot. Startup reads then depend on
+the live set and events since the last successful snapshot, rather than every
+process the host has ever started.
+
+The snapshot cursor names the last folded event, not the snapshot entry:
+a concurrent writer may have recorded another process between those two
+sequences. Publication checks the latest folded cursor in the host's write
+transaction, so a delayed replay cannot replace a newer snapshot. Invalid snapshots are ignored with a warning and the original
+history is replayed. A snapshot write failure also warns and leaves replay
+usable; original records are retained. Debug records report the number of
+events replayed, live records, and the starting and ending cursors.
+
 Live tracking and replay identify each process by `(pid, startedAtMs)`.
 `startedAtMs` comes from the Effect clock when the spawn is recorded. A delayed
 exit, reap, or skip retires only that identity, preserving a newer record for
