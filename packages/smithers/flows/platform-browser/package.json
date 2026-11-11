@@ -191,7 +191,9 @@
     "@tanstack/browser-db-sqlite-persistence": "0.2.36",
     "@tanstack/db": "0.15.1",
     "@types/ws": "8.18.2",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "@zenfs/core": "2.9.0",
+    "just-bash": "3.6.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"

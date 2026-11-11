@@ -1,12 +1,12 @@
 /**
  * Bundles the suites' pages (the engine's at `/`, the cache's at `/cache`,
- * TanStack DB's persistence at `/tanstack`, the agent's at `/agent`) and
- * engine workers, serves them on a loopback
+ * TanStack DB's persistence at `/tanstack`, the agent's at `/agent`, the
+ * shared mount's at `/mount`) and engine workers, serves them on a loopback
  * port, and launches Playwright's Chromium on a persistent profile, so a
  * suite can kill the browser and open the same origin's OPFS and Cache
  * Storage again.
  */
-import { build } from "esbuild"
+import { build, type Plugin } from "esbuild"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createServer, type Server } from "node:http"
@@ -23,14 +23,42 @@ const require = createRequire(import.meta.url)
 const html = `<!doctype html><meta charset="utf-8"><script type="module" src="/page.js"></script>`
 
 /**
- * Bundles `entries`, each named by its output file, for the browser, under
- * the extra export `conditions`. Without tree shaking every module the entries
- * reach is evaluated, as a dev server serves them.
+ * What a browser bundler does with the one Node built-in just-bash's browser
+ * build still imports statically, `node:zlib` for gzip and gunzip: a tab has
+ * none, so the import resolves to a module whose functions throw when a script
+ * reaches them, as Vite externalizes a built-in for the browser.
  */
-const bundle = (entries: Record<string, string>, conditions: Array<string> = [], treeShaking = true) =>
+const noZlib: Plugin = {
+  name: "no-node-zlib",
+  setup: (build) => {
+    build.onResolve({ filter: /^node:zlib$/ }, () => ({ path: "node:zlib", namespace: "no-node-zlib" }))
+    build.onLoad({ filter: /.*/, namespace: "no-node-zlib" }, () => ({
+      contents: [
+        "const unavailable = () => { throw new Error(\"node:zlib is not available in a browser\") }",
+        "export const constants = {}",
+        "export const gunzipSync = unavailable",
+        "export const gzipSync = unavailable"
+      ].join("\n"),
+      loader: "js"
+    }))
+  }
+}
+
+/**
+ * Bundles `entries`, each named by its output file, for the browser, under
+ * the extra export `conditions` and with the extra `plugins`. Without tree
+ * shaking every module the entries reach is evaluated, as a dev server serves
+ * them.
+ */
+const bundle = (
+  entries: Record<string, string>,
+  conditions: Array<string> = [],
+  treeShaking = true,
+  plugins: Array<Plugin> = []
+) =>
   build({
     bundle: true,
-    plugins: [vibelang({ root: fileURLToPath(new URL("../../", import.meta.url)) })],
+    plugins: [vibelang({ root: fileURLToPath(new URL("../../", import.meta.url)) }), ...plugins],
     conditions,
     treeShaking,
     entryPoints: Object.fromEntries(
@@ -47,10 +75,12 @@ const bundle = (entries: Record<string, string>, conditions: Array<string> = [],
 /**
  * The bundled pages and worker, the SQLite build, and a server for them.
  * With `agent`, also the agent suite's page and worker, bundled apart so the
- * other suites never load `@smthrs/agent`.
+ * other suites never load `@smthrs/agent`. With `mount`, also the shared-mount
+ * suite's page and the jj wasm it mounts, bundled apart so the other suites
+ * never load ZenFS or just-bash.
  */
 export const serve = async (
-  options: { readonly agent?: boolean } = {}
+  options: { readonly agent?: boolean; readonly mount?: boolean } = {}
 ): Promise<{ readonly origin: string; readonly close: () => Promise<void> }> => {
   const bundled = await bundle({
     page: "./app/page.ts",
@@ -69,11 +99,23 @@ export const serve = async (
       ...(await bundle({ "agent-worker": "./app/agent-worker.ts" }, [], false)).outputFiles
     ]
     : []
+  const mount = options.mount === true
+    ? (await bundle({ mount: "./app/mount.ts" }, [], true, [noZlib])).outputFiles
+    : []
   const files = new Map<string, { readonly type: string; readonly body: Uint8Array | string }>([
     ["/", { type: "text/html", body: html }],
     ["/cache", { type: "text/html", body: html.replace("/page.js", "/cache.js") }],
     ["/tanstack", { type: "text/html", body: html.replace("/page.js", "/tanstack.js") }],
     ["/agent", { type: "text/html", body: html.replace("/page.js", "/agent.js") }],
+    ["/mount", { type: "text/html", body: html.replace("/page.js", "/mount.js") }],
+    ...(options.mount === true
+      ? [
+        ["/flows_jj.wasm", {
+          type: "application/wasm",
+          body: readFileSync(fileURLToPath(new URL("../../../jj/wasm/flows_jj.wasm", import.meta.url)))
+        }] as const
+      ]
+      : []),
     // An engine worker that throws while it loads, as one whose module fails to evaluate.
     ["/broken-worker.js", {
       type: "text/javascript",
@@ -83,7 +125,7 @@ export const serve = async (
       type: "application/wasm",
       body: readFileSync(require.resolve("@journeyapps/wa-sqlite/dist/wa-sqlite.wasm"))
     }],
-    ...[...bundled.outputFiles, ...agent].map((file) =>
+    ...[...bundled.outputFiles, ...agent, ...mount].map((file) =>
       [file.path, { type: "text/javascript", body: file.contents }] as const
     )
   ])

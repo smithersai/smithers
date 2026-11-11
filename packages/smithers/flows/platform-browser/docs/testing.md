@@ -5,7 +5,8 @@ description: "Test code that runs on @smthrs/platform-browser without a browser:
 
 The filesystem and child-process backends are structural slices, so their
 adapter tests run under Node without a browser, `@zenfs/core`, or just-bash.
-The seam that keeps their dependency lists short also makes them testable.
+The seam that keeps their dependency lists short also makes them testable. One
+suite needs the real pair: the shared-mount contract, below.
 
 ## Satisfy the filesystem slice with node:fs/promises
 
@@ -141,6 +142,29 @@ const bash: BrowserChildProcessSpawner.JustBashLike = {
 A stub that rejects synchronously inside its own abort listener settles in the
 same turn the permit is released, so an overlap can never be observed through
 it. Count the calls in flight if the assertion is about concurrency.
+
+## Run the contract over the real pair
+
+Stubs pin the adapter; they cannot pin the backends. The shared-mount contract
+runs over both real libraries, which this package keeps as development
+dependencies: `test/fixtures/ZenFsMount.ts` mounts `@zenfs/core`'s in-memory
+volume and binds a real just-bash `Bash` to it, and
+`test/fixtures/SharedMountContract.ts` holds the observations and what each must
+be. `test/contract/BrowserHostSharedMount.contract.test.ts` makes them under
+Node, and `test/browser/SharedMount.test.ts` makes the same ones in Chromium
+through `test/browser/app/mount.ts`.
+
+just-bash takes its own `IFileSystem`, not a Node-shaped module, so the fixture
+is also the binding a page writes: each member is served by the volume's
+promises API, and `getAllPaths` by its synchronous one. ZenFS builds a `Proxy`
+while it serves the volume, which just-bash's defense-in-depth blocks during a
+script, so the binding excludes that one violation type and leaves the layer on.
+
+The contract pins the facts a stub cannot: FileSystem, the interpreter, and jj
+see one volume in both directions; a supplied `env` replaces the interpreter's
+own environment unless the caller extends it; a timed-out command settles and
+releases the permit; and the volume's `ENOENT`, `EEXIST`, and `ENOTDIR` reach
+the caller as `NotFound`, `AlreadyExists`, and `BadResource`.
 
 ## Choose layer or make
 

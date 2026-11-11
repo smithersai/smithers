@@ -1,84 +1,22 @@
 /**
- * Cross-service BrowserHost contract over one real mounted directory.
+ * Cross-service BrowserHost contract over one real mounted volume.
  *
- * A page must hand BrowserFileSystem, just-bash, and BrowserJj views of the
- * same ZenFS mount. This test uses promise and synchronous adapters rooted at
- * one OS tmpdir so a split mount cannot satisfy the assertions by accident.
+ * A page hands BrowserFileSystem, just-bash, and BrowserJj three views of the
+ * same ZenFS mount. This suite composes the bundle the way a page does, from
+ * `@zenfs/core`'s in-memory volume and a real just-bash interpreter bound to it
+ * (`test/fixtures/ZenFsMount.ts`), and makes the observations in
+ * `test/fixtures/SharedMountContract.ts` against those real backends: a split
+ * mount, an error code the adapter does not map, or an interpreter option it
+ * names wrongly fails here rather than in a tab. `test/browser` makes the same
+ * observations in Chromium.
  */
-import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Jj } from "@smthrs/jj"
-import type { SyncFsLike } from "@smthrs/jj/browser/WasiFs"
-import { Effect, FileSystem } from "effect"
-import * as ChildProcess from "effect/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { describe, expect, it } from "@effect/vitest"
+import { Effect } from "effect"
 import * as fsModule from "node:fs"
-import * as fsPromises from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type * as BrowserChildProcessSpawner from "../../src/BrowserChildProcessSpawner/index.ts"
-import * as BrowserFileSystem from "../../src/BrowserFileSystem/index.ts"
 import * as BrowserHost from "../../src/BrowserHost.ts"
-
-/**
- * `lstat` and `realpath` are supplied, not omitted: without them the adapter
- * falls back to lexical canonicalization, and this mount's synchronous slice
- * can create symlinks, so the kernel's boundary resolution would be naming
- * rather than resolution. `realpath` answers inside the virtual namespace by
- * stripping the canonical host root back off.
- */
-const rootedPromisesFs = (hostRoot: string, canonicalRoot: string): BrowserFileSystem.ZenFsPromisesLike => {
-  const at = (path: string): string => join(hostRoot, path)
-  return {
-    open: (path, flags) => fsPromises.open(at(path), flags),
-    readFile: (path) => fsPromises.readFile(at(path)),
-    writeFile: (path, data, options) => fsPromises.writeFile(at(path), data, options),
-    mkdir: (path, options) => fsPromises.mkdir(at(path), options),
-    readdir: (path) => fsPromises.readdir(at(path)),
-    stat: (path) => fsPromises.stat(at(path)),
-    lstat: (path) => fsPromises.lstat(at(path)),
-    realpath: (path) =>
-      fsPromises.realpath(at(path)).then((resolved) =>
-        resolved.startsWith(canonicalRoot) ? resolved.slice(canonicalRoot.length) || "/" : resolved
-      ),
-    rm: (path, options) => fsPromises.rm(at(path), options)
-  }
-}
-
-const rootedSyncFs = (hostRoot: string): SyncFsLike => {
-  const at = (path: string): string => join(hostRoot, path)
-  return {
-    openSync: (path, flags, mode) => fsModule.openSync(at(path), flags, mode),
-    closeSync: (fd) => fsModule.closeSync(fd),
-    readSync: (fd, buffer, offset, length, position) => fsModule.readSync(fd, buffer, offset, length, position),
-    writeSync: (fd, buffer, offset, length, position) => fsModule.writeSync(fd, buffer, offset, length, position),
-    fstatSync: (fd) => fsModule.fstatSync(fd),
-    ftruncateSync: (fd, length) => fsModule.ftruncateSync(fd, length),
-    futimesSync: (fd, atime, mtime) => fsModule.futimesSync(fd, atime, mtime),
-    statSync: (path) => fsModule.statSync(at(path)),
-    lstatSync: (path) => fsModule.lstatSync(at(path)),
-    mkdirSync: (path) => fsModule.mkdirSync(at(path)),
-    readdirSync: (path, options) => fsModule.readdirSync(at(path), options),
-    renameSync: (from, to) => fsModule.renameSync(at(from), at(to)),
-    unlinkSync: (path) => fsModule.unlinkSync(at(path)),
-    rmdirSync: (path) => fsModule.rmdirSync(at(path)),
-    readlinkSync: (path) => fsModule.readlinkSync(at(path)),
-    symlinkSync: (target, path) => fsModule.symlinkSync(target, at(path)),
-    utimesSync: (path, atime, mtime) => fsModule.utimesSync(at(path), atime, mtime)
-  }
-}
-
-const bashFor = (hostRoot: string): BrowserChildProcessSpawner.JustBashLike => ({
-  exec: async (command, options) => {
-    if (command !== "read-shared") return { stdout: "", stderr: "unsupported command", exitCode: 127 }
-    const cwd = options?.cwd ?? "/"
-    return {
-      stdout: await fsPromises.readFile(join(hostRoot, cwd, "shared.txt"), "utf8"),
-      stderr: "",
-      exitCode: 0
-    }
-  }
-})
+import * as SharedMountContract from "../fixtures/SharedMountContract.ts"
+import * as ZenFsMount from "../fixtures/ZenFsMount.ts"
 
 const wasmPath = fileURLToPath(new URL("../../../jj/wasm/flows_jj.wasm", import.meta.url))
 if (!fsModule.existsSync(wasmPath)) {
@@ -90,52 +28,37 @@ if (!fsModule.existsSync(wasmPath)) {
 }
 const wasmBytes = new Uint8Array(fsModule.readFileSync(wasmPath))
 
-const host = fsModule.mkdtempSync(join(tmpdir(), "flows-browser-host-shared-mount-"))
-// The temp root itself can sit behind a symlink (macOS /var), so the prefix
-// the adapter strips has to be the canonical one.
-const canonicalHost = fsModule.realpathSync(host)
-fsModule.mkdirSync(join(host, "repo"))
+const mount = await ZenFsMount.mount({ env: SharedMountContract.ambient })
+mount.fs.mkdirSync("/repo")
 const layer = BrowserHost.layer({
-  bash: bashFor(host),
-  fs: rootedPromisesFs(host, canonicalHost),
-  jj: { wasm: wasmBytes, fs: rootedSyncFs(host), root: "/" }
-})
-
-afterAll(() => {
-  fsModule.rmSync(host, { recursive: true, force: true })
+  bash: mount.bash,
+  fs: mount.fs.promises,
+  jj: { wasm: wasmBytes, fs: mount.fs, root: "/repo" }
 })
 
 describe("BrowserHost shared mount contract", () => {
-  it.effect("makes FileSystem writes visible to bash, jj status, snapshot, and diff", () =>
+  it.effect("shows one volume to FileSystem, the interpreter, and jj", () =>
     Effect.gen(function*() {
-      const observed = yield* (
-        Effect.gen(function*() {
-          const fileSystem = yield* FileSystem.FileSystem
-          const spawner = yield* ChildProcessSpawner
-          const jj = yield* Jj
+      const observed = yield* Effect.provide(SharedMountContract.volume, layer)
+      expect(observed).toEqual(SharedMountContract.expected.volume)
+    }))
 
-          yield* fileSystem.writeFileString("/shared.txt", "first\n")
-          const bashRead = yield* spawner.string(
-            ChildProcess.make("read-shared", [], { cwd: "/" })
-          )
-          const { commitId: first, changeId: firstChange } = yield* jj.snapshot("shared mount first")
+  it.effect("hides the interpreter's environment from a command unless the caller extends it", () =>
+    Effect.gen(function*() {
+      const observed = yield* Effect.provide(SharedMountContract.environment, layer)
+      expect(observed).toEqual(SharedMountContract.expected.environment)
+    }))
 
-          yield* fileSystem.writeFileString("/shared.txt", "second\n")
-          const status = yield* jj.status()
-          const { commitId: second, changeId: secondChange } = yield* jj.snapshot("shared mount second")
-          const diff = yield* jj.diff(first, second)
-          return { bashRead, diff, first, second, firstChange, secondChange, status }
-        }).pipe(Effect.provide(layer))
-      )
+  // Real elapsed time: `it.effect`'s TestClock would stall the timeout.
+  it.live("aborts a running command on timeout and still runs the next one", () =>
+    Effect.gen(function*() {
+      const observed = yield* Effect.provide(SharedMountContract.abort, layer)
+      expect(observed).toEqual(SharedMountContract.expected.abort)
+    }))
 
-      expect(observed.bashRead).toBe("first\n")
-      expect(observed.first).toMatch(/^[a-z0-9]+$/)
-      expect(observed.second).not.toBe(observed.first)
-      expect(observed.secondChange).toBe(observed.firstChange)
-      // Snapshots amend the same change; its parent still has no shared file.
-      expect(observed.status).toContain("A shared.txt")
-      expect(observed.diff).toContain("shared.txt")
-      expect(observed.diff).toContain("-first")
-      expect(observed.diff).toContain("+second")
+  it.effect("keeps the volume's own error codes as PlatformError tags", () =>
+    Effect.gen(function*() {
+      const observed = yield* Effect.provide(SharedMountContract.errorTags, layer)
+      expect(observed).toEqual(SharedMountContract.expected.errorTags)
     }))
 })

@@ -32,11 +32,13 @@ packages:
 
 allowBuilds:
   "@journeyapps/wa-sqlite": false
+  "@mongodb-js/zstd": false
   core-js: false
   dprint: false
   es5-ext: false
   esbuild: false
   msgpackr-extract: false
+  node-liblzma: false
   playwright: false
   sharp: false
   unrs-resolver: false
