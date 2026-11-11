@@ -12562,6 +12562,22 @@ is an exclusive resume claim. Provisioning, SSH setup, and cancellation errors
 still release the workspace. Deletion failures fail release. See the
 [Cloud sandbox guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/cloud-sandbox.md).
 
+## RunnerJobs
+
+Import `RunnerJobs` from `@smthrs/cli` or `@smthrs/cli/RunnerJobs`. It is the
+`AgentRunner.AgentJobs` an external agent step uses when its flow runs on a
+host of its own on the machine of a local runner (a `runner.json` with no
+`origin`). See [Jobs from other flow hosts](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/reference/cli/runner.md#jobs-from-other-flow-hosts).
+
+| Export                 | Signature                                                     | Meaning                                                                                                  |
+| ---------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `layer`                | `(configPath: string) => Layer<AgentJobs, RunnerConfigError>` | The jobs of the local runner `configPath` configures; refuses a `runner.json` with an `origin`.          |
+| `layerFromEnvironment` | `Layer<AgentJobs>`                                            | `layer` over `SMITHERS_RUNNER_CONFIG`; with none usable, every operation fails `AgentJobsUnavailable`.   |
+| `make`                 | `(stateDir: string) => Effect<AgentJobs.Service>`             | The same store over a state directory, through the context's `FileSystem`.                               |
+| `admitAll`             | `(stateDir, jobs) => Effect<void>`                            | What `smthrs runner serve` runs each poll: admits waiting requests into its own store.                   |
+| `Request`, `paths`     | schema, function                                              | A request file's contents, and where requests and jobs live under a state directory.                     |
+| `CONFIG_VARIABLE`      | `"SMITHERS_RUNNER_CONFIG"`                                    | The variable `layerFromEnvironment` reads.                                                               |
+
 ## NodeControl
 
 The Node composition for the command tree.

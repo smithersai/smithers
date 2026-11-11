@@ -319,6 +319,31 @@ its agent's hours ends `timeout`, and a retryable end past its restarts ends
 `exhausted`. A file that doesn't decode is logged and left; nothing claims
 its job. One `serve` owns a state directory.
 
+### Jobs from other flow hosts
+
+A flow that runs on its own host on the runner's machine, such as a
+`smthrs flow start` run, gives its external agent steps this runner's jobs
+with `RunnerJobs.layer("<path>/runner.json")` from `@smthrs/cli/RunnerJobs`
+(or `RunnerJobs.layerFromEnvironment`, which reads the path from
+`SMITHERS_RUNNER_CONFIG`). The flow host never writes the store:
+
+```
+flow host: ExternalAgent step ── start, cancel ──> <state>/job-requests/<job>.<start|cancel>.json
+                              <── status ──────── <state>/jobs/<job>.json
+smthrs runner serve: admits each request into its store every pollSeconds, then deletes it
+```
+
+- A start waits under `job-requests/` while `serve` is down, and its step
+  reads `running` until `serve` admits it. A start of a job the store holds
+  writes nothing.
+- A cancel of a job not started yet wins over its start, whichever `serve`
+  admits first.
+- A request that doesn't decode is renamed `<name>.rejected` and logged.
+- The step reads each job's own file: a job past its agent's hours reads
+  `timeout` before `serve` writes it.
+- With no `runner.json`, one that can't be read, or one that names an
+  `origin`, every operation fails `AgentJobsUnavailable` and logs why.
+
 ## Workstreams
 
 A workstream groups lanes under one goal. You declare its plan once, in

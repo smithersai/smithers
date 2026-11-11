@@ -118,6 +118,7 @@
     "./suggest/Checklist": "./src/suggest/Checklist.ts",
     "./suggest/SuggestFlow": "./src/suggest/SuggestFlow.ts",
     "./CloudSandbox": "./src/CloudSandbox.ts",
+    "./RunnerJobs": "./src/RunnerJobs.ts",
     "./tui-native": {
       "types": "./vendor/opentui-native/runtime.d.ts",
       "bun": "./vendor/opentui-native/runtime.bun.mjs",
@@ -763,6 +764,16 @@
         "require": {
           "types": "./dist/cjs/CloudSandbox.d.ts",
           "default": "./dist/cjs/CloudSandbox.js"
+        }
+      },
+      "./RunnerJobs": {
+        "import": {
+          "types": "./dist/esm/RunnerJobs.d.ts",
+          "default": "./dist/esm/RunnerJobs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunnerJobs.d.ts",
+          "default": "./dist/cjs/RunnerJobs.js"
         }
       },
       "./tui-native": {

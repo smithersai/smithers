@@ -39,6 +39,7 @@ import * as Serve from "../runner/Serve.ts"
 import type * as Session from "../runner/Session.ts"
 import * as StatusPage from "../runner/StatusPage.ts"
 import * as Workstreams from "../runner/Workstreams.ts"
+import * as RunnerJobs from "../RunnerJobs.ts"
 
 /**
  * Serves the runner the configuration at `path` describes, until the process
@@ -134,9 +135,10 @@ const serveLocal = (config: Config.Checked, read: (() => Machine.Reading) | unde
       )
     )
     yield* Deferred.succeed(lanes, Context.get(control, Control.Control))
-    // The requests `runner start` queued, admitted as lanes every poll, after a restart too. A pass that fails anyhow
-    // is logged and the next one goes on.
+    // The requests `runner start` queued, admitted as lanes every poll, after a restart too, and the job requests flow
+    // hosts in other processes wrote (`RunnerJobs`). A pass that fails anyhow is logged and the next one goes on.
     yield* LaneIntake.admitAll(config.stateDir).pipe(
+      Effect.andThen(RunnerJobs.admitAll(config.stateDir, store.jobs)),
       Effect.provideContext(control),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)

@@ -131,6 +131,38 @@ export const steerBoundary = (key: string, ids: ReadonlyArray<string>): string =
   `runner-steer:${key}:${createHash("sha256").update([...ids].sort().join("\n")).digest("hex").slice(0, 32)}`
 
 /**
+ * Whether open job `row` is past its deadline at `now` (a claimed one past
+ * the grace its runner has to settle), so it ends `timeout`.
+ *
+ * @category predicates
+ * @since 1.0.0
+ */
+export const expired = (row: Row, now: number): boolean =>
+  (row.status === "queued" && row.deadline <= now) ||
+  (row.status === "claimed" && row.deadline + SETTLE_GRACE_MS <= now)
+
+/**
+ * How job `row` stands, as {@link AgentRunner.AgentJobs} answers it: open is
+ * `Running`, a retryable end within the agent's restarts is `Again` and past
+ * them `exhausted`, anything else its outcome. An expired open job reads
+ * `timeout`, whether or not the store has written that end yet.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const standingOf = (row: Row, now: number): AgentRunner.Standing => {
+  if (expired(row, now)) return { _tag: "Ended", outcome: TIMEOUT }
+  if (row.status === "queued" || row.status === "claimed") return { _tag: "Running" }
+  if (row.status === "retryable") {
+    // Generation g is the (g-1)th restart.
+    return row.generation <= row.task!.agent.restarts
+      ? { _tag: "Again" }
+      : { _tag: "Ended", outcome: { _tag: "Failed", reason: "exhausted" } }
+  }
+  return { _tag: "Ended", outcome: row.outcome! }
+}
+
+/**
  * Where the store keeps its jobs and transcripts under `stateDir`.
  *
  * @category constructors
@@ -225,8 +257,7 @@ export const make = (stateDir: string, options: Options = {}) =>
 
     /** An open job past its deadline (a claimed one past the grace to settle) ends `timeout`. */
     const expire = (row: Row, now: number) =>
-      (row.status === "queued" && row.deadline <= now) ||
-        (row.status === "claimed" && row.deadline + SETTLE_GRACE_MS <= now)
+      expired(row, now)
         ? write({
           ...row,
           status: "failed",
@@ -236,17 +267,6 @@ export const make = (stateDir: string, options: Options = {}) =>
           settledAt: now
         }).pipe(Effect.map(() => rows.get(row.key)!))
         : Effect.succeed(row)
-
-    const standingOf = (row: Row): AgentRunner.Standing => {
-      if (row.status === "queued" || row.status === "claimed") return { _tag: "Running" }
-      if (row.status === "retryable") {
-        // Generation g is the (g-1)th restart.
-        return row.generation <= row.task!.agent.restarts
-          ? { _tag: "Again" }
-          : { _tag: "Ended", outcome: { _tag: "Failed", reason: "exhausted" } }
-      }
-      return { _tag: "Ended", outcome: row.outcome! }
-    }
 
     const unavailableJobs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       lock.withPermits(1)(effect).pipe(Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()))
@@ -349,7 +369,8 @@ export const make = (stateDir: string, options: Options = {}) =>
           const row = rows.get(key)
           // A key with no job was never queued: another generation.
           if (row === undefined) return { _tag: "Again" } as const
-          return standingOf(yield* expire(row, yield* Clock.currentTimeMillis))
+          const now = yield* Clock.currentTimeMillis
+          return standingOf(yield* expire(row, now), now)
         }).pipe(unavailableJobs),
       cancel: (key) => cancelKey(key).pipe(unavailableJobs)
     })
