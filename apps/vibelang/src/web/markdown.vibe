@@ -124,7 +124,8 @@ export function compile(text: string): ReadonlyArray<MarkdownNode> {
       const ordered = /^[0-9]/.test(line)
       while (index < lines.length) {
         const item = /^(?:- |[0-9]+\. )(.*)$/.exec(lines[index]!)
-        if (!item) break
+        // A change of marker starts a new list, as in CommonMark: dashes then numbers are two lists.
+        if (!item || /^[0-9]/.test(lines[index]!) !== ordered) break
         let words = item[1]!
         index++
         while (index < lines.length && /^  +\S/.test(lines[index]!)) words += " " + lines[index++]!.trim()
