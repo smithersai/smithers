@@ -90,6 +90,31 @@ test("a comparison reads the files two commits differ by", async () => {
   }
 })
 
+test.each([undefined, { cache: "force-cache", credentials: "omit", redirect: "manual" } satisfies RequestInit])(
+  "a comparison bypasses old HTTP cache entries and preserves transport options: %j",
+  async (init) => {
+    const files = [{ filename: "private.md", status: "modified", additions: 1, deletions: 0, patch: "+private" }]
+    const { origin, asked } = await serve(json(200, { files, truncated: false, commits: [], commitsTruncated: false }))
+    const seen: Array<Request> = []
+    const observedFetch: typeof fetch = (input, options) => {
+      seen.push(new Request(input, options))
+      return fetch(input, options)
+    }
+    const read = Effect.flatMap(PullsClient, (client) => client.compare("octo", "hello", BASE, HEAD)).pipe(
+      Effect.provide(PullsClient.layer({ origin, within: "2 seconds" })),
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, observedFetch),
+    )
+    const result = await Effect.runPromise(init === undefined ? read : Effect.provideService(read, FetchHttpClient.RequestInit, init))
+    expect(result.files).toEqual(files)
+    expect(asked).toHaveLength(1)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.cache).toBe("no-store")
+    expect(seen[0]!.credentials).toBe(init?.credentials ?? "same-origin")
+    expect(seen[0]!.redirect).toBe(init?.redirect ?? "follow")
+  },
+)
+
 test("an answer whose body isn't the contract's, or is cut short, fails with its status", async () => {
   const wrong = await serve(json(202, { txid: "41" }))
   expect(await sendMerge(wrong.origin)).toMatchObject({ _tag: "Failure", failure: { status: 202 } })

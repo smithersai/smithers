@@ -30,7 +30,7 @@ Review (a Maintainer's own press, or /review) ─▶ POST /api/repos/<o>/<n>/pul
 the todo run publishes ─▶ checks/Run on the head ─▶ runs rows with the head's SHA (the Checks tab)
                                      each .smithers/checks/<name>.sh on the branch's machine · the review: one comment
                                      each check's result ─▶ POST /statuses/<head> smithers/<name>, as the App (GH-10)
-GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits differ by, kept forever
+GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits differ by, HTTP caching disabled
 ```
 
 - **One row per pull request, beside its issue row.** A pull request is an `items` row of kind `pull` (title, body, state, author, conversation) and a `pulls` row with its head, base, draft, merge and size. `github/Apply` reads it with its commits and reviews (`worker/github/Pulls.ts`), under the same newer-than guard as an issue.
@@ -57,7 +57,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 |---|---|
 | `POST /api/repos/<owner>/<name>/writes` `{ writeId, op: "pr/merge", number, headSha, baseSha, method? }` | `202 { txid, writeId }` and `pr/Merge` started (`pr-merge:<writeId>`); refusals as issues' writes: `403 forbidden` for a Member, a Guest or anyone acting for the person, `401 authentication` without a session |
 | `POST /api/repos/<owner>/<name>/pulls/<number>/review` `{ headSha? }` | `202 { sha, started }` and `pull/Review` started, or the head's review already Running or Passed (`started: false`); refusals in [review on request](#review-on-request) |
-| `GET /api/repos/<owner>/<name>/compare/<base>...<head>` | `200 { files, truncated, commits, commitsTruncated }`, `Cache-Control: private, max-age=31536000, immutable`, on any repository the person may read as the shapes allow (a published branch's lives on its own); `404 not_found` (no such commits), `401`/`403` as the shapes, `503 not_configured` (no App) or `unavailable` |
+| `GET /api/repos/<owner>/<name>/compare/<base>...<head>` | `200 { files, truncated, commits, commitsTruncated }`, `Cache-Control: private, no-store`, on any repository the person may read as the shapes allow (a published branch's lives on its own); `404 not_found` (no such commits), `401`/`403` as the shapes, `503 not_configured` (no App) or `unavailable` |
 | `GET /api/shapes/pulls`, `/api/shapes/pull-commits`, `/api/shapes/reviews` | the repository's rows, `PULL_COLUMNS`, `PULL_COMMIT_COLUMNS`, `REVIEW_COLUMNS` |
 | `GET /api/shapes/checks` | the repository's `runs` with a commit (`CHECK_COLUMNS`): never who launched them |
 
@@ -231,7 +231,7 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `packages/smithers/agent/integrations/test/Pulls.test.ts` | `GitHub.Pulls`, `Refs` and `Commits` against a fake GitHub on a real socket: fenced merges and commits, adoption after a lost answer, every refusal, 100% |
 | `packages/smithers/agent/integrations/test/Once.test.ts` | `GitHub.Once.merge` against a fake GitHub on a real socket: the trailer written and found by its key alone, never a merge someone else made at the same head, the head fence, a rebase never claimed |
 | `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: the repository's merge flow read at the base the page showed (a pull request can't choose its own; bad JSON, an unknown flow or field refused `invalid`; a file GitHub can't serve tried again; no `Contents: read` refused); a queue merge posting one request as the person naming the head, found by its key after a lost answer, refused for a moved head, a draft, merged or closed, and never checking the base; as the person, with the key in the commit message; each refusal, the base branch moved since the page read it included; a lost answer found by its key; someone else's merge at the same head refused `merged`; a base branch it can't read refused; a moved base moving every open pull request's base and a second press merging; a late settlement never moving a base back; a push landing during the merge counted `moved`; a failing projection settling `done`; a run again; give-up |
-| `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route, the shapes |
+| `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route's private, non-storable response, the shapes |
 | `worker/github/Review.test.ts` | review on request through the GitHub routes' real handler on compose Postgres and the scripted GitHub: a Maintainer of a second repository reviews an outsider's pull request, run once as theirs, the comment review and `smithers/review` posted; a failed review asked again by another Maintainer; two presses at once start one; every refusal; a start that failed rolled back; sign-in and Postgres down |
 | `worker/PersonOnly.test.ts` | `pull/review` refused `403 person_only` for every run credential, and counted |
 | `src/features/pulls/steps.test.ts` | `pull/review/request` through the real `PullsClient` against a local server: the body, what is final and what is tried again |
@@ -239,7 +239,7 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `worker/branch/RegistryEgress.test.ts` | a box reaches each registry host, counted; every other host refused before anything is sent; no secret in its policy or vault; a job's box never gets the secrets egress |
 | `packages/smithers/agent/integrations/test/Statuses.test.ts` | `GitHub.Statuses.create` against a fake GitHub on a real socket: per-commit statuses, a lost answer retryable, refusals unretried, every invalid input refused before a request, 100% |
 | `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's; a Maintainer's Review starting `pull/Review`, a Member's refused, a moved head |
-| `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box (Queued while a queue holds the request), the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server |
+| `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box (Queued while a queue holds the request), the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server, including uncached comparison requests that preserve transport options |
 | `e2e/pull-review.spec.ts` | production review on the test account's configured scratch repository: prepare a fresh head through its leased, unrecorded GitHub profile; read Files; require `started: true`, successful Checks and one GitHub `COMMENTED` bot review on that SHA; ask again with `started: false` and no duplicate; leave the PR open and unmerged. The same account's real Member role on the existing shared scratch repository hides Review and is refused `403 forbidden`. No open VibeLang PR or development role override is required. |
 
 ## Not built yet
@@ -259,7 +259,7 @@ Issue and pull request detail pages link back to their repository's list. Every 
 Pull request bodies and conversation comments use the issue store's item-scoped persisted shapes. PR metadata, reviews, commits and checks continue using their existing repository shapes. Hover preload carries the PR number so its body starts before navigation.
 
 
-Comparisons are cached by repository and both commit SHAs. A read owns its cache row; completion after a refusal, wipe, or replacement read cannot modify another comparison. Forks that share SHAs keep separate rows.
+Comparisons are memoized only in the current viewer's wipeable app state, by repository and both commit SHAs. The browser fetch uses `cache: "no-store"` to bypass immutable responses cached by older releases; every network read checks current repository access. A read owns its cache row; completion after a refusal, wipe, or replacement read cannot modify another comparison. Forks that share SHAs keep separate rows.
 
 The list screen exposes safe readiness receipts as `data-access-status`, `data-access-installed`, `data-pull-status`, `data-pull-installed`, `data-query-ready`, `data-sync-complete` and `data-list-ready`. They carry no row or search content.
 

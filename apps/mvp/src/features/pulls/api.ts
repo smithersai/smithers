@@ -1,5 +1,5 @@
-import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { writesRoute } from "../issues/contract"
 import { WriteTaken } from "../issues/schema"
 import { compareRoute, type MergeMethod, reviewRoute } from "./contract"
@@ -75,8 +75,11 @@ export class PullsClient extends Context.Service<
               [200, 202],
             ).pipe(Effect.withSpan("pulls.merge.post")),
           compare: (owner, name, base, head) =>
-            send(HttpClientRequest.get(`${options.origin}${compareRoute(owner, name, base, head)}`), decodeCompared, [200])
-              .pipe(Effect.withSpan("pulls.compare.get")),
+            Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) =>
+              send(HttpClientRequest.get(`${options.origin}${compareRoute(owner, name, base, head)}`), decodeCompared, [200]).pipe(
+                // Bypass comparisons cached by older releases, even after access or the signed-in account changes.
+                Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrElse(init, () => ({})), cache: "no-store" }),
+              )).pipe(Effect.withSpan("pulls.compare.get")),
           review: ({ repo, number, headSha }) => {
             const [owner = "", name = ""] = repo.split("/")
             return send(

@@ -134,7 +134,7 @@ export const QUEUED_NOTICE = "Queued"
  */
 export const deployWarningOf = (base: string): string => `Merging into ${base} deploys it.`
 
-/** `GET /api/repos/<owner>/<name>/compare/<base>...<head>`: two SHAs' changed files, kept forever. */
+/** `GET /api/repos/<owner>/<name>/compare/<base>...<head>`: two SHAs' changed files, never kept by an HTTP cache. */
 export const COMPARE_SEGMENT = "compare"
 export const compareRoute = (owner: string, name: string, base: string, head: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${COMPARE_SEGMENT}/${base}...${head}`

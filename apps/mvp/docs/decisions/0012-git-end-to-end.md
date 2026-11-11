@@ -18,7 +18,7 @@ The TODO flow (mvp.md §4, §8) is context only. Opus and Sol designed independe
 1. **GitHub is the truth; Postgres holds a projection; devices read the projection.**
    - Issues, pull requests, comments, reviews, labels and branches are Postgres rows that only the server's GitHub flows write.
    - Electric syncs them per repository into persisted TanStack DB collections.
-   - Diffs come through RepoApi GET routes keyed by SHA, cached forever like 0006's tree and blob reads. They are never rows.
+   - Diffs come through RepoApi GET routes keyed by SHA, memoized in the viewer's wipeable app state. Comparison responses use `Cache-Control: private, no-store`, and the client bypasses the HTTP cache so account changes and revoked repository access reach authorization. They are never rows.
    - The device never calls GitHub.
 2. **A webhook rings the bell; the server reads GitHub and writes the row.**
    - `POST /api/github/webhook` verifies `X-Hub-Signature-256`, records `X-GitHub-Delivery` once, answers after that commit, and starts `github/Apply` keyed by the delivery.
@@ -138,7 +138,7 @@ The TODO flow (mvp.md §4, §8) is context only. Opus and Sol designed independe
 | `branch/Update` | `branch, method, expectedHeadSha` | Member, within the branch's mode | run | same |
 | `repo/Refresh` | none | Member | run | the App's, for reads |
 
-- **Reads stay on the device:** `issues/list`, `pulls/list`, `issue/get` and `pr/get` are live queries over the synced collections, and the agent reads them as tools. `pr/diff { repo, base, head }` reads `GET /api/repos/:o/:r/compare/:base...:head`, which RepoApi serves with the installation token and caches forever by the SHA pair, with a `truncated` flag past GitHub's limits.
+- **Reads stay on the device:** `issues/list`, `pulls/list`, `issue/get` and `pr/get` are live queries over the synced collections, and the agent reads them as tools. `pr/diff { repo, base, head }` reads `GET /api/repos/:o/:r/compare/:base...:head`, which RepoApi serves with the installation token and no HTTP caching; the viewer's wipeable app state memoizes it by the SHA pair, with a `truncated` flag past GitHub's limits.
 - **Admission is per operation inside one route,** so [no remote door](../features/remote-flows.md#no-remote-door) still holds: nothing starts a flow by name. A repeated `writeId` with the same payload hash answers the existing row; a different hash answers `409`.
 - **An unknown outcome is reconciled before anything is written again.** Each created issue, comment, pull request and review carries `<!-- smithers:write=<id> -->`. On `outcomeUnknown`, the step reads the author's recent items or the pull request's state, and adopts what it finds. Merge reads the `merge-async` result. A label is idempotent.
 - **`GitHubTokens`** (0008 §5) has two methods:
@@ -400,7 +400,7 @@ Both designs were written independently, then Opus merged them. Claims adopted f
 | Sync status | `repositories.synced_at` | `github_sync_status` with partial or complete | Sol's, merged with the cursor as `github_sync` | an incomplete scan must never read as complete, and the first sync must not show "No issues" |
 | Reconcile trigger | a stale read, keyed by 5-minute bucket; cron later | `@smthrs/triggers` schedule | Opus now, Sol's cron as W9 | `@smthrs/platform-cloudflare` has no cron or scheduled entry today (searched); `auth/RecheckRole` proves the keyed-start pattern |
 | Write door | per-operation admitting routes | restore a typed remote dispatch door; add result waiting to the SDK | Opus, as one route over a closed union | [remote-flows.md](../features/remote-flows.md#no-remote-door) brings a door back only for a flow its schema alone admits; git writes need role, installation and hash checks. The settled row is the result, so nothing waits |
-| Diffs | GitHub compare through a GET route, cached by SHA pair | `github_pr_files` rows with patches | Opus, with Sol's `truncated` flag | 0006 keeps content out of Postgres; a SHA pair never changes |
+| Diffs | GitHub compare through a GET route, memoized by SHA pair in the viewer's wipeable app state | `github_pr_files` rows with patches | Opus, with Sol's `truncated` flag | 0006 keeps content out of Postgres; a SHA pair never changes |
 | Merge call | `merge-async` with `sha`, polled | synchronous squash merge with the head SHA | Opus | GitHub recommends `merge-async`, which answers `202` and keeps its result 24 h [GH-pulls] |
 | Merge binding | head SHA | tuple of PR, head, base and policy revision; online only; request and confirm | Sol's online rule, `baseSha` and the request/confirm split | GitHub's merge has no expected-base field [GH-pulls], so the step rechecks it and protection enforces it; a queued offline merge would skip review |
 | Update with merge | GraphQL for PRs, `POST /merges` otherwise | REST `update-branch` with `expected_head_sha`, waiting past `202` | Sol's for PRs, Opus's `POST /merges` otherwise | `update-branch` refuses a mismatched head with `422` [GH-pulls]; `POST /merges` serves a branch with no PR [GH-branches] |

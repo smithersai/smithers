@@ -254,14 +254,14 @@ describe("pull request webhooks", () => {
 })
 
 describe("GET .../compare/<base>...<head>", () => {
-  test("a person with a role reads the files two commits differ by, kept forever", async () => {
+  test("a person with a role reads the files without allowing HTTP caching", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const base = github.refs.get("main")!
     const head = github.push("feature", { "README.md": "# Widgets\n\nA line\n" })
     const h = await githubHarness(runtime, { github, app: app({ privateKey: await appKey() }) })
     const response = await h.fetch(compareRoute("acme", "widgets", base, head))
     expect(response.status).toBe(200)
-    expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     const body = await response.json() as {
       files: Array<{ filename: string; status: string; patch: string }>
       truncated: boolean

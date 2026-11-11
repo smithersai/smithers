@@ -10,8 +10,9 @@ import * as Tokens from "./Tokens.ts"
 
 // `GET /api/repos/<owner>/<name>/compare/<base>...<head>` (decision 0012 §3, docs/features/pulls.md#files): the files two
 // commits differ by, with their patches, which a pull request's Files tab shows. Two SHAs never change what they
-// compare, so the answer is kept forever by whoever reads it, and nothing of it is a row. The route reads GitHub with
-// the App's installation token for this one repository; the device never calls GitHub.
+// compare, so the viewer's wipeable app state may reuse the answer. HTTP caches must not keep it: repository access
+// can change between reads. The route reads GitHub with the App's installation token for this one repository; the
+// device never calls GitHub.
 
 /** `GET /api/repos/<owner>/<name>/compare/<base>...<head>` as its parts, or `undefined` for any other path. */
 export const parseComparePath = (path: string) => {
@@ -37,9 +38,8 @@ const noStore = { "cache-control": "no-store" }
 
 /**
  * The compare route over `app` and `http` (`fetch` unless set): an installation token per read (`pulls` access), then
- * GitHub's comparison. `200 { files,
- * truncated }` kept forever; `404 not_found` when GitHub has no such commits; `503` when the App isn't installed or
- * GitHub didn't answer. Each read is a log line `github.compare` with the outcome and the file count, never a path.
+ * GitHub's comparison. `200 { files, truncated }` with HTTP caching disabled; `404 not_found` when GitHub has no such
+ * commits; `503` when the App isn't installed or GitHub didn't answer. Each read is a log line `github.compare` with the outcome and the file count, never a path.
  */
 export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> = Option.none()) =>
   Effect.gen(function* () {
@@ -73,7 +73,7 @@ export const make = (app: GitHubApp, http: Option.Option<HttpClient.HttpClient> 
               commits: outcome.success.commits,
               commitsTruncated: outcome.success.commitsTruncated,
             },
-            { status: 200, headers: { "cache-control": "private, max-age=31536000, immutable" } },
+            { status: 200, headers: { "cache-control": "private, no-store" } },
           )
         }
         const status = statusOf(outcome.failure)
