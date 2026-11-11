@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs one model-backed step end to end. The agent loop is the
 production one; only the model is scripted, so the run is deterministic and
 needs no API key. By the end you will have a step whose answer arrives as a
-typed value, decoded by the schema you declared.
+typed value, decoded by the schema you declared. Each step below is
+TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same
+step as Effect code.
 
 A runnable version of this walkthrough lives in the Smithers repository, as
 [`packages/smithers/agent/examples/11-agent-step.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/examples/11-agent-step.ts).
@@ -212,6 +214,115 @@ its correction budget on a re-prompt before failing with a typed
 `StructuredOutputFailure`. The model call itself is a sealed durable step, so a
 replay of this execution re-emits the recorded events instead of asking the
 provider again.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the output type is a
+`schema` declaration, and the run is an `effect` function that provides the
+composed layer with `provide` and runs the flow with `try`, so no
+`Effect.provide` pipe or `Effect.runPromise` call appears. The scripted model
+takes the cell's `ctx.done` argument as text, so a test can also feed it an
+answer that misses the schema and observe the typed failure.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+````vibe
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Agent, AgentAction, Budget, QuotaPolicy, ScriptedJudge, Seat, SeatResolver } from "@smthrs/agent"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Model, ModelEvent, type Route } from "@smthrs/model"
+import { Registry } from "@smthrs/registry"
+
+/** The typed answer the step must produce. */
+export schema ResearchResult {
+  readonly summary: string
+  readonly keyPoints: ReadonlyArray<string>
+}
+
+/** The step: a model call whose answer must be a ResearchResult. */
+export const Research = AgentAction.make("quickstart/Research", {
+  payload: { topic: Schema.String },
+  output: ResearchResult,
+  seat: "anthropic:claude-sonnet-4-5",
+  system: ["You are a research assistant. Provide concise, accurate summaries."],
+  prompt: ({ topic }) => `Research the topic "${topic}" and report what matters about it.`
+})
+
+/** The flow: one step, so the result is ResearchResult-typed all the way out. */
+export const ResearchFlow = Flow.make("quickstart/ResearchFlow", {
+  payload: { topic: Schema.String },
+  success: ResearchResult,
+  error: AgentAction.AgentFailure,
+  body: ({ topic }) => Research.call({ topic })
+})
+
+const prepared: Route.PreparedRequest = {
+  routeId: "quickstart",
+  protocolId: "quickstart",
+  method: "POST",
+  url: "https://example.invalid/v1/messages",
+  publicHeaders: { "content-type": "application/json" },
+  body: new TextEncoder().encode("{}"),
+  bodyText: "{}"
+}
+
+/** A model that answers every request with one cell calling `ctx.done(answer)`. */
+const scripted = (answer: string): Model.Model =>
+  Model.make({
+    stream: () =>
+      Stream.fromIterable([
+        ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
+        ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\nctx.done(" + answer + ")\n```" }),
+        ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
+        ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+      ])
+  })
+
+/** Every declared seat resolves to the scripted model: the only seam to a live run. */
+const seats = (model: Model.Model) =>
+  SeatResolver.layer({
+    resolve: (id) =>
+      succeed(Seat.make({
+        id,
+        modelId: "test-model",
+        model,
+        route: { prepare: () => succeed(prepared) },
+        contextWindowTokens: 200_000
+      }))
+  })
+
+const host = AgentAction.layerHost({
+  registry: Registry.makeNoop({
+    list: () => succeed([]),
+    visible: () => succeed([]),
+    getOption: () => succeed(Option.none())
+  }),
+  limits: { calls: 8 },
+  capabilityEnvelope: [],
+  maxFrames: 4
+})
+
+const layer = (model: Model.Model) =>
+  Layer.mergeAll(Research.layer, Interpreter.layer(ResearchFlow)).pipe(
+    Layer.provideMerge(Layer.mergeAll(host, seats(model), Agent.layer)),
+    Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+    Layer.provideMerge(Agent.layerDefaults),
+    Layer.provideMerge(ScriptedJudge.layer),
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provideMerge(NodeCrypto.layer)
+  )
+
+/** Runs the flow with a model that answers `answer`, the cell's `ctx.done` argument as code. */
+export effect function research(topic: string, answer: string) {
+  const live = layer(scripted(answer))
+  provide live {
+    return try ResearchFlow.execute({ topic }, { executionId: "quickstart-1" })
+  }
+}
+````
 
 ## Next steps
 

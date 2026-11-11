@@ -1,0 +1,16 @@
+import { expect, it } from "@effect/vitest"
+import { research } from "../examples/quickstart.vibe"
+
+const answer = {
+  summary: "Durable workflows record every step so a restart resumes instead of repeating.",
+  keyPoints: ["steps are journaled", "replay is deterministic"]
+}
+
+it.effect("returns the model's answer decoded as a ResearchResult", effect () => {
+  expect(try research("durable workflows", JSON.stringify(answer))).toEqual(answer)
+})
+
+it.effect("fails typed when the answer misses the declared schema", effect () => {
+  const failed = research("durable workflows", `{ summary: "no key points" }`) catch (error) => error._tag
+  expect(failed).toBe("/harness/StructuredOutputFailure")
+})

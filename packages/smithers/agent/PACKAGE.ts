@@ -7,13 +7,13 @@ import {
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
-const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+const { check, circular, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/agent",
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 /** ModelStep's durable and process-boundary cases require an authenticated PostgreSQL server. */
@@ -30,10 +30,10 @@ const modelStepPostgres = Smithers.Docker.Service({
 
 const test = Smithers.Vitest({
   cwd: "packages/smithers/agent",
-  tests: [Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })],
+  tests: [Smithers.glob("test/**/*.test.{ts,vibe}", { exclude: ["test/faults/**"] })],
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
-    Smithers.glob("{test,examples}/**/*.ts"),
+    Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
     Smithers.file("docs/quickstart.md"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
@@ -48,6 +48,22 @@ const test = Smithers.Vitest({
   env: { SMITHERS_MODEL_STEP_TEST_PG_PORT: "55439" },
   services: [modelStepPostgres],
   sandbox: { network: "loopback" }
+})
+
+/**
+ * The quickstart's VibeLang tab is held to `examples/quickstart.vibe`; `docs`
+ * depends on this package's own `check` and `test`, the suite with its
+ * PostgreSQL service, so the docs verb compiles and runs the example.
+ */
+const docs = Smithers.DocsParity({
+  readme: Smithers.file("README.md"),
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }],
+  deps: [check, test],
+  cwd: "packages/smithers/agent"
 })
 
 /** Memory and promotion stay portable; their regression tests never wait on wall time. */
