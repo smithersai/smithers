@@ -160,6 +160,18 @@ describe("BuildAndCheckTypeScriptPackage", () => {
     expect(Target.metadata(targets.docs).kinds).toEqual(["docs"])
   })
 
+  it("holds declared page examples to their sources and compiles and runs them under docs", () => {
+    const example = {
+      page: Input.file("docs/quickstart.md"),
+      example: Input.file("examples/quickstart.vibe"),
+      test: Input.file("test/quickstart.test.vibe")
+    }
+    const withExamples = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/errors", examples: [example] })
+    expect(attrsOf<{ readonly examples: unknown }>(withExamples.docs).examples).toEqual([example])
+    expect(Target.metadata(withExamples.docs).dependencies).toEqual([withExamples.check, withExamples.test])
+    expect(attrsOf<{ readonly examples: unknown }>(targets.docs).examples).toEqual([])
+  })
+
   it("keeps docs as a separately planned target kind", () => {
     for (const target of [targets.lib, targets.test, targets.lint]) {
       expect(Target.metadata(target).kinds).not.toContain("docs")

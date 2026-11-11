@@ -92,6 +92,18 @@ export interface Options {
   readonly dprintConfig?: Input.File | undefined
   readonly readme?: Input.File | undefined
   /**
+   * Page examples the `docs` target holds to their sources, such as a
+   * quickstart's VibeLang tab: each `page` must show its `example` file
+   * verbatim in a fence named for the file's extension, and `test` must import
+   * the example. When any is listed, `docs` depends on `check` and `test`, so
+   * the docs verb also compiles and runs every example a page shows.
+   *
+   * @default []
+   */
+  readonly examples?:
+    | ReadonlyArray<{ readonly page: Input.File; readonly example: Input.File; readonly test: Input.File }>
+    | undefined
+  /**
    * The program that builds the package's distribution. It defaults to the
    * conventional `scripts/build.mjs`, which is what the repository's
    * per-package `build` script runs.
@@ -154,7 +166,8 @@ export interface PackageTargets {
  * for test files, and ESLint 9 fails on a pattern whose matches are all
  * unconfigured. `check` depends on `lib` because the test tsconfig resolves
  * workspace dependencies through their built declarations. `docs` is the
- * documentation-parity target over the package README. It participates in
+ * documentation-parity target over the package README and any declared page
+ * `examples`; with examples it depends on `check` and `test`. It participates in
  * the `docs` verb alone; the aggregate `ci` command plans that verb alongside
  * build, test, and lint. `docsFiles` is the package's documentation named as
  * a `Filegroup` (`docs/**\/*.md`, the README, `package.json`); it joins no
@@ -300,9 +313,11 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     cwd
   })
   const readme = options.readme ?? Input.file("README.md")
+  const examples = options.examples ?? []
   const docs = DocsParity({
     readme,
-    deps: [],
+    examples,
+    deps: examples.length === 0 ? [] : [check, test],
     cwd
   })
   const docsFiles = Filegroup({
