@@ -11,6 +11,12 @@
  *   MQ_BOOKMARK       the bookmark the queue lands on (default `main`)
  *   MQ_STATE          a directory for the inbox, the ledger and fix briefs
  *   MQ_CHECK_COMMAND  run as `sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>`; exit 0 passes the check
+ *   MQ_RUN_COMMAND    instead of MQ_CHECK_COMMAND: one process per CI run, as
+ *                     `sh -c "$MQ_RUN_COMMAND" sh <commit> <check>...`, printing `<check> pass|fail [seconds]`
+ *                     as each check finishes
+ *   MQ_FINISH_COMMAND optional, run as `sh -c "$MQ_FINISH_COMMAND" sh <head> <onto> <conflicted>` on each change
+ *                     once it is rebased; prints the commit that stands for the change (regenerated files)
+ *   MQ_JJ             the jj program (default `jj`)
  *   MQ_FIX_COMMAND    run as `sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>`
  *   MQ_POLL_MS        how often to look for news (default 2000)
  *
@@ -21,17 +27,34 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Flow, Interpreter } from "@smthrs/flow"
 import { CommandCi, CommandFixer, FileInbox, JjRepository, QueueFlow, QueueSchema } from "@smthrs/merge-queue"
-import { Config, Effect, Layer } from "effect"
+import { Config, Effect, Layer, Option } from "effect"
 
 const services = Layer.unwrap(
   Effect.gen(function*() {
     const repo = yield* Config.String("MQ_REPO")
     const bookmark = yield* Config.String("MQ_BOOKMARK").pipe(Config.withDefault("main"))
     const state = yield* Config.String("MQ_STATE")
-    const check = yield* Config.String("MQ_CHECK_COMMAND")
+    const run = yield* Config.option(Config.String("MQ_RUN_COMMAND"))
+    const check = yield* (Option.isSome(run) ? Config.succeed("") : Config.String("MQ_CHECK_COMMAND"))
+    const finish = yield* Config.option(Config.String("MQ_FINISH_COMMAND"))
+    const binary = yield* Config.String("MQ_JJ").pipe(Config.withDefault("jj"))
     const fix = yield* Config.String("MQ_FIX_COMMAND")
     const poll = yield* Config.Number("MQ_POLL_MS").pipe(Config.withDefault(2000))
-    const repository = yield* JjRepository.make({ path: repo, bookmark, ledger: `${state}/ledger.json`, poll })
+    const repository = yield* JjRepository.make({
+      path: repo,
+      bookmark,
+      ledger: `${state}/ledger.json`,
+      poll,
+      binary,
+      finish: Option.match(finish, {
+        onNone: () => undefined,
+        onSome: (command) => (head: string, onto: string, conflicted: boolean) => ({
+          command: "sh",
+          args: ["-c", command, "sh", head, onto, String(conflicted)],
+          cwd: repo
+        })
+      })
+    })
     return Layer.mergeAll(
       FileInbox.layer({
         path: `${state}/inbox.jsonl`,
@@ -39,10 +62,23 @@ const services = Layer.unwrap(
         register: (id, commit) => repository.register({ id, rev: 0 }, commit)
       }),
       JjRepository.target(repository, poll),
-      CommandCi.layer({
-        repository,
-        command: (id, commit) => ({ command: "sh", args: ["-c", check, "sh", String(id), commit], cwd: repo }),
-        poll
+      Option.match(run, {
+        onNone: () =>
+          CommandCi.layer({
+            repository,
+            command: (id, commit) => ({ command: "sh", args: ["-c", check, "sh", String(id), commit], cwd: repo }),
+            poll
+          }),
+        onSome: (command) =>
+          CommandCi.streamed({
+            repository,
+            command: (checks, commit) => ({
+              command: "sh",
+              args: ["-c", command, "sh", commit, ...checks.map(String)],
+              cwd: repo
+            }),
+            poll
+          })
       }),
       CommandFixer.layer({
         repository,

@@ -153,6 +153,10 @@ the four services from the environment and starts the queue.
 export MQ_REPO=/srv/repo            # the jj repository
 export MQ_STATE=/srv/queue          # inbox, ledger and fix briefs
 export MQ_CHECK_COMMAND='...'       # sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>; exit 0 passes
+export MQ_RUN_COMMAND='...'         # instead: one process per run, sh -c "$MQ_RUN_COMMAND" sh <commit> <check>...
+                                    # prints "<check> pass" or "<check> fail" as each check finishes
+export MQ_FINISH_COMMAND='...'      # optional: sh -c "$MQ_FINISH_COMMAND" sh <head> <onto> <conflicted>
+                                    # prints the commit that stands for the rebased change
 export MQ_FIX_COMMAND='...'         # sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>
 smthrs flow start merge-queue --data @start.json
 ```
@@ -164,6 +168,13 @@ smthrs flow start merge-queue --data @start.json
 ```json
 { "_tag": "enqueue", "id": 42, "priority": 0, "commit": "<commit id>" }
 ```
+
+`commit` is one commit id, or a jj revset of a stack of commits such as `"<first> | <second>"`. A stack is
+rebased, tested and landed whole.
+
+When generated files must be rebuilt after a rebase, set `MQ_FINISH_COMMAND`. It runs on each change after the
+change is replayed on the tip (and on the changes before it), may resolve conflicts and add commits on top, and
+prints the commit that now stands for the change. That commit is the one tested and the one that lands.
 
 `{"_tag":"withdraw","id":42}` takes it back and `{"_tag":"close"}` lets the
 run finish once every change has ended. After a host dies, `smthrs runs resume

@@ -38,7 +38,10 @@ let repositories = 0
  * fails on a commit that contains the file `fail-n.txt` and sleeps first when
  * the commit contains `slow-n.txt`.
  */
-const setup = async (command?: (check: number, commit: string) => CommandCi.Command) => {
+const setup = async (
+  command?: (check: number, commit: string) => CommandCi.Command,
+  stream?: (checks: ReadonlyArray<number>, commit: string) => CommandCi.Command
+) => {
   const path = join(root, `repo-${repositories++}`)
   const jj = (...args: ReadonlyArray<string>): string =>
     execFileSync(
@@ -68,7 +71,7 @@ const setup = async (command?: (check: number, commit: string) => CommandCi.Comm
     `(cd '${path}' && jj --ignore-working-copy file list -r ${commit} 2>/dev/null | grep -qx ${file})`
   const script = (check: number, commit: string): CommandCi.Command => ({
     command: "sh",
-    args: ["-c", `if ${has(commit, `slow-${check}.txt`)}; then sleep 0.4; fi; ! ${has(commit, `fail-${check}.txt`)}`]
+    args: ["-c", `if ${has(commit, `slow-${check}.txt`)}; then sleep 3; fi; ! ${has(commit, `fail-${check}.txt`)}`]
   })
   const base = ManagedRuntime.make(host)
   runtimes.push(base)
@@ -77,7 +80,9 @@ const setup = async (command?: (check: number, commit: string) => CommandCi.Comm
   )
   const layer = Layer.provideMerge(
     Layer.merge(
-      CommandCi.layer({ repository, command: command ?? script, poll: "5 millis" }),
+      stream === undefined
+        ? CommandCi.layer({ repository, command: command ?? script, poll: "5 millis" })
+        : CommandCi.streamed({ repository, command: stream, poll: "5 millis" }),
       JjRepository.target(repository, "5 millis")
     ),
     host
@@ -176,8 +181,48 @@ describe.skipIf(!jjInstalled)("CI as commands on candidate commits", () => {
     await world.ci((ci) => ci.reconcile([job(0, tree([1, 0]), [1])]))
     await world.ci((ci) => ci.reconcile([job(0, tree([1, 0]), [1])]))
     await world.ci((ci) => ci.reconcile([]))
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await new Promise((resolve) => setTimeout(resolve, 3500))
     expect(await world.ci((ci) => ci.progress(0))).toEqual({ _tag: "running", finished: [] })
+  })
+
+  it("one process per run: each check's verdict is read as its line prints, the rest is ignored", async () => {
+    const lines = [
+      "starting",
+      "2 fail 7",
+      "2 pass",
+      "9 pass",
+      "sleep",
+      "1 pass",
+      "done"
+    ]
+    const world = await setup(undefined, (checks, commit) => ({
+      command: "sh",
+      args: [
+        "-c",
+        lines.map((line) => line === "sleep" ? "sleep 3" : `echo '${line}'`).join("; ") + `; : ${checks} ${commit}`
+      ]
+    }))
+    await world.register(1, 0, world.change({ "one.txt": "one\n" }))
+    await world.ci((ci) => ci.reconcile([job(0, tree([1, 0]))]))
+    expect(await world.settled(0, 1)).toEqual({
+      _tag: "running",
+      finished: [{ check: 2, verdict: "fail", duration: 7 }]
+    })
+    const late = await world.settled(0, 2)
+    expect(late).toMatchObject({ _tag: "running", finished: [{ check: 2 }, { check: 1, verdict: "pass" }] })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(await world.ci((ci) => ci.progress(0))).toEqual(late)
+  })
+
+  it("one process per run: ending with a check unreported, or not starting, loses the run", async () => {
+    const quiet = await setup(undefined, () => ({ command: "sh", args: ["-c", "echo '1 pass'"] }))
+    await quiet.register(1, 0, quiet.change({ "one.txt": "one\n" }))
+    await quiet.ci((ci) => ci.reconcile([job(0, tree([1, 0]))]))
+    expect(await quiet.settled(0, 2)).toEqual({ _tag: "lost" })
+    const broken = await setup(undefined, () => ({ command: join(root, "no-such-program"), args: [], cwd: root }))
+    await broken.register(1, 0, broken.change({ "one.txt": "one\n" }))
+    await broken.ci((ci) => ci.reconcile([job(0, tree([1, 0]))]))
+    expect(await broken.settled(0, 1)).toEqual({ _tag: "lost" })
   })
 
   it("end to end on a real repository: a failing change is fixed and everything lands on tested commits", async () => {

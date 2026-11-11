@@ -32,7 +32,10 @@ export const Line = Schema.Union([
     _tag: Schema.Literal("enqueue"),
     id: Natural,
     priority: Natural,
-    /** The commit the change is handed in as. With it, one line both registers and enqueues the change. */
+    /**
+     * The commit the change is handed in as, or a jj revset of its stack of
+     * commits. With it, one line both registers and enqueues the change.
+     */
     commit: Schema.optionalKey(Schema.NonEmptyString)
   }),
   Schema.Struct({ _tag: Schema.Literal("withdraw"), id: Natural }),

@@ -4,8 +4,9 @@
  *
  * The kernel reasons about trees: lists of change revisions. This module is
  * where a tree becomes commits. A candidate for a tree is built by replaying
- * each change's commit onto the bookmark's tip, in order, so every candidate
- * descends from the tip it is tested on. Landing moves the bookmark forward
+ * each change's commits onto the bookmark's tip, in order, so every candidate
+ * descends from the tip it is tested on. A change may be a stack of several
+ * commits; the stack is replayed whole and lands whole. Landing moves the bookmark forward
  * onto the exact commit that was tested; jj refuses to move it backwards or
  * sideways. There is no side branch.
  *
@@ -14,6 +15,11 @@
  * repository every time, never from memory: a commit the queue did not put
  * there is reported as a part of its own, which the driver turns into a
  * `foreign` event.
+ *
+ * A repository whose generated files must be rebuilt after a rebase gives a
+ * `finish` command. It runs on each change once it is replayed, may resolve
+ * conflicts and add commits on top, and names the commit that stands for the
+ * change from then on. That commit is what is tested and what lands.
  *
  * It runs `jj` through Effect's `ChildProcessSpawner` and keeps the ledger
  * through `FileSystem`, with `--ignore-working-copy`, so it never touches a
@@ -53,6 +59,28 @@ export interface Options {
   readonly ledger: string
   /** How often `wait` looks at the bookmark. */
   readonly poll: Duration.Input
+  /** The `jj` program. Defaults to `jj` on the path. */
+  readonly binary?: string | undefined
+  /**
+   * Finishes a change replayed onto `onto`: `head` is its last commit and
+   * `conflicted` says whether any of its commits has a conflict. The command
+   * prints the commit that stands for the change (its last line of output)
+   * and exits 0, or exits with another status when the change cannot be
+   * applied there. Without it, a conflicted change cannot be applied.
+   */
+  readonly finish?: ((head: string, onto: string, conflicted: boolean) => Command) | undefined
+}
+
+/**
+ * A command to run.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Command {
+  readonly command: string
+  readonly args: ReadonlyArray<string>
+  readonly cwd?: string | undefined
 }
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -67,12 +95,14 @@ const Pinned = Schema.Struct({ id: Natural, rev: Natural, commit: Schema.String 
 export const Ledger = Schema.Struct({
   /** The bookmark's commit when the queue started. The queue's tree is what follows it. */
   genesis: Schema.String,
-  /** The commit each change revision was handed in as. */
+  /** The commits each change revision was handed in as: one commit, or a jj revset of a stack. */
   sources: Schema.Array(Pinned),
   /** The commit each part became in a candidate, and foreign commits. */
   pinned: Schema.Array(Pinned),
   /** The candidate commit built for each tree. A tree's prefixes have entries of their own. */
   candidates: Schema.Array(Schema.Struct({ tree: Schema.String, commit: Schema.String })),
+  /** Commits of a stack below its last one. On the bookmark they belong to the part that follows them. */
+  interior: Schema.Array(Schema.String),
   /** The id the next foreign commit gets. */
   foreign: Natural
 })
@@ -106,7 +136,7 @@ export type Candidate =
  * @since 0.1.0
  */
 export interface Repository {
-  /** Records the commit a change revision was handed in as. */
+  /** Records the commits a change revision was handed in as: a commit id, or a jj revset of a stack. */
   readonly register: (part: Part, commit: string) => Effect.Effect<void, Unavailable>
   /** The tree on the bookmark now. */
   readonly tip: Effect.Effect<Tree, Unavailable>
@@ -135,14 +165,12 @@ export const make = (
     const fs = yield* FileSystem.FileSystem
     const spawner = yield* ChildProcessSpawner
 
-    const jj = (args: ReadonlyArray<string>): Effect.Effect<string, Unavailable> =>
+    const run = (
+      command: Command
+    ): Effect.Effect<{ readonly stdout: string; readonly stderr: string; readonly code: number }, Unavailable> =>
       Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawner.spawn(
-          ChildProcess.make(
-            "jj",
-            ["-R", options.path, "--ignore-working-copy", "--no-pager", "--color=never", ...args],
-            { cwd: options.path }
-          )
+          ChildProcess.make(command.command, command.args, { cwd: command.cwd ?? options.path })
         )
         const [stdout, stderr, code] = yield* Effect.all(
           [
@@ -152,11 +180,26 @@ export const make = (
           ],
           { concurrency: "unbounded" }
         )
+        return { stdout, stderr, code }
+      })).pipe(
+        Effect.catchTag(
+          "PlatformError",
+          (error) => Effect.fail(unavailable(`${command.command} could not run: ${error.message}`))
+        )
+      )
+
+    const jj = (args: ReadonlyArray<string>): Effect.Effect<string, Unavailable> =>
+      Effect.gen(function*() {
+        const { code, stderr, stdout } = yield* run({
+          command: options.binary ?? "jj",
+          args: ["-R", options.path, "--ignore-working-copy", "--no-pager", "--color=never", ...args]
+        })
         if (code !== 0) return yield* unavailable(`jj ${args[0]} exited ${code}: ${stderr.trim().split("\n").at(-1)}`)
         return stdout + stderr
-      })).pipe(
-        Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(`jj could not run: ${error.message}`)))
-      )
+      })
+
+    const ids = (revset: string): Effect.Effect<ReadonlyArray<string>, Unavailable> =>
+      Effect.map(jj(["log", "--no-graph", "-r", revset, "-T", "commit_id ++ \"\\n\""]), lines)
 
     const lines = (text: string): ReadonlyArray<string> => text.split("\n").filter((line) => line !== "")
 
@@ -171,7 +214,7 @@ export const make = (
       const genesis = yield* tipCommit
       if (genesis === undefined) return yield* unavailable(`no bookmark ${options.bookmark}`)
       // Written at once: the queue's tree is what follows this commit, for good.
-      const created = { genesis, sources: [], pinned: [], candidates: [], foreign: firstForeign }
+      const created = { genesis, sources: [], pinned: [], candidates: [], interior: [], foreign: firstForeign }
       yield* fs.writeFileString(options.ledger, JSON.stringify(created) + "\n")
       return created
     }).pipe(
@@ -203,7 +246,7 @@ export const make = (
       )
       let foreign = ledger.foreign
       const pinned = [...ledger.pinned]
-      const parts = commits.map((commit): typeof Pinned.Type => {
+      const parts = commits.filter((commit) => !ledger.interior.includes(commit)).map((commit): typeof Pinned.Type => {
         const known = pinned.find((entry) => entry.commit === commit)
         if (known !== undefined) return known
         const added = { id: foreign++, rev: 0, commit }
@@ -217,6 +260,49 @@ export const make = (
 
     const tip = Effect.map(read, ({ parts }): Tree => parts.map((part) => ({ id: part.id, rev: part.rev })))
 
+    /**
+     * Replays a change's commits onto `onto`. Gives the commit that stands for
+     * the change and the commits below it, or nothing when the change cannot
+     * be applied there: it conflicts, it is not one line of commits, or the
+     * `finish` command refused it. What it made is then abandoned.
+     */
+    const apply = (source: string, onto: string) =>
+      Effect.gen(function*() {
+        const duplicated = yield* jj(["duplicate", "-r", source, "--onto", onto])
+        const changes = [...duplicated.matchAll(/Duplicated \S+ as (\S+) /g)].map((match) => match[1]!)
+        if (changes.length === 0) {
+          return yield* unavailable(`jj duplicate printed no new commit: ${duplicated.trim()}`)
+        }
+        const made = changes.join(" | ")
+        const refuse = Effect.as(jj(["abandon", made]), undefined)
+        const heads = yield* ids(`heads(${made})`)
+        // A stack with a fork has no last commit, and a commit that still
+        // reaches history outside the tip, such as a merge that kept its other
+        // parent, would bring that history along: neither can fast-forward.
+        const stray = yield* ids(`(${onto}..(${made})) ~ (${made})`)
+        if (heads.length !== 1 || stray.length > 0) return yield* refuse
+        const conflicted = (yield* ids(`(${made}) & conflicts()`)).length > 0
+        let commit = heads[0]!
+        if (options.finish === undefined) {
+          if (conflicted) return yield* refuse
+        } else {
+          const finished = yield* run(options.finish(commit, onto, conflicted))
+          if (finished.code !== 0) return yield* refuse
+          commit = lines(finished.stdout).at(-1)?.trim() ?? ""
+          // The finished change must still be a clean line of commits on `onto`.
+          const wrong = unavailable(`the finish command gave ${commit || "no commit"}, not a clean line on ${onto}`)
+          const line = yield* Effect.orElseSucceed(ids(`${onto}..(${commit})`), () => [])
+          if (line.length === 0) return yield* wrong
+          const flaws = yield* ids(
+            `((${onto}..${commit}) & (conflicts() | merges())) | (roots(${onto}..${commit})- ~ ${onto})`
+          )
+          if (flaws.length > 0) return yield* wrong
+          commit = line[0]!
+        }
+        const below = yield* ids(`(${onto}..${commit}) ~ ${commit}`)
+        return { commit, interior: below }
+      })
+
     const build = (tree: Tree) =>
       Effect.gen(function*() {
         const { ledger, parts } = yield* read
@@ -228,6 +314,7 @@ export const make = (
         // from a shorter one: landing the shorter never strands the longer.
         const candidates = [...ledger.candidates]
         const pinned = [...ledger.pinned]
+        const interior = [...ledger.interior]
         let onto = parts.at(-1)?.commit ?? ledger.genesis
         for (const [index, part] of batch.entries()) {
           const prefix = key(tree.slice(0, parts.length + index + 1))
@@ -238,24 +325,17 @@ export const make = (
           }
           const source = ledger.sources.find((entry) => samePart(entry, part))
           if (source === undefined) return yield* unavailable(`no commit registered for ${part.id}.${part.rev}`)
-          const duplicated = yield* jj(["duplicate", "-r", source.commit, "--onto", onto])
-          const change = /Duplicated \S+ as (\S+) /.exec(duplicated)?.[1]
-          if (change === undefined) {
-            return yield* unavailable(`jj duplicate printed no new commit: ${duplicated.trim()}`)
-          }
-          const [commit, conflict] = lines(
-            yield* jj(["log", "--no-graph", "-r", change, "-T", "commit_id ++ \"\\n\" ++ conflict ++ \"\\n\""])
-          )
-          if (conflict === "true") {
-            yield* jj(["abandon", change])
-            yield* save({ ...ledger, candidates, pinned })
+          const applied = yield* apply(source.commit, onto)
+          if (applied === undefined) {
+            yield* save({ ...ledger, candidates, pinned, interior })
             return { _tag: "conflict", part } as const
           }
-          onto = commit!
+          interior.push(...applied.interior)
+          onto = applied.commit
           candidates.push({ tree: prefix, commit: onto })
           pinned.push({ ...part, commit: onto })
         }
-        if (candidates.length !== ledger.candidates.length) yield* save({ ...ledger, candidates, pinned })
+        if (candidates.length !== ledger.candidates.length) yield* save({ ...ledger, candidates, pinned, interior })
         return { _tag: "built", commit: onto } as const
       })
 

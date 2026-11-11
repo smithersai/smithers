@@ -68,10 +68,17 @@ const repository = () => {
     jj("new")
     return jj("log", "--no-graph", "-r", "@-", "-T", "commit_id").trim()
   }
+  /** Commits a change to one file on top of `parent`, and returns its commit id. */
+  const on = (parent: string, file: string, text: string): string => {
+    jj("new", parent, "-m", `change ${file}`)
+    writeFileSync(join(path, file), text)
+    jj("new")
+    return jj("log", "--no-graph", "-r", "@-", "-T", "commit_id").trim()
+  }
   const head = (): string => jj("log", "--no-graph", "-r", "main", "-T", "commit_id").trim()
   const files = (): ReadonlyArray<string> => jj("file", "list", "-r", "main").trim().split("\n").sort()
   const options = { path, bookmark: "main", ledger: join(path, ".jj", "queue-ledger.json"), poll: "5 millis" } as const
-  return { path, jj, change, head, files, options }
+  return { path, jj, change, on, head, files, options }
 }
 
 const tree = (...parts: ReadonlyArray<readonly [number, number]>): Tree => parts.map(([id, rev]) => ({ id, rev }))
@@ -165,6 +172,101 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
     expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
     const exit = await runExit(queue.advance([], tree([1, 0], [2, 0])))
     expect(Exit.isFailure(exit) && String(exit.cause)).toContain("Unavailable")
+  })
+
+  it("a change may be a stack of commits: it is replayed whole, lands whole and reads back as one part", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    const base = repo.head()
+    const first = repo.change("one.txt", "one\n")
+    const second = repo.on(first, "two.txt", "two\n")
+    await run(queue.register({ id: 1, rev: 0 }, `${first} | ${second}`))
+    await run(queue.register({ id: 2, rev: 0 }, repo.change("three.txt", "three\n")))
+    const built = await run(queue.candidate(tree([1, 0])))
+    const commit = built._tag === "built" ? built.commit : ""
+    expect(repo.jj("log", "--no-graph", "-r", `${base}..${commit}`, "-T", "description").trim().split("\n"))
+      .toEqual(["change two.txt", "change one.txt"])
+    await run(queue.advance([], tree([1, 0], [2, 0])))
+    expect(await run(queue.tip)).toEqual(tree([1, 0], [2, 0]))
+    expect(repo.files()).toEqual(["base.txt", "one.txt", "three.txt", "two.txt"])
+    // A second opening of the same ledger reads the same tree: the stack's lower commit is not a stranger.
+    expect(await run(Effect.flatMap(JjRepository.make(repo.options), (again) => again.tip)))
+      .toEqual(tree([1, 0], [2, 0]))
+  })
+
+  it("a stack that forks has no last commit and cannot be applied", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    const left = repo.change("left.txt", "left\n")
+    const right = repo.change("right.txt", "right\n")
+    await run(queue.register({ id: 1, rev: 0 }, `${left} | ${right}`))
+    expect(await run(queue.candidate(tree([1, 0])))).toEqual({ _tag: "conflict", part: { id: 1, rev: 0 } })
+    expect(
+      repo.jj(
+        "log",
+        "--no-graph",
+        "-r",
+        "description(substring:'change') ~ ::main ~ (" + left + "|" + right + ")",
+        "-T",
+        "commit_id"
+      )
+    ).toBe("")
+  })
+
+  it("a finish command stands a commit of its own for the change, and that commit is what lands", async () => {
+    const repo = repository()
+    const jjArgs = "jj --ignore-working-copy --config user.name=queue --config user.email=queue@example.com"
+    // Adds a "regenerated" commit on a clean change, and refuses a conflicted one.
+    const script = `[ "$3" = false ] || exit 1; ${jjArgs} new --no-edit "$1" -m regenerated >/dev/null 2>&1; `
+      + `${jjArgs} log --no-graph -r 'heads('"$1"'::) & description(substring:"regenerated")' -T commit_id`
+    const finish = (head: string, onto: string, conflicted: boolean) => ({
+      command: "sh",
+      args: ["-c", script, "sh", head, onto, String(conflicted)],
+      cwd: repo.path
+    })
+    const queue = await run(JjRepository.make({ ...repo.options, finish }))
+    const base = repo.head()
+    await run(queue.register({ id: 1, rev: 0 }, repo.change("same.txt", "mine\n")))
+    await run(queue.register({ id: 2, rev: 0 }, repo.change("same.txt", "yours\n")))
+    await run(queue.register({ id: 3, rev: 0 }, repo.change("three.txt", "three\n")))
+    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    await run(queue.advance([], tree([1, 0], [3, 0])))
+    expect(repo.jj("log", "--no-graph", "-r", `${base}..main`, "-T", "description").trim().split("\n"))
+      .toEqual(["regenerated", "change three.txt", "regenerated", "change same.txt"])
+    expect(await run(queue.tip)).toEqual(tree([1, 0], [3, 0]))
+  })
+
+  it("is unavailable, blaming nobody, when the finish command gives no clean line on the tip or cannot run", async () => {
+    const detail = (effect: Effect.Effect<unknown, Unavailable, any>): Promise<string> =>
+      run(Effect.map(Effect.flip(effect), (error) => error.detail))
+    const repo = repository()
+    const base = repo.head()
+    const one = repo.change("same.txt", "mine\n")
+    const two = repo.change("same.txt", "yours\n")
+    const answering = (script: string) => async (trees: Tree) => {
+      const queue = await run(JjRepository.make({
+        ...repo.options,
+        ledger: join(repo.path, `ledger-${repositories++}.json`),
+        finish: (head) => ({ command: "sh", args: ["-c", script, "sh", head, base] })
+      }))
+      await run(queue.register({ id: 1, rev: 0 }, one))
+      await run(queue.register({ id: 2, rev: 0 }, two))
+      return detail(queue.candidate(trees))
+    }
+    expect(await answering("echo nonsense")(tree([1, 0]))).toContain("not a clean line")
+    expect(await answering("true")(tree([1, 0]))).toContain("gave no commit")
+    expect(await answering("echo $2")(tree([1, 0]))).toContain("not a clean line")
+    // It says the conflicted change is fine as it is: the queue does not take its word.
+    expect(await answering("echo $1")(tree([1, 0], [2, 0]))).toContain("not a clean line")
+    const missing = await run(JjRepository.make({
+      ...repo.options,
+      ledger: join(repo.path, "ledger-missing.json"),
+      finish: () => ({ command: join(repo.path, "no-such-program"), args: [] })
+    }))
+    await run(missing.register({ id: 1, rev: 0 }, one))
+    expect(await detail(missing.candidate(tree([1, 0])))).toContain("could not run")
+    const elsewhere = await run(JjRepository.make({ ...repo.options, binary: join(repo.path, "no-such-jj") }))
+    expect(await detail(elsewhere.tip)).toContain("could not run")
   })
 
   it("a fixed revision replaces the commit registered for the change", async () => {
