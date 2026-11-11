@@ -19,6 +19,10 @@
 
 ### Fixed
 
+- `Burndown.round` admits one freed slot at a time and counts an admitted item
+  as in flight the moment it is taken, so slots that free within one `capacity`
+  round trip no longer all launch on an `Available` answer that allows fewer
+  ([#4680](https://github.com/smithersai/smithers/issues/4680)).
 - A declared `Saga`, `Sidecar`, `Supervisor`, `ReviewLoop`, `Panel`,
   `Recursion`, `ScanFixVerify`, `Debate`, `CheckSuite`, `Escalation`,
   `DriftDetector`, `MapReduce`, `Kanban`, `MergeQueue` or `Optimizer` on a

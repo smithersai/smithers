@@ -37,6 +37,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import * as Compose from "./internal/Compose.ts"
 import type { Member as Callable } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
@@ -1090,7 +1091,9 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
     const budget = Math.min(slots ?? mine.length, mine.length)
     const first = mine.slice(0, Math.min(concurrency, budget))
     let next = first.length
-    let working = 0
+    // The items taken and not yet worked through. An admission counts its item
+    // the moment it takes it, so a slot freeing meanwhile compares against it.
+    let working = first.length
     const claimed = new Set<Card<It>>()
     const executionId = (card: Card<It>) => `${key}/${card.id}`
     // Only a recorded operator cancel makes an interruption final; an
@@ -1179,11 +1182,18 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
             Effect.succeed(isCapacity(answer) && answer._tag === "Available" && answer.slots > working)
         })
       )
-    const admit: Effect.Effect<Card<It> | undefined, Stop, R> = Effect.suspend(() => {
-      if (next < budget) return Effect.succeed(mine[next++])
+    const take = (): Card<It> | undefined => {
+      working += 1
+      return mine[next++]
+    }
+    // Admissions run one at a time, so two slots freeing within one capacity
+    // round trip never both admit on an answer that allows one.
+    const admission = yield* Semaphore.make(1)
+    const admit: Effect.Effect<Card<It> | undefined, Stop, R> = admission.withPermit(Effect.suspend(() => {
+      if (next < budget) return Effect.succeed(take())
       if (next >= mine.length) return Effect.succeed(undefined)
-      return Effect.map(allows, (allowed) => allowed && next < mine.length ? mine[next++] : undefined)
-    })
+      return Effect.map(allows, (allowed) => allowed ? take() : undefined)
+    }))
     const landings = yield* Queue.unbounded<{ readonly card: Card<It>; readonly output: W }, Cause.Done>()
     const releases = yield* Queue.unbounded<Card<It>, Cause.Done>()
     const settleRow = (card: Card<It>, status: Status, text: string) => {
@@ -1196,7 +1206,6 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
       Effect.gen(function*() {
         let card: Card<It> | undefined = start
         while (card !== undefined) {
-          working += 1
           const outcome = yield* attempt(card)
           working -= 1
           if (outcome._tag === "Settled") settleRow(card, outcome.status, outcome.detail)

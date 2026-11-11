@@ -9,6 +9,7 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Scheduler from "effect/Scheduler"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Burndown from "../src/Burndown.ts"
@@ -553,11 +554,44 @@ describe("Burndown.round", () => {
     })
 
     expect(result).toMatchObject({ launched: 3, deferred: 0 })
+    // The second freed slot waits for the first admission, finds nothing left,
+    // and never asks.
     expect(tape.filter((entry) => entry === "capacity" || entry === "claim:c")).toEqual([
-      "capacity",
       "capacity",
       "claim:c"
     ])
+  })
+
+  it("never admits past the capacity's slots when two freed slots ask within one round trip", async () => {
+    // A slow capacity read holds the slots `a` and `b` free inside it at once.
+    // Each scheduler budget moves where the fibers yield between an answer and
+    // the next item's launch; a budget of 3 yields right after the answer.
+    for (let ops = 3; ops <= 32; ops++) {
+      const { note } = recorder()
+      const lastStarted = await Effect.runPromise(Deferred.make<void>())
+      let inFlight = 0
+      let widest = 0
+      const result = await Effect.runPromise(
+        Burndown.round({ input: undefined, round: 0, items: items("a", "b", "c", "d", "e", "f"), slots: 4 }, {
+          ...baseOptions(note),
+          capacity: () => Effect.as(Effect.sleep(5), Burndown.available(3)),
+          work: ({ item }) =>
+            Effect.gen(function*() {
+              inFlight += 1
+              if (item.id === "e" || item.id === "f") widest = Math.max(widest, inFlight)
+              if (item.id === "e") yield* Effect.sleep(20)
+              if (item.id === "f") yield* Deferred.succeed(lastStarted, undefined)
+              if (item.id === "c" || item.id === "d") yield* Deferred.await(lastStarted)
+              inFlight -= 1
+              return "ok"
+            })
+        }).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, ops))
+      )
+
+      expect(result).toMatchObject({ launched: 6, deferred: 0 })
+      // `c` and `d` still work, so `Available(3)` leaves room for one more.
+      expect({ ops, widest }).toEqual({ ops, widest: 3 })
+    }
   })
 
   it("lands worked items one at a time, in discovery order, and quarantines a failed landing", async () => {
