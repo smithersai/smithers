@@ -59,6 +59,45 @@ it("rejects a directory listing that exceeds its requested bound", async () => {
   })).rejects.toThrow(/more than 1 entries/)
 })
 
+it("reads a file another checkout hard-linked between admission and descriptor open", async () => {
+  const entry = await SafeFs.resolveFile(path, { root })
+  await Fs.link(path, join(root, "store-link"))
+  expect(await SafeFs.digestEntry(entry!, { root })).toBe(
+    await SafeFs.digestEntry((await SafeFs.resolveFile(path, { root }))!, { root })
+  )
+})
+
+it("reads a file another checkout hard-linked while it was being read", async () => {
+  const entry = await SafeFs.resolveFile(path, { root })
+  let linked = false
+  const io: SafeFs.Io = {
+    ...base,
+    open: async (candidate) => {
+      const file = await base.open(candidate)
+      return {
+        ...file,
+        read: async (buffer) => {
+          if (!linked) {
+            linked = true
+            await Fs.link(path, join(root, "store-link"))
+          }
+          return file.read(buffer)
+        }
+      }
+    }
+  }
+  expect(await SafeFs.digestEntry(entry!, { root, io })).toMatch(/^[0-9a-f]{64}$/)
+  expect(linked).toBe(true)
+})
+
+it("rejects a file whose status changed with no link made or removed", async () => {
+  const entry = await SafeFs.resolveFile(path, { root })
+  // Past the filesystem's coarse status-time tick, so the change is visible.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await Fs.chmod(path, 0o600)
+  await expect(SafeFs.digestEntry(entry!, { root })).rejects.toThrow(/changed while it was being opened/)
+})
+
 it("rejects a file changed between admission and descriptor open", async () => {
   const entry = await SafeFs.resolveFile(path, { root })
   await Fs.appendFile(path, "changed")

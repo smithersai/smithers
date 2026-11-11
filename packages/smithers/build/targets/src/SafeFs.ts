@@ -269,6 +269,21 @@ const timestamp = (stats: Stats, kind: "mtime" | "ctime"): string => {
 }
 
 /**
+ * Whether two stat results of one inode agree on its status-change time, or
+ * differ only because its link count changed.
+ *
+ * Making or removing a hard link to a file advances its `ctime` and touches
+ * nothing else. A package store links one inode into every checkout that
+ * installs it, so any other checkout's install or removal moves the `ctime` of
+ * a file this read holds. The link count moved with it, while size,
+ * modification time and identity are still compared on their own. A `ctime`
+ * change with the same link count (a permission change, or a modification time
+ * written back) is still a change.
+ */
+const sameStatus = (left: Stats, right: Stats): boolean =>
+  timestamp(left, "ctime") === timestamp(right, "ctime") || left.nlink !== right.nlink
+
+/**
  * One filesystem object, named by the canonical path it was found at and
  * described by the `lstat` that admitted it.
  *
@@ -531,7 +546,7 @@ const withOpen = async <A>(
     if (
       sizeOf(before) !== sizeOf(entry.stats) ||
       timestamp(before, "mtime") !== timestamp(entry.stats, "mtime") ||
-      timestamp(before, "ctime") !== timestamp(entry.stats, "ctime")
+      !sameStatus(before, entry.stats)
     ) {
       throw new Error(`${what} changed while it was being opened: ${entry.path}`)
     }
@@ -576,7 +591,7 @@ const stable = (before: Stats, after: Stats, total: bigint): boolean =>
   identity(after) === identity(before) &&
   sizeOf(after) === sizeOf(before) &&
   timestamp(after, "mtime") === timestamp(before, "mtime") &&
-  timestamp(after, "ctime") === timestamp(before, "ctime") &&
+  sameStatus(after, before) &&
   total === sizeOf(before)
 
 /** Validates one implementation's read result before it reaches a slice or counter. */
