@@ -290,6 +290,23 @@ const IndexJson = Schema.fromJsonString(Schema.Struct({
   }))
 }))
 
+/**
+ * Lists the workspace's targets. Indexing evaluates the change's WORKSPACE.ts
+ * and PACKAGE.ts modules, which are the agent's code, so it runs in the same
+ * sandbox as the tests and never on the host.
+ */
+export const indexTargets = (workspace: string) =>
+  asLand(Effect.flatMap(
+    sandboxed(workspace, ["pnpm", "exec", "smthrs", "index", "//...", "--format", "json"]),
+    (exited) =>
+      exited.code === 0
+        ? Effect.mapError(
+          Schema.decodeUnknownEffect(IndexJson)(exited.stdout),
+          (cause) => fail(`smthrs index: ${cause.message}`)
+        )
+        : Effect.fail(fail(`smthrs index: exit ${exited.code}: ${tail(exited.stderr)}`))
+  )).pipe(Effect.map((index) => index.targets))
+
 // The longest one landing's checks may take before the change fails to land.
 const checkBudget = Duration.minutes(90)
 
@@ -523,15 +540,7 @@ export interface Checks<R = never> {
 /** The checks a live landing runs, sandboxed, in the change's workspace. */
 export const liveChecks: Checks<RetryServices> = {
   prepare: (workspace, change, files) => asLand(Effect.andThen(install(workspace), syncDocs(workspace, change, files))),
-  index: (workspace) =>
-    asLand(Effect.flatMap(
-      output("pnpm", ["exec", "smthrs", "index", "//...", "--format", "json"], { cwd: workspace }),
-      (text) =>
-        Effect.mapError(
-          Schema.decodeUnknownEffect(IndexJson)(text),
-          (cause) => fail(`smthrs index: ${cause.message}`)
-        )
-    )).pipe(Effect.map((index) => index.targets)),
+  index: indexTargets,
   test: (workspace, labels) => asLand(test(workspace, labels)),
   redOnMain: (labels, revision) => redOnMain(revision, labels)
 }
