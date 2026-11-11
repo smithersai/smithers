@@ -833,7 +833,7 @@ const writeLocal = async (
  * race never surfaces as an unhandled rejection.
  */
 const withDeadline = async <A>(
-  operation: "get" | "put",
+  operation: "get" | "put" | "findMissing",
   milliseconds: number,
   run: (signal: AbortSignal) => Promise<A>
 ): Promise<A> => {
@@ -1270,10 +1270,14 @@ class RemoteStore {
   }
 
   private async upload(cas: string, digests: ReadonlyArray<string>): Promise<boolean> {
-    for (let offset = 0; offset < digests.length; offset += 1000) {
+    for (let offset = 0; offset < digests.length; offset += 128) {
       if (this.degraded || this.publishDenied) return false
-      const batch = digests.slice(offset, offset + 1000)
-      const missing = await withDeadline("get", this.timeouts.get, async (signal) => {
+      const batch = digests.slice(offset, offset + 128)
+      // Bulk probes can perform one backend lookup per digest. Keep requests
+      // small and allow 25ms per lookup above the metadata publication budget,
+      // capped by the artifact budget (including an explicit timeout override).
+      const milliseconds = Math.min(this.artifactTimeouts.get, this.timeouts.put + batch.length * 25)
+      const missing = await withDeadline("findMissing", milliseconds, async (signal) => {
         const response = await this.fetch(`${this.endpoint}/cas/findMissing`, {
           method: "POST",
           headers: this.headers("write"),

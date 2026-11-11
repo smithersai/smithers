@@ -320,9 +320,11 @@ A request over budget is answered `429` with `Retry-After: 10` and its body is
 discarded unread; the CLI treats it as a miss for that target or drops that
 one publication, and keeps the remote enabled for the rest of the run. A `401`
 or `403` charges nothing, so a caller
-without the credential cannot spend its budget. Both limits sit above a job's
-legitimate rate: the default pull policy never probes, and a publication
-probes at most twice per target.
+without the credential cannot spend its budget. The default pull policy never
+probes. The CLI sends at most 128 digests per probe, so one entry with 1000
+artifact references needs eight probes. A 520-file publication needs five.
+Concurrent publishers share the limits; sufficiently large bursts can receive
+`429` and skip a publication while retaining subsequent cache reads.
 
 What the budget bounds is the bill. At the deployed limits one credential can
 drive at most 600 x 1000 = 600000 R2 `HEAD` operations a minute at one

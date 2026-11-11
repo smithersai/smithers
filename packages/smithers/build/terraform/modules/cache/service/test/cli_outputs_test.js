@@ -39,7 +39,7 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
           warn: (line) => warnings.push(line),
           fetch: async (input, init) => {
             const req = new Request(input, init)
-            const response = fault(req) ?? await handler(req)
+            const response = await (fault(req) ?? handler(req))
             statuses.push([req.method, new URL(req.url).pathname, response.status])
             return response
           }
@@ -72,6 +72,7 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
           open,
           actionCache,
           contentStore,
+          handler,
           statuses,
           warnings,
           setFault: (value) => {
@@ -82,6 +83,39 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
         await Fs.rm(root, { recursive: true, force: true })
       }
     }
+    test("publishes 520 files through bounded probes and restores their bytes and modes", async () => {
+      await run(1, async (f) => {
+        await Fs.mkdir(Path.join(f.a, "out"))
+        for (let i = 0; i < 520; i++) {
+          await Fs.writeFile(Path.join(f.a, "out", String(i)), "artifact-" + i, { mode: i % 2 ? 0o755 : 0o644 })
+        }
+        const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+        const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+        const batches = []
+        f.setFault(async req => {
+          if (!new URL(req.url).pathname.endsWith("/findMissing")) return f.handler(req)
+          const { digests } = await req.clone().json()
+          batches.push(digests.length)
+          // Backend latency proportional to the requested object count.
+          await new Promise(resolve => setTimeout(resolve, digests.length * 8))
+          return f.handler(req)
+        })
+        await (await f.open(f.a)).put(result.key, result)
+        expect(f.actionCache.entries.has(result.key)).toBe(true)
+        expect(batches).toEqual([128, 128, 128, 128, 8])
+        const hit = await (await f.open(f.b)).get(result.key)
+        expect(hit).not.toBeNull()
+        expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
+        await Tree.materializeManifest(f.b, ".flows", manifest)
+        for (let i = 0; i < 520; i++) {
+          expect(await Fs.readFile(Path.join(f.b, "out", String(i)), "utf8")).toBe("artifact-" + i)
+          expect((await Fs.stat(Path.join(f.b, "out", String(i)))).mode & 0o777).toBe(i % 2 ? 0o755 : 0o644)
+        }
+        expect(f.warnings).toEqual([])
+        expect(f.statuses.filter(([method]) => method === "PUT").at(-1)[1]).toMatch(/^\/ac\//)
+      })
+    }, 30000)
+
     test("file-size property around every chunk boundary and a 40 MiB file", async () => {
       // Reproducible neighbourhood generator: boundary multiples and seeded offsets.
       let seed = 0x5eedcafe

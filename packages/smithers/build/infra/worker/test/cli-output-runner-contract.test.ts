@@ -10,11 +10,11 @@ import { createHandler } from "../protocol.ts"
 import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 import { createHash } from "node:crypto"
 
-it("reports a real target hit and restores outputs after all local cache files are removed", async () => {
+it.each([1, 520])("reports a real target hit and restores %i outputs after all local cache files are removed", async count => {
   const f = await runnerFixture(`
 const command = S.ToolBuild({
   tool: "sh", command: "sh",
-  args: ["-c", "mkdir -p out && printf artifact > out/program && chmod 755 out/program && printf run >> calls.log"],
+  args: ["-c", "mkdir -p out && printf artifact > out/program && chmod 755 out/program && i=1; while [ $i -lt ${count} ]; do printf artifact-%s $i > out/file-$i; i=$((i+1)); done; printf run >> calls.log"],
   inputs: [], outputs: ["out"], deps: [], env: {}, cache: true
 })
 export const Package = S.Package({ targets: { command } })
@@ -27,8 +27,18 @@ export const Package = S.Package({ targets: { command } })
   const result = await local.get(key)
   expect(result).not.toBeNull()
   const hash = (value: string) => createHash("sha256").update(value).digest("hex")
+  const batches: Array<number> = []
+  class SlowContentStore extends MemoryContentStore {
+    override async presentDigests(digests: ReadonlyArray<string>): Promise<ReadonlySet<string>> {
+      batches.push(digests.length)
+      // One 520-digest probe would exceed the metadata read budget.
+      await new Promise(resolve => setTimeout(resolve, digests.length * 8))
+      return super.presentDigests(digests)
+    }
+  }
+  const actionCache = new MemoryActionCache()
   const handler = createHandler({
-    actionCache: new MemoryActionCache(), contentStore: new MemoryContentStore(),
+    actionCache, contentStore: new SlowContentStore(),
     readTokenHash: hash("reader-credential-for-runner-test"), writeTokenHash: hash("writer-credential-for-runner-test")
   })
   const options = {
@@ -42,6 +52,8 @@ export const Package = S.Package({ targets: { command } })
   // the trusted service explicitly; the runner's publication guard is unchanged.
   const publisher = await openCache(options)
   await publisher.put(key, result!)
+  expect(actionCache.entries.has(key)).toBe(true)
+  expect(batches).toEqual(count === 520 ? [128, 128, 128, 128, 8] : [1])
   await Fs.rm(Path.join(f.root, ".flows"), { recursive: true, force: true })
   await Fs.rm(Path.join(f.root, "out"), { recursive: true })
   const second = await Effect.runPromise(executeEffect(f.plan, f.options).pipe(Effect.provideService(ExecutionServices, {
@@ -53,4 +65,8 @@ export const Package = S.Package({ targets: { command } })
   expect(await Fs.readFile(Path.join(f.root, "out/program"), "utf8")).toBe("artifact")
   expect((await Fs.stat(Path.join(f.root, "out/program"))).mode & 0o777).toBe(0o755)
   expect(await Fs.readFile(Path.join(f.root, "calls.log"), "utf8")).toBe("run")
+  expect(await Fs.readdir(Path.join(f.root, "out"))).toHaveLength(count)
+  for (let i = 1; i < count; i++) {
+    expect(await Fs.readFile(Path.join(f.root, "out/file-" + i), "utf8")).toBe("artifact-" + i)
+  }
 })

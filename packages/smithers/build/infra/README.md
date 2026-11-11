@@ -599,8 +599,8 @@ and independent of these Cloudflare resources. It exposes the same `/ac` and
 
 The CLI uses `/cas` for declared outputs, including deterministic 16 MiB
 chunks and an index for large files. One cold publication of 5000 distinct
-blobs across entries costs 5000 artifact uploads, at least five
-`findMissing` requests (1000 digests per batch), and one `/ac` request per
+blobs across entries costs 5000 artifact uploads, at least 40
+`findMissing` requests (128 digests per batch; entry boundaries can add probes), and one `/ac` request per
 entry. Entries are limited to 1000 direct artifact references. Concurrent jobs
 share the credential's 12000-request and 600-probe per-minute location budgets
 in `deployment.ts`; bursts can receive `429`, skip that publication or

@@ -296,7 +296,11 @@ inside one deadline that is a real race against a timer, not only an
 `AbortSignal`. A `fetch` that ignores the signal, or a body that never
 completes, degrades the store to local-only instead of hanging the run.
 Metadata reads use 3 seconds and writes use 8 seconds; artifact transfers use
-60 seconds, including verification and local blob publication. Output-limit
+60 seconds, including verification and local blob publication. Bulk missing-blob
+probes send at most 128 digests with a batch-scaled deadline: the metadata write
+budget plus 25 milliseconds per digest, capped by the artifact read budget.
+The default full-batch deadline is 11.2 seconds. An explicit `timeouts.get`
+override caps probes, and `timeouts.put` supplies their base budget. Output-limit
 refusals skip that entry while leaving other remote operations available.
 
 ### Admission

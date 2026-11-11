@@ -221,7 +221,11 @@ Declared and observed body lengths, byte counts, UTF-8, chunk counts, JSON
 shape, envelope key, and server key limits are checked. One remote failure
 warns and degrades to local-only. A `409` means first-writer conflict and does
 not disable reads. Artifact transfers use a 60-second race, while metadata
-retains the 3-second read and 8-second write deadlines. Output admission
+retains the 3-second read and 8-second write deadlines. Bulk discovery uses
+at most 128 digests per `findMissing` request, with the metadata write budget
+plus 25 milliseconds per digest capped by the artifact read budget. This gives
+a full batch 11.2 seconds by default without relaxing explicit timeout overrides.
+Timeout diagnostics identify the bulk probe. Output admission
 refusals skip one entry without disabling the service. Local metadata remains
 available during outages so the runner can measure existing on-disk outputs.
 

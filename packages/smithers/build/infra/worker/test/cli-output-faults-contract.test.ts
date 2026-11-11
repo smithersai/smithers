@@ -14,20 +14,20 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex")
 const read = "test-read-credential-for-output-faults", write = "test-write-credential-for-output-faults"
 const fresh = async () => { const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "output-faults-"))); roots.push(root); return root }
 
-const fixture = async (large = false, shortDeadline = false) => {
+const fixture = async (large = false, shortDeadline: boolean | { readonly get: number; readonly put: number } = false) => {
   const a = await fresh(), b = await fresh()
   const actionCache = new MemoryActionCache(), contentStore = new MemoryContentStore()
   const handler = createHandler({ actionCache, contentStore, readTokenHash: hash(read), writeTokenHash: hash(write) })
   const warnings: Array<string> = []
-  let fault: (request: Request) => Response | Promise<Response> | undefined = () => undefined
+  let fault: (request: Request, signal?: AbortSignal | null) => Response | Promise<Response> | undefined = () => undefined
   let active = 0, peak = 0
   const open = (root: string) => openCache({
     workspaceRoot: root, endpoint: "https://cache.test", readToken: () => read, writeToken: () => write,
-    ...(shortDeadline ? { timeouts: { get: 100, put: 500 } } : {}), warn: line => warnings.push(line),
+    ...(shortDeadline ? { timeouts: typeof shortDeadline === "boolean" ? { get: 100, put: 500 } : shortDeadline } : {}), warn: line => warnings.push(line),
     fetch: async (input, init) => {
       const request = new Request(input, init), isBlob = new URL(request.url).pathname.startsWith("/cas/")
       if (isBlob) { active++; peak = Math.max(peak, active) }
-      try { return await (fault(request) ?? handler(request)) }
+      try { return await (fault(request, init?.signal) ?? handler(request)) }
       finally { if (isBlob) active-- }
     }
   })
@@ -196,3 +196,93 @@ it("keeps an entry above the metadata bound local and publishes the next valid e
   expect(await (await f.open(f.b)).get(f.result.key)).not.toBeNull()
   expect(f.warnings).toEqual(["smthrs: remote cache entry exceeds limits; skipped one entry"])
 })
+
+it("allows a bulk probe beyond the metadata deadline", async () => {
+  const f = await fixture()
+  let calls = 0
+  f.setFault(async request => {
+    if (new URL(request.url).pathname.endsWith("/findMissing")) {
+      calls++
+      await new Promise(resolve => setTimeout(resolve, 3200))
+    }
+    return f.handler(request)
+  })
+  const cache = await f.open(f.a)
+  await cache.put(f.result.key, f.result)
+  expect(f.actionCache.entries.has(f.result.key)).toBe(true)
+  expect(calls).toBe(1)
+  expect(await (await f.open(f.b)).get(f.result.key)).not.toBeNull()
+  expect(f.warnings).toEqual([])
+})
+
+it.each(["request", "body"])("races a hung bulk %s against an explicit timeout", async stage => {
+  const f = await fixture(false, true)
+  let signal: AbortSignal | undefined
+  f.setFault((request, transportSignal) => {
+    if (!new URL(request.url).pathname.endsWith("/findMissing")) return
+    signal = transportSignal ?? undefined
+    return stage === "request"
+      ? new Promise<Response>(() => {})
+      : new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"missing":[')) } }))
+  })
+  const cache = await f.open(f.a)
+  const start = performance.now()
+  await cache.put(f.result.key, f.result)
+  expect(performance.now() - start).toBeLessThan(2000)
+  expect(signal?.aborted).toBe(true)
+  expect(f.actionCache.entries.size).toBe(0)
+  expect(f.warnings).toHaveLength(1)
+  expect(f.warnings[0]).toContain("findMissing timed out after 100ms")
+  expect(await cache.get(f.result.key)).not.toBeNull()
+  await cache.put(f.result.key, f.result)
+  expect(f.warnings).toHaveLength(1)
+})
+
+it("skips a busy later probe, then publishes every blob before metadata on retry", async () => {
+  const f = await fixture()
+  await Fs.mkdir(Path.join(f.a, "out"))
+  for (let i = 0; i < 129; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), String(i))
+  const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+  const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+  let probes = 0
+  f.setFault(request => {
+    if (new URL(request.url).pathname.endsWith("/findMissing") && ++probes === 2) return new Response(null, { status: 429 })
+  })
+  const cache = await f.open(f.a)
+  await cache.put(result.key, result)
+  expect(f.actionCache.entries.size).toBe(0)
+  expect(f.contentStore.objects.size).toBe(128)
+  expect(await cache.get(result.key)).not.toBeNull()
+  await cache.put(result.key, result)
+  expect(f.actionCache.entries.size).toBe(1)
+  expect(f.contentStore.objects.size).toBe(129)
+  expect(await (await f.open(f.b)).get(result.key)).not.toBeNull()
+  expect(await Tree.verifyManifestBlobs(f.b, ".flows", manifest)).toBeUndefined()
+  expect(f.warnings).toEqual(["smthrs: remote cache busy (HTTP 429); skipped one request"])
+})
+
+it("scales a full discovery batch deadline and still races an uncooperative backend", async () => {
+  const f = await fixture(false, { get: 5000, put: 100 })
+  await Fs.mkdir(Path.join(f.a, "out"))
+  for (let i = 0; i < 128; i++) await Fs.writeFile(Path.join(f.a, "out", String(i)), String(i))
+  const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
+  const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
+  let signal: AbortSignal | undefined
+  f.setFault((request, transportSignal) => {
+    if (!new URL(request.url).pathname.endsWith("/findMissing")) return
+    signal = transportSignal ?? undefined
+    return new Promise<Response>(() => {})
+  })
+  const cache = await f.open(f.a)
+  const start = performance.now()
+  await cache.put(result.key, result)
+  expect(performance.now() - start).toBeGreaterThanOrEqual(3200)
+  expect(performance.now() - start).toBeLessThan(8000)
+  expect(signal?.aborted).toBe(true)
+  expect(f.actionCache.entries.size).toBe(0)
+  expect(f.contentStore.objects.size).toBe(0)
+  expect(await cache.get(result.key)).not.toBeNull()
+  expect(f.warnings).toEqual([
+    "smthrs: remote cache disabled after a failure: PUT request failed: remote cache findMissing timed out after 3300ms"
+  ])
+}, 30000)

@@ -148,7 +148,12 @@ digest.
 
 Artifact transfers have a 60-second deadline, including their bounded response
 body, verification, and local blob publication. Metadata retains 3-second reads
-and 8-second writes. A programmatic `timeouts` override applies to both.
+and 8-second writes. Bulk `findMissing` probes contain at most 128 digests.
+Their deadline is the metadata write budget plus 25 milliseconds per digest
+(11.2 seconds for a full batch by default), capped by the artifact read budget.
+This covers the request and bounded response body; a timeout identifies
+`findMissing` in the warning. A programmatic `timeouts.get` override caps bulk
+probes; `timeouts.put` supplies their base budget.
 An output-limit refusal warns once and skips that entry while other remote
 operations remain available. During an outage, local metadata still reaches the
 runner so it can accept outputs that already measure correctly on disk.

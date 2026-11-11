@@ -3,7 +3,7 @@ title: Remote build output cache
 status: done
 area: build
 owner: Codex
-updated: 2026-11-10
+updated: 2026-11-11
 links: [../../../../packages/smithers/build/docs/workspace/remote-caching.md]
 ---
 
@@ -20,3 +20,9 @@ store module has enforced 100% statement, branch, function and line coverage.
 
 Deployment verification still requires an endpoint and ephemeral credentials;
 the in-process service tests are the executed evidence.
+
+Bulk artifact discovery probes at most 128 digests with a batch-scaled deadline.
+Real hosted and self-hosted handlers restore 520 outputs with identical bytes
+and modes, and the target runner reports a hit without rerunning the tool.
+Regressions cover slow discovery, bounded request/body timeouts and recovery
+after a later probe returns `429`; six fail on the prior implementation.

@@ -339,8 +339,9 @@ export const credentialRequestBudget = {
  *
  * One `findMissing` fans out to up to a thousand R2 `HEAD` calls, so it has a
  * budget of its own, well under the request budget. The default pull policy
- * never probes and a publication probes at most twice per target, so the
- * ceiling sits above any job's legitimate rate.
+ * never probes. The CLI probes up to 128 digests at once, at most eight times
+ * for an entry's 1000 references. Concurrent publishers share this ceiling;
+ * a burst can skip one publication without disabling subsequent cache reads.
  *
  * @category constants
  * @since 0.1.0
