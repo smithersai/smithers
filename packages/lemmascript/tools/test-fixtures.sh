@@ -492,3 +492,25 @@ echo '{ "run-log": false }' > "$run_log_off_dir/lemmascript.json"
 cp examples/arraySum.ts examples/arraySum.dfy "$run_log_off_dir/"
 LSC_RUN_LOG=true "$tsx" tools/src/lsc.ts check --backend=dafny "$run_log_off_dir/arraySum.ts"
 expect_absent "$run_log_off_dir/.lemmascript"
+
+# An Effect Schema model translates through the value type the checker resolves (`fixtures/schema-model`): imported
+# from its source, imported from the declaration TypeScript emits for it, and declared beside the proof. The folder
+# sits inside the package so `effect` resolves; a wrong twin must fail on a proof obligation.
+schema_dir=$(mktemp -d "$PWD/.schema-model.XXXXXX")
+trap 'rm -rf "$fixture_dir" "$schema_dir"' EXIT
+cp tools/fixtures/schema-model/*.ts tools/fixtures/schema-model/tsconfig.json "$schema_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/use.ts"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/local.ts"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/client-first.ts"
+expect_proof_failure \
+  "a wrong twin verified (schema-model)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/use-wrong.ts"
+"$PWD/node_modules/.bin/tsc" --declaration --emitDeclarationOnly --strict --exactOptionalPropertyTypes --target es2022 --module esnext \
+  --moduleResolution bundler --skipLibCheck --outDir "$schema_dir/declared" "$schema_dir/model.ts"
+grep -q "Schema.optionalKey<" "$schema_dir/declared/model.d.ts"
+cp "$schema_dir/use.ts" "$schema_dir/use-wrong.ts" "$schema_dir/client-first.ts" "$schema_dir/tsconfig.json" "$schema_dir/declared/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/declared/use.ts"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/declared/client-first.ts"
+expect_proof_failure \
+  "a wrong twin verified (schema-model, declared)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$schema_dir/declared/use-wrong.ts"

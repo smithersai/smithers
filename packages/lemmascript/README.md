@@ -39,13 +39,16 @@ tests read are unchanged except for the patches listed below.
 | Array-valued `flatMap` callbacks use the existing ordered map and one-level flatten model, including a literal callback’s index and receiver/name hygiene (`flat-map.ts`) | Offered upstream later |
 | Contract arrays may spread array values between literal groups, preserving their order through the executable array-concat IR (`spec-array-spread.ts`) | Offered upstream later |
 | `Math.max(a, b)`/`Math.min(a, b)` with a `real` operand compare as reals, and an integer branch of a real conditional is lifted to `real` (`real-minmax.ts`) | Offered upstream later |
+| A type written as, or derived from, an Effect Schema (`type Model = typeof Model.Type` over `Schema.Struct`, `optionalKey`, `optional`, `Array`, `Record`, `Union` of `TaggedStruct`s, `brand`, `withDecodingDefaultKey`) is read from the value type the checker resolves, from the schema's source or from its emitted `.d.ts`, never from the schema's type text. An anonymous object, array element, record value or tagged union becomes a named datatype (`ModelRowsItem`, `ModelStatus`), and structurally equal ones share one, a schema's own alias included (`type Client = typeof Client.Type` and a Model field holding a copy of it are one datatype); an optional key is `Option` under `exactOptionalPropertyTypes` too; a brand is its primitive; an untagged union is an opaque type of its own; a function returning the alias returns its datatype; and a schema constant named only as a type stays out of the model (`schema-model/`, with a wrong twin, and `tools/tests/schema-model.test.ts`) | Offered upstream later |
+| `tools/test-fixtures.sh` runs the package's own `tsx` and `tsc` rather than `npx`, which exits with `EINVALIDTAGNAME` on this monorepo's pnpm override keys | Local only |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 
 ## Check
 
 `pnpm --filter @smthrs/lemmascript build`, then `pnpm --filter @smthrs/lemmascript test`. The fixtures need `dafny` on
-`PATH`; `apps/vibelang/verify/.tools/bin` has it.
+`PATH`; `apps/vibelang/verify/.tools/bin` has it. The Effect Schema fixtures resolve `effect` from this package's
+`devDependencies`, at the monorepo's version.
 
 Proof harnesses consume `Package.compilerSources` from `PACKAGE.ts` (`//packages/lemmascript:compilerSources`)
 as a data dependency. This keeps compiler changes in their cache identity while each package owns its source globs.

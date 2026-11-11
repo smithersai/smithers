@@ -7,7 +7,7 @@
 
 import { desugarMessageUnions } from "./message-union.js";
 import { Project, Node, FunctionDeclaration, InterfaceDeclaration, SourceFile, TypeAliasDeclaration, Type, SyntaxKind, Expression, ElementAccessExpression, ScriptTarget, VariableDeclaration, ts } from "ts-morph";
-import type { TypeDeclInfo, VariantInfo } from "./types.js";
+import type { FieldInfo, TypeDeclInfo, VariantInfo } from "./types.js";
 import { initTypeParser } from "./types.js";
 import type { RawExpr, RawStmt, RawFunction, RawModule, RawClass, RawConst, RawGhostLet, RawGhostAssign } from "./rawir.js";
 import { normalizeBigIntLiteral } from "./rawir.js";
@@ -1111,21 +1111,7 @@ function extractTypeDecl(decl: TypeAliasDeclaration, extraDecls?: TypeDeclInfo[]
           const tagType = tagProp?.getTypeAtLocation(decl);
           const tag = tagType?.isStringLiteral() ? String(tagType.getLiteralValue())
             : tagType?.getText() ?? "unknown";
-          const fields: { name: string; tsType: string }[] = [];
-          for (const prop of m.getProperties()) {
-            if (prop.getName() === discriminant) continue;
-            let tsType = typeToString(prop.getTypeAtLocation(decl));
-            const propDecl = prop.getDeclarations()[0];
-            tsType = declaredTypeTextIfBetter(propDecl, tsType);
-            if (propDecl && (propDecl as any).hasQuestionToken?.()) {
-              // Normalize checker output that puts `undefined` first, then
-              // ensure exactly one trailing `| undefined`.
-              if (tsType.startsWith("undefined | ")) tsType = `${tsType.slice("undefined | ".length)} | undefined`;
-              else if (!tsType.includes(" | undefined")) tsType = `${tsType} | undefined`;
-            }
-            fields.push({ name: prop.getName(), tsType });
-          }
-          return { name: tag, fields };
+          return { name: tag, fields: fieldsOf(typeName(name, tag), m, decl, extraDecls, discriminant) };
         });
         return { name, typeParams: tpField, kind: "discriminated-union", discriminant, variants };
       }
@@ -1179,8 +1165,25 @@ function extractTypeDecl(decl: TypeAliasDeclaration, extraDecls?: TypeDeclInfo[]
     const elem = type.getArrayElementTypeOrThrow();
     return { name, typeParams: tpField, kind: "alias", aliasOf: `${typeToString(elem)}[]` };
   }
+  // A branded primitive (`string & Brand<"Id">`) is its primitive: the brand is a compile-time tag, not a field.
+  const branded = brandedBase(type);
+  if (branded) return { name, typeParams: tpField, kind: "alias", aliasOf: typeToString(branded) };
   if (type.isObject() || type.isIntersection()) {
+    // An alias of an anonymous object type (`type Model = typeof Model.Type`, an Effect Schema's value type) names
+    // that type wherever the checker reaches it, a return type or another module's field included.
+    const named = isAnonymousObject(type) ? _anonNames.get(type.compilerType) : undefined;
+    if (named !== undefined && named !== name && !tpField) return { name, kind: "alias", aliasOf: named };
+    const anonymous = isAnonymousObject(type) && named === undefined;
+    if (anonymous) _anonNames.set(type.compilerType, name);
     const record = extractRecord(name, type, decl, undefined, extraDecls);
+    if (anonymous && record && !tpField) {
+      // TypeScript is structural: a schema's value type inlined elsewhere (a field of another schema's emitted
+      // declaration) is this type. Reached first, it already has a datatype, which this name aliases; otherwise this
+      // record is the datatype a later structurally equal type reuses (`adoptAnonymous`).
+      const same = _anonDecls.find(d => anonShape(d) === anonShape(record));
+      if (same) return { name, kind: "alias", aliasOf: same.name };
+      _anonDecls.push(record);
+    }
     return record && tpField ? { ...record, typeParams: tpField } : record;
   }
   // Primitive type alias: type TaskId = number → alias
@@ -1206,54 +1209,158 @@ function extractInterface(decl: InterfaceDeclaration, extraDecls?: TypeDeclInfo[
 }
 
 function extractRecord(name: string, type: Type, locationNode: Node, overrides?: Map<string, string>, extraDecls?: TypeDeclInfo[]): TypeDeclInfo | null {
-  const props = type.getProperties();
-  if (props.length === 0) return null;
-  const fields: { name: string; tsType: string }[] = [];
-  for (const prop of props) {
+  if (type.getProperties().length === 0) return null;
+  return { name, kind: "record", fields: fieldsOf(name, type, locationNode, extraDecls, undefined, overrides) };
+}
+
+/** The fields of an object type, each typed as the checker resolved it. `owner` names the datatypes synthesized for the
+ *  anonymous object types, arrays of them and tagged unions of them that the fields hold (`namedTypeString`). */
+function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: TypeDeclInfo[], skip?: string, overrides?: Map<string, string>): FieldInfo[] {
+  const fields: FieldInfo[] = [];
+  for (const prop of type.getProperties()) {
+    if (prop.getName() === skip) continue;
     const override = overrides?.get(prop.getName());
     if (override) { fields.push({ name: prop.getName(), tsType: override }); continue; }
 
     const propType = prop.getTypeAtLocation(locationNode);
     let tsType = typeToString(propType);
     const propDecl = prop.getDeclarations()[0];
-    tsType = declaredTypeTextIfBetter(propDecl, tsType);
-    // Optional property: `foo?: T` reports as `T` (ts-morph strips the
-    // `| undefined` from a question-token type). Add it back so the field
-    // resolves to `Optional<T>`.
-    if (propDecl && (propDecl as any).hasQuestionToken?.()) {
+    tsType = declaredTypeTextIfBetter(propDecl, tsType, propType);
+    // Anonymous object types (ts-morph names them `__type`), and arrays, optionals and tagged unions of them, become
+    // synthetic named datatypes the field references by name.
+    if (extraDecls && /\b__(?:type|object)\b/.test(tsType)) {
+      tsType = namedTypeString(propType, typeName(owner, prop.getName()), locationNode, extraDecls);
+    }
+    // Optional property: `foo?: T` reports as `T` (ts-morph strips the `| undefined` from a question-token type, and
+    // `exactOptionalPropertyTypes` never adds it). Add it back so the field resolves to `Optional<T>`. A mapped type's
+    // optional key (an Effect Schema `optionalKey`) is optional through its symbol: its declaration is the schema's.
+    if (prop.hasFlags(ts.SymbolFlags.Optional) || (propDecl as any)?.hasQuestionToken?.()) {
       // Normalize checker output that puts `undefined` first, then ensure
       // exactly one trailing `| undefined`.
       if (tsType.startsWith("undefined | ")) tsType = `${tsType.slice("undefined | ".length)} | undefined`;
       else if (!tsType.includes(" | undefined")) tsType = `${tsType} | undefined`;
     }
-
-    // Inline anonymous object types: ts-morph names them __type.
-    // Generate a synthetic named record and reference it by name instead.
-    if (extraDecls && tsType.includes("__type")) {
-      let innerType = propType;
-      let isOptional = false;
-      if (propType.isUnion()) {
-        const uTypes = propType.getUnionTypes();
-        const nonUndef = uTypes.filter(t => !t.isUndefined());
-        if (uTypes.some(t => t.isUndefined()) && nonUndef.length === 1) {
-          innerType = nonUndef[0];
-          isOptional = true;
-        }
-      }
-      if (innerType.isObject() && !innerType.isArray()) {
-        const fName = prop.getName();
-        const synName = name + fName.charAt(0).toUpperCase() + fName.slice(1);
-        const extracted = extractRecord(synName, innerType, locationNode, undefined, extraDecls);
-        if (extracted) {
-          extraDecls.push(extracted);
-          tsType = isOptional ? `${synName} | undefined` : synName;
-        }
-      }
-    }
-
     fields.push({ name: prop.getName(), tsType });
   }
-  return { name, kind: "record", fields };
+  return fields;
+}
+
+/** A datatype name made of `parts`: each one's identifier characters, capitalized after the first. */
+function typeName(...parts: string[]): string {
+  return parts.map((p, i) => {
+    const word = p.replace(/[^A-Za-z0-9_]+/g, "");
+    return i === 0 ? word : word.charAt(0).toUpperCase() + word.slice(1);
+  }).join("");
+}
+
+/**
+ * Anonymous object and tagged-union types the checker resolved, keyed by its interned type, mapped to the datatype
+ * that models them. An Effect Schema's value type (`typeof Model.Type`) is such a type: a mapped type with no name of
+ * its own, so without this map its fields, array elements and a function's return of it could only be spelled
+ * `__type`. `typeToString` reads the map, so every place the same type is reached names the same datatype. Reset per
+ * module in `extractModule`.
+ */
+let _anonNames: Map<ts.Type, string> = new Map();
+/** The synthesized datatypes behind `_anonNames`, so a structurally equal type reuses one (`adoptAnonymous`). */
+let _anonDecls: TypeDeclInfo[] = [];
+
+/** An object type with properties and no name: an inline `{ … }`, or a mapped type such as an Effect Schema's value type. */
+function isAnonymousObject(type: Type): boolean {
+  if (!type.isObject() || type.isArray() || type.isTuple() || type.getCallSignatures().length > 0) return false;
+  const name = type.getSymbol()?.getName();
+  return (name === undefined || name.startsWith("__")) && type.getProperties().length > 0;
+}
+
+/** An anonymous object type with only a string index signature, `{ readonly [k: string]: V }`: a `Record<string, V>`. */
+function indexValueType(type: Type): Type | undefined {
+  if (!type.isObject() || type.isArray() || type.getProperties().length > 0 || type.getCallSignatures().length > 0) return undefined;
+  const name = type.getSymbol()?.getName();
+  if (name !== undefined && !name.startsWith("__")) return undefined;
+  return type.getStringIndexType();
+}
+
+/** The primitive under a brand (`string & Brand<"Id">`, an Effect Schema `brand`): one primitive and only object tags. */
+function brandedBase(type: Type): Type | undefined {
+  if (!type.isIntersection()) return undefined;
+  const parts = type.getIntersectionTypes();
+  const values = parts.filter(p => !p.isObject());
+  if (values.length !== 1 || !(values[0].isString() || values[0].isNumber() || values[0].isBoolean() || values[0].isBigInt())) return undefined;
+  return values[0];
+}
+
+/** A unique datatype name from `hint`, clear of this module's declarations and earlier synthesized ones. */
+function freshTypeName(hint: string): string {
+  const taken = (n: string) => _reservedTypeNames.has(n) || _anonDecls.some(d => d.name === n) || (_synthArrayUnions ?? []).some(d => d.name === n);
+  let name = hint;
+  for (let i = 2; taken(name); i++) name = `${hint}${i}`;
+  return name;
+}
+
+/** The type names a module declares, which a synthesized datatype must not take. Set per module in `extractModule`. */
+let _reservedTypeNames: Set<string> = new Set();
+
+/**
+ * `type` as a field type string, where each anonymous object type, array of one, optional one or tagged union of
+ * them becomes a named datatype (`hint`, `hint` + `Item` for an array element, `hint` + `Value` for a record value)
+ * pushed to `extraDecls`. The checker's resolved structure is the source, never the declaration's text.
+ */
+function namedTypeString(type: Type, hint: string, loc: Node, extraDecls: TypeDeclInfo[]): string {
+  const printed = typeToString(type);
+  if (!/\b__(?:type|object)\b/.test(printed)) return printed;
+  if (type.isUnion()) {
+    const members = type.getUnionTypes();
+    const rest = members.filter(m => !m.isUndefined() && !m.isNull());
+    const optional = rest.length < members.length ? " | undefined" : "";
+    if (rest.length === 1) return `${namedTypeString(rest[0], hint, loc, extraDecls)}${optional}`;
+    const whole = type.getNonNullableType();
+    const tagged = rest.every(isAnonymousObject) ? taggedUnionName(whole, rest, hint, loc, extraDecls) : undefined;
+    return `${tagged ?? opaqueName(whole, hint, extraDecls)}${optional}`;
+  }
+  if (type.isArray()) {
+    const elem = namedTypeString(type.getArrayElementTypeOrThrow(), `${hint}Item`, loc, extraDecls);
+    return elem.includes(" | ") ? `(${elem})[]` : `${elem}[]`;
+  }
+  const value = indexValueType(type);
+  if (value) return `Record<string, ${namedTypeString(value, `${hint}Value`, loc, extraDecls)}>`;
+  if (!isAnonymousObject(type)) return printed;
+  const name = freshTypeName(hint);
+  return adoptAnonymous({ name, kind: "record", fields: fieldsOf(name, type, loc, extraDecls) }, type, extraDecls);
+}
+
+/** A tagged union of anonymous object types (an Effect Schema `Union` of `TaggedStruct`s) as a discriminated-union
+ *  datatype named from `hint`; undefined when the members share no literal discriminant. */
+function taggedUnionName(type: Type, members: Type[], hint: string, loc: Node, extraDecls: TypeDeclInfo[]): string | undefined {
+  const discriminant = findDiscriminant(members);
+  if (!discriminant) return undefined;
+  const name = freshTypeName(hint);
+  const variants: VariantInfo[] = members.map(m => {
+    const tag = String(m.getProperty(discriminant)!.getTypeAtLocation(loc).getLiteralValue());
+    return { name: tag, fields: fieldsOf(typeName(name, tag), m, loc, extraDecls, discriminant) };
+  });
+  return adoptAnonymous({ name, kind: "discriminated-union", discriminant, variants }, type, extraDecls);
+}
+
+/** A union with no literal discriminant as its own opaque type (see `_synthOpaque`): passed through, never inspected. */
+function opaqueName(type: Type, hint: string, extraDecls: TypeDeclInfo[]): string {
+  const decl: TypeDeclInfo = { name: freshTypeName(hint), kind: "opaque" };
+  _anonDecls.push(decl);
+  extraDecls.push(decl);
+  _anonNames.set(type.compilerType, decl.name);
+  return decl.name;
+}
+
+/** A datatype's structure without its name: equal shapes are one TypeScript type. */
+function anonShape(d: TypeDeclInfo): string {
+  return JSON.stringify([d.kind, d.discriminant, d.fields, d.variants]);
+}
+
+/** Keep a synthesized datatype, or reuse an earlier one of the same shape: TypeScript types are structural, so two
+ *  copies of one schema (each inlined into an emitted declaration) are one type and one datatype. */
+function adoptAnonymous(decl: TypeDeclInfo, type: Type, extraDecls: TypeDeclInfo[]): string {
+  const kept = _anonDecls.find(d => anonShape(d) === anonShape(decl)) ?? decl;
+  if (kept === decl) { _anonDecls.push(decl); extraDecls.push(decl); }
+  _anonNames.set(type.compilerType, kept.name);
+  return kept.name;
 }
 
 function findDiscriminant(members: Type[]): string | null {
@@ -1278,10 +1385,13 @@ function findDiscriminant(members: Type[]): string | null {
  *  syntactic node text preserves the alias spelling (`TExpr | null`). Only
  *  plain reference text is used: inline object literals (containing `{`)
  *  keep the `__type` marker so record synthesis can handle them. */
-function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string): string {
+function declaredTypeTextIfBetter(propDecl: Node | undefined, tsType: string, propType: Type): string {
   if (!propDecl) return tsType;
   const tn = (propDecl as { getTypeNode?: () => Node | undefined }).getTypeNode?.();
   if (!tn) return tsType;
+  // The declaration must state this property's own type. A mapped type's property (an Effect Schema's value type)
+  // is declared by the schema field it maps, `Schema.optionalKey<Schema.String>`, which is not the value's type.
+  if (tn.getType().getNonNullableType().compilerType !== propType.getNonNullableType().compilerType) return tsType;
   const text = tn.getText();
   // The checker erases `type real = number` to `number`, which would model the field as an integer.
   if (text === "real" && /^(?:undefined \| )?number(?: \| undefined)?$/.test(tsType)) return text;
@@ -1299,6 +1409,8 @@ function typeToString(type: Type): string {
   // literals back so the union dedupes to a single `boolean` rather than being
   // mistaken for an unmodelable multi-member union.
   if (type.isBoolean() || type.isBooleanLiteral()) return "boolean";
+  const anonymous = _anonNames.get(type.compilerType);
+  if (anonymous) return anonymous;
   // Named type alias (e.g. Priority = "low" | "medium" | "high") — use the alias name
   if (type.getAliasSymbol()) {
     const name = type.getAliasSymbol()!.getName();
@@ -1306,6 +1418,10 @@ function typeToString(type: Type): string {
     if (args.length > 0) return `${name}<${args.map(t => typeToString(t)).join(", ")}>`;
     return name;
   }
+  const branded = brandedBase(type);
+  if (branded) return typeToString(branded);
+  const indexValue = indexValueType(type);
+  if (indexValue) return `Record<string, ${typeToString(indexValue)}>`;
   if (type.isUnion()) {
     const unionTypes = type.getUnionTypes();
     // `T[] | U` synthesis: exactly two members, one array, the other not
@@ -2415,6 +2531,10 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // TypeScript collapses `type X = | { kind: 'A'; ... }` to a plain object type, losing
   // the alias. We record a fingerprint (sorted property names) → alias name mapping.
   _collapsedUnionMap = new Map();
+  _anonNames = new Map();
+  _anonDecls = [];
+  _reservedTypeNames = new Set(sourceFile.getStatements().flatMap(st =>
+    Node.isTypeAliasDeclaration(st) || Node.isInterfaceDeclaration(st) || Node.isClassDeclaration(st) || Node.isEnumDeclaration(st) ? [st.getName() ?? ""] : []));
   for (const stmt of sourceFile.getStatements()) {
     if (Node.isTypeAliasDeclaration(stmt)) {
       const type = stmt.getType();
@@ -2744,6 +2864,9 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // In brownfield mode, filter consts to only those referenced by verified functions.
   if (hasVerifyDirective) {
     const referencedNames = new Set<string>();
+    // Names read as values (body and contract identifiers), which alone keep a constant: a parameter typed `Model`
+    // must not keep `const Model = Schema.Struct(…)`, a schema the proof never evaluates.
+    const valueNames = new Set<string>();
     function collectNames(stmts: RawStmt[]) {
       for (const s of stmts) {
         if (s.kind === "let") { if (s.tsType) referencedNames.add(s.tsType); collectNamesExpr(s.init); }
@@ -2756,7 +2879,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       }
     }
     function collectNamesExpr(e: RawExpr) {
-      if (e.kind === "var") referencedNames.add(e.name);
+      if (e.kind === "var") { referencedNames.add(e.name); valueNames.add(e.name); }
       if (e.kind === "binop") { collectNamesExpr(e.left); collectNamesExpr(e.right); }
       if (e.kind === "unop") { collectNamesExpr(e.expr); }
       if (e.kind === "call") { collectNamesExpr(e.fn); e.args.forEach(collectNamesExpr); }
@@ -2784,6 +2907,7 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       for (const spec of [...fn.requires, ...fn.ensures]) {
         for (const m of spec.matchAll(/\b([a-zA-Z_]\w*)\b/g)) {
           referencedNames.add(m[1]);
+          valueNames.add(m[1]);
         }
       }
     }
@@ -2801,13 +2925,13 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     for (let grew = true; grew; ) {
       grew = false;
       for (const c of constants) {
-        if (!referencedNames.has(c.name)) continue;
-        const before = referencedNames.size;
+        if (!valueNames.has(c.name)) continue;
+        const before = valueNames.size;
         collectNamesExpr(c.value);
-        if (referencedNames.size !== before) grew = true;
+        if (valueNames.size !== before) grew = true;
       }
     }
-    constants.splice(0, constants.length, ...constants.filter(c => referencedNames.has(c.name)));
+    constants.splice(0, constants.length, ...constants.filter(c => valueNames.has(c.name)));
     // Filter types to only those referenced by verified functions (transitive)
     const neededTypes = new Set<string>();
     function markType(name: string) {
@@ -2839,6 +2963,9 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
       if (/^[A-Za-z_]\w*$/.test(outer)) markType(outer);
     }
     typeDecls.splice(0, typeDecls.length, ...typeDecls.filter(d => neededTypes.has(d.name) || declaredNames.has(d.name)));
+    // A dropped declaration no longer names its type: a later reach of that type synthesizes it again.
+    _anonDecls = _anonDecls.filter(d => typeDecls.includes(d));
+    for (const [type, name] of _anonNames) if (!typeDecls.some(d => d.name === name)) _anonNames.delete(type);
   }
 
   // Resolve imported types: extract types referenced in function signatures but not in this file

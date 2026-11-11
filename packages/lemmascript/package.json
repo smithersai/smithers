@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "26.4.1",
+    "effect": "4.1.1",
     "tsx": "4.23.13",
     "typescript": "5.9.3"
   }
