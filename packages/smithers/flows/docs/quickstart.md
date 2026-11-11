@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs one flow end to end on a real durable engine: SQLite on
 disk, the guarded Node host, and the journal a resume replays from. By the end
 you will have a program that reads a file through a recorded step, and a second
-run of it that answers without reading the file again.
+run of it that answers without reading the file again. Each step below is
+TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same
+steps as Effect code.
 
 ## Prerequisites
 
@@ -206,6 +208,70 @@ The same `executionId` also returns the recorded result after you change the
 flow, so a step you add or edit does not run;
 [Change a flow and keep the work](./guides/change-a-flow-and-keep-the-work.md)
 shows how to run only what changed.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the action's body is an
+`effect` arrow, so `try` replaces each `yield*`, and `main` is an `effect`
+function that takes the workspace root instead of resolving it with
+`node:path`. The tab follows the source checkout, where `NodeRuntime` is a
+namespace of `@smthrs/platform-node`'s root rather than the published rc.16
+`@smthrs/flows/NodeRuntime` subpath. `test/quickstart.test.vibe` runs it twice
+under one execution id after changing the note, and the second run still
+answers with the recorded contents.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Action, Capability, Flow, Interpreter } from "@smthrs/flows"
+import { NodeRuntime } from "@smthrs/platform-node"
+
+/** One recorded step: read a file through the host the engine guards. */
+export const ReadNote = Action.make("quickstart/ReadNote", {
+  payload: { path: Schema.String },
+  success: Schema.String
+})
+
+/** The flow: a graph of one action, planned before any of it runs. */
+export const ReadNoteFlow = Flow.make("quickstart/ReadNoteFlow", {
+  payload: { path: Schema.String },
+  success: Schema.String,
+  body: (payload) => ReadNote.call(payload)
+})
+
+/** The registration phase: the implementation, then the flow's interpreter. */
+const flows = (workspaceRoot: string) =>
+  Interpreter.layer(ReadNoteFlow).pipe(
+    Layer.provideMerge(ReadNote.toLayer(effect ({ path }) => {
+      // Under `layerHost`, FileSystem is the kernel's guarded host surface, not raw Node.
+      const files = try FileSystem.FileSystem
+      return try orDie(files.readFileString(`${workspaceRoot}/${path}`))
+    })),
+    Layer.provideMerge(Action.layerImplementations)
+  )
+
+/** The one capability the body needs: `fs:read` under the workspace, and nothing else. */
+const allowWorkspaceReads = (workspaceRoot: string) =>
+  new Capability.Permission.Rule({
+    effect: "allow",
+    pattern: new Capability.Capability.CapabilityPattern({ action: "fs:read", resource: `${workspaceRoot}/**` })
+  })
+
+/** Stands the durable host up over `<workspaceRoot>/.flows/engine.db` and runs one execution. */
+export effect function main(workspaceRoot: string, executionId: string) {
+  const host = NodeRuntime.layerHost(
+    {
+      filename: `${workspaceRoot}/.flows/engine.db`,
+      workspaceRoot,
+      owner: { hostId: "quickstart" },
+      rules: [allowWorkspaceReads(workspaceRoot)]
+    },
+    flows(workspaceRoot)
+  )
+  return try scoped(Effect.provide(ReadNoteFlow.execute({ path: "note.txt" }, { executionId }), host))
+}
+```
 
 ## What just happened
 

@@ -1,0 +1,19 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/quickstart.vibe"
+
+it.live("reads the note through a recorded step and replays it for the same execution id", effect () => {
+  provide NodeServices.layer {
+    try scoped(effect {
+      const fs = try FileSystem.FileSystem
+      const workspaceRoot = try fs.makeTempDirectoryScoped()
+      try fs.writeFileString(`${workspaceRoot}/note.txt`, "the note\n")
+      expect(try main(workspaceRoot, "quickstart-1")).toBe("the note\n")
+
+      // The second run replays the journal, so it still answers with the old contents.
+      try fs.writeFileString(`${workspaceRoot}/note.txt`, "a changed note\n")
+      expect(try main(workspaceRoot, "quickstart-1")).toBe("the note\n")
+      expect(try main(workspaceRoot, "quickstart-2")).toBe("a changed note\n")
+    })
+  }
+}, 120_000)

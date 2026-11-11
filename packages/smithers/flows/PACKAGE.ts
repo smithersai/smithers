@@ -15,7 +15,12 @@ const cwd = "packages/smithers/flows"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd,
-  testSources: Smithers.glob("{test,examples}/**/*.ts"),
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }],
   // The example projects examples 16 and 24 discover flows in read their
   // markdown descriptors off disk at run time.
   testData: ["examples/**/*.mdx"]
