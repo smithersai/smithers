@@ -1,6 +1,6 @@
 import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Logger } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -80,6 +80,61 @@ describe("Maintenance", () => {
       )
     )
     expect(observed).toEqual({ afterFailure: 1, passes: 2 })
+  })
+
+  // `Effect.catch` handles typed failures only, so a pass that died ended the
+  // interval fiber without a log and no later pass ran.
+  it("logs a scheduled pass that dies and still runs the next pass", async () => {
+    let passes = 0
+    const logs: Array<string> = []
+    const store = MemoryStore.MemoryStore.of({
+      deleteExpiredFacts: Effect.suspend(() => {
+        passes++
+        return passes === 2 ? Effect.die(new Error("driver threw")) : Effect.succeed(0)
+      })
+    } as unknown as MemoryStore.Service)
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        yield* Layer.build(Maintenance.layerTtlGc({ interval: "1 minute" }))
+        yield* TestClock.adjust("1 minute")
+        yield* TestDatabase.until(Effect.sync(() => passes === 2))
+        yield* TestClock.adjust("1 minute")
+        yield* TestDatabase.until(Effect.sync(() => passes === 3))
+      })).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provide(Logger.layer([Logger.make((entry) => logs.push(JSON.stringify(entry.message)))])),
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(passes).toBe(3)
+    expect(logs.filter((log) => log.includes("memory TTL GC pass failed"))).toHaveLength(1)
+  })
+
+  it("logs nothing when the closing scope interrupts a pass in flight", async () => {
+    const logs: Array<string> = []
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const inFlight = yield* Deferred.make<void>()
+        let passes = 0
+        const store = MemoryStore.MemoryStore.of({
+          deleteExpiredFacts: Effect.suspend(() => {
+            passes++
+            return passes === 1
+              ? Effect.succeed(0)
+              : Deferred.succeed(inFlight, undefined).pipe(Effect.andThen(Effect.never))
+          })
+        } as unknown as MemoryStore.Service)
+        yield* Effect.scoped(Effect.gen(function*() {
+          yield* Layer.build(Maintenance.layerTtlGc({ interval: "1 minute" }))
+          yield* TestClock.adjust("1 minute")
+          yield* Deferred.await(inFlight)
+        })).pipe(Effect.provideService(MemoryStore.MemoryStore, store))
+      }).pipe(
+        Effect.provide(Logger.layer([Logger.make((entry) => logs.push(JSON.stringify(entry.message)))])),
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(logs).toEqual([])
   })
 
   it("collects expired facts and their search projections in one finite TTL pass", async () => {

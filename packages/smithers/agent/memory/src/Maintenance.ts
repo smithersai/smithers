@@ -1,5 +1,6 @@
 /**
- * Finite memory maintenance Effects intended for explicit schedules.
+ * Finite memory maintenance Effects intended for explicit schedules, and
+ * `layerTtlGc`, which repeats the TTL pass for as long as its scope is open.
  *
  * @since 0.1.0
  */
@@ -45,8 +46,9 @@ export interface TtlGcScheduleOptions {
 
 /**
  * Runs {@link ttlGc} once while the layer builds and then on every interval
- * for as long as the layer's scope is open. A failed pass is logged and the
- * next one still runs; a pass that deletes rows logs how many.
+ * for as long as the layer's scope is open. A pass that fails or dies is
+ * logged and the next one still runs; a pass that deletes rows logs how many.
+ * A pass interrupted by the closing scope logs nothing.
  *
  * The first pass completes before the layer is built, and the interval fiber
  * starts at once, so its first sleep is already scheduled when the build
@@ -65,7 +67,7 @@ export const layerTtlGc = (options: TtlGcScheduleOptions = {}): Layer.Layer<neve
       deletedFacts > 0 ? Effect.logInfo("memory TTL GC deleted expired facts", { deletedFacts }) : Effect.void
     ),
     Effect.withSpan("Maintenance.ttlGc"),
-    Effect.catch((error) => Effect.logWarning("memory TTL GC pass failed", error))
+    Effect.catchCause((cause) => Effect.logWarning("memory TTL GC pass failed", cause))
   )
   return Layer.effectDiscard(
     pass.pipe(

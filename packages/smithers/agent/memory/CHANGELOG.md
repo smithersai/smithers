@@ -16,6 +16,9 @@
 
 ### Fixed
 
+- `Maintenance.layerTtlGc` logs a pass that dies and runs the next one. It
+  caught typed failures only, so a defect ended the interval fiber without a
+  log and expired facts were never deleted again in that process.
 - Reject sparse provider batches and vectors instead of returning incomplete embeddings.
 - Keyword recall scores every row of each selected bank. It read only the
   newest `requestedRows * 5` rows, so a bank with more than about 40 records
