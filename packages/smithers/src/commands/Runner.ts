@@ -15,8 +15,9 @@
 
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
+import { Control } from "@smthrs/control"
 import { NodeRuntime } from "@smthrs/platform-node"
-import { Cause, Effect, FileSystem, Layer } from "effect"
+import { Cause, Context, Deferred, Effect, FileSystem, Layer, Option, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
 import { dirname, join } from "node:path"
@@ -83,7 +84,32 @@ const jobEngine = <E>(
 const serveLocal = (config: Config.Checked, read: (() => Machine.Reading) | undefined) =>
   Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const store = yield* LocalJobs.make(config.stateDir)
+    // The control host the lanes run on, once it is built: a job's run that ends cancelled or failed stops the job.
+    const lanes = yield* Deferred.make<Control.Service>()
+    const store = yield* LocalJobs.make(config.stateDir, {
+      runEnded: (runId) =>
+        Deferred.await(lanes).pipe(
+          Effect.flatMap((control) =>
+            control.watch({ runId, follow: true }).pipe(
+              Stream.filter((event) =>
+                event.kind === "control.run.cancelled" || event.kind === "control.run.failed" ||
+                event.kind === "control.run.completed"
+              ),
+              Stream.runHead
+            )
+          ),
+          // A run that completed has nothing left to stop; one whose events can't be read is left to its own end.
+          Effect.flatMap((ended) =>
+            Option.isSome(ended) && ended.value.kind !== "control.run.completed" ? Effect.void : Effect.never
+          ),
+          Effect.catch(() =>
+            Effect.logWarning("runner.lane").pipe(
+              Effect.annotateLogs({ run: runId, outcome: "unwatched" }),
+              Effect.andThen(Effect.never)
+            )
+          )
+        )
+    })
     const services = Layer.merge(
       Layer.succeed(AgentRunner.AgentJobs, store.jobs),
       Layer.succeed(Host.Host, store.host)
@@ -99,6 +125,7 @@ const serveLocal = (config: Config.Checked, read: (() => Machine.Reading) | unde
     const control = yield* Layer.build(
       NodeControl.layer({ root: config.lanesRoot, startsRuns: true }, Lane.registration.pipe(Layer.provide(services)))
     )
+    yield* Deferred.succeed(lanes, Context.get(control, Control.Control))
     // The requests `runner start` queued, admitted as lanes every poll, after a restart too. A pass that fails anyhow
     // is logged and the next one goes on.
     yield* LaneIntake.admitAll(config.stateDir).pipe(

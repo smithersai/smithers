@@ -24,12 +24,26 @@
  * A job's transcript events are appended, once each and in order, to
  * `<state>/transcripts/<job>.jsonl`, one event per line.
  *
+ * Steering is the control run's own: a job records the run whose step
+ * started it, and the run's durable notification queue, which `smthrs runs
+ * steer` admits to, is the one the step's handlers run with. A heartbeat
+ * hands the runner the run's pending human steers, and drains those the
+ * runner says the agent read, by id, under a boundary of the job's key and
+ * those ids, as the hosted store does.
+ *
+ * A job whose control run ends without it (`smthrs runs cancel`, or a
+ * failure) is cancelled as a cancel of its key would: a queued one at once, a
+ * claimed one at its runner's next heartbeat. The run's own cancellation of
+ * its step can't reach the store from a module run (see `runEnded`).
+ *
  * @since 1.0.0
  */
 
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
-import { Clock, Effect, FileSystem, Option, Schema, Semaphore } from "effect"
+import { Notifications } from "@smthrs/harness"
+import { NotificationQueue } from "@smthrs/notifications"
+import { Clock, Effect, FileSystem, Option, Schema, Scope, Semaphore } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { ModuleOwner } from "../internal/ModuleOwner.ts"
@@ -107,6 +121,16 @@ const TIMEOUT: AgentRunner.Outcome = { _tag: "Failed", reason: "timeout" }
 export const fileOf = (key: string): string => createHash("sha256").update(key).digest("hex").slice(0, 32)
 
 /**
+ * The boundary a runner's confirmation of `ids` for job `key` drains under:
+ * the same ids confirmed again replay the same drain.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const steerBoundary = (key: string, ids: ReadonlyArray<string>): string =>
+  `runner-steer:${key}:${createHash("sha256").update([...ids].sort().join("\n")).digest("hex").slice(0, 32)}`
+
+/**
  * Where the store keeps its jobs and transcripts under `stateDir`.
  *
  * @category constructors
@@ -129,14 +153,31 @@ export interface Store {
 }
 
 /**
- * Opens the store under `stateDir` through the context's `FileSystem`: reads
- * every job written so far, and removes the temporary files a kill left
- * behind.
+ * What the store asks of the control host its jobs' runs live on.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /**
+   * Succeeds once the control run `runId` has been cancelled or has failed,
+   * and never while it hasn't. The engine starts an external job step's own
+   * stop as a run of its own, which a module's authority refuses for want of
+   * a recorded control ancestor, so the store watches the run itself, from
+   * the store's scope.
+   */
+  readonly runEnded?: ((runId: string) => Effect.Effect<void>) | undefined
+}
+
+/**
+ * Opens the store under `stateDir` through the context's `FileSystem`, for
+ * the life of the context's scope: reads every job written so far, and
+ * removes the temporary files a kill left behind.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = (stateDir: string) =>
+export const make = (stateDir: string, options: Options = {}) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const dirs = paths(stateDir)
@@ -162,6 +203,16 @@ export const make = (stateDir: string) =>
     const lock = Semaphore.makeUnsafe(1)
     /** The next seq each job's transcript lacks, read from its file the first time it is asked. */
     const nexts = new Map<string, number>()
+    /**
+     * The control host's notification queue, as the lane step's handlers run with it: learned from the first store
+     * operation a step makes, after a restart too, since its parked probe asks the job's status.
+     */
+    let queue: NotificationQueue.Service | undefined
+    const learnQueue = Effect.serviceOption(NotificationQueue.NotificationQueue).pipe(
+      Effect.map((found) => {
+        if (Option.isSome(found)) queue = found.value
+      })
+    )
 
     const write = (row: Row) =>
       Effect.gen(function*() {
@@ -207,6 +258,61 @@ export const make = (stateDir: string) =>
         )
       )
 
+    const cancelKey = (key: string) =>
+      Effect.gen(function*() {
+        const row = rows.get(key)
+        const now = yield* Clock.currentTimeMillis
+        if (row === undefined) {
+          // A key not started yet ends now, with no task: its start, arriving later, finds it taken.
+          const { origin, generation } = AgentRunner.parseKey(key)
+          return yield* write({
+            key,
+            origin,
+            generation,
+            status: "cancelled",
+            outcome: STOPPED,
+            cancelRequested: true,
+            deadline: now,
+            queuedAt: now,
+            settledAt: now
+          })
+        }
+        // A queued job ends now; a claimed one when its runner, told at its next heartbeat, settles it.
+        yield* write(
+          row.status === "queued"
+            ? { ...row, status: "cancelled", outcome: STOPPED, cancelRequested: true, settledAt: now }
+            : { ...row, cancelRequested: true }
+        )
+      })
+
+    /** The runs whose end this store watches. */
+    const watched = new Set<string>()
+    const scope = yield* Scope.Scope
+    /** Watches run `runId` once: when it ends, each of its open jobs is cancelled; a failed write is logged. */
+    const watch = (runId: string) =>
+      Effect.suspend(() => {
+        if (options.runEnded === undefined || watched.has(runId)) return Effect.void
+        watched.add(runId)
+        return options.runEnded(runId).pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              const open = [...rows.values()].filter((row) =>
+                row.runId === runId && !row.cancelRequested && (row.status === "queued" || row.status === "claimed")
+              )
+              return Effect.forEach(open, (row) => cancelKey(row.key), { discard: true })
+            }).pipe(lock.withPermits(1))
+          ),
+          Effect.tap(() =>
+            Effect.logInfo("runner.jobs").pipe(Effect.annotateLogs({ run: runId, outcome: "run_ended" }))
+          ),
+          Effect.catch(() =>
+            Effect.logError("runner.jobs").pipe(Effect.annotateLogs({ run: runId, outcome: "not_cancelled" }))
+          ),
+          Effect.forkIn(scope),
+          Effect.asVoid
+        )
+      })
+
     const jobs = AgentRunner.AgentJobs.of({
       start: (task, key) =>
         Effect.gen(function*() {
@@ -218,8 +324,10 @@ export const make = (stateDir: string) =>
           const after = previous?.status === "retryable" && previous.outcome?._tag === "Retryable"
             ? previous.outcome.afterSeconds
             : undefined
-          // The control run the step belongs to: the run whose steers its agent reads.
+          // The control run the step belongs to: the run whose steers its agent reads, and whose end stops it.
           const owner = yield* Effect.serviceOption(ModuleOwner)
+          yield* learnQueue
+          if (Option.isSome(owner)) yield* watch(owner.value.rootId)
           yield* write({
             key,
             origin,
@@ -237,37 +345,13 @@ export const make = (stateDir: string) =>
       status: (key) =>
         Effect.gen(function*() {
           if (corrupt.has(`${fileOf(key)}.json`)) return yield* Effect.fail("corrupt")
+          yield* learnQueue
           const row = rows.get(key)
           // A key with no job was never queued: another generation.
-          if (row === undefined) return { _tag: "Again" }
+          if (row === undefined) return { _tag: "Again" } as const
           return standingOf(yield* expire(row, yield* Clock.currentTimeMillis))
         }).pipe(unavailableJobs),
-      cancel: (key) =>
-        Effect.gen(function*() {
-          const row = rows.get(key)
-          const now = yield* Clock.currentTimeMillis
-          if (row === undefined) {
-            // A key not started yet ends now, with no task: its start, arriving later, finds it taken.
-            const { origin, generation } = AgentRunner.parseKey(key)
-            return yield* write({
-              key,
-              origin,
-              generation,
-              status: "cancelled",
-              outcome: STOPPED,
-              cancelRequested: true,
-              deadline: now,
-              queuedAt: now,
-              settledAt: now
-            })
-          }
-          // A queued job ends now; a claimed one when its runner, told at its next heartbeat, settles it.
-          yield* write(
-            row.status === "queued"
-              ? { ...row, status: "cancelled", outcome: STOPPED, cancelRequested: true, settledAt: now }
-              : { ...row, cancelRequested: true }
-          )
-        }).pipe(unavailableJobs)
+      cancel: (key) => cancelKey(key).pipe(unavailableJobs)
     })
 
     const asJob = (row: Row, reclaimed: boolean): AgentRunner.Job => ({
@@ -311,7 +395,14 @@ export const make = (stateDir: string) =>
           const row = held(request.key, request.claim)
           if (row === undefined) return { held: false, cancel: false, leaseSeconds: LEASE_SECONDS }
           const now = yield* Clock.currentTimeMillis
-          return { held: true, cancel: row.cancelRequested || row.deadline <= now, leaseSeconds: LEASE_SECONDS }
+          const cancel = row.cancelRequested || row.deadline <= now
+          const steers = cancel ? [] : yield* exchange(row, request.delivered ?? [])
+          return {
+            held: true,
+            cancel,
+            leaseSeconds: LEASE_SECONDS,
+            ...(steers.length === 0 ? {} : { steers })
+          }
         }).pipe(unavailableHost("heartbeat")),
       settle: (request) =>
         Effect.gen(function*() {
@@ -355,6 +446,37 @@ export const make = (stateDir: string) =>
     })
 
     /**
+     * Drains the steers the runner says the job's agent read, then reads those its run still has pending. A failure is
+     * logged and hands out nothing: the heartbeat holds all the same, and the runner says the same again at its next.
+     */
+    const exchange = (row: Row, delivered: ReadonlyArray<string>) =>
+      Effect.gen(function*() {
+        const runId = row.runId
+        if (runId === undefined || queue === undefined) return []
+        if (delivered.length > 0) {
+          yield* queue.drain({
+            runId,
+            targetLineageId: runId,
+            boundary: steerBoundary(row.key, delivered),
+            wouldIdle: false,
+            ids: delivered
+          })
+        }
+        const pending = yield* queue.pending(runId)
+        return pending.filter((notification) => notification._tag === "human-steer").map((notification) => ({
+          id: notification.id,
+          text: Notifications.text(notification)
+        }))
+      }).pipe(
+        Effect.catch(() =>
+          Effect.logWarning("runner.jobs").pipe(
+            Effect.annotateLogs({ job: row.key, outcome: "steering_unavailable" }),
+            Effect.as([] as ReadonlyArray<AgentRunner.Steer>)
+          )
+        )
+      )
+
+    /**
      * The next seq a transcript file lacks: one past its last whole line. A line a kill cut short is dropped, so the
      * next append starts on a line of its own.
      */
@@ -368,5 +490,9 @@ export const make = (stateDir: string) =>
         return Option.match(decodeEvent(last), { onNone: () => 0, onSome: (event) => event.seq + 1 })
       })
 
+    // After a restart: the runs of the jobs still open.
+    for (const row of rows.values()) {
+      if (row.runId !== undefined && (row.status === "queued" || row.status === "claimed")) yield* watch(row.runId)
+    }
     return { jobs, host } satisfies Store
   })

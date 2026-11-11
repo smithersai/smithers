@@ -95,6 +95,7 @@ export const make = () => {
 
   return {
     root,
+    agentState,
     stateDir,
     configPath,
     mirror,

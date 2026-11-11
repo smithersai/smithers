@@ -5,7 +5,8 @@
  */
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
-import { Effect, Exit, FileSystem, Layer, PlatformError } from "effect"
+import { NotificationQueue } from "@smthrs/notifications"
+import { Deferred, Effect, Exit, FileSystem, Layer, PlatformError } from "effect"
 import { TestClock } from "effect/testing"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -34,6 +35,8 @@ const HOUR = 3_600_000
 
 /** What fails while it is set: the store's writes (`rename`), its appends, or its reads. */
 const faults = new Set<"rename" | "append" | "read">()
+/** How many writes the store tried. */
+let renames = 0
 const fault = (method: string) =>
   Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method }))
 const faulty = Layer.effect(
@@ -41,18 +44,28 @@ const faulty = Layer.effect(
   Effect.map(FileSystem.FileSystem, (fs) =>
     FileSystem.FileSystem.of({
       ...fs,
-      rename: (from, to) => faults.has("rename") ? fault("rename") : fs.rename(from, to),
+      rename: (from, to) => {
+        renames++
+        return faults.has("rename") ? fault("rename") : fs.rename(from, to)
+      },
       writeFileString: (path, data, options) =>
         faults.has("append") && options?.flag === "a" ? fault("writeFile") : fs.writeFileString(path, data, options),
       readFileString: (path, encoding) => faults.has("read") ? fault("readFile") : fs.readFileString(path, encoding)
     }))
 ).pipe(Layer.provide(NodeServices.layer))
 
-/** Runs `body` with a store over `stateDir` on a test clock (its time starts at 0) and the faulty filesystem. */
-const run = <A, E>(body: (store: LocalJobs.Store) => Effect.Effect<A, E, FileSystem.FileSystem>) =>
+/**
+ * Runs `body` with a store over `stateDir` on a test clock (its time starts at 0) and the faulty filesystem, its runs'
+ * ends told by `options`.
+ */
+const run = <A, E>(
+  body: (store: LocalJobs.Store) => Effect.Effect<A, E, FileSystem.FileSystem>,
+  options: LocalJobs.Options = {}
+) =>
   Effect.runPromise(
-    LocalJobs.make(stateDir).pipe(
+    LocalJobs.make(stateDir, options).pipe(
       Effect.flatMap(body),
+      Effect.scoped,
       Effect.provide(Layer.merge(TestClock.layer(), faulty))
     )
   ).finally(() => faults.clear())
@@ -115,6 +128,72 @@ describe("LocalJobs", () => {
         yield* jobs.start(task(), "n#g1")
         expect(rowOf("o#g1").runId).toBe("run-7")
         expect(rowOf("n#g1").runId).toBeUndefined()
+      })
+    ))
+
+  test("a job's run that ends cancels its open jobs, after a restart too; a run that never ends cancels none", async () => {
+    const owned = (runId: string) => Effect.provideService(ModuleOwner, { rootId: runId, flowId: "lane" })
+    const ended = new Map<string, Deferred.Deferred<void>>()
+    const runEnded = (runId: string) =>
+      Effect.suspend(() => {
+        if (!ended.has(runId)) ended.set(runId, Deferred.makeUnsafe<void>())
+        return Deferred.await(ended.get(runId)!)
+      })
+    const stopped = { _tag: "Ended", outcome: { _tag: "Cancelled", processTreeGone: true } }
+    const job = await run(({ host, jobs }) =>
+      Effect.gen(function*() {
+        yield* jobs.start(task(), "a#g1").pipe(owned("run-a"))
+        yield* jobs.start(task(), "b#g1").pipe(owned("run-b"))
+        yield* jobs.start(task(), "c#g1").pipe(owned("run-c"))
+        yield* jobs.start(task(), "d#g1").pipe(owned("run-a"))
+        const claimed = (yield* host.claim(claimAll))!
+        expect(claimed.key).toBe("a#g1")
+        while (!ended.has("run-a")) yield* Effect.yieldNow
+        Deferred.doneUnsafe(ended.get("run-a")!, Exit.void)
+        // Once its run ended: the claimed job is told to stop, the queued one ends.
+        yield* Effect.yieldNow
+        while (!(yield* host.heartbeat({ key: claimed.key, claim: claimed.claim })).cancel) yield* Effect.yieldNow
+        expect(yield* jobs.status("d#g1")).toEqual(stopped)
+        expect(yield* jobs.status("b#g1")).toEqual({ _tag: "Running" })
+        return claimed
+      }), { runEnded })
+    // Opened again, it watches the runs of its open jobs; run-b's end cancels b, and c's run never ends.
+    ended.clear()
+    await run(({ host, jobs }) =>
+      Effect.gen(function*() {
+        expect(yield* host.heartbeat({ key: job.key, claim: job.claim })).toMatchObject({ cancel: true })
+        while (!ended.has("run-b")) yield* Effect.yieldNow
+        Deferred.doneUnsafe(ended.get("run-b")!, Exit.void)
+        while ((yield* jobs.status("b#g1"))._tag === "Running") yield* Effect.yieldNow
+        expect(yield* jobs.status("b#g1")).toEqual(stopped)
+        expect(yield* jobs.status("c#g1")).toEqual({ _tag: "Running" })
+        expect([...ended.keys()].sort()).toEqual(["run-a", "run-b", "run-c"])
+      }), { runEnded })
+    // A run whose jobs' writes fail when it ends logs it and leaves them.
+    ended.clear()
+    await run(({ jobs }) =>
+      Effect.gen(function*() {
+        faults.add("rename")
+        while (!ended.has("run-c")) yield* Effect.yieldNow
+        const before = renames
+        Deferred.doneUnsafe(ended.get("run-c")!, Exit.void)
+        while (renames === before) yield* Effect.yieldNow
+        faults.delete("rename")
+        expect(yield* jobs.status("c#g1")).toEqual({ _tag: "Running" })
+      }), { runEnded })
+  })
+
+  test("a run's notification queue that fails hands out no steers, and the heartbeat holds", () =>
+    run(({ host, jobs }) =>
+      Effect.gen(function*() {
+        yield* jobs.start(task(), "q#g1").pipe(
+          Effect.provideService(ModuleOwner, { rootId: "run-q", flowId: "lane" }),
+          Effect.provideService(NotificationQueue.NotificationQueue, NotificationQueue.makeNoop())
+        )
+        const job = (yield* host.claim(claimAll))!
+        expect(yield* host.heartbeat({ key: job.key, claim: job.claim, delivered: ["steer-1"] }))
+          .toEqual({ held: true, cancel: false, leaseSeconds: 45 })
+        expect(LocalJobs.steerBoundary("q#g1", ["b", "a"])).toBe(LocalJobs.steerBoundary("q#g1", ["a", "b"]))
       })
     ))
 

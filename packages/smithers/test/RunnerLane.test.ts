@@ -104,6 +104,80 @@ describe("smthrs runner, its own host", () => {
     300_000
   )
 
+  test(
+    "a standing lane runs round after round in one run; runs cancel stops its agent and removes its checkout",
+    async () => {
+      // Queued while no daemon runs: admitted when one starts.
+      const { request } = await Effect.runPromise(
+        RunnerCmd.start(
+          startOptions(lanes.brief("add the line `alpha` to `NOTES.md`\nrun `sleep 150`"), { standing: true })
+        )
+      )
+      serve()
+      const runId = await lanes.admitted(request)
+      // The second round's agent is at work in a checkout of its own. A cancel reaches it at its step's next probe, up
+      // to 30 s apart, so each round's agent works long enough for that.
+      await Lanes.until(
+        () =>
+          lanes.jobs().filter((job) => job.status === "claimed" && job.generation === 1).length === 1 &&
+          lanes.jobs().filter((job) => job.status === "done").length >= 1,
+        600_000,
+        "second round working"
+      )
+      const rounds = lanes.jobs()
+      expect(new Set(rounds.map((job) => job.runId))).toEqual(new Set([runId]))
+      expect(new Set(rounds.map((job) => job.origin)).size).toBe(rounds.length)
+      expect(rounds.every((job) => job.task?.prompt === "add the line `alpha` to `NOTES.md`\nrun `sleep 150`")).toBe(
+        true
+      )
+      // A cancelled run's receipt exits 130.
+      const cancelled = await lanes.smthrs(["runs", "cancel", runId, "--root", lanes.stateDir, "--json"])
+      expect(JSON.parse(cancelled.stdout), cancelled.stderr).toMatchObject({ _tag: "Terminal", status: "cancelled" })
+      await Lanes.until(async () => (await lanes.statusOf(runId)) === "cancelled", 120_000, "run cancelled")
+      for (const pid of lanes.agentPids()) await Lanes.until(() => !Lanes.alive(pid), 60_000, "agent gone")
+      await Lanes.until(() => lanes.jobs().every((job) => job.status !== "claimed" && job.status !== "queued"), 60_000)
+      expect(lanes.jobs().filter((job) => job.status === "cancelled")).toMatchObject([
+        { outcome: { _tag: "Cancelled", processTreeGone: true } }
+      ])
+      await Lanes.until(() => lanes.checkouts().length === 0, 60_000, "checkouts removed")
+      expect(lanes.workspaces()).toEqual(["default"])
+    },
+    900_000
+  )
+
+  test("runs steer reaches the lane's agent in its turn, and the steer reads delivered", async () => {
+    const { request } = await Effect.runPromise(
+      RunnerCmd.start(startOptions(lanes.brief("run `sleep 40`\nadd the line `alpha` to `NOTES.md`")))
+    )
+    serve()
+    const runId = await lanes.admitted(request)
+    await Lanes.until(() => lanes.jobs().some((job) => job.status === "claimed"), 60_000, "job claimed")
+    await Lanes.until(() => lanes.agentPids().length > 0, 60_000, "agent started")
+    const steered = await lanes.smthrs([
+      "runs",
+      "steer",
+      runId,
+      "--message",
+      "add the line `steered` to `S.md`",
+      "--root",
+      lanes.stateDir,
+      "--json"
+    ])
+    expect(steered.code, steered.stdout + steered.stderr).toBe(0)
+    await Lanes.until(() => existsSync(join(lanes.agentState, "steered.log")), 90_000, "agent took the steer")
+    await Lanes.until(async () => (await lanes.statusOf(runId)) === "completed", 120_000, "run completed")
+    const [job] = lanes.jobs()
+    if (job?.outcome?._tag !== "Done") throw new Error(`job ended ${JSON.stringify(job?.outcome)}`)
+    expect(job.outcome.changes.additions.map((file) => [file.path, Buffer.from(file.contents, "base64").toString()]))
+      .toEqual([["NOTES.md", "alpha\n"], ["S.md", "steered\n"]])
+    expect(lanes.transcript(job.key).some((event) => event.kind === "_smithers/steer")).toBe(true)
+    // Delivered: the run has nothing pending.
+    const listed = (await lanes.runs(["list"])) as {
+      readonly items: ReadonlyArray<{ readonly runId: string; readonly steering?: { readonly pending: number } }>
+    }
+    expect(listed.items.find((item) => item.runId === runId)?.steering).toEqual({ pending: 0 })
+  }, 300_000)
+
   test("runner start refuses what the daemon couldn't run, and queues the rest with the base resolved", async () => {
     const brief = lanes.brief("add the line `alpha` to `NOTES.md`")
     expect(await started(startOptions(brief, { profile: "other" }))).toBe("no profile other in runner.json")
