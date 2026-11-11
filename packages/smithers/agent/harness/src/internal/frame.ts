@@ -912,7 +912,9 @@ export const judgeCompletion = (
     })
     const evidence: CompletionClaim.Evidence = {
       task,
-      claim: CompletionClaim.prose(claim),
+      // The whole completion: `CompletionClaim.read` asks its head the
+      // whole-claim questions and every passage the sentence question (#4819).
+      claim,
       // The `UnmovedTree` fact, read the other way round. An unmeasured tree
       // reads as moved, which is the reading that asks for nothing.
       treeMoved: unmovedTree === undefined,
@@ -952,7 +954,7 @@ export const judgeCompletion = (
     // is one more question, asked only here; see `UnfinishedWork`.
     const unfinished = found !== undefined && !bounced && unmoved === undefined && !refused &&
         reading.complete <= CompletionClaim.disprovenAt
-      ? yield* UnfinishedWork.read(evidence, reading.usage)
+      ? yield* UnfinishedWork.read({ ...evidence, claim: CompletionClaim.prose(claim) }, reading.usage)
       : undefined
     const incomplete = unfinished !== undefined && unfinished.unfinished >= UnfinishedWork.reportedAt
     const usage = paidTogether(reading.usage, unfinished?.usage)

@@ -1178,6 +1178,103 @@ describe("a long claim, read one sentence at a time", () => {
   })
 })
 
+describe("a claim longer than the whole-claim questions read (#4819)", () => {
+  // Over 8 KiB of narrative every call recorded, then one sentence nothing ran.
+  // The whole-claim questions read only the head, and the whole text is the
+  // run's answer, so the tail must still reach a sentence question.
+  const narrative = Array.from(
+    { length: 160 },
+    (_, index) => `Read module ${index} of the parser and noted its exports.`
+  )
+    .join(" ")
+  const fabricated = "All tests pass."
+  const long = `${narrative} ${fabricated}`
+
+  const jev = () =>
+    scripted((request) => {
+      if ("unfinished" in request.questions) return { unfinished: { probability: 0.05 } }
+      // The head reads as recorded: it never shows the fabricated sentence.
+      if ("invented" in request.questions) {
+        return { complete: { probability: 0.9 }, overclaims: { probability: 0.1 }, invented: { probability: 0.05 } }
+      }
+      return Object.fromEntries(
+        Object.entries(request.questions).map(([id, question]) => [
+          id,
+          { probability: JSON.stringify(question).includes(fabricated) ? 0.94 : 0.2 }
+        ])
+      )
+    })
+
+  it("puts the sentence past the head to a question, and refuses the claim it fabricates", async () => {
+    expect(new TextEncoder().encode(narrative).byteLength).toBeGreaterThan(CompletionClaim.proseBytes)
+    const judge = jev()
+    const judged = await settled({ layer: judge.layer, claim: long, changes: { claimCap: 1, claimDemands: 1 } })
+
+    const head = judge.asked[0]?.state as { readonly claim: string }
+    expect(head.claim).not.toContain(fabricated)
+    const asked = judge.asked.slice(1).flatMap((request) =>
+      Object.values(request.questions).map((question) => JSON.stringify(question))
+    )
+    expect(asked.some((question) => question.includes(fabricated))).toBe(true)
+    expect(judged.unproven?.code).toBe("claim_unproven")
+    expect(judged.observed).toMatchObject({ invented: 0.94, refused: true })
+    // One decision, numbered across every passage, over the head the whole
+    // question was sent.
+    const questions = Object.keys(judged.sentenceDecision?.questions ?? {})
+    expect(questions).toEqual(Object.keys(judged.sentenceDecision?.answers ?? {}))
+    expect(questions).toEqual(questions.map((_, index) => `sentence${index + 1}`))
+    expect(judged.sentenceDecision?.state).toEqual(judge.asked[0]?.state)
+  })
+
+  it("lets a long claim stand when every passage reads as recorded", async () => {
+    const judge = jev()
+    const judged = await settled({ layer: judge.layer, claim: narrative, changes: { claimCap: 1, claimDemands: 1 } })
+
+    expect(judge.asked.length).toBeGreaterThan(2)
+    expect(judged.unproven).toBeUndefined()
+    expect(judged.observed).toMatchObject({ invented: 0.2, refused: false })
+  })
+
+  it("names what every earlier reading paid when a later passage cannot be read", async () => {
+    const paid = { inputTokens: 100, outputTokens: 2, modelId: "judge" }
+    let sentenceRequests = 0
+    const layer = Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+      evaluate: (request) => {
+        if ("invented" in request.questions) {
+          return Effect.succeed({
+            answers: {
+              complete: { type: "boolean", probability: 0.9 },
+              overclaims: { type: "boolean", probability: 0.1 },
+              invented: { type: "boolean", probability: 0.05 }
+            },
+            latencyMs: 1,
+            usage: paid
+          })
+        }
+        sentenceRequests += 1
+        return sentenceRequests === 1
+          ? Effect.succeed({
+            answers: Object.fromEntries(
+              Object.keys(request.questions).map((id) => [id, { type: "boolean", probability: 0.2 }])
+            ),
+            latencyMs: 1,
+            usage: paid
+          })
+          : Effect.fail(new Evaluator.EvaluatorError({ code: "timeout", message: "deadline", usage: paid }))
+      }
+    }))
+    const failure = await unjudged({ layer, claim: long })
+
+    expect(failure.code).toBe("completion_unjudged")
+    expect(sentenceRequests).toBe(2)
+    expect((failure.cause as Evaluator.EvaluatorError).usage).toEqual({
+      inputTokens: 300,
+      outputTokens: 6,
+      modelId: "judge"
+    })
+  })
+})
+
 describe("the sentences of a claim", () => {
   it("never ends a sentence inside inline code", () => {
     expect(CompletionClaim.sentences("Ran `go test . ./ast` (pass). Committed.")).toEqual([
@@ -1212,6 +1309,29 @@ describe("the sentences of a claim", () => {
 
     expect(parts).toHaveLength(CompletionClaim.sentenceLimit)
     expect(parts.join(" ")).toBe(claim)
+  })
+
+  it("cuts a long claim into passages within the bound, at sentence ends, keeping every word", () => {
+    const claim = Array.from({ length: 400 }, (_, index) => `Sentence ${index} names one file.`).join(" ")
+    const cut = CompletionClaim.passages(claim)
+
+    expect(cut.length).toBeGreaterThan(1)
+    for (const passage of cut) {
+      expect(new TextEncoder().encode(passage).byteLength).toBeLessThanOrEqual(CompletionClaim.proseBytes)
+      expect(passage.endsWith(".")).toBe(true)
+    }
+    expect(cut.join(" ")).toBe(claim)
+  })
+
+  it("keeps a claim within the bound as one passage, and cuts a sentence longer than a passage", () => {
+    expect(CompletionClaim.passages("  Fixed a.py. Tests pass.  ")).toEqual(["Fixed a.py. Tests pass."])
+    const run = "é".repeat(CompletionClaim.proseBytes)
+    const cut = CompletionClaim.passages(`Done. ${run} Then.`)
+
+    for (const passage of cut) {
+      expect(new TextEncoder().encode(passage).byteLength).toBeLessThanOrEqual(CompletionClaim.proseBytes)
+    }
+    expect(cut.join("").replace(/\s/g, "")).toBe(`Done.${run}Then.`)
   })
 
   it("reads the sentence back out of a question, and nothing out of any other text", () => {

@@ -22204,6 +22204,13 @@ the completeness reading was low.
 The controller bounds original task evidence to 8 KiB, keeping both ends so
 a long history or task cannot silently discard the newest request at the end.
 
+The claim brake asks its three whole-claim questions of the completion's
+first 8 KiB. A longer completion is still read in full: `CompletionClaim.read`
+asks the per-sentence `invented` question of every 8 KiB passage
+(`CompletionClaim.passages`), one request per passage, and the claim reads as
+its most invented sentence. No text the armed brake did not read becomes the
+run's answer.
+
 `CellTurn` includes later accepted instructions in the task evidence, in
 admission order, with later changes taking precedence. It labels this block
 with the same `The person now says:` marker used to identify the newest

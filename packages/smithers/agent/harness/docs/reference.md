@@ -44,7 +44,7 @@ importable as `@smthrs/harness/<Module>`.
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
 | `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
-| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `leafBytes`, `resultBytes`, `receipt`, `Reported`, `Settled`, `record`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `UnjudgedReason`, `unjudged`, `refusedBytes`, `refused`, `refusedIn`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
+| `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `leafBytes`, `resultBytes`, `receipt`, `Reported`, `Settled`, `record`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `sentenceLimit`, `sentences`, `passages`, `sentenceMarker`, `sentenceOf`, `sentenceClassifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `UnjudgedReason`, `unjudged`, `refusedBytes`, `refused`, `refusedIn`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
 | `VariablesPanel` | `bound`, `Binding`, `Stamp`, `Ledger`, `stamp`, `render` | The variables panel: what the realm holds, stated every frame. |
@@ -721,6 +721,7 @@ The completion nothing in the record contradicts.
 | `classifier` | const | classifiers | The one classifier this brake asks, declared once. |
 | `sentenceLimit` | const | constants | The most parts `sentences` splits one claim into. |
 | `sentences` | const | conversions | A claim split into its sentences, at most `sentenceLimit` parts. |
+| `passages` | const | conversions | A claim cut into passages of at most `proseBytes` each, in order. |
 | `sentenceMarker` | const | constants | What precedes the sentence in each `sentenceClassifier` question. |
 | `sentenceOf` | const | conversions | The sentence one `sentenceClassifier` question asks about. |
 | `sentenceClassifier` | const | classifiers | The `invented` question asked of each sentence of a claim, in one request. |

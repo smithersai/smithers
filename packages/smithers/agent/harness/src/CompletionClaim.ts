@@ -210,7 +210,9 @@ export const outputBytes = 4096
  *
  * Both are bounded for the reason the output is. The controller keeps both
  * ends of a task because a host may put prior conversation before the newest
- * request. `prose` keeps a completion's head, where it states what was done.
+ * request. The whole-claim questions read a completion's head through
+ * `prose`, where it states what was done; the sentence reading still reads
+ * every byte of a longer claim, one {@link passages} passage per request.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -629,12 +631,63 @@ export const sentenceLimit = 12
  * A sentence ends at `.`, `!` or `?` followed by whitespace, outside inline
  * code. A claim with more
  * sentences than the limit keeps the first `sentenceLimit - 1` and asks about
- * the rest as one part, so nothing the claim says goes unread.
+ * the rest as one part, so nothing the claim says goes unread. A claim longer
+ * than {@link proseBytes} is split one {@link passages} passage at a time.
  *
  * @category conversions
  * @since 1.0.0-rc.0
  */
 export const sentences = (claim: string): ReadonlyArray<string> => {
+  const parts = split(claim)
+  if (parts.length <= sentenceLimit) return parts
+  return [...parts.slice(0, sentenceLimit - 1), parts.slice(sentenceLimit - 1).join(" ")]
+}
+
+/**
+ * A claim cut into passages of at most {@link proseBytes} each, in order.
+ *
+ * The whole-claim questions read only a claim's head, and the whole claim is
+ * the run's answer, so the sentence reading asks about each passage in its own
+ * request. A passage ends at a sentence end where one fits; a sentence longer
+ * than a passage is cut at the bound. Every word of the claim is in exactly one
+ * passage. A claim within the bound is one passage.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.1
+ */
+export const passages = (claim: string): ReadonlyArray<string> => {
+  const text = claim.trim()
+  if (bytes.size(text) <= proseBytes) return [text]
+  const found: Array<string> = []
+  let passage = ""
+  for (const part of split(text).flatMap(cut)) {
+    const joined = passage === "" ? part : `${passage} ${part}`
+    if (bytes.size(joined) <= proseBytes) {
+      passage = joined
+    } else {
+      found.push(passage)
+      passage = part
+    }
+  }
+  found.push(passage)
+  return found
+}
+
+/** One sentence in pieces of at most {@link proseBytes}, none of them empty. */
+const cut = (sentence: string): Array<string> => {
+  const pieces: Array<string> = []
+  let rest = sentence
+  while (bytes.size(rest) > proseBytes) {
+    const kept = bytes.headSlice(rest, proseBytes)
+    pieces.push(kept)
+    rest = rest.slice(kept.length)
+  }
+  pieces.push(rest)
+  return pieces
+}
+
+/** A claim's sentences, however many there are; see {@link sentences}. */
+const split = (claim: string): Array<string> => {
   const found: Array<string> = []
   let code = false
   let start = 0
@@ -651,9 +704,7 @@ export const sentences = (claim: string): ReadonlyArray<string> => {
     }
   }
   found.push(claim.slice(start))
-  const parts = found.map((part) => part.trim()).filter((part) => part !== "")
-  if (parts.length <= sentenceLimit) return parts
-  return [...parts.slice(0, sentenceLimit - 1), parts.slice(sentenceLimit - 1).join(" ")]
+  return found.map((part) => part.trim()).filter((part) => part !== "")
 }
 
 /**
@@ -689,19 +740,20 @@ export const sentenceOf = (instructions: string): string => {
  * the claim reads as its most invented sentence. A lie is a sentence, so a
  * claim that carries one still reads as high as that sentence does.
  *
- * Ids are `sentence1`…`sentenceN`, in claim order.
+ * Ids are `sentence1`…`sentenceN`, in claim order. `first` numbers a later
+ * passage's sentences on from the passages before it.
  *
  * @category classifiers
  * @since 1.0.0-rc.0
  */
-export const sentenceClassifier = (parts: ReadonlyArray<string>) =>
+export const sentenceClassifier = (parts: ReadonlyArray<string>, first = 1) =>
   Classifier.make("completion/claim-sentences", {
     description:
       "Judge each sentence of one agent's completion message against the evidence its run produced: whether that sentence reports a command or a result the evidence does not record.",
     state: Evidence,
     seatNote,
     questions: Object.fromEntries(parts.map((part, index) => [
-      `sentence${index + 1}`,
+      `sentence${index + first}`,
       Classifier.boolean({
         instructions:
           `Does this one sentence of the claim report having run a command, or having obtained a result, that the evidence here does not record? Judge only this sentence; the rest of the claim is context.${sentenceMarker}${part}`,
@@ -756,7 +808,9 @@ export interface Reading extends Probabilities {
   /**
    * The per-sentence reading, when {@link read} asked for one: the claim's
    * {@link invented} is then the highest of these rather than the whole
-   * claim's. See {@link sentenceClassifier}.
+   * claim's. See {@link sentenceClassifier}. A claim of several
+   * {@link passages} is asked one request per passage over the same state;
+   * this holds every passage's answers and their summed latency.
    */
   readonly sentences?: {
     /** The whole claim's own `invented`, which the sentences replaced. */
@@ -954,6 +1008,11 @@ export const unproven = (found: Probabilities, bounced: boolean, claim: string):
  * fails, because a brake that goes quiet when its model is down is a brake
  * that is only there when it is not needed. See the module header.
  *
+ * `evidence.claim` is the whole completion. The three whole-claim questions
+ * are asked of its {@link prose} head; the {@link sentenceClassifier} reading
+ * covers every passage of it, and a claim longer than the head always gets
+ * that reading, because the whole completion is what the run delivers.
+ *
  * @category conversions
  * @since 1.0.0-rc.0
  */
@@ -978,7 +1037,13 @@ export const read = (
     // (#3010).
     const failed = (earlier: Evaluator.Usage | undefined) => (error: Classifier.ClassifierError) =>
       unjudged(error.code, Evaluator.publicMessage(error), evidence.claim, failedReading(error, earlier))
-    const { answers, asked } = yield* Judgement.measured(classifier, evidence).pipe(
+    // The whole-claim questions read the claim's head. A claim longer than
+    // that head is still the run's whole answer, so its sentence reading runs
+    // whatever the whole question said, over every passage (#4819).
+    const claim = evidence.claim.trim()
+    const head = { ...evidence, claim: prose(claim) }
+    const clipped = head.claim !== claim
+    const { answers, asked } = yield* Judgement.measured(classifier, head).pipe(
       Effect.provideService(Evaluator.Evaluator, bound.value),
       Effect.mapError(failed(undefined))
     )
@@ -990,32 +1055,47 @@ export const read = (
       ...(asked.usage === undefined ? {} : { usage: asked.usage }),
       asked: { state: asked.state, answers: asked.answers, ...answeredBy(asked) }
     }
-    // A claim the whole question already reads as recorded, or one sentence
-    // long, has nothing a sentence reading could find. Otherwise the claim's
-    // `invented` is its most invented sentence; see `sentenceClassifier`.
-    const parts = sentences(evidence.claim)
-    if (whole.invented < unsupportedAt || parts.length < 2) return whole
+    // A whole claim the whole question already reads as recorded, or one
+    // sentence long, has nothing a sentence reading could find. Otherwise the
+    // claim's `invented` is its most invented sentence; see `sentenceClassifier`.
+    const batches = passages(claim).map(sentences)
+    const parts = batches.flat()
+    if (!clipped && (whole.invented < unsupportedAt || parts.length < 2)) return whole
     const bySentence = sentenceClassifier(parts)
-    const read = yield* Judgement.measured(bySentence, evidence).pipe(
-      Effect.provideService(Evaluator.Evaluator, bound.value),
-      Effect.mapError(failed(whole.usage))
-    )
-    const scores = Object.values(read.answers).map((answer) => (answer as { readonly probability: number }).probability)
-    const usage = paidTogether(whole.usage, read.asked.usage)
+    let usage = whole.usage
+    let latencyMs = 0
+    let state: Schema.Json = null
+    let seat = false
+    const sentenceAnswers: Record<string, AgentEvent.DecisionAnswer> = {}
+    const scores: Array<number> = []
+    for (const batch of batches) {
+      const read = yield* Judgement.measured(sentenceClassifier(batch, scores.length + 1), head).pipe(
+        Effect.provideService(Evaluator.Evaluator, bound.value),
+        Effect.mapError(failed(usage))
+      )
+      for (const answer of Object.values(read.answers)) {
+        scores.push((answer as { readonly probability: number }).probability)
+      }
+      Object.assign(sentenceAnswers, read.asked.answers)
+      usage = paidTogether(usage, read.asked.usage)
+      latencyMs += read.asked.latencyMs
+      state = read.asked.state
+      seat ||= read.asked.decidedBy === "seat"
+    }
     return {
       ...whole,
       invented: Math.max(...scores),
-      latencyMs: whole.latencyMs + read.asked.latencyMs,
+      latencyMs: whole.latencyMs + latencyMs,
       ...(usage === undefined ? {} : { usage }),
       sentences: {
         whole: whole.invented,
         classifier: bySentence.id,
         digest: bySentence.digest,
         questions: bySentence.questions,
-        state: read.asked.state,
-        answers: read.asked.answers,
-        latencyMs: read.asked.latencyMs,
-        ...answeredBy(read.asked)
+        state,
+        answers: sentenceAnswers,
+        latencyMs,
+        ...(seat ? { decidedBy: "seat" as const } : {})
       }
     }
   })
