@@ -42,6 +42,11 @@ A collection synced from an Electric shape, cleaned up when the scope closes.
   the network. One that ends but isn't a whole batch (cut short, empty, or
   not Electric's) stops the shape, with no status, before Electric takes its
   offset, so `reconnect` sends the same request again and no row is skipped.
+- A row the schema refuses stops the shape too, with no status, after Electric
+  took its batch's offset. `reconnect` then ends the shape's session and starts
+  one from the last batch the collection committed, so the batch is asked for
+  again: its rows arrive once they all decode, and until then it stops the
+  shape again.
 - Each request records one span, `electric.shape.request`, with no row
   content:
 

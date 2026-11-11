@@ -802,6 +802,23 @@ describe.skipIf(!electricUp)("a live batch that isn't whole", () => {
     expect(result.events).not.toContain("Failed:network")
   })
 
+  test("a whole batch without Electric's headers stops the shape, and reconnect asks for it again", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { source, answered } = firstLive((response) => new Response(response.body, { status: 200 }))
+      const notes = yield* notesOf(table).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
+      const events = yield* record(notes)
+      yield* notes.preload
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* eventually(() => events.includes("Stopped:none"))
+      const stoppedWith = ids(yield* notes.toArray)
+      yield* notes.reconnect
+      yield* eventually(() => notes.tanstack.has("a"))
+      return { answered: answered(), stoppedWith }
+    }))
+    expect(result).toEqual({ answered: true, stoppedWith: [] })
+  })
+
   test("a JSON body that isn't a batch stops the shape too", async () => {
     const stop = await run(Effect.gen(function*() {
       const { table, write } = yield* scratchTable
@@ -878,6 +895,138 @@ describe.skipIf(!electricUp)("a live batch that isn't whole", () => {
     expect(live.at(-1)).toMatchObject({ "electric.shape.complete": false })
     expect(live.at(-1)).not.toHaveProperty("electric.shape.rows")
     expect(JSON.stringify(attributes)).not.toMatch(/words of|"a"|"b"/)
+  })
+})
+
+// A batch with a row the schema refuses is whole, so Electric's client has taken its offset by the time decoding stops
+// the shape (@electric-sql/client 1.5.28, electric-client-offset-bug.md). Restarted in place, the client asked from the
+// offset after that batch: every row in it, the valid ones too, never reached the device.
+describe.skipIf(!electricUp)("a batch with a row the schema refuses", () => {
+  const offsetOf = (url: URL | undefined) => ({
+    handle: url?.searchParams.get("handle"),
+    offset: url?.searchParams.get("offset")
+  })
+
+  // The fault is the shape's parser: it leaves the int8 `refused.value` a string, which `Note` refuses.
+  const refusing = (table: string, id = `notes-${crypto.randomUUID()}`) => {
+    const refused: { value?: string } = {}
+    const options = {
+      id,
+      schema: Note,
+      getKey: (row: Row) => row.id,
+      shape: {
+        url: `${ELECTRIC_URL}/v1/shape`,
+        params: { table },
+        parser: { int8: (value: string) => (value === refused.value ? value : Number(value)) }
+      },
+      retry: Schedule.spaced("10 millis")
+    }
+    const make = () => ElectricCollection.make<Row, unknown>(options)
+    const makePersisted = () => ElectricCollection.make<Row, unknown>({ ...options, persist: { schemaVersion: 1 } })
+    return { refused, make, makePersisted, id }
+  }
+
+  // `b`, which the parser refuses, and `c` in one transaction, so Electric sends them in one batch.
+  const writeBoth = (table: string) =>
+    Effect.flatMap(
+      SqlClient.SqlClient,
+      (sql) =>
+        sql`insert into ${sql(table)} ${sql.insert([{ id: "b", text: "two", n: 2 }, { id: "c", text: "three", n: 3 }])}`
+          .pipe(Effect.asVoid, Effect.orDie)
+    )
+
+  test.each([false, true])(
+    "reconnect asks for that batch again, and its rows arrive once they decode (persisted: %s)",
+    async (persist) => {
+      const result = await run(Effect.gen(function*() {
+        const { table, write } = yield* scratchTable
+        const path = databaseFile()
+        const { refused, make, makePersisted, id } = refusing(table)
+        return yield* Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* (persist ? makePersisted() : make())
+          const events = yield* record(notes)
+          yield* write({ id: "a", text: "one", n: 1 })
+          yield* notes.preload
+          yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+          refused.value = "2"
+          yield* writeBoth(table)
+          yield* eventually(() => events.includes("Stopped:none"))
+          const stoppedWith = ids(yield* notes.toArray)
+          const failed = (yield* faults.sent).at(-1)
+          const before = (yield* faults.sent).length
+          delete refused.value
+          yield* notes.reconnect
+          yield* eventually(() => notes.tanstack.has("b") && notes.tanstack.has("c"))
+          if (persist) yield* eventually(() => storedRows(path, id) === 3)
+          return {
+            stoppedWith,
+            rows: ids(yield* notes.toArray).sort(),
+            failed: offsetOf(failed),
+            resumed: offsetOf((yield* faults.sent)[before])
+          }
+        }).pipe(Effect.provide(persistenceOn(path)), Effect.provide(ShapeSource.layerFaulty()))
+      }))
+      expect(result.stoppedWith).toEqual(["a"])
+      expect(result.rows).toEqual(["a", "b", "c"])
+      expect(result.failed.offset).not.toBe("-1")
+      expect(result.resumed).toEqual(result.failed)
+    }
+  )
+
+  test("a batch that still doesn't decode stops the shape again, at the same request", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { refused, make } = refusing(table)
+      const { faults, collection: notes } = yield* faulty(make())
+      const events = yield* record(notes)
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.preload
+      refused.value = "2"
+      yield* writeBoth(table)
+      yield* eventually(() => events.includes("Stopped:none"))
+      const failed = (yield* faults.sent).at(-1)
+      const before = (yield* faults.sent).length
+      const mark = events.length
+      yield* notes.reconnect
+      yield* eventually(() => events.slice(mark).includes("Stopped:none"))
+      return {
+        rows: ids(yield* notes.toArray),
+        failed: offsetOf(failed),
+        again: (yield* faults.sent).slice(before).map(offsetOf)
+      }
+    }))
+    expect(result.rows).toEqual(["a"])
+    expect(result.again).toEqual([result.failed])
+  })
+
+  test("after evict replaced the stopped session, reconnect restarts only the session that stopped last", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { refused, make } = refusing(table)
+      const { faults, collection: notes } = yield* faulty(make())
+      const events = yield* record(notes)
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.preload
+      refused.value = "2"
+      yield* writeBoth(table)
+      yield* eventually(() => events.includes("Stopped:none"))
+      const mark = events.length
+      // The new session reads the whole shape, the refused row included, and stops too.
+      yield* notes.evict
+      yield* eventually(() => events.slice(mark).includes("Stopped:none"))
+      const before = (yield* faults.sent).length
+      delete refused.value
+      yield* notes.reconnect
+      yield* eventually(() => notes.tanstack.size === 3)
+      yield* write({ id: "d", text: "four", n: 4 })
+      yield* notes.awaitMatch(changeTo("d"), "5 seconds")
+      return {
+        rows: ids(yield* notes.toArray).sort(),
+        fromStart: (yield* faults.sent).slice(before).filter((url) => url.searchParams.get("offset") === "-1").length
+      }
+    }))
+    expect(result).toEqual({ rows: ["a", "b", "c", "d"], fromStart: 1 })
   })
 })
 

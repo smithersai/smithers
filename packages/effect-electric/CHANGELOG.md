@@ -6,6 +6,13 @@
 
 - Validate every shape batch member before accepting its offset. Malformed
   change, control and event messages stop sync without skipping the batch.
+- A row the schema refuses no longer makes `reconnect` skip its batch. Electric
+  had taken the batch's offset before decoding stopped the shape, so a shape
+  restarted in place asked from the offset after it, and every row in the
+  batch, the valid ones included, never reached the device. `reconnect` now
+  ends that session and starts one from the last batch the collection
+  committed. The same holds for a `parser` that throws and for a 2xx without
+  Electric's headers, which `reconnect` could not restart before.
 
 ### Added
 

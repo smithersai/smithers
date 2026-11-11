@@ -171,7 +171,10 @@ export interface ElectricCollection<A extends object>
   readonly applied: Stream.Stream<void>
   /** Waits until the latest accepted network batch has installed its rows and resume cursor, including an empty batch. */
   readonly currentApplied: Effect.Effect<void>
-  /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
+  /**
+   * Sends every request waiting out the sync policy now, and restarts a stopped shape: where it stopped if a request
+   * failed, else from the last batch the collection committed.
+   */
   readonly reconnect: Effect.Effect<void>
   /**
    * For a reader who may no longer read the shape: drops every row the collection holds, in memory and, with
@@ -260,6 +263,9 @@ export interface Options<A extends object, E, R> {
  * Every synced row is decoded by `schema`. Electric sends an update's changed
  * columns only, so rows are decoded column by column: each column present
  * must decode. A row that doesn't stops the shape (`Stopped`, with no status).
+ * Electric has taken that batch's offset by then, so `reconnect` ends the
+ * shape's session and starts one from the last batch the collection committed:
+ * the batch is asked for again, and no row in it is skipped.
  *
  * A 2xx batch of the shape's log (every response but progressive mode's
  * subset snapshots) is read in full before Electric sees it, because Electric
@@ -410,12 +416,17 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       )
 
     // A stopped shape is a failure the sync policy can't wait out: logged and counted by the collection's kind and
-    // the status Electric or a proxy answered, never the shape's URL or a message.
+    // the status Electric or a proxy answered, never the shape's URL or a message. `reconnect` ends its wait. A request
+    // that failed left Electric's offset alone, so Electric restarts where it stopped. Any other stop may have come
+    // after Electric took a batch's offset (a row the schema refuses, a parser that throws), and restarting there would
+    // skip the batch: the session that stopped ends, unless `evict` replaced it already, and a new one resumes from
+    // the last batch the collection committed.
     const kind = options.id.split(":", 1)[0]!
     const stopped = (error: Error) =>
       Effect.gen(function*() {
         const failure = syncFailed(error)
         const status = failure.status === undefined ? "none" : String(failure.status)
+        const stoppedSession = session
         yield* restart.close
         yield* Metric.update(Metric.withAttributes(stops, { collection: kind, status }), 1)
         yield* Effect.logWarning("electric.shape.stopped").pipe(
@@ -423,6 +434,12 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         )
         yield* publish({ _tag: "Stopped", error: failure })
         yield* restart.await
+        const requestFailed = error instanceof FetchError || error instanceof RequestFailed ||
+          error instanceof Unreadable
+        if (!requestFailed && session === stoppedSession) {
+          stoppedSession!.cleanup()
+          startSession(controls!)
+        }
       })
 
     const decode = Schema.decodeUnknownSync(columnwise(options.schema))
@@ -446,7 +463,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       ),
       // The sync policy retries; Electric's own backoff never waits, and gives a failure straight to `onError`.
       backoffOptions: { initialDelay: 0, maxDelay: 0, multiplier: 1, maxRetries: 0 },
-      // An object restarts the shape where it stopped (ShapeStreamOptions.onError).
+      // An object restarts the shape where it stopped (ShapeStreamOptions.onError); a session that ended stays ended.
       onError: (error) => run(stopped(error), closing.signal).then(() => ({})),
       transformer: (row) => decode(row) as Row
     }

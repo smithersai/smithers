@@ -23,11 +23,19 @@ a gateway's HTML page) stops it too, with no status. The collection reads every
 2xx batch of the shape's log in full before Electric sees it, because Electric takes a response's
 offset from its headers before it reads the body, and would skip that batch
 when the shape restarts. So the shape stops before Electric takes the offset,
-and `reconnect` sends the same request again: no row is skipped. One
-exception: `@electric-sql/client` 1.5.28 never restarts a shape stopped by a
-2xx whose batch is whole but which lacks Electric's headers
-(`MissingHeadersError`), so `reconnect` can't restart it either. A request
+and `reconnect` sends the same request again: no row is skipped. A request
 Electric aborts itself is neither a success nor a failure.
+
+A whole batch can still stop the shape. A row the collection's schema refuses,
+or a `parser` that throws, stops it after Electric took the batch's offset:
+restarted where it stopped, the shape would ask from the offset after that
+batch and skip every row in it. A 2xx that lacks Electric's headers
+(`MissingHeadersError`) stops it too, and `@electric-sql/client` 1.5.28 never
+restarts such a shape where it stopped. For each of these `reconnect` ends the
+shape's session and starts a new one from the last batch the collection
+committed, or from the start if it committed none. The batch is asked for
+again: its rows arrive once they all decode, and until then it stops the shape
+again.
 
 ## The policy is a `Schedule`
 
@@ -72,7 +80,9 @@ collection applies it to every `retry`.
 ## `reconnect`
 
 `reconnect` ends every wait at once: each request waiting out the policy is
-sent now. It also restarts a stopped shape where it stopped, keeping its rows.
+sent now. It also restarts a stopped shape, keeping its rows: where it stopped
+if a request failed, or from the last batch the collection committed if the
+stop came after Electric took a batch.
 Call it when the device comes back online, or when a person asks to try again.
 After `evict`, the shape's next request asks from the start (`offset=-1`).
 
