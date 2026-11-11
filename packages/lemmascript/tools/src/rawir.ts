@@ -48,7 +48,7 @@ export type RawExpr =
   | { kind: "record"; spread: RawExpr | null; fields: { name: string; value: RawExpr }[] }
   | { kind: "recordMerge"; base: RawExpr; override: RawExpr; line?: number }   // { ...base, ...override } — field-wise merge; resolve expands to a record using the result type's fields
   | { kind: "arrayLiteral"; elems: RawExpr[] }
-  | { kind: "lambda"; params: { name: string; tsType?: string }[]; body: RawExpr | RawStmt[]; returnTsType?: string }
+  | { kind: "lambda"; params: { name: string; tsType?: string }[]; body: RawExpr | RawStmt[]; returnTsType?: string; matchExpression?: boolean }
   | { kind: "conditional"; cond: RawExpr; then: RawExpr; else: RawExpr }  // ternary ? :
   | { kind: "optChain"; obj: RawExpr; chain: RawChainStep[] }   // obj?.field, obj?.foo(), obj?.[i], obj?.foo.bar — single-eval
   | { kind: "nullish"; left: RawExpr; right: RawExpr }   // a ?? b — single-eval; narrow rewrites to someMatch

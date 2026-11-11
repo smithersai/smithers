@@ -299,9 +299,16 @@ function ruleConditionalOptionalSimple(e: TExpr, ctx: CondCtx): TExpr | null {
  *  suffices in the premise). */
 function ruleImplOptional(e: TExpr, ctx: CondCtx): TExpr | null {
   if (e.kind !== "binop" || e.op !== "==>") return null;
+  // Preserve left-to-right guard scope: `(tag && optional !== undefined) ==> B` is
+  // `tag ==> (optional !== undefined ==> B)`. Hoisting the optional match outside `tag`
+  // would read a variant-only field before establishing its constructor. Ordinary boolean
+  // guards need no optional rewrite; keep their existing clause form and mutation selectors.
+  const extracted = leadingPresent(e.left);
+  if (e.left.kind === "binop" && e.left.op === "&&" && extracted) {
+    return walkExpr({ ...e, left: e.left.left, right: { ...e, left: e.left.right } }, ctx);
+  }
   let check: PresentFact;
   let restCond: TExpr | null = null;
-  const extracted = leadingPresent(e.left);
   if (extracted) {
     check = extracted.check;
     restCond = extracted.restCond;

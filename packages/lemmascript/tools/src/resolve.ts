@@ -991,6 +991,8 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
         const varTy = lookup(ctx.env, fn.name);
         if (varTy?.kind === "fn") ty = varTy.result;
       }
+      // An immediately invoked arrow: its result type.
+      if (ty.kind === "unknown" && fn.kind === "lambda" && fn.ty.kind === "fn") ty = fn.ty.result;
       // filterMap: `seqOfOption.filter(x => x !== undefined)` (a defined-check,
       // typically with an `x is T` type guard) drops the Nones AND unwraps to
       // seq<T>. Rewrite to a synthetic `filterSome` call lowered to the proven
@@ -1330,7 +1332,7 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       const lamTy: Ty = e.returnTsType
         ? { kind: "fn", params: params.map(p => p.ty), result: lambdaReturnTy }
         : { kind: "unknown" };
-      return { kind: "lambda", params, body, ty: lamTy };
+      return { kind: "lambda", params, body, ty: lamTy, ...(e.matchExpression ? { matchExpression: true } : {}) };
     }
 
     case "conditional": {

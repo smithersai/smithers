@@ -329,7 +329,8 @@ function flattenLambdaBody(stmts: Stmt[]): Expr | null {
   const first = stmts[0]!;
   const rest = stmts.slice(1);
   if (first.kind === "return") return first.value;
-  if (first.kind === "let" && !first.mutable) {
+  // A collection binding is marked mutable even if never changed. Actual assignments still fail below.
+  if (first.kind === "let") {
     const body = flattenLambdaBody(rest);
     return body === null ? null : { kind: "let", name: first.name, value: first.value, body };
   }
@@ -358,6 +359,44 @@ function flattenLambdaBody(stmts: Stmt[]): Expr | null {
     return { kind: "match", scrutinee: first.scrutinee, arms };
   }
   return null;
+}
+
+/** Finish an expression arm by assigning its result; early returns consume their continuation.
+ * Loops and escaping control flow remain unsupported instead of changing their meaning. */
+function assignExpressionResult(stmts: Stmt[], target: string): Stmt[] | null {
+  const first = stmts[0];
+  if (!first) return null;
+  const rest = stmts.slice(1);
+  if (first.kind === "return") return [{ kind: "assign", target, value: first.value }];
+  if (first.kind === "if") {
+    const thenBody = assignExpressionResult([...first.then, ...rest], target);
+    const elseBody = assignExpressionResult([...first.else, ...rest], target);
+    return thenBody && elseBody ? [{ ...first, then: thenBody, else: elseBody }] : null;
+  }
+  if (first.kind === "match") {
+    const arms: StmtMatchArm[] = [];
+    for (const arm of first.arms) {
+      const body = assignExpressionResult([...arm.body, ...rest], target);
+      if (!body) return null;
+      arms.push({ ...arm, body });
+    }
+    return [{ ...first, arms }];
+  }
+  if (!["let", "let-bind", "assign", "bind", "assert", "ghostLet", "ghostAssign"].includes(first.kind)) return null;
+  const tail = assignExpressionResult(rest, target);
+  return tail ? [first, ...tail] : null;
+}
+
+/** A branch-scoped value computed by statements. Every arm overwrites the initial arbitrary value. */
+function scopedConditionalResult(binds: Stmt[], type: Ty, cond: Expr, thenBody: Stmt[], thenExpr: Expr, elseBody: Stmt[], elseExpr: Expr): Expr {
+  const name = freshName("_conditional" + _liftCounter++);
+  binds.push(
+    { kind: "let", name, type, mutable: true, value: { kind: "havoc", type } },
+    { kind: "if", cond,
+      then: [...thenBody, { kind: "assign", target: name, value: thenExpr }],
+      else: [...elseBody, { kind: "assign", target: name, value: elseExpr }] },
+  );
+  return { kind: "var", name };
 }
 
 /**
@@ -508,6 +547,19 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       return { kind: "unop", op: e.op === "!" ? "¬" : e.op, expr: lowerExpr(e.expr, binds) };
 
     case "binop": {
+      // Keep RHS statements behind a boolean short-circuit guard.
+      if (binds && _opts.backend === "dafny" && (e.op === "&&" || e.op === "||") && e.left.ty.kind === "bool" && e.right.ty.kind === "bool") {
+        const left = lowerExpr(e.left, binds);
+        const rightBinds: Stmt[] = [];
+        const right = lowerExpr(e.right, rightBinds);
+        if (rightBinds.length > 0) {
+          const constant: Expr = { kind: "bool", value: e.op === "||" };
+          return e.op === "&&"
+            ? scopedConditionalResult(binds, e.ty, left, rightBinds, right, [], constant)
+            : scopedConditionalResult(binds, e.ty, left, [], constant, rightBinds, right);
+        }
+        return { kind: "binop", op: BOOL_OP_MAP[e.op] ?? e.op, left, right };
+      }
       // Implication: flatten (A && B) ==> C → implies [A, B] C
       // Spec-only — no lifting through premises/conclusion.
       if (e.op === "==>") {
@@ -920,11 +972,46 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
         }
         return result;
       }
-      // An applied one-parameter lambda whose body is one return (resolve's record built from a spread read once):
-      // a let expression binding the argument.
-      if (e.fn.kind === "lambda" && e.fn.params.length === 1 && e.args.length === 1
-          && e.fn.body.length === 1 && e.fn.body[0].kind === "return") {
-        return { kind: "let", name: e.fn.params[0].name, value: lowerExpr(e.args[0], binds), body: lowerExpr(e.fn.body[0].value, binds) };
+      // An immediately invoked arrow is its body with each argument evaluated once, before parameter bindings.
+      // Fresh argument temporaries preserve outer references in later arguments (`((x,y)=>x-y)(y,x)`).
+      if (e.fn.kind === "lambda" && e.fn.params.length === e.args.length) {
+        const args = e.args.map(a => ({ name: freshName(`_argument${_liftCounter++}`), value: lowerExpr(a, binds) }));
+        const stmts = transformStmts(e.fn.body, _typeDecls);
+        let flat = flattenLambdaBody(stmts);
+        if (flat === null && e.fn.matchExpression && binds && _opts.backend === "dafny") {
+          const name = freshName("_matchResult" + _liftCounter++);
+          const body = assignExpressionResult(stmts, name);
+          if (body) {
+            for (let i = 0; i < args.length; i++) {
+              binds.push({ kind: "let", name: args[i]!.name, type: e.fn.params[i]!.ty, mutable: false, value: args[i]!.value });
+            }
+            for (let i = 0; i < e.fn.params.length; i++) {
+              binds.push({ kind: "let", name: e.fn.params[i]!.name, type: e.fn.params[i]!.ty, mutable: false, value: { kind: "var", name: args[i]!.name } });
+            }
+            binds.push({ kind: "let", name, type: e.ty, mutable: true, value: { kind: "havoc", type: e.ty } }, ...body);
+            return { kind: "var", name };
+          }
+        }
+        if (flat === null) {
+          const failure = (ss: Stmt[]): string => {
+            const first = ss[0];
+            if (!first) return "empty body";
+            if (first.kind === "let" && !first.mutable) return `let ${first.name}: ${failure(ss.slice(1))}`;
+            if (first.kind === "match") {
+              const arm = first.arms.find(a => flattenLambdaBody([...a.body, ...ss.slice(1)]) === null);
+              if (arm) return `match ${JSON.stringify(arm.pattern)}: ${failure([...arm.body, ...ss.slice(1)])}`;
+            }
+            return first.kind === "let" ? `mutable let ${first.name}` : first.kind;
+          };
+          throw new Error(`an immediately invoked arrow must be lets and one return: ${failure(stmts)}`);
+        }
+        for (let i = e.fn.params.length - 1; i >= 0; i--) {
+          flat = { kind: "let", name: e.fn.params[i]!.name, value: { kind: "var", name: args[i]!.name }, body: flat };
+        }
+        for (let i = args.length - 1; i >= 0; i--) {
+          flat = { kind: "let", name: args[i]!.name, value: args[i]!.value, body: flat };
+        }
+        return flat;
       }
       if (e.fn.kind !== "var")
         throw new Error(`Unsupported call expression: ${e.fn.kind}`);
@@ -1064,8 +1151,10 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       // negation forms (`!s` → `s == ""`).  Optional conds are already
       // rewritten to someMatch by narrow.ts.
       const cond = lowerExpr(asCondition(e.cond), binds);
-      let thenExpr = lowerExpr(e.then, binds);
-      let elseExpr = lowerExpr(e.else, binds);
+      const scoped = binds !== null && _opts.backend === "dafny";
+      const thenBinds: Stmt[] = [], elseBinds: Stmt[] = [];
+      let thenExpr = lowerExpr(e.then, scoped ? thenBinds : binds);
+      let elseExpr = lowerExpr(e.else, scoped ? elseBinds : binds);
       if (e.ty.kind === "optional") {
         thenExpr = wrapOptionalBranch(thenExpr, e.then);
         elseExpr = wrapOptionalBranch(elseExpr, e.else);
@@ -1073,6 +1162,9 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       if (e.ty.kind === "real") {
         if (isIntegral(e.then.ty)) thenExpr = { kind: "toReal", expr: thenExpr };
         if (isIntegral(e.else.ty)) elseExpr = { kind: "toReal", expr: elseExpr };
+      }
+      if (binds && scoped && (thenBinds.length > 0 || elseBinds.length > 0)) {
+        return scopedConditionalResult(binds, e.ty, cond, thenBinds, thenExpr, elseBinds, elseExpr);
       }
       return { kind: "if", cond, then: thenExpr, else: elseExpr };
     }
@@ -1095,33 +1187,32 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
       return { kind: "havoc", type: e.ty };
 
     case "someMatch": {
-      let someBody: Expr;
-      let someSource = e.someBody;
-      let scrutinee: Expr | string;
       const path = asTAccessPath(e.scrutinee);
-      if (path) {
-        // Pure access path (var or any depth of obj.f.g.h) — substitute the
-        // path with the binder pre-lowering.
-        const replaced = replacePathInTExpr(e.someBody, path, e.binder, e.binderTy);
-        someSource = replaced;
-        someBody = lowerExpr(replaced, binds);
-        // Bare-var shortcut, but route \result through lowerExpr so the
-        // lemma-side replaceVar pass can substitute it with the function call.
-        scrutinee = path.fields.length === 0 && path.rootVar !== "\\result"
-          ? varE(path.rootVar)
-          : lowerExpr(e.scrutinee, binds);
-      } else {
-        // Complex scrutinee — narrow pre-bound the someBody to use the binder directly,
-        // so no substitution needed. Used by optChain rewrites.
-        someBody = lowerExpr(e.someBody, binds);
-        scrutinee = lowerExpr(e.scrutinee, binds);
-      }
-      let noneBody = lowerExpr(e.noneBody, binds);
+      const someValue = path ? replacePathInTExpr(e.someBody, path, e.binder, e.binderTy) : e.someBody;
+      // A substituted path projection is the unwrapped payload: wrap by that source, not the old Option slot.
+      const someSource = someValue;
+      // Evaluate the scrutinee first, and keep branch calls inside their binder scope.
+      const scrutinee = lowerExpr(e.scrutinee, binds);
+      const scoped = binds !== null && _opts.backend === "dafny";
+      const someBinds: Stmt[] = [], noneBinds: Stmt[] = [];
+      let someBody = lowerExpr(someValue, scoped ? someBinds : binds);
+      let noneBody = lowerExpr(e.noneBody, scoped ? noneBinds : binds);
       if (e.ty.kind === "optional") {
         // A path projection substituted above is now the unwrapped payload.
         // Wrap according to that refined source type, not the old Option slot.
         someBody = wrapOptionalBranch(someBody, someSource);
         noneBody = wrapOptionalBranch(noneBody, e.noneBody);
+      }
+      if (binds && scoped && (someBinds.length > 0 || noneBinds.length > 0)) {
+        const name = freshName("_optional" + _liftCounter++);
+        binds.push(
+          { kind: "let", name, type: e.ty, mutable: true, value: { kind: "havoc", type: e.ty } },
+          { kind: "match", scrutinee, arms: [
+            { pattern: pCtor("some", e.binder), body: [...someBinds, { kind: "assign", target: name, value: someBody }] },
+            { pattern: pCtor("none"), body: [...noneBinds, { kind: "assign", target: name, value: noneBody }] },
+          ] },
+        );
+        return { kind: "var", name };
       }
       return {
         kind: "match", scrutinee,

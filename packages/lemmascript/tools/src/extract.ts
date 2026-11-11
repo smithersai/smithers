@@ -314,7 +314,7 @@ function conditionalSpreadBranches(node: Node): { cond: RawExpr; names: string[]
 
 /** `X.match(value, { Tag: ({ field }) => result, … })` in return position, where the
  *  table names exactly the `_tag` values of `value`'s union: read as a `switch`. */
-function taggedMatchStatement(node: Node, line: number): RawStmt | null {
+function taggedMatchStatement(node: Node, line: number, input?: RawExpr): RawStmt | null {
   if (!Node.isCallExpression(node)) return null;
   const callee = node.getExpression();
   if (!Node.isPropertyAccessExpression(callee) || callee.getName() !== "match") return null;
@@ -328,7 +328,7 @@ function taggedMatchStatement(node: Node, line: number): RawStmt | null {
   const expected = new Set(tags.map(t => t!.getLiteralValue() as string));
   const arms = table.getProperties();
   if (arms.length !== expected.size) return null;
-  const scrutinee = extractExpr(valueNode as Expression);
+  const scrutinee = input ?? extractExpr(valueNode as Expression);
   const cases: { label: string; body: RawStmt[] }[] = [];
   for (const arm of arms) {
     if (!Node.isPropertyAssignment(arm) || !expected.has(arm.getName())) return null;
@@ -660,6 +660,24 @@ function extractExpr(node: Expression): RawExpr {
   if (Node.isCallExpression(node)) {
     // Object.fromEntries(map) → identity (Map IS Record in Dafny)
     const callee = node.getExpression();
+    // A match may occur in an expression (`withCommands(Message.match(...))`, an array element, arithmetic).
+    // Keep its typed switch in an immediately invoked lambda. Bind the input as an argument so even an impure
+    // input expression is evaluated once, outside the lambda, and cannot be re-read by payload projections.
+    if (Node.isPropertyAccessExpression(callee) && callee.getName() === "match") {
+      const name = freshName(`_matched${_destrCounter++}`);
+      const tagged = taggedMatchStatement(node, node.getStartLineNumber(), { kind: "var", name });
+      if (tagged) {
+        const argument = node.getArguments()[0] as Expression;
+        return {
+          kind: "call",
+          fn: {
+            kind: "lambda", matchExpression: true, params: [{ name, tsType: typeToString(argument.getType()) }],
+            body: [tagged], returnTsType: localTypeText(node.getType(), "MatchResult", node),
+          },
+          args: [extractExpr(argument)],
+        };
+      }
+    }
     if (Node.isPropertyAccessExpression(callee) &&
         callee.getExpression().getText() === "Object" &&
         callee.getName() === "fromEntries" &&

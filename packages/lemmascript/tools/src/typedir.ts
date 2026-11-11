@@ -100,7 +100,7 @@ export type TExpr =
       ofVariant?: string }                  // which union variant the field is read from, when narrowing determined it
   | { kind: "record"; spread: TExpr | null; fields: { name: string; value: TExpr }[]; ty: Ty }
   | { kind: "arrayLiteral"; elems: TExpr[]; ty: Ty }
-  | { kind: "lambda"; params: { name: string; ty: Ty }[]; body: TStmt[]; ty: Ty }
+  | { kind: "lambda"; params: { name: string; ty: Ty }[]; body: TStmt[]; ty: Ty; matchExpression?: boolean }
   | { kind: "conditional"; cond: TExpr; then: TExpr; else: TExpr; ty: Ty }
   | { kind: "optChain"; obj: TExpr; chain: TChainStep[]; ty: Ty }
   | { kind: "nullish"; left: TExpr; right: TExpr; ty: Ty }

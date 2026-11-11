@@ -51,3 +51,25 @@ test("Lean preserves the branches of negated array tests on variables and paths"
   const output = emitLeanFile(typesFile);
   assert.equal([...output.matchAll(/\| \.NonArrayBranch [^\n]+ =>\s+1\s+\| _ =>\s+2/g)].length, 2, output);
 });
+
+
+test("ordinary implication guards retain the production postcondition selector shape", () => {
+  const project = new Project({ useInMemoryFileSystem: true, compilerOptions: { strict: true } });
+  const source = project.createSourceFile("guard.ts", `
+type Event = { readonly type: "Posted" } | { readonly type: "Ignored" };
+interface Entry { readonly done: boolean }
+interface Conversation { readonly entries: ReadonlyArray<Entry> }
+//@ verify
+//@ ensures event.type == "Posted" && \\result.entries.length > conversation.entries.length ==> \\result.entries[conversation.entries.length].done == true
+export function apply(conversation: Conversation, event: Event): Conversation {
+  let entries = conversation.entries;
+  if (event.type === "Posted") entries = [...entries, { done: true }];
+  return { ...conversation, entries };
+}
+`);
+  assert.deepEqual(project.getPreEmitDiagnostics(), [], "the regression must be valid TypeScript");
+  const { typesFile, defFile } = transformModuleDafny(narrowModule(resolveModule(extractModule(source))));
+  const output = emitDafnyFile({ ...defFile, decls: [...(typesFile?.decls ?? []), ...defFile.decls] });
+  const selector = '(event.Posted? ==> (|res.entries| > |conversation.entries|) ==> (res.entries[|conversation.entries|].done == true))';
+  assert.equal(output.split("\n").filter(line => line.trimStart().startsWith("ensures ") && line.includes(selector)).length, 1, output);
+});
