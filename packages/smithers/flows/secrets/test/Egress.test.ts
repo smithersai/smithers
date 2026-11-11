@@ -332,13 +332,23 @@ describe("Egress.forward", () => {
     expect(leaks(recorded.recorded())).toEqual([])
   })
 
-  test("HEAD and bodiless statuses answer with no body", async () => {
-    for (const [method, status] of [["HEAD", 200], ["GET", 204], ["GET", 304]] as const) {
+  test("HEAD and bodiless statuses answer with no body and settle telemetry once", async () => {
+    for (const [method, status] of [["HEAD", 200], ["HEAD", 204], ["GET", 204], ["GET", 205], ["GET", 304]] as const) {
       const upstream = scripted(() => new Response(null, { status, headers: { etag: "x" } }))
-      const { response, body } = await forwardThrough(new Request("https://registry.npmjs.org/p", { method }), {
-        fetch: upstream.fetch
-      })
+      const { response, body, recorded } = await forwardThrough(
+        new Request("https://registry.npmjs.org/p", { method }),
+        {
+          fetch: upstream.fetch
+        }
+      )
       expect([response.status, body, response.headers.get("etag")]).toEqual([status, "", "x"])
+      expect(recorded.count("forwarded")).toBe(1)
+      expect(recorded.count("broken")).toBe(0)
+      expect(recorded.logs).toHaveLength(1)
+      expect(recorded.logs[0]).toMatchObject({
+        level: "Info",
+        annotations: { outcome: "forwarded", host: "registry.npmjs.org", method, status, secrets: 0 }
+      })
     }
   })
 
@@ -403,6 +413,9 @@ describe("Egress.forward", () => {
     expect(JSON.stringify(exit)).toContain("@smthrs/secrets/Egress/Broken")
     expect(leaks(JSON.stringify(exit))).toEqual([])
     expect(recorded.count("broken")).toBe(1)
+    expect(recorded.count("cancelled")).toBe(0)
+    expect(recorded.logs).toHaveLength(1)
+    expect(recorded.logs[0]).toMatchObject({ level: "Warn", annotations: { outcome: "broken" } })
     expect(leaks(recorded.recorded())).toEqual([])
   })
 })
@@ -440,6 +453,32 @@ describe("Egress.execute", () => {
     expect(upstream.seen[0]!.body).toBe(`body ${PLACEHOLDER}`)
   })
 
+  test.each([["HEAD", 200], ["HEAD", 204], ["GET", 204], ["GET", 205], ["GET", 304]] as const)(
+    "%s %s settles before its body is read and is never counted twice",
+    async (method, status) => {
+      const upstream = scripted(() => new Response(null, { status }))
+      const recorded = telemetry()
+      const exit = await run(
+        recorded.provide(Effect.gen(function*() {
+          const answer = yield* Egress.execute(HttpClientRequest.make(method)("https://registry.npmjs.org/p"), policy)
+          expect(answer.status).toBe(status)
+          expect(recorded.count("forwarded")).toBe(1)
+          expect(recorded.logs).toHaveLength(1)
+          expect(recorded.logs[0]).toMatchObject({
+            level: "Info",
+            annotations: { outcome: "forwarded", method, status }
+          })
+          yield* Stream.runDrain(answer.body)
+          yield* Stream.runDrain(answer.body)
+        })),
+        upstream.fetch
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(recorded.count("forwarded")).toBe(1)
+      expect(recorded.logs).toHaveLength(1)
+    }
+  )
+
   test("a refusal is a typed failure with its code; nothing is sent", async () => {
     const upstream = scripted()
     const exit = await run(
@@ -472,7 +511,15 @@ describe("Egress.execute", () => {
       )
     )
     expect(Exit.hasInterrupts(exit)).toBe(true)
-    expect(recorded.count("broken")).toBe(1)
+    expect(recorded.count("cancelled")).toBe(1)
+    expect(recorded.count("broken")).toBe(0)
+    expect(recorded.count("forwarded")).toBe(0)
+    expect(recorded.logs).toHaveLength(1)
+    expect(recorded.logs[0]).toMatchObject({
+      level: "Info",
+      annotations: { outcome: "cancelled", host: API, status: 200 }
+    })
+    expect(leaks(recorded.recorded())).toEqual([])
   })
 
   test("a caller's own fetch options are kept, with redirects never followed", async () => {

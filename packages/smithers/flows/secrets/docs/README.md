@@ -46,7 +46,12 @@ use a credential against the hosts it was meant for, and can't read it.
   method, status and number of secrets. The HTTP client's own span is off,
   and no failure carries the request. A forwarded request settles once its
   answer has streamed, through the caller's logger and metrics, wherever the
-  host streams it.
+  host streams it. `HEAD` and statuses `204`, `205` and `304` settle
+  immediately, without reading a body. For other `Egress.execute` answers,
+  consume or drain `body` even when only the status or headers are needed.
+  Successful answers log at Info as `forwarded`; a guest's interrupted
+  download logs at Info as `cancelled`. A host's broken body logs at Warn as
+  `broken`.
 
 ## What it doesn't do
 

@@ -94,7 +94,7 @@ export const audit = (down = false) => {
 /** Everything a program records: its spans (with their attributes and events), log lines and metric registry. */
 export const telemetry = () => {
   const spans: Array<Tracer.NativeSpan> = []
-  const logs: Array<{ message: unknown; annotations: Record<string, unknown> }> = []
+  const logs: Array<{ level: string; message: unknown; annotations: Record<string, unknown> }> = []
   const registry = new Map()
   const tracer = Tracer.make({
     span(options) {
@@ -103,8 +103,8 @@ export const telemetry = () => {
       return span
     }
   })
-  const recorder = Logger.make(({ message, fiber }) => {
-    logs.push({ message, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
+  const recorder = Logger.make(({ logLevel, message, fiber }) => {
+    logs.push({ level: logLevel, message, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
   })
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(

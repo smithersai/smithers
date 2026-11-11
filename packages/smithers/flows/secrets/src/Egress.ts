@@ -41,7 +41,8 @@
  * number of secrets; failures carry a code and nothing of the request. Each
  * request is one `Egress.execute` span and one count on
  * `secret_egress_requests` by `outcome`, recorded when the answer's body has
- * ended.
+ * ended, or immediately for HEAD and bodiless statuses. A caller of
+ * `execute` must drain a body-bearing answer to settle its telemetry.
  *
  * @since 0.1.0
  */
@@ -257,8 +258,9 @@ export interface Answer {
 
 /**
  * {@link execute} calls, by `outcome`: `forwarded` when the answer's body
- * ended, `broken` when it broke off, a {@link Refusal}, or `unavailable_`
- * and the {@link Unavailable} code.
+ * ended (or immediately for HEAD and bodiless statuses), `cancelled` when
+ * the guest interrupted it, `broken` when the host broke it off, a
+ * {@link Refusal}, or `unavailable_` and the {@link Unavailable} code.
  *
  * @category observability
  * @since 0.1.0
@@ -400,7 +402,9 @@ const headerBytes = (headers: Readonly<Record<string, string>>): number => {
  * in its headers, and answers the host's answer scrubbed. Fails with
  * {@link Refused} before anything is revealed or sent, or with
  * {@link Unavailable}. Requires the host's `HttpClient`, {@link Vault} and
- * {@link Audit}.
+ * {@link Audit}. HEAD and bodiless statuses settle telemetry immediately.
+ * For every other answer, consume or drain `body` even if only the status
+ * or headers are needed: its stream exit settles the count and log line.
  *
  * @category egress
  * @since 0.1.0
@@ -426,7 +430,9 @@ export const execute = (
       Effect.gen(function*() {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1)
-        yield* Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress").pipe(
+        yield* Effect.logWithLevel(outcome === "forwarded" || outcome === "cancelled" ? "Info" : "Warn")(
+          "secrets.egress"
+        ).pipe(
           Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })
         )
       })
@@ -453,13 +459,13 @@ export const execute = (
     if (decision._tag === "Denied") return yield* refuse(decision.code, decision.secrets)
     const { used } = decision
     const vault = yield* Vault
-    const revealed = yield* Effect.forEach(policy.secrets, (secret) =>
-      Effect.map(vault.reveal(secret.name), (value) => ({ secret, value }))).pipe(
-        // Any other failure, a defect included, is the vault's and fails closed.
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined)
-        )
-      )
+    const revealed = yield* Effect.forEach(
+      policy.secrets,
+      (secret) => Effect.map(vault.reveal(secret.name), (value) => ({ secret, value }))
+    ).pipe(
+      // Any other failure, a defect included, is the vault's and fails closed.
+      Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.succeed(undefined))
+    )
     if (revealed === undefined) return yield* unavailable("secret", used.length)
     const values = new Map<string, string>()
     for (const { secret, value } of revealed) {
@@ -506,6 +512,10 @@ export const execute = (
     for (const [name, value] of Object.entries(sent.headers)) {
       if (!droppedAnswer.has(name)) answered[name] = scrubber.text(value)
     }
+    if (method === "HEAD" || bodiless.has(sent.status)) {
+      yield* settle("forwarded", sent.status, used.length)
+      return { status: sent.status, headers: answered, body: Stream.empty }
+    }
     const body = scrubber.stream(
       sent.stream.pipe(
         // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
@@ -516,7 +526,11 @@ export const execute = (
       )
     ).pipe(
       Stream.onExit((exit) =>
-        settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length).pipe(
+        settle(
+          Exit.isSuccess(exit) ? "forwarded" : Cause.hasInterruptsOnly(exit.cause) ? "cancelled" : "broken",
+          sent.status,
+          used.length
+        ).pipe(
           Effect.provideContext(services)
         )
       )
