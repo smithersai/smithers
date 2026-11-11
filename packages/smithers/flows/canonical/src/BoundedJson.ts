@@ -226,10 +226,10 @@ const walk = (
       return { ok: true, value: output, bytes }
     }
     try {
-      const keys = strict ? Reflect.ownKeys(value) : undefined
-      const prototype = strict ? Object.getPrototypeOf(value) : undefined
       if (Array.isArray(value)) {
-        if (strict && prototype !== Array.prototype) return refuse("object", "must be an ordinary array")
+        if (strict && Object.getPrototypeOf(value) !== Array.prototype) {
+          return refuse("object", "must be an ordinary array")
+        }
         // `length` is always an own, non-configurable data property of an
         // array, and a Proxy that reports it as absent or as an accessor
         // throws rather than being believed, which lands in the `inspection`
@@ -240,8 +240,11 @@ const walk = (
           return refuse("arrayLength", "has an invalid array length")
         }
         if (!countMembers(length)) return memberFailure()
-        if (strict && (keys!.length !== length + 1 || !keys!.includes("length"))) {
-          return refuse("arrayExtra", "must be dense and have no extra properties")
+        if (strict) {
+          const keys = Reflect.ownKeys(value)
+          if (keys.length !== length + 1 || !keys.includes("length")) {
+            return refuse("arrayExtra", "must be dense and have no extra properties")
+          }
         }
         if (!add(2 + Math.max(0, length - 1))) return byteFailure()
         const output: Array<Json> = []
@@ -278,7 +281,8 @@ const walk = (
         }
         return finish(output)
       }
-      const recordPrototype = strict ? prototype : Object.getPrototypeOf(value)
+      const keys = strict ? Reflect.ownKeys(value) : undefined
+      const recordPrototype = Object.getPrototypeOf(value)
       if (recordPrototype !== Object.prototype && recordPrototype !== null) {
         const native = strict?.native?.(value)
         if (native !== undefined) {

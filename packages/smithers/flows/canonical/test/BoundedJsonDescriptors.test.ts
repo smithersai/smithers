@@ -124,6 +124,30 @@ describe("BoundedJson descriptor and snapshot contracts", () => {
     }
   )
 
+  it.each(admissions)("%s refuses a real wide array before enumerating its keys", (policy, admit) => {
+    const target: Array<number> = JSON.parse(`[${"0,".repeat(65_535)}0]`)
+    const inspected: Array<PropertyKey> = []
+    let enumerations = 0
+    const input = new Proxy(target, {
+      ownKeys: (object) => {
+        enumerations++
+        return Reflect.ownKeys(object)
+      },
+      getOwnPropertyDescriptor: (object, key) => {
+        inspected.push(key)
+        return Reflect.getOwnPropertyDescriptor(object, key)
+      }
+    })
+    expect(target.length).toBe(65_536)
+    expect(admit(input)).toEqual(
+      policy === "ordinary"
+        ? { ok: false, code: "members", path: [], complaint: "exceeds the JSON members limit" }
+        : { ok: false, path: "$", complaint: "exceeds the 32-member limit" }
+    )
+    expect(enumerations).toBe(0)
+    expect(inspected).toEqual(["length"])
+  })
+
   it("ordinary admission copies reserved own data keys into detached null-prototype records at every depth", () => {
     const input: Record<string, unknown> = Object.create(null)
     const hostile = { polluted: "source value" }
