@@ -32,20 +32,22 @@ const orphaned = (run: ControlSchema.RunSummary): Effect.Effect<boolean> => {
 }
 
 /**
+ * A whole-entry cursor resumes by sequence. A cursor inside an expansion keeps
+ * its offset, so the entry's remaining members are not skipped.
+ */
+const resume = (cursor: ControlSchema.WatchCursor | undefined) =>
+  cursor === undefined ? {} : cursor.offset === undefined ? { afterSequence: cursor.sequence } : { afterCursor: cursor }
+
+/**
  * Follows the injected Control service, preserving cursor and final drain ordering.
  * @since 1.0.0
  * @category constructors
  */
-export const events = (runId: string, follow: boolean, afterSequence?: number) =>
+export const events = (runId: string, follow: boolean, after?: ControlSchema.WatchCursor) =>
   Stream.unwrap(Effect.gen(function*() {
     const control = yield* Control.Control
-    let cursor = afterSequence
-    const watch = (live: boolean) =>
-      control.watch({
-        runId,
-        follow: live,
-        ...(cursor === undefined ? {} : { afterSequence: cursor })
-      })
+    let cursor = after
+    const watch = (live: boolean) => control.watch({ runId, follow: live, ...resume(cursor) })
     if (!follow) return watch(false)
     const terminal = Effect.gen(function*() {
       while (true) {
@@ -67,7 +69,7 @@ export const events = (runId: string, follow: boolean, afterSequence?: number) =
       Stream.interruptWhen(terminal),
       Stream.tap((event) =>
         Effect.sync(() => {
-          cursor = event.sequence
+          cursor = event.cursor ?? { sequence: event.sequence }
         })
       ),
       Stream.concat(Stream.unwrap(Effect.sync(() => watch(false))))

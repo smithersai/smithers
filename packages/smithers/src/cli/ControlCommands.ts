@@ -600,11 +600,17 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       options: options.extend({
         follow: z.boolean().default(false),
         after: z.number().int().nonnegative().optional(),
+        afterOffset: z.number().int().nonnegative().optional().describe(
+          "Continue inside the --after sequence's expanded events; copy it from a next-page command"
+        ),
         limit: z.number().int().min(1).max(10000).optional().describe(
           "Maximum events; agent history pulls default to 100"
         )
       }),
       async *run(c) {
+        if (c.options.afterOffset !== undefined && c.options.after === undefined) {
+          return Presentation.fail(c, new CliError.UsageError({ message: "--after-offset requires --after" }))
+        }
         const policy = Presentation.current()?.policy ?? Presentation.policy(c, runtime)
         const limit = c.options.limit ??
           (policy.audience === "agent" && !c.options.follow ? 100 : Number.POSITIVE_INFINITY)
@@ -613,26 +619,40 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
           output: Presentation.current()?.stdout ?? process.stdout
         })
         let count = 0
-        let after = c.options.after
+        // One expanded journal entry yields several events at one sequence, so
+        // a page boundary keeps the whole cursor, offset included.
+        const start = c.options.after === undefined
+          ? undefined
+          : c.options.afterOffset === undefined
+          ? { sequence: c.options.after }
+          : { sequence: c.options.after, offset: c.options.afterOffset }
+        let after: ControlSchema.WatchCursor | undefined = start
         try {
           if (!Bridge.hasRecords(c.options, runtime)) {
             await Bridge.project(checks(c.options, runtime), c.options, runtime)
             return
           }
           for await (
-            const event of Bridge.events(c.args.run, c.options.follow, c.options, runtime, c.options.after)
+            const event of Bridge.events(c.args.run, c.options.follow, c.options, runtime, start)
           ) {
-            after = event.sequence
+            after = event.cursor ?? { sequence: event.sequence }
             count++
             if (renderer === undefined) yield event
             else renderer.event(event)
             if (count >= limit) break
           }
           if (renderer === undefined && after !== undefined && count >= limit) {
-            return c.ok({ events: count, after }, {
+            const offset = after.offset === undefined ? "" : ` --after-offset ${after.offset}`
+            return c.ok({
+              events: count,
+              after: after.sequence,
+              ...(after.offset === undefined ? {} : { afterOffset: after.offset })
+            }, {
               cta: {
                 commands: Presentation.nextActions({}, c, [{
-                  command: `runs logs ${Presentation.quote(c.args.run)} --after ${after} --format jsonl`,
+                  command: `runs logs ${
+                    Presentation.quote(c.args.run)
+                  } --after ${after.sequence}${offset} --format jsonl`,
                   description: "Continue from the last returned event"
                 }])
               }

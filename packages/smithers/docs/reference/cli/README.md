@@ -588,7 +588,10 @@ on standard error while writing JSON to a file. MCP always stays machine-clean.
 
 Agent `runs logs` history pulls default to 100 events when `--follow` is absent.
 Use `--limit 1..10000` to choose a page size and `--after <sequence>` to continue;
-the result supplies a next-page command when a limit is reached. Agent log output
+the result supplies a next-page command when a limit is reached. One journal entry
+can expand into several events at the same sequence, such as a steering promotion and
+its deliveries. When a page ends inside one, the next-page command adds
+`--after-offset <n>` so the next page starts at the entry's next event. Agent log output
 defaults to incremental JSONL. `--follow` streams new events without the default
 100-event bound; an explicit `--limit` still bounds it.
 

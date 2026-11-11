@@ -108,7 +108,7 @@ it(
             const followers = []
             for (const run of committed) {
               expect((yield* runtime.getRun(run.runId)).status).toBe(run.parked ? "parked" : "accepted")
-              for (const after of [undefined, 1_000_000]) {
+              for (const after of [undefined, { sequence: 1_000_000 }]) {
                 const secondRead = yield* Deferred.make<void>()
                 let reads = 0
                 const observed = Control.Control.of({

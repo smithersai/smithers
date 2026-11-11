@@ -792,8 +792,8 @@ describe("control bridge transport scope", () => {
     )
   })
 
-  it.each([undefined, 0, 17])(
-    "forwards watch cursors and releases the transport on early consumer return (%s)",
+  it.each([undefined, { sequence: 0 }, { sequence: 17 }, { sequence: 17, offset: 2 }])(
+    "forwards watch cursors and releases the transport on early consumer return (%j)",
     async (after) => {
       const watch = vi.fn().mockReturnValue(Stream.make({ sequence: 18 }, { sequence: 19 }))
       service = { ...service, watch }
@@ -803,7 +803,11 @@ describe("control bridge transport scope", () => {
       expect(watch).toHaveBeenCalledExactlyOnceWith({
         runId: "watched",
         follow: true,
-        ...(after === undefined ? {} : { afterSequence: after })
+        ...(after === undefined
+          ? {}
+          : after.offset === undefined
+          ? { afterSequence: after.sequence }
+          : { afterCursor: after })
       })
       expect(lifecycle).toEqual(["control:open", "control:close"])
     }
@@ -824,7 +828,7 @@ describe("control bridge transport scope", () => {
       )
       service = { ...service, list, watch } as unknown as Control.Service
       const events: Array<unknown> = []
-      for await (const event of Bridge.events("watched", true, local, runtime, 3)) events.push(event)
+      for await (const event of Bridge.events("watched", true, local, runtime, { sequence: 3 })) events.push(event)
       expect(events).toEqual([{ sequence: 4 }, { sequence: 5 }])
       expect(watch.mock.calls).toEqual([
         [{ runId: "watched", follow: true, afterSequence: 3 }],

@@ -1,7 +1,8 @@
 /** An engine observation can settle before the control journal's terminal transaction. */
 import { NodeCrypto } from "@effect/platform-node"
 import { Control, ControlExecutor, ControlLive, ControlRuntime } from "@smthrs/control"
-import { SqlJournal } from "@smthrs/journal"
+import * as TestControl from "@smthrs/control/test/TestControl"
+import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
@@ -41,8 +42,8 @@ const stack = (executor: ControlExecutor.Service) => {
 }
 
 for (const status of ["completed", "failed", "cancelled"] as const) {
-  it.each([undefined, 1_000_000])(
-    `waits for committed ${status} before draining the journal (after=%s)`,
+  it.each([undefined, { sequence: 1_000_000 }])(
+    `waits for committed ${status} before draining the journal (after=%j)`,
     async (after) => {
       // The injected executor deliberately reports an engine ahead of the
       // real control runtime and journal. Their own transitions stay real.
@@ -143,5 +144,84 @@ it.each(
       expect((yield* runtime.getRun(launch.run.runId)).status).toBe("accepted")
       yield* Fiber.interrupt(followed)
     }).pipe(Effect.provide(stack(executor)), Effect.scoped)
+  )
+})
+
+/** One promotion row expands into itself plus one delivery per message, all at one sequence. */
+const expanded = (runId: string) =>
+  Effect.gen(function*() {
+    const journal = yield* Journal.Journal
+    for (
+      const [eventType, payload] of [
+        ["flows/notifications/Promoted", { boundary: "turn", ids: ["one", "two"] }],
+        ["plain", {}]
+      ] as const
+    ) {
+      yield* journal.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId: JournalEvent.RunId.make(runId),
+          sourceId: JournalEvent.SourceId.make("/test"),
+          eventType,
+          payload
+        })
+      )
+    }
+  })
+
+it("resumes a page that ends inside an expanded journal entry without skipping its deliveries", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runId = "paged-expansion"
+      yield* expanded(runId)
+      const full = Array.from(yield* RunEventStream.events(runId, false).pipe(Stream.runCollect))
+      expect(full.map((event) => event.kind)).toEqual([
+        "flows/notifications/Promoted",
+        "control.steer.delivered",
+        "control.steer.delivered",
+        "plain"
+      ])
+      for (let count = 1; count <= full.length; count++) {
+        const last = full[count - 1]!.cursor!
+        const resumed = yield* RunEventStream.events(runId, false, last).pipe(Stream.runCollect)
+        expect([...full.slice(0, count), ...resumed]).toEqual(full)
+      }
+    }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("drains the rest of an expanded entry after a follow ends inside it", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runId = "followed-expansion"
+      yield* expanded(runId)
+      const real = yield* Control.Control
+      const promoted = yield* Deferred.make<void>()
+      // Fault injection at the Effect service boundary: the live watch stalls
+      // right after the promotion, then the run reads as terminal, so the
+      // final drain must resume inside the promotion's expansion.
+      const stalled = Control.Control.of({
+        ...real,
+        list: () =>
+          Deferred.await(promoted).pipe(
+            Effect.as({ _tag: "runs" as const, items: [{ runId, status: "completed" }] } as never)
+          ),
+        watch: (filter) =>
+          filter.follow === true
+            ? real.watch(filter).pipe(
+              Stream.take(1),
+              Stream.tap(() => Deferred.succeed(promoted, undefined)),
+              Stream.concat(Stream.never)
+            )
+            : real.watch(filter)
+      })
+      const followed = yield* RunEventStream.events(runId, true).pipe(
+        Stream.runCollect,
+        Effect.provideService(Control.Control, stalled),
+        Effect.timeout("2 seconds")
+      )
+      expect(Array.from(followed)).toEqual(
+        Array.from(yield* real.watch({ runId, follow: false }).pipe(Stream.runCollect))
+      )
+    }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.orDie)
   )
 })

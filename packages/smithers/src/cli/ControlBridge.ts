@@ -7,7 +7,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import { ApprovalAuthority, Control, ControlRuntime, SqlControlRuntime } from "@smthrs/control"
+import { ApprovalAuthority, Control, ControlRuntime, type ControlSchema, SqlControlRuntime } from "@smthrs/control"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import type * as Evaluator from "@smthrs/model/Evaluator"
@@ -522,9 +522,9 @@ export const events = (
   follow: boolean,
   options: ConnectionOptions,
   runtime: Runtime = {},
-  afterSequence?: number
+  after?: ControlSchema.WatchCursor
 ) => {
-  const stream = RunEventStream.events(runId, follow, afterSequence).pipe(
+  const stream = RunEventStream.events(runId, follow, after).pipe(
     Stream.provide(NodeControl.layerObserve(configuration(options, runtime))),
     Stream.provide(runtime.effectContext ?? Context.empty())
   )
