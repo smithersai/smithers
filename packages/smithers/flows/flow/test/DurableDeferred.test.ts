@@ -605,7 +605,7 @@ describe("DurableDeferred", () => {
     }).pipe(Effect.provide(layer))
   })
 
-  effect("into records the effect exit so a replay reuses it without re-running", () => {
+  effect("into runs its effect on every call and keeps only the first recorded exit", () => {
     let runs = 0
     const Recorded = DurableDeferred.make("DurableDeferred/Recorded", {
       success: Schema.Number,
@@ -637,13 +637,15 @@ describe("DurableDeferred", () => {
             Effect.sync(() => ++runs),
             Recorded
           )
+          // The second call ran its effect again; the record still holds the first exit.
+          expect(yield* DurableDeferred.await(Recorded)).toBe(1)
           return first + second
         })
       ),
       Interpreter.layer(flow)
     ))
     return Effect.gen(function*() {
-      // `into` writes the exit once; the recorded exit is what a resumed flow reads
+      // `into` never reads the record: both calls ran, and each returned its own value
       expect(yield* flow.execute({ id: "i" })).toBe(3)
       expect(runs).toBe(2)
     }).pipe(Effect.provide(layer))

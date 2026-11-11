@@ -6,7 +6,8 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  *
  * A restart between the park and the answer is proved twice. Here, by dropping
  * the runtime that parked and building another over the same durable record, so
- * the second process parks on the wait point the first one handed out. And on
+ * the second process replays the refusal the first one recorded and parks on the
+ * attempt the first one left open. And on
  * the real durable engine in `packages/smithers/flows/examples/34-human-task.ts`, which parks a
  * confirm on one SQLite-backed engine, drops it, and answers it from a second.
  *
@@ -1367,53 +1368,57 @@ describe("HumanTask records what it refused", () => {
 })
 
 describe("HumanTask across a restart", () => {
-  effect("parks on one process and is answered on the next, through the same token", () => {
-    const Gated = Flow.make("humanTask/restart", {
-      payload: {},
-      success: Schema.Json,
-      error: HumanTask.HumanTaskFailed,
-      body: () => HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?" })
-    })
+  effect("resumes on the next process from the refusal and the attempt the first one recorded", () => {
     const executionId = "human-restart"
-    // The token the FIRST process parked with, computed once. Nothing the
-    // second process does may change it: a question that moved its wait point
-    // when the process restarted would leave whoever holds this token unable to
-    // answer it.
-    const parkedToken = DurableDeferred.tokenFromExecutionId(HumanTask.deferred("release", 1), {
-      flow: Gated,
-      executionId
-    })
+    const ask = Flow.intoResult(
+      Interpreter.interpret(HumanTask.action.call({ name: "release", kind: "confirm", prompt: "Ship it?" }))
+    )
+    const refusal = { task: "release", attempt: 1, reason: expect.stringContaining("boolean") }
     // The record both processes read: recorded steps, and settled wait points.
+    // Everything else, the execution's instance included, is the process's own.
     const durable = makeMemoryState()
-    const process = () => wiredOver(durable, Interpreter.layer(Gated))
+    const inProcess = <A, E, R>(instance: FlowRuntime.FlowInstance["Service"], body: Effect.Effect<A, E, R>) =>
+      body.pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, instance),
+        Effect.provide(wiredOver(durable))
+      )
     return Effect.gen(function*() {
-      // The first process asks and parks. Then it is gone: its scope closes,
-      // taking its registrations, its live execution, and its fibers with it.
-      const parked = yield* Effect.scoped(
+      // The first process asks, refuses an answer a confirm cannot accept, and
+      // parks on the second attempt. Then it is gone.
+      const first = makeInstance(Host, executionId)
+      const tokens = yield* inProcess(
+        first,
         Effect.gen(function*() {
-          yield* Effect.orDie(Gated.execute({}, { executionId, discard: true }))
-          const suspended = yield* Effect.orDie(reaches(Gated.poll(executionId), "Suspended"))
-          const instance = yield* Effect.orDie(Gated.poll(executionId))
-          expect(Option.isSome(instance)).toBe(true)
-          return suspended
-        }).pipe(Effect.provide(process()))
+          expect((yield* ask)._tag).toBe("Suspended")
+          const asked = first.waiting!.token!
+          yield* HumanTask.answer({ token: asked, value: "yes, ship it" })
+          expect((yield* ask)._tag).toBe("Suspended")
+          return { asked, reasked: first.waiting!.token! }
+        })
       )
-      expect(parked._tag).toBe("Suspended")
+      expect(tokens.reasked).not.toBe(tokens.asked)
+      expect(rejectionsRecorded(durable)).toEqual([refusal])
 
-      // The second process re-drives the execution it found parked, parks on
-      // the SAME wait point, and the token the first process handed out settles
-      // it.
-      const finished = yield* Effect.scoped(
+      // The second process replays the recorded refusal rather than asking
+      // attempt 1 again: it parks on the token the first process re-asked
+      // with, and the first attempt's token no longer answers anything.
+      const second = makeInstance(Host, executionId)
+      const finished = yield* inProcess(
+        second,
         Effect.gen(function*() {
-          yield* Effect.orDie(Gated.execute({}, { executionId, discard: true }))
-          expect((yield* Effect.orDie(reaches(Gated.poll(executionId), "Suspended")))._tag).toBe("Suspended")
+          expect((yield* ask)._tag).toBe("Suspended")
+          expect(second.waiting?.token).toBe(tokens.reasked)
+          const stale = yield* Effect.flip(HumanTask.answer({ token: tokens.asked, value: true }))
+          expect(stale).toBeInstanceOf(HumanTask.HumanAnswerInvalid)
+          expect(stale instanceof HumanTask.HumanAnswerInvalid && stale.code).toBe("answer_not_open")
 
-          yield* HumanTask.answer({ token: parkedToken, value: true })
-          return yield* Effect.orDie(reaches(Gated.poll(executionId), "Complete"))
-        }).pipe(Effect.provide(process()))
+          yield* HumanTask.answer({ token: tokens.reasked, value: true })
+          return yield* ask
+        })
       )
 
-      expect(finished._tag === "Complete" && Exit.isSuccess(finished.exit) && finished.exit.value).toBe(true)
+      expect(finished._tag === "Complete" && Exit.isSuccess(finished.exit) && finished.exit.value.value).toBe(true)
+      expect(rejectionsRecorded(durable)).toEqual([refusal])
     })
   })
 })

@@ -7,7 +7,7 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import { PersistedQueue } from "effect/persistence"
 import { TestClock } from "effect/testing"
 import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"
-import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
+import { layerMemory, layerMemoryOver, makeInstance, makeMemoryState } from "./MemoryFlowRuntime.ts"
 
 const PersistedQueueLayer = PersistedQueue.layer.pipe(
   Layer.provideMerge(PersistedQueue.layerStoreMemory)
@@ -571,12 +571,10 @@ describe("DurableQueue", () => {
     )
   })
 
-  // A completion the store failed to record used to run the handler again on the next take. The item now runs as
-  // a durable execution whose first step records the handler's exit, so a redelivery replays that exit instead. This
-  // in-memory runtime runs no retry policies, so the item's execution ends at the failed completion; the engine's
-  // retries, and the caller's result, are proved on a durable engine in @smthrs/engine-store
-  // (`test/DurableQueueCrash.test.ts`).
-  effect("a completion the store fails to record never runs the handler again", () => {
+  // This in-memory runtime runs no retry policies, so the item's execution ends at the failed completion; the
+  // engine's retries, and the caller's result, are proved on a durable engine in @smthrs/engine-store
+  // (`test/DurableQueueCrash.test.ts`). That a redelivery replays the recorded handler exit is the next case.
+  effect("a completion the store fails to record is logged without the item's private data", () => {
     let handled = 0
     let writes = 0
     const logs: Array<string> = []
@@ -621,11 +619,6 @@ describe("DurableQueue", () => {
       const id = yield* Flow_.execute({ id: "private-payload", value: 41 }, { discard: true })
       for (let turn = 0; turn < 500 && writes === 0; turn++) yield* Effect.yieldNow
       expect(writes).toBe(1)
-      // The item is redelivered on the persisted queue's schedule; each delivery attaches to the same execution.
-      for (let delivery = 0; delivery < 5; delivery++) {
-        yield* TestClock.adjust("5 minutes")
-        for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow
-      }
       expect(handled).toBe(1)
       expect(Option.isSome(yield* Flow_.poll(id))).toBe(true)
       expect(logs.some((line) => line.includes("completion is retried"))).toBe(true)
@@ -648,6 +641,65 @@ describe("DurableQueue", () => {
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Metric.MetricRegistry, new Map())
     )
+  })
+
+  // A handler result the store recorded is never produced twice. The first process records the handle step, then is
+  // gone before the completion is recorded. The second process, over the same durable record and the same persisted
+  // queue, is delivered the item again: the item's execution runs a second time, replays the recorded handler exit,
+  // and completes the caller with it.
+  effect("a delivery after a restart replays the recorded handler exit instead of running the handler again", () => {
+    const itemFlow = `DurableQueue/${Queue.name}/item`
+    const payload = { id: "restarted", value: 0 }
+    const durable = makeMemoryState()
+    let handled = 0
+    let executions = 0
+    let completions = 0
+    const process = (stopsBeforeCompletion: boolean) => {
+      const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+        const base = yield* FlowRuntime.FlowRuntime
+        return FlowRuntime.FlowRuntime.of({
+          ...base,
+          execute: ((flow, options) =>
+            Effect.suspend(() => {
+              if (flow._tag === itemFlow) executions++
+              return base.execute(flow, options)
+            })) as typeof base.execute,
+          // The first process stops while it records the completion, with the handler's exit already recorded.
+          deferredDone: (deferred, options) =>
+            Effect.suspend(() => {
+              if (!options.deferredName.startsWith(Queue.deferred.name)) return base.deferredDone(deferred, options)
+              completions++
+              return stopsBeforeCompletion ? Effect.never : base.deferredDone(deferred, options)
+            })
+        })
+      })).pipe(Layer.provide(layerMemoryOver(durable)))
+      return Layer.mergeAll(
+        Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
+        Interpreter.layer(Flow_),
+        DurableQueue.worker(Queue, () => Effect.suspend(() => (handled++, Effect.fail("handled once"))))
+      ).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(runtime)
+      )
+    }
+    return Effect.gen(function*() {
+      yield* Effect.gen(function*() {
+        yield* Flow_.execute(payload, { discard: true })
+        for (let turn = 0; turn < 500 && completions === 0; turn++) yield* Effect.yieldNow
+      }).pipe(Effect.provide(process(true)))
+      expect({ handled, executions, completions }).toEqual({ handled: 1, executions: 1, completions: 1 })
+
+      const exit = yield* Effect.gen(function*() {
+        for (let turn = 0; turn < 500 && completions < 2; turn++) {
+          yield* Effect.yieldNow
+          yield* TestClock.adjust("1 second")
+        }
+        return yield* Effect.exit(Flow_.execute(payload))
+      }).pipe(Effect.provide(process(false)))
+      expect({ handled, executions, completions }).toEqual({ handled: 1, executions: 2, completions: 2 })
+      expect(Exit.isFailure(exit) && exit.cause.reasons.map((reason) => Cause.isFailReason(reason) && reason.error))
+        .toEqual(["handled once"])
+    }).pipe(Effect.provide(PersistedQueueLayer))
   })
 
   const itemFor = (id: string) => ({

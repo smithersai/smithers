@@ -338,7 +338,14 @@ const makeRuntime = (durable: MemoryState) =>
           Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
           Effect.provideService(Action.CurrentAttempt, attempt),
           Effect.provideService(Action.CurrentInvocationKey, dispatch),
-          Effect.onExit((exit: any) => Effect.sync(() => actions.set(id, exit)))
+          // Like `@smthrs/engine`, only a settled dispatch is kept for replay: an
+          // interrupted or dying one, a process that stopped mid-step among
+          // them, has no settlement, so the next process runs the step again.
+          Effect.onExit((exit: any) =>
+            Effect.sync(() => {
+              if (exit._tag === "Success") actions.set(id, exit)
+            })
+          )
         ) as Effect.Effect<Flow.Result<unknown, unknown>>)) as Flow.Result<unknown, unknown>
         if (instance.waiting === waitingBefore) instance.waiting = actionInstance.waiting
         // A recorded interruption is a durable OUTCOME, not a request to
