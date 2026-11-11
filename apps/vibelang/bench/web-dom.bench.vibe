@@ -183,14 +183,14 @@ it("the run card's elapsed time advances from the app's clock while a tour waits
     try wait(() => expect(current().actions?.loading).toBe(false))
     try send(() => Message.ClickedRunAction())
     try wait(() => expect(current().actions?.runs[0]?.state).toBe("running"))
-    const id = current().actions!.runs[0]!.id
+    const { id, flow } = current().actions!.runs[0]!
     const started = current().actions!.runs[0]!.started
     // No TickedActions is injected. The real active-run subscription must read the clock and update the card.
     try wait(() => {
       expect((current().actions?.now ?? 0) - started).toBeGreaterThanOrEqual(1000)
       expect(page.textContent).toMatch(/person · [1-9][0-9]*s/)
     })
-    try send(() => Message.SelectedRun({ id }))
+    try send(() => Message.SelectedRun({ id, flow }))
     try wait(() => expect(current().actions?.run).toBe(id))
     try send(() => Message.ClickedCancelAction())
     try wait(() => expect(current().actions?.runs.find(run => run.id === id)?.state).toBe("cancelled"))
@@ -234,8 +234,8 @@ it("a lost action follow reconnects and delivers the current run and its cancell
       expect(counts.emissions).toBeGreaterThanOrEqual(1)
       expect(current().actions?.runs[0]?.state).toBe("running")
     })
-    const id = current().actions!.runs[0]!.id
-    try send(() => Message.SelectedRun({ id }))
+    const { id, flow } = current().actions!.runs[0]!
+    try send(() => Message.SelectedRun({ id, flow }))
     try wait(() => expect(current().actions?.run).toBe(id))
     try send(() => Message.ClickedCancelAction())
     try wait(() => {

@@ -38,6 +38,28 @@ test.describe("the history page's refusals and epic page", () => {
     await expect(page.getByRole("list", { name: "Coverage" }).getByRole("link")).toHaveText([/test\(coverage\): a first journey/])
   })
 
+  test("a maintainer exports, files evidence and a superseded note, and plans before a commit", async ({ page }) => {
+    await open(page, "&role=maintainer")
+    const epic = page.getByRole("button", { name: /The compiler/ })
+    await expect(epic).toHaveAttribute("aria-expanded", "false")
+    await epic.focus()
+    await epic.press("a")
+    await expect(epic).toHaveAttribute("aria-expanded", "false")
+    await epic.press(" ")
+    await expect(epic).toHaveAttribute("aria-expanded", "true")
+    await page.getByRole("button", { name: "Export", exact: true }).click()
+    await expect(page.getByTitle("Exported")).toHaveText(/^mythical \S{1,7}$/)
+    await page.getByRole("list", { name: "The compiler" }).getByRole("link").first().click()
+    for (const [section, text] of [["evidence", "A bench run held it."], ["superseded", "A later fold replaced it."]] as const) {
+      await page.getByLabel("Section").selectOption(section)
+      await page.getByLabel("Note", { exact: true }).fill(text)
+      await page.getByRole("button", { name: "Add note" }).click()
+      await expect(page.getByText(text)).toBeVisible()
+    }
+    await page.getByRole("button", { name: "Insert before…" }).click()
+    await expect(page.getByRole("dialog").getByText("Before", { exact: true })).toBeVisible()
+  })
+
   test("opens an epic's page from a commit's crumb, and from its address", async ({ page }) => {
     await open(page)
     await page.getByRole("button", { name: /The compiler/ }).click()

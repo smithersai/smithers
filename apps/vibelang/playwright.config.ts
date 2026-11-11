@@ -27,6 +27,9 @@ export default defineConfig({
     storageState: { cookies: [], origins: [{ origin: new URL(deployed ?? `http://127.0.0.1:${port}`).origin, localStorage: [{ name: "vibelang:toured", value: "yes" }, ...(deployed === undefined ? [] : [{ name: "vibelang.agent", value: "mock" }])] }] },
     video: "retain-on-failure",
     trace: "retain-on-failure",
+    // Chromium's RenderDocument gives each cross-document navigation a new frame and drops the old document's V8
+    // coverage, so a test that loads two pages reported only the last (e2e/coverage-navigation.spec.ts, decision 0016).
+    launchOptions: { args: ["--disable-features=RenderDocument"] },
   },
   projects: [
     { name: "dark", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, colorScheme: "dark" } },

@@ -540,12 +540,11 @@ export function roleReceived(state: RoleScreen, facts: RoleFacts): RoleStep {
 
 export interface RunSelection { readonly step: string; readonly run: string; readonly selected: string; readonly open: boolean; readonly maximized: boolean }
 
-/** Picking a run opens it maximized from its own flow; an unknown run keeps the selected flow. */
+/** Picking a run opens it maximized from its own flow. A pick names a run the page shows, and shown runs never leave. */
 //@ verify
-//@ ensures known ==> \result == { step: "", run: id, selected: flow, open: true, maximized: true }
-//@ ensures !known ==> \result == { step: "", run: id, selected: state.selected, open: true, maximized: true }
-export function selectedRun(state: RunSelection, id: string, known: boolean, flow: string): RunSelection {
-  return { step: "", run: id, selected: known ? flow : state.selected, open: true, maximized: true }
+//@ ensures \result == { step: "", run: id, selected: flow, open: true, maximized: true }
+export function selectedRun(state: RunSelection, id: string, flow: string): RunSelection {
+  return { step: "", run: id, selected: flow, open: true, maximized: true }
 }
 
 /** A started run follows the panel only when the panel is already showing a run. */

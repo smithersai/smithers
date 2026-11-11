@@ -111,7 +111,7 @@ function cancelRun({ session: id, role, flow, input, wait, twice }: typeof Cance
     const started = actionsOf(session.model()).runs.find((run) => !known.has(run.id))
     if (started === undefined) return true
     try sleep(Duration.millis(wait % 4 * 5))
-    try send(() => Message.SelectedRun({ id: started.id }))
+    try send(() => Message.SelectedRun({ id: started.id, flow: started.flow }))
     try send(() => Message.ClickedCancelAction())
     if (twice) try send(() => Message.ClickedCancelAction())
     try session.settle

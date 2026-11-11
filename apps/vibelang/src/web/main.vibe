@@ -248,7 +248,7 @@ export const Message = defineMessageUnion({
   MaximizedActions: {},
   SelectedAction: { name: Schema.String },
   SelectedActionStep: { key: Schema.String },
-  SelectedRun: { id: Schema.String },
+  SelectedRun: { id: Schema.String, flow: Schema.String },
   LoadedActions: { epoch: Schema.optionalKey(Schema.Number), entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
   FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number), op: Schema.optionalKey(Schema.Literals(["load", "run", "cancel"])) },
   UpdatedActionInput: { value: Schema.String },
@@ -507,10 +507,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
     SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
     SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
-    SelectedRun: ({ id }) => {
-      const flow = actionsOf(model).runs.find((run) => run.id === id)?.flow
-      return { model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow !== undefined, flow ?? "") } } }
-    },
+    SelectedRun: ({ id, flow }) => ({ model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow) } } }),
     LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
     FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),

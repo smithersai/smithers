@@ -38,11 +38,70 @@ Named browser sites and status:
 | --- | --- |
 | `src/history/flows.vibe:213` | V8 range defect (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`), if the bundle ships it. |
 | `src/history/tools.vibe:93` | The compiler's exhaustive-match fallthrough arm (ruling VL-37; the fleet lead's compiler change). |
-| `src/web/wikiView.vibe:88` (`toHtml`) | Closed in session 19: the GitHub-recorded repository copy differs from the build; the browser saves an edit and renders it. |
+| `src/web/wikiView.vibe:88` (`toHtml`) | `toHtml` runs since session 19: the GitHub-recorded repository copy differs from the build. Its link resolver still never runs: the recorded page has no links (session 21). |
 | `src/web/main.vibe:391`–`394` and `issueRecovered`, `issueRecoveredView` (`issueDecision.vibe`) | Closed in session 20: the browser uses production issue routes on workerd over recorded GitHub. Pending new issues and VIPs restore their forms; completed and unwritten-refused comments restore their issue. |
 | `src/web/main.vibe:1375`–`1376` (`LoadAccount` failure) | Only `startup.vibe`'s mode resolution sends `LoadAccount`; the fault pages start in mock mode without it. The same `AccountFailed` arm runs from sign-in and Visit as. |
 | `issueKnownAction` (`issueDecision.vibe:207`) | Called only by a proof contract and a unit test, never by product code. |
 | `src/web/historyStartup.vibe` (`signedRoles`) | Runs only live: the preview has no API Worker, and the mock plays the role the page chose. The unit suite drives it through the real startup over a loopback API (`test/historyStartup.test.vibe`). |
+
+### Browser coverage across navigations, and People over a maximized pane (session 21, 2026-11-11)
+
+Both full gates, each on a box over this session's tree before its history journey. `pnpm test:coverage`
+(`--image node26`): typecheck 0; 296 files and 2,428 tests passed (1 expected fail, 5 skipped); the workerd suite
+passed 20 files and 83 tests; exit 1 on thresholds only. `pnpm e2e:coverage` (`--image playwright`, three projects):
+`failedTests` empty, every check with evidence; exit 1 on thresholds only.
+
+| Gate | Files below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unit (Node + workerd), session 20 → 21 | 13/195 → 14/196 | 8544/8562 → 8596/8619 | 8872/8910 → 8895/8940 | 3222/3239 → 3253/3271 | 10873/10894 → 10928/10954 |
+| Browser, session 20 → 21 | 94/116 → 95/117 | 4163/5290 → 4235/5339 | 4025/6110 → 4112/6134 | 1768/2198 → 1811/2231 | 4963/6764 → 5063/6817 |
+
+Denominators moved with other lanes' work (`modelWrite.vibe` and `screenRead.vibe` are new; `historyStartup.vibe`
+grew), so the percentages are not a controlled delta. The unit gate's new gaps are those two lanes' files:
+`modelWrite.vibe` (6 lines, 2 functions, 5 branches) and `historyStartup.vibe` (2 branches). `main.vibe` reaches 100%
+in the unit gate: session 20's follow-reconnection regression closes line 1127. Per-file browser rows for `src/web`
+are in `~/vl/vl-coverage-evidence/s21/browser-web-table.md`.
+
+**Measurement defect, fixed.** Chromium's RenderDocument feature gives each cross-document navigation a new frame,
+and V8 drops the old document's coverage with it. `page.coverage.stopJSCoverage()` returned each chunk once, for the
+last document, so every journey that loads two documents (two `page.goto` calls, a reload, a full-load link, sign-in)
+under-credited the browser gate. Evidence: `e2e/history.spec.ts` "shows a viewer no action, and a contributor no
+retelling" passes, yet `historyView.vibe:38`'s viewer arm read 0; a viewer-only test reads it 1. With
+`BackForwardCache` or `ProactivelySwapBrowsingInstance` disabled alone the test still returned 13 script entries; with
+`RenderDocument` disabled alone it returned 26, two per chunk. `playwright.config.ts` now launches Chromium with
+`--disable-features=RenderDocument`. Regression: `e2e/coverage-navigation.spec.ts` (red: each chunk reported once;
+green: twice). Browser tables before session 21 undercount for this reason.
+
+**Product bug, fixed.** With the wiki, docs or People maximized, the open Account menu rendered under the pane. The
+header `.vl-top` (sticky, `z-index: 30`) is the menu's stacking context and maximized panes sit at 45, so the pane's
+heading took the click on People. The header now stacks at 46, under the palette (50). Regression: `e2e/roles.spec.ts`
+"People opened over a maximized wiki takes its place maximized" (red: the click timed out; the wiki's heading
+intercepted it), which also reaches `peopleOpened`'s maximized arm.
+
+**Dead code deleted.** `selectedRun`'s unknown-run arm. Both run pickers (`actionView.vibe`) render from
+`actions.runs`, and `mergeRuns` never removes a run, so a picked run is always known. `SelectedRun` now carries the
+run's flow, and `main.vibe`'s lookup and `selectedRun`'s `known` parameter are gone. The unit test checks a pick made
+while another flow is selected; the fuzz drivers send only shown runs; mutation `run-unknown` is removed and
+`run-selected` and `run-id` follow the new source.
+
+**New fault.** `fault=roles-gap` (`test/support/FaultyFactory.vibe`) loses the role event of the first grant. The next
+grant shows the gap, the page replays the ledger, and both people show their new roles (`e2e/roles.spec.ts`). It
+reaches `roleReceived`'s gap arm and `ReceivedRole`'s replay.
+
+**New journey.** `e2e/history-paths.spec.ts` "a maintainer exports, files evidence and a superseded note, and plans
+before a commit": the Exported badge, a key that is neither Enter nor Space on an epic header and then Space, the
+Evidence and Superseded note sections, and the plan dialog's "Before" (`historyView.vibe` 114, 170, 320, 364).
+
+Browser gaps named this session, with what closes each:
+
+| Site | Reason | Closes with |
+| --- | --- | --- |
+| `modelDecision.vibe` `slashHighlight`, `length === 0` | The view sends `MovedSlash` only while completions exist (`view.vibe:288`). The arm guards a menu that shrinks between the key and the update. | Nothing in a browser; the unit gate covers it. |
+| `modelDecision.vibe` `actionsFailureApplies`, `current === null` | An actions command carries an epoch only when the page holds one, and the page never clears it. | A non-optional epoch in `ActionsState`, which removes this arm and `actionsEpochCurrent`'s. |
+| `modelDecision.vibe` `clickedSignIn` refused, `signInRefused`'s live operand | The fault page starts in mock mode and never sends `LoadAccount`, so no unavailable identity loads. | A live host whose session route is `worker/Accounts.vibe`'s `disabled()`. |
+| `modelDecision.vibe` `sandboxLowMinutes`, `sandboxOutOfMinutes` | The mock meter counts real minutes against a role's allowance. | A faulty `Clock` under the sandbox meter, or a seeded ledger. |
+| `wikiView.vibe:88` link resolver | `toHtml` runs (session 19), but the recorded repository copy has no links. | A recording whose page links; re-recording `wiki.json` changes vl-bench's workload. |
+| `historyView.vibe` 93, 111, 191, 193 (two), 251, 280, 352, 365 | Fallbacks for an empty epic title, an unfolded main, an unknown epic, an empty commit title and id, a commit with no epic, an empty SHA and a missing plan target. The bootstrapped history holds none of them. | A history fixture that holds them, or deleting each one the history schema rules out. |
 
 ### Issue recovery and agent run reads (session 20, 2026-11-11)
 

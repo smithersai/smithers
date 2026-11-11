@@ -23,7 +23,7 @@ function actionRow(h: H, entry: Registered, model: Model): Html {
 }
 function runRows(h: H, runs: ReadonlyArray<Run>, now = 0): Html {
   return h.div([h.Class("vl-act-main")], runs.length === 0 ? [h.div([h.Class("sui-empty")], ["No runs yet"])] : runs.map((run) =>
-    h.button([h.Class("sui-row-button vl-run"), h.Type("button"), h.OnClick(Message.SelectedRun({ id: run.id }))], [
+    h.button([h.Class("sui-row-button vl-run"), h.Type("button"), h.OnClick(Message.SelectedRun({ id: run.id, flow: run.flow }))], [
       dot(h, run.state), h.span([h.Class("vl-run-main")], [h.span([h.Class("vl-run-title")], [`${title(run.flow)} #${run.id}`]), h.span([h.Class("vl-run-meta")], [`${run.actor} · ${status(run)}`])]), h.span([h.Class("vl-run-dur")], [duration(run, now)]),
     ])
   ))
@@ -81,7 +81,7 @@ export function actionsPane(model: Model, h: H): Html {
 export function actionCards(model: Model, h: H): ReadonlyArray<Html> {
   return actionsOf(model).runs.map((run) => h.article([h.Class("sui-chat-message"), h.DataAttribute("role", "assistant")], [
     h.div([h.Class("sui-chat-message-label")], [run.actor === "agent" ? "VibeLang agent" : "You"]),
-    h.button([h.Class("vl-runcard"), h.Type("button"), h.AriaLabel(`Open ${title(run.flow)} run ${run.id}`), h.OnClick(Message.SelectedRun({ id: run.id }))], [
+    h.button([h.Class("vl-runcard"), h.Type("button"), h.AriaLabel(`Open ${title(run.flow)} run ${run.id}`), h.OnClick(Message.SelectedRun({ id: run.id, flow: run.flow }))], [
       h.span([h.Class("vl-runcard-top")], [h.span([h.Class("vl-runcard-name")], [title(run.flow)]), badge(h, run)]), steps(h, run), h.span([h.Class("vl-runcard-meta")], [`${run.actor} · ${duration(run, actionsOf(model).now)}`]),
     ]),
   ]))

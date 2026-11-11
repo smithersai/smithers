@@ -104,6 +104,7 @@ export function tourEnded(model: Model): ReadonlyArray<Message> {
 export function gesture(model: Model, { op, n, text }: typeof Step.Type): ReadonlyArray<Message> {
   const actions = actionsOf(model)
   const entry = actions.entries[n % Math.max(1, actions.entries.length)]
+  const run = actions.runs[n % Math.max(1, actions.runs.length)]
   const command = actions.commands[n % Math.max(1, actions.commands.length)]
   const page = pages[n % pages.length]!
   const editable = pages.filter((entry) => wikiEditable(entry.id))[n % pages.filter((entry) => wikiEditable(entry.id)).length]!
@@ -129,7 +130,7 @@ export function gesture(model: Model, { op, n, text }: typeof Step.Type): Readon
     case "action-input": return [Message.UpdatedActionInput({ value: n % 2 === 0 ? text : "{\"a\":1}" })]
     case "run-action": return [Message.ClickedRunAction()]
     case "cancel-action": return [Message.ClickedCancelAction()]
-    case "select-run": return [Message.SelectedRun({ id: actions.runs[n % Math.max(1, actions.runs.length)]?.id ?? text })]
+    case "select-run": return run === undefined ? [] : [Message.SelectedRun({ id: run.id, flow: run.flow })]
     case "tick": return [Message.TickedActions({ at: n * 1000 })]
     case "retry-actions": return [Message.RetriedActions()]
     case "move-slash": return [Message.UpdatedDraft({ value: "/" }), Message.MovedSlash({ delta: n % 2 === 0 ? 1 : -1 })]

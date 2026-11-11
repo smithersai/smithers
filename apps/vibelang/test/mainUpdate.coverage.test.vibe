@@ -426,8 +426,10 @@ describe("actions", () => {
     expect(selected.commands?.[0]).toMatchObject({ args: { flow: reply.name, epoch: 1 } })
     expect(update(noEpoch, Message.SelectedAction({ name: reply.name })).commands?.[0]).not.toHaveProperty("args.epoch")
     const known: Model = { ...open, actions: { ...open.actions!, runs: [run("running")] } }
-    expect(update(known, Message.SelectedRun({ id: "a1" })).model.actions).toMatchObject({ run: "a1", selected: tour.name, open: true, maximized: true, step: "" })
-    expect(update(known, Message.SelectedRun({ id: "gone" })).model.actions?.selected).toBe(tour.name)
+    expect(update(known, Message.SelectedRun({ id: "a1", flow: tour.name })).model.actions).toMatchObject({ run: "a1", selected: tour.name, open: true, maximized: true, step: "" })
+    // A run picked while another flow is selected opens in its own flow.
+    const elsewhere: Model = { ...known, actions: { ...known.actions!, selected: reply.name } }
+    expect(update(elsewhere, Message.SelectedRun({ id: "a1", flow: tour.name })).model.actions?.selected).toBe(tour.name)
   })
   it("a failure names what failed: the input, a refusal, a start, a cancel, else the load", () => {
     const failed = (code: string, op?: "load" | "run" | "cancel") => update(open, Message.FailedActions({ code, epoch: 1, ...(op === undefined ? {} : { op }) })).model.actions?.error

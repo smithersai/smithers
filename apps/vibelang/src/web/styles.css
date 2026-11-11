@@ -19,7 +19,8 @@ button { font: inherit; }
 .vl-app { min-height: 100dvh; display: flex; flex-direction: column; }
 
 /* ── top bar ─────────────────────────────────────────────────────────────────── */
-.vl-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+/* Above maximized panes (45), which start below it, so its menus open over them; below the palette (50). */
+.vl-top { position: sticky; top: 0; z-index: 46; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .vl-home { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-1, 6px); background: transparent; cursor: pointer; }
 .vl-home:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .vl-logo { display: inline-flex; }

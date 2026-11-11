@@ -7,7 +7,7 @@ import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { recordedWikiStore } from "./recordedWiki.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "roles-gap" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -36,6 +36,28 @@ function rolesFault(accounts: Accounts.Shape, fails: () => boolean): Accounts.Sh
   }
 }
 
+/** The real accounts, except that the role event of the first grant is lost, so the next grant arrives after a gap. */
+function rolesGapFault(accounts: Accounts.Shape, loses: () => boolean): Accounts.Shape {
+  const lost = { pending: false }
+  return {
+    current: () => accounts.current(),
+    members: () => accounts.members(),
+    grant: (id, role) => Effect.suspend(() => {
+      if (loses()) lost.pending = true
+      return accounts.grant(id, role)
+    }),
+    signOut: () => accounts.signOut(),
+    choose: (role) => accounts.choose(role),
+    signInAgent: () => accounts.signInAgent(),
+    participated: (personId) => accounts.participated(personId),
+    events: (after) => accounts.events(after).pipe(Stream.filter((event) => {
+      if (!lost.pending || event.type !== "RoleGranted") return true
+      lost.pending = false
+      return false
+    })),
+  }
+}
+
 /** The real accounts, except that the first `choose` (sign-in, Visit as), `members`, `grant` and `signOut` each fail once. */
 function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolean): Accounts.Shape {
   return {
@@ -52,7 +74,7 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
 
 /**
  * Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. `sandbox-read`
- * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable;
+ * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable; `roles-gap` loses the first grant's role event;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
  * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
@@ -76,7 +98,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     }
     return {
       mode: fault === "live-header" || fault === "live-details" ? "live" : base.mode,
-      ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
+      ...(base.accounts === undefined ? {} : { accounts: fault === "roles" ? rolesFault(base.accounts, () => first("roles")) : fault === "roles-gap" ? rolesGapFault(base.accounts, () => first("roles-gap")) : fault === "accounts" ? accountsFault(base.accounts, first) : base.accounts }),
       ...(base.policy === undefined ? {} : { policy: base.policy }),
       ...(base.wiki === undefined ? {} : { wiki: {
         read: effect (page) => {
