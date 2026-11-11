@@ -1,0 +1,40 @@
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { NodeHost } from "@smthrs/platform-node"
+import { DirectorySandbox, Sandbox, SandboxHealth } from "@smthrs/sandbox"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/** Writes a file, measures it with a process, and asks whether the machine is alive. */
+export effect function countBytes() {
+  const fs = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+  try fs.writeFileString("report.txt", "placed on the machine\n")
+  const printed = try spawner.string(ChildProcess.make("wc", ["-c", "report.txt"]))
+  const state = try (try SandboxHealth.SandboxHealth).check
+  return { bytes: Number.parseInt(printed.trim(), 10), health: state._tag }
+}
+
+/** Places the body on a scratch-directory machine under `root`; closing the scope ends the machine. */
+export effect function placeOnMachine(root: string) {
+  const options = { fs: try FileSystem.FileSystem, spawner: try ChildProcessSpawner, root }
+  // `make` throws a TypeError for a relative root or a restriction it cannot enforce.
+  const provider = try Effect.try(() => DirectorySandbox.make(options))
+  provide Sandbox.layerHost(provider, { session: "quickstart:01J" }) {
+    return try scoped(countBytes())
+  }
+}
+
+/** A lifecycle-backed Node host whose process ledger lives in memory. */
+export const host = NodeHost.layerContained().pipe(
+  Layer.provide(ProcessLedger.layerMemory({ hostId: "directory-quickstart", ownerPid: 4102 }))
+)
+
+/** Runs the body on the host, rooted in a temporary directory removed afterwards. */
+export effect function quickstart() {
+  provide host {
+    return try scoped(effect {
+      const root = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      return try placeOnMachine(root)
+    })
+  }
+}

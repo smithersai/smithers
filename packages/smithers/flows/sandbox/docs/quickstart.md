@@ -10,6 +10,9 @@ body asks for Effect's ordinary `FileSystem` and `ChildProcessSpawner`, writes
 a relative path, and runs `wc -c` against that path. Both services come from
 one session, which is why the process finds the file without either operation
 naming a provider or a remote path.
+Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same body as
+`effect` functions.
 
 `DirectorySandbox` makes the machine a real scratch directory on this host, so
 the walkthrough needs no container runtime and no credentials. It is also not
@@ -126,6 +129,60 @@ within the probe deadline, and `DirectorySandbox`'s ping is a constant, because
 the machine is this process's own host. A provider that declares no `ping` at
 all gets a probe that always answers `Healthy`, which says nothing is watching
 the machine rather than that it is alive.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the body and the placement
+are `effect` functions and `try` runs each service call. Each `provide` block
+hands its layer to the code inside it, and `scoped` ends the machine. The root is
+a temporary directory instead of a fixed path, and `make` runs inside
+`Effect.try` because it throws on a relative root.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { NodeHost } from "@smthrs/platform-node"
+import { DirectorySandbox, Sandbox, SandboxHealth } from "@smthrs/sandbox"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/** Writes a file, measures it with a process, and asks whether the machine is alive. */
+export effect function countBytes() {
+  const fs = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+  try fs.writeFileString("report.txt", "placed on the machine\n")
+  const printed = try spawner.string(ChildProcess.make("wc", ["-c", "report.txt"]))
+  const state = try (try SandboxHealth.SandboxHealth).check
+  return { bytes: Number.parseInt(printed.trim(), 10), health: state._tag }
+}
+
+/** Places the body on a scratch-directory machine under `root`; closing the scope ends the machine. */
+export effect function placeOnMachine(root: string) {
+  const options = { fs: try FileSystem.FileSystem, spawner: try ChildProcessSpawner, root }
+  // `make` throws a TypeError for a relative root or a restriction it cannot enforce.
+  const provider = try Effect.try(() => DirectorySandbox.make(options))
+  provide Sandbox.layerHost(provider, { session: "quickstart:01J" }) {
+    return try scoped(countBytes())
+  }
+}
+
+/** A lifecycle-backed Node host whose process ledger lives in memory. */
+export const host = NodeHost.layerContained().pipe(
+  Layer.provide(ProcessLedger.layerMemory({ hostId: "directory-quickstart", ownerPid: 4102 }))
+)
+
+/** Runs the body on the host, rooted in a temporary directory removed afterwards. */
+export effect function quickstart() {
+  provide host {
+    return try scoped(effect {
+      const root = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      return try placeOnMachine(root)
+    })
+  }
+}
+```
 
 ## Next steps
 

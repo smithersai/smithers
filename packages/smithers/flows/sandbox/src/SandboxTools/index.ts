@@ -642,7 +642,16 @@ const run = (session: Session, call: typeof Run.Type, options: ExecuteOptions) =
     const max = limits.outputBytes
     const { code, stdout } = yield* gather(
       session,
-      script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max), `${resolve("/", options.callsDirectory)}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`, JSON.stringify(options.callId)]),
+      script(RUN, [
+        RUNNER,
+        fence,
+        String(timeout),
+        cwd,
+        call.command,
+        String(max),
+        `${resolve("/", options.callsDirectory)}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`,
+        JSON.stringify(options.callId)
+      ]),
       2 * max + 128
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))

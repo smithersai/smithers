@@ -1,0 +1,6 @@
+import { expect, it } from "@effect/vitest"
+import { quickstart } from "../examples/quickstart.vibe"
+
+it.live("writes through the session's FileSystem and counts the same file with a process", effect () => {
+  expect(try quickstart()).toEqual({ bytes: 22, health: "Healthy" })
+})

@@ -119,39 +119,67 @@ describe("SandboxTools.resolve", () => {
 })
 
 describe("SandboxTools run", () => {
-  it.effect("refuses an empty call identity that aliases an existing legacy receipt directory", () => onMachine((session) => Effect.gen(function*() {
-    mkdirSync(calls, { recursive: true })
-    const lost = yield* failure(exec(session, { tool: "run", command: "echo unsafe > reran" }, ""))
-    expect(lost._tag).toBe(new SandboxTools.ToolLost()._tag)
-    expect(existsSync(join(session.workdir, "reran"))).toBe(false)
-  }), { git: false }), slow)
+  it.effect(
+    "refuses an empty call identity that aliases an existing legacy receipt directory",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          mkdirSync(calls, { recursive: true })
+          const lost = yield* failure(exec(session, { tool: "run", command: "echo unsafe > reran" }, ""))
+          expect(lost._tag).toBe(new SandboxTools.ToolLost()._tag)
+          expect(existsSync(join(session.workdir, "reran"))).toBe(false)
+        }), { git: false }),
+    slow
+  )
 
-  it.effect("refuses an ambiguous legacy fence without rerunning its command", () => onMachine((session) => Effect.gen(function*() {
-    const id = `legacy-${++ids}`
-    mkdirSync(join(calls, id), { recursive: true })
-    const lost = yield* failure(exec(session, { tool: "run", command: "echo unsafe > reran" }, id))
-    expect(lost._tag).toBe(new SandboxTools.ToolLost()._tag)
-    expect(existsSync(join(session.workdir, "reran"))).toBe(false)
-  }), { git: false }), slow)
-  it.effect("keeps long, percent and UTF-16 call ids distinct and replayable", () => onMachine((session) => Effect.gen(function*() {
-    const prefix = `unicode-${++ids}`
-    for (const id of [`${prefix}/`, `${prefix}%002f`, `${prefix}😀`, `${prefix}\ud800`, `${prefix}${"a".repeat(300)}`]) {
-      const first = yield* exec(session, { tool: "run", command: "echo once" }, id)
-      const replay = yield* exec(session, { tool: "run", command: "echo wrong" }, id)
-      expect(replay).toEqual(first)
-      expect(first).toMatchObject({ stdout: "once\n" })
-    }
-  }), { git: false }), slow)
+  it.effect(
+    "refuses an ambiguous legacy fence without rerunning its command",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const id = `legacy-${++ids}`
+          mkdirSync(join(calls, id), { recursive: true })
+          const lost = yield* failure(exec(session, { tool: "run", command: "echo unsafe > reran" }, id))
+          expect(lost._tag).toBe(new SandboxTools.ToolLost()._tag)
+          expect(existsSync(join(session.workdir, "reran"))).toBe(false)
+        }), { git: false }),
+    slow
+  )
+  it.effect(
+    "keeps long, percent and UTF-16 call ids distinct and replayable",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const prefix = `unicode-${++ids}`
+          for (
+            const id of [
+              `${prefix}/`,
+              `${prefix}%002f`,
+              `${prefix}😀`,
+              `${prefix}\ud800`,
+              `${prefix}${"a".repeat(300)}`
+            ]
+          ) {
+            const first = yield* exec(session, { tool: "run", command: "echo once" }, id)
+            const replay = yield* exec(session, { tool: "run", command: "echo wrong" }, id)
+            expect(replay).toEqual(first)
+            expect(first).toMatchObject({ stdout: "once\n" })
+          }
+        }), { git: false }),
+    slow
+  )
 
-  it.effect("keeps slash and underscore call identities distinct", () => onMachine((session) => Effect.gen(function*() {
-    const prefix = `identity-${++ids}`
-    const a = yield* exec(session, { tool: "run", command: "echo first" }, `${prefix}/same`)
-    const b = yield* exec(session, { tool: "run", command: "echo second" }, `${prefix}_same`)
-    const replay = yield* exec(session, { tool: "run", command: "echo wrong" }, `${prefix}/same`)
-    expect(a).toMatchObject({ stdout: "first\n" })
-    expect(b).toMatchObject({ stdout: "second\n" })
-    expect(replay).toEqual(a)
-  }), { git: false }), slow)
+  it.effect("keeps slash and underscore call identities distinct", () =>
+    onMachine((session) =>
+      Effect.gen(function*() {
+        const prefix = `identity-${++ids}`
+        const a = yield* exec(session, { tool: "run", command: "echo first" }, `${prefix}/same`)
+        const b = yield* exec(session, { tool: "run", command: "echo second" }, `${prefix}_same`)
+        const replay = yield* exec(session, { tool: "run", command: "echo wrong" }, `${prefix}/same`)
+        expect(a).toMatchObject({ stdout: "first\n" })
+        expect(b).toMatchObject({ stdout: "second\n" })
+        expect(replay).toEqual(a)
+      }), { git: false }), slow)
 
   it.effect(
     "answers the exit code and both streams, in the workdir or a cwd under it",
