@@ -4,11 +4,16 @@
  * executable and in this process; the daemon runs in this process, on its own journals; the lane's run is read through
  * the real `smthrs runs` commands on the lanes root.
  */
-import { Cause, Effect, Fiber } from "effect"
+import { Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Cause, Effect, Fiber, Schema } from "effect"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as RunnerCmd from "../src/commands/Runner.ts"
+import * as Config from "../src/runner/Config.ts"
+import * as Lane from "../src/runner/Lane.ts"
 import * as LaneIntake from "../src/runner/LaneIntake.ts"
 import * as Lanes from "./fixtures/runner/lanes.ts"
 
@@ -105,7 +110,7 @@ describe("smthrs runner, its own host", () => {
   )
 
   test(
-    "a standing lane runs round after round in one run; runs cancel stops its agent and removes its checkout",
+    "a standing lane runs round after round in one run from main as it moves; runs cancel stops its agent and removes its checkout",
     async () => {
       // Queued while no daemon runs: admitted when one starts.
       const { request } = await Effect.runPromise(
@@ -115,6 +120,9 @@ describe("smthrs runner, its own host", () => {
       )
       serve()
       const runId = await lanes.admitted(request)
+      // main moves while the first round works: the second round starts from where it is then.
+      await Lanes.until(() => lanes.jobs().some((job) => job.status === "claimed"), 120_000, "first round claimed")
+      const moved = lanes.advanceMain()
       // The second round's agent is at work in a checkout of its own. A cancel reaches it at its step's next probe, up
       // to 30 s apart, so each round's agent works long enough for that.
       await Lanes.until(
@@ -127,6 +135,10 @@ describe("smthrs runner, its own host", () => {
       const rounds = lanes.jobs()
       expect(new Set(rounds.map((job) => job.runId))).toEqual(new Set([runId]))
       expect(new Set(rounds.map((job) => job.origin)).size).toBe(rounds.length)
+      expect(rounds.map((job) => [job.status, job.task?.base]).sort()).toEqual([
+        ["claimed", moved],
+        ["done", lanes.mirror.base]
+      ])
       expect(rounds.every((job) => job.task?.prompt === "add the line `alpha` to `NOTES.md`\nrun `sleep 150`")).toBe(
         true
       )
@@ -192,13 +204,46 @@ describe("smthrs runner, its own host", () => {
     const id = (queued as { readonly request: string }).request
     expect(JSON.parse(readFileSync(LaneIntake.paths(lanes.stateDir).request(id), "utf8"))).toEqual({
       id,
-      input: { ...laneInput(), standing: true }
+      input: { ...laneInput(), standing: true, follow: lanes.mirror.base }
     })
     lanes.configure({ origin: "https://smithers.example" })
     expect(await started(startOptions(brief))).toBe("runner start needs a runner.json with no origin")
     lanes.configure({ stateDir: join(LaneIntake.paths(lanes.stateDir).request(id), "under-a-file") })
     expect(await started(startOptions(brief))).toBe("the lane request can't be written")
   })
+})
+
+describe("runner/Lane/Base", () => {
+  const Round = Flow.make("test/Lane/Base", {
+    description: "Resolve a standing lane's next base.",
+    payload: Schema.Struct({ repository: Schema.String, follow: Schema.String, last: Schema.String }),
+    success: Schema.String,
+    body: Node.capture({ base: Lane.Base.name }, (payload) => Lane.Base.call(payload))
+  })
+
+  test(
+    "resolves the followed revision as it moved; keeps the last base when it names no commit or no mirror",
+    async () => {
+      const moved = lanes.advanceMain()
+      const bases = await Effect.runPromise(
+        Effect.gen(function*() {
+          const config = yield* Config.load(lanes.configPath)
+          const engine = NodeRuntime.layerHost(
+            { filename: join(lanes.root, "base.db"), workspaceRoot: lanes.root, owner: { hostId: "runner-test" } },
+            Interpreter.layerWithImplementations(Round, Lane.baseLayer(config))
+          )
+          const base = (follow: string, repository: string = Lanes.REPOSITORY) =>
+            Round.execute({ repository, follow, last: lanes.mirror.base }, {
+              executionId: `base-${follow}-${repository}`
+            })
+              .pipe(Effect.provide(engine))
+          return [yield* base("main"), yield* base("nothing-here"), yield* base("main", "gone")]
+        }).pipe(Effect.scoped)
+      )
+      expect(bases).toEqual([moved, lanes.mirror.base, lanes.mirror.base])
+    },
+    120_000
+  )
 })
 
 /** The lane input `runner start` writes for the one-line brief at the mirror's base. */

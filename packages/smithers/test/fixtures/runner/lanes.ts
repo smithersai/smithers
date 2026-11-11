@@ -108,6 +108,15 @@ export const make = () => {
     workspaces: () =>
       execFileSync("jj", ["-R", mirror.path, "workspace", "list", ...Host.jjFlags], { encoding: "utf8", env: jjEnv })
         .split("\n").filter((line) => line !== "").map((line) => line.slice(0, line.indexOf(":"))),
+    /** Moves the mirror's `main` to a new commit on top of it: that commit. */
+    advanceMain: () => {
+      const jj = (args: ReadonlyArray<string>) =>
+        execFileSync("jj", ["-R", mirror.path, ...args, ...Host.jjFlags], { encoding: "utf8", env: jjEnv }).trim()
+      jj(["new", "main", "--no-edit", "-m", "moved"])
+      const moved = jj(["log", "--no-graph", "-r", "children(main) & description(substring:moved)", "-T", "commit_id"])
+      jj(["bookmark", "set", "main", "-r", moved])
+      return moved
+    },
     /** Rewrites `runner.json` with `changes`. */
     configure: (changes: Record<string, unknown>) =>
       writeFileSync(configPath, JSON.stringify({ ...config, ...changes })),

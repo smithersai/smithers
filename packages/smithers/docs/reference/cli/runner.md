@@ -274,14 +274,19 @@ smthrs runner serve --config runner.json
   │    runner/Lane round ── runner/Lane/Session step ── <state>/jobs/<job>.json
   └─ claim loop: claims the job, runner/Job does it in a checkout, settles it
        one-shot: the run completes with the step's result
-       standing: the next round starts, same brief, same run
+       standing: runner/Lane/Base fetches the mirror and resolves --base again,
+                 then the next round starts from it, same brief, same run
 ```
 
 - **Start.** `runner start` checks the profile, the repository and the brief
   file, resolves `--base` with jj in the repository's mirror (its `main`
   unless set) to a commit, and writes the request whole under
   `<state>/lanes/`. It prints the request's id; once `serve` admits it, the
-  run's id is in `<state>/lanes/admitted/<id>.json`. Each round's agent has
+  run's id is in `<state>/lanes/admitted/<id>.json`. A standing lane follows
+  the revision `--base` names: before each next round the runner fetches the
+  mirror from all its remotes and resolves that revision again, so a lane
+  that runs for weeks works on the current tree; a revision that then names
+  no single commit keeps the last base. Each round's agent has
   `--max-hours` (4 unless set) and `--restarts` (1 unless set), and its change
   may hold at most 1,000 files and 16 MiB.
 - **Admission.** `serve` admits each request every `pollSeconds`, after a

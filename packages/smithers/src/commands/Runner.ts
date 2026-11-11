@@ -33,7 +33,6 @@ import * as LocalJobs from "../runner/LocalJobs.ts"
 import type * as Machine from "../runner/Machine.ts"
 import * as Serve from "../runner/Serve.ts"
 import type * as Session from "../runner/Session.ts"
-import * as Workspace from "../runner/Workspace.ts"
 
 /**
  * Serves the runner the configuration at `path` describes, until the process
@@ -123,7 +122,10 @@ const serveLocal = (config: Config.Checked, read: (() => Machine.Reading) | unde
       yield* fs.writeFileString(descriptor, Lane.DESCRIPTOR_SOURCE)
     }
     const control = yield* Layer.build(
-      NodeControl.layer({ root: config.lanesRoot, startsRuns: true }, Lane.registration.pipe(Layer.provide(services)))
+      NodeControl.layer(
+        { root: config.lanesRoot, startsRuns: true },
+        Lane.registration(config).pipe(Layer.provide(services))
+      )
     )
     yield* Deferred.succeed(lanes, Context.get(control, Control.Control))
     // The requests `runner start` queued, admitted as lanes every poll, after a restart too. A pass that fails anyhow
@@ -152,17 +154,6 @@ const serveLocal = (config: Config.Checked, read: (() => Machine.Reading) | unde
       Effect.provide(Layer.merge(jobEngine(config, controls, services), services))
     )
   })).pipe(Effect.provide(NodeServices.layer))
-
-/** The commit `rev` names in `mirror`, resolved with jj: exactly one, as 40 hex. */
-const resolveBase = (mirror: string, rev: string) =>
-  Workspace.jj(["-R", mirror, "log", "--no-graph", "-r", rev, "-T", "commit_id ++ \"\\n\""]).pipe(
-    Effect.flatMap((ran) => {
-      const lines = ran.stdout.split("\n").filter((line) => line !== "")
-      return ran.code === 0 && lines.length === 1 && /^[0-9a-f]{40}$/.test(lines[0]!)
-        ? Effect.succeed(lines[0]!)
-        : Effect.fail(new Config.RunnerConfigError({ message: `--base ${rev} names no single commit in the mirror` }))
-    })
-  )
 
 /**
  * What `runner start` asks for.
@@ -217,7 +208,8 @@ export const start = (options: StartOptions) =>
       Effect.mapError(() => new Config.RunnerConfigError({ message: "the brief file can't be read" }))
     )
     if (brief.trim() === "") return yield* new Config.RunnerConfigError({ message: "the brief file is empty" })
-    const base = yield* resolveBase(repository.mirror, options.base ?? "main")
+    const follow = options.base ?? "main"
+    const base = yield* Lane.resolveBase(repository.mirror, follow)
     const input = yield* Effect.try({
       try: () =>
         Lane.decodeInput({
@@ -228,7 +220,9 @@ export const start = (options: StartOptions) =>
           limits: LANE_LIMITS,
           maxHours: options.maxHours,
           restarts: options.restarts,
-          standing: options.standing
+          standing: options.standing,
+          // A standing lane's next rounds start from the same revision, resolved again.
+          ...(options.standing ? { follow } : {})
         }),
       catch: () =>
         new Config.RunnerConfigError({
