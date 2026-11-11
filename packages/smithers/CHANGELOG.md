@@ -85,6 +85,9 @@
 
 ### Fixed
 
+- Building the CLI no longer fails on esbuild's optional Yarn Plug'n'Play probe.
+  Other undeclared TUI bundle imports still fail the build.
+
 - `smthrs mcp add --agent claude` writes `$CLAUDE_CONFIG_DIR/.claude.json` for
   a Claude Code profile instead of `~/.claude.json`, which that profile never
   reads (#4582).

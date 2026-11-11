@@ -39,6 +39,14 @@ const builtin = (specifier) =>
 /** The package name a bare specifier names: `@scope/name` or `name`. */
 const packageName = (specifier) => specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/")
 
+/**
+ * esbuild probes Yarn's virtual PnP API inside a try/catch when its native
+ * binary lives in a zip. Yarn supplies it; ordinary Node installations do not.
+ * Only that dependency's CommonJS probe is optional.
+ */
+const optionalEnvironmentProbe = (path, importer, kind) =>
+  path === "pnpapi" && kind === "require-call" && /(?:^|[/\\])esbuild[/\\]lib[/\\]main\.js$/.test(importer)
+
 /** The bare specifier a `#import` names in the nearest manifest's `imports`, if it names a package. */
 const packageImportTarget = (specifier, directory) => {
   for (let current = directory; ; current = dirname(current)) {
@@ -60,9 +68,10 @@ const packageImportTarget = (specifier, directory) => {
 export const declaredDependenciesExternal = (declared) => ({
   name: "declared-dependencies-external",
   setup(context) {
-    context.onResolve({ filter: /^[^./]/ }, ({ path, resolveDir }) => {
+    context.onResolve({ filter: /^[^./]/ }, ({ path, resolveDir, importer, kind }) => {
       const specifier = path.startsWith("#") ? packageImportTarget(path, resolveDir) : path
       if (specifier === undefined) return undefined
+      if (optionalEnvironmentProbe(specifier, importer, kind)) return { path: specifier, external: true }
       if (builtin(specifier)) return { path: specifier, external: true }
       if (specifier === "@smthrs/cli/tui-native") return { path: specifier, external: true }
       const name = packageName(specifier)
@@ -70,6 +79,34 @@ export const declaredDependenciesExternal = (declared) => ({
     })
   }
 })
+
+/** Reject undeclared imports, allowing only dependency-scoped optional environment probes. */
+export const assertTuiImports = (metafile, declared) => {
+  const optional = new Set()
+  const required = new Set()
+  for (const [importer, input] of Object.entries(metafile.inputs)) {
+    for (const { path, external, kind } of input.imports) {
+      if (!external) continue
+      if (optionalEnvironmentProbe(path, importer, kind)) optional.add(path)
+      else required.add(path)
+    }
+  }
+  const undeclared = new Set()
+  for (const output of Object.values(metafile.outputs)) {
+    for (const { path, external, kind } of output.imports) {
+      if (
+        external && path !== "@smthrs/cli/tui-native" && !builtin(path) && !path.startsWith(".") &&
+        !declared.has(packageName(path)) &&
+        !(kind === "require-call" && optional.has(path) && !required.has(path))
+      ) {
+        undeclared.add(path)
+      }
+    }
+  }
+  if (undeclared.size > 0) {
+    throw new Error(`The TUI bundle imports packages @smthrs/cli does not declare: ${[...undeclared].join(", ")}`)
+  }
+}
 
 export const buildTui = async () => {
   verifyNativeArtifacts()
@@ -105,20 +142,7 @@ export const buildTui = async () => {
     plugins: [vibelang({ root: app }), declaredDependenciesExternal(declared)]
   })
   if (result.errors.length > 0) throw new Error("The TUI bundle failed to build")
-  const undeclared = new Set()
-  for (const output of Object.values(result.metafile.outputs)) {
-    for (const { path, external } of output.imports) {
-      if (
-        external && path !== "@smthrs/cli/tui-native" && !builtin(path) && !path.startsWith(".") &&
-        !declared.has(packageName(path))
-      ) {
-        undeclared.add(path)
-      }
-    }
-  }
-  if (undeclared.size > 0) {
-    throw new Error(`The TUI bundle imports packages @smthrs/cli does not declare: ${[...undeclared].join(", ")}`)
-  }
+  assertTuiImports(result.metafile, declared)
   for (const file of result.outputFiles) {
     let current
     try {
@@ -131,6 +155,7 @@ export const buildTui = async () => {
     writeFileSync(file.path, file.contents)
   }
   await buildPrivateEffectAdapters(packageRoot)
+  return result.metafile
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await buildTui()

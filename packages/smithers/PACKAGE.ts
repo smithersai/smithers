@@ -311,16 +311,23 @@ const commonJsBuild = Smithers.NodeTest({
 })
 
 /**
- * The TUI bundle's externals: a declared package stays external, also when an
- * inlined module reaches it through its own `#import`.
+ * The real TUI bundle accepts declared packages and dependency-scoped optional
+ * environment probes, and rejects every other undeclared external import.
  *
  * @since 1.0.0
  * @category test
  */
 const tuiBundleExternals = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/build-tui.test.mjs")]),
-  srcs: [Smithers.file("//packages/smithers/scripts/build-tui.mjs")],
-  deps: []
+  srcs: [
+    Smithers.file("//packages/smithers/scripts/build-tui.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
+    Smithers.glob("//packages/smithers/vendor/opentui-native/**"),
+    Smithers.file("//apps/tui/package.json"),
+    Smithers.file("//apps/tui/tsconfig.json"),
+    Smithers.file("//tsconfig.base.json")
+  ],
+  deps: [lib]
 })
 
 /**

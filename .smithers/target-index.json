@@ -91214,10 +91214,33 @@
       {
         "kind": "file",
         "path": "packages/smithers/scripts/build-tui.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/vendor/opentui-native/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers:lib"
+    ],
     "source": {
       "file": "packages/smithers/PACKAGE.ts"
     }
