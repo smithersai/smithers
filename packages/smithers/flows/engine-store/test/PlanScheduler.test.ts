@@ -861,34 +861,65 @@ describe("PlanScheduler admission", () => {
     expect(waited).toEqual([["high", 0], ["medium", 1], ["low", 2]])
   })
 
-  it("charges an agent node against both caps", async () => {
+  it("holds a second agent until the running agent releases its permit", async () => {
+    // `probe` depends on `compute`, so the admission pass that runs when
+    // `compute` settles also considers `agent-b`. Three step permits leave the
+    // agent permit as the only cap that can hold `agent-b` back.
     const plan = await runPromise(compile([
       draft("agent-a", { kind: "agent" }),
       draft("agent-b", { kind: "agent" }),
-      draft("compute")
+      draft("compute"),
+      draft("probe", { inputs: [{ _tag: "Pending", from: "compute" }] })
     ]))
-    const started = new Set<string>()
-    const executor: PlanScheduler.Executor = {
-      execute: ({ node }) =>
-        Effect.sync(() => {
-          started.add(node.id)
-          return node.id
-        })
-    }
-    await runPromise(
+    const scheduledIds = (runId: string) =>
+      Effect.map(
+        JournalRecords.entries(runId, undefined, 512),
+        (page) =>
+          page.entries.flatMap((entry) =>
+            entry.eventType === "flows.engine.node-scheduled"
+              ? [(entry.payload as { readonly nodeId: string }).nodeId]
+              : []
+          )
+      )
+    const observed = await runPromise(
       Effect.gen(function*() {
+        const agentGate = yield* Latch.make()
+        const events = yield* Ref.make<ReadonlyArray<string>>([])
+        const executor: PlanScheduler.Executor = {
+          execute: ({ node }) =>
+            Effect.gen(function*() {
+              yield* Ref.update(events, (all) => [...all, `start:${node.id}`])
+              if (node.id === "agent-a") yield* Latch.await(agentGate)
+              yield* Ref.update(events, (all) => [...all, `end:${node.id}`])
+              return node.id
+            })
+        }
         yield* activate("run-agents")
-        const service = scheduler({
+        const running = yield* scheduler({
           runId: "run-agents",
           executor,
-          options: { concurrency: { steps: 2, agents: 1 } }
-        })
-        return yield* service.run(plan)
-      }).pipe(Effect.provide(harness({ runId: "run-agents", executor })), Effect.provide(TestStores.layer()))
+          options: { concurrency: { steps: 3, agents: 1 } }
+        }).run(plan).pipe(
+          Effect.provide(harness({ runId: "run-agents", executor })),
+          Effect.forkChild({ startImmediately: true })
+        )
+        // `probe` settling proves the coordinator finished the pass that
+        // `compute` opened while `agent-a` still held the only agent permit.
+        yield* awaitNodeSettlement("run-agents", "probe")
+        const whileHeld = yield* scheduledIds("run-agents")
+        yield* Latch.open(agentGate)
+        const report = yield* Fiber.join(running)
+        return { whileHeld, events: yield* Ref.get(events), report }
+      }).pipe(Effect.provide(TestStores.layer()))
     )
-    // Two step permits, one agent permit: one agent and the compute node run
-    // together, while the second agent waits for an agent permit.
-    expect(started.size).toBe(3)
+    expect(observed.whileHeld).toEqual(["agent-a", "compute", "probe"])
+    expect(observed.events.indexOf("start:agent-b")).toBeGreaterThan(observed.events.indexOf("end:agent-a"))
+    expect(outcomes(observed.report)).toEqual({
+      "agent-a": "built",
+      "agent-b": "built",
+      compute: "built",
+      probe: "built"
+    })
   })
 
   it("runs concurrently admitted nodes together", async () => {

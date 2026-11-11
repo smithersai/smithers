@@ -31,6 +31,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as EffectRecords from "../src/internal/EffectRecords.ts"
@@ -194,23 +195,20 @@ describe("HumanTask.timeoutMs on the durable engine", () => {
     asking(() =>
       Effect.gen(function*() {
         const store = yield* RunStore.RunStore
-        const attempts = yield* AttemptStore.AttemptStore
+        const sql = yield* SqlClient.SqlClient
         const payload = { name: "release", timeoutMs: 60_000 }
+        // Every attempt row of the run, read without re-deriving the engine's
+        // private step key, so an assertion over them cannot pass on no rows.
+        const attemptRows = sql<{ readonly step_key_digest: string; readonly attempt: number; readonly state: string }>`
+          SELECT step_key_digest, attempt, state FROM flows_attempts
+          WHERE run_id = 'human-raced' ORDER BY step_key_digest, attempt`
 
         yield* Effect.orDie(Asked.execute(payload, { executionId: "human-raced", discard: true }))
         yield* TestDatabase.until(Effect.map(store.get("human-raced"), (row) => row.status === "suspended"))
         const parked = yield* store.get("human-raced")
         // The attempt the question parked in is unsettled, not failed: the next
         // drive re-enters it under the same number rather than burning a retry.
-        const parkedAttempts = yield* Effect.forEach(
-          [1, 2],
-          (attempt) =>
-            attempts.get({
-              runId: "human-raced",
-              stepKeyDigest: sha256(JSON.stringify({ kind: "invocation", action: HumanTask.tag })),
-              attempt
-            })
-        )
+        const parkedAttempts = yield* attemptRows
 
         yield* HumanTask.answer({
           token: DurableDeferred.tokenFromExecutionId(HumanTask.deferred("release", 1), {
@@ -221,11 +219,13 @@ describe("HumanTask.timeoutMs on the durable engine", () => {
         })
         const settled = yield* settles("human-raced")
         const result = yield* Effect.orDie(Asked.poll("human-raced"))
+        const settledAttempts = yield* attemptRows
 
         expect(parked.status).toBe("suspended")
-        expect(
-          parkedAttempts.flatMap((row) => Option.isSome(row) ? [row.value.state] : [])
-        ).not.toContain("failed")
+        expect(parkedAttempts.map(({ attempt, state }) => ({ attempt, state }))).toEqual([
+          { attempt: 1, state: "running" }
+        ])
+        expect(settledAttempts).toEqual([{ ...parkedAttempts[0], state: "succeeded" }])
         expect(settled.status).toBe("completed")
         expect(
           Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)
