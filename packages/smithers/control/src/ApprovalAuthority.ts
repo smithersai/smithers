@@ -115,7 +115,12 @@ const compile = (delegations: ReadonlyArray<Delegation>, options: Options = {}):
           if (entry.flowId !== undefined && entry.flowId !== flowId) continue
           if (entry.requiredProof !== undefined) {
             if (verifyProof === undefined) continue
-            yield* verifyProof(entry.requiredProof, request)
+            // A refused proof rules out only this entry; storage failures stay fatal.
+            const proven = yield* verifyProof(entry.requiredProof, request).pipe(
+              Effect.as(true),
+              Effect.catchTag("/control/Unauthorized", () => Effect.succeed(false))
+            )
+            if (!proven) continue
           }
           return
         }

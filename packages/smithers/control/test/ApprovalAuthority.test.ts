@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
+import { PersistenceError, Unauthorized } from "../src/ControlError.ts"
 
 const envelope = { capabilities: [], flows: [], budget: {} }
 const actor = { id: "delegated-reviewer", kind: "user" }
@@ -117,5 +118,25 @@ describe("explicit approval authority", () => {
       expect(error.issue).toBe("Approval authority cannot be delegated to an agent identity")
       expect(JSON.stringify(error)).not.toContain("RAW-SECRET")
     }
+  })
+
+  it("tries later delegations when an earlier entry's proof is refused, but not when storage fails", async () => {
+    const wait = { _tag: "Node" as const, runId: "run", requestId: "lint", digest: "digest", envelope }
+    const proofEntry = { principal: actor, scopes: ["once"], targets: ["Node"], requiredProof: "otp" } as const
+    const waitEntry = { principal: actor, scopes: ["once"], targets: ["Node"], waitName: "lint" } as const
+    let failure: Unauthorized | PersistenceError = new Unauthorized({ message: "no otp" })
+    const options = { verifyProof: () => Effect.fail(failure) }
+    // The outcome does not depend on configuration order.
+    for (const entries of [[proofEntry, waitEntry], [waitEntry, proofEntry]]) {
+      const policy = await Effect.runPromise(ApprovalAuthority.make(entries, options))
+      await Effect.runPromise(policy.authorize({ ...request, target: wait }))
+      const other = { ...wait, requestId: "deploy" }
+      expect((await Effect.runPromise(Effect.flip(policy.authorize({ ...request, target: other }))))._tag)
+        .toBe("/control/Unauthorized")
+    }
+    failure = new PersistenceError({ operation: "proof", message: "offline" })
+    const policy = await Effect.runPromise(ApprovalAuthority.make([proofEntry, waitEntry], options))
+    expect((await Effect.runPromise(Effect.flip(policy.authorize({ ...request, target: wait }))))._tag)
+      .toBe("/control/PersistenceError")
   })
 })
