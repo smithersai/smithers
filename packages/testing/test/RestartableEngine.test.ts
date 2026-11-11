@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Ref from "effect/Ref"
@@ -144,21 +145,20 @@ it.scoped("kill leaves the abandoned instance running and unreleased", () =>
       flow,
       payload: { command: "kill" },
       executionId
-    }).pipe(Effect.forkChild({ startImmediately: true }))
+    }).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
     yield* started.await
 
     yield* harness.kill
 
-    // The killed instance kept its fiber: releasing the latch lets the
-    // execution the dead engine was driving finish on its own. A `restart`
-    // would have interrupted it and answered `suspended` instead.
+    // The scope stays open, but the dead owner's writes are fenced even
+    // before the replacement resumes the execution.
     yield* release.open
     const abandonedResult = yield* Fiber.join(running)
-    expect(abandonedResult.status).toBe("completed")
-
-    // The facade now serves the fresh instance over the same store.
+    expect(Exit.isFailure(abandonedResult)).toBe(true)
     const survivor = yield* harness.engine.result(executionId)
-    expect(survivor.status).toBe("completed")
+    expect(survivor.status).toBe("suspended")
+    expect(yield* harness.engine.journal(executionId)).toEqual([])
+    expect((yield* harness.engine.resume(executionId)).status).toBe("completed")
   }))
 
 /**
@@ -195,6 +195,7 @@ it.scoped("killAndResume re-drives the frontier while the killed instance still 
     }
 
     const abandoned = yield* harness.engine.run({ flow, payload: undefined, executionId }).pipe(
+      Effect.exit,
       Effect.forkChild({ startImmediately: true })
     )
     yield* firstStarted.await
@@ -209,10 +210,20 @@ it.scoped("killAndResume re-drives the frontier while the killed instance still 
     expect(yield* Ref.get(frontierRuns)).toBe(2)
 
     yield* release.open
-    // Both settle: the abandoned attempt finishes on the instance nobody
-    // released, which is exactly the lease-reclaim state.
-    expect((yield* Fiber.join(abandoned)).status).toBe("completed")
-    expect((yield* Fiber.join(resumed)).status).toBe("completed")
+    // Only the successor can commit an outcome.
+    expect(Exit.isFailure(yield* Fiber.join(abandoned))).toBe(true)
+    expect(yield* Fiber.join(resumed)).toEqual({
+      executionId,
+      status: "completed",
+      value: { step: "complete", attempt: 2 }
+    })
+    expect(yield* harness.engine.journal(executionId)).toEqual([{
+      index: 0,
+      stepKey: "restartable/kill-and-resume/step",
+      kind: "step",
+      outcome: "completed",
+      value: { step: "complete", attempt: 2 }
+    }])
   }))
 
 it.scoped("forwards resume through the current engine facade", () =>

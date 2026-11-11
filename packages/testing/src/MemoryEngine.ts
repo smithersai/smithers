@@ -22,6 +22,7 @@ import {
   type StepSpec
 } from "./EngineSubject.ts"
 import { conflict, type ExecutionConflict } from "./internal/Execution.ts"
+import { type EngineOwnerToken, registerOwner } from "./internal/MemoryEngineOwner.ts"
 import { EngineUnavailableError, type ExecutionConflictError } from "./TestingError.ts"
 
 type ExecutionStatus = ExecutionResult["status"] | "running"
@@ -57,10 +58,14 @@ export interface EngineStore {
   readonly [EngineStoreTypeId]: Ref.Ref<StoreState>
 }
 
+interface EngineOwner extends EngineStore {
+  readonly token: EngineOwnerToken
+}
+
 interface ActiveExecution {
-  readonly deferred: Deferred.Deferred<ExecutionResult>
+  readonly deferred: Deferred.Deferred<ExecutionResult, EngineUnavailableError>
   /** An interrupt during startup waits for the worker instead of missing it. */
-  readonly fiber: Deferred.Deferred<Fiber.Fiber<ExecutionResult>>
+  readonly fiber: Deferred.Deferred<Fiber.Fiber<ExecutionResult, EngineUnavailableError>, EngineUnavailableError>
   activeStep: StepSpec | undefined
 }
 
@@ -68,10 +73,6 @@ interface StepOutcome {
   readonly status: "completed" | "failed" | "suspended"
   readonly value: unknown
 }
-
-type Modification<A> =
-  | { readonly found: false }
-  | { readonly found: true; readonly value: A }
 
 const makeResult = (
   executionId: string,
@@ -102,39 +103,38 @@ const getExecution = (
   )
 
 const modifyExecution = <A>(
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   f: (execution: StoredExecution) => readonly [A, StoredExecution]
 ): Effect.Effect<A, EngineUnavailableError> =>
-  Ref.modify<StoreState, Modification<A>>(store[EngineStoreTypeId], (state) => {
+  Ref.modify<StoreState, Effect.Effect<A, EngineUnavailableError>>(store[EngineStoreTypeId], (state) => {
     const execution = state.executions.get(executionId)
     if (execution === undefined) {
-      return [
-        { found: false as const },
-        state
-      ] as const
+      return [Effect.fail(unavailable(`Execution ${executionId} is unavailable`)), state] as const
+    }
+    // A killed owner cannot write, including from shutdown finalizers.
+    if (!store.token.active) {
+      return [Effect.fail(unavailable(`Execution ${executionId} belongs to a killed engine instance`)), state] as const
     }
     const [value, updated] = f(execution)
     const executions = new Map(state.executions)
     executions.set(executionId, updated)
-    return [{ found: true as const, value }, { ...state, executions }] as const
-  }).pipe(
-    Effect.flatMap((result) =>
-      result.found
-        ? Effect.succeed(result.value)
-        : Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
-    )
-  )
+    return [Effect.succeed(value), { ...state, executions }] as const
+  }).pipe(Effect.flatten)
+
+const isTerminal = (execution: StoredExecution): boolean =>
+  execution.status === "completed" || execution.status === "failed" || execution.status === "aborted"
 
 const appendEntry = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   stepKey: string,
   kind: string,
   outcome: JournalEntryLike["outcome"],
   value: unknown
-): Effect.Effect<JournalEntryLike, EngineUnavailableError> =>
+): Effect.Effect<void, EngineUnavailableError> =>
   modifyExecution(store, executionId, (execution) => {
+    if (isTerminal(execution)) return [undefined, execution] as const
     const entry: JournalEntryLike = value === undefined
       ? {
         index: execution.journal.length,
@@ -149,7 +149,7 @@ const appendEntry = (
         outcome,
         value
       }
-    return [entry, { ...execution, journal: [...execution.journal, entry] }] as const
+    return [undefined, { ...execution, journal: [...execution.journal, entry] }] as const
   })
 
 const branchPath = (path: string, index: number): string => `${path}.${index}`
@@ -229,18 +229,19 @@ const firstFrontier = (
 }
 
 const setStatus = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   status: ExecutionStatus,
   value: unknown
 ): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
   modifyExecution(store, executionId, (execution) => {
+    if (isTerminal(execution)) return [storedResult(execution), execution] as const
     const updated: StoredExecution = { ...execution, status, value }
     return [storedResult(updated), updated] as const
   })
 
 const suspendIfRunning = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   activeStep: StepSpec | undefined
 ): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
@@ -269,12 +270,12 @@ const suspendIfRunning = (
   })
 
 const abort = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   activeStep: StepSpec | undefined
 ): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
   modifyExecution(store, executionId, (execution) => {
-    if (execution.status === "completed" || execution.status === "failed" || execution.status === "aborted") {
+    if (isTerminal(execution)) {
       return [storedResult(execution), execution] as const
     }
     const frontier = activeStep ?? firstFrontier(execution.flow, execution.journal)
@@ -299,7 +300,7 @@ const abort = (
   })
 
 const executeRaceBranch = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   branch: StepSpec,
   input: unknown,
@@ -348,7 +349,7 @@ const executeRaceBranch = (
 }
 
 const executeRace = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   race: Extract<StepSpec, { readonly kind: "race" }>,
   input: unknown,
@@ -415,7 +416,7 @@ const executeRace = (
   )
 
 const executeStep = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   step: StepSpec,
   input: unknown,
@@ -498,7 +499,7 @@ const executeStep = (
   )
 
 const execute = (
-  store: EngineStore,
+  store: EngineOwner,
   executionId: string,
   active: ActiveExecution
 ): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
@@ -509,6 +510,8 @@ const execute = (
     for (let index = 0; index < execution.flow.steps.length; index++) {
       const step = execution.flow.steps[index]
       if (step === undefined) continue
+      const current = yield* getExecution(store, executionId)
+      if (isTerminal(current)) return storedResult(current)
       const outcome = yield* executeStep(
         store,
         executionId,
@@ -532,17 +535,20 @@ const execute = (
   })
 
 const claimExecution = (
-  store: EngineStore,
+  store: EngineOwner,
   options: {
     readonly flow: FlowSpec
     readonly payload: unknown
     readonly executionId?: string | undefined
     readonly idempotencyKey?: string | undefined
   }
-): Effect.Effect<StoredExecution, ExecutionConflictError> =>
-  Ref.modify<StoreState, Effect.Effect<StoredExecution, ExecutionConflictError>>(
+): Effect.Effect<StoredExecution, ExecutionConflictError | EngineUnavailableError> =>
+  Ref.modify<StoreState, Effect.Effect<StoredExecution, ExecutionConflictError | EngineUnavailableError>>(
     store[EngineStoreTypeId],
     (state) => {
+      if (!store.token.active) {
+        return [Effect.fail(unavailable("Engine instance was killed")), state] as const
+      }
       const joinedId = options.idempotencyKey === undefined
         ? undefined
         : state.idempotencyIndex.get(options.idempotencyKey)
@@ -590,6 +596,7 @@ const claimExecution = (
       return [
         Effect.succeed(execution),
         {
+          ...state,
           executions,
           idempotencyIndex,
           nextExecutionId: options.executionId === undefined
@@ -620,7 +627,9 @@ export const makeStore = (): Effect.Effect<EngineStore> =>
  *
  * Closing the construction scope interrupts only this engine instance's live
  * fibers. A fresh engine built with the same store replays completed journal
- * entries and continues at the first unfinished step.
+ * entries and continues at the first unfinished step. Terminal results and
+ * journals never change. A worker that cannot start because its scope closed
+ * fails its caller with `EngineUnavailableError`.
  *
  * @category constructors
  * @since 0.0.0
@@ -630,6 +639,7 @@ export const make = (
 ): Effect.Effect<EngineSubjectService, never, Scope.Scope> =>
   Effect.gen(function*() {
     const scope = yield* Effect.scope
+    const owner: EngineOwner = { ...store, token: { active: true } }
     const active = new Map<string, ActiveExecution>()
 
     const start = Effect.fnUntraced(function*(
@@ -647,31 +657,26 @@ export const make = (
         return storedResult(execution)
       }
 
-      const deferred = Deferred.makeUnsafe<ExecutionResult>()
+      const deferred = Deferred.makeUnsafe<ExecutionResult, EngineUnavailableError>()
       const activeExecution: ActiveExecution = {
         deferred,
         fiber: Deferred.makeUnsafe(),
         activeStep: undefined
       }
-      const worker = execute(store, executionId, activeExecution).pipe(
+      const worker = execute(owner, executionId, activeExecution).pipe(
         Effect.onInterrupt(() =>
           suspendIfRunning(
-            store,
+            owner,
             executionId,
             activeExecution.activeStep
           ).pipe(
-            Effect.tap((result) => Deferred.succeed(deferred, result)),
-            Effect.asVoid,
-            Effect.orDie
+            Effect.flatMap((result) => Deferred.succeed(deferred, result)),
+            // Fencing also applies during scope cleanup: a replaced worker
+            // cannot suspend its successor's execution, so its caller fails.
+            Effect.catchTag("EngineUnavailableError", (error) => Deferred.fail(deferred, error)),
+            Effect.asVoid
           )
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            active.delete(executionId)
-          })
-        ),
-        Effect.tap((result) => Deferred.succeed(deferred, result)),
-        Effect.orDie
+        )
       )
 
       // Claiming the execution is one synchronous step. The check above ran
@@ -689,16 +694,31 @@ export const make = (
         const concurrent = active.get(executionId)
         if (concurrent !== undefined) return concurrent
         active.set(executionId, activeExecution)
-        yield* setStatus(store, executionId, "running", execution.value)
+        yield* setStatus(owner, executionId, "running", execution.value)
         const fiber = yield* Effect.forkIn(worker, scope)
+        yield* Effect.sync(() =>
+          fiber.addObserver((exit) => {
+            active.delete(executionId)
+            // A closed scope can interrupt the fiber before its body starts;
+            // in that case even the worker's interruption hooks never run.
+            Deferred.doneUnsafe(
+              deferred,
+              Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+                ? Exit.fail(unavailable("Engine instance stopped before its worker started"))
+                : exit
+            )
+          })
+        )
         yield* Deferred.succeed(activeExecution.fiber, fiber)
         return activeExecution
       }).pipe(
-        Effect.onError(() =>
-          Effect.sync(() => {
-            // Only this claimant can publish here. Arming failed before a
-            // worker was forked; concurrent callers only join this entry.
+        Effect.onError((cause) =>
+          Effect.gen(function*() {
             active.delete(executionId)
+            // Arming can fail after a joiner has observed this entry. Settle
+            // both wait points even though no worker was forked to own them.
+            yield* Deferred.done(deferred, Exit.failCause(cause))
+            yield* Deferred.done(activeExecution.fiber, Exit.failCause(cause))
           })
         ),
         Effect.uninterruptible
@@ -714,14 +734,14 @@ export const make = (
       name: "MemoryEngine",
       run: (options) =>
         Effect.gen(function*() {
-          const execution = yield* claimExecution(store, options)
+          const execution = yield* claimExecution(owner, options)
           return yield* start(execution.executionId)
         }),
       result: (executionId) => getExecution(store, executionId).pipe(Effect.map(storedResult)),
       interrupt: (executionId) =>
         Effect.gen(function*() {
           const running = active.get(executionId)
-          const result = yield* abort(store, executionId, running?.activeStep)
+          const result = yield* abort(owner, executionId, running?.activeStep)
           if (running !== undefined) {
             yield* Deferred.succeed(running.deferred, result)
             yield* Deferred.await(running.fiber).pipe(Effect.flatMap(Fiber.interrupt))
@@ -735,6 +755,7 @@ export const make = (
           Effect.map((execution) => execution.journal)
         )
     })
+    registerOwner(engine, owner.token)
     return engine
   })
 

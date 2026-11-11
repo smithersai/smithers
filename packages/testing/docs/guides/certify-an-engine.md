@@ -150,7 +150,10 @@ Swap `harness.restartAndResume` for `harness.killAndResume` to run the same
 pins against the hard-kill state instead: the outgoing instance is left running
 and unreleased, exactly as `SIGKILL` leaves a durable owner holding a run it
 will never release. The abandoned scope still closes when the harness scope
-closes, so a killed instance leaks nothing past the test.
+closes, so a killed instance leaks nothing past the test. The replacement
+immediately fences the old instance's store writes; late results cannot replace
+a terminal outcome or append journal entries. Its current step body can still
+settle inside the abandoned scope.
 
 ## What conformance does not answer
 

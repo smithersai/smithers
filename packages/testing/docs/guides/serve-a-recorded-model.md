@@ -57,8 +57,10 @@ npx smthrs-model-server --fixture test/fixtures/install.json
 
 A request the fixture does not hold is answered `501` with
 `{"error":{"type":"unrecorded"}}` and logged with its model id and message
-count, never its text. Replay refuses to start when the fixture file does not
-exist.
+count, never its text. If a heartbeat or model output already opened the
+stream, its HTTP status stays `200`; the server sends the same error as an SSE
+chunk and ends the response. Replay refuses to start when the fixture file
+does not exist.
 
 ## Make replay deterministic
 

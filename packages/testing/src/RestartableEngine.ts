@@ -8,11 +8,13 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Ref from "effect/Ref"
 import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
 import {
   type EngineSubject as EngineSubjectService,
   EngineSubject as EngineSubjectTag,
   type ExecutionResult
 } from "./EngineSubject.ts"
+import { revokeOwner } from "./internal/MemoryEngineOwner.ts"
 import { type EngineStore, make as makeMemoryEngine, makeStore } from "./MemoryEngine.ts"
 import type { EngineSubjectError, EngineUnavailableError } from "./TestingError.ts"
 
@@ -41,6 +43,11 @@ export interface Restartable {
    * held, exactly as SIGKILL leaves a durable owner holding a run it will
    * never release, which is the state lease-based reclaim has to recover from
    * (`Ownership.leaseLiveness`).
+   *
+   * The replacement fences the old instance's store writes immediately. A
+   * late step result cannot change the journal or terminal result, and its
+   * waiting caller fails with `EngineUnavailableError`. The step body itself
+   * remains in its open scope until it settles or the harness closes.
    *
    * The abandoned scope is still closed when the harness's own scope closes,
    * so a killed instance leaks nothing past the test that killed it.
@@ -98,6 +105,7 @@ export const make = (): Effect.Effect<
     const store = yield* makeStore()
     const initial = yield* buildInstance(store)
     const current = yield* Ref.make(initial)
+    const replacement = yield* Semaphore.make(1)
     /**
      * Instances dropped by {@link Restartable.kill}. A killed instance is
      * deliberately left running for the rest of the test, so the harness — not
@@ -117,19 +125,25 @@ export const make = (): Effect.Effect<
       })
     )
 
-    const restart: Effect.Effect<void, EngineUnavailableError> = Effect.gen(function*() {
+    const restart: Effect.Effect<void, EngineUnavailableError> = replacement.withPermit(Effect.gen(function*() {
       const previous = yield* Ref.get(current)
       yield* Scope.close(previous.scope, Exit.void)
       const next = yield* buildInstance(store)
       yield* Ref.set(current, next)
-    })
+    }))
 
-    const kill: Effect.Effect<void, EngineUnavailableError> = Effect.gen(function*() {
-      const previous = yield* Ref.get(current)
-      yield* Ref.update(abandoned, (scopes) => [...scopes, previous.scope])
-      const next = yield* buildInstance(store)
-      yield* Ref.set(current, next)
-    })
+    const kill: Effect.Effect<void, EngineUnavailableError> = replacement.withPermit(
+      Effect.gen(function*() {
+        const previous = yield* Ref.get(current)
+        yield* revokeOwner(previous.engine)
+        yield* Ref.update(abandoned, (scopes) => [...scopes, previous.scope])
+        const next = yield* buildInstance(store)
+        yield* Ref.set(current, next)
+      }).pipe(
+        // Once revoked, the outgoing owner must always get a published successor.
+        Effect.uninterruptible
+      )
+    )
 
     const withEngine = <A>(
       f: (engine: EngineSubjectService) => Effect.Effect<A, EngineSubjectError>

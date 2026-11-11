@@ -34,6 +34,11 @@
 
 ### Fixed
 
+- Replay misses after a heartbeat now end with an `unrecorded` stream error
+  instead of hanging. Other handler defects also finish the HTTP response.
+- Killed restartable engines can no longer write execution state. Late step
+  results preserve terminal outcomes and journals after cancellation. Waiting
+  callers also settle if the engine closes before its worker starts.
 - Fixed `Divergence`: its canonicalizer collapsed every non-plain object to
   `{}`, so two different `Date`s, a `Map` beside a `Set`, `-0` beside `0`, and
   `NaN` beside `Infinity` compared equal and a drifted fixture passed. It also

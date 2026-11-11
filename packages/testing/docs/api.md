@@ -750,7 +750,9 @@ const make: (store: EngineStore) => Effect.Effect<EngineSubject, never, Scope.Sc
 Constructs an in-memory engine whose durable state is held by `store`. Closing
 the construction scope interrupts only this engine instance's live fibers. A
 fresh engine built with the same store replays completed journal entries and
-continues at the first unfinished step.
+continues at the first unfinished step. Completed, failed and aborted executions
+retain their terminal result and journal. A worker that cannot start because
+its construction scope closed fails its caller with `EngineUnavailableError`.
 
 ### MemoryEngine.layer
 
@@ -801,7 +803,10 @@ runs neither interruption nor finalizers, so the abandoned instance keeps
 whatever it held, exactly as `SIGKILL` leaves a durable owner holding a run it
 will never release. That is the state lease-based reclaim has to recover from.
 The abandoned scope is still closed when the harness's own scope closes, so a
-killed instance leaks nothing past the test that killed it.
+killed instance leaks nothing past the test that killed it. The fresh instance
+immediately fences the abandoned instance's store writes: its step body can
+settle, but its late result cannot change the journal or terminal result, and
+its waiting caller fails with `EngineUnavailableError`.
 
 `restartAndResume` and `killAndResume` are those two followed by `resume` on
 the fresh instance. Only `killAndResume` produces the hard-kill state.
@@ -2232,8 +2237,11 @@ after output it ends the stream with an `error` chunk. An `EvaluatorError`
 answers its `status`, else `400` for `invalid_question`, `504` for `timeout`
 and `502` for the rest. A request the backing model or evaluator has no answer
 for (it dies, as a replay miss does) answers `501` with `type: "unrecorded"`
-and logs a warning naming the model and message count, never the text. A
-silent answer opens the stream after `heartbeatMs` and writes `: held` comments
+and logs a warning naming the model and message count, never the text. If
+streaming already started, the status stays `200` and the stream ends with an
+`unrecorded` error chunk instead. Any other handler defect ends the response
+with a generic `500`, or an error chunk when headers have already been sent.
+A silent answer opens the stream after `heartbeatMs` and writes `: held` comments
 until output arrives.
 
 ## ModelServerCli

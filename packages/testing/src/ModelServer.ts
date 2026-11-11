@@ -11,7 +11,9 @@
  *
  * A request the backing model has no answer for (a replay miss: the model dies
  * rather than fails) is answered `501` with `type: "unrecorded"` and logged at
- * warning level, naming the model and the message count, never the text.
+ * warning level, naming the model and the message count, never the text. If
+ * streaming already started, the stream ends with the same error as an SSE
+ * chunk instead; HTTP headers cannot change once sent.
  *
  * Node only: it listens through `node:http`.
  *
@@ -238,11 +240,13 @@ const json = (response: ServerResponse, status: number, body: unknown): void => 
 
 const unrecorded = (response: ServerResponse, what: string): Effect.Effect<void> =>
   Effect.logWarning(`ModelServer: no recording answers ${what}`).pipe(
-    Effect.andThen(Effect.sync(() =>
-      json(response, 501, {
+    Effect.andThen(Effect.sync(() => {
+      const body = {
         error: { type: "unrecorded", message: `No recording answers ${what}. Record it, then replay.` }
-      })
-    ))
+      }
+      if (response.headersSent) response.end(`data: ${JSON.stringify(body)}\n\n`)
+      else json(response, 501, body)
+    }))
   )
 
 const readBody = (request: IncomingMessage): Effect.Effect<unknown> =>
@@ -295,10 +299,13 @@ const chat = (options: Options, request: IncomingMessage, response: ServerRespon
       write(": held\n\n")
       heartbeat = setTimeout(beat, heartbeatMs)
     }, heartbeatMs)
-    const exit = yield* Stream.runForEach(options.model.stream(lifted), (event) =>
-      Effect.sync(() => {
-        for (const chunk of encode(event)) write(`data: ${JSON.stringify(chunk)}\n\n`)
-      })).pipe(Effect.ensuring(Effect.sync(() => clearTimeout(heartbeat))), Effect.exit)
+    const exit = yield* Stream.runForEach(
+      Stream.suspend(() => options.model.stream(lifted)),
+      (event) =>
+        Effect.sync(() => {
+          for (const chunk of encode(event)) write(`data: ${JSON.stringify(chunk)}\n\n`)
+        })
+    ).pipe(Effect.ensuring(Effect.sync(() => clearTimeout(heartbeat))), Effect.exit)
     if (Exit.isSuccess(exit)) return void response.end(write("data: [DONE]\n\n"))
     const failure = Cause.findErrorOption(exit.cause)
     if (failure._tag === "None") {
@@ -400,7 +407,22 @@ const serve = (
 ): Effect.Effect<ModelServer, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof createServer>>((resume) => {
-      const server = createServer((request, response) => fork(route(options, request, response)))
+      const server = createServer((request, response) =>
+        fork(
+          Effect.suspend(() => route(options, request, response)).pipe(
+            Effect.onExit((exit) =>
+              Effect.sync(() => {
+                if (Exit.isSuccess(exit) || response.writableEnded || response.destroyed) return
+                // A handler defect must never leave a socket waiting forever.
+                // Its cause can contain private input, so return a fixed message.
+                const body = { error: { type: "internal_error", message: "Model server request failed" } }
+                if (response.headersSent) response.end(`data: ${JSON.stringify(body)}\n\n`)
+                else json(response, 500, body)
+              })
+            )
+          )
+        )
+      )
       const hostname = options.hostname ?? "127.0.0.1"
       server.once("error", (error) => resume(Effect.die(error)))
       server.listen(options.port ?? 0, hostname, () => resume(Effect.succeed(server)))

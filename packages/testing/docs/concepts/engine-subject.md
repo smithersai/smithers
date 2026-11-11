@@ -137,7 +137,9 @@ supplies one; `.live` does not.
 durable state lives in an externally owned `EngineStore`. Closing one engine
 instance's scope interrupts only that instance's fibers, and a fresh engine
 built over the same store replays completed journal entries and continues at
-the first unfinished step.
+the first unfinished step. Terminal results and journals remain unchanged.
+A caller whose worker cannot start because the construction scope closed fails
+with `EngineUnavailableError`.
 
 `FlowEngineLike` is the authoritative subject: the same port over the real
 engine from [`@smthrs/engine`](/api/engine). `FlowEngineLike.layerOver` takes
@@ -155,4 +157,7 @@ from. It holds one persistent store and swaps the live instance over it:
 | `killAndResume`    | `kill`, then `resume` while the killed instance is still running and unreleased. The only variant that produces that state.                 |
 
 A killed instance is left running deliberately, and the harness scope, not the
-kill, owns closing it, so nothing leaks past the test that killed it.
+kill, owns closing it, so nothing leaks past the test that killed it. Its store
+writes are fenced immediately: late work fails with `EngineUnavailableError`
+and cannot change the journal or result. The open scope can still run the
+current step body; this in-process harness does not terminate a real process.
