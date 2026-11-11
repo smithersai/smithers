@@ -167,6 +167,9 @@ export interface RawAssert {
   expr: string;              // spec expression string (parsed later)
   line: number;
   assumed?: boolean;         // true when source was //@ assume — emitted as `assume`, not `assert`
+  /** `//@ assert forall(i, A ==> exists(k, B)) by exists(k, C)`: the `exists(k, C)` text. Each `i` picks a `k`
+   *  satisfying C, which must then satisfy B (Dafny: a forall statement with `var k :| C`). */
+  witness?: string;
 }
 
 export type RawStmt = RawLet | RawAssign | RawReturn | RawBreak | RawContinue | RawExprStmt | RawIf | RawWhile | RawSwitch | RawForOf | RawThrow | RawGhostLet | RawGhostAssign | RawAssert;

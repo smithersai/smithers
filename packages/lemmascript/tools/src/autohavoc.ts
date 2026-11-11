@@ -95,7 +95,7 @@ function forEachChildExprInStmt(s: TStmt, f: (c: TExpr) => void): void {
     case "assign": case "ghostAssign": f(s.value); return;
     case "return": f(s.value); return;
     case "expr": f(s.expr); return;
-    case "assert": f(s.expr); return;
+    case "assert": f(s.expr); if (s.witness) f(s.witness); return;
     case "if": f(s.cond); s.then.forEach(st => forEachChildExprInStmt(st, f)); s.else.forEach(st => forEachChildExprInStmt(st, f)); return;
     case "while": f(s.cond); s.body.forEach(st => forEachChildExprInStmt(st, f)); return;
     case "forof": f(s.iterable); s.body.forEach(st => forEachChildExprInStmt(st, f)); return;
@@ -307,7 +307,7 @@ function rewriteStmt(s: TStmt): TStmt[] {
     case "ghostAssign": { const value = rw(s.value); return [...h, { ...s, value }]; }
     case "return": { const value = rw(s.value); return [...h, { ...s, value }]; }
     case "expr": { const expr = rw(s.expr); return [...h, { ...s, expr }]; }
-    case "assert": { const expr = rw(s.expr); return [...h, { ...s, expr }]; }
+    case "assert": { const expr = rw(s.expr); const witness = s.witness ? rw(s.witness) : undefined; return [...h, { ...s, expr, ...(witness ? { witness } : {}) }]; }
     case "if": { const cond = rewriteCond(s.cond, h); return [...h, { ...s, cond, then: rewriteStmts(s.then), else: rewriteStmts(s.else) }]; }
     case "while": { const cond = rewriteCond(s.cond, h); return [...h, { ...s, cond, body: rewriteStmts(s.body) }]; }
     case "forof": { const iterable = rw(s.iterable); return [...h, { ...s, iterable, body: rewriteStmts(s.body) }]; }

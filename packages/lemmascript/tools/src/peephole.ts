@@ -341,7 +341,7 @@ function rewriteChildrenStmt(s: Stmt): Stmt {
     case "forin": return { ...s, bound: re(s.bound), invariants: s.invariants.map(re), body: rs(s.body) };
     case "ghostLet": return { ...s, value: re(s.value) };
     case "ghostAssign": return { ...s, value: re(s.value) };
-    case "assert": return { ...s, expr: re(s.expr) };
+    case "assert": return { ...s, expr: re(s.expr), ...(s.witness ? { witness: re(s.witness) } : {}) };
   }
 }
 

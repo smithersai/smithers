@@ -3,7 +3,7 @@
  */
 
 import type { Expr, Stmt, Decl, Module, MatchPattern } from "./ir.js";
-import { exactIntegerLiteral, usesName, usesNameInDecl, usesNameInStmts } from "./ir.js";
+import { anyExpr, exactIntegerLiteral, usesName, usesNameInDecl, usesNameInStmts } from "./ir.js";
 import type { Ty } from "./typedir.js";
 import { parseTsType } from "./types.js";
 import { freshName, freshNameWhere, userNames } from "./names.js";
@@ -827,6 +827,254 @@ function emitPureExpr(e: Expr, indent: number): string {
 
 // ── Statement emission ──────────────────────────────────────
 
+// ── Witness assertions ──────────────────────────────────────
+//
+// `//@ assert forall(i, A ==> exists(k, B)) by exists(k, C)`. Z3 cannot use a forall-exists fact for an identical
+// goal: it skolemizes the negated goal to i0, whose terms in B sit only under k's binder, so nothing triggers the fact
+// (apps/vibelang/verify/bugs/forall-exists-witness.dfy). The emitter names the quantifier's body `A ==> exists k :: B`
+// as a predicate over its free variables; a negated goal is then the ground atom `!P(.., i0, ..)`, which triggers the
+// fact. The method's requires and ensures whose bodies are the same formula up to their free variables use the same
+// predicate, so the postcondition follows and a pick taken from a precondition finds it. Each named quantifier keeps
+// its index terms `X[i]` as alternative triggers, so callers still instantiate it from their own ground terms.
+
+/** `forall i :: A ==> exists k :: B` as range A and exists `k :: B`, or null for any other shape. */
+function witnessShape(e: Expr): { i: string; iTy: Ty; range: Expr[]; k: string; kTy: Ty; body: Expr } | null {
+  if (e.kind !== "forall") return null;
+  let range: Expr[];
+  let inner: Expr;
+  if (e.body.kind === "implies") { range = e.body.premises; inner = e.body.conclusion; }
+  else if (e.body.kind === "binop" && e.body.op === "==>") { range = [e.body.left]; inner = e.body.right; }
+  else return null;
+  if (inner.kind !== "exists" || inner.body.kind === "exists" || range.length === 0) return null;
+  return { i: e.var, iTy: e.type, range, k: inner.var, kTy: inner.type, body: inner.body };
+}
+
+/** Free variables of `e` in first-occurrence order, or null when `e` has a form this walk does not cover. */
+function freeVars(e: Expr): string[] | null {
+  const out: string[] = [];
+  const walk = (x: Expr, bound: ReadonlySet<string>): boolean => {
+    const all = (xs: Expr[]) => xs.every(y => walk(y, bound));
+    switch (x.kind) {
+      case "var":
+        if (x.name !== "undefined" && !bound.has(x.name) && !out.includes(x.name)) out.push(x.name);
+        return true;
+      case "num": case "bigint": case "bool": case "str": case "emptyMap": case "emptySet": case "havoc": case "default":
+        return true;
+      case "constructor": case "app": return all(x.args);
+      case "binop": return all([x.left, x.right]);
+      case "unop": case "toNat": case "toReal": return walk(x.expr, bound);
+      case "field": case "tupleProj": return walk(x.obj, bound);
+      case "index": return all([x.arr, x.idx]);
+      case "tupleLiteral": case "arrayLiteral": return all(x.elems);
+      case "record": return (x.spread === null || walk(x.spread, bound)) && all(x.fields.map(f => f.value));
+      case "mapLiteral": return all(x.entries.flatMap(m => [m.key, m.value]));
+      case "methodCall": return all([x.obj, ...x.args]);
+      case "if": return all([x.cond, x.then, x.else]);
+      case "implies": return all([...x.premises, x.conclusion]);
+      case "forall": case "exists": return walk(x.body, new Set([...bound, x.var]));
+      case "let": return walk(x.value, bound) && walk(x.body, new Set([...bound, x.name]));
+      case "lambda": case "match": return false;
+    }
+  };
+  return walk(e, new Set()) ? out : null;
+}
+
+interface WitnessPredicate {
+  name: string;
+  /** Free variables of the named body, in parameter order, and of its `exists` part, aligned with `existsKey`. */
+  bodyVars: string[];
+  existsVars: string[];
+  existsKey: string;
+  fromRequires: boolean;
+}
+interface WitnessContext {
+  /** Types of the method's parameters, `\result` and body locals; a name bound at two types is absent. */
+  types: Map<string, Ty>;
+  /** Canonical body text → predicate. */
+  predicates: Map<string, WitnessPredicate>;
+  /** Canonical bodies of the witness goals, and canonical `exists` parts of their picks. */
+  goals: Set<string>;
+  picks: Set<string>;
+  decls: string[];
+  method: string;
+}
+let _witness: WitnessContext | null = null;
+
+function forEachAssert(stmts: Stmt[], f: (s: Stmt & { kind: "assert" }) => void): void {
+  for (const s of stmts) {
+    switch (s.kind) {
+      case "assert": f(s); break;
+      case "if": forEachAssert(s.then, f); forEachAssert(s.else, f); break;
+      case "while": case "forin": forEachAssert(s.body, f); break;
+      case "match": for (const a of s.arms) forEachAssert(a.body, f); break;
+    }
+  }
+}
+
+function localTypes(stmts: Stmt[], types: Map<string, Ty>, conflicts: Set<string>): void {
+  const bind = (name: string, ty: Ty) => {
+    const prior = types.get(name);
+    if (prior !== undefined && tyToDafny(prior) !== tyToDafny(ty)) conflicts.add(name);
+    types.set(name, ty);
+  };
+  for (const s of stmts) {
+    switch (s.kind) {
+      case "let": case "ghostLet": bind(s.name, s.type); break;
+      case "if": localTypes(s.then, types, conflicts); localTypes(s.else, types, conflicts); break;
+      case "while": localTypes(s.body, types, conflicts); break;
+      case "forin": bind(s.idx, { kind: "int" }); localTypes(s.body, types, conflicts); break;
+      case "match": for (const a of s.arms) localTypes(a.body, types, conflicts); break;
+    }
+  }
+}
+
+/** `e` with its free variables renamed in order of occurrence, as a key that includes their types. `bound` gives
+ *  the types of variables a surrounding quantifier binds. */
+function canonical(e: Expr, bound: ReadonlyMap<string, Ty>): { key: string; params: string; body: Expr; vars: string[] } | null {
+  const ctx = _witness;
+  if (ctx === null) return null;
+  const vars = freeVars(e);
+  if (vars === null) return null;
+  const tys: Ty[] = [];
+  for (const v of vars) {
+    const ty = bound.get(v) ?? ctx.types.get(v);
+    if (ty === undefined) return null;
+    tys.push(ty);
+  }
+  let body = e;
+  const tmp = vars.map((_, n) => `_lscWitnessTmp${n}`);
+  const final = vars.map((_, n) => `_lscW${n}`);
+  vars.forEach((v, n) => { body = renameFreeVar(body, v, tmp[n]); });
+  tmp.forEach((t, n) => { body = renameFreeVar(body, t, final[n]); });
+  const params = final.map((p, n) => `${escapeName(p)}: ${tyToDafny(tys[n])}`).join(", ");
+  return { key: `${params} | ${emitExpr(body)}`, params, body, vars };
+}
+
+function canonicalParts(e: Expr & { kind: "forall" }) {
+  const shape = witnessShape(e);
+  if (shape === null) return null;
+  const bound = new Map([[e.var, e.type]]);
+  const body = canonical(e.body, bound);
+  const ex = canonical({ kind: "exists", var: shape.k, type: shape.kTy, body: shape.body }, bound);
+  return body === null || ex === null ? null : { body, ex };
+}
+
+/** `X[i]` terms of a quantifier body over i, whose X uses only the body's free variables. */
+function indexTriggers(e: Expr & { kind: "forall" }, vars: string[]): string[] {
+  const terms: string[] = [];
+  anyExpr(e.body, x => {
+    const idx = x.kind === "index" && x.idx.kind === "toNat" ? x.idx.expr : x.kind === "index" ? x.idx : null;
+    if (x.kind === "index" && idx !== null && idx.kind === "var" && idx.name === e.var) {
+      const arrVars = freeVars(x.arr);
+      if (arrVars !== null && !arrVars.includes(e.var) && arrVars.every(v => vars.includes(v))) {
+        const t = emitExpr(x);
+        if (!terms.includes(t)) terms.push(t);
+      }
+    }
+    return false;
+  });
+  return terms;
+}
+
+/** The predicate naming a forall-exists clause or goal: created for a goal, or for a contract clause whose body is
+ *  a goal's or whose `exists` part is a pick's. Null for anything else. */
+function witnessPredicate(e: Expr, origin: "goal" | "requires" | "ensures"): { call: string; triggers: string } | null {
+  const ctx = _witness;
+  if (ctx === null || e.kind !== "forall") return null;
+  const c = canonicalParts(e);
+  if (c === null) return null;
+  const wanted = ctx.goals.has(c.body.key) || (origin === "requires" && ctx.picks.has(c.ex.key));
+  if (!wanted) return null;
+  let p = ctx.predicates.get(c.body.key);
+  if (p === undefined) {
+    const name = escapeGeneratedName(`LscExists_${ctx.method}_${ctx.predicates.size}`);
+    p = { name, bodyVars: c.body.vars, existsVars: c.ex.vars, existsKey: c.ex.key, fromRequires: false };
+    ctx.predicates.set(c.body.key, p);
+    ctx.decls.push(`predicate ${name}(${c.body.params})\n{\n  ${emitExpr(c.body.body)}\n}`);
+  }
+  if (origin === "requires") p.fromRequires = true;
+  const call = `${p.name}(${c.body.vars.map(escapeName).join(", ")})`;
+  const triggers = [call, ...indexTriggers(e, c.body.vars)].map(t => `{:trigger ${t}}`).join(" ");
+  return { call, triggers };
+}
+
+/** A precondition predicate whose `exists` part is the pick's, applied to the pick's variables: asserting it
+ *  instantiates the precondition at this i. Null when no precondition has the pick's `exists` part. */
+function pickFromRequires(pick: Expr & { kind: "forall" }): string | null {
+  const ctx = _witness;
+  if (ctx === null) return null;
+  const c = canonicalParts(pick);
+  if (c === null) return null;
+  for (const p of ctx.predicates.values()) {
+    if (!p.fromRequires || p.existsKey !== c.ex.key) continue;
+    const args = p.bodyVars.map(v => p.existsVars.indexOf(v));
+    if (args.some(n => n < 0)) continue;
+    return `${p.name}(${args.map(n => escapeName(c.ex.vars[n])).join(", ")})`;
+  }
+  return null;
+}
+
+/** A contract clause: a witness-named forall-exists, or the clause as written. */
+function emitContract(e: Expr, origin: "requires" | "ensures"): string {
+  const p = witnessPredicate(e, origin);
+  if (p === null || e.kind !== "forall") return emitExpr(e);
+  const ty = tyToDafny(e.type);
+  return `forall ${escapeName(e.var)}${ty === "string" ? "" : `: ${ty}`} ${p.triggers} :: ${p.call}`;
+}
+
+/** Set up witness naming for a method whose body holds a `by` assertion; null when it holds none. */
+function witnessContext(name: string, params: { name: string; type: Ty }[], returnType: Ty, requires: Expr[],
+                        ensures: Expr[], body: Stmt[]): WitnessContext | null {
+  const goals: (Stmt & { kind: "assert" })[] = [];
+  forEachAssert(body, s => { if (s.witness !== undefined) goals.push(s); });
+  if (goals.length === 0) return null;
+  const types = new Map<string, Ty>();
+  const conflicts = new Set<string>();
+  for (const p of params) types.set(p.name, p.type);
+  types.set("\\result", returnType);
+  localTypes(body, types, conflicts);
+  for (const n of conflicts) types.delete(n);
+  const ctx: WitnessContext = { types, predicates: new Map(), goals: new Set(), picks: new Set(), decls: [], method: name };
+  _witness = ctx;
+  for (const g of goals) {
+    const goal = g.expr.kind === "forall" ? canonicalParts(g.expr) : null;
+    const pick = g.witness!.kind === "forall" ? canonicalParts(g.witness!) : null;
+    if (goal === null || pick === null)
+      throw new Error(`//@ assert ... by in ${name}: every free variable of the goal must be a parameter, local or \\result`);
+    ctx.goals.add(goal.body.key);
+    ctx.picks.add(pick.ex.key);
+  }
+  return ctx;
+}
+
+/** `//@ assert forall(i, A ==> exists(k, B)) by exists(k, C)`: a forall statement fixes i, picks k from C and checks
+ *  B for it; the closing assert restates the goal in its named form for the code after it. */
+function emitWitnessAssert(goal: Expr, witness: Expr, pad: string): string {
+  const g = witnessShape(goal);
+  const w = witnessShape(witness);
+  if (g === null || w === null || g.i !== w.i || g.k !== w.k || g.range.length !== w.range.length ||
+      g.range.some((r, n) => emitExpr(r) !== emitExpr(w.range[n])))
+    throw new Error("//@ assert ... by: expected forall(i, A ==> exists(k, B)) by exists(k, C)");
+  if (_witness === null) throw new Error("//@ assert ... by: supported in methods only");
+  const named = witnessPredicate(goal, "goal")!;
+  const pick = witness.kind === "forall" ? pickFromRequires(witness) : null;
+  const ann = (ty: Ty) => { const d = tyToDafny(ty); return d === "string" ? "" : `: ${d}`; };
+  const i = escapeName(g.i);
+  const k = escapeName(g.k);
+  return [
+    `${pad}forall ${i}${ann(g.iTy)}`,
+    `${pad}  ensures ${named.call}`,
+    `${pad}{`,
+    `${pad}  if ${g.range.map(wrapQuantifier).join(" && ")} {`,
+    ...(pick !== null ? [`${pad}    assert ${pick};`] : []),
+    `${pad}    var ${k}${ann(g.kTy)} :| ${emitExpr(w.body)};`,
+    `${pad}    assert ${emitExpr(g.body)};`,
+    `${pad}  }`,
+    `${pad}}`,
+    `${pad}assert forall ${i}${ann(g.iTy)} ${named.triggers} :: ${named.call};`,
+  ].join("\n");
+}
+
 function emitStmts(stmts: Stmt[], indent: number): string {
   return stmts.map(s => emitStmt(s, indent)).join("\n");
 }
@@ -854,6 +1102,7 @@ function emitStmt(s: Stmt, indent: number): string {
     case "ghostAssign":
       return `${pad}${escapeName(s.target)} := ${emitExpr(s.value)};`;
     case "assert":
+      if (s.witness !== undefined) return emitWitnessAssert(s.expr, s.witness, pad);
       return `${pad}${s.assumed ? "assume {:axiom}" : "assert"} ${emitExpr(s.expr)};`;
     case "bind":
       // Monadic bind shouldn't appear in Dafny mode, emit as regular assign
@@ -1011,14 +1260,19 @@ function emitDecl(d: Decl): string {
     case "method": {
       const tp = d.typeParams.length > 0 ? `<${d.typeParams.join(", ")}>` : "";
       const lines = [methodHeader(`method ${escapeName(d.name)}${tp}`, d.params, d.returnType, d)];
-      for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
-      for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
-      if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
-      lines.push(`{`);
-      lines.push(...revealLines(d.reveals ?? []));
-      lines.push(emitStmts(d.body, 1));
-      lines.push(`}`);
-      return lines.join("\n");
+      const witness = witnessContext(d.name, d.params, d.returnType, d.requires, d.ensures, d.body);
+      try {
+        for (const r of d.requires) lines.push(`  requires ${emitContract(r, "requires")}`);
+        for (const e of d.ensures) lines.push(`  ensures ${emitContract(e, "ensures")}`);
+        if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
+        lines.push(`{`);
+        lines.push(...revealLines(d.reveals ?? []));
+        lines.push(emitStmts(d.body, 1));
+        lines.push(`}`);
+      } finally {
+        _witness = null;
+      }
+      return [...(witness?.decls ?? []), lines.join("\n")].join("\n\n");
     }
 
     case "class": {

@@ -75,7 +75,7 @@ function mapStmt(s: Stmt, f: (e: Expr) => Expr | null): Stmt {
     case "forin": return { ...s, bound: r(s.bound), invariants: s.invariants.map(r), body: s.body.map(t => mapStmt(t, f)) };
     case "ghostLet": return { ...s, value: r(s.value) };
     case "ghostAssign": return { ...s, value: r(s.value) };
-    case "assert": return { ...s, expr: r(s.expr) };
+    case "assert": return { ...s, expr: r(s.expr), ...(s.witness ? { witness: r(s.witness) } : {}) };
   }
 }
 
@@ -164,7 +164,7 @@ function mapTStmt(s: TStmt, f: (e: TExpr) => TExpr | null): TStmt {
     case "forof": return { ...s, iterable: r(s.iterable), invariants: s.invariants.map(r), body: s.body.map(t => mapTStmt(t, f)) };
     case "ghostLet": return { ...s, init: r(s.init) };
     case "ghostAssign": return { ...s, value: r(s.value) };
-    case "assert": return { ...s, expr: r(s.expr) };
+    case "assert": return { ...s, expr: r(s.expr), ...(s.witness ? { witness: r(s.witness) } : {}) };
     case "someMatch": return { ...s, scrutinee: r(s.scrutinee), someBody: s.someBody.map(t => mapTStmt(t, f)), noneBody: s.noneBody.map(t => mapTStmt(t, f)) };
     case "tagMatch": return { ...s, scrutinee: r(s.scrutinee),
       cases: s.cases.map(c => ({ ...c, body: c.body.map(t => mapTStmt(t, f)) })),
@@ -1915,7 +1915,7 @@ function transformStmt(s: TStmt, typeDecls: TypeDeclInfo[]): Stmt[] {
       return [{ kind: "ghostAssign", target: s.target, value: transformExpr(s.value) }];
 
     case "assert":
-      return [{ kind: "assert", expr: transformExpr(s.expr), assumed: s.assumed }];
+      return [{ kind: "assert", expr: transformExpr(s.expr), assumed: s.assumed, ...(s.witness ? { witness: transformExpr(s.witness) } : {}) }];
 
     case "someMatch": {
       const path = asTAccessPath(s.scrutinee);

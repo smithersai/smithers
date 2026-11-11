@@ -229,6 +229,26 @@ if grep -qE 'timed out|time out|out of range' "$fixture_dir/proof-failure.log"; 
   exit 1
 fi
 
+# `//@ assert forall(i, A ==> exists(k, B)) by exists(k, C)` proves a forall-exists postcondition from a loop
+# invariant and from a precondition, and a caller still reasons from it. The same program without `by` fails at its
+# postconditions (apps/vibelang/verify/bugs/forall-exists-witness.dfy); a false parity fails the witness's own check.
+cp tools/fixtures/forall-exists-witness.ts tools/fixtures/forall-exists-witness-red.ts \
+  tools/fixtures/forall-exists-witness-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=30 "$fixture_dir/forall-exists-witness.ts"
+expect_proof_failure \
+  "a forall-exists postcondition verified without its witness" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=30 "$fixture_dir/forall-exists-witness-red.ts"
+witness_log="$fixture_dir/forall-exists-witness-wrong.log"
+if "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=30 "$fixture_dir/forall-exists-witness-wrong.ts" >"$witness_log" 2>&1; then
+  echo "ERROR: a witness proved a false parity"
+  exit 1
+fi
+if grep -qE 'resolution/type errors|timed out|time out' "$witness_log" || ! grep -q "assertion might not hold" "$witness_log"; then
+  cat "$witness_log"
+  echo "ERROR: the false-parity witness failed before reaching its check"
+  exit 1
+fi
+
 cp tools/fixtures/safe-slice-suffix-wrong.ts "$fixture_dir/safe-slice-suffix-wrong.ts"
 expect_failure \
   "a clamped suffix past the end verified as nonempty" \

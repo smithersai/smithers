@@ -141,7 +141,8 @@ export type TStmt =
   | { kind: "throw" }
   | { kind: "ghostLet"; name: string; ty: Ty; init: TExpr }
   | { kind: "ghostAssign"; target: string; value: TExpr }
-  | { kind: "assert"; expr: TExpr; assumed?: boolean }
+  /** `witness`: the goal with its inner exists body replaced by the pick predicate (`forall(i, A ==> exists(k, C))`). */
+  | { kind: "assert"; expr: TExpr; assumed?: boolean; witness?: TExpr }
   | { kind: "someMatch"; scrutinee: TExpr; binder: string; binderTy: Ty;
       someBody: TStmt[]; noneBody: TStmt[] }
   | { kind: "tagMatch"; scrutinee: TExpr; typeName: string;

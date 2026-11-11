@@ -1794,7 +1794,7 @@ function renameRawStmt(s: RawStmt, from: string, to: string): RawStmt {
       defaultBody: renameRawStmts(s.defaultBody, from, to) };
     case "ghostLet": return { ...s, init: sp(s.init) };
     case "ghostAssign": return { ...s, target: s.target === from ? to : s.target, value: sp(s.value) };
-    case "assert": return { ...s, expr: sp(s.expr) };
+    case "assert": return { ...s, expr: sp(s.expr), ...(s.witness !== undefined ? { witness: sp(s.witness) } : {}) };
     case "break": case "continue": case "throw": return s;
   }
   function e_forof(f: RawStmt & { kind: "forof" }): RawStmt {
@@ -1820,6 +1820,28 @@ function renameRawStmts(stmts: RawStmt[], from: string, to: string): RawStmt[] {
 
 // ── Statement extraction ─────────────────────────────────────
 
+/** An `//@ assert` body: `P`, or `forall(i, A ==> exists(k, B)) by exists(k, C)`, split at the first ` by exists(`
+ *  outside parentheses, brackets and string literals, so a name `by` elsewhere stays a name. */
+export function rawAssert(text: string, line: number): import("./rawir.js").RawAssert {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote !== null) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (depth === 0 && /\s/.test(c) && /^by\s+exists\s*\(/.test(text.slice(i + 1))) {
+      return { kind: "assert", expr: text.slice(0, i).trim(), line, witness: text.slice(i + 3).trim() };
+    }
+  }
+  return { kind: "assert", expr: text.trim(), line };
+}
+
 /** Parse ghost and assert annotations from comment ranges. */
 function parseSpecComments(ranges: ReturnType<Node["getLeadingCommentRanges"]>, line: number): (RawGhostLet | RawGhostAssign | import("./rawir.js").RawAssert)[] {
   const result: (RawGhostLet | RawGhostAssign | import("./rawir.js").RawAssert)[] = [];
@@ -1829,7 +1851,7 @@ function parseSpecComments(ranges: ReturnType<Node["getLeadingCommentRanges"]>, 
     const content = text.slice(PREFIX.length);
     // assert expr
     if (content.startsWith("assert ")) {
-      result.push({ kind: "assert", expr: content.slice(7).trim(), line });
+      result.push(rawAssert(content.slice(7), line));
       continue;
     }
     // assume expr — trusted form of assert; emitted as `assume P;` in Dafny.
@@ -2445,7 +2467,7 @@ function extractStmts(stmts: Node[]): RawStmt[] {
       const content = text.slice(PREFIX.length);
       // assert expr
       if (content.startsWith("assert ")) {
-        result.push({ kind: "assert", expr: content.slice(7).trim(), line });
+        result.push(rawAssert(content.slice(7), line));
         continue;
       }
       // assume expr — trusted form of assert; emitted as `assume P;` in Dafny.

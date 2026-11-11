@@ -588,6 +588,7 @@ function emitStmt(s: Stmt, indent: number): string {
     case "ghostAssign": return `${pad}${escapeName(s.target)} := ${emitExpr(s.value)}`;
     case "assert": {
       if (s.assumed) throw new Error("//@ assume: not supported in Lean backend.");
+      if (s.witness !== undefined) throw new Error("//@ assert ... by exists(...): not supported in Lean backend.");
       // WPGen.assert needs a Prop; bare Bool expressions (`k in m` → `.contains`,
       // method calls, vars) lack a matching WPGen instance and silently fall back
       // to WPGen.default, which drops the assertion. Coerce to Prop via `= true`.

@@ -1724,8 +1724,11 @@ function resolveStmtAt(s: RawStmt, ctx: Ctx): [TStmt, Env | null] {
 
     case "assert": {
       const specCtx = { ...ctx, inSpec: true };
-      const expr = resolveExpr(parseExpr(s.expr), specCtx);
-      return [{ kind: "assert", expr, assumed: s.assumed }, ctx.env];
+      const goal = parseExpr(s.expr);
+      const expr = resolveExpr(goal, specCtx);
+      if (s.witness === undefined) return [{ kind: "assert", expr, assumed: s.assumed }, ctx.env];
+      const witness = resolveExpr(witnessGoal(goal, parseExpr(s.witness), s.line), specCtx);
+      return [{ kind: "assert", expr, assumed: s.assumed, witness }, ctx.env];
     }
   }
 }
@@ -1789,6 +1792,19 @@ function collectCallsExpr(e: RawExpr, fns: Set<string>, out: Set<string>): void 
       collectCallsExpr(e.else, fns, out);
       return;
   }
+}
+
+/** `forall(i, A ==> exists(k, B)) by exists(k, C)` → `forall(i, A ==> exists(k, C))`: the pick resolves in the
+ *  goal's scope, so `i` and every name in A mean the same thing in both. */
+function witnessGoal(goal: RawExpr, pick: RawExpr, line: number): RawExpr {
+  const shape = `//@ assert ... by at line ${line}: expected forall(i, A ==> exists(k, B)) by exists(k, C)`;
+  if (goal.kind !== "forall" || goal.body.kind !== "binop" || goal.body.op !== "==>" || goal.body.right.kind !== "exists")
+    throw new Error(shape);
+  if (pick.kind !== "exists") throw new Error(shape);
+  const inner = goal.body.right;
+  if (pick.var !== inner.var || pick.varType !== inner.varType)
+    throw new Error(`${shape}; the pick binds ${pick.var}, the goal's exists binds ${inner.var}`);
+  return { ...goal, body: { ...goal.body, right: { ...inner, body: pick.body } } };
 }
 
 function collectCallsStmts(stmts: RawStmt[], fns: Set<string>, out: Set<string>): void {

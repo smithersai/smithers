@@ -97,7 +97,8 @@ export type Stmt =
   | { kind: "forin"; idx: string; bound: Expr; invariants: Expr[]; body: Stmt[] }
   | { kind: "ghostLet"; name: string; type: Ty; value: Expr }
   | { kind: "ghostAssign"; target: string; value: Expr }
-  | { kind: "assert"; expr: Expr; assumed?: boolean }
+  /** `witness`: the goal with its inner exists body replaced by the pick predicate (`forall(i, A ==> exists(k, C))`). */
+  | { kind: "assert"; expr: Expr; assumed?: boolean; witness?: Expr }
 
 export interface StmtMatchArm {
   pattern: MatchPattern;
@@ -283,7 +284,7 @@ export function anyExprInStmt(s: Stmt, pred: ExprPred): boolean {
   switch (s.kind) {
     case "let": case "assign": case "bind": case "let-bind": case "return":
     case "ghostLet": case "ghostAssign": return anyExpr(s.value, pred);
-    case "assert": return anyExpr(s.expr, pred);
+    case "assert": return anyExpr(s.expr, pred) || (s.witness !== undefined && anyExpr(s.witness, pred));
     case "break": case "continue": return false;
     case "if": return anyExpr(s.cond, pred) || anyExprInStmts(s.then, pred) || anyExprInStmts(s.else, pred);
     case "match": return anyExpr(s.scrutinee, pred) || s.arms.some(a => anyExprInStmts(a.body, pred));
