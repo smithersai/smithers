@@ -16402,7 +16402,8 @@ statement, which a terminal transition does in its own transaction.
 so a registration sweep re-arms timers and replays completions for runs that can
 still make progress and for no others. `completedDeferreds` also excludes
 completions marked observed by `consumeDeferred`. The engine marks a completion
-before `deferredResult` serves it; `deferred` remains a read-only lookup and keeps
+before `deferredResult` serves it, and marks every unobserved completion when a
+run activates; `deferred` remains a read-only lookup and keeps
 returning the original result for replay. Duplicate completion writes do not
 clear the marker. Migration 0008 leaves existing completions unconsumed until
 the upgraded engine first serves them.

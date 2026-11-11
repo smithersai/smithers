@@ -208,7 +208,9 @@ cannot leave ghost edges.
 
 ### Clock wakes beside external waits
 
-Activation consumes a completed `DurableClock/` wake marker once, even if the action is parked on a separate external deferred. Its persisted completion remains readable for replay. Other event completions remain unconsumed until their waits observe them. This lets a host use an engine clock as a fallback for a missed webhook without repeatedly driving the same due marker.
+Activation consumes a completed `DurableClock/` wake marker once, even if the action is parked on a separate external deferred. Its persisted completion remains readable for replay. This lets a host use an engine clock as a fallback for a missed webhook without repeatedly driving the same due marker.
+
+Activation consumes every other completion the run has not observed too, including one whose wait the run has not reached yet. A flow that awaits deferred A and then deferred B, whose B completes first, is driven once for B and then stays parked on A: the replay that reaches B reads its persisted result. Without this, B counted as a due wake on every poll, and each hosted drive replayed the parked run until its hold ran out.
 
 A hosted recovery can schedule a completed deferred before the host requests
 cancellation. If that request stops the recovering drain, the next explicit

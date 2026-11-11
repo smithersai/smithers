@@ -2904,28 +2904,41 @@ const enterRunning = (
     return activeState
   })
 
-/** Activation consumes control, child and clock wakes; durable results remain readable by later awaits. */
+/**
+ * Activation consumes every completion the run has not observed: the round it
+ * starts replays from durable state, and `deferred` keeps serving a consumed
+ * result to the await that reaches it later. A completion left unconsumed
+ * stays a due wake (`hasDueWake`), so one that arrived before its wait was
+ * reached re-drove the parked run on every poll (issue #4751). Child and
+ * clock markers are not journalled; every other completion records its
+ * consumption, as `deferredResult` does.
+ */
 const consumeActivationWakes = (driver: Driver, flowName: string, executionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
     for (const wake of yield* driver.engineState.completedDeferreds(flowName, executionId)) {
-      if (wake.deferredName.startsWith(controlWakePrefix)) {
-        // Keep the completion fold consistent with the row, even if this activation dies before its body starts.
-        yield* driver.transactState(
-          Effect.gen(function*() {
-            const consumedAtMs = yield* Clock.currentTimeMillis
-            if (!(yield* driver.engineState.consumeDeferred(wake, consumedAtMs))) return
-            yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredConsumed({
-              runId: executionId,
-              lineageId: FlowEngine.Lineage.root(executionId),
-              sourceId: `${driver.dependencies.journalSource}:control-consumed:${wake.deferredName}`,
-              sourceSeq: 0
-            }, { ...wake, consumedAtMs })).pipe(Effect.orDie)
-          }),
-          { partition: executionId }
-        ).pipe(Effect.orDie)
-      } else if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
+      if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
         yield* driver.engineState.consumeDeferred(wake, yield* Clock.currentTimeMillis)
+        continue
       }
+      // Keep the completion fold consistent with the row, even if this activation dies before its body starts.
+      const sourceId = wake.deferredName.startsWith(controlWakePrefix)
+        ? `${driver.dependencies.journalSource}:control-consumed:${wake.deferredName}`
+        : `${driver.dependencies.journalSource}:deferred-consumed:${
+          JSON.stringify([wake.flowName, wake.executionId, wake.deferredName])
+        }`
+      yield* driver.transactState(
+        Effect.gen(function*() {
+          const consumedAtMs = yield* Clock.currentTimeMillis
+          if (!(yield* driver.engineState.consumeDeferred(wake, consumedAtMs))) return
+          yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredConsumed({
+            runId: executionId,
+            lineageId: FlowEngine.Lineage.root(executionId),
+            sourceId,
+            sourceSeq: 0
+          }, { ...wake, consumedAtMs })).pipe(Effect.orDie)
+        }),
+        { partition: executionId }
+      ).pipe(Effect.orDie)
     }
   })
 

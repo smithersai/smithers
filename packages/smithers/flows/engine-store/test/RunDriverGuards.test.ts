@@ -10,6 +10,7 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -201,7 +202,7 @@ describe("RunDriver guards", () => {
       expect(total(snapshot, "flows_run_first_step_ms")).toBe(1)
     }))
 
-  it.effect("consumes only the parent wakes at activation and leaves the run's own completions to its body", () =>
+  it.effect("consumes every completion at activation and still serves the run's own to its body", () =>
     Effect.gen(function*() {
       const seen = yield* withCrypto(provideStores(Effect.gen(function*() {
         const store = yield* RunStore.RunStore
@@ -217,19 +218,24 @@ describe("RunDriver guards", () => {
             completedAtMs: 0
           })
         }
-        let listed: ReadonlyArray<string> = []
+        let seen: { readonly listed: ReadonlyArray<string>; readonly signal: boolean } | undefined
         yield* driver.register(
           GuardFlow,
           () =>
-            Effect.map(state.completedDeferreds(GuardFlow._tag, "own-signal"), (rows) => {
-              listed = rows.map((row) => row.deferredName)
+            Effect.gen(function*() {
+              const listed = (yield* state.completedDeferreds(GuardFlow._tag, "own-signal")).map((row) =>
+                row.deferredName
+              )
+              const address = { flowName: GuardFlow._tag, executionId: "own-signal", deferredName: "signal" }
+              seen = { listed, signal: Option.isSome(yield* state.deferred(address)) }
               return "driven"
             })
         )
         yield* driver.resume(GuardFlow, "own-signal")
-        return listed
+        return seen
       })))
-      expect(seen).toEqual(["signal"])
+      // No completion stays a wake once the run is active (issue #4751), and the body still reads its own.
+      expect(seen).toEqual({ listed: [], signal: true })
     }))
 
   it.effect("records a parent edge once however often its child is admitted under it", () =>

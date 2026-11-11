@@ -773,6 +773,54 @@ describe("EngineStore.drive", () => {
       expect(starts.waiter).toBe(1)
     })))
 
+  it("drives a run once for a completion that arrives before its wait, then leaves it parked", () =>
+    run(Effect.gen(function*() {
+      const executionId = "out-of-order"
+      const earlier = DurableDeferred.make("first", { success: Schema.String })
+      const later = DurableDeferred.make("later", { success: Schema.String })
+      const Pair = Flow.make("HostedEngine/Pair", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+      let starts = 0
+      const outcome = yield* Effect.gen(function*() {
+        const runtime = yield* FlowRuntime.FlowRuntime
+        yield* runtime.register(Pair, () =>
+          Effect.gen(function*() {
+            starts++
+            const a = yield* DurableDeferred.await(earlier)
+            return a + (yield* DurableDeferred.await(later))
+          }))
+        const input = { executionId, payload: {} }
+        const admitted = yield* EngineStore.drive(Pair, input)
+        // The later wait's answer arrives while the run is parked on the first.
+        yield* runtime.deferredDone(later, {
+          flowName: Pair._tag,
+          executionId,
+          deferredName: later.name,
+          exit: Exit.succeed("b")
+        })
+        const early = yield* EngineStore.drive(Pair, input)
+        const again = yield* EngineStore.drive(Pair, input)
+        const nextWake = yield* EngineStore.nextWake(executionId)
+        const startsBeforeFirst = starts
+        yield* runtime.deferredDone(earlier, {
+          flowName: Pair._tag,
+          executionId,
+          deferredName: earlier.name,
+          exit: Exit.succeed("a")
+        })
+        const settled = yield* EngineStore.drive(Pair, input)
+        return { admitted, early, again, nextWake, startsBeforeFirst, settled }
+      }).pipe(Effect.provide(engine(filename, first, { host: executionId })))
+      expect(outcome).toEqual({
+        admitted: { _tag: "Parked", wakeAtMs: undefined },
+        early: { _tag: "Parked", wakeAtMs: undefined },
+        again: { _tag: "Parked", wakeAtMs: undefined },
+        nextWake: Option.none(),
+        // The admission, then one replay for the early answer; nothing until the first answer.
+        startsBeforeFirst: 2,
+        settled: { _tag: "Settled", status: "completed" }
+      })
+    })))
+
   it("reports work it did not do, and fails for a flow it cannot run or an id it refuses", () =>
     run(Effect.gen(function*() {
       const starts = { sleeper: 0, waiter: 0 }

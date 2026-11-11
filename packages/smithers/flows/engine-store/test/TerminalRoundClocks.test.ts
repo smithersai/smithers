@@ -11,7 +11,7 @@ import { withCrypto } from "./Sha256.ts"
 const owner = { hostId: "round-clocks", pid: 1, nonce: "round-clocks-owner" }
 
 describe("terminal rounds close their clocks", () => {
-  it.effect("activation consumes a clock wake once but retains its result and other event wakes", () =>
+  it.effect("activation consumes a clock wake and an event wake once but retains both results", () =>
     Effect.gen(function*() {
       const runId = "round-clock-consumption"
       const flow = Flow.make("RoundClocks/consumption", {
@@ -37,8 +37,9 @@ describe("terminal rounds close their clocks", () => {
             return yield* Flow.suspend(instance)
           }
           const pending = yield* state.completedDeferreds(flow._tag, runId)
-          expect(pending.map((wake) => wake.deferredName)).toEqual([event.deferredName])
+          expect(pending.map((wake) => wake.deferredName)).toEqual([])
           expect(Option.getOrThrow(yield* state.deferred(address)).exit).toEqual({ _tag: "Success", value: "clock" })
+          expect(Option.getOrThrow(yield* state.deferred(event)).exit).toEqual({ _tag: "Success", value: "event" })
           return "done"
         }))
       yield* driver.execute(flow, { executionId: runId, payload: {}, discard: false })
