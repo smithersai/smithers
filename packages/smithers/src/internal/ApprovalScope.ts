@@ -64,6 +64,26 @@ export const triggerDeclaration = (id: string) =>
     })
   ))
 
+/** What a scheduled occurrence would run, without the plan ID it was planned under.
+ * A compiled plan's digest names its own plan ID, so two occurrences of one
+ * unchanged flow never share a plan digest. Standing consent binds to this
+ * identity instead: the flow, input, envelope, executable source and every
+ * compiled node. Any change to one of them stops the consent from matching.
+ * @category queries
+ * @since 1.0.0
+ */
+export const standingPlanDigest = (card: PlanCard): string =>
+  Sha256.digestSync(canonicalize({
+    flowId: card.flowId,
+    input: card.inputSummary,
+    envelope: card.envelope,
+    deployClass: card.deployClass,
+    executionDigest: card.executionDigest ?? null,
+    plan: card.plan === undefined
+      ? null
+      : { flow: card.plan.flow, generation: card.plan.generation, nodes: card.plan.nodes }
+  }))
+
 /** Check standing consent in the same transaction that admits the run.
  * Revocation or any declaration edit wins against an uncommitted admission,
  * including a process that crashed after approving its occurrence's plan.
@@ -87,7 +107,7 @@ export const authorizeTriggerLaunch = (card: PlanCard, sql: SqlClient.SqlClient)
     const current = yield* triggerDeclaration(grant.triggerId).pipe(Effect.provideService(SqlClient.SqlClient, sql))
     if (
       grant.revokedAt !== null || current?.trigger.enabled !== true || current.digest !== grant.declarationDigest ||
-      card.digest !== grant.planDigest
+      standingPlanDigest(card) !== grant.planDigest
     ) {
       return yield* new PlanDenied({ planId: card.planId })
     }

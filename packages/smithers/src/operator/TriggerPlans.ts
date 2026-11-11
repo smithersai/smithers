@@ -15,7 +15,7 @@ import { TriggerError } from "@smthrs/triggers/TriggerError"
 import { Clock, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { join } from "node:path"
-import { triggerDeclaration } from "../internal/ApprovalScope.ts"
+import { standingPlanDigest, triggerDeclaration } from "../internal/ApprovalScope.ts"
 import { databaseLayer } from "./Store.ts"
 
 const prefix = "trigger-plan:"
@@ -146,9 +146,11 @@ export const grantApproval = (root: string, submitted: typeof StandingApproval.T
     const control = yield* Control.Control
     const { sql, write } = yield* makeStore
     const current = yield* previewApproval(root, consent.triggerId)
+    // Each preview mints a new plan ID, so the submitted card is compared by
+    // what it would run, never by its own plan digest.
+    const planDigest = standingPlanDigest(current.plan)
     if (
-      current.declarationDigest !== consent.declarationDigest || current.plan.digest !== consent.plan.digest ||
-      canonicalize(current.plan.envelope) !== canonicalize(consent.plan.envelope) ||
+      current.declarationDigest !== consent.declarationDigest || planDigest !== standingPlanDigest(consent.plan) ||
       consent.plan.approval.target._tag !== "Plan" || consent.plan.approval.target.planId !== consent.plan.planId ||
       consent.plan.approval.target.digest !== consent.plan.digest
     ) return yield* failure("Standing approval no longer matches the registered trigger and plan")
@@ -172,7 +174,7 @@ export const grantApproval = (root: string, submitted: typeof StandingApproval.T
       )
       yield* sql`INSERT INTO control_trigger_approvals
       (grant_id, trigger_id, declaration_digest, plan_digest, approval_json, principal_json, granted_at_ms)
-      VALUES (${grantId}, ${consent.triggerId}, ${consent.declarationDigest}, ${consent.plan.digest},
+      VALUES (${grantId}, ${consent.triggerId}, ${consent.declarationDigest}, ${planDigest},
         ${JSON.stringify(approval)}, ${JSON.stringify(principal)}, ${yield* Clock.currentTimeMillis})
       ON CONFLICT (grant_id) DO NOTHING`
       const grant = yield* sql<
@@ -186,7 +188,7 @@ export const grantApproval = (root: string, submitted: typeof StandingApproval.T
       grantId,
       triggerId: consent.triggerId,
       declarationDigest: consent.declarationDigest,
-      planDigest: consent.plan.digest
+      planDigest
     }
   }).pipe(Effect.provide(databaseLayer(root)))
 
@@ -256,7 +258,8 @@ export const layer = (root: string) =>
           LEFT JOIN control_trigger_approval_uses u ON u.plan_id = b.plan_id
           JOIN control_trigger_approvals g
             ON g.trigger_id = b.trigger_id AND g.declaration_digest = b.declaration_digest
-          WHERE b.plan_id = ${entry.plan.planId} AND g.plan_digest = ${entry.plan.digest} AND g.revoked_at_ms IS NULL
+          WHERE b.plan_id = ${entry.plan.planId} AND g.plan_digest = ${standingPlanDigest(entry.plan)}
+            AND g.revoked_at_ms IS NULL
             AND (u.grant_id IS NULL OR g.grant_id = u.grant_id)
           ORDER BY g.granted_at_ms DESC, g.grant_id LIMIT 1
         `

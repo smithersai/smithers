@@ -27,6 +27,7 @@ run-kind targets; `flow start` starts durable flows.
 | `runs list/show/logs/output/cancel/cancel-all/resume/signal/steer` | Inspect and operate durable runs. |
 | `runs inspect/replay/fork/rewind` | Read frames, branch history, or restore an earlier frame. |
 | `approvals list/approve/deny/grant` | Inspect pending decisions, answer them, or grant a build target's revision. |
+| `approvals trigger-plan/grant-trigger/revoke-trigger` | Prepare, grant or revoke the standing approval that lets a trigger run unattended. |
 | `init [name]`, `generate flow/package/ci` | Initialize a workspace or scaffold a declared resource. |
 | `install`, `git-hooks [--write]` | Use the declared installation toolchain and Git hooks. |
 | `cache status/prune/clear`, `cache steps`, `clean [patterns...]`, `gc` | Maintain target results, step results, declared cleanup targets, or terminal run history. |
@@ -361,10 +362,32 @@ named by `SMITHERS_GITHUB_API_BASE_URL`. These host settings stay outside the
 repository configuration.
 
 `serve` (also available as `gateway`) hosts the trigger scheduler; `triggers serve` runs it separately.
-Scheduled and manual occurrences preserve approval requirements. Disabling a
-trigger stops future dispatch without cancelling its active run.
-`triggers show <id>` exposes the persisted `activePlan.plan.approval` payload;
-submit that unchanged to `approvals approve '<payload>' --scope run`. The
+Scheduled and manual occurrences preserve approval requirements: each
+occurrence waits at `waiting-approval` until a person approves it or a standing
+approval matches it. Disabling a trigger stops future dispatch without
+cancelling its active run.
+
+A standing approval lets a trigger run unattended:
+
+```bash
+smthrs approvals trigger-plan inbox-triage > consent.json   # review what will run
+smthrs approvals grant-trigger @consent.json                # prints the grantId
+smthrs triggers serve                                       # occurrences now start on their own
+smthrs approvals revoke-trigger <grantId>                   # later occurrences wait again
+```
+
+The consent binds to the trigger registration (any `register`, `enable` or
+`disable` changes it) and to what an occurrence would run: the flow, its input,
+its capability envelope, its source and every compiled step. It does not bind
+to a plan ID, because each occurrence is planned under a new one. After an
+edit to the trigger or the flow, occurrences wait at `waiting-approval` until
+you grant a new consent; an occurrence already waiting starts on the next poll
+after the grant. Each use is journaled as an approval by the granting
+principal, and a revoked grant keeps its recorded uses. These three commands
+need a local `--root`.
+
+To approve one waiting occurrence by hand instead, `triggers show <id>` exposes
+the persisted `activePlan.plan.approval` payload; submit that unchanged to `approvals approve '<payload>' --scope run`. The
 scheduler retains the same plan across restarts and waits until it is approved
 or denied. Both `approvals approve` and `approve` default to `--scope run`.
 `approvals list` lists in-run requests, not these pre-run plans.
