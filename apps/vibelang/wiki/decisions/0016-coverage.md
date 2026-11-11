@@ -72,6 +72,31 @@ only. Before is the first run with this roster (old structure counting); after i
 Files below 100%: 91 of 105, then 89 of 106. The history page has no fault host yet, so its failed, empty and
 refused states (`historyView.vibe` 48–59, 206–211) are the next journeys.
 
+### History, tour and navigation journeys (session 17, 2026-11-11)
+
+The history page has a fault host: `e2e/history-runtime/` runs the real page (`historyMain`, whose `around` parameter
+wraps its history service) over `test/support/FaultyMythical.vibe`. Each fault `?fault=` names happens once: `outline`
+(the first load), `empty` (no epics), `reads` (the first epic, commit and search read, and the first outline read after
+the load), `events` (the first event stream) and `writes` (the first plan, start, note, approve and fold).
+`e2e/history-faults.spec.ts` and `e2e/history-paths.spec.ts` drive them, plus a refused plan, a new epic and the epic
+page. `e2e/chat-paths.spec.ts` covers lost tour events, a resize during the tour, a modifier-click on a wiki link and
+live sign-in.
+
+Bugs found and fixed, each with a check that failed first:
+
+| Bug | Fix | Regression |
+| --- | --- | --- |
+| A lost history event stream ended following for good; the page's own Start left the badge at "planned". | The subscription follows again 2 seconds later; `FailedEvents` had no sender left and is deleted. | `history-faults.spec.ts` |
+| A failed commit read left the page on a skeleton with no alert. | The page shows the failure and the History crumb. | `history-faults.spec.ts` |
+| A lost tour event stream stalled the tour (Skip stayed at step 1) and labeled it "Send failed" in a hidden composer. | The tour's subscription follows again 2 seconds later. | `chat-paths.spec.ts`, `mainRuntime.coverage.test.vibe` |
+| A check that leaves the app with a full load lost its Chromium evidence ("Missing executed source"). | A local run reads such chunks from the build it served. | `chat-paths.spec.ts` live sign-in |
+| The auth broker setup gave the host 120 s; a loaded host needs 195 s, so focused runs failed before any test. | It uses `E2E_SERVER_SECONDS` (default 600), like the web server. | Focused runs on nyc-01 |
+
+A focused Chromium run of the three history specs (dark project, before the commit-read fix) reached 81/81
+statements and 43/43 functions in `historyView.vibe` (session 16: 73/81, 40/43); `historyApp.vibe` went from 181/217
+statements and 84/105 functions to 201/218 and 101/105. A full `pnpm e2e:coverage` after these commits is the next
+measurement.
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;
