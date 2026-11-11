@@ -1995,6 +1995,112 @@ describe("the write-set guard quarantines what it reverts", () => {
   })
 })
 
+describe("the portal guard spares other writers and quarantines what it reverts", () => {
+  beforeEach(async () => {
+    ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })
+    await Fs.writeFile(NodePath.join(outside, "notes.txt"), "existing\n")
+    await Fs.symlink("../outside", NodePath.join(root, "shared"))
+  })
+  const exists = (path: string): Promise<boolean> => Fs.lstat(path).then(() => true, () => false)
+  /** Another process edits one file and creates another behind the portal. */
+  const otherWriter = async (): Promise<void> => {
+    await Fs.writeFile(NodePath.join(outside, "notes.txt"), "edited elsewhere\n")
+    await Fs.writeFile(NodePath.join(outside, "new-work.txt"), "new work\n")
+  }
+
+  it("leaves a change no admitted location reaches through the portal and reports nothing", async () => {
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "//:sandboxed")
+    try {
+      await otherWriter()
+      // A sandbox admits canonical directories inside the workspace, never a portal.
+      expect(await PackageTree.revertChangedPortals(snapshot, { quarantine, admitted: ["", "shared-out"] })).toEqual([])
+      expect(await Fs.readFile(NodePath.join(outside, "notes.txt"), "utf8")).toBe("edited elsewhere\n")
+      expect(await Fs.readFile(NodePath.join(outside, "new-work.txt"), "utf8")).toBe("new work\n")
+      expect(quarantine.held).toEqual([])
+      expect(await exists(NodePath.join(root, ".flows", "reverted"))).toBe(false)
+    } finally {
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
+
+  it("reverts only the admitted path an in-process body wrote through the portal", async () => {
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows")
+    try {
+      await otherWriter()
+      expect(await PackageTree.revertChangedPortals(snapshot, { admitted: ["shared/notes.txt"] })).toEqual([
+        "shared/notes.txt"
+      ])
+      expect(await Fs.readFile(NodePath.join(outside, "notes.txt"), "utf8")).toBe("existing\n")
+      expect(await Fs.readFile(NodePath.join(outside, "new-work.txt"), "utf8")).toBe("new work\n")
+    } finally {
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
+
+  it("copies the bytes an unbounded revert removes or overwrites into the quarantine", async () => {
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "//:unconfined")
+    try {
+      await otherWriter()
+      expect(await PackageTree.revertChangedPortals(snapshot, { quarantine })).toEqual([
+        "shared/new-work.txt",
+        "shared/notes.txt"
+      ])
+      expect(await Fs.readFile(NodePath.join(outside, "notes.txt"), "utf8")).toBe("existing\n")
+      expect(await exists(NodePath.join(outside, "new-work.txt"))).toBe(false)
+      const kept = NodePath.join(root, quarantine.directory, "shared")
+      expect(await Fs.readFile(NodePath.join(kept, "notes.txt"), "utf8")).toBe("edited elsewhere\n")
+      expect(await Fs.readFile(NodePath.join(kept, "new-work.txt"), "utf8")).toBe("new work\n")
+      expect([...quarantine.held].sort()).toEqual(["shared/new-work.txt", "shared/notes.txt"])
+    } finally {
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
+
+  it("copies a file portal's real bytes, not the link", async () => {
+    await Fs.symlink(NodePath.join(outside, "notes.txt"), NodePath.join(root, "notes-link"))
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "file")
+    try {
+      await Fs.writeFile(NodePath.join(outside, "notes.txt"), "edited elsewhere\n")
+      expect(await PackageTree.revertChangedPortals(snapshot, { quarantine, admitted: ["notes-link"] })).toEqual([
+        "notes-link"
+      ])
+      const copy = NodePath.join(root, quarantine.directory, "notes-link")
+      expect((await Fs.lstat(copy)).isFile()).toBe(true)
+      expect(await Fs.readFile(copy, "utf8")).toBe("edited elsewhere\n")
+    } finally {
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
+
+  it("admits in a scratch copy only the links that still reach their real target", async () => {
+    await Fs.symlink(outside, NodePath.join(root, "absolute"))
+    await Fs.symlink("../missing-elsewhere/new.txt", NodePath.join(root, "dangling"))
+    const snapshot = await PackageTree.snapshotPortals(root, ".flows")
+    const scratch = await PackageTree.scratchCopy(root, ".flows")
+    try {
+      expect(snapshot.portals.map((portal) => portal.link)).toEqual(["absolute", "dangling", "shared"])
+      expect(await PackageTree.portalsReachableFrom(snapshot, scratch)).toEqual(["absolute"])
+      expect(await PackageTree.portalsReachableFrom(snapshot, root)).toEqual(["absolute", "dangling", "shared"])
+      // A link the copy no longer holds reaches nothing.
+      await Fs.rm(NodePath.join(scratch, "absolute"))
+      expect(await PackageTree.portalsReachableFrom(snapshot, scratch)).toEqual([])
+      await Fs.symlink(outside, NodePath.join(scratch, "absolute"))
+      await otherWriter()
+      expect(
+        await PackageTree.revertChangedPortals(snapshot, {
+          admitted: await PackageTree.portalsReachableFrom(snapshot, scratch)
+        })
+      ).toEqual(["absolute/new-work.txt", "absolute/notes.txt"])
+    } finally {
+      await Fs.rm(scratch, { recursive: true, force: true })
+      await PackageTree.releasePortals(snapshot)
+    }
+  })
+})
+
 describe("judgedChanges", () => {
   it("keeps only the changes that resolve inside a location the body could write", async () => {
     await Fs.mkdir(NodePath.join(root, "src"), { recursive: true })

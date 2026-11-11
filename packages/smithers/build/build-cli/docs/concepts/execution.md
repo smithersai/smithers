@@ -180,8 +180,14 @@ it, because removing it would destroy contents the stash never held.
 
 Git cannot see a write that lands through an in-workspace symlink whose real
 target leaves the workspace, so those portals are measured directly, before
-and after. A portal the census cannot measure, over the entry cap or
-unreadable, refuses the target. The guard has no partial mode: a confinement
+and after. A write through a portal is reverted and fails the target only when
+the body could have made it: an unconfined tool, an in-process body that named
+a path through the link, or a scratch-copy body whose copy of the link still
+reaches the real target. A sandbox never binds a portal target writable, so a
+change behind a portal during a confined run is another writer's and is left
+alone. Every portal revert first copies the bytes it removes into the
+`reverted/` quarantine. A portal the census cannot measure, over the entry cap
+or unreadable, refuses the target. The guard has no partial mode: a confinement
 claim it cannot keep is not made.
 
 ## Sandboxing

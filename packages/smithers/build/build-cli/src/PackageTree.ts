@@ -608,10 +608,18 @@ export const openQuarantine = (root: string, cacheDirectory: string, label: stri
   return { root, directory: `${posix(cacheDirectory)}/reverted/${slug}-${stamp}`, held: [] }
 }
 
-/** Copies the current bytes at `path` into the quarantine before a revert removes them. */
-const quarantinePath = async (quarantine: Quarantine | undefined, path: string): Promise<void> => {
+/**
+ * Copies the current bytes at `path` into the quarantine before a revert
+ * removes them. `source` is where those bytes stand, when that is not the
+ * workspace path itself (a portal's real target).
+ */
+const quarantinePath = async (
+  quarantine: Quarantine | undefined,
+  path: string,
+  source?: string
+): Promise<void> => {
   if (quarantine === undefined) return
-  const absolute = NodePath.join(quarantine.root, path)
+  const absolute = source ?? NodePath.join(quarantine.root, path)
   const present = await Fs.lstat(absolute).then(() => true, () => false)
   if (!present) return
   const destination = NodePath.join(quarantine.root, quarantine.directory, path)
@@ -1465,13 +1473,54 @@ export const snapshotPortals = async (
 }
 
 /**
- * Reverts every write that landed through a portal since the snapshot and
- * returns the escaped paths, workspace-relative through their portal link.
+ * Where a guarded body could have written through a portal, and where the
+ * bytes a revert removes are kept.
+ *
+ * @category write sets
+ * @since 1.0.0
+ */
+export interface PortalRevertOptions {
+  /**
+   * Copies whatever stands at a changed path before the revert removes or
+   * overwrites it, as the tracked and gitignored guards do.
+   */
+  readonly quarantine?: Quarantine
+  /**
+   * Workspace-relative locations the body could write. A portal change is
+   * the body's only when one of them is the portal link or lies under it and
+   * contains the change: a sandbox binds canonical directories inside the
+   * workspace, so it never reaches a portal target, and an in-process body
+   * names the paths it writes. Any other change was written by someone else
+   * while the body ran and is neither reported nor touched. `undefined`
+   * admits every change: nothing bounds where the body wrote.
+   */
+  readonly admitted?: ReadonlyArray<string> | undefined
+}
+
+const admitsPortalPath = (
+  admitted: ReadonlyArray<string> | undefined,
+  link: string,
+  path: string
+): boolean =>
+  admitted === undefined ||
+  admitted.some((location) =>
+    (location === link || location.startsWith(`${link}/`)) &&
+    (path === location || path.startsWith(`${location}/`))
+  )
+
+/**
+ * Reverts every write the body could have made through a portal since the
+ * snapshot and returns the escaped paths, workspace-relative through their
+ * portal link. Changes outside `options.admitted` are left alone, and every
+ * revert first copies the bytes it removes into `options.quarantine`.
  *
  * @category write sets
  * @since 0.1.0
  */
-export const revertChangedPortals = async (snapshot: PortalSnapshot): Promise<ReadonlyArray<string>> => {
+export const revertChangedPortals = async (
+  snapshot: PortalSnapshot,
+  options: PortalRevertOptions = {}
+): Promise<ReadonlyArray<string>> => {
   const escaped: Array<string> = []
   for (const [index, portal] of snapshot.portals.entries()) {
     let after: Map<string, PathState>
@@ -1494,9 +1543,12 @@ export const revertChangedPortals = async (snapshot: PortalSnapshot): Promise<Re
       if (!after.has(relativePath)) changed.add(relativePath)
     }
     for (const relativePath of [...changed].sort()) {
+      const path = relativePath === "" ? portal.link : `${portal.link}/${relativePath}`
+      if (!admitsPortalPath(options.admitted, portal.link, path)) continue
       const target = relativePath === ""
         ? portal.realTarget
         : NodePath.join(portal.realTarget, ...relativePath.split("/"))
+      await quarantinePath(options.quarantine, path, target)
       const before = portal.states.get(relativePath)
       if (before === undefined || before.kind === "missing") {
         await Fs.rm(target, { recursive: true, force: true })
@@ -1510,10 +1562,36 @@ export const revertChangedPortals = async (snapshot: PortalSnapshot): Promise<Re
         await Fs.copyFile(NodePath.join(snapshot.stashDirectory, portalStashKey(index, relativePath)), target)
         await Fs.chmod(target, before.mode)
       }
-      escaped.push(relativePath === "" ? portal.link : `${portal.link}/${relativePath}`)
+      escaped.push(path)
     }
   }
   return escaped.sort()
+}
+
+/**
+ * The portal links whose copy under `tree` (a scratch copy of the workspace)
+ * still resolves to the portal's real target, so a body run in that copy
+ * could write through them. A relative link copied elsewhere points somewhere
+ * else, so a change behind it was written by someone else. Pass the result as
+ * {@link PortalRevertOptions.admitted}.
+ *
+ * @category write sets
+ * @since 1.0.0
+ */
+export const portalsReachableFrom = async (
+  snapshot: PortalSnapshot,
+  tree: string
+): Promise<ReadonlyArray<string>> => {
+  const reachable: Array<string> = []
+  for (const portal of snapshot.portals) {
+    const copy = NodePath.join(tree, ...portal.link.split("/"))
+    const resolved = await Fs.realpath(copy).catch(async () => {
+      const target = await Fs.readlink(copy)
+      return resolveFromExistingAncestor(NodePath.resolve(NodePath.dirname(copy), target))
+    }).catch(() => undefined)
+    if (resolved === portal.realTarget) reachable.push(portal.link)
+  }
+  return reachable
 }
 
 /**

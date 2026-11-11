@@ -1477,10 +1477,13 @@ export const executeEffect = (
           const quarantine = PackageTree.openQuarantine(root, cacheDirectory, label)
           const kept = (): string =>
             quarantine.held.length === 0 ? "" : `; the reverted bytes are kept at ${quarantine.directory}`
-          // Any write through an escaping-symlink portal is out of the workspace and
-          // therefore out of any write-set; it is reverted whether the run passed
-          // or failed.
-          const escapedPortals = yield* joined(() => PackageTree.revertChangedPortals(portals))
+          // Any write the body made through an escaping-symlink portal is out of the
+          // workspace and therefore out of any write-set; it is reverted whether the
+          // run passed or failed. A portal change the body could not have made is
+          // another writer's and is left alone.
+          const escapedPortals = yield* joined(() =>
+            PackageTree.revertChangedPortals(portals, { quarantine, admitted })
+          )
           // A gitignored path the census never measured (a nested repository, or a
           // path inside one) is left as the tool left it and named here, because a
           // removal would destroy contents the stash never held.
@@ -1609,8 +1612,16 @@ export const executeEffect = (
           // The copy omits host cache state. Its empty result cache still
           // needs a real directory for the sandbox's read-only mount.
           yield* joined(() => ensureCacheDirectory(scratch, cacheDirectory))
+          // Only a link whose copy reaches the real target before the body runs
+          // could carry its write out of the scratch tree; the rest is another
+          // writer's.
+          const reachable = yield* joined(() => PackageTree.portalsReachableFrom(portals, scratch))
           const exit = yield* Effect.exit(restore(Effect.suspend(() => body(scratch))))
-          const escaped = yield* joined(() => PackageTree.revertChangedPortals(portals))
+          const quarantine = PackageTree.openQuarantine(root, cacheDirectory, "scratch")
+          const escaped = yield* joined(() =>
+            PackageTree.revertChangedPortals(portals, { quarantine, admitted: reachable })
+          )
+          if (quarantine.held.length > 0) log(`smthrs: the reverted portal bytes are kept at ${quarantine.directory}`)
           if (Exit.isFailure(exit)) return yield* Effect.failCause(exit.cause)
           return { outcome: exit.value, escaped }
         })
