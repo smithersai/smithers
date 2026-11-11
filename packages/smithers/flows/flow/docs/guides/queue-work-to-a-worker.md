@@ -124,5 +124,7 @@ plan. When it is its own unit of work with its own journal,
   is doing while the worker works.
 
 A store take failure logs a warning and terminates the worker as a defect; the host owns recovery.
-Successful takes continue consuming items. Completion retries remain durable steps in the item's flow.
+Successful takes continue consuming items. An item whose execution fails or is interrupted, for example while
+the engine's store is unavailable, logs a warning; the queue delivers it again and the worker takes the next
+item. Completion retries remain durable steps in the item's flow.
 Malformed-token diagnostics bound and escape token excerpts and schema errors before queue logging.

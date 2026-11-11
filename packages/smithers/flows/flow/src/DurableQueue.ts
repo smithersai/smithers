@@ -530,13 +530,21 @@ const makeWorkerEffect = Effect.fnUntraced(
         }
       )
     }).pipe(
-      // Store failures terminate this worker; its host owns recovery. Item completion retries belong to the engine.
-      Effect.tapCause((cause) =>
-        Effect.logWarning("DurableQueue worker stopped after a take failure").pipe(
-          Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })
-        )
+      // A store failure terminates this worker; its host owns recovery. Any other failure is the item's: the store
+      // has already scheduled its redelivery, so the worker logs it and takes the next item. Interrupting the worker
+      // itself still ends the loop, because an interrupted fiber does not run a recovery.
+      Effect.catchCause((cause) =>
+        cause.reasons.some((reason) =>
+            Cause.isFailReason(reason) && reason.error instanceof PersistedQueue.PersistedQueueError
+          )
+          ? Effect.logWarning("DurableQueue worker stopped after a store failure").pipe(
+            Effect.andThen(Effect.failCause(cause)),
+            Effect.orDie
+          )
+          : Effect.logWarning("DurableQueue item execution stopped; the store delivers it again").pipe(
+            Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })
+          )
       ),
-      Effect.orDie,
       Effect.forever,
       Effect.annotateLogs({
         package: "@smthrs/flow",
@@ -570,6 +578,9 @@ const makeWorkerEffect = Effect.fnUntraced(
  * Create a worker effect that processes items from the durable queue.
  *
  * A store take failure terminates the worker as a defect for its host to recover.
+ * An item whose execution fails or is interrupted, for example because the
+ * engine's store is briefly unavailable, is delivered again by the queue and
+ * the worker goes on to its next item.
  * Each item runs as a durable execution named by its completion address: the
  * handler's exit is recorded as a step, then recorded against the caller's
  * deferred as a second step that the engine retries without a limit. A failure
