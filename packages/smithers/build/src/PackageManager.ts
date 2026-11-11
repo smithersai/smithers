@@ -32,6 +32,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
@@ -702,54 +703,52 @@ const insideRoot = (root: string, candidate: string): boolean => {
 }
 
 /**
- * Node's `fs` on a host whose `/dev/fd` names open descriptors, else absent.
- *
- * Resolved through `getBuiltinModule` so this module stays browser-bundleable.
- */
-const descriptorFs = (() => {
-  const host = globalThis.process
-  return host?.platform === "darwin" || host?.platform === "linux" ? host.getBuiltinModule?.("node:fs") : undefined
-})()
-
-/**
- * Opens `path` for a bounded read without ever waiting on a FIFO.
+ * Opens a path for reading only when it names a regular file, without ever
+ * waiting on a FIFO.
  *
  * `effect/FileSystem` names only string open modes, and `"r"` blocks until a
- * writer appears when the path became a FIFO after its `stat`. Where Node and
- * `/dev/fd` are available, the path is opened `O_RDONLY | O_NONBLOCK` and
- * refused unless that descriptor is a regular file; the service then opens the
- * verified descriptor through `/dev/fd`, never the path again. Elsewhere
- * (Windows has no FIFOs on ordinary paths) the service opens the path and the
- * descriptor `stat` that follows decides.
+ * writer appears when the path became a FIFO after its `stat`. A host that can
+ * open without blocking provides this service: `open` fails unless the opened
+ * entry is a regular file, and the returned `File` reads that same entry.
+ * `@smthrs/platform-node` implements it as `NodeHost.openRegularFile`.
+ *
+ * Every package-manager file read uses it when it is in context. Without it,
+ * reads open through the injected `FileSystem` after their `stat` check, and
+ * the first such read logs one warning that a FIFO swapped in after the check
+ * can block the read.
+ *
+ * @category services
+ * @since 1.0.0-rc.17
  */
+export class RegularFileOpen extends Context.Service<RegularFileOpen, {
+  readonly open: (path: string) => Effect.Effect<FileSystem.File, PlatformError.PlatformError, Scope.Scope>
+}>()("smithers-build/PackageManager/RegularFileOpen") {}
+
+let warnedUnguardedOpen = false
+
+/** Logs, once per process, that file reads run without {@link RegularFileOpen}. */
+const warnUnguardedOpen = Effect.suspend(() => {
+  if (warnedUnguardedOpen) return Effect.void
+  warnedUnguardedOpen = true
+  return Effect.logWarning(
+    "PackageManager.RegularFileOpen is not provided: file reads open through FileSystem, " +
+      "so a FIFO swapped in after the stat check can block a read until a writer appears"
+  )
+})
+
+/** Opens `path` through {@link RegularFileOpen}, or through `fs` when it is absent. */
 const openBounded = (
   fs: FileSystem.FileSystem,
   code: ErrorCode,
-  path: string,
-  limit: number
+  path: string
 ): Effect.Effect<FileSystem.File, PackageManagerError, Scope.Scope> =>
   Effect.gen(function*() {
-    const open = (target: string) =>
-      fs.open(target, { flag: "r" }).pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
-    if (descriptorFs === undefined) return yield* open(path)
-    const { O_NONBLOCK, O_RDONLY } = descriptorFs.constants
-    const handle = yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () => descriptorFs.promises.open(path, O_RDONLY | O_NONBLOCK),
-        catch: (cause) => unreadable(code, path, cause)
-      }),
-      (opened) => Effect.promise(() => opened.close().catch(() => undefined))
-    )
-    const info = yield* Effect.tryPromise({
-      try: () => handle.stat(),
-      catch: (cause) => unreadable(code, path, cause)
-    })
-    if (!info.isFile()) {
-      return yield* Effect.fail(
-        unreadable(code, path, new Error(`expected a regular file no larger than ${limit} bytes`))
-      )
+    const regular = yield* Effect.serviceOption(RegularFileOpen)
+    if (Option.isSome(regular)) {
+      return yield* regular.value.open(path).pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
     }
-    return yield* open(`/dev/fd/${handle.fd}`)
+    yield* warnUnguardedOpen
+    return yield* fs.open(path, { flag: "r" }).pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
   })
 
 /** Reads one descriptor-stable regular file while enforcing an actual byte limit. */
@@ -774,14 +773,14 @@ const boundedBytes = (
         )
       }
       // Reject stable FIFOs, sockets, devices, and directories before open.
-      // A FIFO swapped in after this check cannot block `openBounded`.
+      // A FIFO swapped in after this check cannot block `RegularFileOpen`.
       const before = yield* fs.stat(path).pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
       if (before.type !== "File" || before.size > BigInt(limit)) {
         return yield* Effect.fail(
           unreadable(code, path, new Error(`expected a regular file no larger than ${limit} bytes`))
         )
       }
-      const file = yield* openBounded(fs, code, path, limit)
+      const file = yield* openBounded(fs, code, path)
       const info = yield* file.stat.pipe(Effect.mapError((cause) => unreadable(code, path, cause)))
       if (info.type !== "File" || info.size > BigInt(limit)) {
         return yield* Effect.fail(

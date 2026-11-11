@@ -55,7 +55,11 @@ Embedding the install flow requires:
   resolve the flow by tag;
 - a `FlowRuntime`;
 - Node `FileSystem`, `ChildProcessSpawner`, and `Crypto` services;
-- one `PackageManager` layer.
+- one `PackageManager` layer;
+- `PackageManager.RegularFileOpen`, which on Node is
+  `NodeHost.openRegularFile` from `@smthrs/platform-node`. Without it, a file
+  read opens through `FileSystem`, so a FIFO swapped in after the read's `stat`
+  can block it, and the first such read logs a warning.
 
 Only `PackageManager.layerPnpm` performs work today. `layerBun` resolves the
 service but fails every operation with a typed `unsupported` error; no install

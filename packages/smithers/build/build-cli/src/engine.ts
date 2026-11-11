@@ -16,6 +16,7 @@ import * as NodeStdio from "@effect/platform-node/NodeStdio"
 import { Install, PackageManager, Runtime } from "@smthrs/build"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Graph, Interpreter } from "@smthrs/flow"
+import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import * as Config from "@smthrs/targets/Config"
 import * as TargetPackageManager from "@smthrs/targets/PackageManager"
 import * as TargetRuntime from "@smthrs/targets/Runtime"
@@ -40,6 +41,10 @@ import * as Environment from "./Environment.ts"
  * services the CLI actually uses avoids shared-terminal state and preserves
  * per-target flow isolation.
  *
+ * `PackageManager.RegularFileOpen` is the Node open that refuses anything but
+ * a regular file without waiting on a FIFO, so package-manager file reads keep
+ * that guarantee.
+ *
  * @category layers
  * @since 0.1.0
  * @slop
@@ -50,7 +55,8 @@ export const layerNonInteractiveNodeServices = Layer.provideMerge(
     NodeFileSystem.layer,
     NodeCrypto.layer,
     EffectNodePath.layer,
-    NodeStdio.layer
+    NodeStdio.layer,
+    Layer.succeed(PackageManager.RegularFileOpen, { open: NodeHost.openRegularFile })
   )
 )
 

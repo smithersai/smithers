@@ -402,6 +402,23 @@ is what bounds the names held across the whole walk. Progress is partial on
 refusal, since entries already unlinked stay unlinked. `force: true` succeeds
 for a path whose ancestors do not exist, exactly as `fs.rm` does.
 
+### `NodeHost.openRegularFile`
+
+`NodeHost.openRegularFile(path)` returns `Effect<File, PlatformError, Scope>`.
+It opens `path` for reading only when it names a regular file, and never waits
+on a FIFO, even one swapped in after a caller's `stat`. On Linux and macOS it
+opens the path `O_RDONLY | O_NONBLOCK`, refuses the descriptor unless it is a
+regular file, and returns a `File` that reopens that descriptor through
+`/dev/fd`. On Windows it opens the path `"r"` and refuses it unless it is a
+regular file. A refusal is a `BadResource` `PlatformError`.
+
+It is the Node implementation of `@smthrs/build`'s
+`PackageManager.RegularFileOpen`:
+
+```ts
+Layer.succeed(PackageManager.RegularFileOpen, { open: NodeHost.openRegularFile })
+```
+
 ## Liveness and reaping
 
 `ProcessReaper.groupSnapshotFor(platform)` selects the live cleanup probe,

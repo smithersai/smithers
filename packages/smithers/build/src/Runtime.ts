@@ -472,7 +472,8 @@ const normalizeOptions = (value: Options, extraKeys: ReadonlyArray<string> = [])
 const probeEnvironment = (options: NormalizedOptions): Record<string, string> => {
   const windows = options.platform.os === "win32"
   const environment = options.environment ?? Validate.normalizeEnvironment(
-    globalThis.process?.env ?? {},
+    (globalThis as { readonly process?: { readonly env: Readonly<Record<string, string | undefined>> } }).process
+      ?.env ?? {},
     windows,
     "runtime environment"
   )

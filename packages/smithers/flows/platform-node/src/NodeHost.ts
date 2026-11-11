@@ -32,15 +32,18 @@ import type { HostServiceIds } from "@smthrs/kernel/HostServices"
 import type * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import type * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Effect from "effect/Effect"
-import type { FileSystem } from "effect/FileSystem"
+import type { File, FileSystem } from "effect/FileSystem"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import type * as Path from "effect/Path"
+import type * as PlatformError from "effect/PlatformError"
 import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
 import { isAbsolute } from "node:path"
 import * as AtomicFileSystem from "./AtomicFileSystem.ts"
 import * as EgressHttpClient from "./EgressHttpClient.ts"
+import * as RegularFile from "./internal/RegularFile.ts"
 import * as ProcessConfinement from "./ProcessConfinement.ts"
 import * as ProcessReaper from "./ProcessReaper.ts"
 
@@ -263,3 +266,23 @@ export const layerContainedAt = (
       Layer.provideMerge(NodeJj.layerSpawnerAt(root), spawner)
     ).pipe(Layer.provideMerge(ProcessReaper.layer(reaping(options))))
   }))
+
+/**
+ * Opens `path` for reading only when it names a regular file, and never waits
+ * on a FIFO, even one swapped in after a caller's `stat`.
+ *
+ * On Linux and macOS the path is opened `O_RDONLY | O_NONBLOCK` and refused
+ * unless that descriptor is a regular file; the returned `File` reopens the
+ * verified descriptor through `/dev/fd`, never the path. Windows has no FIFOs
+ * on ordinary paths, so there the path is opened `"r"` and refused unless it
+ * is a regular file. A refusal is a `BadResource` `PlatformError`.
+ *
+ * This is the Node implementation of `@smthrs/build`'s
+ * `PackageManager.RegularFileOpen`:
+ * `Layer.succeed(PackageManager.RegularFileOpen)({ open: NodeHost.openRegularFile })`.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.17
+ */
+export const openRegularFile = (path: string): Effect.Effect<File, PlatformError.PlatformError, Scope.Scope> =>
+  RegularFile.open(process.platform, path)

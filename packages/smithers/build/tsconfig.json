@@ -22,7 +22,7 @@
     "sourceMap": true,
     "inlineSources": true,
     "rewriteRelativeImportExtensions": true,
-    "types": ["node"],
+    "types": [],
     "plugins": [
       {
         "name": "@effect/language-service",

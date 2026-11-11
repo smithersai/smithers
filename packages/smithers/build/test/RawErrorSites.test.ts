@@ -26,7 +26,7 @@ const bareString = /Effect\.(?:fail|die)\(\s*["'`]|throw\s+["'`]/
 
 /** Reviewed files and their `new Error` sites: designed sentences or causes of tagged failures. */
 const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
-  ["src/PackageManager.ts", 11],
+  ["src/PackageManager.ts", 10],
   ["src/internal/boundedOutput.ts", 2]
 ]
 
