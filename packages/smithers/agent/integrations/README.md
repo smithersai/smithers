@@ -140,6 +140,25 @@ cookie, check expiry and exact Origin, then redeem. A no-referrer browser may po
 with `Sec-Fetch-Site: same-origin`. No token ever appears in a URL. Broker metrics/spans/logs contain only step and
 outcome; exchange transport tracing is disabled. A lost response requires a fresh sign-in rather than replay.
 
+A person who cancels on GitHub comes back to the broker's callback with `error=access_denied` and no code.
+`cancel()` ends that attempt once, after the same browser-cookie check as `callback()`, and sends the browser to the
+site's fixed callback with `#error=access_denied&state=<nonce>`: no code and no identity, and GitHub issued no token.
+`screen()` admits only that error; the broker refuses any other GitHub error as before. `HANDOFF_PAGE` posts
+`{ code, state, error }`, so the site spends its pending sign-in and tells the person they cancelled.
+
+A site outside this monorepo implements its half from the wire format, which `site()` produces:
+
+| Step     | Request                                                                                                          | Checked                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start    | Browser `GET {broker}/api/auth/broker/start?origin={origin}&return_to={signed claims}`                           | the broker: `origin` listed; signature; `claims.origin` is `origin`; 43-character base64url `nonce` and S256 `challenge`; `expires` within ten minutes          |
+| Return   | Browser lands on `{origin}/api/auth/callback#code={code}&state={nonce}`, or `#error=access_denied&state={nonce}` | the site's own browser cookie holds `nonce`; the site spends its pending sign-in once                                                                           |
+| Exchange | Site `POST {broker}/api/auth/broker/exchange` with JSON `{ origin, request: {signed redemption} }`               | the broker: signature; the code once, for this origin, nonce and `S256(verifier)`, within sixty seconds. `200 { id, login }`, else `400 { "error": "sign-in" }` |
+
+Claims are the JSON `{ origin, nonce, challenge, expires }`, and a redemption is `{ origin, nonce, verifier, code,
+expires }`, with `expires` in epoch milliseconds. Each is signed as `Core.CookieKeys` signs: the JSON text, a dot, and
+the lowercase hex HMAC-SHA256 of `purpose:` plus that text, keyed by the site's secret, with purpose `broker_return`
+for claims and `broker_exchange` for a redemption. The broker verifies the exact text it receives, then decodes it.
+
 Install `Broker.httpPolicy` in the outer HTTP request context before server tracing. Alchemy hosts register it with `Telemetry.layer(Broker.httpPolicy)` during each Worker and auth Durable Object initialization; an ordinary init-only reference layer does not reach request fibers. It redacts every query value, including signed return_to, state and GitHub codes. Proxy/native access logs must independently omit OAuth query values and callback/exchange bodies.
 
 Identity-only callbacks revoke their temporary GitHub access token immediately after the identity read, including a

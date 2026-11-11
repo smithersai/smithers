@@ -16,6 +16,8 @@ export const EXCHANGE = "/api/auth/broker/exchange"
 export const CALLBACK = "/api/auth/callback"
 export const CONSENT = "/api/auth/broker/consent"
 export const STATE_PREFIX = "broker_"
+/** GitHub's `error` when the person cancels, and the one error the broker passes on to the site. */
+export const CANCELLED = "access_denied"
 export const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" }
 export const REQUEST_TTL = 600_000
 export const CODE_TTL = 60_000
@@ -221,6 +223,11 @@ export effect function make(options: {
     if (!callbackState(state) || code.length === 0 || code.length > 4096) throw refused()
     try sameBrowser("broker_browser", cookie, state)
   }
+  /** GitHub's answer when the person cancels: `error=access_denied` and the state, with no code. */
+  const cancelBrowser = effect (state: string, error: string, cookie: string | undefined) => {
+    if (!callbackState(state) || error !== CANCELLED) throw refused()
+    try sameBrowser("broker_browser", cookie, state)
+  }
   /** Everything `start` checks before it writes: a site's signature, freshness and claims. */
   const startClaims = effect (origin: string, signed: string) => {
     const claims = try checked(decodeClaims(try verify(origin, "broker_return", signed)))
@@ -284,6 +291,7 @@ export effect function make(options: {
     admits: {
       start: (origin: string, signed: string) => passes(startClaims(origin, signed)),
       callback: (state: string, code: string, cookie: string | undefined) => passes(callbackBrowser(state, code, cookie)),
+      cancel: (state: string, error: string, cookie: string | undefined) => passes(cancelBrowser(state, error, cookie)),
       consent: (consent: string, cookie: string | undefined) => passes(consentBrowser(consent, cookie)),
       exchange: (origin: string, signed: string) => passes(redemptionClaims(origin, signed)),
     },
@@ -314,6 +322,21 @@ export effect function make(options: {
       const stored = try seal(key, { claims, verifier: pair.codeVerifier, expires })
       if (!(try options.store.insert(key, try hash(state), stored, expires))) throw refused()
       return { location: options.github.authorizeUrl({ state, codeChallenge: pair.codeChallenge, redirectUri: options.origin + CALLBACK }), cookie: try options.keys.sign("broker_browser", state) }
+    }),
+    /**
+     * The person cancelled on GitHub. The attempt ends once, and the browser returns to the site's fixed callback with
+     * `error=access_denied` and the site's own nonce in the fragment, so the site can say so. GitHub issued no token,
+     * and no identity or code leaves the broker.
+     */
+    cancel: (state: string, error: string, cookie: string | undefined) => observed("cancel", effect {
+      try cancelBrowser(state, error, cookie)
+      const key = "attempt/" + (try hash(state))
+      const stored = try options.store.take(key, try hash(state), try Clock.currentTimeMillis)
+      if (stored === undefined) throw refused()
+      const pending = try checked(decodeAttempt(try open(key, stored)))
+      try fresh(pending.expires, REQUEST_TTL)
+      if (!allowedOrigin(pending.claims.origin, options.sites, options.localDevelopment)) throw refused()
+      return pending.claims.origin + CALLBACK + "#" + new URLSearchParams({ error: CANCELLED, state: pending.claims.nonce })
     }),
     callback: (state: string, code: string, cookie: string | undefined, referer?: string) => observed("callback", effect {
       try callbackBrowser(state, code, cookie)
@@ -354,12 +377,15 @@ export effect function make(options: {
   }
 }
 
-/** The fragment never reaches HTTP/access logs; erase it before submitting a same-origin POST. No third-party assets. */
+/**
+ * The fragment never reaches HTTP/access logs; erase it before submitting a same-origin POST. No third-party assets.
+ * It posts `{ code, state, error }`: a person who cancelled on GitHub arrives with `error=access_denied` and no code.
+ */
 export const HANDOFF_PAGE = `<!doctype html><meta name="referrer" content="no-referrer"><title>Sign in</title><script>
 const p=new URLSearchParams(location.hash.slice(1));history.replaceState(null,"",location.pathname);
-fetch(location.pathname,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:p.get("code"),state:p.get("state")})}).then(r=>r.ok?r.json():{location:"/?sign-in=failed"}).then(a=>location.replace(a.location||"/")).catch(()=>location.replace("/?sign-in=failed"));
+fetch(location.pathname,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:p.get("code"),state:p.get("state"),error:p.get("error")})}).then(r=>r.ok?r.json():{location:"/?sign-in=failed"}).then(a=>location.replace(a.location||"/")).catch(()=>location.replace("/?sign-in=failed"));
 </script>`
-export const HANDOFF_CSP = "default-src 'none'; script-src 'sha256-GIDYQwpM0yJZjomirUAQiFzuA0To64XMN+VUcwhLmyM='; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+export const HANDOFF_CSP = "default-src 'none'; script-src 'sha256-HsP21JNOtEEas//iru4G8LIZ8dmGD/9LfVucrIhCxEI='; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 export function consentHtml(host: string, login: string, consent: string): string {
   return `<!doctype html><meta name="referrer" content="no-referrer"><title>Connect GitHub</title><form method="post"><input type="hidden" name="consent" value="${escapeHtml(consent)}"><p>Connect ${escapeHtml(host)} to GitHub as @${escapeHtml(login)}?</p><button name="answer" value="connect">Connect</button> <button name="answer" value="cancel">Cancel</button></form>`
@@ -381,6 +407,8 @@ const consentPost = (request: HttpServerRequest.HttpServerRequest, origin: strin
   (request.headers.origin === origin || request.headers.origin === "null") && request.headers["sec-fetch-site"] === "same-origin" && !(Number(request.headers["content-length"]) > CONSENT_BODY)
 /** The request reads its body once; a second read answers the same text. */
 const bodyOf = (request: HttpServerRequest.HttpServerRequest, limit: number) => checked(request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(limit)), Effect.timeout("3 seconds")))
+/** GitHub's callback for a cancel: an error and no code. */
+const cancelled = (url: URL) => url.searchParams.has("error") && !url.searchParams.has("code")
 const decodeExchange = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ origin: Schema.String, request: Schema.String })))
 
 /** `serve`'s answer to a request `screen` refused: the same 400, clearing the browser cookie. */
@@ -397,7 +425,7 @@ export effect function screen(broker: { readonly admits: Effect.Success<ReturnTy
   const cookie = request.cookies[cookieNameOf(origin)]
   const query = (name: string) => url.searchParams.get(name) ?? ""
   if (url.pathname === START && request.method === "GET") return try broker.admits.start(query("origin"), query("return_to"))
-  if (url.pathname === CALLBACK && request.method === "GET") return try broker.admits.callback(query("state"), query("code"), cookie)
+  if (url.pathname === CALLBACK && request.method === "GET") return try (cancelled(url) ? broker.admits.cancel(query("state"), query("error"), cookie) : broker.admits.callback(query("state"), query("code"), cookie))
   if (url.pathname === CONSENT && request.method === "GET") return try broker.admits.consent(query("consent"), cookie)
   if (url.pathname === CONSENT && request.method === "POST") {
     if (!consentPost(request, origin)) return false
@@ -427,6 +455,10 @@ export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof ma
     if (url.pathname === START && request.method === "GET") {
       const start = try broker.start(url.searchParams.get("origin") ?? "", url.searchParams.get("return_to") ?? "")
       return cookie(HttpServerResponse.redirect(start.location, { status: 303, headers: HEADERS }), start.cookie, REQUEST_TTL)
+    }
+    if (url.pathname === CALLBACK && request.method === "GET" && cancelled(url)) {
+      const location = try broker.cancel(url.searchParams.get("state") ?? "", url.searchParams.get("error") ?? "", request.cookies[cookieName])
+      return cookie(HttpServerResponse.redirect(location, { status: 303, headers: HEADERS }), "", 0)
     }
     if (url.pathname === CALLBACK && request.method === "GET") {
       const location = try broker.callback(url.searchParams.get("state") ?? "", url.searchParams.get("code") ?? "", request.cookies[cookieName], request.headers.referer)

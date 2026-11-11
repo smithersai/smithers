@@ -260,6 +260,49 @@ it.effect("preserves normal 43-character GitHub state even when it begins with t
   })
 })
 
+it.effect("a person who cancels on GitHub returns once to the site's callback, with the error and the site's nonce and nothing else", () => effect {
+  const f = try fixture()
+  const forged = try exit(f.broker.cancel(f.state, Broker.CANCELLED, f.start.cookie + "0"))
+  const otherError = try exit(f.broker.cancel(f.state, "redirect_uri_mismatch", f.start.cookie))
+  const foreignState = try exit(f.broker.cancel(Broker.STATE_PREFIX + "x".repeat(43), Broker.CANCELLED, f.start.cookie))
+  const location = try f.broker.cancel(f.state, Broker.CANCELLED, f.start.cookie)
+  const again = try exit(f.broker.cancel(f.state, Broker.CANCELLED, f.start.cookie))
+  const late = try exit(f.broker.callback(f.state, "github-code", f.start.cookie))
+  const g = try fixture()
+  try TestClock.adjust("10 minutes")
+  const expired = try exit(g.broker.cancel(g.state, Broker.CANCELLED, g.start.cookie))
+  try Effect.try(() => {
+    expect([forged, otherError, foreignState, again, late, expired].map(value => value._tag)).toEqual(Array(6).fill("Failure"))
+    expect(location).toBe(origin + Broker.CALLBACK + "#" + new URLSearchParams({ error: "access_denied", state: f.pending.claims.nonce }))
+  })
+})
+
+it.effect("serves GitHub's cancel as a redirect to the site, clearing its cookie, and screens out every other error", () => effect {
+  const f = try fixture()
+  const next = try f.client.begin()
+  const started = try call(f.broker, Broker.START + "?" + new URLSearchParams({ origin, return_to: next.returnTo }))
+  const state = new URL(started.headers.location!).searchParams.get("state")!
+  const browser = "__Host-smithers-broker=" + started.cookies.cookies["__Host-smithers-broker"]!.value
+  // GitHub's own words for a cancel: https://docs.github.com/en/apps/oauth-apps/maintaining-oauth-apps/troubleshooting-authorization-request-errors#access-denied
+  const cancelPath = Broker.CALLBACK + "?" + new URLSearchParams({ error: "access_denied", error_description: "The user has denied your application access.", state })
+  const admitted = try screened(f.broker, cancelPath, { cookie: browser })
+  const refusals = [
+    try screened(f.broker, cancelPath),
+    try screened(f.broker, cancelPath, { cookie: browser + "0" }),
+    try screened(f.broker, Broker.CALLBACK + "?" + new URLSearchParams({ error: "redirect_uri_mismatch", state }), { cookie: browser }),
+  ]
+  const cancelled = try call(f.broker, cancelPath, undefined, browser)
+  const replay = try call(f.broker, cancelPath, undefined, browser)
+  try Effect.try(() => {
+    expect([admitted, ...refusals]).toEqual([true, false, false, false])
+    expect(cancelled.status).toBe(303)
+    expect(cancelled.headers.location).toBe(origin + "/api/auth/callback#" + new URLSearchParams({ error: "access_denied", state: next.claims.nonce }))
+    expect(cancelled.headers["referrer-policy"]).toBe("no-referrer")
+    expect(cancelled.cookies.cookies["__Host-smithers-broker"]!.value).toBe("")
+    expect(replay.status).toBe(400)
+  })
+})
+
 it.effect("malformed provider callbacks leave a valid pending attempt usable", () => effect {
   const f = try fixture()
   const empty = try exit(f.broker.callback(f.state, "", f.start.cookie))

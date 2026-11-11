@@ -128,3 +128,20 @@ places. Each fix has a test that failed on the old code.
 
 smithers.sh's broker now refuses an unsigned request before any execution, holds no lock across sign-ins and
 throttles its routes per network; the site's sign-in needs no change for it.
+
+## A cancel returns to the site (2026-11-11, lane signin-broker)
+
+A person who cancelled on GitHub stopped at smithers.sh's `400 {"error":"sign-in"}`, with no way back to the site.
+GitHub's callback for a cancel carries `error=access_denied`, the state, and no code. The broker's new `cancel` step
+checks the same browser cookie as `callback`, ends the attempt once, and sends the browser to the site's fixed
+callback with `#error=access_denied&state=<nonce>`. No code, identity or token exists to leak. `screen()` admits only
+that error; any other GitHub error is refused as before. `HANDOFF_PAGE` now posts `error` beside `code` and `state`.
+
+| Site | What a cancel shows |
+| --- | --- |
+| vibelang.smithers.sh | Its post has no code, so it answers 400 and the page goes to `/?sign-in=failed`, as for any failed sign-in. Its pending row expires as before |
+| lang.smithers.sh | "You cancelled the sign-in on GitHub." on Live mode's home |
+
+`test/AuthBroker.test.vibe` covers the step (wrong cookie, other errors, a foreign state, replay, a late code, expiry)
+and its HTTP route through `screen()` and `serve()`. No redirect URL, secret or dependency is added. It takes effect
+when smithers.sh deploys.
