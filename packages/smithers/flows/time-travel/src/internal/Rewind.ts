@@ -768,6 +768,7 @@ interface Progress {
   compensation: Compensation.Result
   archiveAttempted: boolean
   archiveCommitted: boolean
+  suspended: boolean
   readonly claimedChildren: Array<ClaimedChild>
   readonly cancelledChildren: Array<string>
 }
@@ -1021,12 +1022,13 @@ const commit = (context: Context, progress: Progress, preflighted: Preflight) =>
 const finish = (
   context: Context,
   progress: Progress,
-  preflighted: Preflight,
+  preflighted: Pick<Preflight, "pendingChildren">,
   lease: Lease.HeldLease
 ) =>
   Effect.gen(function*() {
     const { auditId, claimed, options, runs, store } = context
     for (const child of progress.claimedChildren) {
+      if (progress.cancelledChildren.includes(child.plan.edge.childRunId)) continue
       yield* cancelClaimedChild(runs, child)
       progress.cancelledChildren.push(child.plan.edge.childRunId)
       yield* persist(context, progress, {
@@ -1035,29 +1037,37 @@ const finish = (
       })
     }
 
-    // The run suspends with the state AT the frame, not the state the
-    // truncated future left on the row. `createFork` already derives it this
-    // way for a child; a rewound parent that kept the later payload resumed
-    // from a future its journal no longer records.
-    const frameState = yield* store.stateAt(options.runId, options.frame)
-    // From here, losing the heartbeat is expected: this transition
-    // intentionally releases the ownership the supervisor watches.
-    yield* lease.releasing
-    const suspended = yield* runs.transitionOwned(
-      options.runId,
-      options.owner,
-      "suspended",
-      frameState ?? claimed.row.stateJson
-    ).pipe(
-      Effect.mapError((cause) => RunRow.failure("suspend rewound run", cause))
-    )
-    if (suspended._tag !== "Transitioned") {
-      return yield* Effect.fail(
-        error("busy", `run ${options.runId} lost ownership before suspension`)
+    if (!progress.suspended) {
+      // The run suspends with the state AT the frame, not the state the
+      // truncated future left on the row. `createFork` already derives it this
+      // way for a child; a rewound parent that kept the later payload resumed
+      // from a future its journal no longer records.
+      const frameState = yield* store.stateAt(options.runId, options.frame)
+      // From here, losing the heartbeat is expected: this transition
+      // intentionally releases the ownership the supervisor watches.
+      yield* lease.releasing
+      const suspended = yield* runs.transitionOwned(
+        options.runId,
+        options.owner,
+        "suspended",
+        frameState ?? claimed.row.stateJson
+      ).pipe(
+        Effect.mapError((cause) => RunRow.failure("suspend rewound run", cause))
       )
+      if (suspended._tag !== "Transitioned") {
+        return yield* Effect.fail(
+          error("busy", `run ${options.runId} lost ownership before suspension`)
+        )
+      }
+      progress.suspended = true
     }
 
-    const detail: AuditDetail = { ...progress.detail!, phase: "completed" }
+    const detail: AuditDetail = {
+      ...progress.detail!,
+      phase: "completed",
+      cancelledChildren: [...progress.cancelledChildren],
+      pendingChildren: []
+    }
     progress.detail = detail
     yield* store.updateAudit(auditId, { status: "completed", detail })
   })
@@ -1100,14 +1110,16 @@ const reraise = (cause: Cause.Cause<TimeTravelFailure>): Effect.Effect<never, Ti
  *
  * It first settles whether the archive committed, from `archiveCommitted` or,
  * when the commit may have landed unobserved, from the journal and archive. A
- * committed rewind stays `archive_committed` for `Recovery` to finish. An
+ * committed rewind finishes under the held lease, retaining an open audit
+ * for `Recovery` only if settlement fails. An
  * uncommitted one rolls back `progress.compensation`, gives back every claimed
  * child and the run, and closes the audit `rolled_back` or `terminal_failure`.
  */
 const settleFailure = (
   context: Context,
   progress: Progress,
-  cause: Cause.Cause<TimeTravelFailure>
+  cause: Cause.Cause<TimeTravelFailure>,
+  lease: Lease.HeldLease
 ) =>
   Effect.gen(function*() {
     const { auditId, claimed, journal, options, runs, store } = context
@@ -1151,6 +1163,32 @@ const settleFailure = (
         Effect.catchCause((cause) =>
           Effect.logWarning("time-travel: failed to persist rewind audit", cause).pipe(
             Effect.annotateLogs({ auditId, runId: options.runId, step: "archive_committed" })
+          )
+        )
+      )
+      // The archive is irreversible. Finish its remaining transitions while
+      // this call still holds the lease instead of waiting for a new service
+      // incarnation. Preserve the caller's original failure even if settlement
+      // succeeds; an unsuccessful settlement leaves the quarantined audit open.
+      yield* lease.guard(Effect.gen(function*() {
+        if (!progress.suspended) {
+          const row = yield* runs.get(options.runId).pipe(
+            Effect.mapError((cause) => RunRow.failure("read committed rewind owner", cause))
+          )
+          if (
+            row.owner?.hostId !== options.owner.hostId || row.owner.pid !== options.owner.pid ||
+            row.owner.nonce !== options.owner.nonce
+          ) {
+            return yield* Effect.fail(error("fence_lost", "committed rewind no longer owns its run"))
+          }
+        }
+        yield* finish(context, progress, {
+          pendingChildren: progress.detail!.pendingChildren ?? []
+        }, lease)
+      })).pipe(
+        Effect.catchCause((settlement) =>
+          Effect.logWarning("time-travel: committed rewind remains pending").pipe(
+            Effect.annotateLogs({ auditId, runId: options.runId, code: fromCause(settlement).code })
           )
         )
       )
@@ -1325,6 +1363,7 @@ export const rewind = (
             compensation: { handlerReceipts: [] },
             archiveAttempted: false,
             archiveCommitted: false,
+            suspended: false,
             claimedChildren: [],
             cancelledChildren: []
           }
@@ -1345,7 +1384,7 @@ export const rewind = (
             Effect.gen(function*() {
               const protocolExit = yield* Effect.exit(restore(lease.guard(protocol(context, progress, lease))))
               if (Exit.isSuccess(protocolExit)) return protocolExit.value
-              return yield* settleFailure(context, progress, protocolExit.cause)
+              return yield* settleFailure(context, progress, protocolExit.cause, lease)
             }))
         })
       )

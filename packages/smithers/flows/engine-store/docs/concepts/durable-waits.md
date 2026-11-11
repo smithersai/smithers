@@ -229,3 +229,9 @@ for arranging their next invocation after delivering the control request.
 `test/HostedEngine.test.ts` covers separate runtimes over a persistent database,
 both sides of the parking transition, repeated requests on a fixed TestClock, and
 rebuilding the admission and consumption records from the journal.
+
+A `quarantine` wait whose token starts with `time-travel:` belongs to an
+unfinished rewind audit. Polling, explicit resume, and cancellation preserve
+that wait until the audit closes. Cancellation intent remains durable and is
+handled after closure; an operator resume cannot authorize execution against
+a partially restored workspace or journal.

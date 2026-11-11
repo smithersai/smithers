@@ -394,6 +394,12 @@ attaches the restoration problem as its cause. See
 [The rewind protocol](../concepts/rewind-protocol.md) for where each step sits
 relative to that point, and what a crash between them costs.
 
+After the archive commits, a failure attempts to finish cancellation and
+suspension under the same lease before returning the original error. If that
+settlement fails, the open audit keeps the run quarantined from automatic
+engine takeover. The archive transaction has already saved the frame state
+alongside the surviving journal.
+
 ## Where to go next
 
 - [Fork a run at a frame](./fork-a-run.md): what a child run inherits, and

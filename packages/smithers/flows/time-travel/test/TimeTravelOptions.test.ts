@@ -8,6 +8,7 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import { TestClock } from "effect/testing"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import { forkWorkspaceName, layerWith, type Options, TimeTravel } from "../src/TimeTravel.ts"
@@ -288,7 +289,13 @@ describe("TimeTravel recovery liveness", () => {
           )
         )
       )
-      yield* Effect.scoped(Effect.provide(Effect.void, composed))
+      const logged: Array<string> = []
+      yield* Effect.scoped(Effect.provide(Effect.void, composed)).pipe(
+        Effect.provide(Logger.layer([Logger.make<unknown, void>(({ message }) => logged.push(String(message)))]))
+      )
+      if (store.state().audits.some((audit) => audit.status === "in_progress")) {
+        expect(logged).toContain("time-travel: startup recovery deferred an audit")
+      }
       return store.state().audits
     })
 

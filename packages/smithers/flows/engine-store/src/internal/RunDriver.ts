@@ -101,7 +101,8 @@ export type RequestedResumeReason = "deferred" | "clock" | "parent"
 /**
  * Why a wake is scheduled for an execution.
  *
- * Only `operator` is recovery consent for a quarantine park. `delegated` is a
+ * Only `operator` is recovery consent for an evidence quarantine park.
+ * A rewind's quarantine instead waits for its audit to close. `delegated` is a
  * host taking up a control delegation it has already claimed, so, like
  * `operator`, it is not recorded back to the host as a request.
  *
@@ -1088,11 +1089,18 @@ const abandon = (driver: Driver, runId: string, claimedAtMs: number): Effect.Eff
     Effect.orDie
   )
 
-/** Whether a run is parked in quarantine, which only an operator's resume lifts. */
-const isQuarantined = (driver: Driver, runId: string): Effect.Effect<boolean> =>
+// A rewind owns this wait until its audit closes. Neither operator consent
+// nor cancellation can resume execution against partially reverted effects.
+const rewindQuarantine = (waiting: DurableEngineState.WaitingRow): boolean =>
+  waiting.reason === "quarantine" && waiting.token?.startsWith("time-travel:") === true
+
+/** Whether quarantine blocks this drive, including a pending cancellation. */
+const isQuarantined = (driver: Driver, runId: string, cancelling = false): Effect.Effect<boolean> =>
   Effect.map(
     driver.engineState.waiting(runId),
-    (waiting) => Option.isSome(waiting) && waiting.value.reason === "quarantine"
+    (waiting) =>
+      Option.isSome(waiting) && waiting.value.reason === "quarantine" &&
+      (!cancelling || rewindQuarantine(waiting.value))
   )
 
 /** Each way a claim ends: the span outcome it is annotated with, by its counter. */
@@ -1206,8 +1214,9 @@ const claimable = (driver: Driver, row: RunStore.RunRow): Effect.Effect<boolean>
       return false
     }
     // Every drive, including a fresh execute or a queued wake, must
-    // preserve quarantine. Cancellation still claims the row to close it.
-    return row.cancelRequestedAtMs !== null || !(yield* isQuarantined(driver, row.runId))
+    // preserve quarantine. Cancellation may close an evidence quarantine,
+    // but a rewind must settle its audit before either path can execute.
+    return !(yield* isQuarantined(driver, row.runId, row.cancelRequestedAtMs !== null))
   })
 
 /**
@@ -1418,7 +1427,7 @@ const activate = (
       // Another owner can quarantine and return to the same suspended
       // snapshot between preflight and claim. Fence that park in the
       // activation transaction too; the rejected claim is abandoned below.
-      if (row.cancelRequestedAtMs === null && (yield* isQuarantined(driver, row.runId))) {
+      if (yield* isQuarantined(driver, row.runId, row.cancelRequestedAtMs !== null)) {
         return { _tag: "SnapshotChanged" as const }
       }
       const activation = yield* driver.store.activate(
@@ -4548,8 +4557,9 @@ const recordWake = (
       if (isSettled(row.status)) return
       const state = yield* decodeState(row.stateJson)
       if (state.flowName !== flowName) return
-      if (yield* isQuarantined(driver, executionId)) {
-        if (reason !== "operator") return
+      const waiting = yield* driver.engineState.waiting(executionId)
+      if (Option.isSome(waiting) && waiting.value.reason === "quarantine") {
+        if (reason !== "operator" || rewindQuarantine(waiting.value)) return
         // Recovery consent and its journal receipt commit together. A
         // queued drive cannot consume quarantined evidence before consent.
         yield* driver.engineState.wake(executionId)

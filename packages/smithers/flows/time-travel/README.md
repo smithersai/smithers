@@ -59,7 +59,9 @@ Every module is also reachable at the matching `@smthrs/time-travel/*` subpath;
 `HistoryLimit`, and `EffectHandlerRegistry` are machinery a caller never names, and `@smthrs/time-travel/internal/*` is not importable.
 Recovery is never a call: building `TimeTravel.layer` finishes or rolls back any
 rewind a crash interrupted, and forgets the jj lane of any fork that reserved an
-id and died before it committed.
+id and died before it committed. An open SQL rewind audit quarantines its run
+from automatic engine takeover, even after the rewind owner's heartbeat expires.
+A still-live owner's recovery is deferred and logged for a later layer build.
 
 `replay` and `inspect` are one fold. `replay` takes the read knobs
 (`pageSize`, `maxHistoryEntries`, `engineEvents`); `inspect` is the same fold

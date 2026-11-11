@@ -282,6 +282,14 @@ says it exists.
 11. Cancel the claimed children, recording each on the audit as it lands.
 12. Suspend the run with the state derived at the frame and close the audit.
 
+The SQL audit opens with a quarantine wait in the same transaction and clears
+it only when the audit closes. Engine stale-run recovery cannot take over an
+open rewind, including one whose owner died. The archive transaction also
+writes the frame state to the run row. A post-commit failure attempts to finish
+under the held lease before returning the original error; if settlement fails,
+the audit remains open for startup recovery. Every deferred `Busy` outcome is
+logged as a warning with its audit id, code, and reason.
+
 Step 10 is the recovery commit point. The audit records the journal `generation`
 before truncation. When a committed phase was not persisted, recovery requires
 an empty live suffix and its archived tail in that exact generation. Old audits

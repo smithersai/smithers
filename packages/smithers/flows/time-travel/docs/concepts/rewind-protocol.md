@@ -23,6 +23,8 @@ the process dies at this exact line, what does the next process see?
    validation would have refused.
 4. **Apply the `Options.rateLimit` limiter and write the audit row**, carrying
    the decision and the pre-truncation journal `generation` read under the claim.
+   The SQL transaction also quarantines the run's wait projection, preventing
+   the engine's stale-run sweep from taking it over while the audit is open.
    The audit exists before anything is compensated or truncated,
    so a crash always leaves a row recovery can find. A build that supplies no
    limiter allows every rewind and records `{ allowed: true, checkedAtMs }`.
@@ -40,7 +42,9 @@ the process dies at this exact line, what does the next process see?
 9. **Write the cancellation plan, then claim every child it names.** A claim is
    reversible; a cancellation is not.
 10. **Archive and truncate the suffix atomically**, fenced on the parent's owner
-    and on every non-terminal attached child's exact owner. Archiving is not
+    and on every non-terminal attached child's exact owner. The frame's derived
+    state is written to the run row in that transaction, so its state always
+    agrees with the surviving journal after commit. Archiving is not
     deletion: the records move aside so a forensic reader can still reach them.
     Archive rows use `(run_id, generation, seq)`, with each run's generation read
     before truncation advances it. Snapshot anchors above the parent frame and
@@ -69,10 +73,17 @@ the archived suffix tail in the audit's pre-truncation generation before choosin
 rollback. When the audit records a generation, an archive row from an earlier
 generation cannot prove this commit. Audits without one retain the
 generation-agnostic archive check described below.
-A durable archive keeps
-the audit `in_progress` at phase `archive_committed`, with compensation and
-workspace restoration intact for recovery to finish. If the evidence cannot
-be read, the audit stays open and rollback is deferred.
+After a post-commit failure, the call attempts to finish child cancellation,
+suspension, and audit closure while it still holds the lease, then returns the
+original error. Already completed transitions are not repeated. If settlement
+fails or commit evidence cannot be read, the audit stays `in_progress` at its
+last durable phase, with compensation and workspace restoration intact for
+recovery. The run remains quarantined even after its heartbeat expires.
+
+Closing the SQL audit clears its quarantine in the same transaction. A failed,
+uncommitted rewind restores the original wait projection; a completed rewind
+clears the discarded future's wait. The quarantine token ties that change to
+this audit, so closure cannot clear a replacement wait.
 
 Cancelling a child is terminal and has no inverse, so it runs only after the
 commit. A rewind that fails earlier leaves every child exactly as it was:
@@ -93,8 +104,8 @@ their external effects cannot be erased by deleting a parent's suffix.
 
 Building `TimeTravel.layer` finishes or rolls back every rewind a crash
 interrupted, before the service accepts new work. There is no recovery call for
-a caller to remember, and no window in which the service is up but the last
-crash is unresolved.
+a caller to remember. A still-live owner's audit is deferred and remains
+quarantined until a later layer build can recover it.
 
 Recovery decides by evidence, not by assumption. An interrupted rewind whose
 live suffix is gone checks that its recorded tail landed in the archive. When
@@ -115,7 +126,8 @@ new audits.
 
 One audit it will not resolve is one whose run a live process still holds. That
 one is declined: it keeps its `in_progress` status, stays in `pendingAudits`,
-and nothing is written, so a later build finishes it. Recording it `failed`
+and a warning identifies the deferred audit. Nothing is written to the audit,
+so a later build finishes it. Recording it `failed`
 would close it terminally and drop it from `pendingAudits` forever, and a
 rewind a living process still owns is never stolen.
 

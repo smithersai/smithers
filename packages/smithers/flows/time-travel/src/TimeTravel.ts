@@ -527,15 +527,17 @@ export const makeWith = (
     // that invisible to the composition, so an operator learned about a rewind
     // recovery could not finish only by reading the audit table by hand.
     yield* Effect.forEach(
-      outcomes.filter((outcome) => outcome._tag === "Failed"),
+      outcomes.filter((outcome) => outcome._tag === "Failed" || outcome._tag === "Busy"),
       (outcome) =>
-        Effect.logError("time-travel: startup recovery closed an audit as failed").pipe(
-          Effect.annotateLogs({
-            auditId: outcome.auditId,
-            code: outcome.error.code,
-            reason: outcome.error.message
-          })
-        ),
+        (outcome._tag === "Busy"
+          ? Effect.logWarning("time-travel: startup recovery deferred an audit")
+          : Effect.logError("time-travel: startup recovery closed an audit as failed")).pipe(
+            Effect.annotateLogs({
+              auditId: outcome.auditId,
+              code: outcome.error.code,
+              reason: outcome.error.message
+            })
+          ),
       { discard: true }
     )
 

@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Interrupted rewinds stay quarantined from engine takeover until their audit
+  closes. Truncation commits the frame state, and post-commit failures finish
+  under the held lease before returning the original error.
+
 - Failed rewind/recovery audit updates and unknown effect-boundary appends now
   warn with their cause and identifiers while preserving the primary outcome.
 

@@ -53,6 +53,16 @@ export const migrate: Effect.Effect<void, unknown, SqlClient.SqlClient> = Databa
 )
 const Json = Schema.fromJsonString(Schema.Unknown)
 const RunStateJson = Schema.fromJsonString(RunState)
+// A rewind temporarily replaces the mutable wait projection. Keep the old
+// projection in the quarantine request so a failed rewind restores it without
+// adding another durable store or exposing it through the audit detail.
+const SavedWait = Schema.Struct({
+  waiting_reason: Schema.NullOr(Schema.String),
+  waiting_wake_at_ms: Schema.NullOr(Schema.Number),
+  waiting_token: Schema.NullOr(Schema.String),
+  waiting_request: Schema.NullOr(Schema.String)
+})
+const SavedWaitJson = Schema.fromJsonString(SavedWait)
 const mapError = (cause: unknown) =>
   cause instanceof TimeTravelError ? cause : error("unknown", "time-travel persistence failed", cause)
 const decodeJson = (value: string | null) =>
@@ -770,6 +780,26 @@ export const make: Effect.Effect<
               const rateLimit = audit.rateLimit === undefined ? null : yield* encodeJson(audit.rateLimit)
               const detail = audit.detail === undefined ? null : yield* encodeJson(audit.detail)
               yield* sql`INSERT INTO flows_time_travel_audits (id, run_id, lineage_id, seq, status, rate_limit_json, detail_json) VALUES (${audit.id}, ${audit.runId}, ${audit.frame.lineageId}, ${audit.frame.seq}, ${audit.status}, ${rateLimit}, ${detail})`
+              if (audit.status === "in_progress") {
+                const rows = yield* sql<typeof SavedWait.Type>`
+                  SELECT waiting_reason, waiting_wake_at_ms, waiting_token, waiting_request
+                  FROM flows_runs WHERE run_id = ${audit.runId}
+                `
+                if (rows[0] !== undefined) {
+                  if (
+                    rows[0].waiting_reason === "quarantine" &&
+                    rows[0].waiting_token?.startsWith("time-travel:") === true
+                  ) {
+                    return yield* Effect.fail(error("busy", `run ${audit.runId} has an unfinished rewind`))
+                  }
+                  const saved = yield* Schema.encodeEffect(SavedWaitJson)(rows[0])
+                  yield* sql`
+                    UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_wake_at_ms = NULL,
+                      waiting_token = ${`time-travel:${audit.id}`}, waiting_request = ${saved}
+                    WHERE run_id = ${audit.runId}
+                  `
+                }
+              }
             })
           ).pipe(Effect.asVoid, Effect.mapError(mapError))
         ))
@@ -787,6 +817,24 @@ export const make: Effect.Effect<
                 const rateLimitJson = next.rateLimit === undefined ? null : yield* encodeJson(next.rateLimit)
                 const detailJson = next.detail === undefined ? null : yield* encodeJson(next.detail)
                 yield* sql`UPDATE flows_time_travel_audits SET status = ${next.status}, rate_limit_json = ${rateLimitJson}, detail_json = ${detailJson} WHERE id = ${id}`
+                if (next.status !== "in_progress") {
+                  const rows = yield* sql<{ readonly waiting_request: string }>`
+                    SELECT waiting_request FROM flows_runs WHERE run_id = ${audit.runId}
+                      AND waiting_reason = 'quarantine' AND waiting_token = ${`time-travel:${id}`}
+                  `
+                  if (rows[0] !== undefined) {
+                    const saved = yield* Schema.decodeUnknownEffect(SavedWaitJson)(rows[0].waiting_request)
+                    yield* sql`
+                      UPDATE flows_runs SET
+                        waiting_reason = ${next.status === "failed" ? saved.waiting_reason : null},
+                        waiting_wake_at_ms = ${next.status === "failed" ? saved.waiting_wake_at_ms : null},
+                        waiting_token = ${next.status === "failed" ? saved.waiting_token : null},
+                        waiting_request = ${next.status === "failed" ? saved.waiting_request : null}
+                      WHERE run_id = ${audit.runId}
+                        AND waiting_reason = 'quarantine' AND waiting_token = ${`time-travel:${id}`}
+                    `
+                  }
+                }
               }).pipe(Effect.mapError(mapError))
             ).pipe(Effect.mapError(mapError), Effect.asVoid)
           )
@@ -825,6 +873,13 @@ export const make: Effect.Effect<
                         `run ${runId} is no longer owned by ${owner.hostId}:${owner.pid}:${owner.nonce}`
                       )
                     )
+                  }
+                  // The state and its surviving journal prefix commit together.
+                  // Recovery may be delayed after COMMIT, but no reader should
+                  // observe the truncated journal with the future's run state.
+                  const frameState = yield* stateAtFrame(runId, frame)
+                  if (frameState !== undefined) {
+                    yield* sql`UPDATE flows_runs SET state_json = ${frameState} WHERE run_id = ${runId}`
                   }
                   const rows = yield* edgesUnder(runId)
                   const descendants = LineageTree.descendants(rows.map(edgeFromRow), runId, frame)

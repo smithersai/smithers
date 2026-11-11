@@ -898,6 +898,14 @@ describe("Rewind protocol fault matrix", () => {
               auditId: `audit-${scenario.message}`,
               step: "archive_committed"
             })
+          }),
+          expect.objectContaining({
+            level: "Warn",
+            annotations: expect.objectContaining({
+              runId: "run",
+              auditId: `audit-${scenario.message}`,
+              code: expect.any(String)
+            })
           })
         ])
         expect(String(logs[0]?.message)).toContain("postcommit audit unavailable")

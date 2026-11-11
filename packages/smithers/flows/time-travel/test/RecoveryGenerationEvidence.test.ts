@@ -86,16 +86,16 @@ describe("rewind generation commit evidence", () => {
         const audits = yield* sql<{ readonly status: string; readonly detail_json: string }>`
           SELECT status, detail_json FROM flows_time_travel_audits WHERE id = 'second-rewind'
         `
-        expect(audits[0]?.status).toBe(reportsGeneration ? "failed" : "in_progress")
+        expect(audits[0]?.status).toBe(reportsGeneration ? "failed" : "completed")
         const detail = JSON.parse(audits[0]!.detail_json)
-        expect(detail.phase).toBe(reportsGeneration ? "rolled_back" : "archive_committed")
+        expect(detail.phase).toBe(reportsGeneration ? "rolled_back" : "completed")
         expect(detail.generation).toBe(reportsGeneration ? 1 : undefined)
         const runs = yield* RunStore.RunStore
         if (!reportsGeneration) {
-          expect(yield* runs.get("run")).toMatchObject({ status: "running", owner })
+          expect(yield* runs.get("run")).toMatchObject({ status: "suspended", owner: null })
           expect(yield* store.archivedAt("run", 2, 1)).toBe(true)
           expect(yield* Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }))
-            .toEqual([{ _tag: "Completed", auditId: "second-rewind" }])
+            .toEqual([])
         }
         expect(yield* runs.get("run")).toMatchObject({ status: "suspended", owner: null })
       }).pipe(
