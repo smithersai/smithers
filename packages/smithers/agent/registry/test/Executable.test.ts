@@ -1314,10 +1314,24 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const greet = yield* fs.readFileString(`${flowsRoot}/greet/flow.ts`)
       const root = yield* project({ ".smithers/flows/greet/flow.ts": greet })
       const directory = `${root}/.smithers/flows/greet`
-      const stale = `.smithers-deadbeef-1-${(Date.now() - 60 * 60 * 1000).toString(36)}.ts`
-      const fresh = `.smithers-deadbeef-2-${Date.now().toString(36)}.ts`
+      const now = 1_700_000_000_000
+      yield* TestClock.setTime(now)
+      const sibling = (sequence: number, at: number) => `smithers-${"d".repeat(64)}-${sequence}-${at.toString(36)}.ts`
+      const stale = sibling(1, now - 60 * 60 * 1000)
+      const fresh = sibling(2, now)
+      // Old names that are not regular files the loader wrote: the user's own
+      // helper, a hex digest that is too short, a stamp in the future, and a
+      // directory named exactly like a stale sibling.
+      const helper = "smithers-agent-flow-helper.ts"
+      const short = `smithers-deadbeef-1-${(now - 60 * 60 * 1000).toString(36)}.ts`
+      const future = sibling(3, now + 60 * 60 * 1000)
+      const folder = sibling(4, now - 60 * 60 * 1000)
       yield* fs.writeFileString(`${directory}/${stale}`, "")
       yield* fs.writeFileString(`${directory}/${fresh}`, "")
+      yield* fs.writeFileString(`${directory}/${helper}`, "export const helper = 1\n")
+      yield* fs.writeFileString(`${directory}/${short}`, "")
+      yield* fs.writeFileString(`${directory}/${future}`, "")
+      yield* fs.makeDirectory(`${directory}/${folder}`)
       const descriptor = yield* descriptorIn(root, "greet")
       const refused: Array<string> = []
       // The unlink of this load's own sibling fails, as EBUSY does on Windows.
@@ -1343,7 +1357,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       expect(refused).toHaveLength(1)
       const left = yield* fs.readDirectory(directory)
       expect(left).not.toContain(stale)
-      expect(left).toContain(fresh)
+      expect(left).toEqual(expect.arrayContaining([fresh, helper, short, future, folder]))
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("pins a NodeNext './x.js' import of x.ts and loads the module", () =>

@@ -36,9 +36,7 @@ const program = Effect.gen(function*() {
     freshDigest: Descriptor.executionDigest(fresh),
     helperEvaluations: Reflect.get(globalThis, "__identityHelperEvaluations") ?? 0,
     entryEvaluations: Reflect.get(globalThis, "__identityEntryEvaluations") ?? 0,
-    leftovers: (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) =>
-      name.startsWith(".smithers-")
-    )
+    leftovers: (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith("smithers-"))
   }
 })
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

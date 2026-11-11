@@ -550,10 +550,11 @@ const reserveSibling = (
   extension: string,
   attempts = 8
 ): Effect.Effect<string, unknown> =>
-  Effect.suspend(() => {
+  Effect.gen(function*() {
     loadSequence += 1
-    const candidate = `${prefix}${loadSequence.toString(36)}-${Date.now().toString(36)}${extension}`
-    return fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
+    const now = yield* Clock.currentTimeMillis
+    const candidate = `${prefix}${loadSequence.toString(36)}-${now.toString(36)}${extension}`
+    return yield* fs.writeFile(candidate, new Uint8Array(0), { flag: "wx", mode: 0o600 }).pipe(
       Effect.as(candidate),
       Effect.catch((cause) => attempts > 1 ? reserveSibling(fs, prefix, extension, attempts - 1) : Effect.fail(cause))
     )
@@ -568,30 +569,39 @@ const reserveSibling = (
  */
 const staleSiblingAgeMs = 10 * 60 * 1000
 
-/** `smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
-const loadSibling = /^\.?smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/
+/**
+ * `smithers-<SHA-256 hex>-<sequence>-<base-36 epoch ms><extension>`, exactly
+ * as {@link reserveSibling} names it. The 64-digit digest keeps a user file
+ * such as `smithers-agent-flow-helper.ts` out of the sweep, and the 8 or 9
+ * digit stamp spans the epoch milliseconds of 1972 to 5188.
+ */
+const loadSibling = /^smithers-[0-9a-f]{64}-[0-9a-z]+-([0-9a-z]{8,9})\.[A-Za-z0-9]+$/
 
 /**
- * Removes the load siblings a crash left in `directory`. Best effort: a
- * listing or an unlink that fails leaves the file for the next load.
+ * Removes the load siblings a crash left in `directory`. Only a regular file
+ * whose name {@link loadSibling} matches and whose stamp is older than
+ * {@link staleSiblingAgeMs} goes; a stamp in the future reads as fresh. Best
+ * effort: a listing, stat or unlink that fails leaves the file for the next
+ * load.
  */
 const removeStaleSiblings = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
   directory: string
 ): Effect.Effect<void> =>
-  fs.readDirectory(directory).pipe(
-    Effect.flatMap((names) =>
-      Effect.forEach(names, (name) => {
-        const stamp = loadSibling.exec(name)?.[1]
-        const createdAt = stamp === undefined ? Number.NaN : Number.parseInt(stamp, 36)
-        return Number.isFinite(createdAt) && Date.now() - createdAt > staleSiblingAgeMs
-          ? Effect.ignore(fs.remove(path.join(directory, name)))
-          : Effect.void
-      }, { discard: true })
-    ),
-    Effect.ignore
-  )
+  Effect.gen(function*() {
+    const now = yield* Clock.currentTimeMillis
+    const names = yield* fs.readDirectory(directory)
+    yield* Effect.forEach(names, (name) => {
+      const stamp = loadSibling.exec(name)?.[1]
+      if (stamp === undefined || now - Number.parseInt(stamp, 36) <= staleSiblingAgeMs) return Effect.void
+      const sibling = path.join(directory, name)
+      return fs.stat(sibling).pipe(
+        Effect.flatMap((info) => info.type === "File" ? fs.remove(sibling) : Effect.void),
+        Effect.ignore
+      )
+    }, { discard: true })
+  }).pipe(Effect.ignore)
 
 /**
  * Evaluates a verified closure as one coherent version.

@@ -36,7 +36,7 @@ import * as Scope from "effect/Scope"
 import { readFile, readlink, symlink, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterEach, vi } from "vitest"
+import { afterEach } from "vitest"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
 
@@ -76,7 +76,7 @@ const reserved = (site: string): string => fileURLToPath(new URL(site))
  * The name a load `delta` sequence values later would try, given one it took.
  *
  * A reserved name is `smithers-<content digest>-<sequence>-<clock>` plus the
- * source's extension. The digest and the clock are pinned by the caller, so
+ * source's extension. The digest is the source's and the test clock stands still, so
  * the sequence is the only part that moves and a later name is predictable —
  * which is exactly what makes a collision plantable.
  */
@@ -158,17 +158,12 @@ const withProject = <A, E>(
     )
   }).pipe(Effect.scoped, Effect.provide(platform))
 
-/** A fixed clock, so the only moving part of a reserved name is its sequence. */
-const pinClock = () => vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000)
-
 afterEach(() => {
-  vi.restoreAllMocks()
   sites.length = 0
 })
 
 describe("a load reserves its own module file", () => {
   it.effect("costs one attempt on a name another writer holds, and writes nothing through it", () => {
-    pinClock()
     return withProject(runtime(), (root) =>
       Effect.gen(function*() {
         const refresh = yield* Executable.Refresh
@@ -191,7 +186,6 @@ describe("a load reserves its own module file", () => {
   }, 60_000)
 
   it.effect("refuses the body rather than take a name it could not create", () => {
-    pinClock()
     return withProject(runtime(), (root) =>
       Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
