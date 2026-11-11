@@ -422,6 +422,53 @@ describe("Plan.compile reader-after-writer edges", () => {
       expect(acyclic(plan)).toBe(true)
     }))
 
+  it.effect("serializes two nodes that each read and write one path, the earlier reading the version before both", () =>
+    Effect.gen(function*() {
+      // Read-modify-write of one file. The overlap pass serializes the later
+      // writer behind the earlier one; the earlier node reads what the path
+      // held before either write, which its own write accounts for. The
+      // later writer's unread extra path does not change that.
+      const plan = yield* withCrypto(compile([
+        draft("first", { reads: ["package.json"], writes: ["package.json"] }),
+        draft("second", { reads: ["package.json"], writes: ["package.json", "second.out"] })
+      ]))
+      expect(plan.nodes.map((node) => [node.id, node.dependsOn])).toEqual([
+        ["first", []],
+        ["second", ["first"]]
+      ])
+      expect(plan.nodes.find((node) => node.id === "second")!.conflicts).toMatchObject([
+        { with: "first", paths: ["package.json"], strategy: "serialize" }
+      ])
+      expect(acyclic(plan)).toBe(true)
+      expect(yield* withCrypto(Plan.verify(JSON.parse(JSON.stringify(plan))))).toEqual(plan)
+
+      // Two agent steps that declare a glob read and a glob write: two globs
+      // always overlap, so this is the same pair.
+      const glob = { _tag: "Glob", include: ["src/**"] } as const
+      const agent = (id: string) => {
+        const source = draft(id)
+        return { ...source, effects: { ...source.effects, reads: [glob], writes: [glob] } }
+      }
+      const globs = yield* withCrypto(compile([agent("left"), agent("right")]))
+      expect(globs.nodes.map((node) => [node.id, node.dependsOn])).toEqual([["left", []], ["right", ["left"]]])
+    }))
+
+  it.effect("still refuses a read-modify-write node that reads another path the later writer produces", () =>
+    Effect.gen(function*() {
+      // The reader's own write accounts for src/a.ts only; src/b.ts would be
+      // read from before its producer with nothing declaring that intent.
+      const reader = draft("reader", { writes: ["src/a.ts"] })
+      const error = yield* withCryptoFailure(compile([
+        { ...reader, effects: { ...reader.effects, reads: [{ _tag: "Glob", include: ["src/**"] }] } },
+        draft("writer", { writes: ["src/a.ts", "src/b.ts"] })
+      ]))
+      expect(error).toMatchObject({
+        code: "cycle",
+        message: "Plan cycle: node reader reads src/**, which node writer produces, so reader must follow writer, " +
+          "but writer already depends on reader through writer -> reader"
+      })
+    }))
+
   it.effect("never gives a node an edge to itself for reading its own write", () =>
     Effect.gen(function*() {
       const plan = yield* withCrypto(compile([draft("both", { reads: ["out"], writes: ["out"] })]))

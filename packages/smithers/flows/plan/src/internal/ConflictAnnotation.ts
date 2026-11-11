@@ -114,7 +114,9 @@ const readOverlap = (
  * because nothing needs annotating and no strategy applies. It is a missing
  * edge, so only `dependsOn` grows. When the graph already orders the producer
  * behind its reader by explicit material dependencies, the reader consumes
- * the earlier version. An opposing inferred ordering still fails with `cycle`.
+ * the earlier version. So does a reader that writes every path of the
+ * producer's it reads: the first pass already serialized that read-modify-write
+ * pair. Any other opposing inferred ordering still fails with `cycle`.
  *
  * Nodes are visited in plan order, so a `serialize` edge always points from
  * the earlier declaration to the later one and can never close a cycle. The
@@ -356,6 +358,19 @@ export const annotate = (
           // earlier inferred producer edge cannot silently select old bytes.
           if (yield* reaches(writer.id, reader.id)) {
             if ((yield* route(writer.id, reader.id, declaredEdges)) !== undefined) continue
+            // Read-modify-write: when the reader itself writes every path of
+            // the writer's that it reads, the pair is a write-write overlap the
+            // pass above already ordered, writer after reader. The reader
+            // reads the version before its own write, which is the version
+            // before the later writer's too.
+            const own = expanded.get(reader.id)!.produced
+            // Charged here and checked at the next pair or refusal.
+            work += produced.length * (reads.length + own.length)
+            const unexplained = produced.some((output) =>
+              reads.some((entry) => FileSet.overlaps(entry, output)) &&
+              !own.some((mine) => FileSet.overlaps(mine, output))
+            )
+            if (!unexplained) continue
             const contradiction = (yield* route(writer.id, reader.id))!
             return yield* refuse(
               "cycle",

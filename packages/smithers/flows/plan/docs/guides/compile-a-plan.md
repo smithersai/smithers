@@ -74,8 +74,10 @@ const compiled = Plan.compile({
    imply.
 5. Adds reader-after-writer edges where explicit `Ref`/`Pending` paths have not
    already selected read-before-write sequencing. A read before a writer
-   consumes an earlier version, not that later writer's output. Contradictory
-   inferred orderings still fail with `cycle`.
+   consumes an earlier version, not that later writer's output. So does a
+   reader that writes every path of the later writer's that it reads, such as
+   two serialized steps that each edit one file. Other contradictory inferred
+   orderings still fail with `cycle`.
 6. Derives the plan digest over the whole result.
 
 The nodes come back in topological order of material dependencies, deep-frozen,

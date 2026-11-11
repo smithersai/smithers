@@ -104,6 +104,13 @@ reader is accepted, including a transitive path. It selects earlier bytes: the
 initial source or an earlier producer's output. The pass preserves that order
 instead of adding a reverse edge.
 
+A reader that also writes every path of the writer's that it reads is a
+read-modify-write pair, such as two steps that each edit `package.json`. Both
+write the path, so the overlap pass already ordered them, and the reader reads
+what the path held before its own write, which is also before the later
+writer's. The pass keeps that order. When the reader reads any other path the
+writer produces, the rule below applies.
+
 If only inferred producer or `serialize` edges order the writer after the
 reader, there is no explicit selection of earlier bytes. Adding the required
 reader-after-writer edge closes a cycle, so the plan is refused with `cycle`.
