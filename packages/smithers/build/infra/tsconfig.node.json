@@ -11,6 +11,7 @@
     "alchemy.run.ts",
     "deployment.ts",
     "scripts/**/*.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "../../../repo-targets/src/vibelang-eslint.d.ts"
   ]
 }

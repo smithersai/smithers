@@ -198,7 +198,7 @@ The store path is fixed at `.flows/store/<manager>`. Consequently the direct
 ## 6. Target result cache
 
 The CLI cache stores a target's schema-encoded success value, not an engine
-step journal and not output artifacts. Local entries are addressed by the
+step journal. Output manifests name files in the local CAS. Entries are addressed by the
 planner content key under `<cacheDirectory>/cache`.
 
 Every entry boundary is defensive:
@@ -213,12 +213,17 @@ Every entry boundary is defensive:
 - writes use an exclusive sibling temporary file, file fsync, atomic rename,
   and directory fsync where the platform supports it.
 
-A remote endpoint adds a read-through `/ac` tier. Request and body deadlines
+A remote endpoint adds read-through `/ac` and `/cas` tiers. Publishable targets
+upload missing output blobs before metadata; readers hydrate verified blobs
+before the runner binds and materializes declared outputs. Request and body deadlines
 are real races, so a fetch or stream that ignores abort cannot hang the run.
 Declared and observed body lengths, byte counts, UTF-8, chunk counts, JSON
 shape, envelope key, and server key limits are checked. One remote failure
 warns and degrades to local-only. A `409` means first-writer conflict and does
-not disable reads.
+not disable reads. Artifact transfers use a 60-second race, while metadata
+retains the 3-second read and 8-second write deadlines. Output admission
+refusals skip one entry without disabling the service. Local metadata remains
+available during outages so the runner can measure existing on-disk outputs.
 
 ## 7. Shared cache protocol
 
@@ -248,6 +253,19 @@ otherwise it compares the whole document. Canonical rendering sorts object
 members and rejects accessors, sparse arrays, cycles, lossy numbers, malformed
 Unicode, excessive depth, and excessive width. The first writer's original
 JSON is preserved for reads.
+
+CLI files larger than the 16 MiB artifact bound are represented by deterministic
+16 MiB chunks and a small content-addressed index. Manifests retain whole-file
+digests and optionally name an index; old local manifests remain readable.
+Inline chunk lists were rejected because repeated large-file references grow
+the 1 MiB action entry. Every index and chunk is a direct retention reference;
+1000 unique references, 16 GiB of unique whole files, and the action body
+limit bound publication and remote hydration. Aggregate index sizes are checked
+before large-file assembly; complete legacy local hits retain their behavior. A cache
+handle serializes CAS exchanges across target workers, buffering at most one
+artifact rather than one whole large file. Remote file-result timestamps are
+canonical; the actual publication time stays in envelope metadata and is restored in local
+result receipts.
 
 Artifacts are published only after their SHA-256 matches the route. The hosted
 R2 adapter also requires stored checksum metadata to match before serving a
@@ -281,8 +299,9 @@ barriers.
    graph yet.
 5. **Lifecycle scripts disabled.** Arbitrary dependency code needs a separate,
    non-sealed execution model.
-6. **Engine remote artifacts not composed by the CLI.** The CLI uses `/ac` for
-   target JSON results; embedding hosts must wire engine step/artifact layers.
+6. **Engine layers remain separate.** The CLI now uses `/ac` and `/cas` for
+   target results and declared files. Embedding hosts still wire engine
+   step/artifact layers independently.
 7. **Irreversible actions gated.** Release mutations require an explicit
    executor with a different retry and approval policy.
 

@@ -166,7 +166,10 @@ const cacheService = Smithers.NodeTest({
     Smithers.file("//packages/smithers/build/terraform/modules/cache/migrations/0001_initial.sql"),
     Smithers.file("//packages/smithers/build/infra/worker/protocol.ts")
   ],
-  deps: [],
+  deps: [
+    Smithers.Target.subtree("//packages/smithers/build/build-cli/...", "sourceFiles"),
+    Smithers.Target.subtree("//packages/smithers/build/infra/...", "sourceFiles")
+  ],
   cwd: "packages/smithers/build"
 })
 

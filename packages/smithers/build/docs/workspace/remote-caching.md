@@ -7,14 +7,14 @@ Two independent caches carry the word "remote". They store different things,
 speak different protocols, and are wired in different places. Read this page
 before choosing one.
 
-|                 | CLI result cache                                   | Engine step cache and artifact CAS                                             |
-| --------------- | -------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Stores          | The success value of one executed target           | Keyed step results, plus the files a declared `TreeArtifact` boundary produced |
-| Keyed by        | The planner content key                            | The engine step key                                                            |
-| Local tier      | JSON files under `<cacheDirectory>/cache`          | The Smithers local step cache and artifact store                               |
-| Remote tier     | HTTP `/ac`, read-through                           | HTTP `/ac` and `/cas`                                                          |
-| Wired by        | The CLI's cache module, when one is configured     | Not composed by the smithers-build CLI today                                   |
-| Configured with | Root `RemoteCache`; `SMITHERS_CACHE_URL` overrides | `RemoteCacheStore` and `RemoteArtifacts` layer options                         |
+|                 | CLI result cache                                                        | Engine step cache and artifact CAS                                             |
+| --------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Stores          | Success values and declared output files                                | Keyed step results, plus the files a declared `TreeArtifact` boundary produced |
+| Keyed by        | The planner content key                                                 | The engine step key                                                            |
+| Local tier      | JSON under `<cacheDirectory>/cache`, blobs under `<cacheDirectory>/cas` | The Smithers local step cache and artifact store                               |
+| Remote tier     | HTTP `/ac` and `/cas`, read-through                                     | HTTP `/ac` and `/cas`                                                          |
+| Wired by        | The CLI's cache module, when one is configured                          | Not composed by the smithers-build CLI today                                   |
+| Configured with | Root `RemoteCache`; `SMITHERS_CACHE_URL` overrides                      | `RemoteCacheStore` and `RemoteArtifacts` layer options                         |
 
 ## The CLI result cache remote tier
 
@@ -79,10 +79,10 @@ on the same host.
 
 Behavior:
 
-- A local hit never touches the remote.
+- A local hit with complete output blobs never touches the remote. Missing local blobs are fetched from `/cas` and SHA-256 verified before the runner restores declared outputs.
 - A local miss queries the remote. A remote hit hydrates the local file, so the
   next read stays on disk.
-- A put writes both tiers.
+- A put writes the local result first. A publishable, confined target probes `/cas/findMissing`, uploads missing blobs, then publishes `/ac`. A failed blob upload suppresses that entry; local data remains usable.
 - Any remote failure prints one warning line to standard error and degrades the
   store to local-only for the rest of the process. A run never fails because the
   remote cache failed.
@@ -92,6 +92,45 @@ Behavior:
 - A `PUT` returning `201` inserted the entry, `200` found an identical entry,
   and `409` found a different result under the same key. A `409` warns without
   failing the run or disabling subsequent remote reads.
+
+### Output files and chunking
+
+A fresh machine can restore declared output files and directories from the same
+remote endpoint. The runner still binds manifests to exactly the target's
+declared outputs, verifies every whole-file digest, and stages output files
+before publication. A missing or corrupt artifact is a cache miss.
+
+Files up to 16 MiB are single artifacts. Larger files, up to 4 GiB, use fixed 16 MiB chunks
+and a small content-addressed `smithers-build/chunks-v1` index containing
+the ordered chunk digests and sizes. The file manifest keeps its whole-file
+digest and adds `index`. Chunking is deterministic; the remote result uses a
+canonical timestamp so equivalent publishers receive `200`. The envelope
+keeps the actual publication time outside its compared result. Readers restore
+that publication time in the local result's `storedAt` field.
+
+The alternative, embedding chunk lists in each file manifest, would grow the
+`/ac` document with each large file and repeated file reference. Index blobs
+keep that document compact while remaining individually bounded and verified.
+All indexes and chunks are listed as direct declared-output artifact references,
+so the self-hosted service's retention accounting sees every referenced blob.
+One entry is limited to 1 MiB, 1000 unique artifact references, and 16 GiB
+across unique whole files; entries that exceed a bound stay local. A reader
+checks aggregate index sizes before assembling large files. Complete legacy
+local results remain usable above the remote limits.
+
+One CAS transfer runs at a time per cache handle, across concurrent targets.
+Files are streamed while hashing and split into bounded buffers; downloads are
+bounded to one artifact before verification and atomic CAS publication. Request
+deadlines cover the response body and are real races. No large file is buffered
+whole. Previously written whole-file manifests remain locally restorable.
+
+Artifact transfers have a 60-second deadline, including their bounded response
+body, verification, and local blob publication. Metadata retains 3-second reads
+and 8-second writes. A programmatic `timeouts` override applies to both.
+An output-limit refusal warns once and skips that entry while other remote
+operations remain available. During an outage, local metadata still reaches the
+runner so it can accept outputs that already measure correctly on disk.
+Go module-cache `directory-archive` blobs use the same verified transport.
 
 The client sends the richer action-cache envelope used by the self-hosted
 service and accepts either that envelope or the CLI `CachedResult` JSON returned
@@ -163,7 +202,8 @@ Neither backend implements the resumable `Content-Range`/`308` upload sequence
 resource that does not support partial `PUT`, and the client reads that as its
 cue to send the blob in one request. One artifact body is therefore bounded by
 the configured artifact cap, at most 16 MiB on either tier, so a larger
-artifact cannot be published to these services in either mode.
+artifact requires a client representation such as the CLI's chunk index; the
+engine artifact client still sends whole artifacts in either mode.
 
 An action-cache document is stored and returned verbatim. Two shapes are
 accepted: the `CacheEntry` envelope `RemoteCacheStore` publishes, and the CLI's
@@ -176,8 +216,10 @@ members is `200` rather than `409`.
 The endpoint and its bearer token arrive as layer construction options. They are
 capabilities, so they never enter a step key or the journal.
 
-**The smithers-build CLI does not compose these engine layers.** Its target result
-cache uses the same `/ac` service directly. The executor builds its runtime from
+## The current engine boundary
+
+The CLI composes its own target-result and output-blob cache over `/ac` and
+`/cas`. It does not compose the engine step-cache and artifact layers. The executor builds its runtime from
 the install layer, `ExecLive`, the catalog action layers, and an in-memory flow
 engine. Using remote engine artifacts still means composing
 `RemoteCacheStore` and `RemoteArtifacts` into a flows runtime yourself.
