@@ -291,6 +291,15 @@ const makeWith = (
        * `Number.POSITIVE_INFINITY` is the unbounded walk the recovery reads
        * take: they answer a question about the whole durable history, and a
        * bounded answer to that question is a wrong one.
+       *
+       * A cursor below the run's compaction floor resumes AT the floor. The
+       * walk only seeds the fast path and finds admitted commands; neither
+       * needs the deleted entries, because the journal's retained producer
+       * identity still answers a retransmission of a compacted command. So a
+       * process with no state for a compacted branch (a restart, an idle
+       * eviction) reads from the floor instead of refusing every submission.
+       * The floor must move the cursor forward, so a journal repeating the
+       * same refusal fails the walk rather than looping it.
        */
       const walk = (
         branchId: BranchId,
@@ -308,7 +317,18 @@ const makeWith = (
               runId,
               ...(after === undefined ? {} : { after }),
               limit: Math.min(pageSize, remaining)
-            }).pipe(Effect.mapError(journalFailure))
+            }).pipe(
+              Effect.catch((cause) =>
+                cause.code === "compacted" && cause.checkpointSeq !== undefined &&
+                  cause.checkpointSeq - 1 > (after ?? -1)
+                  ? Effect.succeed(cause.checkpointSeq)
+                  : Effect.fail(journalFailure(cause))
+              )
+            )
+            if (typeof page === "number") {
+              after = (page - 1) as JournalEvent.Seq
+              continue
+            }
             const admitted = yield* Admission.withCommands(page.entries, runId, after ?? -1)
             for (const { command, entry } of admitted) {
               after = entry.seq
