@@ -19,6 +19,13 @@ import { objectStorage } from "../test/support/objectStorage.ts"
 import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 import { run, Finding, Text, STEERED_FLOOR } from "./run.vibe"
 
+/** A latch or held fiber that never answers is a `Finding` that names it, not a 600 s test timeout (0015). */
+effect function bounded<A, E, R>(label: string, body: A!E!R) {
+  const finished = try Effect.timeoutOption(body, "20 seconds")
+  if (Option.isNone(finished)) throw new Finding({ report: `${label} did not return` })
+  return finished.value
+}
+
 const Config = Schema.Struct({
   flow: Schema.Literals(["vibelang/Post", "vibelang/Tour"]),
   reply: Schema.Literals(["answer", "refused", "credit", "garbage", "prose"]),
@@ -167,13 +174,13 @@ it.live("actions/held-replies", () => run("actions/held-replies", Text, (text) =
       const release = try Deferred.make<void>()
       const held = { admit: (day: string, reply: string, ceiling: number) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.andThen(w.spend.admit(day, reply, ceiling))), spend: w.spend.spend }
       const running = try Effect.forkScoped(Effect.exit(cancelled.host.alarm(held, { model: scripted.model, unusable: "" }, product)))
-      try Deferred.await(entered)
+      try bounded("reply admission", Deferred.await(entered))
       const row = (try Runs.read(cancelled.sequencer)).find((item) => item.id === "cancelled-reply")
       if (row?.state !== "running") throw new Finding({ report: `a held reply's run is ${row?.state}` })
       const answer = try cancelled.host.cancel("cancelled-reply", "maintainer", w.person.id)
       if (answer !== null) throw new Finding({ report: `cancelling a running reply answered ${answer}` })
       try Deferred.succeed(release, undefined)
-      try Fiber.join(running)
+      try bounded("held reply", Fiber.join(running))
       try alarms(cancelled)
       try ended("cancelled", cancelled.sequencer, "Cancelled", "cancelled")
     }
@@ -355,14 +362,14 @@ it.live("actions/steered-runs", () => run("actions/steered-runs", Text, (text) =
       if ((try early.host.start(nameless, "maintainer")) !== null) throw new Finding({ report: "a post was refused" })
       if ((try early.sequencer.read(0)).entries.find((entry) => entry.clientId === "early")?.name !== "Guest") throw new Finding({ report: "a nameless post was not signed Guest" })
       const replying = try Effect.forkScoped(Effect.exit(early.host.alarm(w.spend, model, product)))
-      try Deferred.await(hold.entered)
+      try bounded("reply start", Deferred.await(hold.entered))
       const child = try state(early, "early-reply")
       if (child === "running") {
         const cancelled = try early.host.cancel("early-reply", "maintainer", w.person.id)
         if (cancelled !== null) throw new Finding({ report: `cancelling a reply before it spoke answered ${cancelled}` })
       }
       try Deferred.succeed(hold.release, undefined)
-      try Fiber.join(replying)
+      try bounded("held reply", Fiber.join(replying))
       try alarms(early, 2)
       const spoke = (try early.sequencer.read(0)).entries.filter((entry) => entry.author === "agent" && !entry.done)
       if (child !== "running" || spoke.length !== 0 || (try state(early, "early-reply")) !== "cancelled") throw new Finding({ report: `a reply cancelled before it spoke: run was ${child}, is ${try state(early, "early-reply")}, ${spoke.length} entries running` })

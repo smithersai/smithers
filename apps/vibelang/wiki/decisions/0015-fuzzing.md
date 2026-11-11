@@ -1023,3 +1023,16 @@ which failed first (two 20-second timeouts), and the saved value in `fuzz/__fuzz
 
 Two more unreachable arms removed: `src/core/wiki.vibe`'s `raw ?? ""` and `split("#")[0] ?? ""` (`split` returns at
 least one element).
+
+### Unbounded waits in steered targets (vl-fuzz2, 2026-11-11)
+
+The two steered failures vl-fuzz3 saw at `90f526f0` reproduce no more on `f84ddb86`: `objects/steered-host` passes
+under coverage at seeds 20261107, 20261111 and 7 (4 to 6 executions in its 15 s floor), and `actions/steered-runs` at
+20261107 (6 executions in 34 s). Their causes are recorded above: the latch `c5bbf81b` stopped reaching ("Two oracles
+behind `c5bbf81b`", fixed in `8d835fa6`) and the missing floor ("Floor for steered targets under coverage", `9fea2b98`).
+
+The first is a class, not a case: a steered scenario that awaits a latch or joins a held fiber without a bound turns
+any reorder in the product into a test timeout that names nothing (600 s under coverage). `actions/steered-runs` and
+`actions/held-replies` still had four such waits and `objects/steered-host` one. Each is now bounded at 20 s and
+fails as a `Finding` naming the wait. Checked by mutation: with the `early` scenario's latch never entered, the old
+target timed out at 120 s; the bounded one answers `Finding: reply start did not return`.

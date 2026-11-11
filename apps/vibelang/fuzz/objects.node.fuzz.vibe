@@ -207,7 +207,7 @@ const objectScenario = (scenario: typeof OBJECT_SCENARIOS[number], pick: number,
       const during = try bounded("tour", Objects.tour("conv", object, sequencer))
       if (during !== "busy" || touring(try sequencer.snapshot()) !== "") throw new Finding({ report: `a tour while a reply runs answered ${during}` })
       try Deferred.succeed(release, undefined)
-      try Fiber.join(replying)
+      try bounded("held reply", Fiber.join(replying))
       // The reply still holds the object's execution; a tour is accepted behind it, and ending it wakes nothing.
       const intent = try promise(() => object.get<string>(ExecutionObject.intentKey))
       if (intent === undefined || !intent.includes(Reply._tag)) throw new Finding({ report: "the reply let go of the object before its next alarm" })
