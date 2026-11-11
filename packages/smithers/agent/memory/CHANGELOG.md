@@ -4,6 +4,8 @@
 
 ### Added
 
+- `SearchRowsInput.kinds` restricts `searchRows` to facts or notes, and
+  `SearchRowsInput.after` continues a single-kind read after a row.
 - `Maintenance.layerTtlGc` runs `ttlGc` at build and every ten minutes while
   its scope is open. The Smithers host composes it wherever it builds the
   memory store, so expired facts and their projections are deleted instead of
@@ -19,6 +21,12 @@
 - `Maintenance.layerTtlGc` logs a pass that dies and runs the next one. It
   caught typed failures only, so a defect ended the interval fiber without a
   log and expired facts were never deleted again in that process.
+- Opening-context primers read notes only. Facts took the newest candidate
+  slots, so a primer bank with more recent facts than the window rendered no
+  primers.
+- Keyword recall pages each bank in reads of `RecallKeyword.pageSize` (512)
+  rows per kind and keeps only the rows the byte cap can still select. It read
+  every row of every selected bank into memory on each call.
 - Reject sparse provider batches and vectors instead of returning incomplete embeddings.
 - Keyword recall scores every row of each selected bank. It read only the
   newest `requestedRows * 5` rows, so a bank with more than about 40 records

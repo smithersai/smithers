@@ -4,7 +4,9 @@
  * Scores every authoritative row in each selected bank by the number of
  * normalized query terms occurring in its key and text, breaks ties by newest
  * update, then applies the shared Smithers-compatible byte cap. There is no
- * recency window: an old match ranks the same as a new one.
+ * recency window: an old match ranks the same as a new one. Each bank is read
+ * in pages of {@link pageSize} rows per kind, and only the rows the cap can
+ * still select are kept between pages.
  *
  * @since 0.1.0
  */
@@ -16,6 +18,14 @@ import type * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.ts"
 import * as Recall from "./Recall.ts"
+
+/**
+ * Rows one store read returns while recall pages through a bank.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const pageSize = 512
 
 /**
  * A row accepted from the store retrieval seam.
@@ -52,6 +62,14 @@ const matches = (row: Row, groups: ReadonlyArray<Recall.TagGroup> | undefined): 
 const authoritative = (row: Row, groups: ReadonlyArray<Recall.TagGroup> | undefined): boolean =>
   matches(row, groups) && (row.status === undefined || row.status === "accepted")
 
+// The cap selects a greedy prefix of the ranked rows, and adding rows only
+// pushes a row further down, so a row past the selected prefix of any subset
+// is never selected from the whole bank.
+const retained = (rows: Array<Recall.Result>, maxTokens: number | undefined): Array<Recall.Result> => {
+  rows.sort(Recall.compareResults)
+  return rows.slice(0, Recall.capRecallResults(rows, maxTokens).length)
+}
+
 /**
  * Runs keyword recall against the supplied MemoryStore.
  *
@@ -66,31 +84,34 @@ export const recall = (
     const banks = yield* resolveBanks(input.banks)
     const terms = normalizeQueryTerms(input.query)
     if (banks.length === 0 || terms.length === 0) return []
-    const rows = yield* Effect.all(
-      banks.map(({ namespace }) =>
-        store.searchRows({
-          namespace,
-          status: "accepted",
-          tagGroups: input.tagGroups
-        })
-      ),
+    const scan = (bank: string, namespace: Namespace.Namespace, kind: MemoryStore.SearchRow["kind"]) =>
+      Effect.gen(function*() {
+        let kept: Array<Recall.Result> = []
+        let after: MemoryStore.SearchRow | undefined
+        let page: ReadonlyArray<MemoryStore.SearchRow>
+        do {
+          page = yield* store.searchRows({
+            namespace,
+            status: "accepted",
+            tagGroups: input.tagGroups,
+            kinds: [kind],
+            limit: pageSize,
+            ...(after === undefined ? {} : { after })
+          })
+          for (const row of page) {
+            const score = authoritative(row, input.tagGroups) && row.text !== "" ? scoreRow(terms, row) : 0
+            if (score > 0) kept.push({ bank, key: row.key, text: row.text, score, updatedAtMs: row.updatedAtMs })
+          }
+          kept = retained(kept, input.maxTokens)
+          after = page.at(-1)
+        } while (page.length === pageSize)
+        return kept
+      })
+    const kept = yield* Effect.all(
+      banks.flatMap(({ bank, namespace }) => [scan(bank, namespace, "fact"), scan(bank, namespace, "note")]),
       { concurrency: 4 }
     )
-    const ranked = rows.flatMap((bankRows, index) =>
-      bankRows
-        .map((row) => ({ ...row, bank: banks[index]?.bank ?? "" }))
-        .filter((row) => authoritative(row, input.tagGroups))
-        .map((row) => ({
-          bank: banks[index]?.bank ?? "",
-          key: row.key,
-          text: row.text,
-          score: scoreRow(terms, row),
-          updatedAtMs: row.updatedAtMs
-        }))
-        .filter((row) => row.score > 0)
-    )
-    ranked.sort(Recall.compareResults)
-    return Recall.capRecallResults(ranked, input.maxTokens)
+    return Recall.capRecallResults(kept.flat().sort(Recall.compareResults), input.maxTokens)
   })
 
 /**

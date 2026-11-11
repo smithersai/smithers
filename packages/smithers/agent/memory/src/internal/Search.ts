@@ -37,11 +37,12 @@ export interface Readers {
   readonly readFacts: (
     input: ListFactsInput & { readonly keys?: ReadonlyArray<string> | undefined },
     recentFirst: boolean,
-    after?: Fact
+    after?: Pick<Fact, "key" | "updatedAtMs">
   ) => Effect.Effect<ReadonlyArray<Fact>, MemoryError>
   readonly readNotes: (
     input: ListNotesInput & { readonly ids?: ReadonlyArray<string> | undefined },
-    recentFirst?: boolean
+    recentFirst?: boolean,
+    after?: Pick<Note, "createdAtMs" | "id">
   ) => Effect.Effect<ReadonlyArray<Note>, MemoryError>
 }
 
@@ -84,12 +85,22 @@ export const make = (
   // MATCHING rows provably contains the global top `limit`. That only holds
   // when each side really returns `limit` matches, which is why the fact side
   // pages the same way `readNotes` does instead of overscanning a window.
+  // A single-kind read keeps that kind's SQL order unsorted, so its last row
+  // is an exact `after` cursor even where JS and SQL key collation differ.
   const searchRows: Service["searchRows"] = (input) =>
     Effect.gen(function*() {
       const limit = yield* validateLimit(input.limit, "searchRows")
       if (limit === 0) return []
       const { bank, namespace } = yield* resolveNamespace(input.namespace)
       yield* validateRecords(input.records, "searchRows")
+      const { after, kinds } = input
+      const singleKind = kinds?.length === 1
+      if (after !== undefined && !singleKind) {
+        return yield* Effect.fail(
+          error("invalid_argument", "searchRows after requires exactly one kind", undefined, ["after"])
+        )
+      }
+      const reads = (kind: SearchRow["kind"]) => kinds === undefined || kinds.includes(kind)
       const tagFiltered = input.tagGroups !== undefined
       const matchesTags = tagMatcher(input)
       const toFactRow = (fact: Fact): SearchRow => factSearchRow(bank, fact)
@@ -104,7 +115,8 @@ export const make = (
         if (limit === undefined || !tagFiltered) {
           const facts = yield* readFacts(
             { ...factQuery, ...(limit === undefined ? {} : { limit }) },
-            true
+            true,
+            after
           )
           const rows = facts.map(toFactRow)
           return tagFiltered ? rows.filter((row) => matchesTags(row.tags)) : rows
@@ -113,24 +125,32 @@ export const make = (
         const facts = yield* collectUntil(
           limit,
           pageSize,
-          (size, after: Fact | undefined) => readFacts({ ...factQuery, limit: size }, true, after),
+          (size, next: Fact | undefined) => readFacts({ ...factQuery, limit: size }, true, next ?? after),
           (facts) => Effect.succeed(facts.filter((fact) => matchesTags(toFactRow(fact).tags)))
         )
         return facts.map(toFactRow)
       })
       const [factRows, notes] = yield* Effect.all([
-        readFactRows,
-        readNotes({
-          ...input,
-          namespace,
-          ...(input.records === undefined ? {} : {
-            ids: input.records.filter((record) => record.kind === "note").map((record) => record.id)
-          }),
-          ...(limit === undefined ? {} : { limit })
-        }, true)
+        reads("fact") ? readFactRows : Effect.succeed<ReadonlyArray<SearchRow>>([]),
+        reads("note") ?
+          readNotes(
+            {
+              ...input,
+              namespace,
+              ...(input.records === undefined ? {} : {
+                ids: input.records.filter((record) => record.kind === "note").map((record) => record.id)
+              }),
+              ...(limit === undefined ? {} : { limit })
+            },
+            true,
+            after === undefined ? undefined : { createdAtMs: after.updatedAtMs, id: after.key }
+          ) :
+          Effect.succeed<ReadonlyArray<Note>>([])
       ])
-      const rows = [...factRows, ...notes.map((note) => noteSearchRow(bank, note))]
-        .sort((left, right) => right.updatedAtMs - left.updatedAtMs || compareText(left.key, right.key))
+      const merged = [...factRows, ...notes.map((note) => noteSearchRow(bank, note))]
+      const rows = singleKind ?
+        merged :
+        merged.sort((left, right) => right.updatedAtMs - left.updatedAtMs || compareText(left.key, right.key))
       return limit === undefined ? rows : rows.slice(0, limit)
     })
 

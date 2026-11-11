@@ -203,12 +203,13 @@ export const readRows = (
       resolvedPrimerBanks.map(({ bank, namespace }) => {
         // Even an empty note consumes its label and a separator. This window
         // contains enough candidates to fill the body, without reading a bank
-        // in full. searchRows orders newest-first; facts use candidate slots
-        // but are never rendered as primers.
+        // in full. The read selects notes only, so facts never take a primer
+        // slot; the kind filter still guards a store that ignores `kinds`.
         const minimumLineBytes = bytes(`[primer:${escapeLabel(bank)}] `) + 1
         return store.searchRows({
           namespace,
           status: "accepted",
+          kinds: ["note"],
           limit: Math.max(1, Math.ceil((available + 1) / minimumLineBytes))
         }).pipe(
           Effect.map((rows) =>

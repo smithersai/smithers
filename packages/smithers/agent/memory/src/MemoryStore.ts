@@ -389,6 +389,15 @@ export interface SearchRowsInput extends ListNotesInput {
    * merge is the true newest `limit` rows, never a sample of a wider window.
    */
   readonly limit?: number | undefined
+  /** Read only these kinds. Absent reads facts and notes; an empty array selects nothing. */
+  readonly kinds?: ReadonlyArray<"fact" | "note"> | undefined
+  /**
+   * Continue a single-kind read after this row. Requires `kinds` to name
+   * exactly one kind. A single-kind read returns rows in that kind's
+   * newest-first store order, so the last row of one page is the cursor of
+   * the next.
+   */
+  readonly after?: Pick<SearchRow, "key" | "updatedAtMs"> | undefined
 }
 
 /**
@@ -405,7 +414,7 @@ export type EnableFtsInput = Namespace.Kind
  * @category models
  * @since 0.1.0
  */
-export interface SearchFtsInput extends SearchRowsInput {
+export interface SearchFtsInput extends Omit<SearchRowsInput, "kinds" | "after"> {
   readonly query: string
 }
 

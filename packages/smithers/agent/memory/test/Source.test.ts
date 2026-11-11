@@ -91,6 +91,31 @@ describe("Source", () => {
     expect(Cause.isTimeoutError(failure(result))).toBe(true)
   })
 
+  it("renders a primer note behind more newer facts than the candidate window", async () => {
+    const snapshot = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        yield* store.putNote({ namespace: "bank", id: "primer", text: "use the runbook", tags: [], provenance: {} })
+        for (let index = 0; index < 10; index++) {
+          yield* TestClock.adjust("1 millis")
+          yield* store.putFact({ namespace: "bank", key: `fact-${index}`, value: `fact ${index}`, provenance: {} })
+        }
+        return yield* Source.make().read({
+          lineageId: "facts",
+          iteration: 0,
+          banks: ["bank"],
+          query: "q",
+          maxBytes: 100
+        })
+      }).pipe(
+        Effect.provide(TestMemory.layer),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(Recall.Recall, Recall.makeNoop())
+      )
+    )
+    expect(snapshot.rows).toEqual([{ origin: "primer", bank: "bank", key: "primer", text: "use the runbook" }])
+  })
+
   it("bounds primer candidates by bytes and renders the newest notes", async () => {
     const limits: Array<number | undefined> = []
     const maxBytes = 100

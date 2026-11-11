@@ -36,7 +36,7 @@ The input extends the recall input, so `banks`, `query`, `tagGroups`, `maxTokens
 - `lineageId` and `iteration` form the retry identity. The first successful read for an identity fetches; later reads answer the frozen rows. A failed read remains retryable.
 - `maxBytes` caps the complete fenced render, defaulting to 16,384. It is a separate ceiling from `maxTokens`, which caps only the recalled rows. A cap too small for the fence and the first row's label yields no rows. Non-finite caps use the default.
 
-Primer banks default to `banks` when omitted. Each bank reads a newest-first candidate window through `searchRows`, with a row limit derived from `maxBytes`, the fence size, and the minimum rendered primer label size. Only accepted, non-superseded notes render as primers. The window includes facts, which occupy candidate slots but do not render as primers; use note-focused primer banks when that distinction matters.
+Primer banks default to `banks` when omitted. Each bank reads a newest-first window of notes through `searchRows` with `kinds: ["note"]`, with a row limit derived from `maxBytes`, the fence size, and the minimum rendered primer label size. Only accepted, non-superseded notes render as primers. Facts never enter the window, so a bank that keeps receiving facts still renders its primers.
 
 Primer banks retain input order after alias deduplication. Within each bank, newer notes survive truncation ahead of older notes, with ties ordered by key. Primers come before recalled rows. The byte cap keeps the beginning of that order, so earlier banks take priority; the first row that does not fit whole is cut to what does, at a code point, and ends the snapshot. The limit bounds returned candidates, not SQL work or the size of one stored note.
 

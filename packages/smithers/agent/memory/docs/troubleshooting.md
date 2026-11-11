@@ -80,4 +80,4 @@ Three causes cover nearly every case:
 
 `Source` never answers empty text for a failure: a read that exceeds two seconds fails with `TimeoutError`, and a store or recall failure fails with its `MemoryError`. The host decides what the run does without its memory. A failed read is never frozen: a later read for the same identity retries, and with `SnapshotRecorder` it is not recorded either.
 
-An empty snapshot is a successful read that found no rows, or a `maxBytes` too small for the fence and the first row's label. Primer reads use a bounded newest-first candidate window; facts can occupy candidate slots but only notes render as primers. See [opening memory](./guides/agent-opening-context.md) for truncation order.
+An empty snapshot is a successful read that found no rows, or a `maxBytes` too small for the fence and the first row's label. Primer reads use a bounded newest-first window of accepted notes; facts never take a primer slot. See [opening memory](./guides/agent-opening-context.md) for truncation order.

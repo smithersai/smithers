@@ -145,6 +145,8 @@ Each tag group is bounded on its own, and the group list is bounded too: every g
 
 `searchRows.records` and `searchFts.records` optionally restrict the read to at most 64 exact `{ kind, id }` identities, while preserving namespace, TTL, status, supersession, and tag filtering. An empty array selects nothing. Each identity requires kind `fact` or `note` and a nonempty id.
 
+`searchRows.kinds` restricts the read to facts or notes; an empty array selects nothing. `searchRows.after` continues a single-kind read after the given `{ key, updatedAtMs }` row and fails with `invalid_argument` unless `kinds` names exactly one kind. A single-kind read returns rows in that kind's newest-first store order, so the last row of one page is the cursor of the next.
+
 `limit` on `listFacts`, `listNotes`, `listMessages`, `searchRows` and `searchFts` bounds the rows the caller receives, after every status, supersession and tag-group filter on the same input. It is not a bound on the rows the query examines, and a bounded read never under-fills while matching rows remain.
 
 Statuses and supersession are answered in SQL. Tag groups are answered by `Namespace.matches`, the single source of truth for the five match modes, so a tag-filtered read walks the namespace in bounded pages until it has `limit` matches. Working-set memory stays proportional to one page, never to the namespace.
@@ -432,13 +434,14 @@ When memory shares a database with the engine or control plane, compose all requ
 
 ### `@smthrs/memory/RecallKeyword`
 
-| Export                | Signature                                                    | Behavior                                                                                                            |
-| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `Row`                 | type                                                         | `Pick<MemoryStore.SearchRow, "key" \| "text" \| "tags" \| "status" \| "updatedAtMs">`.                              |
-| `recall`              | `(input: Input) => Effect<Output, MemoryError, MemoryStore>` | Runs keyword recall against the supplied store. Scores every row of each selected bank; there is no recency window. |
-| `layer`               | `Layer<Recall, never, MemoryStore>`                          | Provides keyword recall with no host dependencies.                                                                  |
-| `normalizeQueryTerms` | `(value: string) => ReadonlyArray<string>`                   | The NFKC, lowercase term split scoring compares against.                                                            |
-| `scoreRow`            | `(query: ReadonlyArray<string>, row: Row) => number`         | The term-occurrence score of one row.                                                                               |
+| Export                | Signature                                                    | Behavior                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Row`                 | type                                                         | `Pick<MemoryStore.SearchRow, "key" \| "text" \| "tags" \| "status" \| "updatedAtMs">`.                                                                                                                                          |
+| `recall`              | `(input: Input) => Effect<Output, MemoryError, MemoryStore>` | Runs keyword recall against the supplied store. Scores every row of each selected bank; there is no recency window. Reads each bank in pages of `pageSize` rows per kind and keeps only the rows the byte cap can still select. |
+| `pageSize`            | `512`                                                        | Rows one store read returns while recall pages through a bank.                                                                                                                                                                  |
+| `layer`               | `Layer<Recall, never, MemoryStore>`                          | Provides keyword recall with no host dependencies.                                                                                                                                                                              |
+| `normalizeQueryTerms` | `(value: string) => ReadonlyArray<string>`                   | The NFKC, lowercase term split scoring compares against.                                                                                                                                                                        |
+| `scoreRow`            | `(query: ReadonlyArray<string>, row: Row) => number`         | The term-occurrence score of one row.                                                                                                                                                                                           |
 
 ### `@smthrs/memory/RecallSemantic`
 

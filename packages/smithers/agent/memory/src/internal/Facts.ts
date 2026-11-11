@@ -38,7 +38,7 @@ const isExpired = (fact: Fact, now: number): boolean => fact.ttlMs !== undefined
 type ReadFacts = (
   input: ListFactsInput & { readonly keys?: ReadonlyArray<string> | undefined },
   recentFirst: boolean,
-  after?: Fact
+  after?: Pick<Fact, "key" | "updatedAtMs">
 ) => Effect.Effect<ReadonlyArray<Fact>, MemoryError>
 
 /**

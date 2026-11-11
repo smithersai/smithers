@@ -30,7 +30,83 @@ const seeded = Effect.gen(function*() {
 // A store that must never be read; any call is a defect.
 const unreadStore = (reason: string) => MemoryStore.makeNoop({ searchRows: () => Effect.die(reason) })
 
+const oracle = (bankRows: ReadonlyArray<MemoryStore.SearchRow>, query: string, maxTokens: number) =>
+  Recall.capRecallResults(
+    bankRows
+      .map((row) => ({
+        bank: "bank",
+        key: row.key,
+        text: row.text,
+        score: Keyword.scoreRow(Keyword.normalizeQueryTerms(query), row),
+        updatedAtMs: row.updatedAtMs
+      }))
+      .filter((row) => row.score > 0)
+      .sort(Recall.compareResults),
+    maxTokens
+  )
+
 describe("RecallKeyword", () => {
+  it.each(
+    [
+      ["facts", "fact"],
+      ["notes", "note"]
+    ] as const
+  )(
+    "reads %s in bounded pages and recalls the best match behind more than a page of newer matches",
+    async (_label, kind) => {
+      const total = Keyword.pageSize * 2 + 7
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* MemoryStore.MemoryStore
+          const write = (key: string, text: string) =>
+            kind === "fact"
+              ? store.putFact({ namespace: "bank", key, value: text, tags: ["scope:x"], provenance: {} })
+              : store.putNote({ namespace: "bank", id: key, text, tags: ["scope:x"], provenance: {} })
+          yield* write("best", "alpha beta")
+          for (let index = 0; index < total; index++) {
+            if (index % 100 === 0) yield* TestClock.adjust("1 millis")
+            yield* write(`newer-${String(index).padStart(4, "0")}`, `alpha ${index}`)
+          }
+          const reads: Array<MemoryStore.SearchRowsInput> = []
+          const all = yield* store.searchRows({ namespace: "bank", status: "accepted" })
+          const tagGroups = [{ tags: ["scope:x"], match: "all_strict" }] as const
+          const recalled = yield* Keyword.recall({ banks: ["bank"], query: "alpha beta", tagGroups, maxTokens: 2048 })
+            .pipe(Effect.provideService(MemoryStore.MemoryStore, {
+              ...store,
+              searchRows: (input) => {
+                reads.push(input)
+                return store.searchRows(input)
+              }
+            }))
+          return { all, recalled, reads }
+        }).pipe(Effect.provide(TestMemory.layer), Effect.provide(TestClock.layer()))
+      )
+      expect(result.reads.every((input) => input.limit === Keyword.pageSize && input.kinds?.length === 1)).toBe(true)
+      expect(result.reads.filter((input) => input.kinds?.[0] === kind)).toHaveLength(3)
+      expect(result.all).toHaveLength(total + 1)
+      expect(result.recalled[0]?.key).toBe("best")
+      expect(result.recalled).toEqual(oracle(result.all, "alpha beta", 2048))
+    }
+  )
+
+  it("keeps the same rows as an unbounded read when small rows fill the budget", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        for (let index = 0; index < Keyword.pageSize + 40; index++) {
+          yield* store.putFact({ namespace: "bank", key: `k${index}`, value: "alpha", provenance: {} })
+          yield* TestClock.adjust("1 millis")
+        }
+        yield* store.putNote({ namespace: "bank", id: "empty", text: "", tags: [], provenance: {} })
+        const all = yield* store.searchRows({ namespace: "bank", status: "accepted" })
+        const recalled = yield* Keyword.recall({ banks: ["bank"], query: "alpha empty", maxTokens: 4096 })
+        return { all, recalled }
+      }).pipe(Effect.provide(TestMemory.layer), Effect.provide(TestClock.layer()))
+    )
+    expect(result.recalled.length).toBeGreaterThan(Recall.requestedRows(4096))
+    expect(result.recalled).toEqual(oracle(result.all, "alpha empty", 4096))
+  })
+
   it.each([4, 5, 6])(
     "recalls a tagged SQLite row behind %i rejected candidates at a five-row window",
     async (rejected) => {

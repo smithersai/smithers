@@ -37,7 +37,8 @@ const NOTE_COLUMNS = `${CREATION_COLUMNS}, status_at_ms, accepted_todo`
 
 type ReadNotes = (
   input: ListNotesInput & { readonly ids?: ReadonlyArray<string> | undefined },
-  recentFirst?: boolean
+  recentFirst?: boolean,
+  start?: Pick<Note, "createdAtMs" | "id">
 ) => Effect.Effect<ReadonlyArray<Note>, MemoryError>
 
 /**
@@ -71,7 +72,7 @@ export const make = (database: DatabaseService): {
     JOIN memory_notes superseder ON superseder.id = edges.superseder_id
     WHERE edges.target_id = notes.id AND superseder.status = 'accepted')`)
 
-  const readNotes: ReadNotes = (input, recentFirst = false) =>
+  const readNotes: ReadNotes = (input, recentFirst = false, start) =>
     Effect.gen(function*() {
       const { namespace } = yield* resolveNamespace(input.namespace)
       const limit = yield* validateLimit(input.limit, "listNotes")
@@ -90,7 +91,7 @@ export const make = (database: DatabaseService): {
       const status = statusCondition(input.status)
       if (status !== undefined) conditions.push(status)
       if (input.includeSuperseded !== true) conditions.push(notSupersededCondition)
-      const page = (rowLimit: number | undefined, after?: Note) => {
+      const page = (rowLimit: number | undefined, after: Pick<Note, "createdAtMs" | "id"> | undefined = start) => {
         const continuation = after === undefined ? [] : [
           recentFirst
             ? sql`(notes.created_at_ms < ${after.createdAtMs}

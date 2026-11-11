@@ -385,6 +385,64 @@ describe("MemoryStore search and FTS", () => {
     expect(result.prefixed.map((row) => row.key)).toEqual(["fact-0000"])
   })
 
+  it("reads one kind and pages it with an after cursor, with and without tag filters", async () => {
+    const result = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      for (let index = 0; index < 7; index++) {
+        if (index % 3 === 0) yield* TestClock.adjust("1 millis")
+        const tags = [index % 2 === 0 ? "scope:even" as const : "scope:odd" as const]
+        yield* store.putFact({ namespace, key: `f${index}`, value: `fact ${index}`, tags, provenance: {} })
+        yield* store.putNote({ namespace, id: `n${index}`, text: `note ${index}`, tags, provenance: {} })
+      }
+      const pages = (kind: "fact" | "note", tagGroups?: MemoryStore.SearchRowsInput["tagGroups"]) =>
+        Effect.gen(function*() {
+          const keys: Array<string> = []
+          let after: MemoryStore.SearchRow | undefined
+          for (;;) {
+            const page = yield* store.searchRows({
+              namespace,
+              kinds: [kind],
+              limit: 2,
+              ...(tagGroups === undefined ? {} : { tagGroups }),
+              ...(after === undefined ? {} : { after })
+            })
+            keys.push(...page.map((row) => row.key))
+            if (page.length < 2) return keys
+            after = page.at(-1)
+          }
+        })
+      const even = [{ tags: ["scope:even"], match: "any_strict" }] as const
+      return {
+        facts: yield* pages("fact"),
+        notes: yield* pages("note"),
+        evenFacts: yield* pages("fact", even),
+        evenNotes: yield* pages("note", even),
+        allFacts: (yield* store.searchRows({ namespace, kinds: ["fact"] })).map((row) => row.key),
+        allNotes: (yield* store.searchRows({ namespace, kinds: ["note"] })).map((row) => row.key),
+        none: yield* store.searchRows({ namespace, kinds: [] }),
+        unbounded: (yield* store.searchRows({ namespace, kinds: ["note"], after: { key: "n3", updatedAtMs: 2 } }))
+          .map((row) => row.key),
+        mixed: yield* Effect.flip(store.searchRows({ namespace, after: { key: "f0", updatedAtMs: 0 } })),
+        both: yield* Effect.flip(
+          store.searchRows({ namespace, kinds: ["fact", "note"], after: { key: "f0", updatedAtMs: 0 } })
+        )
+      }
+    }))
+
+    expect(result.allFacts).toEqual(["f6", "f3", "f4", "f5", "f0", "f1", "f2"])
+    expect(result.allNotes).toEqual(["n6", "n3", "n4", "n5", "n0", "n1", "n2"])
+    expect(result.facts).toEqual(result.allFacts)
+    expect(result.notes).toEqual(result.allNotes)
+    expect(result.evenFacts).toEqual(["f6", "f4", "f0", "f2"])
+    expect(result.evenNotes).toEqual(["n6", "n4", "n0", "n2"])
+    expect(result.none).toEqual([])
+    expect(result.unbounded).toEqual(["n4", "n5", "n0", "n1", "n2"])
+    expect([result.mixed, result.both].map((error) => [error.code, error.path])).toEqual([
+      ["invalid_argument", ["after"]],
+      ["invalid_argument", ["after"]]
+    ])
+  })
+
   it("returns no FTS matches for an empty record selection", async () => {
     const rows = await run(Effect.gen(function*() {
       const store = yield* MemoryStore.MemoryStore
