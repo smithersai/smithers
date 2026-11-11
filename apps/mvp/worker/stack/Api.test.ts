@@ -38,7 +38,7 @@ import { OWN_REPOSITORY, runs, stackHarness, type StackHarness } from "./test/st
 const runtime = testFile("stack_api")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, github_repo_roles, github_repositories`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todo_leaves, todos, stacks, github_repo_roles, github_repositories, repo_about`))
 )
 
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }
@@ -633,6 +633,8 @@ describe("another repository's stack (decision 0079)", () => {
     github.installed = false
     expect(await json(await post(await onGitHub(github), commitBody(), {}, OTHER))).toEqual([404, { code: "app_not_installed" }])
     github.installed = true
+    // The refusal left an absence receipt (`repo_about.app_absent_until`) that answers without GitHub until it lapses.
+    await sql(`UPDATE repo_about SET app_absent_until = app_absent_until - interval '${RepoRoles.APP_ABSENCE_SECONDS + 1} seconds'`)
     github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "12" } })
     const limited = await post(await onGitHub(github), commitBody(), {}, OTHER)
     expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([429, "12", { code: "rate_limited" }])
