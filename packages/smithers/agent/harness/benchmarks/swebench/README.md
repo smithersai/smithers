@@ -1984,6 +1984,22 @@ instance while the marker exists: a retry would purge the edits it names.
 Recover the patch from the retained checkout, then delete the marker to let the
 backfill run the instance again.
 
+The archive is published the way `lib/fullbench-instance.sh` publishes the flows
+attempt's. The patch, the untracked list, the timings, the transcript, the last
+message and the prompt are copied into a staging directory under
+`fullbench/codex/archives/`, each copy is compared against its source, and one
+rename publishes `fullbench/codex/archives/<id>/`; `patches/`, `timings/` and
+`logs/` hold relative links into it, and only then are the sources deleted. A
+copy, comparison, link or rename that fails records `failed` with reason
+`archive-failed` and no verdict, grades nothing, and leaves the sources where the
+run wrote them — so the next pass retries the instance rather than reading a
+grading of nothing as `eval error`, the one verdict that would make the retry a
+no-op. Before a retry purges those sources it publishes a checked copy under
+`fullbench/codex/archives/<id>.recovered-<timestamp>-<pid>/`, and it moves an
+archive whose attempt never reached a verdict row there too, evaluator report
+included. Recovery archives are kept for inspection and are not graded; a failed
+recovery stops the retry.
+
 Each attempt carries the run index `r90c`: `r90` is the full benchmark's flows
 lane and `r90c` is the codex lane over the same instances, so the two sit side by
 side in the shared codex roots under one readable rule.  `lib/run-paths.sh`
@@ -1997,6 +2013,7 @@ extraction on each one first.
 | path | what it holds |
 | --- | --- |
 | `fullbench/codex-manifest.jsonl` | the ledger: `{id, verdict, wallSeconds, tokens, patchBytes, timestamps}` and the flags |
+| `fullbench/codex/archives/<id>/` | the attempt's evidence, published by one rename; the patch, timings and transcript paths below are links into it |
 | `fullbench/codex/patches/<id>.patch` | the captured patch, as graded |
 | `fullbench/codex/logs/<id>.*` | the transcript, last message, prompt, pull and grade logs |
 | `fullbench/codex/timings/<id>.json` | the agent's own wall clock |
@@ -2388,6 +2405,17 @@ is launched only once both are known to be inside their instances, so "the third
 waits" is a fact about the semaphore rather than about which invocation won a
 race. `busybox` and `hello-world` are pulled and deleted; `alpine` stands in for a
 pinned instance's image and is still present at the end.
+
+What the dry run cannot inject is an archive that fails.
+`fixtures/check-codex-backfill-archive.mjs`, inside `verify.sh`, runs the script
+in a copied rig with the agent, the evaluator, the auth check and docker stubbed
+and `cp`, `ln` and `mv` made to fail one at a time: a copy that fails or is
+interrupted, a copy whose bytes differ, a link that fails and a rename that
+fails. Each leaves the patch and transcript where the run wrote them, publishes
+nothing, grades nothing, records `failed` with reason `archive-failed` and no
+verdict, and leaves the instance owed; a retry recovers the sources before it
+runs, and an attempt that was archived but never reached its verdict row is
+recovered with its evaluator report.
 
 ## The re-run
 

@@ -84,6 +84,7 @@
 # fullbench.sh, fullbench-report.mjs, lib/grade.py, lib/httpbin.sh, lib/plue.py,
 # lib/transport.sh, ../harbor/plue_env.py, ../harbor/plue_docker.py,
 # lib/rerun-queue.mjs, run-45.sh, compare-runs.mjs, three-way.mjs, regrade.sh,
+# codex-backfill.sh, lib/codex-backfill-queue.mjs,
 # lib/program-evidence.mjs, lib/surgery-evidence.mjs, lib/round3-evidence.mjs,
 # lib/repl-evidence.mjs, lib/excluded.mjs or
 # anything under lib/fullbench-*. The subject and evaluator checks run separately
@@ -217,6 +218,9 @@ node "$S/fixtures/check-codex-lanes.mjs"
 
 echo "== the backfill row codex-backfill.sh evals"
 node "$S/fixtures/check-backfill-row.mjs"
+
+echo "== the backfill's archive: checked copies, one rename, sources kept on failure"
+node "$S/fixtures/check-codex-backfill-archive.mjs"
 
 echo "== the two-codex-lane scoreboard"
 node "$S/fixtures/check-compare-codex-lanes.mjs"

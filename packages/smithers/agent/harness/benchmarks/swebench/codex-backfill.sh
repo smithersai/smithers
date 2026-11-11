@@ -282,6 +282,8 @@ run_one() {
   SLOT=""
   IMAGE=""
   KEEP_IMAGE=0
+  ARCHIVE_STAGE=""
+  ARCHIVE_LINKS_PENDING=0
 
   BACKFILL_STATE=""
   FLOWS_VERDICT=""
@@ -308,6 +310,14 @@ run_one() {
   fi
 
   cleanup_one() {
+    # Staging and unpublished links only: a failed archive leaves its sources
+    # where the run wrote them, and a published one is already in place.
+    if [ -n "${ARCHIVE_STAGE:-}" ]; then rm -rf -- "$ARCHIVE_STAGE"; fi
+    if [ "${ARCHIVE_LINKS_PENDING:-0}" = 1 ]; then
+      rm -f -- "$FBC/patches/$ID.patch" "$FBC/patches/$ID.patch.untracked" \
+        "$FBC/timings/$ID.json" "$FBC/logs/$ID.run.log" "$FBC/logs/$ID.last-message.txt" \
+        "$FBC/logs/$ID.prompt.md"
+    fi
     release_slot
     "$S/lib/lock.sh" release "$CLAIM" --owner $$ --quiet || true
     "$S/lib/lock.sh" release "$S/.grade-lock" --owner $$ --quiet || true
@@ -380,6 +390,56 @@ run_one() {
     return 1
   }
 
+  # All evidence belongs to one directory, published by one same-filesystem
+  # rename. The familiar paths are relative links into it, prepared while the
+  # target is still absent. A failed copy, comparison, link or rename leaves the
+  # sources untouched; cleanup removes only staging and unpublished links. It is
+  # the protocol `lib/fullbench-instance.sh` publishes the flows attempt with,
+  # for the same reason: a copy that fails on a full disk, followed by the
+  # delete, is a paid attempt whose only patch and transcript are gone — and
+  # whose grading then records `eval error`, the one row that makes the retry a
+  # no-op.
+  copy_checked() {
+    cp "$1" "$2" && cmp -s "$1" "$2"
+  }
+
+  archive_evidence() {
+    local destination="$1" links="${2:-0}"
+    mkdir -p "$FBC/archives" || return 1
+    [ ! -e "$destination" ] || return 1
+    ARCHIVE_STAGE="$(mktemp -d "$FBC/archives/.$ID.XXXXXX")" || return 1
+    copy_checked "$PATCH" "$ARCHIVE_STAGE/patch" || return 1
+    if [ -f "$PATCH.untracked" ]; then
+      copy_checked "$PATCH.untracked" "$ARCHIVE_STAGE/untracked" || return 1
+    fi
+    if [ -f "$TIMINGS" ]; then
+      copy_checked "$TIMINGS" "$ARCHIVE_STAGE/timings.json" || return 1
+    fi
+    for SUFFIX_NAME in run.log last-message.txt prompt.md; do
+      if [ -f "$LOG_PREFIX.$SUFFIX_NAME" ]; then
+        copy_checked "$LOG_PREFIX.$SUFFIX_NAME" "$ARCHIVE_STAGE/$SUFFIX_NAME" || return 1
+      fi
+    done
+    if [ "$links" = 1 ]; then
+      ARCHIVE_LINKS_PENDING=1
+      ln -s "../archives/$ID/patch" "$FBC/patches/$ID.patch" || return 1
+      if [ -f "$PATCH.untracked" ]; then
+        ln -s "../archives/$ID/untracked" "$FBC/patches/$ID.patch.untracked" || return 1
+      fi
+      if [ -f "$TIMINGS" ]; then
+        ln -s "../archives/$ID/timings.json" "$FBC/timings/$ID.json" || return 1
+      fi
+      for SUFFIX_NAME in run.log last-message.txt prompt.md; do
+        if [ -f "$LOG_PREFIX.$SUFFIX_NAME" ]; then
+          ln -s "../archives/$ID/$SUFFIX_NAME" "$FBC/logs/$ID.$SUFFIX_NAME" || return 1
+        fi
+      done
+    fi
+    mv -- "$ARCHIVE_STAGE" "$destination" || return 1
+    ARCHIVE_STAGE=""
+    ARCHIVE_LINKS_PENDING=0
+  }
+
   disk_gate() {
     PHASE="$1"
     WAITED=0
@@ -423,9 +483,25 @@ run_one() {
   # Purge whatever a dead attempt at this instance left behind, in the shared
   # codex roots and under fullbench/codex/, so a retry runs clean rather than
   # inheriting half a workspace.
+  #
+  # An archive-failed attempt may be the only copy of paid evidence. Preserve it
+  # before the purge, using the same checked publication protocol.
+  if [ -f "$PATCH" ]; then
+    archive_evidence "$FBC/archives/$ID.recovered-$(now_ms)-$$" || fail_one "archive-failed" || return 1
+  fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   rm -rf -- "$WORK"
   rm -f -- "$PATCH" "$PATCH.untracked" "$TIMINGS" "$LOG_PREFIX".*
+  # A verdict append can fail after source evidence was archived and removed.
+  # Keep that attempt, including its evaluator report, before replacing its links.
+  if [ -d "$FBC/archives/$ID" ]; then
+    PREVIOUS_REPORT="$EVAL_LOG_ROOT/$EVAL_RUN_ID/$MODEL_NAME/$ID/report.json"
+    if [ ! -f "$PREVIOUS_REPORT" ]; then PREVIOUS_REPORT="$FBC/reports/$ID.json"; fi
+    if [ -f "$PREVIOUS_REPORT" ]; then
+      copy_checked "$PREVIOUS_REPORT" "$FBC/archives/$ID/report.json" || fail_one "archive-failed" || return 1
+    fi
+    mv -- "$FBC/archives/$ID" "$FBC/archives/$ID.recovered-$(now_ms)-$$" || fail_one "archive-failed" || return 1
+  fi
   rm -f -- "$FBC/patches/$ID.patch" "$FBC/patches/$ID.patch.untracked" \
     "$FBC/timings/$ID.json" "$FBC/logs/$ID".* "$FBC/reports/$ID.json"
   # And the evaluator's own log directory for this instance. The official
@@ -470,13 +546,11 @@ run_one() {
   PATCH_BYTES="$(wc -c < "$PATCH" | tr -d ' ')"
 
   # Archive first, delete second. Everything downstream — the trace bundle, the
-  # report, any later forensics — reads these and never the workspace.
-  cp "$PATCH" "$FBC/patches/$ID.patch"
-  if [ -f "$PATCH.untracked" ]; then cp "$PATCH.untracked" "$FBC/patches/$ID.patch.untracked"; fi
-  if [ -f "$TIMINGS" ]; then cp "$TIMINGS" "$FBC/timings/$ID.json"; fi
-  for SUFFIX_NAME in run.log last-message.txt prompt.md; do
-    if [ -f "$LOG_PREFIX.$SUFFIX_NAME" ]; then cp "$LOG_PREFIX.$SUFFIX_NAME" "$FBC/logs/$ID.$SUFFIX_NAME"; fi
-  done
+  # report, any later forensics — reads these and never the workspace. An
+  # archive that cannot be published stops the instance here, with its sources
+  # where the run wrote them and a `failed` row that carries no verdict, so the
+  # next pass retries it instead of reading a grading of nothing as `eval error`.
+  archive_evidence "$FBC/archives/$ID" 1 || fail_one "archive-failed" || return 1
   rm -rf -- "$WORK"
   rm -f -- "$PATCH" "$PATCH.untracked" "$TIMINGS" "$LOG_PREFIX".*
 
