@@ -556,7 +556,7 @@ describe("Redaction", () => {
 
     const selfReturning: { toJSON?: () => unknown } = {}
     selfReturning.toJSON = () => selfReturning
-    expect(Redaction.redact(selfReturning)).toBe("[Circular]")
+    expect(Redaction.redact(selfReturning)).toEqual({ toJSON: Redaction.functionMarker })
 
     // Re-pinned 2026-09-01: these expected `{ safe: 1 }` and the function
     // itself, which was the mirror of `JSON.stringify` for a callable. A
@@ -637,6 +637,22 @@ describe("Redaction", () => {
         prompt: "call with Bearer [REDACTED_TOKEN]"
       })
       expect(entry.meta).toEqual({ authorization: Redaction.placeholder })
+    }).pipe(Effect.provide(journalLayer()), Effect.scoped))
+
+  effect("persists the fields of a self-returning serializer", () =>
+    Effect.gen(function*() {
+      class Result {
+        readonly count = 1
+        readonly token = "private"
+        toJSON() {
+          return this
+        }
+      }
+      const journal = yield* Journal
+      const run = runId("self-returning-json")
+      yield* journal.emitDurableUnfenced(input(run, sourceId("producer"), "action.completed", new Result()))
+      const page = yield* journal.entries({ runId: run, limit: 1 })
+      expect(page.entries[0]!.payload).toEqual({ count: 1, token: Redaction.placeholder })
     }).pipe(Effect.provide(journalLayer()), Effect.scoped))
 
   effect("persists key-sensitive serializers and compares canonical producer retries", () =>

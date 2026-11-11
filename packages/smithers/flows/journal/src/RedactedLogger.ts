@@ -214,6 +214,7 @@ const redactError = (
   error: Error,
   redactor: Redaction.Redactor,
   seen: WeakMap<Error, Error>,
+  walk: (value: unknown) => unknown,
   depth = 0
 ): Error => {
   // The memo holds the COPY, not a visited mark: returning the original on a
@@ -251,9 +252,7 @@ const redactError = (
         // deep value carried on a cause can exhaust the stack just as easily.
         : depth + 1 >= renderDepthLimit
         ? renderDepthMarker
-        : value instanceof Error
-        ? redactError(value, redactor, seen, depth + 1)
-        : redactor(value),
+        : walk(value),
       descriptor.enumerable === true
     )
   }
@@ -284,7 +283,14 @@ const redactError = (
  */
 export const redactArgument = (value: unknown, redactor: Redaction.Redactor): unknown => {
   try {
-    return value instanceof Error ? redactError(value, redactor, new WeakMap()) : redactor(value)
+    const seen = new WeakMap<Error, Error>()
+    const walk = (node: unknown, depth = 0): unknown =>
+      node instanceof Error
+        ? redactError(node, redactor, seen, (member) => walk(member, depth + 1), depth)
+        : redactor(node)
+    return redactor.withErrors === undefined
+      ? walk(value)
+      : redactor.withErrors(value, (error, member, depth) => redactError(error, redactor, seen, member, depth))
   } catch {
     // A logged value is arbitrary and a throw here happens while the line is
     // rendering, which would kill the run the line describes. The marker is

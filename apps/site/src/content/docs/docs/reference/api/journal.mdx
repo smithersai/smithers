@@ -378,6 +378,7 @@ The scrub applied to every `payload` and `meta` before persistence.
 | `redactJsonString`    | `(json: string, redactor: Redactor) => string`   | scrubs an already-encoded column at a display surface                   |
 | `isSensitiveKey`      | `(key: string) => boolean`                       | whether a field name names a credential                                 |
 | `Redactor`            | `(value: unknown) => unknown`                    | the function type the journal consumes                                  |
+| `ErrorHandler`        | `(error, walk, depth) => unknown`                | diagnostic Error copy hook; `walk` shares ancestors and depth           |
 | `Rule`                | `{ id, pattern, replace?, rewrite? }`            | one textual rule; `rewrite` for a value a regex cannot bound            |
 | `Options`             | `{ rules?, onTooDeep? }`                         | `onTooDeep` is `"throw"` (default) or `"name"`                          |
 | `defaultRules`        | `ReadonlyArray<Rule>`                            | the built-in credential shapes                                          |
@@ -447,6 +448,13 @@ logger a fiber whose `Console` is redacting. Both halves are load-bearing:
 `wrap` defaults `onTooDeep` to `"name"`, because a throw in a logger costs the
 operator the whole line. A caller's own `onTooDeep` still wins. Wrapping is
 idempotent.
+
+The optional diagnostic `Redaction.ErrorHandler` receives an `Error`, a callback
+`(value: unknown) => unknown` that walks its members with the current traversal,
+and the current depth. The redactor returned by `Redaction.make()` exposes
+`withErrors(value, onError)` for this diagnostic walk; a plain one-argument
+redactor remains supported. A handler memoizes its copies before walking members to terminate error cycles.
+The logger uses it to preserve nested errors; journal writes omit it.
 
 See [Keep credentials out of log output](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/guides/redact-log-output.md).
 

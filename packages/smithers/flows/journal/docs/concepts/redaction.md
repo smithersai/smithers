@@ -201,6 +201,15 @@ replaces the defaults, so spread `Redaction.defaultRules` when you mean to add
 to them rather than to swap them out. A non-global custom pattern is normalized
 to global once, and a sticky one keeps its stickiness.
 
+## Custom JSON serialization
+
+An object's `toJSON` runs once with its containing key, as in
+`JSON.stringify`. Its return value is walked without calling another
+`toJSON` on that replacement. Returning `this` keeps the object's fields;
+an actual member cycle is still named `"[Circular]"`. The replacement hop
+counts against the depth bound, and every returned field still meets the
+redaction rules.
+
 ## Bounds on the scrub
 
 Redaction runs on every write, so it is bounded against hostile input rather

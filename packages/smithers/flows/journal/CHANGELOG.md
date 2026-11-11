@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Logged errors nested in objects, arrays, annotations, or aggregate errors
+  keep their redacted messages and stacks instead of appearing as `{}`.
+  Self-returning `toJSON` methods retain their fields, and replacement
+  serializers no longer recurse until the stack overflows.
+
 - `Consensus.layerLocal` undoes a lease change when the write that made it
   rolls back. A claim whose `RunStore` write failed, was interrupted, or was
   replayed after a busy conflict left the in-memory lease claimed over a free

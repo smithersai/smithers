@@ -1550,6 +1550,22 @@ export const symbolMarker = "[Symbol]"
 export const depthMarker = "[Deep]"
 
 /**
+ * Rebuilds an Error reached during redaction for a diagnostic renderer.
+ *
+ * The callback walks an own member using the same ancestors and depth budget.
+ * A handler must memoize its copies before walking members to terminate error
+ * cycles. The journal leaves this hook unset and keeps JSON's enumerable data.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ErrorHandler = (
+  error: Error,
+  walk: (value: unknown) => unknown,
+  depth: number
+) => unknown
+
+/**
  * Returns `value` with credentials removed.
  *
  * Objects and arrays are rebuilt: a field whose name {@link isSensitiveKey}
@@ -1570,7 +1586,10 @@ export const depthMarker = "[Deep]"
  * @since 0.1.0
  * @category redaction
  */
-export const redact = (value: unknown, options?: Options): unknown => {
+export const redact = (value: unknown, options?: Options): unknown => redactWithErrors(value, options)
+
+/** The shared walk; only diagnostic callers provide an Error handler. */
+const redactWithErrors = (value: unknown, options?: Options, onError?: ErrorHandler): unknown => {
   const onTooDeep = options?.onTooDeep ?? "throw"
   const rules = globalRules(options?.rules ?? defaultRules)
   /**
@@ -1616,7 +1635,13 @@ export const redact = (value: unknown, options?: Options): unknown => {
     return Object.fromEntries(entries)
   }
 
-  const walk = (node: unknown, ancestors: WeakSet<object>, depth: number, key: string): unknown => {
+  const walk = (
+    node: unknown,
+    ancestors: WeakSet<object>,
+    depth: number,
+    key: string,
+    skipToJSON = false
+  ): unknown => {
     if (depth > maxDepth) {
       if (onTooDeep === "name") return depthMarker
       throw new RedactionDepthError({
@@ -1632,6 +1657,9 @@ export const redact = (value: unknown, options?: Options): unknown => {
     if (typeof node === "function") return functionMarker
     if (typeof node === "symbol") return symbolMarker
     if (node === null || typeof node !== "object") return node
+    if (onError !== undefined && node instanceof Error) {
+      return onError(node, (value) => walk(value, ancestors, depth + 1, ""), depth)
+    }
     if (isBinary(node)) return binary(node, ancestors, depth)
     if (ancestors.has(node)) return "[Circular]"
     // A journal row is bounded by its schema, but a LOGGED value is arbitrary:
@@ -1641,10 +1669,17 @@ export const redact = (value: unknown, options?: Options): unknown => {
     // is named.
     ancestors.add(node)
     try {
-      const toJSON = (node as { toJSON?: unknown }).toJSON
-      // JSON.stringify passes the containing key (or "" at the root) to toJSON.
-      // Reuse it when walking the replacement; siblings may share this object.
-      if (typeof toJSON === "function") return walk(toJSON.call(node, key), ancestors, depth, key)
+      if (!skipToJSON) {
+        const toJSON = (node as { toJSON?: unknown }).toJSON
+        if (typeof toJSON === "function") {
+          const replacement = toJSON.call(node, key)
+          // A fresh replacement can refer back to its source, so keep that
+          // source on the ancestor path. Returning this instead walks its own
+          // fields once, without treating the serializer hop as a cycle.
+          if (replacement === node) ancestors.delete(node)
+          return walk(replacement, ancestors, depth + 1, key, true)
+        }
+      }
       if (Array.isArray(node)) {
         // `map` invokes the input's species constructor, which can restore
         // credential fields and inspection hooks after the elements are walked.
@@ -1705,10 +1740,16 @@ export const redact = (value: unknown, options?: Options): unknown => {
 /**
  * A redaction function, as the journal consumes it.
  *
+ * Built-in redactors also expose `withErrors`, the optional diagnostic walk.
+ * Plain one-argument redactors remain valid.
+ *
  * @since 0.1.0
  * @category models
  */
-export type Redactor = (value: unknown) => unknown
+export type Redactor = ((value: unknown) => unknown) & {
+  /** An optional diagnostic walk that preserves Error nodes. */
+  readonly withErrors?: (value: unknown, onError: ErrorHandler) => unknown
+}
 
 /**
  * Builds a redactor over a rule set.
@@ -1716,7 +1757,10 @@ export type Redactor = (value: unknown) => unknown
  * @since 0.1.0
  * @category constructors
  */
-export const make = (options?: Options): Redactor => (value) => redact(value, options)
+export const make = (options?: Options): Redactor =>
+  Object.assign((value: unknown) => redact(value, options), {
+    withErrors: (value: unknown, onError: ErrorHandler) => redactWithErrors(value, options, onError)
+  })
 
 /**
  * Applies a redactor to an already-encoded JSON string, returning the

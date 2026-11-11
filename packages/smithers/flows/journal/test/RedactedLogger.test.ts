@@ -1279,4 +1279,19 @@ describe("RedactedLogger", () => {
     const endless = new Proxy({ token: "sk-live-abcdefgh" }, { getPrototypeOf: () => ({}) })
     expect(JSON.stringify(redactor(endless))).not.toContain("sk-live-abcdefgh")
   })
+  it.effect("renders errors nested in objects, arrays, annotations and aggregate members", () =>
+    Effect.gen(function*() {
+      const first = new Error("connection refused token=sk-live-abcdefgh")
+      const second = new TypeError("invalid input token=sk-live-abcdefgh")
+      const aggregate = new AggregateError([first, { error: second }], "deploy failed")
+      const recorded = yield* logged(
+        Effect.logError({ error: aggregate }, [second]).pipe(Effect.annotateLogs({ error: first }))
+      )
+      const text = rendered(recorded)
+      expect(text).toContain("deploy failed")
+      expect(text).toContain("connection refused")
+      expect(text).toContain("invalid input")
+      expect(text).toContain(Redaction.placeholder)
+      expect(text).not.toContain("sk-live-abcdefgh")
+    }))
 })

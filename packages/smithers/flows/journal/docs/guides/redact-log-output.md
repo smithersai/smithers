@@ -65,8 +65,10 @@ its own `onTooDeep` still wins.
 **An `Error` is rebuilt as a plain `Error`.** Its `message` and `stack` live on
 non-enumerable properties, so the own-key rebuild the write path uses would
 print `{}` where the operator expected a failure. The copy keeps the name,
-message, stack, and own members with the rules applied, but not the class. A
-copy built on the original's prototype would inherit everything the prototype
+message, stack, and own members with the rules applied, but not the class. This
+also covers errors inside objects, arrays, log annotations, and
+`AggregateError.errors`. Shared references reuse the redacted copy, and mixed
+error and object chains share the traversal's depth bound. A copy built on the original's prototype would inherit everything the prototype
 defines, and `name`, `cause`, `toJSON`, `Symbol.toStringTag`, and
 `nodejs.util.inspect.custom` each carried a credential out that way.
 
