@@ -567,9 +567,12 @@ The execution host serializes immediate renewal drives and scheduled alarms with
 The deployment repository's fresh session role also authorizes its conversations
 and feed when no App installation row has been recorded. A GitHub metadata hiccup
 does not demote a Member. Elsewhere, the uninstalled public-copy fallback needs a
-successful public metadata answer; 404/410 are retryable `503 unavailable`, never
-private receipts. Confirmed private visibility, revoked sessions and confirmed
-role loss still deny. See [decision 0156](../decisions/0156-deployment-authority-without-installation-row.md).
+successful public metadata answer. A metadata 404 denies public readability, the same
+for an absent repository and a private one, and the denial is kept for 60 seconds
+([decision 0162](../decisions/0162-repository-refusal-classification.md)); a 5xx,
+timeout or rate limit stays a retryable `503 unavailable`. Confirmed private
+visibility, revoked sessions and confirmed role loss still deny. See
+[decision 0156](../decisions/0156-deployment-authority-without-installation-row.md).
 
 
 ### Pending sign-out across tabs

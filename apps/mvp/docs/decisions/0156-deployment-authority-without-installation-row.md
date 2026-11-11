@@ -2,6 +2,9 @@
 
 2026-11-03. Will's question-403 fix request.
 
+> **Superseded in part by [0162](0162-repository-refusal-classification.md) (2026-11-04):** a metadata 404 is a
+> definite denial of public readability, kept for 60 seconds, not a retryable unavailable. The rest stands.
+
 The deployment repository (`GITHUB_REPOSITORY`) uses its fresh session role,
 confirmed by sign-in's installation or collaborator checks, whether or not
 `github_repositories` records an installation. Public visibility is not an
