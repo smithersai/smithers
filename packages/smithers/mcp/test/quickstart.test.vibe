@@ -1,0 +1,28 @@
+import { NodeServices } from "@effect/platform-node"
+import { expect, it } from "@effect/vitest"
+import { quickstart } from "../examples/vibelang/quickstart.vibe"
+import { server } from "./quickstartServer.ts"
+
+effect function run() {
+  provide NodeServices.layer {
+    return try quickstart(server)
+  }
+}
+
+it.live("reads the catalog and checks structured output against its schema", effect () => {
+  const result = try run()
+  expect(result.tools).toEqual(["word_count", "explode"])
+  expect(result.counted).toMatchObject({ isError: false, structuredContent: { words: 4 } })
+})
+
+it.live("returns a tool-level failure as data in the success channel", effect () => {
+  const { refused } = try run()
+  expect(refused).toMatchObject({ content: [{ type: "text", text: "the tool refused" }], isError: true })
+  expect(refused.structuredContent).toBeUndefined()
+})
+
+it.live("projects one flow per tool under the server's source", effect () => {
+  const { sourceName, flowNames } = try run()
+  expect(sourceName).toBe("mcp/quickstart")
+  expect(flowNames).toEqual(["mcp/quickstart/word_count", "mcp/quickstart/explode"])
+})

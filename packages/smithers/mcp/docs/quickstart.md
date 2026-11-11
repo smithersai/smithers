@@ -8,7 +8,9 @@ sidebar:
 This quickstart connects to a real MCP server in its own process, calls two of
 its tools, and prints the flows the adapter projects from its catalog. Nothing
 is mocked: the server is a separate program speaking newline-delimited JSON-RPC,
-which is the only thing MCP is.
+which is the only thing MCP is. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 By the end you will have seen both halves of this package. `McpClient` owns the
 session, and `McpFlows` turns that session's catalog into flows a Smithers run
@@ -189,6 +191,53 @@ holding one binding per tool. Each binding's descriptor carries the server's own
 `inputSchema` as its input document, so a model reading the catalog sees
 `{ type: "object", properties: { text: { type: "string" } }, required: ["text"] }`
 rather than this package's permissive record type.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the client half is an
+`effect` function: `try` runs each session call, and `scoped` owns the
+subprocess as `Effect.scoped` does above. A `.vibe` file reads no Node
+globals, so the caller passes the command that starts `quickstart-server.mjs`,
+and provides `NodeServices.layer`. `McpFlows.mcp` is synchronous TypeScript
+the compiler cannot prove total, so it runs inside `Effect.try`. The answers
+are the ones above.
+
+This is `examples/vibelang/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as McpClient from "@smthrs/mcp/McpClient"
+import * as McpFlows from "@smthrs/mcp/McpFlows"
+
+/** How to start the server: the Node executable and `quickstart-server.mjs`. */
+export interface Server {
+  readonly command: string
+  readonly args: ReadonlyArray<string>
+}
+
+/** Connects, calls both tools, and lists the flows projected from the catalog. */
+export effect function quickstart({ command, args }: Server) {
+  // The scope owns the subprocess; closing it tears the server down.
+  return try scoped(effect {
+    const client = try McpClient.connect({ server: "quickstart", command, args: [...args] })
+
+    const counted = try client.callTool("word_count", { text: "durable flows release notes" })
+    const refused = try client.callTool("explode", {})
+
+    // Projection is synchronous TypeScript that may throw, so it runs in Effect.try.
+    const source = try Effect.try(() => McpFlows.mcp(client))
+    const bindings = try source.bindings()
+
+    return {
+      tools: client.tools.map((tool) => tool.name),
+      counted,
+      refused,
+      sourceName: source.name,
+      flowNames: bindings.map((binding) => binding.descriptor.name)
+    }
+  })
+}
+```
 
 ## Next steps
 

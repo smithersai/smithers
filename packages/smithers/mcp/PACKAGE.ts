@@ -7,8 +7,13 @@ const cwd = "packages/smithers/mcp"
 // Examples are type-checked, linted and run by `test/examples.test.ts`, so
 // they key the same targets as the sources; the server they spawn is test data.
 const standard = BuildAndCheckTypeScriptPackage({
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/vibelang/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   cwd,
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["examples/**/*.mjs"]
 })
 

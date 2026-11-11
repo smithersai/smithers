@@ -1,0 +1,31 @@
+import * as McpClient from "@smthrs/mcp/McpClient"
+import * as McpFlows from "@smthrs/mcp/McpFlows"
+
+/** How to start the server: the Node executable and `quickstart-server.mjs`. */
+export interface Server {
+  readonly command: string
+  readonly args: ReadonlyArray<string>
+}
+
+/** Connects, calls both tools, and lists the flows projected from the catalog. */
+export effect function quickstart({ command, args }: Server) {
+  // The scope owns the subprocess; closing it tears the server down.
+  return try scoped(effect {
+    const client = try McpClient.connect({ server: "quickstart", command, args: [...args] })
+
+    const counted = try client.callTool("word_count", { text: "durable flows release notes" })
+    const refused = try client.callTool("explode", {})
+
+    // Projection is synchronous TypeScript that may throw, so it runs in Effect.try.
+    const source = try Effect.try(() => McpFlows.mcp(client))
+    const bindings = try source.bindings()
+
+    return {
+      tools: client.tools.map((tool) => tool.name),
+      counted,
+      refused,
+      sourceName: source.name,
+      flowNames: bindings.map((binding) => binding.descriptor.name)
+    }
+  })
+}
