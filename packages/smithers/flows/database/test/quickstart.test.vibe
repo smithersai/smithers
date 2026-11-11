@@ -1,0 +1,33 @@
+import { expect, it } from "@effect/vitest"
+import { database, insertNote, insertTwice, quickstart } from "../examples/vibe/quickstart.vibe"
+
+// `:memory:` is a SQLite open that no environment setting redirects to
+// PostgreSQL, so both lanes of the storage matrix run the same program.
+const inMemory = database(":memory:")
+
+it.effect("applies notes_initial as global id 1, reads the row back, and counts 1 then 0", () =>
+  effect {
+    const result = try quickstart()
+    expect(result).toEqual({
+      applied: [[1, "notes_initial"]],
+      bodies: ["hello"],
+      ledger: [{ migration_id: 1, name: "notes_initial" }],
+      deleted: [1, 0]
+    })
+  } |> Effect.provide(%, inMemory))
+
+it.effect("a second pass on the same database applies no migration and keeps one ledger row", () =>
+  effect {
+    try quickstart()
+    const second = try quickstart()
+    expect(second.applied).toEqual([])
+    expect(second.ledger).toEqual([{ migration_id: 1, name: "notes_initial" }])
+    expect(second.deleted).toEqual([1, 0])
+  } |> Effect.provide(%, inMemory))
+
+it.effect("a second insert of the same id fails as a constraint, recovered by its code", () =>
+  effect {
+    try quickstart()
+    expect(try insertNote("second")).toBe("inserted")
+    expect(try insertTwice("twice")).toBe("constraint")
+  } |> Effect.provide(%, inMemory))

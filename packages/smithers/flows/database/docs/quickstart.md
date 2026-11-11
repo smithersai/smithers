@@ -8,7 +8,9 @@ sidebar:
 This quickstart builds a small durable store from nothing: one table, one
 migration set, one write through `DurableWriter`, and one read back. When it
 finishes you have a SQLite file with your table, a `flows_migrations` ledger
-recording what was applied, and a program that is safe to run again.
+recording what was applied, and a program that is safe to run again. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -148,6 +150,83 @@ const deleted = Effect.gen(function*() {
 The delete that matches the row answers `1`, and the same delete run again
 answers `0`. See
 [Read a write's affected-row count](./guides/count-affected-rows.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the migration and the
+program are `effect` functions, so `try` replaces each `yield*`, and the
+layers stay ordinary `Layer` values. The walkthrough calls `Migrations.run`
+directly so it can return what this pass applied, and a duplicate insert's
+`constraint` failure is recovered by its code with `catch` instead of
+`Effect.catch`. The test runs it against `:memory:`, so nothing is left on disk.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as Migrations from "@smthrs/database/Migrations"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as SqlClient from "effect/sql/SqlClient"
+
+/** The migration: an Effect that needs a SQL client and returns nothing. */
+effect function createNotes() {
+  const sql = try SqlClient.SqlClient
+  try sql`CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL)`
+}
+
+/** Local id `0001` plus offset `0` is global id 1, recorded as `notes_initial`. */
+export const notes: Migrations.MigrationSet = {
+  namespace: "notes",
+  idOffset: 0,
+  migrations: { "0001_initial": createNotes() }
+}
+
+/** The driver, then the write policy over it; `provideMerge` keeps both in the output. */
+export const database = (filename: string) =>
+  Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
+
+/** Migrates, writes one note, reads it and the ledger back, then deletes it twice. */
+export effect function quickstart() {
+  const sql = try SqlClient.SqlClient
+  const writer = try DurableWriter.DurableWriter
+  const applied = try Migrations.run([notes])
+
+  try writer.write(sql`INSERT INTO notes (id, body) VALUES ('first', 'hello')`)
+  const rows = try sql<{ readonly body: string }>`SELECT body FROM notes ORDER BY id`
+  const ledger = try sql<{
+    readonly migration_id: number
+    readonly name: string
+  }>`SELECT migration_id, name FROM ${sql(Migrations.table)} ORDER BY migration_id`
+
+  const deleteFirst = writer.write(
+    Effect.flatMap(sql`DELETE FROM notes WHERE id = ${"first"}`.raw, DurableWriter.affectedRows)
+  )
+  const first = try deleteFirst
+  const second = try deleteFirst
+
+  return {
+    applied,
+    bodies: rows.map((row) => row.body),
+    ledger: ledger.map(({ migration_id, name }) => ({ migration_id: Number(migration_id), name })),
+    deleted: [first, second] as const
+  }
+}
+
+/** Inserts one note; an id that already exists fails with a typed `DatabaseError`. */
+export effect function insertNote(id: string) {
+  const sql = try SqlClient.SqlClient
+  const writer = try DurableWriter.DurableWriter
+  try writer.write(sql`INSERT INTO notes (id, body) VALUES (${id}, 'hello')`)
+  return "inserted"
+}
+
+/** The second insert fails as `constraint`, which is never retried; `catch` recovers its code. */
+export effect function insertTwice(id: string) {
+  try insertNote(id)
+  return insertNote(id) catch (error) => error.code
+}
+```
 
 ## What just happened
 
