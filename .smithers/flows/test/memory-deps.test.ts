@@ -317,6 +317,38 @@ test("a lane refuses to write dependency pages through a linked .flows directory
   assert.deepEqual(await readdir(join(outside, "wiki", "deps")), ["keep"], "nothing outside the checkout is touched")
 })
 
+test("a refresh refuses linked output directories before touching outside files", async (t) => {
+  for (const [linked, deps] of [[directory, ""], [".flows/wiki", "deps"], [".flows", "wiki/deps"]] as const) {
+    await t.test(linked, async (t) => {
+      const root = await repository()
+      const outside = await realpath(await mkdtemp(join(tmpdir(), "memory-deps-outside-")))
+      t.after(() =>
+        Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })])
+      )
+      await mkdir(join(outside, deps), { recursive: true })
+      await writeFile(join(outside, deps, "keep.txt"), "keep\n")
+      await mkdir(join(root, linked, ".."), { recursive: true })
+      await symlink(outside, join(root, linked))
+      const refused = await failure(importDocs(root, { lib: S.Docs.Package("@scope/lib") }))
+      assert.equal(refused.code, "invalid")
+      assert.equal(refused.message, `${linked} is a link`)
+      assert.deepEqual(await readdir(join(outside, deps)), ["keep.txt"], "no imported files are written outside")
+      assert.equal(await readFile(join(outside, deps, "keep.txt"), "utf8"), "keep\n", "outside bytes are preserved")
+    })
+  }
+})
+
+test("a refresh accepts a repository reached through a symlink", async (t) => {
+  const root = await repository()
+  const parent = await realpath(await mkdtemp(join(tmpdir(), "memory-deps-link-")))
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(parent, { recursive: true, force: true })]))
+  const linkedRoot = join(parent, "repo")
+  await symlink(root, linkedRoot)
+  await run(importDocs(root, { lib: S.Docs.Package("@scope/lib") }))
+  await run(importDocs(linkedRoot, { lib: S.Docs.Package("@scope/lib") }))
+  assert.equal(await readFile(join(root, directory, "lib", "README.md"), "utf8"), "# lib\n\nUse lib.start().\n")
+})
+
 test("a file changed after its import, and dependency docs over a lane's budget, are refused", async (t) => {
   const root = await repository()
   t.after(() => rm(root, { recursive: true, force: true }))

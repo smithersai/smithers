@@ -221,10 +221,30 @@ export const fetchBounded = async (url: string, timeoutMs = fetchTimeoutMs): Pro
 }
 
 /**
+ * Refuses a `.flows`, `.flows/wiki` or deps directory under `root` that is a
+ * link, so nothing that lists, removes or writes {@link directory} ever
+ * reaches outside the repository.
+ */
+const refuseLinkedOutput = (root: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const realRoot = yield* fs.realPath(root)
+    for (const relative of [".flows", ".flows/wiki", directory]) {
+      const at = path.join(root, relative)
+      if ((yield* fs.exists(at)) && (yield* fs.realPath(at)) !== path.join(realRoot, relative)) {
+        return yield* new DocsImportError({ code: "invalid", source: relative, message: `${relative} is a link` })
+      }
+    }
+  })
+
+/**
  * Imports every declared source into `root/.flows/wiki/deps`, replacing each
  * source's directory whole, and removes directories no longer declared. The
  * first failing source fails the import before anything is written. Verified
- * bytes are written unchanged, and the receipt hashes those bytes.
+ * bytes are written unchanged, and the receipt hashes those bytes. It
+ * refuses a linked `.flows`, `.flows/wiki` or deps directory before it
+ * lists, removes or writes anything.
  */
 export const importDocs = (
   root: string,
@@ -242,6 +262,7 @@ export const importDocs = (
           (result) => ({ name, source, ...result })
         )))
     const base = path.join(root, directory)
+    yield* refuseLinkedOutput(root)
     yield* fs.makeDirectory(base, { recursive: true })
     for (
       const stale of (yield* fs.readDirectory(base)).filter((entry) =>
@@ -375,9 +396,9 @@ export const publishedPages = (root: string) =>
 /**
  * Writes the dependency pages a stack request was handed into `root`'s
  * {@link directory}, replacing what was there, so `memory` in this checkout
- * reads them as it reads a local import. Other pages are ignored. It
- * refuses a `.flows`, `.flows/wiki` or deps directory that is a link, so it
- * never removes or writes outside the checkout.
+ * reads them as it reads a local import. Other pages are ignored. Like
+ * {@link importDocs}, it refuses a linked output directory, so it never
+ * removes or writes outside the checkout.
  */
 export const installPages = (
   root: string,
@@ -387,13 +408,7 @@ export const installPages = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const base = path.join(root, directory)
-    const realRoot = yield* fs.realPath(root)
-    for (const relative of [".flows", ".flows/wiki", directory]) {
-      const at = path.join(root, relative)
-      if ((yield* fs.exists(at)) && (yield* fs.realPath(at)) !== path.join(realRoot, relative)) {
-        return yield* new DocsImportError({ code: "invalid", source: relative, message: `${relative} is a link` })
-      }
-    }
+    yield* refuseLinkedOutput(root)
     yield* fs.remove(base, { recursive: true, force: true })
     for (const page of pages.filter(isDependencyPage)) {
       const [, name, file] = pageTitle.exec(page.title)!
