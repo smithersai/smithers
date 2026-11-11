@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/bun-sqlite-client.ts", import.meta.url))
 
-// BunSqliteClient.test.ts and BunDatabase.test.ts shim bun:sqlite with Node, so
-// only a real Bun process proves what the vendored client does with Bun's own
-// driver: its error codes, its `file:` opens and its transaction state.
+// BunSqliteClient.test.ts shims bun:sqlite with Node, so only a real Bun process
+// proves what the vendored client does with Bun's own driver: its error codes,
+// its `file:` opens and its transaction state.
 const bunInstalled = spawnSync("bun", ["--version"], { stdio: "ignore" }).status === 0
 
 describe("Bun SQLite client under real Bun", () => {

@@ -41,6 +41,11 @@ export default defineConfig({
       // profile with every test passing (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-database-coverage-${process.pid}`),
       include: ["src/**"],
+      // `src/bun/**` imports `bun:sqlite`, which Node cannot load, so no suite
+      // in this Node lane can execute it without a shim. BunDatabase.test.ts
+      // runs it under real Bun instead, where v8 coverage cannot see it
+      // (issue #4504: the shim that used to cover it hid a guard bypass).
+      exclude: ["src/bun/**"],
       thresholds: {
         branches: 100,
         functions: 100,
