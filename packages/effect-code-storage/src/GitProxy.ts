@@ -24,10 +24,10 @@
  * Code Storage's guide to proxying git with your own auth has the same shape
  * (code.storage/docs/guides/proxy-git-with-your-own-auth, read 2026-10-20).
  *
- * Each request is one span, `GitProxy.uploadPack`, and one count on
- * `git_proxy_requests` by `service` and `outcome`, recorded when the answer's
- * body has ended, so a pack that breaks off counts as `broken`; neither
- * carries the credential, a path or any bytes.
+ * Each request is one span, `GitProxy.uploadPack`, with its service and status,
+ * ending when the response headers are ready. One count on `git_proxy_requests`
+ * by `service` and `outcome` and one log record the full body transfer, so a pack
+ * that breaks off counts as `broken`. None carries a credential, a path or bytes.
  *
  * @since 0.2.0
  */
@@ -87,6 +87,7 @@ const forwardedResponseHeaders: ReadonlyArray<string> = ["content-type", "cache-
  * @since 0.2.0
  */
 export const classify = (method: string, url: string): Service | undefined => {
+  if (!URL.canParse(url, "http://proxy")) return undefined
   const parsed = new URL(url, "http://proxy")
   if (method === "GET" && parsed.pathname.endsWith("/info/refs")) {
     return parsed.searchParams.getAll("service").join(",") === "git-upload-pack" ? "info-refs" : undefined
@@ -121,18 +122,20 @@ export const uploadPack = (
   Effect.gen(function*() {
     const startedAt = yield* Clock.currentTimeMillis
     const service = classify(request.method, request.url)
-    const done = (outcome: string, status: number) =>
+    const annotate = (status: number) =>
+      Effect.annotateCurrentSpan({
+        "git.proxy.service": service ?? "refused",
+        "http.response.status_code": status
+      })
+    const record = (outcome: string, status: number) =>
       Effect.gen(function*() {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         yield* Metric.update(Metric.withAttributes(requests, { service: service ?? "refused", outcome }), 1)
-        yield* Effect.annotateCurrentSpan({
-          "git.proxy.service": service ?? "refused",
-          "http.response.status_code": status
-        })
         yield* Effect.logWithLevel(outcome === "ok" ? "Info" : "Warn")("git.proxy").pipe(
           Effect.annotateLogs({ service: service ?? "refused", outcome, status, durationMs })
         )
       })
+    const done = (outcome: string, status: number) => annotate(status).pipe(Effect.andThen(record(outcome, status)))
     if (service === undefined) {
       yield* done("refused", 403)
       return HttpServerResponse.empty({ status: 403 })
@@ -208,6 +211,7 @@ export const uploadPack = (
       return HttpServerResponse.empty({ status: 502 })
     }
     const answer = response.value
+    yield* annotate(answer.status)
     const headers: Record<string, string> = {}
     for (const name of forwardedResponseHeaders) {
       const value = answer.headers[name]
@@ -216,7 +220,7 @@ export const uploadPack = (
     const outcome = answer.status < 300 ? "ok" : statusClass(answer.status)
     // Recorded once the body has ended, the way the guest saw it: whole, or broken off.
     const body = answer.stream.pipe(
-      Stream.onExit((exit) => done(Exit.isSuccess(exit) ? outcome : "broken", answer.status))
+      Stream.onExit((exit) => record(Exit.isSuccess(exit) ? outcome : "broken", answer.status))
     )
     return HttpServerResponse.stream(body, { status: answer.status, headers })
   }).pipe(Effect.withSpan("GitProxy.uploadPack", { kind: "server" }))

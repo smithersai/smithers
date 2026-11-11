@@ -17,6 +17,7 @@
  * @since 0.1.0
  */
 
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as HttpClient from "effect/http/HttpClient"
@@ -82,8 +83,8 @@ export interface Head {
 }
 
 /**
- * The counter {@link head} updates once per call: `git_remote_requests`, by
- * `outcome` (`ok`, or the failure's code).
+ * The counter {@link head} and {@link ref} update once per call: `git_remote_requests`, by
+ * `outcome` (`ok`, `defect`, `interrupted`, or the failure's code).
  *
  * @category observability
  * @since 0.1.0
@@ -197,7 +198,11 @@ const observed = (span: string, remote: string) => <A, R>(effect: Effect.Effect<
         Metric.withAttributes(requests, {
           outcome: Exit.isSuccess(exit) ?
             "ok" :
-            Option.match(Exit.findErrorOption(exit), { onNone: () => "interrupted", onSome: (error) => error.code })
+            Cause.hasDies(exit.cause) ?
+            "defect" :
+            Cause.hasInterrupts(exit.cause) ?
+            "interrupted" :
+            Option.match(Exit.findErrorOption(exit), { onNone: () => "defect", onSome: (error) => error.code })
         }),
         1
       )

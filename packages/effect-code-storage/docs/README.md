@@ -81,7 +81,8 @@ reads as every call, including `Retry-After`. The client never retries;
 `transport` means no answer was received and deletion may have been accepted.
 
 Each call records `CodeStorage.deleteRepo` and one `code_storage_requests`
-count with `operation=deleteRepo` and `outcome=ok` or the failure code. Like
+count with `operation=deleteRepo` and `outcome=ok`, `defect`, `interrupted` or
+the failure code. Like
 `pullUpstream`, it does not consume the success body. Error-body bytes read
 count on `code_storage_bytes_read` with `operation=deleteRepo`.
 
@@ -112,8 +113,10 @@ enters the box:
    any compressed answer. The repository named in the guest's
    path is ignored: the host's upstream decides it.
 4. Each request is one span, `GitProxy.uploadPack`, one log line `git.proxy`
-   and one count on `git_proxy_requests` by `service` and `outcome`; none
-   carries the credential, a path or any bytes.
+   and one count on `git_proxy_requests` by `service` and `outcome`. The span
+   records `git.proxy.service` and `http.response.status_code` and ends when
+   headers are ready; the count and log cover the body transfer. None carries
+   the credential, a path or any bytes.
 
 `GitRemote.ref(upstream, branch)` reads one branch's commit with git protocol
 v2's `ls-refs` for that ref alone, with the upstream's credential, and fails
@@ -143,7 +146,9 @@ From `https://code.storage/docs/openapi.json`, read 2026-10-19:
 | `listTags`     | `GET /api/repos/{repo}/tags`                                     | `git:read`   |
 
 A repository name may contain `/`; the client encodes it into one path
-segment. The organization's API origin is `https://api.<org>.code.storage`.
+segment. API calls reject names containing unpaired UTF-16 surrogates with
+`invalid_argument` before sending HTTP; `gitRemote` requires a well-formed name.
+The organization's API origin is `https://api.<org>.code.storage`.
 
 ### Capacity and spend
 
@@ -161,6 +166,7 @@ From `https://code.storage/docs/llms.txt` and its pages, read 2026-10-19:
 ## Pages
 
 - [API reference](api.md)
+- [Stream an original file](guides/stream-file.md)
 
 ## Ref namespaces
 

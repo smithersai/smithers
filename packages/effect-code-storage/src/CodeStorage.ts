@@ -28,6 +28,7 @@
  * @since 0.1.0
  */
 
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
 import * as Context from "effect/Context"
@@ -72,7 +73,8 @@ export type Operation =
  *   a documented one (`sync_in_progress`, `repository_not_found`,
  *   `rate_limited`, ...), its generic code for the status otherwise, or one of
  *   this client's: `transport` (no answer), `invalid_response` (an answer it
- *   couldn't read), `too_large` (a file over `maxBytes`) and `invalid_key`
+ *   couldn't read), `too_large` (a file over `maxBytes`), `invalid_argument`
+ *   (a malformed repository name or invalid read limit) and `invalid_key`
  *   (the key didn't import). A code the docs don't list becomes the status's
  *   generic code, as the docs say to treat it.
  * - `unknownCode` is that undocumented code, kept for diagnosis only. Messages
@@ -506,7 +508,7 @@ export interface Client {
 
 /**
  * The counter every call updates once: `code_storage_requests`, by
- * `operation` and `outcome` (`ok`, or the failure's code).
+ * `operation` and `outcome` (`ok`, `defect`, `interrupted`, or the failure's code).
  *
  * @category observability
  * @since 0.1.0
@@ -751,14 +753,22 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
 
     /** One span and one count per call; the span names only the repository. */
     const observe = <A>(operation: Operation, repo: string, effect: Effect.Effect<A, CodeStorageError>) =>
-      effect.pipe(
+      Effect.try({
+        try: () => encodeURIComponent(repo),
+        catch: () => new CodeStorageError({ operation, code: "invalid_argument" })
+      }).pipe(
+        Effect.andThen(effect),
         Effect.onExit((exit) =>
           Metric.update(
             Metric.withAttributes(requests, {
               operation,
-              outcome: Exit.isSuccess(exit) ? "ok" : Exit.findErrorOption(exit).pipe(
-                Option.match({ onNone: () => "interrupted", onSome: (error) => error.code })
-              )
+              outcome: Exit.isSuccess(exit) ?
+                "ok" :
+                Cause.hasDies(exit.cause) ?
+                "defect" :
+                Cause.hasInterrupts(exit.cause) ?
+                "interrupted" :
+                Option.match(Exit.findErrorOption(exit), { onNone: () => "defect", onSome: (error) => error.code })
             }),
             1
           )
@@ -821,15 +831,19 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
         observe(
           "deleteRepo",
           repo,
-          send("deleteRepo", repo, ["repo:write"], HttpClientRequest.delete(url(repo))).pipe(Effect.asVoid)
+          Effect.suspend(() =>
+            send("deleteRepo", repo, ["repo:write"], HttpClientRequest.delete(url(repo))).pipe(Effect.asVoid)
+          )
         ),
 
       pullUpstream: (repo) =>
         observe(
           "pullUpstream",
           repo,
-          send("pullUpstream", repo, ["git:write"], HttpClientRequest.post(url(repo, "/upstream/pull"))).pipe(
-            Effect.asVoid
+          Effect.suspend(() =>
+            send("pullUpstream", repo, ["git:write"], HttpClientRequest.post(url(repo, "/upstream/pull"))).pipe(
+              Effect.asVoid
+            )
           )
         ),
 
