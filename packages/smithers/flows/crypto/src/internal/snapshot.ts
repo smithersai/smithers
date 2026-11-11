@@ -1,0 +1,81 @@
+/**
+ * The SHA-256 input policy: copy bytes, and encode only well-formed UTF-16
+ * text as UTF-8.
+ *
+ * The encoder and the failure constructor are parameters. `Sha256.ts` binds
+ * the standard `TextEncoder` and its own `Sha256Error`; a test binds an
+ * encoder that fails, which is the only way to reach `text_encoding_failed`
+ * without patching the process-wide `TextEncoder`.
+ *
+ * @since 1.0.0-rc.17
+ */
+
+/**
+ * The failure codes an input snapshot can produce.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type SnapshotFailureCode = "invalid_input" | "invalid_text" | "text_encoding_failed"
+
+/** Whether UTF-8 can represent a JavaScript string without replacement. */
+const isWellFormed = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff) return false
+      index++
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Builds the synchronous snapshot: a copied byte view, or strictly encoded
+ * text. Every refusal is thrown as `failure(code, message, cause)`, and no
+ * message contains the input.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.17
+ */
+export const makeSnapshotSync = <E extends Error>(
+  encoder: Pick<TextEncoder, "encode">,
+  failure: (code: SnapshotFailureCode, message: string, cause?: unknown) => E
+) =>
+(input: string | Uint8Array): Uint8Array => {
+  if (typeof input === "string") {
+    if (!isWellFormed(input)) {
+      throw failure(
+        "invalid_text",
+        "SHA-256 text input contains an unpaired UTF-16 surrogate"
+      )
+    }
+    try {
+      return encoder.encode(input)
+    } catch (cause) {
+      throw failure(
+        "text_encoding_failed",
+        "SHA-256 text input could not be encoded as UTF-8",
+        cause
+      )
+    }
+  }
+  if (input instanceof Uint8Array) {
+    try {
+      return new Uint8Array(input)
+    } catch (cause) {
+      throw failure(
+        "invalid_input",
+        "SHA-256 byte input could not be copied",
+        cause
+      )
+    }
+  }
+  throw failure(
+    "invalid_input",
+    "SHA-256 input must be a string or Uint8Array"
+  )
+}
