@@ -79,24 +79,41 @@ export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owne
     return token
   })
 
+/** What the deployment's read token comes from: `GITHUB_TOKEN`, else the GitHub App, else neither (anonymous). */
+export interface Settings {
+  readonly token: Option.Option<Redacted.Redacted<string>>
+  readonly app: Option.Option<GitHubConfig.GitHubApp>
+}
+
 /**
- * The deployment's read token from its configuration: `GITHUB_TOKEN` when set and not blank, else the App's
- * (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_REPOSITORY`, `GITHUB_API_URL`) over the `HttpClient` in context,
- * else none. An App configuration that doesn't read, or a key that doesn't import, is none too; `github.config` logs
- * them where the git loop starts.
+ * Reads `Settings` from the deployment's configuration: `GITHUB_TOKEN` when set and not blank, else the App's
+ * (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_REPOSITORY`, `GITHUB_API_URL`). A host reads them while it
+ * builds; `fromSettings` reads no configuration.
  */
-export const fromConfig = Effect.gen(function* () {
-  const configured = Option.filter(
+export const settings = Effect.gen(function* () {
+  const token = Option.filter(
     yield* Config.option(Config.Redacted("GITHUB_TOKEN")),
     (value) => Redacted.value(value).trim() !== "",
   )
-  if (Option.isSome(configured)) return fixed(configured)
+  if (Option.isSome(token)) return { token, app: Option.none() }
   // An App configuration that doesn't read (a malformed `GITHUB_API_URL`) fails where the git loop reads it; here it
   // leaves reads anonymous.
-  const github = yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>()))
-  if (Option.isNone(github)) return fixed(Option.none())
-  const { appId, privateKey, apiBaseUrl, repository } = github.value
+  const app = yield* GitHubConfig.configured.pipe(Effect.orElseSucceed(() => Option.none<GitHubConfig.GitHubApp>()))
+  return { token, app }
+}) satisfies Effect.Effect<Settings, Config.ConfigError>
+
+/**
+ * The deployment's read token from `settings`: the configured token, else the App's over the `HttpClient` in context,
+ * else none. A key that doesn't import is none too; `github.config` logs it where the git loop starts.
+ */
+export const fromSettings = (settings: Settings) => Effect.gen(function* () {
+  if (Option.isSome(settings.token)) return fixed(settings.token)
+  if (Option.isNone(settings.app)) return fixed(Option.none())
+  const { appId, privateKey, apiBaseUrl, repository } = settings.app.value
   const app = yield* GitHub.AppAuth.make({ appId, privateKey, apiBaseUrl }).pipe(Effect.option)
   if (Option.isNone(app)) return fixed(Option.none())
   return yield* fromApp(app.value, repository)
-}) satisfies Effect.Effect<ReadToken, Config.ConfigError, HttpClient.HttpClient>
+}) satisfies Effect.Effect<ReadToken, never, HttpClient.HttpClient>
+
+/** The deployment's read token from its configuration (`settings`, then `fromSettings`). */
+export const fromConfig = Effect.flatMap(settings, fromSettings) satisfies Effect.Effect<ReadToken, Config.ConfigError, HttpClient.HttpClient>

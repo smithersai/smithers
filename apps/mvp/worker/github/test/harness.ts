@@ -164,7 +164,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     const { services } = yield* Effect.promise(() =>
       flowServices(runtime, github, { database, ...(options.judge === undefined ? {} : { judge: options.judge }) })
     )
-    const built = yield* build(Host.registration(services).pipe(Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none() }))), { maxConnections: 3 }).pipe(
+    const built = yield* build(Host.registration(services).pipe(Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none(), configReads: { token: { token: Option.none(), app: Option.none() }, visibilityApi: "https://api.github.com" } }))), { maxConnections: 3 }).pipe(
       Effect.provideService(Scope.Scope, scope),
       Effect.orDie,
     )

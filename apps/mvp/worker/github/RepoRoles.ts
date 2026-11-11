@@ -264,8 +264,26 @@ export interface RepoRoles<R = never> {
   readonly workUninstalled?: (actor: Actor, repository: Repository) => Effect.Effect<Role | null, RoleRefused, R>
 }
 
+/** What `make` reads from the deployment's configuration: the read token's settings and the visibility API's origin. */
+export interface ConfigReads {
+  readonly token: ReadToken.Settings
+  readonly visibilityApi: string
+}
+
+/** Reads `ConfigReads` for a deployment whose App is `app`: a host that builds `RepoRoles` at runtime reads them while building. */
+export const configuredReads = (app: Option.Option<GitHubApp>) => Effect.gen(function* () {
+  const token = yield* ReadToken.settings
+  const visibilityApi = Option.isSome(app) ? app.value.apiBaseUrl :
+    yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
+  return { token, visibilityApi } satisfies ConfigReads
+})
+
 /** `RepoRoles` over `database`: `resolve` opens a Postgres client for each read. */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
+  Effect.flatMap(configuredReads(options.app).pipe(Effect.orDie), (captured) => makeWith(database, options, captured))
+
+/** `make` over `captured`, the configuration a host read while building: it reads none itself. */
+export const makeWith = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options, captured: ConfigReads) =>
   Effect.gen(function* () {
     const allowedIds = options.allowed ?? Option.none()
     const freshSeconds = Math.min(FRESH_SECONDS, Math.max(0.001, options.freshSeconds ?? FRESH_SECONDS))
@@ -289,9 +307,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       })
       : Option.none()
 
-    const readToken = yield* ReadToken.fromConfig.pipe(client, Effect.orDie)
-    const visibilityApi = Option.isSome(options.app) ? options.app.value.apiBaseUrl :
-      yield* Config.String("GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL), Effect.orDie)
+    const readToken = yield* ReadToken.fromSettings(captured.token).pipe(client)
+    const visibilityApi = captured.visibilityApi
 
     /** The role where there is no App to ask: local development's own, else the session's. */
     const uninstalled = (actor: Actor, repository: Repository): Role | null => {

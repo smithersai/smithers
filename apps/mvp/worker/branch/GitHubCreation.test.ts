@@ -376,7 +376,7 @@ test("an unavailable database is a sanitized durable action failure", async () =
   const faulty = Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("injected database detail")))
   const result = await Effect.runPromise(Effect.flatMap(HttpClient.HttpClient, (http) => send(faulty, http)({ request: crypto.randomUUID() })).pipe(
     Effect.provide(FetchHttpClient.layer),
-    Effect.provideService(Settings, { app: Option.none(), allowed: Option.none() }), Effect.result,
+    Effect.provideService(Settings, { app: Option.none(), allowed: Option.none(), configReads: { token: { token: Option.none(), app: Option.none() }, visibilityApi: "https://api.github.com" } }), Effect.result,
   ))
   expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "GitHubCreationUnavailable" } })
   expect(JSON.stringify(result)).not.toContain("injected database detail")

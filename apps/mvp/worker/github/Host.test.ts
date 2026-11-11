@@ -155,7 +155,7 @@ describe("Host", () => {
           hostId: `object-${executionId}`,
           database: ExecutionHost.database(url, name),
           flows: { ...flows, registration: flows.registration.pipe(
-            Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none() })),
+            Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none(), configReads: { token: { token: Option.none(), app: Option.none() }, visibilityApi: "https://api.github.com" } })),
           ) },
           router: { start: () => Effect.void, wake: () => Effect.void },
         })

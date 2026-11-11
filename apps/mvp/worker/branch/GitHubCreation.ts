@@ -81,21 +81,24 @@ const unavailable = (error: unknown): CreateRefused => error instanceof CreateRe
 
 /** Deployment choices captured before constructing handlers or durable step implementations. */
 export const settings = Effect.gen(function* () {
-  return { app: yield* Config.configured, allowed: yield* RepoRoles.allowed }
+  const app = yield* Config.configured
+  return { app, allowed: yield* RepoRoles.allowed, configReads: yield* RepoRoles.configuredReads(app) }
 })
 export class Settings extends Context.Service<Settings, {
   readonly app: Option.Option<Config.GitHubApp>
   readonly allowed: Option.Option<ReadonlySet<string>>
+  /** What `RepoRoles` reads from configuration: each step builds its roles from these, reading none itself. */
+  readonly configReads: RepoRoles.ConfigReads
 }>()("smithers/branch/GitHubCreation/Settings") {}
 
 /** Build provider services from injected deployment choices on the remote action host. */
 export const configured = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, http: HttpClient.HttpClient) => Effect.gen(function* () {
-  const { app, allowed } = yield* Settings
+  const { app, allowed, configReads } = yield* Settings
   if (Option.isNone(app)) return yield* new CreateRefused({ code: "not_configured" })
   const auth = yield* GitHub.AppAuth.make(app.value).pipe(Effect.provideService(HttpClient.HttpClient, http), Effect.mapError(refused))
-  const roles = yield* RepoRoles.make(database, {
+  const roles = yield* RepoRoles.makeWith(database, {
     repository: app.value.repository, app, allowed, http,
-  })
+  }, configReads)
   const apiBaseUrl = app.value.apiBaseUrl
   const authorize = (input: Input, token: Redacted.Redacted<string>) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
