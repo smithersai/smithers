@@ -29,16 +29,19 @@ export const test = base.extend<{ sourceCoverage: void }>({
         if (!/\.js(?:\?|$)/.test(script.url) || new URL(script.url).origin !== origin) continue
         // Vite's generated runtime/preload helpers and pure export facades contain no application source.
         if (/\/(?:rolldown-runtime|preload-helper)-[^/]+\.js$/.test(new URL(script.url).pathname)) continue
-        const code = script.source
+        const local = process.env.E2E_BASE_URL === undefined
+        const scriptPath = resolve(root, "dist", new URL(script.url).pathname.slice(1))
+        if (local && !scriptPath.startsWith(resolve(root, "dist") + "/")) throw new Error("Executed script escapes the build")
+        // A page that left the app with a full load (sign-in does) no longer holds the sources of scripts it ran; a
+        // local run reads each from the build it served.
+        const code = script.source ?? (local ? await builtFile(scriptPath).catch(() => undefined) : undefined)
         if (code === undefined) throw new Error(`Missing executed source: ${script.url}`)
         const reference = /\/\/# sourceMappingURL=(\S+)/.exec(code)?.[1]
         if (!reference && /^\s*export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];?\s*$/.test(code)) continue
         if (!reference) throw new Error(`Missing source map: ${script.url}`)
         const mapUrl = new URL(reference, script.url)
-        if (process.env.E2E_BASE_URL === undefined) {
+        if (local) {
           if (mapUrl.origin !== origin) throw new Error(`Unexpected source map origin: ${script.url}`)
-          const scriptPath = resolve(root, "dist", new URL(script.url).pathname.slice(1))
-          if (!scriptPath.startsWith(resolve(root, "dist") + "/")) throw new Error("Executed script escapes the build")
           if (await builtFile(scriptPath) !== code) throw new Error(`Executed script differs from the build: ${script.url}`)
         }
         let pending = maps.get(mapUrl.href)
@@ -56,8 +59,8 @@ export const test = base.extend<{ sourceCoverage: void }>({
           maps.set(mapUrl.href, pending)
         }
         // The ranges stay with the test; the source and map are stored once per run (coverageStore.ts).
-        const { source, ...ranges } = script
-        entries.push({ ...ranges, script: await storeScript(resolve(info.project.outputDir, "chromium-scripts"), source!, await pending) })
+        const { source: _source, ...ranges } = script
+        entries.push({ ...ranges, script: await storeScript(resolve(info.project.outputDir, "chromium-scripts"), code, await pending) })
       }
       const directory = info.outputPath("coverage")
       await mkdir(directory, { recursive: true })
