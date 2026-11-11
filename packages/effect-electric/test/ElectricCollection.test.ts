@@ -562,6 +562,30 @@ describe.skipIf(!electricUp)("sync status and the sync policy", () => {
     }
   )
 
+  // Electric 1.5.28 restarts a stopped shape itself at most 50 times in a row, then gives up on it for good.
+  test("a shape stopped 51 times in a row still restarts on reconnect", async () => {
+    const rows = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const { faults, collection: notes } = yield* faulty(notesOf(table))
+      const events = yield* record(notes)
+      yield* write({ id: "a", text: "one", n: 1 })
+      yield* notes.preload
+      yield* faults.refuse(403)
+      yield* write({ id: "b", text: "two", n: 2 })
+      const stops = () => events.filter((event) => event === "Stopped:403").length
+      yield* eventually(() => stops() === 1)
+      for (let stop = 2; stop <= 51; stop++) {
+        yield* notes.reconnect
+        yield* eventually(() => stops() === stop)
+      }
+      yield* faults.heal
+      yield* notes.reconnect
+      yield* notes.awaitMatch(changeTo("b"), "5 seconds")
+      return ids(yield* notes.toArray).sort()
+    }))
+    expect(rows).toEqual(["a", "b"])
+  }, 60_000)
+
   test("evict drops every row at once; once its source answers again, the shape syncs from the start", async () => {
     const result = await run(Effect.gen(function*() {
       const { table, write } = yield* scratchTable
@@ -833,6 +857,53 @@ describe.skipIf(!electricUp)("a live batch that isn't whole", () => {
       return yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
     }))
     expect(stop).toMatchObject(Option.some({ _tag: "Stopped", error: { cause: { _tag: "Unreadable" } } }))
+  })
+
+  // Electric 1.5.28 refuses a 2xx of the shape's log without its headers for good (`MissingHeadersError`).
+  test.each([
+    ["a live batch without electric-handle", 200, "electric-handle"],
+    ["a live batch without electric-offset", 200, "electric-offset"],
+    ["a live batch without electric-cursor", 200, "electric-cursor"],
+    ["a 204 without electric-handle", 204, "electric-handle"]
+  ])("%s stops the shape before Electric sees it, and reconnect asks for it again", async (_, status, header) => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const refused: Array<URL> = []
+      const headless = firstLive((response, url) => {
+        refused.push(url)
+        const headers = new Headers(response.headers)
+        headers.delete(header)
+        return new Response(status === 204 ? null : response.body, { status, headers })
+      })
+      const sent: Array<URL> = []
+      const source: ShapeSource.Source = {
+        request: (url, init) => {
+          sent.push(new URL(url))
+          return headless.source.request(url, init)
+        }
+      }
+      const notes = yield* notesOf(table).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
+      const events = yield* record(notes)
+      yield* notes.preload
+      const mark = events.length
+      yield* write({ id: "a", text: "one", n: 1 })
+      const stop = yield* notes.sync.pipe(Stream.filter((event) => event._tag === "Stopped"), Stream.runHead)
+      const before = sent.length
+      yield* notes.reconnect
+      yield* notes.awaitMatch(changeTo("a"), "5 seconds")
+      return {
+        stop,
+        events: events.slice(mark).filter((event) => event !== "Sent"),
+        refused: refused[0]!.searchParams.get("offset"),
+        resumed: sent[before]?.searchParams.get("offset")
+      }
+    }))
+    expect(result.stop).toMatchObject(
+      Option.some({ _tag: "Stopped", error: { _tag: "SyncFailed", cause: { _tag: "Unreadable", status } } })
+    )
+    expect(result.events[0]).toBe("Stopped:none")
+    expect(result.events.at(-1)).toBe("Succeeded")
+    expect(result.resumed).toBe(result.refused)
   })
 
   test("a 204, which older Electric servers sent when nothing was new, goes to Electric as it is", async () => {

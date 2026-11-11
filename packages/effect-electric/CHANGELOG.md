@@ -13,6 +13,12 @@
   ends that session and starts one from the last batch the collection
   committed. The same holds for a `parser` that throws and for a 2xx without
   Electric's headers, which `reconnect` could not restart before.
+- A shape that stopped 50 times in a row no longer stays stopped. `reconnect`
+  left a stop after a failed request to Electric's own restart, which
+  `@electric-sql/client` 1.5.28 gives up after 50 stops in a row, so `reconnect`
+  then did nothing. Every stop now restarts as a new session. A 2xx without
+  Electric's headers stops the shape before Electric sees it, and is no longer
+  reported `Succeeded`.
 
 ### Added
 
