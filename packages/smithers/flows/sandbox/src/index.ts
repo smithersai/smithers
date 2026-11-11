@@ -77,6 +77,9 @@ export * as CloudflareSandbox from "./CloudflareSandbox/index.ts"
 /** The provider that reaches machines held by an HTTP service, and the handler that service mounts. */
 export * as HttpSandbox from "./HttpSandbox/index.ts"
 
+/** The machines a workspace declares, which a host offers a flow's actions by name. */
+export * as Remotes from "./Remotes/index.ts"
+
 /** Sandbox health-check contracts. */
 export * as SandboxHealth from "./SandboxHealth/index.ts"
 

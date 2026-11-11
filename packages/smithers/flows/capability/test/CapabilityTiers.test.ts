@@ -1,3 +1,4 @@
+import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 import * as Capability from "../src/Capability.ts"
 
@@ -110,5 +111,23 @@ describe("Capability.format over patterns", () => {
   it("rejects an invalid structural action before rendering durable bytes", () => {
     expect(() => Capability.format({ action: "fs" as Capability.Action, resource: "read:/x" }))
       .toThrow(/fs/)
+  })
+})
+
+describe("remote:acquire", () => {
+  it("is irreversible whatever remote it names: the session runs commands on another machine", () => {
+    expect(Capability.tierOf(Capability.make("remote:acquire", "fuzz"), { workspaceRoot: "/workspace" }))
+      .toBe("irreversible")
+    expect(Capability.format(Capability.make("remote:acquire", "fuzz"))).toBe("remote:acquire:fuzz")
+  })
+
+  it("is granted by its own name, its family and the whole authority, and by no other remote's name", () => {
+    const request = Capability.make("remote:acquire", "fuzz")
+    const grants = (text: string) => Capability.matches(Option.getOrThrow(Capability.parsePattern(text)), request)
+    expect(grants("remote:acquire:fuzz")).toBe(true)
+    expect(grants("remote:*:*")).toBe(true)
+    expect(grants("*")).toBe(true)
+    expect(grants("remote:acquire:ci")).toBe(false)
+    expect(grants("proc:*:*")).toBe(false)
   })
 })

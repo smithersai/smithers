@@ -5921,6 +5921,9 @@ importers:
 
   packages/smithers/flows/sandbox:
     dependencies:
+      '@smthrs/capability':
+        specifier: 1.0.0-rc.17
+        version: link:../capability
       '@smthrs/flow':
         specifier: 1.0.0-rc.17
         version: link:../flow

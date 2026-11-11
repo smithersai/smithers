@@ -69,7 +69,7 @@ unknown key fails with `Workspace received unknown option "x"`.
 | `environment`    | `S.Nix.Environment({ flake })`          | The Nix closure tools resolve from. See [Environments](../concepts/environments.md).   |
 | `toolchains`     | `Array<Declaration>`                    | Non-Node toolchain layers, such as `S.Rust.Toolchain`. Must be non-empty when present. |
 | `sandboxes`      | `S.Sandboxes({ ... })`                  | The confinement mechanisms available by name.                                          |
-| `remotes`        | `S.Remotes({ ... })`                    | The machines `ci --remote <name>` splits a run across, by name.                        |
+| `remotes`        | `S.Remotes({ ... })`                    | The machines `ci --remote <name>` splits a run across, and flows acquire, by name.     |
 | `host`           | `S.Host({ bins })`                      | Host binaries the workspace requires on `PATH`.                                        |
 | `flags`          | `S.Flags(...)`                          | Workspace-wide flag declarations.                                                      |
 | `agents`         | `S.Agents(...)`                         | The agents model-backed targets may name.                                              |

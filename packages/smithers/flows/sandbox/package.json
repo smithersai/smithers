@@ -69,6 +69,8 @@
     "./CloudflareSandbox/*": null,
     "./HttpSandbox": "./src/HttpSandbox/index.ts",
     "./HttpSandbox/*": null,
+    "./Remotes": "./src/Remotes/index.ts",
+    "./Remotes/*": null,
     "./DaytonaSandbox": "./src/DaytonaSandbox/index.ts",
     "./DaytonaSandbox/*": null,
     "./JustBashSandbox": "./src/JustBashSandbox/index.ts",
@@ -297,6 +299,17 @@
           "default": "./dist/cjs/HttpSandbox/index.js"
         }
       },
+      "./Remotes": {
+        "import": {
+          "types": "./dist/esm/Remotes/index.d.ts",
+          "default": "./dist/esm/Remotes/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Remotes/index.d.ts",
+          "default": "./dist/cjs/Remotes/index.js"
+        }
+      },
+      "./Remotes/*": null,
       "./HttpSandbox/*": null,
       "./DaytonaSandbox": {
         "import": {
@@ -377,6 +390,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@smthrs/capability": "1.0.0-rc.17",
     "@smthrs/flow": "1.0.0-rc.17",
     "@smthrs/jj": "1.0.0-rc.17",
     "@smthrs/kernel": "1.0.0-rc.17",

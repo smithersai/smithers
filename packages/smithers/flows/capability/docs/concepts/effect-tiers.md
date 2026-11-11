@@ -16,7 +16,7 @@ person they are agreeing to, and whether a retry needs an idempotency key.
 | -------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sealed`       | Observes without changing anything, so a repeat costs nothing. | `fs:read`, `net:get`, `model:call`, `memory:read`, `jj:status`, `jj:diff`, `jj:root`                                                         |
 | `compensable`  | Changes state the run can undo from its own snapshot.          | `jj:snapshot`, `jj:restore`, `jj:workspace-add`, `jj:workspace-forget`, `jj:revert`, `jj:op-restore`, and an `fs:write` inside the workspace |
-| `irreversible` | Leaves the run's reach. Nothing here can undo it.              | `net:post`, `net:private`, `proc:spawn`, `memory:write`, and an `fs:write` that escapes the workspace                                        |
+| `irreversible` | Leaves the run's reach. Nothing here can undo it.              | `net:post`, `net:private`, `proc:spawn`, `memory:write`, `remote:acquire`, and an `fs:write` that escapes the workspace                      |
 
 `Capability.requiresIdempotencyKey` reports the one rule derived from the
 tier: only `irreversible` effects need a key to retry safely. This includes
@@ -35,7 +35,8 @@ Capability.requiresIdempotencyKey("irreversible")
 
 `proc:spawn` is `irreversible` regardless of the command. The package cannot
 know what a subprocess did, and a tier that guessed would be worse than one that
-admits the operation left the run's reach.
+admits the operation left the run's reach. `remote:acquire` is `irreversible`
+for the same reason: the session it opens runs commands on another machine.
 
 ## Why only a write depends on its resource
 

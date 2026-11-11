@@ -284,9 +284,16 @@ describe("the sealed model step key", () => {
     // Moved under every key encoding when `HarnessErrorCode` gained
     // `realm_exhausted` (#4829), a declaration change. Same rule as above for
     // runs already in flight.
-    expect(observed.encoding2).toBe("key1_f185dec9fdba72ad15bf311b8e257845c69b9eb6839b2df826fbd5e2ffeb7750")
-    expect(observed.encoding3).toBe("key1_165e33cc42efdf88b5913c6b30041cff375da03b0614e891a744a6bf06018579")
-    expect(observed.host).toBe("key1_78e08824b2f814c189f018444f1f6541e4ce2d80a88e681118c86e5c091dd421")
+    expect(observed.host).not.toBe("key1_78e08824b2f814c189f018444f1f6541e4ce2d80a88e681118c86e5c091dd421")
+    //
+    // Moved again, under every key encoding, when the `Action` literal union
+    // gained `remote:acquire` for the machines a workspace declares (#4966):
+    // the declaration's capability schema is in this preimage, as it was for
+    // `jj:op-restore` and `memory:*`. Runs already in flight finish on their
+    // original revision.
+    expect(observed.encoding2).toBe("key1_8abb335185ba5d66bceda98f38971322131f3ba848e727e2edf9c4a27ddeb540")
+    expect(observed.encoding3).toBe("key1_c4a2ccf6b4f8d00563d61f77c853bde9583ad09e2c5c6e24e82b823c6ed89d24")
+    expect(observed.host).toBe("key1_537c51d05dd89569d92aa245f601a345aa0bced59b8a46f82430e53dd8899aea")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)

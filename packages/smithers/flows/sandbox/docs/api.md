@@ -251,6 +251,10 @@ of a repository still fails with `not_a_repository`.
 
 `hostContext(session, { health? })` builds the `Host` context `layerHost` provides from a session the caller already holds; it requires a `Scope`. `layerHost` and `run` both use it.
 
+## Remotes
+
+`Remotes` is the service a host provides over the machines its workspace declares in `S.Remotes`. `acquire(remote, session)` is scoped and opens a session under `session` on the remote named `remote`; it fails with a `PermissionError` when the calling action's ceiling does not admit `remote:acquire:<remote>`, and with `ProviderError` `not_found` for a name the workspace does not declare. `make({ grants, provider })` builds it: the capability check runs first, so a refused action starts no transport and asks `provider` for nothing. The `smthrs` host provides it to every module flow; see [Reach a declared remote from a flow](./guides/reach-a-declared-remote.md).
+
 ## TerminalProtocol
 
 `@smthrs/sandbox/TerminalProtocol` ships ESM and CommonJS entrypoints with

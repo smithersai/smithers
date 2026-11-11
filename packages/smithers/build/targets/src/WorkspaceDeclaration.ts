@@ -728,7 +728,8 @@ export const isRemotesDeclaration = (value: unknown): value is RemotesDeclaratio
 }
 
 /**
- * Declares the machines `smthrs ci --remote <name>` runs on, by name.
+ * Declares the machines `smthrs ci --remote <name>` runs on, and module flows
+ * acquire through `@smthrs/sandbox` `Remotes`, by name.
  *
  * @category constructors
  * @since 1.0.0

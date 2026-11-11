@@ -97,6 +97,7 @@ export const tierOf = (capability: Capability, options: TierOptions): EffectTier
     case "net:post":
     case "net:private":
     case "proc:spawn":
+    case "remote:acquire":
       return "irreversible"
   }
 }

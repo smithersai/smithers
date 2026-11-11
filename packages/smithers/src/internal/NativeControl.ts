@@ -151,6 +151,7 @@ import * as RoleProfile from "./RoleProfile.ts"
 import * as SourceRevision from "./SourceRevision.ts"
 import * as SupervisorMemory from "./SupervisorMemory.ts"
 import * as Telemetry from "./Telemetry.ts"
+import * as WorkspaceRemotes from "./WorkspaceRemotes.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 const instructionNames = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]
@@ -1629,7 +1630,15 @@ export const make = (
     // with, so this context, not registration's, is the one the flow's
     // capability ceiling must reach: the kernel's spawner, path, network and
     // filesystem, and the kernel's `Jj` decorated over the engine's.
-    const engineHost = guard(engineContained)
+    // Beside it, the machines the workspace declares: their transports start
+    // from the contained spawner, outside the confinement above, once the
+    // action's ceiling admits `remote:acquire` on the remote's name.
+    const engineHost = Layer.merge(
+      guard(engineContained),
+      WorkspaceRemotes.layer({ root, environment }).pipe(
+        Layer.provide([engineContained, grants, native.httpClient(environment)])
+      )
+    )
     const actionJj = KernelJj.layer.pipe(
       Layer.provide(engineJj),
       Layer.provide([engineHost, grants, Workspace.layer(workspaceRoot)])

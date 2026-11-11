@@ -32,7 +32,8 @@ export const Action = Schema.Literals(
     "jj:workspace-forget",
     "jj:root",
     "jj:revert",
-    "jj:op-restore"
+    "jj:op-restore",
+    "remote:acquire"
   ] as const
 )
 

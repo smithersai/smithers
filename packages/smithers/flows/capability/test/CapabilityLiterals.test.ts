@@ -238,7 +238,8 @@ const witnessActions: Readonly<Record<string, Capability.Action>> = {
   "net:*": "net:get",
   "model:*": "model:call",
   "proc:*": "proc:spawn",
-  "jj:*": "jj:status"
+  "jj:*": "jj:status",
+  "remote:*": "remote:acquire"
 }
 
 /**
@@ -316,7 +317,7 @@ describe("HARDEN-2: the sweep sees each staged form and judges it", () => {
   })
 
   it("reads the whole-form vocabulary off the kernel's own selectors", () => {
-    expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "model", "net", "proc"])
+    expect(namespacesOf(selectors)).toEqual(["*", "fs", "jj", "memory", "model", "net", "proc", "remote"])
   })
 
   it("follows a namespace the kernel has not declared yet", () => {

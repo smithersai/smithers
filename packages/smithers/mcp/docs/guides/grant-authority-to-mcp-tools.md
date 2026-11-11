@@ -33,7 +33,8 @@ host action, at resource `**`:
   "jj:workspace-forget:**",
   "jj:root:**",
   "jj:revert:**",
-  "jj:op-restore:**"
+  "jj:op-restore:**",
+  "remote:acquire:**"
 ]
 ```
 

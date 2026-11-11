@@ -33,7 +33,8 @@ const exactActions = [
   "jj:workspace-forget",
   "jj:root",
   "jj:revert",
-  "jj:op-restore"
+  "jj:op-restore",
+  "remote:acquire"
 ] as const satisfies ReadonlyArray<Capability.Action>
 
 const actionArb = FastCheck.constantFrom<Capability.Action>(...exactActions)
@@ -349,7 +350,7 @@ describe("Capability properties", () => {
       if (action === "*") return exactActions[pick % exactActions.length]!
       if (
         action === "fs:*" || action === "net:*" || action === "model:*" || action === "memory:*" ||
-        action === "proc:*" || action === "jj:*"
+        action === "proc:*" || action === "jj:*" || action === "remote:*"
       ) {
         const family = exactActions.filter((exact) => exact.startsWith(action.slice(0, -1)))
         return family[pick % family.length]!

@@ -22,6 +22,7 @@ describe("@smthrs/sandbox barrel", () => {
       "MicrosandboxSandbox",
       "ProviderConformance",
       "RemoteChildProcessSpawner",
+      "Remotes",
       "Sandbox",
       "SandboxCommand",
       "SandboxConformance",

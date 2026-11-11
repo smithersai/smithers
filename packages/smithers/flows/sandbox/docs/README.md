@@ -156,6 +156,8 @@ next.
   boundary, byte exactness, and cost to run.
 - [Reach sandboxes behind an HTTP service](./guides/reach-sandboxes-behind-an-http-service.md):
   serve a retained provider over HTTP and reach its machines from any host.
+- [Reach a declared remote from a flow](./guides/reach-a-declared-remote.md):
+  open a session on a machine `WORKSPACE.ts` declares, from a module flow.
 - [Write a provider](./guides/write-a-provider.md) and
   [Prove a provider](./guides/prove-a-provider.md): adapt your own backend and
   hold it to the conformance suites.

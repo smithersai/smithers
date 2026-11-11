@@ -57,6 +57,9 @@ Cloudflare containers: `machines` is how many one run starts, and `token` is an
 
 See
 [Run CI on other machines](../../build-cli/docs/guides/run-ci-on-other-machines.md).
+A module flow on the `smthrs` host reaches the same entries by name through
+`Remotes` from `@smthrs/sandbox`, once its capabilities name `remote:acquire:<name>`; see
+[Reach a declared remote from a flow](../../flows/sandbox/docs/guides/reach-a-declared-remote.md).
 
 `S.Workspace` validates its options and performs no I/O, so evaluating the
 module stays pure. For the full option list and every refusal, see
