@@ -94,6 +94,13 @@ describe("an issues answer", () => {
     expect(named).toMatchObject({ screen: "detail", selected: 2, busy: false })
     expect(newest).toMatchObject({ screen: "detail", selected: 5 })
   })
+  it("text typed into the issues pane is stored well formed, so its request stays on the wire", () => {
+    // A lone surrogate can reach an input's value; DurableText refuses it, as the wiki editor's input already guards.
+    const typed = update(open({ screen: "new" }), Message.IssueUi({ action: "title", value: "a\ud800b" })).model
+    const asked = update(typed, Message.IssueUi({ action: "new", value: "" })).model
+    expect(typed.issues?.title).toBe("a\ufffdb")
+    expect(Schema.is(Model)(asked)).toBe(true)
+  })
   it("a created answer that names no issue and lists none selects no issue", () => {
     // The schema allows it; Math.max of no numbers is -Infinity, which no later request may carry.
     const model = update(open({ retry: retrying, busy: true }), loaded({ seq: 1, items: [] }, { created: true, ...settling })).model

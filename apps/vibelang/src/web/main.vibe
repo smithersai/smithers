@@ -378,8 +378,10 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
     IssueUi: ({ action, value }) => {
       const before = issueStateOf(model)
-      const result = issuesUpdate(before, action, value)
-      const effects = IssueDecision.issueUiEffects(action, value, model.mode === "live", before.dialog, result.ui.dialog)
+      // An input's value may hold a lone surrogate; every request text is DurableText (as UpdatedWikiEdit guards).
+      const text = value.toWellFormed()
+      const result = issuesUpdate(before, action, text)
+      const effects = IssueDecision.issueUiEffects(action, text, model.mode === "live", before.dialog, result.ui.dialog)
       return { model: { ...model, issues: effects.bumpSerial ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(effects.toChat ? { surface: "chat" } : {}) }, commands: [
         ...(effects.details ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
         ...(result.request === undefined ? [] : [ActOnIssue({ request: result.request })]),

@@ -7,7 +7,7 @@ import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang
 import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
 import { IssueFailure, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
-import { pages } from "../src/core/wiki.vibe"
+import { pages, wikiEditable } from "../src/core/wiki.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
 import {
@@ -188,7 +188,9 @@ effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof C
       }
     }
     case "editor-other-draft": {
-      const page = pages[input.number % pages.length]!.id
+      // Only an editable page has a source to edit (the decisions index is built, not stored).
+      const editable = pages.filter((entry) => wikiEditable(entry.id))
+      const page = editable[input.number % editable.length]!.id
       const got = try Effect.provide(answer(() => OpenWikiEditor({ page, request: input.number })), otherDraft(role))
       return got._tag === "BeganWikiEdit" && got.draft === ""
     }
