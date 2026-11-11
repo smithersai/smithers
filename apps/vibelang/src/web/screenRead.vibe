@@ -1,0 +1,89 @@
+// The plain screens `update`'s proved decisions read, projected from the page's Model (decision 0018). Each screen is
+// exactly the Model's fields it names, an absent optional field read as its default; nothing else is read.
+import type { AccountState, Model } from "./main.vibe"
+import type { ActionView } from "./actionModel.vibe"
+import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
+import type { EscapeScreen } from "./updateDecision.vibe"
+import type { StreamScreen } from "./tourDecision.vibe"
+import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
+import type { WikiDraft } from "./wikiEditorDecision.vibe"
+import type { WikiRequest } from "../core/wikiSchemas.vibe"
+
+/** The account screen: the page's surface and docs, and the account's nine screen fields. */
+//@ verify
+//@ ensures \result == { surface: model.surface, docs: model.docs, menu: account.menu, people: account.people, pending: account.pending, error: account.error, retry: account.retry, target: account.target, targetRole: account.targetRole, epoch: account.epoch, from: account.from }
+export function accountScreen(model: Model, account: AccountState): AccountScreen {
+  const { menu, people, pending, error, retry, target, targetRole, epoch, from } = account
+  return { surface: model.surface, docs: model.docs, menu, people, pending, error, retry, target, targetRole, epoch, from }
+}
+
+/** What Escape reads: the open dialogs, menus and panes. No issues state is a closed list with no dialog; no editor
+ *  is neither editing nor submitting; an absent sandbox pane is not maximized. */
+//@ verify
+//@ ensures \result.target == account.target && \result.error == account.error && \result.menu == account.menu
+//@ ensures \result.slash == actions.slash && \result.actionsMax == actions.maximized && \result.docs == model.docs
+//@ ensures model.issues === undefined ==> \result.dialog == "" && !\result.issuesOpen
+//@ ensures model.issues !== undefined ==> \result.dialog == model.issues.dialog && \result.issuesOpen == model.issues.open
+//@ ensures model.wikiEdit === undefined ==> !\result.editing && !\result.submitting
+//@ ensures model.wikiEdit !== undefined ==> \result.editing && \result.submitting == (model.wikiEdit.submission !== undefined)
+//@ ensures \result.sandboxMax == (model.sandboxPane == "max")
+export function escapeScreen(model: Model, account: AccountState, actions: ActionView): EscapeScreen {
+  return { target: account.target, error: account.error, menu: account.menu, dialog: model.issues?.dialog ?? "", issuesOpen: model.issues?.open === true, slash: actions.slash, actionsMax: actions.maximized, editing: model.wikiEdit !== undefined, submitting: model.wikiEdit?.submission !== undefined, sandboxMax: model.sandboxPane === "max", docs: model.docs }
+}
+
+/** The actions panel's screen: its nine screen fields. */
+//@ verify
+//@ ensures \result == { open: actions.open, maximized: actions.maximized, selected: actions.selected, run: actions.run, loading: actions.loading, starting: actions.starting, error: actions.error, input: actions.input, highlight: actions.highlight }
+export function actionScreen(actions: ActionView): ActionScreen {
+  const { open, maximized, selected, run, loading, starting, error, input, highlight } = actions
+  return { open, maximized, selected, run, loading, starting, error, input, highlight }
+}
+
+/** The run the panel shows; no step reads as the empty one. */
+//@ verify
+//@ ensures \result == { step: actions.step ?? "", run: actions.run, selected: actions.selected, open: actions.open, maximized: actions.maximized }
+export function runSelection(actions: ActionView): RunSelection {
+  const { step, run, selected, open, maximized } = actions
+  return { step: step ?? "", run, selected, open, maximized }
+}
+
+/** The event stream's screen. */
+//@ verify
+//@ ensures \result == { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
+export function streamScreen(model: Model): StreamScreen {
+  return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
+}
+
+/** The sandbox's screen: no pane is closed, no operation or error is empty, not busy, and no request is request 0. */
+//@ verify
+//@ ensures \result == { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
+export function sandboxScreen(model: Model): SandboxScreen {
+  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
+}
+
+/** What a sandbox result reads, with the same defaults as the screen. */
+//@ verify
+//@ ensures \result == { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
+export function sandboxResult(model: Model): SandboxResult {
+  return { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
+}
+
+/** A waiting submission as plain data for the proved submit step; none reads as an empty save the step never sends,
+ *  and no recovery key as an empty one. */
+//@ verify
+//@ ensures request === undefined ==> \result == { op: "save", page: "", base: "", text: "", key: "", recovery: "" }
+//@ ensures request !== undefined ==> \result == { op: request.op, page: request.page, base: request.base, text: request.text, key: request.key, recovery: request.recovery ?? "" }
+export function wikiDraft(request: WikiRequest | undefined): WikiDraft {
+  if (request === undefined) return { op: "save", page: "", base: "", text: "", key: "", recovery: "" }
+  return { op: request.op, page: request.page, base: request.base, text: request.text, key: request.key, recovery: request.recovery ?? "" }
+}
+
+/** The proved submission as the request the flow takes: an empty recovery key is no recovery key. */
+//@ verify
+//@ ensures \result.op == draft.op && \result.page == draft.page && \result.base == draft.base && \result.text == draft.text && \result.key == draft.key
+//@ ensures draft.recovery == "" ==> \result.recovery === undefined
+//@ ensures draft.recovery != "" ==> \result.recovery !== undefined && \result.recovery == draft.recovery
+export function wikiRequest(draft: WikiDraft): WikiRequest {
+  const { recovery, ...request } = draft
+  return recovery === "" ? request : { ...request, recovery }
+}

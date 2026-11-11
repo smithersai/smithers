@@ -2,7 +2,28 @@
 A = 'src/web/armDecision.vibe'
 W = 'src/web/wikiEditorDecision.vibe'
 M = 'src/web/modelWrite.vibe'
+S = 'src/web/screenRead.vibe'
 cases = [
+(S, 'screen-account-surface', 'accountScreen', 'return { surface: model.surface, docs', 'return { surface: "chat", docs', 'the account screen reads the surface'),
+(S, 'screen-account-docs', 'accountScreen', 'docs: model.docs, menu', 'docs: "pane", menu', 'the account screen reads docs'),
+(S, 'screen-account-people', 'accountScreen', 'docs: model.docs, menu, people, pending', 'docs: model.docs, menu, people: "closed", pending', 'the account screen reads the People pane'),
+(S, 'screen-account-target-role', 'accountScreen', 'targetRole, epoch, from }\n', 'targetRole: "community", epoch, from }\n', 'the account screen reads the grant role'),
+(S, 'screen-escape-dialog', 'escapeScreen', 'dialog: model.issues?.dialog ?? ""', 'dialog: ""', 'Escape reads the issues dialog'),
+(S, 'screen-escape-issues-open', 'escapeScreen', 'issuesOpen: model.issues?.open === true', 'issuesOpen: false', 'Escape reads whether issues are open'),
+(S, 'screen-escape-submitting', 'escapeScreen', 'submitting: model.wikiEdit?.submission !== undefined', 'submitting: model.wikiEdit !== undefined', 'an editor without a submission is not submitting'),
+(S, 'screen-escape-sandbox-max', 'escapeScreen', 'sandboxMax: model.sandboxPane === "max"', 'sandboxMax: model.docs === "max"', 'Escape reads the sandbox pane'),
+(S, 'screen-escape-slash', 'escapeScreen', 'slash: actions.slash', 'slash: actions.open', 'Escape reads the slash menu'),
+(S, 'screen-action-highlight', 'actionScreen', 'input, highlight }\n', 'input, highlight: 0 }\n', 'the actions screen reads the highlight'),
+(S, 'screen-run-step', 'runSelection', 'step: step ?? ""', 'step: ""', 'the run selection reads its step'),
+(S, 'screen-stream-from', 'streamScreen', 'epoch: model.epoch, from: model.from }', 'epoch: model.epoch, from: model.epoch }', 'the stream screen reads where the stream starts'),
+(S, 'screen-sandbox-pane', 'sandboxScreen', 'pane: model.sandboxPane ?? "closed", operation', 'pane: model.sandboxPane ?? "pane", operation', 'no sandbox pane is a closed one'),
+(S, 'screen-sandbox-request', 'sandboxScreen', 'request: model.sandboxRequest ?? 0', 'request: model.sandboxRequest ?? 1', 'no sandbox request is request 0'),
+(S, 'screen-sandbox-draft', 'sandboxScreen', 'draft: model.terminalDraft ?? ""', 'draft: ""', 'the sandbox screen reads the terminal draft'),
+(S, 'screen-sandbox-result-busy', 'sandboxResult', 'busy: model.sandboxBusy ?? false', 'busy: model.sandboxBusy ?? true', 'no busy flag is not busy'),
+(S, 'screen-wiki-draft-recovery', 'wikiDraft', 'recovery: request.recovery ?? "" }', 'recovery: "" }', 'a waiting submission keeps its recovery key'),
+(S, 'screen-wiki-draft-none', 'wikiDraft', 'return { op: "save", page: "", base: ""', 'return { op: "propose", page: "", base: ""', 'no submission reads as an empty save'),
+(S, 'screen-wiki-request-dropped', 'wikiRequest', 'return recovery === "" ? request : { ...request, recovery }', 'return request', 'a recovery key is sent'),
+(S, 'screen-wiki-request-empty', 'wikiRequest', 'return recovery === "" ? request : { ...request, recovery }', 'return { ...request, recovery }', 'an empty recovery key is no recovery key'),
 (M, 'write-account-docs', 'writeAccount', 'docs: state.docs, account }', 'docs: model.docs, account }', 'an account step writes docs'),
 (M, 'write-account-surface', 'writeAccount', 'surface: state.surface, docs', 'surface: model.surface, docs', 'an account step writes the surface'),
 (M, 'write-account-dropped', 'writeAccount', 'return { ...model, surface: state.surface, docs: state.docs, account }', 'return { ...model, surface: state.surface, docs: state.docs }', 'an account step writes the account'),

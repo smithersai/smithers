@@ -1,5 +1,6 @@
 import * as ModelDecision from "./modelDecision.vibe"
 import * as ModelWrite from "./modelWrite.vibe"
+import * as ScreenRead from "./screenRead.vibe"
 import * as IssueDecision from "./issueDecision.vibe"
 import * as TourDecision from "./tourDecision.vibe"
 import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
@@ -597,16 +598,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
 }
 
 /** The plain account state the proved arms in `modelDecision.vibe` read and return. */
-function accountScreen(model: Model): ModelDecision.AccountScreen {
-  const { menu, people, pending, error, retry, target, targetRole, epoch, from } = accountOf(model)
-  return { surface: model.surface, docs: model.docs, menu, people, pending, error, retry, target, targetRole, epoch, from }
-}
+function accountScreen(model: Model): ModelDecision.AccountScreen { return ScreenRead.accountScreen(model, accountOf(model)) }
 
-function escapeScreen(model: Model): UpdateDecision.EscapeScreen {
-  const account = accountOf(model)
-  const actions = actionsOf(model)
-  return { target: account.target, error: account.error, menu: account.menu, dialog: model.issues?.dialog ?? "", issuesOpen: model.issues?.open === true, slash: actions.slash, actionsMax: actions.maximized, editing: model.wikiEdit !== undefined, submitting: model.wikiEdit?.submission !== undefined, sandboxMax: model.sandboxPane === "max", docs: model.docs }
-}
+function escapeScreen(model: Model): UpdateDecision.EscapeScreen { return ScreenRead.escapeScreen(model, accountOf(model), actionsOf(model)) }
 
 /** Applies Escape's one proved change. */
 function runEscape(model: Model, step: UpdateDecision.EscapeStep): Update.Return<Model, Message, Factory | Actions> {
@@ -647,15 +641,9 @@ function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Retur
   return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(accountCommand) }
 }
 
-function actionScreen(model: Model): ModelDecision.ActionScreen {
-  const { open, maximized, selected, run, loading, starting, error, input, highlight } = actionsOf(model)
-  return { open, maximized, selected, run, loading, starting, error, input, highlight }
-}
+function actionScreen(model: Model): ModelDecision.ActionScreen { return ScreenRead.actionScreen(actionsOf(model)) }
 
-function runSelection(model: Model): ModelDecision.RunSelection {
-  const { step, run, selected, open, maximized } = actionsOf(model)
-  return { step: step ?? "", run, selected, open, maximized }
-}
+function runSelection(model: Model): ModelDecision.RunSelection { return ScreenRead.runSelection(actionsOf(model)) }
 
 function actionCommand(command: ModelDecision.ActionCommand) {
   switch (command.type) {
@@ -710,9 +698,7 @@ function runTourControl(model: Model, control: TourDecision.TourControl): Update
   // A new control clears the last one's failure; it shows again if this one fails too.
   return control.action === "none" ? { model } : { model: model.tourError === "" ? model : { ...model, tourError: "" }, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action: control.action, step: control.step })] }
 }
-function streamScreen(model: Model): TourDecision.StreamScreen {
-  return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
-}
+function streamScreen(model: Model): TourDecision.StreamScreen { return ScreenRead.streamScreen(model) }
 function touringHere(model: Model): boolean {
   const conversation = (model.tourClient ?? model.client).conversation
   return Machine.isTouring(conversation, conversation.replying)
@@ -1348,30 +1334,18 @@ function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update
   return { model: { ...model, ...screen, sandboxPane: pane, sandboxOperation: operation, sandboxBusy: busy, sandboxError: error, sandboxRequest: request, terminalDraft: draft }, commands: step.commands.map((command) => SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${command.request}`, request: command.request, kind: command.kind, generation: command.generation, command: command.command })) }
 }
 
-function sandboxScreen(model: Model): PaneDecision.SandboxScreen {
-  return { surface: model.surface, palette: model.palette, docs: model.docs, pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "", request: model.sandboxRequest ?? 0, draft: model.terminalDraft ?? "" }
-}
+function sandboxScreen(model: Model): PaneDecision.SandboxScreen { return ScreenRead.sandboxScreen(model) }
 
-function sandboxResult(model: Model): PaneDecision.SandboxResult {
-  return { pane: model.sandboxPane ?? "closed", operation: model.sandboxOperation ?? "", busy: model.sandboxBusy ?? false, error: model.sandboxError ?? "" }
-}
+function sandboxResult(model: Model): PaneDecision.SandboxResult { return ScreenRead.sandboxResult(model) }
 
 function wikiEditScreen(editing: NonNullable<Model["wikiEdit"]>): PaneDecision.WikiEditScreen {
   const { page, base, text, busy, error } = editing
   return { page, base, text, busy, error }
 }
 
-/** A waiting submission as plain data for the proved submit step; none reads as an empty draft the step never sends. */
-function wikiDraft(request: WikiRequest | undefined): WikiEditorDecision.WikiDraft {
-  if (request === undefined) return { op: "save", page: "", base: "", text: "", key: "", recovery: "" }
-  return { op: request.op, page: request.page, base: request.base, text: request.text, key: request.key, recovery: request.recovery ?? "" }
-}
-
-/** The proved submission as the request the flow takes: an empty recovery key is no recovery key. */
-function wikiRequest(draft: WikiEditorDecision.WikiDraft): WikiRequest {
-  const { recovery, ...request } = draft
-  return recovery === "" ? request : { ...request, recovery }
-}
+/** A waiting submission as plain data for the proved submit step, and back (proved in `screenRead.vibe`). */
+function wikiDraft(request: WikiRequest | undefined): WikiEditorDecision.WikiDraft { return ScreenRead.wikiDraft(request) }
+function wikiRequest(draft: WikiEditorDecision.WikiDraft): WikiRequest { return ScreenRead.wikiRequest(draft) }
 
 function minuteNotice(notice: PaneDecision.SandboxNotice, id: string, remaining: number, kept: string): string {
   switch (notice) {
