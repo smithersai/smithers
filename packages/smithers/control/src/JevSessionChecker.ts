@@ -67,10 +67,6 @@ const questions = {
     type: "choice",
     instructions: "Read the tail of this agent session's output. What is the agent doing right now?",
     criteria: activityCriteria
-  },
-  question: {
-    type: "boolean",
-    instructions: "Does the output end with the agent waiting for a person to answer?"
   }
 } as const
 

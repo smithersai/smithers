@@ -71,8 +71,7 @@ observes runs rather than sessions, so it never binds this checker.
 The checker sends the session's `alive`, `exitCode`, and the newest 4 KiB of its
 output to Jev, TypeSafe's decision model, through the Vercel AI Gateway, with zero
 data retention. Jev answers one choice question (`working`, `idle`, `needs-input`)
-and one boolean question about whether the output ends waiting for a person, both
-in one request that returns in about 300 ms. `exposeOutput: true` is required:
+in one request. `exposeOutput: true` is required:
 without it the host sends no tail and the probe answers unknown.
 
 An answer becomes a report only at confidence 0.7 or above. TypeSafe claims 76%

@@ -69,14 +69,16 @@ describe("Health authority and freshness", () => {
     expect(roll({ now: 199 })).toMatchObject({ activity: "working", freshness: "fresh" })
   })
   it.each(["waiting-approval", "parked"] as const)(
-    "an approval fence wins over working, errors and staleness: %s",
+    "an approval fence wins over fresh working activity: %s",
     (state) => {
-      expect(roll({ state, waitingReason: "approval" })).toMatchObject({
-        state,
-        activity: "unknown",
-        health: "awaiting-human",
-        attention: "awaiting-approval"
-      })
+      expect(roll({ state, waitingReason: "approval", latest: { observation: observation({ state }), sequence: 9 } }))
+        .toMatchObject({
+          state,
+          activity: "unknown",
+          health: "awaiting-human",
+          attention: "awaiting-approval",
+          freshness: "fresh"
+        })
     }
   )
   it.each(["timer", "event", "quota"])("a declared %s wait is not a stall", (waitingReason) => {
@@ -112,7 +114,12 @@ describe("Health authority and freshness", () => {
       ["exited", null, "unknown"]
     ] as const
   )("terminal %s with code %s is %s regardless of callback", (state, exitCode, health) => {
-    expect(roll({ state, exitCode })).toMatchObject({ state, activity: "unknown", health })
+    expect(roll({ state, exitCode, latest: { observation: observation({ state }), sequence: 9 } })).toMatchObject({
+      state,
+      activity: "unknown",
+      health,
+      freshness: "fresh"
+    })
   })
   it("explicit idle is neutral, never inferred to need input", () => {
     expect(roll({ latest: { observation: observation({ report: { activity: "idle" } }), sequence: 9 } })).toMatchObject(

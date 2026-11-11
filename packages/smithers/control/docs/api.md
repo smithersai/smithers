@@ -792,7 +792,7 @@ The one registered checker that reads semantic activity, bound by the ID
 `makeJevSessionChecker({ evaluator, timeoutMs })` uses the host's existing
 subscription judge. `Health.makeRegistry(config, kind, evaluator)` binds it to
 `jev.session`. It asks one choice question over `working`, `idle`, and
-`needs-input`, plus a boolean question about waiting for a person. Evidence is
+`needs-input`. Evidence is
 `alive`, `exitCode`, and the newest `jevStateTailCharacters` of output.
 It reads no gateway key and has no separate authentication path.
 

@@ -18,7 +18,13 @@ it("has no ambient run identity outside an executing action", async () => {
 })
 
 it("scoped delegations require trusted flow identity and the exact human wait", async () => {
-  const entry = { principal, scopes: ["once" as const], targets: ["Node" as const], flowId: "allowed", waitName: "ask" }
+  const entry = {
+    principal,
+    scopes: ["once" as const],
+    targets: ["Plan" as const, "Node" as const],
+    flowId: "allowed",
+    waitName: "ask"
+  }
   // Configuration carries identity only, never the principal clock.
   const delegation = { ...entry, principal: { id: principal.id, kind: principal.kind } }
   const policy = await Effect.runPromise(ApprovalAuthority.make([delegation]))
@@ -34,6 +40,17 @@ it("scoped delegations require trusted flow identity and the exact human wait", 
   }
   expect((await Effect.runPromise(Effect.flip(policy.authorize(request))))._tag).toBe("/control/Unauthorized")
   await Effect.runPromise(policy.authorize(request, { flowId: Effect.succeed("allowed") }))
+  for (
+    const target of [
+      { _tag: "Node", runId: "run", requestId: "other", digest: "token", envelope },
+      { _tag: "Plan", planId: "plan", digest: "token", envelope }
+    ] as const
+  ) {
+    await expect(Effect.runPromise(policy.authorize(
+      { ...request, target },
+      { flowId: Effect.succeed("allowed") }
+    ))).rejects.toMatchObject({ _tag: "/control/Unauthorized" })
+  }
   const proof = await Effect.runPromise(
     ApprovalAuthority.make([{ ...delegation, flowId: undefined, requiredProof: "passkey" }])
   )

@@ -13,8 +13,7 @@ const context = (outputTail: string | undefined = "Continue?", alive = true): He
 })
 const response = (choice = "needs-input", probability = 0.9): Evaluator.Response => ({
   answers: {
-    activity: { type: "choice", choice, probabilities: { [choice]: probability } },
-    question: { type: "boolean", probability }
+    activity: { type: "choice", choice, probabilities: { [choice]: probability } }
   },
   latencyMs: 1
 })
@@ -82,13 +81,21 @@ describe("seat-backed session checker", () => {
     await probe(checker(evaluate), context("Done", false))
     expect(evaluate).not.toHaveBeenCalled()
   })
-  it("clips evidence and asks both questions once", async () => {
-    const evaluate = vi.fn((_request: Evaluator.Request) => Effect.succeed(response()))
-    await probe(checker(evaluate), context("x".repeat(8000) + "Continue?"))
-    expect(evaluate).toHaveBeenCalledOnce()
-    const request = evaluate.mock.calls[0]![0] as Evaluator.Request
+  it("clips evidence and asks only for the activity it reports", async () => {
+    const requests: Array<Evaluator.Request> = []
+    const evaluate: Evaluator.Evaluator["evaluate"] = (request) =>
+      Effect.sync(() => {
+        requests.push(request)
+        return response()
+      })
+    expect(await probe(checker(evaluate), context("x".repeat(8000) + "Continue?"))).toEqual({
+      activity: "needs-input",
+      reason: "prompt-detected"
+    })
+    expect(requests).toHaveLength(1)
+    const request = requests[0]!
     expect((request.state as { outputTail: string }).outputTail).toHaveLength(Jev.jevStateTailCharacters)
-    expect(Object.keys(request.questions)).toEqual(["activity", "question"])
+    expect(Object.keys(request.questions)).toEqual(["activity"])
   })
   it("binds the host evaluator through the existing registry", async () => {
     const registry = Health.makeRegistry({ bindings: { review: { checkerId: "jev.session" } } }, "session", {
