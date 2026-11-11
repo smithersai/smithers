@@ -10,10 +10,13 @@
  * integrations cursor table of the engine database, so a restarted run polls
  * on from where the last one committed and a batch polled twice records each
  * message once. A run is bounded by `maxTurns`; a durable trigger with
- * `--overlap skip` keeps exactly one poller going:
+ * `--overlap skip` keeps exactly one poller going, and a standing approval
+ * lets its occurrences start unattended under `smthrs serve`:
  *
- *   smthrs triggers register --flow telegram-inbox --cron "* * * * *" --overlap skip \
- *     --data '{"allowedChatIds":["<chat id>"],"thread":"telegram/inbox"}'
+ *   smthrs triggers register telegram-inbox --flow telegram-inbox --cron "* * * * *" --overlap skip \
+ *     --input '{"allowedChatIds":["<chat id>"],"thread":"telegram/inbox"}'
+ *   smthrs approvals trigger-plan telegram-inbox > consent.json
+ *   smthrs approvals grant-trigger @consent.json
  *
  * Read what arrived with `smthrs memory messages list telegram/inbox`.
  */
