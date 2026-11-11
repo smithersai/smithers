@@ -1,0 +1,25 @@
+import { expect, it } from "@effect/vitest"
+import { owner, quickstart, RaceLost } from "../examples/vibe/quickstart.vibe"
+
+it.effect("settles the run with its owner cleared and the step attempt recorded", effect () => {
+  const { settled, attempt } = try quickstart()
+  expect(settled).toMatchObject({
+    runId: "quickstart-1",
+    status: "completed",
+    owner: null,
+    heartbeatAtMs: null,
+    claim: null,
+    stateJson: `{"cursor":1}`
+  })
+  expect(settled.finishedAtMs).not.toBeNull()
+  expect(Option.getOrUndefined(attempt)).toMatchObject({ state: "completed", outcome: { rows: 12 } })
+})
+
+it.effect("refuses to settle under a fence that does not match the owner", effect () => {
+  const refused = quickstart({ ...owner, nonce: "a-later-incarnation" }) catch (error) =>
+    match (error) {
+      when RaceLost: `${error.step}: ${error.outcome}`;
+      default: error._tag;
+    }
+  expect(refused).toBe("settle: FenceLost")
+})

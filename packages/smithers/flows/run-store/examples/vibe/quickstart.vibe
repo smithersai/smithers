@@ -1,0 +1,50 @@
+import { AttemptStore, RunStore } from "@smthrs/run-store"
+import type { OwnerId } from "@smthrs/run-store/Ownership"
+import * as TestRunStore from "@smthrs/run-store/test/TestRunStore"
+
+/** The fence on every write this process makes. */
+export const owner: OwnerId = { hostId: "quickstart-host", pid: 4102, nonce: "3f9c-8b21" }
+
+/** A compare-and-swap that did not admit the write, named by its outcome. */
+export error RaceLost { step: string; outcome: string }
+
+/** Creates the run, reserves it, and turns the reservation into ownership. */
+export effect function claimRun(runId: string, by: OwnerId) {
+  const runs = try RunStore.RunStore
+  try runs.create(runId, `{"cursor":0}`)
+  const pending = try runs.get(runId)
+  const expected = { status: pending.status, owner: pending.owner, heartbeatAtMs: pending.heartbeatAtMs }
+
+  const claim = try runs.claim(runId, expected, by, try Clock.currentTimeMillis)
+  if (claim._tag !== "Claimed") throw new RaceLost({ step: "claim", outcome: claim._tag })
+  const activation = try runs.activate(runId, by, claim.claimedAtMs, expected)
+  if (activation._tag !== "Activated") throw new RaceLost({ step: "activate", outcome: activation._tag })
+}
+
+/** Starts one step attempt, checkpoints it, and records how it ended. */
+export effect function runStep(runId: string, by: OwnerId) {
+  const attempts = try AttemptStore.AttemptStore
+  const id = { runId, stepKeyDigest: "step-fetch", attempt: 0 }
+  try attempts.put({ ...id, state: "running", startedAtMs: try Clock.currentTimeMillis, meta: { step: "fetch" } }, by)
+  try attempts.heartbeat(runId, "step-fetch", 0, by, try Clock.currentTimeMillis, { cursor: 1 })
+  try attempts.finish({ ...id, state: "completed", finishedAtMs: try Clock.currentTimeMillis, outcome: { rows: 12 } }, by)
+}
+
+/** Moves the owned run to `completed`; only the full owner fence admits it. */
+export effect function settleRun(runId: string, by: OwnerId) {
+  const runs = try RunStore.RunStore
+  const outcome = try runs.transitionOwned(runId, by, "completed", `{"cursor":1}`)
+  if (outcome._tag !== "Transitioned") throw new RaceLost({ step: "settle", outcome: outcome._tag })
+  return try runs.get(runId)
+}
+
+/** The whole lifecycle against the production stores over an in-memory database. */
+export effect function quickstart(settledBy: OwnerId = owner) {
+  provide TestRunStore.layer {
+    try claimRun("quickstart-1", owner)
+    try runStep("quickstart-1", owner)
+    const settled = try settleRun("quickstart-1", settledBy)
+    const attempt = try (try AttemptStore.AttemptStore).get({ runId: "quickstart-1", stepKeyDigest: "step-fetch", attempt: 0 })
+    return { settled, attempt }
+  }
+}
