@@ -9,7 +9,9 @@ This quickstart exports all three signals from one small program and shows you
 what arrived. It needs no Docker, no vendor account, and no OpenTelemetry SDK:
 a twelve-line Node server stands in for the collector so you can read the
 delivery with your own eyes, and swapping in a real collector is a one-line
-change at the end.
+change at the end. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same program as
+Effect code.
 
 ## Prerequisites
 
@@ -133,6 +135,40 @@ absolute `http:` or `https:` URL carrying no credentials; anything else refuses
 the layer at acquisition rather than failing silently later. See
 [Export to an OTLP collector](./guides/export-to-a-collector.md) for the rest
 of the options.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `deploy` is an `effect`
+block wrapped in `withSpan`, and `try` runs the log and the counter.
+`deployAndExport` keeps the layer's refusal typed instead of calling
+`Effect.orDie`, so a caller can read `invalid_exporter_endpoint` with `catch`.
+The collector stand-in is the test's `fetch`, so nothing listens on a port.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Otlp } from "@smthrs/observability"
+
+const deployments = Metric.counter("quickstart/deployments", {
+  description: "Deployments this program recorded"
+})
+
+/** Ordinary Effect code: a span, a log record, and a counter. None of it names telemetry. */
+export const deploy = withSpan(effect {
+  try logInfo("deploying the API")
+  try Metric.update(deployments, 1)
+}, "deploy")
+
+/** Effect's three OTLP exporters, posting over the host's global `fetch`. */
+export const telemetry = (baseUrl: string) =>
+  Otlp.layerFetch({ baseUrl, serviceName: "quickstart", serviceVersion: "1.0.0" })
+
+/** Runs `deploy` under the exporters. Closing the scope is what flushes all three signals. */
+export effect function deployAndExport(baseUrl: string) {
+  try scoped(Effect.provide(deploy, telemetry(baseUrl)))
+}
+```
 
 ## Next steps
 

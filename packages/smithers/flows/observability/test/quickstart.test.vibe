@@ -1,0 +1,21 @@
+import { expect, it } from "@effect/vitest"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import { deployAndExport } from "../examples/quickstart.vibe"
+import { collector } from "./fixtures/collector.ts"
+
+it.live("delivers a trace, a log record, and a metric series when the scope closes", effect () => {
+  const { paths, fetch } = collector()
+  provide FetchHttpClient.Fetch = fetch {
+    try deployAndExport("http://localhost:4318")
+  }
+  expect([...new Set(paths)].sort()).toEqual(["/v1/logs", "/v1/metrics", "/v1/traces"])
+})
+
+it.live("refuses an endpoint that carries credentials before exporting anything", effect () => {
+  const { paths, fetch } = collector()
+  provide FetchHttpClient.Fetch = fetch {
+    const refused = deployAndExport("https://user:secret@otlp.example.com") catch (error) => error.code
+    expect(refused).toBe("invalid_exporter_endpoint")
+  }
+  expect(paths).toEqual([])
+})

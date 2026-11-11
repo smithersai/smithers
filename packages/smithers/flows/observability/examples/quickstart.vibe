@@ -1,0 +1,20 @@
+import { Otlp } from "@smthrs/observability"
+
+const deployments = Metric.counter("quickstart/deployments", {
+  description: "Deployments this program recorded"
+})
+
+/** Ordinary Effect code: a span, a log record, and a counter. None of it names telemetry. */
+export const deploy = withSpan(effect {
+  try logInfo("deploying the API")
+  try Metric.update(deployments, 1)
+}, "deploy")
+
+/** Effect's three OTLP exporters, posting over the host's global `fetch`. */
+export const telemetry = (baseUrl: string) =>
+  Otlp.layerFetch({ baseUrl, serviceName: "quickstart", serviceVersion: "1.0.0" })
+
+/** Runs `deploy` under the exporters. Closing the scope is what flushes all three signals. */
+export effect function deployAndExport(baseUrl: string) {
+  try scoped(Effect.provide(deploy, telemetry(baseUrl)))
+}
