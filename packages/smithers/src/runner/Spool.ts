@@ -24,7 +24,7 @@
 import * as Transcript from "@smthrs/agent/Transcript"
 import { Clock, Effect, Option, Queue, Schema, type Scope } from "effect"
 import { createHash } from "node:crypto"
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs"
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, truncateSync, writeSync } from "node:fs"
 import { join } from "node:path"
 import * as Host from "./Host.ts"
 
@@ -84,7 +84,8 @@ const ENVELOPE_BYTES = 1024
 
 /**
  * Opens job `key`'s spool under `stateDir`, uploading under `claim` and
- * scrubbing every string with `scrub`. Lines a crash left torn are skipped.
+ * scrubbing every string with `scrub`. A final line a crash left torn is cut
+ * off before anything is written after it; other invalid lines are skipped.
  *
  * @category constructors
  * @since 1.0.0
@@ -104,9 +105,15 @@ export const open = (options: {
   Effect.gen(function*() {
     const file = fileOf(options.stateDir, options.key)
     mkdirSync(join(options.stateDir, "spool"), { recursive: true, mode: 0o700 })
-    const kept: Array<Transcript.Event> = existsSync(file)
-      ? readFileSync(file, "utf8").split("\n").flatMap((line) => Option.toArray(decodeLine(line)))
-      : []
+    const content = existsSync(file) ? readFileSync(file) : Buffer.alloc(0)
+    // A crash mid-write leaves the last line without its newline: kept if it is a whole event, cut off otherwise, so
+    // the next event starts a line of its own.
+    const end = content.lastIndexOf(0x0a) + 1
+    const tail = content.subarray(end).toString("utf8")
+    const torn = tail.length > 0 && Option.isNone(decodeLine(tail))
+    if (torn) truncateSync(file, end)
+    const kept: Array<Transcript.Event> = content.subarray(0, torn ? end : content.length).toString("utf8").split("\n")
+      .flatMap((line) => Option.toArray(decodeLine(line)))
     const pending: Array<{ readonly event: Transcript.Event; readonly bytes: number }> = kept.map((event) => ({
       event,
       bytes: bytesOf(event)
@@ -121,6 +128,7 @@ export const open = (options: {
       Effect.sync(() => openSync(file, "a", 0o600)),
       (descriptor) => Effect.sync(() => closeSync(descriptor))
     )
+    if (tail.length > 0 && !torn) writeSync(fd, "\n")
 
     const write = (kind: string, update: Record<string, unknown>, at: number) => {
       const event: Transcript.Event = { seq: next, at, kind, update }
