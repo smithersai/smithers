@@ -201,16 +201,19 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(a.run(first)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "option", door: "key", outcome: "done" }))).toBe(1)
 
-    // An approval: `a` sends Approve with the note.
+    // An approval: `a` sends Approve with the note. A note typed while the press is on its way never went: it stays.
     const approval = await a.ask("Approve two", `{ kind: "approval", prompt: "Delete two?" }`)
     await until(() => expect(a.state()?.item).toBe(approval))
     expect(a.press("1")).toBe(false)
     a.plugins.actions.setDraft(VIEW, "ship it")
     expect(a.press("a")).toBe(true)
+    expect(a.state()?.sending).toBe(true)
+    a.plugins.actions.setDraft(VIEW, "ship it, then tag it")
     ;(await Effect.runPromise(api.answerTo("Approve two", 1))).cell(`ctx.done("Approved")`)
     await until(() => expect(a.run(approval)?.answer).toEqual({ value: { approved: true, note: "ship it" } }))
     await until(() => expect(a.run(approval)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "approve", door: "key", outcome: "done" }))).toBe(1)
+    expect(a.plugins.queries.notes.toArray.map(({ id, text }) => ({ id, text }))).toEqual([{ id: draftKey(VIEW, approval), text: "ship it, then tag it" }])
 
     // A question again: ⌘↵ from the note replies with its words.
     const third = await a.ask("Deploy three", question("three"))

@@ -587,7 +587,8 @@ const seen = (row: Readonly<Record<string, unknown>>) =>
  * The person pressed `button` on view `id`'s strip, by pointer (`button`) or key (`key`): runs its event's flow for the
  * selected item with the button's fields and the draft in every text field, in the background. The strip shows
  * Sending until the run settles; a second press meanwhile does nothing, so two presses record one answer. A run that
- * fails shows as failed, keeping the draft, until the next press.
+ * fails shows as failed, keeping the draft, until the next press. A run that succeeds drops the draft it sent; a note
+ * typed while it was on its way never went, so it stays.
  */
 export const press = (
   id: string,
@@ -642,7 +643,7 @@ export const press = (
       Effect.flatMap((exit) =>
         Exit.isSuccess(exit)
           ? Effect.andThen(
-            Effect.andThen(touch(id, () => ({ sending: false })), dropDraft(id, key)),
+            Effect.andThen(touch(id, () => ({ sending: false })), dropDraft(id, key, note)),
             outcome("done"),
           )
           : Effect.andThen(touch(id, () => ({ sending: false, failed: true })), outcome("failed", Cause.squash(exit.cause)))
@@ -651,10 +652,11 @@ export const press = (
     )
   })
 
-/** Drops view `id`'s note for `item`, once its answer went. */
-const dropDraft = (id: string, item: string) =>
+/** Drops view `id`'s note for `item`, once its answer went, if it is still the note that went (`sent`): a newer one stays. */
+const dropDraft = (id: string, item: string, sent: string) =>
   Effect.gen(function* () {
     const { drafts } = yield* Plugins
+    if ((yield* draftOf(id, item)) !== sent) return
     yield* drafts.delete(draftKey(id, item)).pipe(Effect.ignore)
   })
 
