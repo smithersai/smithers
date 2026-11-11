@@ -171,7 +171,13 @@ const generated = S.glob("src/**/*.ts", { exclude: ["src/**/*.gen.ts"] })
 const config = S.file("vitest.config.ts") // package-relative
 const rootConfig = S.file("//eslint.jsdoc.js") // workspace-relative
 const changes = S.gitDiff("origin/main")
+const effect = S.nodeModules("//experiments") // an install outside the target's own directories
 ```
+
+`nodeModules()` names a directory that holds a `package.json`, a lockfile and
+an installed `node_modules`. The manifest and lockfile key the target; a
+confined tool may read that `node_modules`. See
+[Installed trees](../concepts/inputs.md#installed-trees).
 
 Reuse one declared value across several targets. Each target digests it
 independently, and equal content always produces an equal digest. See
