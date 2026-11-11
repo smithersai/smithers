@@ -1566,8 +1566,13 @@ next step starts. Each instance passes through `pulled`, `ran`, `graded`,
 `cleaned`, and the **last row for an instance is that instance's state**.
 
 `graded` is the resume boundary. A restart skips every instance whose last state
-is `graded` or `cleaned` and re-runs everything else **from the top**, purging
-that instance's workspace, patch, journal and archive first. A crash mid-instance
+is `graded` or `cleaned` with a recognized verdict (`resolved`, `unresolved`,
+`empty patch` or `eval error`) and re-runs everything else **from the top**.
+A failed lifecycle append stops the worker with a nonzero exit before the next
+step starts; a failed verdict append never publishes `cleaned` or deletes the
+image. Before replacing an archived attempt, a retry retains its patch, journal,
+timings, run log and any evaluator report under
+`fullbench/archives/<id>.recovered-<timestamp>-<pid>/`. A crash mid-instance
 therefore costs that instance and nothing else, and never leaves half a run to be
 mistaken for a whole one. A `pulled` row *replaces* an instance's earlier columns
 rather than merging into them, so a patch size or a verdict from the attempt that
@@ -1581,7 +1586,8 @@ poll for those markers through the same function. After
 is still alive: a live one is reported, with the shared locks reconciled beside
 it, and a dead one is reaped. Reaping records `failed` with reason `the worker
 died without writing a completion marker`, unless the ledger already has that
-instance at `graded` or `cleaned` — a marker lost after the work finished is a
+instance at `graded` or `cleaned` with a recognized verdict — a marker lost
+after the work finished is a
 lost marker, not a lost instance, and a `failed` row over it would re-run
 something the evaluator already graded. Without this the final drain waited on a
 killed wrapper for ever and the run never reached its last checkpoint.
@@ -1872,7 +1878,8 @@ instances under the same conditions. `codex-backfill.sh` is that second harness.
 ./codex-backfill.sh                 # everything left, in order
 ```
 
-Its population is **whatever `fullbench/manifest.jsonl` says was graded**, read
+Its population is **the completed instances with recognized verdicts in
+`fullbench/manifest.jsonl`**, read
 by the same `isDone` rule the flows driver resumes on. Nothing else is eligible:
 an instance our side never finished has no flows attempt to compare against. The
 ids come out in the order the ledger first saw them, which is the seeded draw

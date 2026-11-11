@@ -186,6 +186,7 @@ echo "== the lock every lane shares"
 
 echo "== the full benchmark's ledger, queue and report"
 node "$S/fixtures/check-fullbench.mjs"
+node "$S/fixtures/check-fullbench-receipts.mjs"
 node "$S/fixtures/check-fullbench-budget.mjs"
 node "$S/fixtures/check-fullbench-status.mjs"
 

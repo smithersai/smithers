@@ -99,6 +99,21 @@ try {
   assert.equal(kept.states.get("astropy__astropy-12907").verdict, "resolved")
   assert.equal(kept.rowCount, 2, "a lost marker must not append a row over a graded instance")
 
+  // Terminal rows without a recognized verdict are not completed work.
+  // Reaping must keep these attempts eligible for resume instead of silently
+  // trusting a cleanup receipt whose grade never reached the ledger.
+  for (const state of ["graded", "cleaned"]) {
+    for (const verdict of [undefined, "unknown"]) {
+      const incomplete = runDrain({
+        ledger: [{ kind: "instance", id: "astropy__astropy-12907", state, verdict }],
+        worker: diedWithoutMarker
+      })
+      assert.equal(incomplete.status, 0, incomplete.out)
+      assert.equal(read(incomplete.manifest).states.get("astropy__astropy-12907").state, "failed")
+      assert.equal(read(incomplete.manifest).rowCount, 2)
+    }
+  }
+
   // The ordinary path is unchanged: a marker is reaped on the first poll, with
   // the exit code it carried, and nothing is recorded as failed.
   const finished = runDrain({
@@ -151,7 +166,7 @@ try {
     ledger,
     [
       JSON.stringify({ kind: "instance", id: "astropy__astropy-12907", state: "ran" }),
-      JSON.stringify({ kind: "instance", id: "django__django-11039", state: "graded" })
+      JSON.stringify({ kind: "instance", id: "django__django-11039", state: "graded", verdict: "resolved" })
     ].join("\n") + "\n"
   )
   assert.equal(ask(ledger, "django__django-11039").status, 0)

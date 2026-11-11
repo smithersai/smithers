@@ -25,7 +25,8 @@
  * | `failed`  | the pipeline could not reach a verdict; the instance re-runs clean   |
  *
  * `graded` is the resume boundary: a resumed driver skips every instance whose
- * last row is `graded` or `cleaned`, and re-runs everything else from the top.
+ * last row is `graded` or `cleaned` with a recognized verdict, and re-runs
+ * everything else from the top.
  *
  * @since 0.1.0
  */
@@ -131,13 +132,15 @@ export const read = (path) => {
   }
 }
 
+const VERDICTS = new Set(["resolved", "unresolved", "empty patch", "eval error"])
+
 /**
  * True when this instance is finished and a resumed driver must skip it.
  *
  * @category predicates
  * @since 0.1.0
  */
-export const isDone = (state) => state !== undefined && DONE_STATES.has(state.state)
+export const isDone = (state) => state !== undefined && DONE_STATES.has(state.state) && VERDICTS.has(state.verdict)
 
 /**
  * Every billed attempt, in ledger order: the one attempt projection the budget

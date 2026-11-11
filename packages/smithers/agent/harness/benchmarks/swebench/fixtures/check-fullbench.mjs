@@ -255,8 +255,8 @@ if [ "$ARCHIVE_MODE" = publish-fail ]; then exit 1; fi
   assert.equal(folded.notes.length, 1)
   assert.equal(folded.header.subject, "s1")
 
-  assert.equal(isDone({ state: "graded" }), true)
-  assert.equal(isDone({ state: "cleaned" }), true)
+  assert.equal(isDone({ state: "graded", verdict: "resolved" }), true)
+  assert.equal(isDone({ state: "cleaned", verdict: "unresolved" }), true)
   assert.equal(isDone({ state: "ran" }), false)
   assert.equal(isDone({ state: "pulled" }), false)
   assert.equal(isDone({ state: "failed" }), false)

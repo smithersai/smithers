@@ -82,7 +82,12 @@ WAITS="$FB/waits.jsonl"
 
 now_ms() { node -e 'process.stdout.write(String(Date.now()))'; }
 log() { printf '%s [%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ID" "$*"; }
-append() { node "$S/lib/manifest-append.mjs" "$1" "$2"; }
+append() {
+  if ! node "$S/lib/manifest-append.mjs" "$1" "$2"; then
+    log "FAILED: could not persist receipt to $1; preserving evidence" >&2
+    exit 1
+  fi
+}
 
 # A JSON row, built by node so that a value this script splices in can never
 # produce a manifest line that does not parse.
@@ -268,7 +273,16 @@ if [ "$TRANSPORT" = "docker" ]; then docker rm -f "$CONTAINER" >/dev/null 2>&1 |
 rm -rf -- "$WORK" "$JOURNAL"
 rm -f -- "$PATCH" "$PATCH.untracked" "$TIMINGS" "$LOG_PREFIX".*
 rm -rf -- "$FB/journals/$ID"
-rm -rf -- "$FB/archives/$ID"
+# A verdict append can fail after source evidence was archived and removed.
+# Keep that attempt, including its evaluator report, before replacing its links.
+if [ -d "$FB/archives/$ID" ]; then
+  PREVIOUS_REPORT="$EVAL_LOG_ROOT/$EVAL_RUN_ID/$MODEL/$ID/report.json"
+  if [ ! -f "$PREVIOUS_REPORT" ]; then PREVIOUS_REPORT="$FB/reports/$ID.json"; fi
+  if [ -f "$PREVIOUS_REPORT" ]; then
+    copy_checked "$PREVIOUS_REPORT" "$FB/archives/$ID/report.json" || fail "archive-failed"
+  fi
+  mv -- "$FB/archives/$ID" "$FB/archives/$ID.recovered-$(now_ms)-$$" || fail "archive-failed"
+fi
 rm -f -- "$FB/patches/$ID.patch" "$FB/patches/$ID.patch.untracked" \
   "$FB/timings/$ID.json" "$FB/logs/$ID.run.log" "$FB/logs/$ID.pull.log" "$FB/reports/$ID.json"
 # The official evaluator's own log directory for this instance, too. It skips
