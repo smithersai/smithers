@@ -6,7 +6,7 @@ import { Egress, Scrub } from "../src/index.ts"
 // per test, or the real one against real local servers), and the host's vault and audit are injected services.
 
 /** A value no test text otherwise contains, with characters that make each of its encoded forms differ. */
-export const VALUE = "sk_live_51Hq SENTINEL/value+=:\"quoted\"~é"
+export const VALUE = "sk_live_51Hq SENTINEL/value+=:\"quoted\"~"
 
 /** Another bound value, for a second secret. */
 export const OTHER = "ghp_OtherSentinelToken0123456789"

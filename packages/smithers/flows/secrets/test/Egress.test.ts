@@ -284,14 +284,23 @@ describe("Egress.forward", () => {
     expect(entries).toEqual([{ host: API, method: "GET", outcome: "headers_too_large", secrets: ["API_KEY"] }])
   })
 
-  test("a stored value that can't go in a header is never sent", async () => {
+  test.each([
+    "value\r\nX-Injected: 1",
+    "tokenévalue",
+    "token😀value",
+    " token-value",
+    "token-value "
+  ])("a stored value that cannot go in a header is never sent: %j", async (value) => {
     const upstream = scripted()
-    const { response, body } = await forwardThrough(
+    const { response, body, entries, recorded } = await forwardThrough(
       new Request(`https://${API}/`, { headers: { "x-api-key": PLACEHOLDER } }),
-      { fetch: upstream.fetch, values: { API_KEY: "value\r\nX-Injected: 1", GH_TOKEN: OTHER } }
+      { fetch: upstream.fetch, values: { API_KEY: value, GH_TOKEN: OTHER } }
     )
     expect([response.status, body]).toEqual([503, "value"])
     expect(upstream.seen).toEqual([])
+    expect(entries).toEqual([])
+    expect(recorded.count("unavailable_value")).toBe(1)
+    expect(leaks(recorded.recorded(), [value])).toEqual([])
   })
 
   test("a value the vault can't reveal fails closed: 503 and nothing sent", async () => {

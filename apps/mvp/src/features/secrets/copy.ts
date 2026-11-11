@@ -39,6 +39,8 @@ export const FAILURE_COPY: Record<Exclude<WriteFailure, "exists">, string> = {
   too_long: "Values are at most 16 KiB",
   control_character: "Values can't contain line breaks or control characters",
   malformed_text: "Values must be plain text",
+  non_ascii: "Values must use ASCII characters",
+  surrounding_space: "Values can't start or end with a space",
   too_large: "Values are at most 16 KiB",
   off: "Secrets are off on this deployment",
   unavailable: "Secrets are unavailable; try again",

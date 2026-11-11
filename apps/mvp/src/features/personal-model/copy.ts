@@ -97,6 +97,8 @@ export const REFUSAL_COPY: Record<Refusal | "unsaved", string> = {
   too_long: "Keys are at most 16 KiB",
   control_character: "Keys can't contain line breaks or control characters",
   malformed_text: "Keys must be plain text",
+  non_ascii: "Keys must use ASCII characters",
+  surrounding_space: "Keys can't start or end with a space",
   too_large: "Keys are at most 16 KiB",
   key_required: "Enter the key",
   invalid_token: "Tokens start with sk-ant-oat",

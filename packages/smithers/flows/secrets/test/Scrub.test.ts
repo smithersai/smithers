@@ -1,7 +1,10 @@
 import { Chunk, Effect, Redacted, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Scrub } from "../src/index.ts"
-import { leaks, PLACEHOLDER, VALUE } from "./fixtures.ts"
+import { leaks, PLACEHOLDER, VALUE as HEADER_VALUE } from "./fixtures.ts"
+
+// Scrubbing still protects legacy Unicode values, even though new header credentials are ASCII.
+const VALUE = `${HEADER_VALUE}é`
 
 const encoder = new TextEncoder()
 const b64 = (text: string) => btoa(String.fromCharCode(...encoder.encode(text)))
