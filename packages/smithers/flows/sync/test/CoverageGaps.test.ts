@@ -193,6 +193,35 @@ describe("sync malformed and terminal boundaries", () => {
       expect(received).toEqual(["null"])
     }))
 
+  it.effect("drops a whole RPC message whose nested Entries frame intersects the range", () =>
+    Effect.gen(function*() {
+      const chunk = (fromSeq: number, toSeq: number) =>
+        JSON.stringify({
+          _tag: "Chunk",
+          requestId: 1,
+          values: [{ _tag: "Heartbeat" }, { _tag: "Entries", runId: "boundary", fromSeq, toSeq, entries: [] }]
+        })
+      const received = yield* (
+        Effect.gen(function*() {
+          const pair = yield* TestSocket.makePair()
+          pair.faults.dropRange("boundary", 1, 1)
+          const write = yield* pair.client.writer
+          const frames: Array<string> = []
+          const fiber = yield* Stream.runForEach(Socket.toStream(pair.server), (bytes) =>
+            Effect.sync(() => {
+              frames.push(typeof bytes === "string" ? bytes : new TextDecoder().decode(bytes))
+            })).pipe(Effect.forkChild)
+          for (const message of [chunk(0, 0), chunk(1, 2), chunk(2, 2)]) yield* write.write(message)
+          yield* Effect.yieldNow
+          yield* Effect.yieldNow
+          yield* Fiber.interrupt(fiber)
+          return frames
+        }).pipe(Effect.scoped)
+      )
+
+      expect(received).toEqual([chunk(0, 0), chunk(2, 2)])
+    }))
+
   it.effect("allows synchronous frame handlers to acknowledge delivery", () =>
     Effect.gen(function*() {
       const received = yield* (

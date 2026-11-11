@@ -104,14 +104,21 @@ describe("SyncServer fan-out budgets", () => {
         )
       )
 
-      const shapes = collected.map((frames) =>
-        Array.from(frames)
-          .map((frame) => frame._tag === "Entries" ? `${frame.runId}:${frame.toSeq}` : frame._tag)
-          .sort()
-      )
+      // Runs interleave differently per subscriber, but each run's frames
+      // arrive in sequence order: group them by run without sorting.
+      const shapes = collected.map((frames) => {
+        const byRunSeqs: Record<string, Array<string>> = {}
+        for (const frame of frames) {
+          if (frame._tag !== "Entries") continue
+          const seqs = byRunSeqs[frame.runId] ?? []
+          seqs.push(`${frame.fromSeq}-${frame.toSeq}`)
+          byRunSeqs[frame.runId] = seqs
+        }
+        return byRunSeqs
+      })
       // Every subscriber sees the whole workspace, and sees exactly the same
       // thing: no subscriber may be starved or served a divergent view.
-      expect(shapes[0]).toHaveLength(12)
+      expect(shapes[0]).toEqual(Object.fromEntries(ids.map((id) => [id, ["0-0", "1-1", "2-2", "3-3"]])))
       for (const shape of shapes) {
         expect(shape).toEqual(shapes[0])
       }

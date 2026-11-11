@@ -65,15 +65,21 @@ const workspace = (runs: number) => {
 
 /**
  * Records the runs a subscription serves as it serves them, so a subscription
- * that never completes still says which runs it starved.
+ * that never completes still says which runs it starved. `ranges` keeps each
+ * frame's covered interval in arrival order, so a duplicated or reordered page
+ * is visible too.
  */
 const recorder = () => {
   const seen: Array<string> = []
+  const ranges: Array<string> = []
   const record = (frame: SyncProtocol.Frame) =>
     Effect.sync(() => {
-      if (frame._tag === "Entries") seen.push(frame.runId as string)
+      if (frame._tag === "Entries") {
+        seen.push(frame.runId as string)
+        ranges.push(`${frame.runId}:${frame.fromSeq}-${frame.toSeq}`)
+      }
     })
-  return { seen, record }
+  return { seen, ranges, record }
 }
 
 describe("SyncServer bounded fan-out liveness", () => {
@@ -281,14 +287,14 @@ describe("SyncServer bounded fan-out liveness", () => {
       expect(elapsed).toBeLessThan(tailIntervalMs)
     }))
 
-  it.live("walks one run's backlog across pages inside a single round", () =>
+  it.live("walks one run's backlog one page per woken round, in sequence order", () =>
     Effect.gen(function*() {
-      // A run with more unserved entries than one page must not be served one
-      // page per round: the tail walks it to its durable tail before the round
-      // moves on, so a follower that reattaches to a busy run catches up in
-      // one round rather than in one round per page.
+      // A run with more unserved entries than one page is served one page per
+      // round: the tail releases its slot and wakes the next round at once,
+      // so the follower still reaches the durable tail without waiting for
+      // the interval, and every page continues where the last one ended.
       const backlog = Array.from({ length: 5 }, (_, index) => entry("busy", index))
-      const { record, seen } = recorder()
+      const { ranges, record } = recorder()
       const settled = yield* (
         Effect.gen(function*() {
           const server = yield* SyncServer.makeLiveWith({ concurrency: 2 })
@@ -314,7 +320,7 @@ describe("SyncServer bounded fan-out liveness", () => {
         )
       )
 
-      expect(seen).toEqual(["busy", "busy", "busy", "busy", "busy"])
+      expect(ranges).toEqual(["busy:0-0", "busy:1-1", "busy:2-2", "busy:3-3", "busy:4-4"])
       expect(Option.isSome(settled)).toBe(true)
     }))
 

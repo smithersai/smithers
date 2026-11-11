@@ -42,6 +42,10 @@ describe("SyncServer request validation", () => {
                 entries: ({ after }) => {
                   reads.push(after)
                   return Effect.succeed({ entries: [entry(1), entry(2)], hasMore: false })
+                },
+                stream: ({ afterSequence }) => {
+                  reads.push(afterSequence)
+                  return Stream.fromIterable([entry(1), entry(2)])
                 }
               }),
               RunCatalog.layerStatic([runId]),

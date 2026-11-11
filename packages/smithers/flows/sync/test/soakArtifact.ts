@@ -6,7 +6,6 @@ export const slopeBudgets = {
   handles: 0.5,
   sockets: 0.5,
   activeReads: 1,
-  pendingWrites: 1,
   socketQueuedBytes: 64 * 1024,
   journalQueued: 1,
   databaseBytes: 1024 * 1024,
@@ -15,6 +14,8 @@ export const slopeBudgets = {
 export type Metric = keyof typeof slopeBudgets
 export interface Sample extends Record<Metric, number> {
   elapsedMs: number
+  /** Not a slope budget: every sample must report zero. */
+  pendingWrites: number
   cycle: number
   emitted: number
   connections: number

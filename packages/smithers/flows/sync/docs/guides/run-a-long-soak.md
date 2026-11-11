@@ -57,14 +57,14 @@ Queues measure outstanding journal reads/writes, socket readable/writable
 bytes, and the stalled journal notification subscription. These are named
 observed queues, not a claim to inspect every runtime-internal RPC queue.
 
-| Metric                                                             | Maximum positive slope per minute |
-| ------------------------------------------------------------------ | --------------------------------- |
-| Retained heap                                                      | 1 MiB                             |
-| RSS                                                                | 4 MiB                             |
-| Open handles, connected sockets                                    | 0.5 each                          |
-| Active journal reads, pending writes, queued journal notifications | 1 each                            |
-| Queued socket bytes                                                | 64 KiB                            |
-| Database bytes, WAL bytes                                          | 1 MiB each                        |
+| Metric                                             | Maximum positive slope per minute |
+| -------------------------------------------------- | --------------------------------- |
+| Retained heap                                      | 1 MiB                             |
+| RSS                                                | 4 MiB                             |
+| Open handles, connected sockets                    | 0.5 each                          |
+| Active journal reads, queued journal notifications | 1 each                            |
+| Queued socket bytes                                | 64 KiB                            |
+| Database bytes, WAL bytes                          | 1 MiB each                        |
 
 The verifier also requires at most 40 retained events, exactly one retained
 checkpoint, exactly one stalled subscriber during sampling, zero pending

@@ -93,7 +93,11 @@ describe("subscription lifetime", () => {
   it.effect("never expires a subscription opened by an in-process owner", () =>
     Effect.gen(function*() {
       const engineRun = "lifetime-engine" as JournalEvent.RunId
-      const frames = yield* (
+      // The journal holds its only entry back until after the clock has
+      // moved, so a deadline armed at any time would end the stream first.
+      const attached = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const observed = yield* (
         Effect.gen(function*() {
           const server = yield* SyncServer.makeLive
           const collected = yield* Effect.forkChild(
@@ -110,12 +114,21 @@ describe("subscription lifetime", () => {
             ),
             { startImmediately: true }
           )
+          yield* Deferred.await(attached)
           yield* TestClock.adjust("10 minutes")
-          return yield* Fiber.join(collected)
+          const afterTenMinutes = collected.pollUnsafe()
+          yield* Deferred.succeed(release, undefined)
+          return { afterTenMinutes, frames: Array.from(yield* Fiber.join(collected)) }
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
-              Journal.layerNoop({ stream: () => Stream.succeed(entry(engineRun, 0)) }),
+              Journal.layerNoop({
+                stream: () =>
+                  Stream.onStart(
+                    Stream.fromEffect(Effect.as(Deferred.await(release), entry(engineRun, 0))),
+                    Deferred.succeed(attached, undefined)
+                  )
+              }),
               RunCatalog.layerStatic([engineRun]),
               SyncPrincipal.layerWorkspace("in-process-owner")
             )
@@ -125,7 +138,8 @@ describe("subscription lifetime", () => {
         )
       )
 
-      expect(Array.from(frames)).toHaveLength(1)
+      expect(observed.afterTenMinutes).toBeUndefined()
+      expect(observed.frames).toMatchObject([{ _tag: "Entries", runId: engineRun, fromSeq: 0, toSeq: 0 }])
     }))
 
   // The header's expiry travels with the identity, so a workspace-scoped

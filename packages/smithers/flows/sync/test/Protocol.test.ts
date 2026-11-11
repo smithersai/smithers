@@ -3,15 +3,18 @@
  *
  * @since 0.1.0
  */
-import type { JournalEvent } from "@smthrs/journal"
+import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import * as RunCatalog from "../src/RunCatalog.ts"
+import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError, SyncGapError } from "../src/SyncError.ts"
+import * as SyncPrincipal from "../src/SyncPrincipal.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
-import type * as SyncServer from "../src/SyncServer.ts"
+import * as SyncServer from "../src/SyncServer.ts"
 
 const runId = (value: string) => value as JournalEvent.RunId
 const seq = (value: number) => value as JournalEvent.Seq
@@ -114,11 +117,41 @@ describe("SyncProtocol.RequestEnvelope", () => {
     expect(Schema.is(SyncProtocol.RequestEnvelope)({ ...envelope, scope: { _tag: "Nothing" } })).toBe(false)
   })
 
-  it("is the one schema the server and client admission sites use", () => {
-    for (const source of ["src/SyncServer.ts", "src/SyncClient.ts"]) {
-      const text = readFileSync(new URL(`../${source}`, import.meta.url), "utf8")
-      expect(text).toContain("RequestEnvelope, input, \"invalid_request\"")
-      expect(text).not.toMatch(/Schema\.Struct\(\{\s*scope:/)
+  it("refuses a bad scope or cursor as invalid_request at every read and subscribe admission site", async () => {
+    const calls: Array<string> = []
+    const record = (name: string) => () => {
+      calls.push(name)
+      return Stream.empty
     }
+    const server = await Effect.runPromise(SyncServer.makeLive.pipe(
+      Effect.provide(Layer.mergeAll(
+        Journal.layerNoop({
+          entries: () =>
+            Effect.sync(() => calls.push("journal.entries")).pipe(Effect.as({ entries: [], hasMore: false })),
+          stream: record("journal.stream")
+        }),
+        RunCatalog.layerStatic([runId("run")]),
+        SyncPrincipal.layerWorkspace("protocol-suite")
+      ))
+    ))
+    const client = await Effect.runPromise(SyncClient.make({
+      client: { "Sync.Read": record("Sync.Read"), "Sync.Subscribe": record("Sync.Subscribe") } as unknown as Parameters<
+        typeof SyncClient.make
+      >[0]["client"]
+    }))
+    const scope = { _tag: "Run", runId: runId("run") } as const
+    const bad = [
+      { scope: { _tag: "Nothing" }, cursors: [] },
+      { scope, cursors: [{ runId: runId("run") }] }
+    ] as unknown as ReadonlyArray<SyncProtocol.RequestEnvelope>
+    for (const envelope of bad) {
+      const refusals = await Effect.runPromise(Effect.all([
+        Effect.flip(server.read({ protocolVersion: 1, limit: 10, ...envelope })),
+        Effect.flip(Stream.runDrain(server.subscribe({ protocolVersion: 1, credit: 4, ...envelope }))),
+        Effect.flip(Stream.runDrain(client.subscribe(envelope)))
+      ]))
+      for (const refusal of refusals) expect(refusal).toMatchObject({ code: "invalid_request" })
+    }
+    expect(calls).toEqual([])
   })
 })

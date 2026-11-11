@@ -329,8 +329,11 @@ describe("public snapshot admission", () => {
     }).pipe(Effect.provide(stack), Effect.scoped)
   })
 
-  it.live("fetches a versioned public projection through the real JSON RPC without exposing private state", () =>
-    Effect.gen(function*() {
+  it.live("fetches a versioned public projection through the real JSON RPC without exposing private state", () => {
+    // The first read hands the server the provider's whole private record;
+    // the second hands it only the public projection.
+    const supplied: Array<unknown> = [{ ...snapshot, secret: "private-provider-state" }, snapshot]
+    return Effect.gen(function*() {
       const pair = yield* TestSocket.makePair()
       const wire: Array<string> = []
       pair.faults.installFilter((bytes) => {
@@ -338,6 +341,7 @@ describe("public snapshot admission", () => {
         return true
       })
       const remote = yield* TestSync.connect(pair)
+      expect(yield* Effect.flip(remote.snapshot(request))).toMatchObject({ code: "decode_failed" })
       const result = yield* remote.snapshot(request)
       expect(Schema.is(Protocol.Snapshot)(result)).toBe(true)
       expect(result).toEqual(snapshot)
@@ -349,12 +353,10 @@ describe("public snapshot admission", () => {
         base,
         TestSync.layerTrustAllAsOwner,
         Layer.succeed(SyncServer.SnapshotSource, {
-          read: () => {
-            const privateRecord = { public: snapshot, secret: "private-provider-state" }
-            return Effect.succeed(privateRecord.public)
-          }
+          read: () => Effect.sync(() => supplied.shift() as Protocol.Snapshot)
         })
       )))),
       Effect.scoped
-    ))
+    )
+  })
 })

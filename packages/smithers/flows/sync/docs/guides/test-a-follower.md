@@ -89,11 +89,18 @@ const withHole = Effect.gen(function*() {
 })
 ```
 
-The follower stalls at sequence 0 forever. That is the correct outcome:
-sequence 1 is not a legitimate journal hole, it is a frame the transport ate,
-and skipping it would lose an entry. The package's own transport-fault suite
-asserts exactly this, by requiring the subscription to time out rather than
-complete.
+The follower stalls at sequence 0. `dropRange` drops the whole RPC message,
+so the RPC never acknowledges it and the server sends nothing more on that
+subscription. The stall proves only that the lost entries never arrived: a
+follower that skipped the hole would stall the same way.
+
+To prove the follower refuses the hole, lose the entries but keep the message.
+An `installFilter` transformation that replaces the `Entries` frame with a
+`Heartbeat` frame does this. The next frame then begins past the follower's
+cursor, and the subscription fails with `SyncGapError` instead of delivering
+it. Sequence 1 is not a legitimate journal hole, it is a frame the transport
+ate, and skipping it would lose an entry. The package's own transport-fault
+suite asserts exactly this.
 
 `dropRange` recognizes the JSON form of an `Entries` frame without importing
 the protocol, so it works only when the connection uses JSON serialization,

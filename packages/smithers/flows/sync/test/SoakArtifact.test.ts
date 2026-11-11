@@ -18,7 +18,7 @@ const fixture = (): Artifact => {
     activeReads: 0,
     pendingWrites: 0,
     socketQueuedBytes: 0,
-    journalQueued: 1024,
+    journalQueued: 64,
     databaseBytes: 100_000,
     walBytes: 1_000_000
   }))
@@ -48,7 +48,7 @@ describe("scheduled soak artifact contract", () => {
           2 * slopeBudgets[metric] * sample.elapsedMs / 60_000
       }))
       artifact.slopes[metric] = slope(artifact.samples, metric)
-      expect(() => verify(artifact, 1)).toThrow()
+      expect(() => verify(artifact, 1)).toThrow(new RegExp(`^${metric} growth .* exceeds `))
     })
   }
   for (
@@ -70,6 +70,12 @@ describe("scheduled soak artifact contract", () => {
       },
       (value: Artifact) => {
         value.samples[2]!.slowSubscribers = 0
+      },
+      (value: Artifact) => {
+        value.samples[2]!.pendingWrites = 1
+      },
+      (value: Artifact) => {
+        value.samples[2]!.journalQueued = 1025
       },
       (value: Artifact) => {
         value.candidate.sourceSha256 = "missing"
