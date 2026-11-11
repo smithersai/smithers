@@ -9,6 +9,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * answers with its own invocation number, and a replayed step's answer is the
  * number the source run recorded.
  */
+import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
@@ -601,6 +602,78 @@ describe("retryFrom refuses what it cannot retry, admitting nothing", () => {
             retry(Nest, "nest-2", yield* nodeOf("nest-2", Finish.name), "nest-2/retry")
           )
           expect(refusal).toMatchObject({ code: "unsupported", executionId: "nest-2" })
+        })
+      ))
+    } finally {
+      await cleanup()
+    }
+  })
+})
+
+describe("retryFrom under a parent", () => {
+  it("records the parent edge with the run, so the run's first step already sees it", async () => {
+    const { cleanup, filename } = await database()
+    const counts: Counts = {}
+    let state: DurableEngineState.Service | undefined
+    // Read by the retry's own prompt body, which the engine runs only after
+    // it scheduled the new run: an edge written any later is not here.
+    const parentsSeen: Array<ReadonlyArray<string>> = []
+    try {
+      await runPromise(process(
+        filename,
+        {
+          counts,
+          state: (service) => (state = service),
+          hooks: {
+            prompt: (n) =>
+              n === 2
+                ? Effect.map(
+                  state!.runParents("chain-7/retry"),
+                  (edges) => void parentsSeen.push(edges.map((edge) => edge.parentId))
+                )
+                : Effect.void
+          }
+        },
+        Effect.gen(function*() {
+          yield* settle(Chain, "chain-7", { input: "j" })
+          // A live caller: a run parked on its gate, as an agent run is while it awaits its module.
+          yield* Effect.flatMap(
+            engine,
+            (runtime) => runtime.execute(Gated, { executionId: "chain-7/caller", payload: {}, discard: true })
+          )
+          const parent = FlowEngine.makeInstance(Gated, "chain-7/caller")
+          const step = yield* nodeOf("chain-7", Prompt.name)
+          yield* Effect.flatMap(
+            engine,
+            (runtime) => runtime.retryFrom!(Chain, { source: "chain-7", step, executionId: "chain-7/retry", parent })
+          )
+          expect(success(yield* settle(Chain, "chain-7/retry", { input: "j" }))).toBe(
+            "finish(prompt(load(j)#1)#2)#2"
+          )
+          expect(parentsSeen).toEqual([["chain-7/caller"]])
+          // The retry is the caller's attached child, and still a retry of its source.
+          expect(yield* stateOf("chain-7/retry")).toMatchObject({
+            parentExecutionId: "chain-7/caller",
+            onParentExit: "cancel",
+            retryFrom: { source: "chain-7", step }
+          })
+          const decisions = (yield* Effect.flatMap(Journal.Journal, (journal) =>
+            journal.entries({
+              runId: JournalEvent.RunId.make("chain-7/retry"),
+              eventTypes: ["flows.engine.run-decision"],
+              limit: 1000
+            }))).entries.map((entry) => (entry.payload as Record<string, unknown>)["decision"])
+          expect(decisions.filter((decision) => decision === "parent-recorded")).toHaveLength(1)
+          // A repeated request under the same parent joins, recording nothing new.
+          yield* Effect.flatMap(
+            engine,
+            (runtime) => runtime.retryFrom!(Chain, { source: "chain-7", step, executionId: "chain-7/retry", parent })
+          )
+          expect(yield* state!.runParents("chain-7/retry")).toHaveLength(1)
+          // Without a parent, a retry stays a root run.
+          yield* retry(Chain, "chain-7", step, "chain-7/root")
+          expect(yield* state!.runParents("chain-7/root")).toEqual([])
+          expect((yield* stateOf("chain-7/root"))["onParentExit"]).toBe("detach")
         })
       ))
     } finally {

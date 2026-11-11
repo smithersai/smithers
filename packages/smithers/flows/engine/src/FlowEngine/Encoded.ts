@@ -353,7 +353,8 @@ export interface Encoded {
    * it. It carries no flow-declared payload: the new execution takes the
    * payload `source` was admitted with, as stored.
    *
-   * A store that implements it admits the new execution as a root run, seeded
+   * A store that implements it admits the new execution as a root run, or as
+   * `parent`'s attached child with its edge in the same transaction, seeded
    * with `source`'s step attempts that finished before `step`'s first
    * attempt, so they replay; it refuses with `FlowRuntime.RetryFromRefused`
    * before writing anything, and joins a repeated request with the same
@@ -366,7 +367,12 @@ export interface Encoded {
   readonly retryFrom?:
     | ((
       flow: Flow.Any,
-      options: { readonly source: string; readonly step: string; readonly executionId: string }
+      options: {
+        readonly source: string
+        readonly step: string
+        readonly executionId: string
+        readonly parent?: FlowRuntime.FlowInstance["Service"] | undefined
+      }
     ) => Effect.Effect<void, FlowRuntime.RetryFromRefused>)
     | undefined
   /**

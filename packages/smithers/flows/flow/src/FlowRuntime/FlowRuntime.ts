@@ -229,7 +229,10 @@ export class FlowRuntime extends Context.Service<
      * attempt, in `source`'s own journal order, is served from `source`'s
      * record and its body is not executed again; `step` and everything after
      * it execute. `source` is not changed. The new execution is a root run of
-     * its own, never a child of the caller.
+     * its own unless the caller names a `parent`: then it is that execution's
+     * attached child, and the edge is recorded in the same transaction that
+     * creates the run, so the run never starts without its parent. Nothing is
+     * taken from the ambient `FlowInstance`.
      *
      * OPTIONAL: a runtime that keeps no history has nothing to replay and
      * leaves it absent, and `Flow.retryFrom` then refuses with
@@ -244,6 +247,7 @@ export class FlowRuntime extends Context.Service<
           readonly source: string
           readonly step: string
           readonly executionId: string
+          readonly parent?: FlowInstance["Service"] | undefined
         }
       ) => Effect.Effect<void, RetryFromRefused>)
       | undefined

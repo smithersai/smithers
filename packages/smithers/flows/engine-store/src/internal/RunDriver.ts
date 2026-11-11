@@ -4057,6 +4057,8 @@ interface RetryRequest {
   readonly source: string
   readonly step: string
   readonly executionId: string
+  /** The caller's execution, when the retry is its child; absent, the retry is a root run. */
+  readonly parent?: FlowRuntime.FlowInstance["Service"] | undefined
 }
 
 /** Counts a retry's outcome, and the attempts it seeded. Ids, codes and counts only. */
@@ -4115,6 +4117,11 @@ const retryFrom = Effect.fn("FlowEngine.retryFrom")(
  * its opening frame; the source's attempts that finished before the step; and
  * the `retry-from` decision that counts them. A repeated request joins the
  * run the first one admitted.
+ *
+ * A retry with a `parent` is that execution's attached child, admitted the way
+ * `admitIn` admits one: the parent edge, the child's state and its inherited
+ * cancellation commit with the row, so the run is never scheduled, and no
+ * host ever drives it, without its parent.
  */
 const admitRetry = (
   driver: Driver,
@@ -4133,14 +4140,20 @@ const admitRetry = (
     }
     const retry = { source: options.source, step: options.step, boundaries: seed.boundaries }
     let replayed: number | undefined
+    const admission: Admission = { executionId: options.executionId, payload: {}, parent: options.parent }
     yield* driver.transactState(
       Effect.gen(function*() {
+        // A fresh retry id has no children, so its edge cannot close a cycle;
+        // a joined one already holds this edge.
+        const parentRecorded = yield* recordParentEdge(driver, admission).pipe(Effect.orDie)
         const state: RunState = {
           version: 1,
           flowName: flow._tag,
           payload: source.payload,
           capabilityCeilings: yield* FlowEngine.requestedAuthority(flow),
-          onParentExit: "detach",
+          // The caller awaits its child, as an attached `execute` does.
+          onParentExit: options.parent === undefined ? "detach" : "cancel",
+          ...(options.parent === undefined ? {} : { parentExecutionId: options.parent.executionId }),
           ...(flow.maxRounds === undefined ? {} : { maxRounds: flow.maxRounds }),
           origin,
           forkKeyRunIds: [options.source, ...(source.forkKeyRunIds ?? [])],
@@ -4157,7 +4170,7 @@ const admitRetry = (
           roundOrdinal: 0,
           retryFrom: retry,
           onCreated: Effect.gen(function*() {
-            yield* recordCreated(driver, flow, { executionId: options.executionId, payload: {} }, createdStateJson)
+            yield* recordCreated(driver, flow, admission, createdStateJson)
             replayed = yield* copyAttempts({ from: options.source, to: options.executionId, attempts: seed.attempts })
             yield* emitDecision(driver, options.executionId, {
               decision: "retry-from",
@@ -4168,8 +4181,17 @@ const admitRetry = (
             })
           })
         })
+        if (options.parent !== undefined) {
+          yield* inheritParentCancellation(driver, options.parent.executionId, options.executionId)
+          if (parentRecorded) {
+            yield* emitDecision(driver, options.executionId, {
+              decision: "parent-recorded",
+              parentExecutionId: options.parent.executionId
+            })
+          }
+        }
       }),
-      { partition: options.executionId }
+      { partition: yield* admissionPartition(driver, admission) }
       // The admission fails only as storage does, which the caller can't mend.
     ).pipe(Effect.orDie)
     yield* recordRetry(replayed === undefined ? "joined" : "admitted", replayed)
