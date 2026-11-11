@@ -12,6 +12,10 @@ export const signedInChanges = (auth: AuthStore["Service"]): Stream.Stream<boole
     Stream.changes,
   )
 
-/** `source`, each request waiting while no one is signed in. The server still answers a signed-out request no rows. */
+/**
+ * `source`, each request waiting while no one is signed in. The server still answers a signed-out request no rows.
+ *
+ * @throws {never}
+ */
 export const signedInShapeSource = (source: ShapeSource.Source, auth: AuthStore["Service"]): ShapeSource.Source =>
   ShapeSource.gated(source, signedInChanges(auth))

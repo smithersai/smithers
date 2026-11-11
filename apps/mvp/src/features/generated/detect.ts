@@ -12,6 +12,8 @@ const encoder = new TextEncoder()
 /**
  * The manifest nearest `path` among the repository's `paths`: its own folder's, else each folder above it, up to the
  * root's. `undefined` when no folder on the way has one.
+ *
+ * @throws {never}
  */
 export const nearestManifest = (paths: ReadonlySet<string>, path: string): string | undefined => {
   const folders = path.split("/").slice(0, -1)
