@@ -1060,3 +1060,20 @@ any reorder in the product into a test timeout that names nothing (600 s under c
 `actions/held-replies` still had four such waits and `objects/steered-host` one. Each is now bounded at 20 s and
 fails as a `Finding` naming the wait. Checked by mutation: with the `early` scenario's latch never entered, the old
 target timed out at 120 s; the bounded one answers `Finding: reply start did not return`.
+
+### Third measurement and draw-dependent arms (vl-fuzz2, 2026-11-11)
+
+The third full `pnpm fuzz:coverage` (seed 20261107, 5 s, `f84ddb86` plus the bounded waits) passed every target: 83
+files, 248 tests. Its browser phase needs a `playwright` box: on `node26`, Chromium exits 127 and its libraries cannot
+be installed, so the merged map comes from the `playwright` run. In this lane's scope 32 files stay below 100%.
+
+Two gaps were the draw's, not the code's:
+
+| File | Why it moved | Closed by |
+| --- | --- | --- |
+| `worker/Accounts.vibe` (34 lines and 32 arms missed, from 11 and 37 before) | `accounts/broker-sequences` walks a fixed op list every execution since `59195ea1`; the list had no foreign origins, bad queries or bodies a route cannot take, and at 5 executions in 30 s the drawn ops rarely produced them | the walk now also runs `refusals` (another origin's issue, wiki and device writes; a device body too long by header and by chunked stream; a chunked roles body; a malformed callback post), `stall` (device and roles bodies that never end, answered 408 at the 3 s read deadline, in virtual time), a corrupt and an expired sign-in row and an id past 2^53 - 1 in GitHub's own OAuth, every query Connect refuses, a Connect handoff without the session that pressed it (403, nothing stored), issue and wiki writes by a person and by their agent, and a short walk where the site names a broker it has no secret for |
+| `worker/CallBudget.vibe` (new in `a2de30ee`, 3 lines and 2 arms missed) | no target reached it | `budget/physical-calls`: the meter over a ledger that fails a drawn number of times and admits or refuses, with every ceiling and usage shape, in virtual time; each execution walks every refusal, each recovery inside the three retries, and every usage. Oracle: the handover comes first and is tried at most four times; a ceiling with no room for the 32,768-token input allowance is refused before admission; a retried admission keeps one key; a receipt names the day, a version-4 `model/` key and the ceiling; settling charges exactly the counted tokens; a foreign receipt charges nothing |
+
+`CallBudget.vibe` is at 100% from its target alone; the Accounts targets alone leave 13 lines of `Accounts.vibe`: the
+issue and wiki reads (each waits out its flow's deadline against an unreachable GitHub, 6 to 13 s, so the walk sends
+only writes), the read-queue deadline, the `github/` migration, and the broker's local-development option.

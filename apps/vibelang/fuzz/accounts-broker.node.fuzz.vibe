@@ -13,7 +13,7 @@ import { Node } from "@smthrs/plan"
 import * as Accounts from "../worker/Accounts.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
-import { run, Int, STEERED_FLOOR } from "./run.vibe"
+import { run, stepped, Int, STEERED_FLOOR } from "./run.vibe"
 
 const SITE = "https://factory.example"
 const BROKER = "https://broker.example"
@@ -22,9 +22,9 @@ const KEY = Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 const STATE = "__Host-vibelang-sign-in"
 
 const Op = Schema.Struct({
-  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere"]),
+  kind: Schema.Literals(["sign-in", "connect", "disconnect", "device", "session", "members", "grant", "events", "sign-out", "install", "handoff", "unknown", "foreign", "issues", "wiki", "draft-wiki", "participation", "roles-large", "expire", "abandon", "device-id", "elsewhere", "refusals", "stall"]),
   person: Schema.Literals(["1", "2", "7", "0"]),
-  tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired"]),
+  tamper: Schema.Literals(["none", "none", "state", "cookie", "code", "replay", "null-same", "null-cross", "foreign-origin", "expired", "corrupt", "huge"]),
   query: Schema.Literals(["", "?wiki-page=index", "?wiki-page=../x", "?resume-op=new&resume-key=k1", "?resume-op=new", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=r1", "?resume-recovery=r1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key"]),
   answer: Schema.Literals(["connect", "cancel"]),
   install: Schema.Boolean,
@@ -81,7 +81,7 @@ effect function world(slug: boolean, brokered: boolean, named: boolean) {
   }), HttpClient.HttpClient, client)
   const jars = new Map<string, Jar>([[SITE, new Map()], [BROKER, new Map()]])
   /** One browser request: the origin's cookies, then the response's Set-Cookie into that jar. */
-  effect function ask(url: string, options: { readonly method?: "GET" | "POST"; readonly origin?: string; readonly site?: string; readonly body?: string; readonly cookies?: Jar; readonly stream?: boolean; readonly form?: boolean; readonly url?: string } = {}) {
+  effect function ask(url: string, options: { readonly method?: "GET" | "POST"; readonly origin?: string; readonly site?: string; readonly body?: string; readonly cookies?: Jar; readonly stream?: boolean; readonly form?: boolean; readonly url?: string; readonly chunks?: ReadonlyArray<string> | "stall" } = {}) {
     const target = new URL(url).origin
     const jar = options.cookies ?? jars.get(target) ?? new Map()
     let request = HttpClientRequest.make(options.method ?? "GET")(url)
@@ -89,13 +89,15 @@ effect function world(slug: boolean, brokered: boolean, named: boolean) {
     if (options.site !== undefined) request = HttpClientRequest.setHeader(request, "sec-fetch-site", options.site)
     if (jar.size > 0) request = HttpClientRequest.setHeader(request, "cookie", [...jar].map(([name, value]) => `${name}=${value}`).join("; "))
     if (options.body !== undefined) request = HttpClientRequest.bodyText(request, options.body, options.form === true ? "application/x-www-form-urlencoded" : "application/json")
+    // A body with no length header: its chunks, or a stream that never ends.
+    if (options.chunks !== undefined) request = HttpClientRequest.bodyStream(request, options.chunks === "stall" ? Stream.never : Stream.fromIterable(options.chunks).pipe(Stream.encodeText), { contentType: "application/json" })
     const parsed = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
     // A platform that hands the object an absolute URL for another host.
     const server = options.url === undefined ? parsed : parsed.modify({ url: options.url })
     const response = target === BROKER ? try Effect.provideService(serveBroker, HttpServerRequest.HttpServerRequest, server)
       : try Effect.provideService(accounts.fetch, HttpServerRequest.HttpServerRequest, server)
-    const web = HttpServerResponse.toWeb(response)
-    const cookies = web.headers.getSetCookie()
+    const answer = HttpServerResponse.toWeb(response)
+    const cookies = answer.headers.getSetCookie()
     if (options.cookies === undefined) for (const cookie of cookies) {
       const pair = cookie.split(";")[0]!
       const at = pair.indexOf("=")
@@ -103,8 +105,8 @@ effect function world(slug: boolean, brokered: boolean, named: boolean) {
       else jar.set(pair.slice(0, at), pair.slice(at + 1))
     }
     // An event stream never ends; its body is not read.
-    const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => web.text()) : ""
-    return { status: response.status, location: web.headers.get("location") ?? "", text, cookies } satisfies Answer
+    const text = options.stream !== true && (response.status === 200 || response.status >= 400) ? try promise(() => answer.text()) : ""
+    return { status: response.status, location: answer.headers.get("location") ?? "", text, cookies } satisfies Answer
   }
   return { storage, accounts, ask, jars, setCustodian: (healthy: boolean) => { custodian = healthy } }
 }
@@ -159,13 +161,15 @@ it.live("accounts/broker-sequences", () => run("accounts/broker-sequences", Inpu
   // takes seconds, so a drawn walk might never run at a short budget); drawn ops then run in the drawn world.
   if (!(try play(input, true, false, true))) return false
   if (!(try play(input, false, false, true))) return false
+  if (!(try play(input, false, true, true))) return false
   return try play(input, input.brokered, !input.brokered && input.named, false)
 }), undefined, { minimum: STEERED_FLOOR }), 120_000)
 
 effect function play(input: typeof Input.Type, brokered: boolean, named: boolean, walking: boolean) {
   const w = try world(input.slug, brokered, named)
   const base: Op = { kind: "session", person: "7", tamper: "none", query: "", answer: "connect", install: true, role: "community", body: "valid", n: 0 }
-  const walk: ReadonlyArray<Op> = walking ? [
+  const namedWalk: ReadonlyArray<Op> = [{ ...base, kind: "sign-in" }, { ...base, kind: "abandon" }, { ...base, kind: "refusals" }]
+  const walk: ReadonlyArray<Op> = walking && named ? namedWalk : walking ? [
     { ...base, kind: "sign-in" }, { ...base, kind: "connect" }, { ...base, kind: "disconnect" }, { ...base, kind: "connect", answer: "cancel" },
     { ...base, kind: "connect", install: false }, { ...base, kind: "connect", query: "?resume-op=new&resume-key=k1&resume-recovery=r1" },
     { ...base, kind: "sign-in", tamper: "code" }, { ...base, kind: "sign-in", tamper: "replay" }, { ...base, kind: "sign-in", tamper: "expired" },
@@ -177,6 +181,16 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
     { ...base, kind: "sign-out" }, { ...base, kind: "issues" }, { ...base, kind: "wiki" }, { ...base, kind: "roles-large" }, { ...base, kind: "participation" },
     { ...base, kind: "device-id" }, { ...base, kind: "elsewhere" }, { ...base, kind: "abandon" }, { ...base, kind: "sign-in" }, { ...base, kind: "expire" },
     { ...base, kind: "sign-in" }, { ...base, kind: "expire", n: 1 },
+    // Refusals a draw reaches only by chance (0015): bodies a route cannot take, a corrupt sign-in row, an id GitHub
+    // cannot have, each query Connect refuses, a handoff without the session that pressed Connect, and issue and wiki
+    // writes by a person and by their agent.
+    { ...base, kind: "refusals" }, { ...base, kind: "stall" }, { ...base, kind: "sign-in", tamper: "corrupt" }, { ...base, kind: "sign-in", tamper: "huge" },
+    { ...base, kind: "sign-in" }, { ...base, kind: "refusals" }, { ...base, kind: "stall" },
+    ...(["?wiki-page=../x", "?resume-op=new", "?resume-recovery=r1", "?resume-op=bad&resume-key=k1", "?resume-op=new&resume-key=k1&resume-recovery=bad%20key", "?wiki-page=index"] as const).map((query) => ({ ...base, kind: "connect" as const, query })),
+    { ...base, kind: "disconnect" }, { ...base, kind: "connect", tamper: "cookie" },
+    // Writes only: a read goes on to an unreachable GitHub and waits out its flow's deadline (6 to 13 s each).
+    { ...base, kind: "issues" }, { ...base, kind: "wiki" },
+    { ...base, kind: "device" }, { ...base, kind: "issues" }, { ...base, kind: "wiki" },
   ] : []
   // The model: whose session the browser holds, and whether it is the person's agent.
   let signedIn: { readonly id: string; readonly agent: boolean } | undefined
@@ -200,9 +214,16 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
           const state = op.tamper === "state" ? "y".repeat(43) : authorize.searchParams.get("state") ?? ""
           const jar = w.jars.get(SITE)!
           const cookies = op.tamper === "cookie" ? new Map([...jar, [STATE, (jar.get(STATE) ?? "") + "0"]]) : undefined
-          const back = try seen(try w.ask(`${SITE}${Accounts.CALLBACK}?state=${state}&code=${op.tamper === "code" ? "x".repeat(5000) : op.person}`, cookies === undefined ? {} : { cookies }))
+          if (op.tamper === "expired" || op.tamper === "corrupt") {
+            const key = `sign-in/${state}`
+            const record = (try promise(() => w.storage.get(key))) as Record<string, unknown> | undefined
+            if (record !== undefined) try promise(() => w.storage.put(key, op.tamper === "corrupt" ? { broken: true } : { ...record, expires: 1 }))
+          }
+          // GitHub names no person with an id past 2^53 - 1.
+          const code = op.tamper === "code" ? "x".repeat(5000) : op.tamper === "huge" ? "9".repeat(20) : op.person
+          const back = try seen(try w.ask(`${SITE}${Accounts.CALLBACK}?state=${state}&code=${code}`, cookies === undefined ? {} : { cookies }))
           const replayed = op.tamper === "replay" ? try seen(try w.ask(`${SITE}${Accounts.CALLBACK}?state=${state}&code=${op.person}`)) : undefined
-          const honest = (op.tamper !== "state" && op.tamper !== "cookie" && op.tamper !== "code") && op.person !== "0"
+          const honest = !["state", "cookie", "code", "expired", "corrupt", "huge"].includes(op.tamper) && op.person !== "0"
           if (honest) {
             if (back.status !== 302 || back.location !== SITE + "/" || (replayed !== undefined && replayed.status !== 400)) return try refute(op.kind, 2)
             signedIn = { id: op.person, agent: false }
@@ -213,10 +234,10 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const handed = try trip(w, start, op.person, op.answer)
         // GitHub has no account for code 0, so the broker never hands the browser back.
         if (handed === undefined || handed === "cancelled") { if (op.person !== "0") return try refute(op.kind, 2400 + tripStage); break }
-        if (op.tamper === "expired") {
+        if (op.tamper === "expired" || op.tamper === "corrupt") {
           const key = `broker/${handed.state}`
           const record = (try promise(() => w.storage.get(key))) as { readonly claims: Record<string, unknown> } | undefined
-          if (record !== undefined) try promise(() => w.storage.put(key, { ...record, claims: { ...record.claims, expires: 1 } }))
+          if (record !== undefined) try promise(() => w.storage.put(key, op.tamper === "corrupt" ? { broken: true } : { ...record, claims: { ...record.claims, expires: 1 } }))
         }
         const body = JSON.stringify({ code: op.tamper === "code" ? "z".repeat(43) : handed.code, state: op.tamper === "state" ? "y".repeat(43) : handed.state })
         const jar = w.jars.get(SITE)!
@@ -225,7 +246,7 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         const site = op.tamper === "null-same" ? "same-origin" : op.tamper === "null-cross" ? "cross-site" : undefined
         const accepted = try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin, ...(site === undefined ? {} : { site }), body, ...(cookies === undefined ? {} : { cookies }) }))
         const replayed = op.tamper === "replay" ? try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body })) : undefined
-        const honest = op.tamper === "none" || op.tamper === "replay" || op.tamper === "null-same"
+        const honest = op.tamper === "none" || op.tamper === "replay" || op.tamper === "null-same" || op.tamper === "huge"
         const person = op.person !== "0"
         if (honest && person) {
           if (accepted.status !== 200 || (replayed !== undefined && replayed.status !== 400)) return try refute(op.kind, 40)
@@ -245,8 +266,12 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
         // A custodian that fails refuses the consent at the broker, which keeps the browser there.
         if (handed === undefined) { if (op.answer === "connect" && !op.install) break; return try refute(op.kind, 5400 + tripStage) }
         if (handed === "cancelled") { if (op.answer !== "cancel") return try refute(op.kind, 55); break }
-        const accepted = try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body: JSON.stringify(handed) }))
+        // The browser no longer presents the session that pressed Connect: the handoff is refused and stores nothing.
+        const unsigned = op.tamper === "cookie" ? new Map([...w.jars.get(SITE)!].filter(([name]) => name !== Accounts.SESSION)) : undefined
+        const before = JSON.stringify((try promise(() => w.storage.get(`delegation/${signedIn!.id}`))) ?? null)
+        const accepted = try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body: JSON.stringify(handed), ...(unsigned === undefined ? {} : { cookies: unsigned }) }))
         const stored = (try promise(() => w.storage.get(`delegation/${signedIn!.id}`))) as { readonly delegation?: string } | undefined
+        if (unsigned !== undefined) { if (accepted.status !== 403 || JSON.stringify(stored ?? null) !== before) return try refute(op.kind, 57); break }
         // Consent with a working custodian is the only way here, and it installs a delegation for the same person.
         const delegated = op.answer === "connect" && op.install
         if (!delegated || accepted.status !== 200 || stored?.delegation !== `d-${signedIn.id}`) return try refute(op.kind, 59)
@@ -364,6 +389,30 @@ effect function play(input: typeof Input.Type, brokered: boolean, named: boolean
       case "elsewhere": {
         const answer = try seen(try w.ask(SITE + "/api/auth/session", { url: "https://evil.example/api/auth/session" }))
         if (answer.status !== 403) return try refute(op.kind, 210)
+        break
+      }
+      case "refusals": {
+        // Another origin's writes, and bodies a route cannot take, are refused before any work.
+        const evil = "https://evil.example"
+        const long = ["x".repeat(1500), "x".repeat(1500)]
+        const answers: ReadonlyArray<readonly [Answer, number]> = [
+          [try seen(try w.ask(SITE + "/api/issues", { method: "POST", origin: evil, body: "{}" })), 403],
+          [try seen(try w.ask(SITE + "/api/wiki", { method: "POST", origin: evil, body: "{}" })), 403],
+          [try seen(try w.ask(SITE + "/api/auth/device", { method: "POST", origin: evil, body: "{}" })), 403],
+          [try seen(try w.ask(SITE + "/api/auth/device", { method: "POST", origin: SITE, body: "x".repeat(3000) })), 413],
+          [try seen(try w.ask(SITE + "/api/auth/device", { method: "POST", origin: SITE, chunks: long })), 413],
+          [try seen(try w.ask(SITE + "/api/roles", { method: "POST", origin: SITE, chunks: long })), signedIn === undefined ? 403 : 413],
+          [try seen(try w.ask(SITE + Accounts.CALLBACK, { method: "POST", origin: SITE, body: "{" })), brokered ? 400 : 503],
+        ]
+        const wrong = answers.findIndex(([answer, status]) => answer.status !== status)
+        if (wrong !== -1) return try refute(op.kind, 220 + wrong)
+        break
+      }
+      case "stall": {
+        // A body that never ends is answered at the 3-second read deadline, in virtual time.
+        const device = try stepped(w.ask(SITE + "/api/auth/device", { method: "POST", origin: SITE, chunks: "stall" }), 10)
+        const roles = try stepped(w.ask(SITE + "/api/roles", { method: "POST", origin: SITE, chunks: "stall" }), 10)
+        if (device.status !== 408 || roles.status !== (signedIn === undefined ? 403 : 408)) return try refute(op.kind, 230)
         break
       }
       case "foreign": {
