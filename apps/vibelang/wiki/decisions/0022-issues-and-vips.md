@@ -132,3 +132,19 @@ a retained human gate receipt as well as GitHub's label. Specification revision/
 this same Factory/flow/host boundary; all four named LGTM results need A- or better on the same revision. Under
 0027's 2026-11-09 addenda, new revisions keep all four answers and acceptance; release runs a full panel again. Proposal approval and specification acceptance remain separate; neither commits a task or
 merges a change. The fixture includes the previously accepted specification and an earlier reset.
+
+
+## Stable submission bases
+
+Before the first keyed branch write, a logical submission persists its repository, base branch and commit SHA in
+the object's durable storage, under the same execution id as its admission time. Automatic retries and explicit
+recovery executions reuse that snapshot, including after an unrelated upstream commit or default-branch change, so
+the branch creation, commit precondition and review target keep the same operation under each original write key.
+A refused observation persists nothing, and a saved snapshot that no longer decodes refuses as unavailable rather
+than choosing a replacement. The wiki host validates the page at the chosen commit before persisting it
+([0021](0021-wiki.md#stable-submission-bases)).
+
+`test/issuesDelegated.coverage.test.vibe` and `test/wikiDelegated.coverage.test.vibe` run the real delegation broker
+and SQLite engine with an injected faulty GitHub: a failure after branch or commit creation, an upstream advance,
+then automatic retry and explicit recovery keep one branch, commit and review per request, with every branch start,
+commit fence and review base equal to the original. No dependency is added.

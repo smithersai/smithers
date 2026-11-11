@@ -15,6 +15,7 @@ import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/co
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
 import { agentRefused, carriesCode, choiceLabel, choiceLogin, failureReason, issueTask, nextRevision, revisionRoom, validRevision, projectedVip, refusalStatus, requestKey, resumable, resumeStatus, timelineText, unwritten, vipState } from "../src/core/issueHostDecision.vibe"
+import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { personId } from "./accountsDecision.vibe"
 import { reviewNumberText } from "./workerDecision.vibe"
@@ -70,7 +71,7 @@ export function issueFailureOf(error: unknown): IssueFailure {
   return new IssueFailure({ reason, ...(carriesCode(reason) ? { code: reason } : {}), ...(typeof details?.retryAfterMillis === "number" ? { retryAfterMillis: details.retryAfterMillis } : {}) })
 }
 
-export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false, admitted: () => string!IssueFailure = () => admittedNow): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
+export effect function githubHost(repo: Repository = repository, observe?: (items: ReadonlyArray<IssueRecord>) => import("../src/core/conversation.vibe").IssuesState!IssueFailure, fresh: () => boolean = () => false, admitted: () => string!IssueFailure = () => admittedNow, storage?: Storage): IssueHost.Shape!never!(IssueAuthority | HttpClient.HttpClient) {
   const authority = try IssueAuthority
   const http = try HttpClient.HttpClient
   const writer = try Effect.serviceOption(VipWriter)
@@ -199,17 +200,20 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
         if (request.op === "propose") {
           if ([request.text, request.example, request.prior].some((s) => s.trim() === "")) throw new IssueFailure({ reason: "incomplete" })
           // The person's fork owns the change; smithers.sh derives and verifies it from their login (decision 0165).
-          const upstream = try Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) }))
-          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, upstream.default_branch)
-          if (Option.isNone(head)) throw new IssueFailure({ reason: "missing" })
-          const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/vip-", label: "proposal", at: head.value.sha }), { key: try key("branch") })
+          const base = try submissionBase(storage, try issueExecutionId(actor.id, request.op, request.key), effect () => {
+            const upstream = try Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) }))
+            const head = try GitHub.Refs.getBranch(repo.owner, repo.name, upstream.default_branch)
+            if (Option.isNone(head)) throw new IssueFailure({ reason: "missing" })
+            return { repository, branch: upstream.default_branch, sha: head.value.sha }
+          })
+          const branch = try Action.once("branch", permitted({ kind: "branch.create", repository: base.repository, prefix: "vibelang/vip-", label: "proposal", at: base.sha }), { key: try key("branch") })
           const path = `docs/design/vips/proposal-${try key("document")}.md`
           const document = vipDocument(request)
           const contents = try Effect.try(() => Base64.encode(document))
           // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
           // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
-          try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
-          const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base: upstream.default_branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
+          try Action.once("commit", permitted({ kind: "commit.create", repository: base.repository, branch: branch.name!, expectedHeadOid: base.sha, headline: `VIP: ${request.title.trim()}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+          const pull = try Action.once("review", permitted({ kind: "pull.create", repository: base.repository, head: `${actor.login}:${branch.name!}`, base: base.branch, title: `VIP: ${request.title.trim()}`, body: document }), { key: try key("review") })
           const review = `https://github.com/${repo.owner}/${repo.name}/pull/${pull.number!}`
           const body = `${vipIssueBody(request)}\n<!-- vibelang:vip path=${path} review=${review} -->`
           const made = try Action.once("vip-issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body, since: try admitted() }), { key: try key("vip-issue") })
@@ -323,7 +327,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     const next = applyIssues({ seq, items: [] }, { type: "IssuesObserved", seq: seq + 1, items })
     try promise(() => storage.put("issues/revision", next.seq))
     return next
-  }, () => fresh, admitted)
+  }, () => fresh, admitted, storage)
   // The project object owns gate receipts; public GitHub labels cannot invent a person's approval.
   const host: IssueHost.Shape = { perform: effect (request) => {
     const current = try authority.current()

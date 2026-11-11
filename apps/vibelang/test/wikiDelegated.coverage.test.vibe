@@ -13,9 +13,10 @@ import type { WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
 import { WikiHost } from "../src/core/wikiFlows.vibe"
 import type { Principal } from "../worker/Issues.vibe"
 import { executeWiki, githubWikiHost, serveWiki, WikiAuthority, type WikiRepository } from "../worker/Wiki.vibe"
+import type { GitHub } from "@smthrs/integrations"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { API, fakeClient, forked, seed } from "../fuzz/issues-node-fake.vibe"
+import { API, REPOSITORY_ID, fakeClient, forked, seed } from "../fuzz/issues-node-fake.vibe"
 import { delegated, reach } from "../fuzz/delegated.vibe"
 import { faultyStore } from "../fuzz/faulty-store.ts"
 
@@ -53,6 +54,8 @@ effect function world(options: Options = {}) {
     return answer === undefined ? inner.execute(request) : succeed(HttpClientResponse.fromWeb(request, answer))
   })
   const site = try delegated(github, reach())
+  const operations: Array<GitHub.DelegationPolicy.Operation> = []
+  const delegate: typeof site.delegate = { ...site.delegate, keyed: (person, delegation, operation) => { operations.push(operation); return site.delegate.keyed(person, delegation, operation) } }
   const caller = try Ref.make<Caller | undefined>({ role: "maintainer" })
   const lost = try Ref.make(0)
   const principal = (who: Caller | undefined): Principal | undefined => who === undefined ? undefined : { id: "7", login: "fuzz", role: who.role, ...(who.kind === undefined ? {} : { kind: who.kind }), ...(who.connected === false ? {} : { connection: site.connection }) }
@@ -65,7 +68,7 @@ effect function world(options: Options = {}) {
   }
   const provided = <A, E, R>(program: A!E!R) => program.pipe(
     Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, site.http),
-    Effect.provide(options.delegate === false ? Layer.empty : Layer.succeed(GitHubDelegate, site.delegate)),
+    Effect.provide(options.delegate === false ? Layer.empty : Layer.succeed(GitHubDelegate, delegate)),
     Effect.provide(WebCrypto.layer),
   )
   let keys = 0
@@ -79,7 +82,7 @@ effect function world(options: Options = {}) {
   const perform = (request: Partial<WikiRequest>) => Effect.exit(provided((host.perform as (request: WikiRequest) => State!unknown)({ ...blank, ...request })))
   const kept = () => promise(() => store.storage.get(`wiki/draft/7/${PAGE}`))
   return {
-    fake, site, store, caller, lost, act, perform, kept, provided,
+    fake, site, store, caller, lost, act, perform, kept, provided, operations,
     fault: (next: Fault) => { fault = next },
     /** From the `from`-th identity lookup of the next call on, `next` asks instead. */
     turn: effect (from: number, next: Caller | undefined) => {
@@ -103,6 +106,40 @@ const succeeded = (exit: Exit.Exit<State, unknown>): State => {
 }
 
 describe("the wiki through smithers.sh's delegation", () => {
+  for (const stage of ["commit", "review"] as const) for (const recovery of [false, true]) {
+    it.live(`wiki keeps its base after a ${stage} failure and upstream advance (${recovery ? "explicit recovery" : "automatic retry"})`, () => scoped(effect {
+      const w = try world()
+      const originalHead = w.fake.branches["o/r"]!.main!
+      const request = { base: SOURCE, text: EDITED, key: "stable-base" }
+      let refused = false
+      w.fault((call, url) => {
+        const target = stage === "commit" ? url.pathname === "/graphql" : url.pathname === "/repos/o/r/pulls"
+        if (refused || call.method !== "POST" || !target) return undefined
+        refused = true
+        // The branch already exists. A different upstream commit must not change its bound operation.
+        w.fake.branches["o/r"]!.main = "b".repeat(40)
+        w.fake.branches["o/r"]!.next = "b".repeat(40)
+        w.fake.repositories = { "o/r": { id: REPOSITORY_ID, name: "r", owner: { login: "o" }, default_branch: "next" } }
+        return json(recovery ? 403 : 503, { message: recovery ? "Forbidden" : "Unavailable" })
+      })
+      const first = try w.act("propose", request)
+      if (recovery) {
+        expect(failed(first)).toMatchObject({ unwritten: false })
+        expect(w.fake.writes).toBe(stage === "commit" ? 1 : 2)
+      }
+      const completed = recovery ? try w.act("propose", { ...request, recovery: "retry-base" }) : first
+      const answer = succeeded(completed)
+      expect(refused).toBe(true)
+      expect(answer.review).toBe("https://github.com/o/r/pull/600")
+      expect(w.fake.writes).toBe(3)
+      expect(Object.keys(w.fake.branches["fuzz/r"]!).filter(name => name.startsWith("vibelang/wiki-"))).toHaveLength(1)
+      const bases = w.operations.flatMap(operation => operation.kind === "branch.create" ? [operation.at] : operation.kind === "commit.create" ? [operation.expectedHeadOid] : [])
+      expect(bases.length).toBeGreaterThan(2)
+      expect(new Set(bases)).toEqual(new Set([originalHead]))
+      expect(w.operations.filter(operation => operation.kind === "pull.create").every(operation => operation.base === "main")).toBe(true)
+    }))
+  }
+
   it.live("a read names an unknown page, a missing file and GitHub's refusals", () => scoped(effect {
     const w = try world()
     expect(failed(try w.perform({ page: "decisions" }))).toEqual({ reason: "missing", unwritten: false })

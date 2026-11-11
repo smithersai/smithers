@@ -14,7 +14,7 @@ import { executeIssues, githubHost, publicIssues, serveIssues, IssueAuthority, t
 import { IssueHost } from "../src/core/issueFlows.vibe"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
-import { API, fakeClient, forked, repo, seed, type Fake } from "../fuzz/issues-node-fake.vibe"
+import { API, REPOSITORY_ID, fakeClient, forked, repo, seed, type Fake } from "../fuzz/issues-node-fake.vibe"
 import { delegated, reach } from "../fuzz/delegated.vibe"
 import { faultyStore } from "../fuzz/faulty-store.ts"
 import type { GitHub } from "@smthrs/integrations"
@@ -106,6 +106,40 @@ function addIssue(fake: Fake, number: number, fields: Partial<Fake["issues"][num
 describe("issues through smithers.sh's delegation", () => {
   // What only deleted accounts, null fields, foreign links and a second assignable account produce; the read of real
   // GitHub (tasks, verified and refused VIP claims, parents, notes) is test/issues.github.test.vibe on a recording.
+  for (const stage of ["commit", "review"] as const) for (const recovery of [false, true]) {
+    it.live(`VIP keeps its base after a ${stage} failure and upstream advance (${recovery ? "explicit recovery" : "automatic retry"})`, () => scoped(effect {
+      const w = try world()
+      const originalHead = w.fake.branches["o/r"]!.main!
+      const request = { title: "Stable base", text: "Proposal", example: "Example", prior: "Prior", key: "stable-base" }
+      let refused = false
+      w.fault((call, url) => {
+        const target = stage === "commit" ? url.pathname === "/graphql" : url.pathname === "/repos/o/r/pulls"
+        if (refused || call.method !== "POST" || !target) return undefined
+        refused = true
+        // The branch already exists. A different upstream commit must not change its bound operation.
+        w.fake.branches["o/r"]!.main = "b".repeat(40)
+        w.fake.branches["o/r"]!.next = "b".repeat(40)
+        w.fake.repositories = { "o/r": { id: REPOSITORY_ID, name: "r", owner: { login: "o" }, default_branch: "next" } }
+        return json(recovery ? 403 : 503, { message: recovery ? "Forbidden" : "Unavailable" })
+      })
+      const first = try w.act("propose", request)
+      if (recovery) {
+        expect(failed(first)).toMatchObject({ unwritten: false })
+        expect(w.fake.writes).toBe(stage === "commit" ? 1 : 2)
+      }
+      const completed = recovery ? try w.act("propose", { ...request, recovery: "retry-base" }) : first
+      const answer = succeeded(completed)
+      expect(refused).toBe(true)
+      expect(item(answer, answer.selected!).vip).toBe("In review")
+      expect(w.fake.writes).toBe(4)
+      expect(Object.keys(w.fake.branches["fuzz/r"]!).filter(name => name.startsWith("vibelang/vip-"))).toHaveLength(1)
+      const bases = w.operations.flatMap(operation => operation.kind === "branch.create" ? [operation.at] : operation.kind === "commit.create" ? [operation.expectedHeadOid] : [])
+      expect(bases.length).toBeGreaterThan(2)
+      expect(new Set(bases)).toEqual(new Set([originalHead]))
+      expect(w.operations.filter(operation => operation.kind === "pull.create").every(operation => operation.base === "main")).toBe(true)
+    }))
+  }
+
   it.live("a read survives deleted accounts, null fields and foreign parent links, and lists the agent first among assignees", () => scoped(effect {
     const w = try world()
     const marker = (review: string, path = "docs/design/vips/proposal-seed.md") => `Proposal\n<!-- vibelang:vip path=${path} review=${review} -->`

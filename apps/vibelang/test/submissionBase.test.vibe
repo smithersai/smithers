@@ -1,0 +1,40 @@
+// @vitest-environment node
+import { describe, expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { IssueFailure } from "../src/core/issueSchemas.vibe"
+import { submissionBase } from "../worker/SubmissionBase.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+
+const initial = { repository: "o/r", branch: "main", sha: "a".repeat(40) }
+const advanced = { repository: "o/r", branch: "next", sha: "b".repeat(40) }
+
+describe("submission base persistence", () => {
+  it.live("a new host reuses the whole snapshot, while a different request chooses its own", () => scoped(effect {
+    const store = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), store => Effect.sync(() => store.close()))
+    const storage = store as unknown as Storage
+    expect(try submissionBase(storage, "first", () => succeed(initial))).toEqual(initial)
+    let observations = 0
+    const observe = effect () => { observations += 1; return advanced }
+    expect(try submissionBase(storage, "first", observe)).toEqual(initial)
+    expect(observations).toBe(0)
+    expect(try submissionBase(storage, "second", observe)).toEqual(advanced)
+    expect(observations).toBe(1)
+    expect(try submissionBase(undefined, "direct", observe)).toEqual(advanced)
+    expect(observations).toBe(2)
+  }))
+
+  it.live("a refused observation binds nothing, and a corrupt saved snapshot never selects a replacement", () => scoped(effect {
+    const store = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), store => Effect.sync(() => store.close()))
+    const storage = store as unknown as Storage
+    const failed = try Effect.result(submissionBase(storage, "retry", () => fail(new IssueFailure({ reason: "missing" }))))
+    expect(failed._tag).toBe("Failure")
+    expect(try promise(() => storage.get("submission/base/retry"))).toBeUndefined()
+    expect(try submissionBase(storage, "retry", () => succeed(advanced))).toEqual(advanced)
+    try promise(() => storage.put("submission/base/corrupt", { sha: initial.sha }))
+    let observed = false
+    const corrupt = try Effect.result(submissionBase(storage, "corrupt", effect () => { observed = true; return initial }))
+    expect(corrupt._tag).toBe("Failure")
+    expect(observed).toBe(false)
+    expect(try promise(() => storage.get("submission/base/corrupt"))).toEqual({ sha: initial.sha })
+  }))
+})

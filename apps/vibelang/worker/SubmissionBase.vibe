@@ -1,0 +1,15 @@
+import type { Storage } from "./Objects.vibe"
+
+/** The immutable source of a logical submission, shared by its automatic retries and recovery executions. */
+schema SubmissionBase { repository: string; branch: string; sha: string }
+
+/** Persist the source before binding any GitHub write key. A failed observation never binds a source. */
+export effect function submissionBase<E, R>(storage: Storage | undefined, executionId: string, observe: () => SubmissionBase!E!R) {
+  if (storage === undefined) return try observe()
+  const key = `submission/base/${executionId}`
+  const known = try promise(() => storage.get(key))
+  if (known !== undefined) return try Schema.decodeUnknownEffect(SubmissionBase)(known)
+  const base = try observe()
+  try promise(() => storage.put(key, base))
+  return base
+}

@@ -17,6 +17,7 @@ export interface WikiRepository extends Repository { readonly root: string; read
 export const wikiRepository: WikiRepository = { owner: "smithersai", name: "smithers", api: "https://api.github.com", agent: "", root: "apps/vibelang/wiki" }
 import type { Storage } from "./Objects.vibe"
 import { GitHubDelegate, asPerson, refusalOf, type Connection } from "./GitHubDelegate.vibe"
+import { submissionBase } from "./SubmissionBase.vibe"
 import { PublicReads, READ_PATIENCE } from "./PublicReads.vibe"
 import { carriesCode, failureReason, requestKey } from "../src/core/issueHostDecision.vibe"
 import { editable, wikiRefusalStatus, wikiUnwritten } from "../src/core/wikiPageDecision.vibe"
@@ -140,18 +141,21 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         // caller's request is a decoded WikiRequest. A fifth operation fails to compile here.
         request.op satisfies "propose" | "save"
         // The person's fork owns the change, derived and verified by smithers.sh; the review is theirs. People merge; the agent never does.
-        const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
-        const base = repo.branch ?? upstream.default_branch
-        const head = try GitHub.Refs.getBranch(repo.owner, repo.name, base)
-        if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
-        // Compare against the exact commit the new branch will use, even if main advanced after the first read.
-        const pinned = try authorized(readSource(path, head.value.sha))
-        if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
-        const branch = try Action.once("branch", permitted({ kind: "branch.create", repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: head.value.sha }), { key: try key("branch") })
+        const base = try submissionBase(storage, try wikiExecutionId(actor.id, request.op, request.key), effect () => {
+          const upstream = try authorized(Effect.flatMap(GitHub.GitHubClient.GitHubClient, (api) => api.request("GET", `/repos/${repository}`, undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })))
+          const branch = repo.branch ?? upstream.default_branch
+          const head = try GitHub.Refs.getBranch(repo.owner, repo.name, branch)
+          if (Option.isNone(head)) throw new WikiFailure({ reason: "missing" })
+          // Validate the exact commit before persisting it or binding any write key.
+          const pinned = try authorized(readSource(path, head.value.sha))
+          if (pinned.text !== request.base) throw new WikiFailure({ reason: "conflict" })
+          return { repository, branch, sha: head.value.sha }
+        })
+        const branch = try Action.once("branch", permitted({ kind: "branch.create", repository: base.repository, prefix: "vibelang/wiki-", label: request.page.replace(/[^a-z0-9]+/gi, "-").slice(0, 40), at: base.sha }), { key: try key("branch") })
         // The commit the branch was cut from, never the branch's current head: a retry adopts a branch its own commit
         // advanced, and smithers.sh refuses a key whose operation changed (key_conflict).
-        try Action.once("commit", permitted({ kind: "commit.create", repository, branch: branch.name!, expectedHeadOid: head.value.sha, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
-        const pull = try Action.once("review", permitted({ kind: "pull.create", repository, head: `${actor.login}:${branch.name!}`, base, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
+        try Action.once("commit", permitted({ kind: "commit.create", repository: base.repository, branch: branch.name!, expectedHeadOid: base.sha, headline: `Wiki: ${request.page}`, additions: [{ path, contents }], deletions: [] }), { key: try key("commit") })
+        const pull = try Action.once("review", permitted({ kind: "pull.create", repository: base.repository, head: `${actor.login}:${branch.name!}`, base: base.branch, title: `Wiki: ${request.page}`, body: `A proposed edit to [${request.page}](https://vibelang.smithers.sh/wiki/${request.page}).` }), { key: try key("review") })
         // Native evidence before the answer: the PR exists, is the person's, and changes exactly this page.
         const observedReview = try authorized(GitHub.Proposals.documentReview(repo.owner, repo.name, pull.number!))
         const authored = actor.id !== "" && observedReview.pipe(Option.exists((review) => String(review.author) === actor.id))
