@@ -24,9 +24,10 @@ and no verification obligation is suppressed. The previously supplied probe docu
 `finite-round.ts`, `json-codec.ts`, `uri-codec.ts` and `object-constant.ts` are minimal unsupported
 operations encountered while inventorying the app. Every source strictly typechecks; the failures occur in
 LemmaScript emission or Dafny resolution. They do not count as rejected executable mutations. Decision 0018 names
-which production behavior each leaves unproved and the retained host reproduction directory. `regexp.ts` (a `test` on
-a literal pattern) proves since LemmaScript's RegExp subset (0018 third-lane batch 24) and was removed; `exec`,
-`replace`, flags and `\b` remain unsupported and are refused by name.
+which production behavior each leaves unproved and the retained host reproduction directory. `test` on a literal pattern proves since LemmaScript’s RegExp subset (0018 third-lane batch 24). The current
+`regexp.ts`, `regexp-flags.ts` and `regexp-replace.ts` isolate still-unsupported capture extraction, flags and
+replacement; these are tool refusals, not negative-contract evidence. Word boundaries remain covered by the
+refusal regression in `packages/lemmascript/tools/tests/regex.test.ts`.
 
 `unicode-case.ts` shows a correct non-ASCII casing contract the backend cannot prove (casing is exact only on ASCII strings, so no false casing claim proves either); `event-key.ts` retains the
 production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have
@@ -50,7 +51,7 @@ claims. Both sources strictly typecheck.
 - `record-identity.ts`: object equality is structural in the backend and reference-based in JavaScript; the tool warns and the correct fresh-copy identity contract fails. Structural frame proofs do not establish object identity.
 
 - `readonly-set.ts`: ReadonlySet.has is not lowered, while the same Set contract verifies. The mock dispatcher owns and passes an actual Set.
-- `conditional-method.ts`: a guarded method call in a ternary is hoisted before its discriminant guard. The receiver uses an equivalent guarded statement, preserving all specifications; the malformed lowering remains reproduced.
+- `conditional-method.ts`: the guarded method-call lowering is fixed (0018 batch 30). The reproduction is retained as a positive regression; its discriminant guard now encloses the call. The receiver’s equivalent guarded statement remains valid.
 
 - `union-widening.ts`: a strict TypeScript return widens a string union, but LemmaScript emits incompatible Dafny
   datatypes. Exact value contracts remain in the fixture; no production workaround is added.

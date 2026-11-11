@@ -5916,3 +5916,102 @@ The full `verify:broken` on `94566fc0` (box job `vl-proveall:full48`) ran no mut
 the runner gave an isolated proof two cores only when `CHECK_JOBS` was 1, and `verify:broken` sets it to 2. A
 dependency now gets the two cores a lone isolated proof gets (`check.py`; `harness_test.py`
 `test_a_sequential_isolated_dependency_gets_two_cores`, red before). The mutants keep one core each.
+
+## Third-lane batches 25–27: history captures, bootstrap text and mock commit reads
+
+Batch 25 replaces the `Mythical:` capture and paragraph selection with `trailerName` in
+`trailerDecision.vibe`. The last paragraph must be a trailer paragraph; its first matching name wins. A title's
+scope now calls `titleScope` in `seedDecision.vibe`: conventional type/scope, first comma-delimited scope with
+blank-scope fallback, then the bare prefix in ASCII lower case. Native line splitting and trimming remain boundaries.
+
+Batch 26 adds `seedTextDecision.vibe`: first-line extraction, the exact word boundary after
+`chore(docs): regenerate`, revert titles and evidence-line captures. Its whitespace and word predicates are compared
+with native `\s` and `\w` on all 65,536 UTF-16 units. The text decisions are compared against their replaced
+expressions on 8,000 generated strings. The earlier RegExp-subset limitations remain in force.
+
+Batch 27 closes `MockMythical.vibe`'s new `mockRepository/readCommit` row: `commitSource` chooses memory for an
+unknown real revision, then an existing header, otherwise a new header; `mainFile` and `madeMessage` preserve the
+file separator and final newline. Repository and mutable-memory operations remain host boundaries.
+
+## Third-lane batch 28: the wiki build's text decisions
+
+`scripts/wiki.vibe` reads its page fields through `wikiPage.vibe`, which composes the proved
+`wikiBuildDecision.vibe` scans. Page ids, decision file/id rules and labels, first headings, optional field stars,
+first field values, ruling order, case-insensitive ASCII status words and first 2026 dates have explicit string
+decisions. The two simple decision patterns use the existing proved RegExp subset. Recursive specifications state
+the scan results; runtime loops prove equality to those specifications. Native regex equivalence is checked by tests,
+not by a capture model in the prover.
+
+The comparison suite checks every current wiki page, boundary cases, 8,000 generated Markdown strings and 100 KB
+inputs. It failed first on a status-field stack overflow in the carried implementation. Both status containment and
+long ruling-number scans now use loops. No wiki output or field-selection behavior changes.
+
+LemmaScript companion lemmas now call right-operand contracts inside the guards for `&&`, `||` and implication.
+The emitter regression fails on the previous implementation and passes with guarded calls. This supplies callee
+contracts only on paths that evaluate the call, preserving its preconditions. Native FileSystem/Path operations,
+Set uniqueness, trimming, JSON serialization and Markdown rendering remain tested boundaries.
+
+Dafny method lowering also keeps lifted Boolean right-operand calls under their evaluation guards; a guarded index
+must not be read before that guard. The extended contract-callers fixture proves both empty and nonempty cases for
+conjunction and disjunction. The wiki module proves 85 obligations; its 35 executable mutations are registered for
+the mutation gate. Final gate counts and the exact landing revision are retained in the lane report.
+
+
+
+## Third-lane batch 29: note redaction and sentence boundaries
+
+The last regex operations in the bootstrap's note path now call seedSanitizeDecision.vibe. Path redaction reads the
+same six prefixes and excluded characters. Host redaction requires ASCII word boundaries on both sides of nyc-digits.
+Whitespace replacement consumes one full run. Sentence ends read punctuation, all closing quotes/brackets, whitespace,
+one optional opener and an ASCII capital or digit; the lookahead text remains unconsumed. Trailing note punctuation is
+removed as an exact prefix with a proved length.
+
+Recursive definitions specify the ordered, non-overlapping replacement and endpoint scans. Runtime loops prove equality
+to those definitions and keep endpoint lists strictly increasing, positive and within the text, meeting sentenceCut's
+precondition. Their 36 obligations pass along with the two imported modules (52 and 33 obligations). Native regex
+equivalence is independently tested: six path prefixes and terminators, both host word boundaries, all 65,536 UTF-16
+units, 6,000 mixed generated strings and 100 KB inputs. Five tests failed first against stubs, then passed.
+
+The production sanitize and wholeSentences functions compose these scans with the already proved sentence cut and
+sentence-ending decision. The caller comparison retains the former native replacements/lookahead and an independent
+sentence-cut oracle, including negative, fractional, infinite and NaN limits. Native trim, string composition and the
+final slice remain tested boundaries. The recursive specification bodies define the reference algorithms; their
+individual range/base contracts do not establish equivalence to the JavaScript regex engine. The inventory names that
+limit explicitly. No native regex operation remains in seed.vibe itself.
+
+Together, batches 25–29 close the requested Mythical capture, area/scope extraction, wiki-build parsing, bootstrap text,
+note redaction/sentence boundaries and new mockRepository/readCommit row. Line splitting/trimming, native codecs and
+external services remain named boundaries. Mutation and final landing receipts are retained in the lane report.
+
+## Third-lane batch 30: long history scans and nonempty evidence captures
+
+The native-expression edge audit found five defects in the unlanded batches 25–26. A whitespace-only evidence
+capture must keep its last unit: greedy whitespace backtracks so the following nonempty capture can match.
+The former extraction dropped that unit. Long descriptions, type scopes, Mythical digit strings and trailing
+blank-line arrays also overflowed recursive runtime scans. The retained regression fails all five cases before the
+fix and passes them after it.
+
+The recursive functions remain reference specifications. Actual first-line, type/scope, whitespace, digit,
+paragraph and selected-name scans now execute as loops with contracts proving equality to those specifications.
+Evidence captureStart explicitly preserves the final unit when its whitespace run reaches the text end.
+Native comparisons include all six evidence keys and line/Unicode whitespace, 100 KB strings and 20,000-line
+trailer paragraphs. The ordinary flow order and external services are unchanged.
+
+This also exposed a LemmaScript conditional-lowering bug: a selected line's method call was evaluated before its
+index guard. Lifted calls now remain in their selected then/else branch. A failing-first emitter regression and
+both guarded-index fixtures cover the fix. Signed/natural conditional result typing is checked as part of the same
+package change; guarded temporaries must accept every value their source branches can produce.
+
+The initial 105-mutant gate rejected 103 by their own contracts. Two old mutations were invalid evidence: one was
+equivalent under native charCodeAt behavior and failed only on a modeled index bound; another produced only an
+invalid slice bound. Both are replaced by genuine behavioral faults. No proof contract or rejection criterion is
+weakened. Fourteen additional executable faults exercise the new loop bridges and nonempty-capture rule.
+
+The current five affected modules prove 268 obligations: seedDecision 56, seedTextDecision 37, trailerDecision 54,
+seedSanitizeDecision 36 and wikiBuildDecision 85. The expanded guarded-call and signed-conditional fixture proves
+20 obligations. Scoped scan coverage remains 100% for all 57 functions and 349 branches in wikiBuildDecision,
+wikiPage and seedSanitizeDecision; this is separate from the whole-app unit/workerd gate.
+
+The retained conditional-method reproduction now verifies both obligations. Standalone capture extraction,
+case-insensitive flags and replacement reproductions still fail with named tool refusals; these failures are
+recorded as boundaries and never counted as rejected mutants.

@@ -5787,7 +5787,7 @@ cases.extend([
 ('src/history/seedDecision.vibe', 'scope-end-comma', 'scopeEnd', 'comma >= 0 && comma < close ? comma : close', 'close', 'the first scope ends at its comma'),
 ('src/history/seedDecision.vibe', 'scope-paren-open', 'parenScope', 'title.charCodeAt(open) !== 40', 'title.charCodeAt(open) !== 41', 'a scope opens with a parenthesis'),
 ('src/history/seedDecision.vibe', 'scope-paren-trim', 'parenScope', 'return title.slice(open + 1, end).trim()', 'return title.slice(open + 1, end)', 'a scope is trimmed'),
-('src/history/seedDecision.vibe', 'scope-blank-type', 'titleScope', 'scope !== "" ? scope : title.slice(0, lowerEnd(title, 0))', 'scope', 'a blank scope falls back to the type'),
+('src/history/seedDecision.vibe', 'scope-blank-type', 'titleScope', 'scope !== "" ? scope : title.slice(0, findLowerEnd(title, 0))', 'scope', 'a blank scope falls back to the type'),
 ('src/history/seedDecision.vibe', 'scope-prefix-lower', 'titleScope', 'title.slice(0, colon).toLowerCase()', 'title.slice(0, colon)', 'a bare prefix reads in lower case'),
 ('src/history/seedDecision.vibe', 'scope-prefix-pattern', 'titleScope', '/^[A-Za-z][\\w./-]*:\\s/', '/^[A-Za-z][\\w./-]*:/', 'a bare prefix is followed by a space'),
 ])
@@ -5802,7 +5802,7 @@ cases.extend([
 ('src/history/seedTextDecision.vibe', 'text-revert-start', 'revertedTitle', 'title.slice(8, title.length - 1)', 'title.slice(7, title.length - 1)', 'the reverted title starts after the quote'),
 ('src/history/seedTextDecision.vibe', 'text-spaces-step', 'spacesEnd', 'return spacesEnd(text, at + 1)', 'return at + 1', 'every leading space is skipped'),
 ('src/history/seedTextDecision.vibe', 'text-evidence-separator', 'evidenceStart', '+ ": " +', '+ ":" +', 'a key and its text are separated by one space'),
-('src/history/seedTextDecision.vibe', 'text-evidence-spaces', 'evidenceStart', 'line.slice(spacesEnd(line, colon + 1))', 'line.slice(colon + 1)', 'spaces after the colon are dropped'),
+('src/history/seedTextDecision.vibe', 'text-evidence-spaces', 'evidenceStart', 'line.slice(start)', 'line.slice(colon + 1)', 'spaces after the colon are dropped'),
 ])
 
 # Lane vl-proveall3, batch 27: the mock repository's commit reads (src/history/mockMainDecision.vibe).
@@ -5884,3 +5884,20 @@ cases.extend([
 ('src/history/seedSanitizeDecision.vibe', 'note-boundaries-loop', 'sentenceEnds', 'found.push(end)', 'found.push(end + 1)', 'the runtime loop retains the exact endpoints'),
 ])
 
+# Lane vl-proveall3, batch 30: bounded-loop execution of history scan specifications and nonempty captures.
+cases.extend([
+('src/history/seedDecision.vibe', 'history-lower-loop', 'findLowerEnd', 'return i', 'return at', 'the whole type is scanned'),
+('src/history/seedDecision.vibe', 'history-unit-loop', 'findUnitFrom', 'return i', 'return -1', 'a found delimiter is returned'),
+('src/history/seedDecision.vibe', 'history-scope-loop', 'readScopeEnd', 'return comma >= 0 && comma < close ? comma : close', 'return close', 'the first comma ends the first scope'),
+('src/history/seedDecision.vibe', 'history-scope-trim', 'readParenScope', 'title.slice(open + 1, end).trim()', 'title.slice(open + 1, end)', 'the scope is trimmed'),
+('src/history/seedTextDecision.vibe', 'history-spaces-loop', 'findSpacesEnd', 'return i', 'return at', 'all leading whitespace is scanned'),
+('src/history/seedTextDecision.vibe', 'history-capture-last', 'captureStart', '? end - 1 : end', '? end : end', 'a nonempty capture retains the final whitespace unit'),
+('src/history/seedTextDecision.vibe', 'history-capture-loop', 'findCaptureStart', '? end - 1 : end', '? end : end', 'the runtime capture start agrees with its nonempty specification'),
+('src/history/trailerDecision.vibe', 'history-name-spec', 'mythicalNameSpec', 'return line.slice(at - 1)', 'return line.slice(at)', 'the reference capture retains its m'),
+('src/history/trailerDecision.vibe', 'history-digits-loop', 'findDigitsStart', 'return i', 'return end', 'all trailing digits are scanned'),
+('src/history/trailerDecision.vibe', 'history-blanks-loop', 'findTextEnd', 'return i', 'return end', 'all trailing blank lines are skipped'),
+('src/history/trailerDecision.vibe', 'history-paragraph-loop', 'findParagraphStart', 'return i', 'return -1', 'a found paragraph start is returned'),
+('src/history/trailerDecision.vibe', 'history-last-loop', 'findLastParagraph', 'end - 1)', 'end)', 'the last paragraph starts before the text end'),
+('src/history/trailerDecision.vibe', 'history-named-loop', 'findFirstNamed', 'return i', 'return -1', 'the first matching name is returned'),
+('src/history/trailerDecision.vibe', 'history-name-missing', 'readNameAt', ': ""', ': "m0"', 'an absent selected line names no commit'),
+])

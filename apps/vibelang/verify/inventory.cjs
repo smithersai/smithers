@@ -112,6 +112,7 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  'src/history/trailerDecision.vibe:mythicalNameSpec': 'Proved matching refusal, name shape and digit/range properties. Defines the recursive capture reference; mythicalName proves equality with a loop over its digit run. Native capture equivalence is independently tested (0018 batch 30).',
   'src/history/seedSanitizeDecision.vibe:matchEnd': 'Proved endpoint bounds and totality. Its body defines the path/host/whitespace match specification; the runtime findMatchEnd proves equality to that definition. Native regex equivalence is tested, not a proved capture model (0018 batch 29).',
   'src/history/seedSanitizeDecision.vibe:boundaryEnd': 'Proved endpoint bounds and totality. Its body defines punctuation, closers and next-initial lookahead; findBoundaryEnd proves equality. Native regex equivalence is tested (0018 batch 29).',
   'src/history/seedSanitizeDecision.vibe:redactedFrom': 'Proved empty-suffix behavior, call safety and termination. Defines the exact ordered replacement recurrence; redactText proves that full recurrence. Native regex equivalence is tested (0018 batch 29).',
@@ -124,7 +125,7 @@ const functionBoundaries = {
   "src/history/MockMythical.vibe:MockMythical": 'Calls the proved executionKey (an operation\u2019s id by its digest, else the next count; 0018 third-lane batch 23). Pages forward to the proved page decisions; the engine, flows, digest and Ref are host boundaries.',
   // Lane vl-proveall3, batch 22: main as a fold reads it.
   "worker/MainLog.vibe:newCommits": 'Calls the proved newCommitOrder (mainLogDecision, 0018 third-lane batch 22) over each commit\u2019s id and parent ids, then formats the chosen commits.',
-  "worker/MainLog.vibe:toCommit": 'Formats a commit: the 12-character id prefix and the title through seed titleOf (its regexp work is recorded at titleOf). No decision.',
+  "worker/MainLog.vibe:toCommit": 'Formats a commit: the 12-character id prefix and the title through seed titleOf (its proved first-line scan and native trim are recorded at titleOf). No decision.',
   "worker/MainLog.vibe:githubMain": 'Calls the proved pageAccepted (status 200) and readsAnotherPage (only after a full page, below MAX_PAGES), and newCommits (0018 third-lane batch 22). HTTP, headers, JSON and Schema decoding remain host boundaries.',
   // Lane vl-proveall3, batch 21: the API Worker's object bodies.
   "worker/apiObjects.vibe:objectOf": 'Native Durable Object stub lookup (`getByName`); a throw becomes `Unreachable`. No decision.',
@@ -163,7 +164,7 @@ const functionBoundaries = {
   'src/web/markdown.vibe:render': 'Builds Foldkit Html from the compiled tree with the proved markdownClass; no other decision.',
   'src/web/markdown.vibe:toHtml': 'Builds HTML from the compiled tree: text and attribute values pass through the proved escapeHtml (no <, > or " in the output), classes through the proved markdownClass. Link resolution is the caller\'s.',
   "scripts/mythical-seed-program.vibe:log": "Not proved: native jj execution, newline framing and Schema/JSON decoding. The minimal JSON-codec reproduction is verify/bugs/json-codec.ts; process exit observation is a host boundary. No all-function proof is claimed.",
-  "scripts/mythical-seed-program.vibe:titlesOf": "Calls seedInputDecision batchEnd and batchRevset for bounded half-open batches and exact present(id) alternatives. Native jj execution, Map writes and commit title normalization remain unproved; the latter uses the regexp.ts boundary.",
+  "scripts/mythical-seed-program.vibe:titlesOf": "Calls seedInputDecision batchEnd and batchRevset for bounded half-open batches and exact present(id) alternatives. Native jj execution and Map writes remain unproved. Commit title normalization calls the proved firstLine scan through seed titleOf; its trim is native.",
   "scripts/mythical-seed-program.vibe:entriesOf": "Calls seedInputDecision receiptCommits (a present empty receipt is authoritative), shortCommits, queueText and knownTitles (input order and multiplicity). Not proved: JSON/Schema decoding, Set deduplication, queue projection and filesystem/jj execution; json-codec.ts records the codec gap.",
   "scripts/mythical-seed-program.vibe:main": "Calls the seed and history replay; their separate proofs do not prove this generator. Not proved: JSON encoding, refusal counting and generated-module formatting, configuration and filesystem writes. JSON encoding is the json-codec.ts tool boundary.",
   "src/history/seed.vibe:scopeOf": "Calls the proved titleScope (seedDecision, 0018 third-lane batch 25): the conventional and bare-prefix patterns decided by LemmaScript’s proved RegExp test, the first scope and the type by proved index walks, trimmed; the prefix lower-cased (exact on its ASCII characters).",
@@ -265,8 +266,8 @@ const functionBoundaries = {
   "src/history/wire.vibe:statusOf": "Calls proved exact forbidden/unavailable/other refusal HTTP status mapping; no codec decision here.",
   "src/history/flows.vibe:signature": "Calls proved exact name/agent signature projection.",
   "src/web/historyApp.vibe:pageOf": "Calls the proved epicIndex (historyDecision); the indexed read of the page is the result.",
-  "src/web/historyApp.vibe:shownCommit": "Calls the proved commitShown; the commit-hash regexp test stays a host boundary (regexp.ts).",
-  "src/web/historyApp.vibe:hashReads": "Calls the proved hashRead; the hash regexp tests (regexp.ts) and Command construction stay host boundaries.",
+  "src/web/historyApp.vibe:shownCommit": "Calls the proved commitShown; the commit-hash literal test is in the supported RegExp subset but is not annotated here.",
+  "src/web/historyApp.vibe:hashReads": "Calls the proved hashRead; the hash literal tests are not annotated here, although in the supported RegExp subset; Command construction remains a host boundary.",
   "src/web/historyApp.vibe:shownReads": "Calls the proved hashRead, readOffsets and filterSearches; collecting Command values is Foldkit host work.",
   "src/web/historyApp.vibe:update": "Each arm calls its proved historyDecision guard or frame (outlineArrival, commitApplies, matchesApply, eventArrival, navigatedFrame and the other nine-field frames, toggleEpic, epicOpenReads, validPlanField, planFields, resolvedRole, signedRole, initialEpic) and spreads it over the model; the HistoryMessage match, the model spread and Command construction are Foldkit types LemmaScript cannot read.",
   "src/web/historyApp.vibe:reasonOf": "Calls the proved failureReason; telling Refused from Unavailable is the Effect error channel.",

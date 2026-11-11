@@ -5,7 +5,7 @@
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
-import { unitFrom } from "./seedDecision.vibe"
+import { findUnitFrom, unitFrom } from "./seedDecision.vibe"
 
 /** A code unit JavaScript's `\s` matches: ECMAScript WhiteSpace and LineTerminator. */
 //@ verify
@@ -28,7 +28,7 @@ export function wordUnit(unit: number): boolean {
 //@ ensures unitFrom(text, 0, 10) >= 0 && unitFrom(text, 0, 10) <= text.length ==> \result == text.slice(0, unitFrom(text, 0, 10))
 //@ ensures forall(i, 0 <= i && i < \result.length ==> \result.charCodeAt(i) != 10)
 export function firstLine(text: string): string {
-  const end = unitFrom(text, 0, 10)
+  const end = findUnitFrom(text, 0, 10)
   return end < 0 ? text : text.slice(0, end)
 }
 
@@ -67,10 +67,47 @@ export function spacesEnd(text: string, at: number): number {
 //@ verify
 //@ ensures !\matches("^(?:Validation|Tests?|Regression|Before|After):\\s*.+$", line) ==> \result == ""
 //@ ensures \result != "" ==> \matches("^(?:Validation|Tests?|Regression|Before|After):\\s*.+$", line)
-//@ ensures \result != "" ==> 0 <= unitFrom(line, 0, 58) && 0 <= spacesEnd(line, unitFrom(line, 0, 58) + 1) && spacesEnd(line, unitFrom(line, 0, 58) + 1) <= line.length && \result == line.slice(0, unitFrom(line, 0, 58)) + ": " + line.slice(spacesEnd(line, unitFrom(line, 0, 58) + 1))
+//@ ensures \result != "" ==> 0 <= unitFrom(line, 0, 58) && 0 <= captureStart(line, unitFrom(line, 0, 58) + 1) && captureStart(line, unitFrom(line, 0, 58) + 1) <= line.length && \result == line.slice(0, unitFrom(line, 0, 58)) + ": " + line.slice(captureStart(line, unitFrom(line, 0, 58) + 1))
 export function evidenceStart(line: string): string {
   if (!/^(?:Validation|Tests?|Regression|Before|After):\s*.+$/.test(line)) return ""
-  const colon = unitFrom(line, 0, 58)
+  const colon = findUnitFrom(line, 0, 58)
   if (colon < 0) return ""
-  return line.slice(0, colon) + ": " + line.slice(spacesEnd(line, colon + 1))
+  const start = findCaptureStart(line, colon + 1)
+  return line.slice(0, colon) + ": " + line.slice(start)
+}
+
+
+/** The whitespace-run specification, executed as a loop. */
+//@ verify
+//@ ensures \result == spacesEnd(text, at)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+export function findSpacesEnd(text: string, at: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && spaceUnit(text.charCodeAt(i))) {
+    //@ invariant at <= i
+    //@ invariant i <= text.length || i == at
+    //@ invariant spacesEnd(text, at) == spacesEnd(text, i)
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** Greedy whitespace before a nonempty capture leaves its final unit when everything after the key is whitespace. */
+//@ verify
+//@ ensures \result == (spacesEnd(text, at) == text.length && text.length > 0 ? text.length - 1 : spacesEnd(text, at))
+//@ ensures 0 <= at && at <= text.length ==> 0 <= \result && \result <= text.length
+export function captureStart(text: string, at: number): number {
+  const end = spacesEnd(text, at)
+  return end === text.length && text.length > 0 ? end - 1 : end
+}
+
+/** The nonempty capture start with its whitespace run executed as a loop. */
+//@ verify
+//@ ensures \result == captureStart(text, at)
+//@ ensures 0 <= at && at <= text.length ==> 0 <= \result && \result <= text.length
+export function findCaptureStart(text: string, at: number): number {
+  const end = findSpacesEnd(text, at)
+  return end === text.length && text.length > 0 ? end - 1 : end
 }

@@ -155,3 +155,27 @@ describe("the history's proved RegExp tests", () => {
     }
   })
 })
+
+
+describe("history capture regressions", () => {
+  it("leaves the final whitespace unit for a nonempty evidence capture", () => {
+    for (const key of ["Validation", "Test", "Tests", "Regression", "Before", "After"]) {
+      for (const suffix of [" ", "  ", "\t", "\n ", "\u00a0", "\ufeff", "\r\n\t", "\n", "   text  "]) {
+        const line = key + ":" + suffix
+        const native = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/.exec(line)
+        expect(evidenceStart(line)).toBe(native === null ? "" : native[1] + ": " + native[2])
+      }
+    }
+  })
+  it("scans long first lines, scopes, digits and trailer paragraphs without overflowing", () => {
+    const word = "a".repeat(100000)
+    const digits = "1".repeat(100000)
+    expect(firstLine(word + "\nbody")).toBe(word)
+    expect(titleScope(word + ": x")).toBe(word)
+    expect(titleScope("A".repeat(100000) + ": x")).toBe(word)
+    expect(titleScope("fix(" + word + ", other): x")).toBe(word)
+    expect(mythicalName("Mythical: m" + digits)).toBe("m" + digits)
+    expect(trailerName(["title", "", "Mythical: m7", ...Array(20000).fill("")])).toBe("m7")
+    expect(trailerName(["title", "", ...Array(20000).fill("Key: value"), "Mythical: m7"])).toBe("m7")
+  })
+})

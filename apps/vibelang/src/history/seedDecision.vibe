@@ -210,12 +210,71 @@ export function parenScope(title: string): string {
 //@ ensures !\matches("^[a-z]+(?:\\([^)]*\\))?!?:\\s", title) && \matches("^[A-Za-z][\\w./-]*:\\s", title) && 0 <= unitFrom(title, 0, 58) && unitFrom(title, 0, 58) <= title.length ==> \result == title.slice(0, unitFrom(title, 0, 58)).toLowerCase()
 export function titleScope(title: string): string {
   if (/^[a-z]+(?:\([^)]*\))?!?:\s/.test(title)) {
-    const scope = parenScope(title)
-    return scope !== "" ? scope : title.slice(0, lowerEnd(title, 0))
+    const scope = readParenScope(title)
+    return scope !== "" ? scope : title.slice(0, findLowerEnd(title, 0))
   }
   if (/^[A-Za-z][\w./-]*:\s/.test(title)) {
-    const colon = unitFrom(title, 0, 58)
+    const colon = findUnitFrom(title, 0, 58)
     return colon < 0 ? "" : title.slice(0, colon).toLowerCase()
   }
   return ""
+}
+
+
+/** The lower-case run specification, executed as a loop for unbounded titles. */
+//@ verify
+//@ ensures \result == lowerEnd(text, at)
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+export function findLowerEnd(text: string, at: number): number {
+  if (at < 0) return at
+  let i = at
+  while (i < text.length && lowerUnit(text.charCodeAt(i))) {
+    //@ invariant at <= i
+    //@ invariant i <= text.length || i == at
+    //@ invariant lowerEnd(text, at) == lowerEnd(text, i)
+    //@ decreases text.length - i
+    i = i + 1
+  }
+  return i
+}
+
+/** The first-unit specification, executed as a loop for unbounded descriptions. */
+//@ verify
+//@ ensures \result == unitFrom(text, at, unit)
+//@ ensures \result == -1 || (0 <= at && at <= \result && \result < text.length && text.charCodeAt(\result) == unit)
+//@ ensures 0 <= at ==> forall(k, at <= k && k < text.length && (\result == -1 || k < \result) ==> text.charCodeAt(k) != unit)
+export function findUnitFrom(text: string, at: number, unit: number): number {
+  if (at < 0) return -1
+  let i = at
+  while (i < text.length) {
+    //@ invariant 0 <= at && at <= i
+    //@ invariant unitFrom(text, at, unit) == unitFrom(text, i, unit)
+    //@ invariant forall(k, at <= k && k < i && k < text.length ==> text.charCodeAt(k) != unit)
+    //@ decreases text.length - i
+    if (text.charCodeAt(i) === unit) return i
+    i = i + 1
+  }
+  return -1
+}
+
+/** The first scope endpoint with both searches executed as loops. */
+//@ verify
+//@ ensures \result == scopeEnd(title, open)
+//@ ensures 0 <= open && \result >= 0 ==> open < \result && \result < title.length
+export function readScopeEnd(title: string, open: number): number {
+  const close = findUnitFrom(title, open + 1, 41)
+  if (close < 0) return -1
+  const comma = findUnitFrom(title, open + 1, 44)
+  return comma >= 0 && comma < close ? comma : close
+}
+
+/** The scope substring with no recursive runtime scan. */
+//@ verify
+//@ ensures \result == parenScope(title)
+export function readParenScope(title: string): string {
+  const open = findLowerEnd(title, 0)
+  if (open >= title.length || title.charCodeAt(open) !== 40) return ""
+  const end = readScopeEnd(title, open)
+  if (end <= open) return ""
+  return title.slice(open + 1, end).trim()
 }

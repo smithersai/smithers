@@ -53,7 +53,7 @@ export function digitsStart(line: string, end: number): number {
 //@ ensures \result != "" ==> \result.length >= 2 && \result.charCodeAt(0) == 109 && line.endsWith(\result)
 //@ ensures \result != "" ==> forall(i, 1 <= i && i < \result.length ==> digitUnit(\result.charCodeAt(i)))
 //@ ensures !\matches("^Mythical:\\s*m\\d+$", line) ==> \result == ""
-export function mythicalName(line: string): string {
+export function mythicalNameSpec(line: string): string {
   if (!/^Mythical:\s*m\d+$/.test(line)) return ""
   const at = digitsStart(line, line.length)
   if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109) return ""
@@ -89,19 +89,19 @@ export function paragraphStart(lines: ReadonlyArray<string>, from: number): numb
 /** The first line from `at` before `end` that names a mythical commit, or -1. */
 //@ verify
 //@ decreases end - at
-//@ ensures \result == -1 || (at <= \result && \result < end && 0 <= \result && \result < lines.length && mythicalName(lines[\result]) != "")
-//@ ensures 0 <= at && end <= lines.length ==> forall(i, at <= i && i < end && (\result == -1 || i < \result) ==> mythicalName(lines[i]) == "")
+//@ ensures \result == -1 || (at <= \result && \result < end && 0 <= \result && \result < lines.length && mythicalNameSpec(lines[\result]) != "")
+//@ ensures 0 <= at && end <= lines.length ==> forall(i, at <= i && i < end && (\result == -1 || i < \result) ==> mythicalNameSpec(lines[i]) == "")
 export function firstNamed(lines: ReadonlyArray<string>, at: number, end: number): number {
   if (at < 0 || at >= end || at >= lines.length) return -1
-  if (mythicalName(lines[at]!) !== "") return at
+  if (mythicalNameSpec(lines[at]!) !== "") return at
   return firstNamed(lines, at + 1, end)
 }
 
 /** The name line `at` gives, `""` past the lines. */
 //@ verify
-//@ ensures \result == (0 <= at && at < lines.length ? mythicalName(lines[at]) : "")
+//@ ensures \result == (0 <= at && at < lines.length ? mythicalNameSpec(lines[at]) : "")
 export function nameAt(lines: ReadonlyArray<string>, at: number): string {
-  return 0 <= at && at < lines.length ? mythicalName(lines[at]!) : ""
+  return 0 <= at && at < lines.length ? mythicalNameSpec(lines[at]!) : ""
 }
 
 /** Where the last paragraph of a message's lines starts, -1 when it has one paragraph. */
@@ -121,9 +121,108 @@ export function lastParagraph(lines: ReadonlyArray<string>): number {
 //@ ensures lastParagraph(lines) >= 0 && !forall(i, lastParagraph(lines) <= i && i < textEnd(lines, lines.length) && i < lines.length ==> trailerLine(lines[i], i - lastParagraph(lines))) ==> \result == ""
 //@ ensures lastParagraph(lines) >= 0 && forall(i, lastParagraph(lines) <= i && i < textEnd(lines, lines.length) && i < lines.length ==> trailerLine(lines[i], i - lastParagraph(lines))) ==> \result == nameAt(lines, firstNamed(lines, lastParagraph(lines), textEnd(lines, lines.length)))
 export function trailerName(lines: ReadonlyArray<string>): string {
-  const start = lastParagraph(lines)
+  const start = findLastParagraph(lines)
   if (start < 0) return ""
-  const end = textEnd(lines, lines.length)
+  const end = findTextEnd(lines, lines.length)
   if (!trailerParagraph(lines.slice(start, end))) return ""
-  return nameAt(lines, firstNamed(lines, start, end))
+  return readNameAt(lines, findFirstNamed(lines, start, end))
+}
+
+
+/** The trailing-digit specification executed as a loop. */
+//@ verify
+//@ requires 0 <= end && end <= line.length
+//@ ensures \result == digitsStart(line, end)
+//@ ensures 0 <= \result && \result <= end
+//@ ensures forall(i, \result <= i && i < end ==> digitUnit(line.charCodeAt(i)))
+//@ ensures \result == 0 || !digitUnit(line.charCodeAt(\result - 1))
+export function findDigitsStart(line: string, end: number): number {
+  let i = end
+  while (i > 0 && digitUnit(line.charCodeAt(i - 1))) {
+    //@ invariant 0 <= i && i <= end
+    //@ invariant digitsStart(line, end) == digitsStart(line, i)
+    //@ invariant forall(k, i <= k && k < end ==> digitUnit(line.charCodeAt(k)))
+    //@ decreases i
+    i = i - 1
+  }
+  return i
+}
+
+/** The native capture with its unbounded digit run executed as a loop. */
+//@ verify
+//@ ensures \result == mythicalNameSpec(line)
+//@ ensures \result != "" ==> \matches("^Mythical:\\s*m\\d+$", line)
+//@ ensures \result != "" ==> \result.length >= 2 && \result.charCodeAt(0) == 109 && line.endsWith(\result)
+//@ ensures \result != "" ==> forall(i, 1 <= i && i < \result.length ==> digitUnit(\result.charCodeAt(i)))
+export function mythicalName(line: string): string {
+  if (!/^Mythical:\s*m\d+$/.test(line)) return ""
+  const at = findDigitsStart(line, line.length)
+  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109) return ""
+  return line.slice(at - 1)
+}
+
+/** The trailing-blank specification executed as a loop. */
+//@ verify
+//@ requires 0 <= end && end <= lines.length
+//@ ensures \result == textEnd(lines, end)
+//@ ensures 0 <= \result && \result <= end
+export function findTextEnd(lines: ReadonlyArray<string>, end: number): number {
+  let i = end
+  while (i > 0 && lines[i - 1] === "") {
+    //@ invariant 0 <= i && i <= end
+    //@ invariant textEnd(lines, end) == textEnd(lines, i)
+    //@ decreases i
+    i = i - 1
+  }
+  return i
+}
+
+/** The last paragraph start executed as a loop. */
+//@ verify
+//@ ensures \result == paragraphStart(lines, from)
+//@ ensures \result == -1 || (2 <= \result && \result <= from && \result < lines.length)
+export function findParagraphStart(lines: ReadonlyArray<string>, from: number): number {
+  if (from < 2 || from >= lines.length) return -1
+  let i = from
+  while (i >= 2) {
+    //@ invariant 1 <= i && i <= from && from < lines.length
+    //@ invariant paragraphStart(lines, from) == paragraphStart(lines, i)
+    //@ decreases i
+    if (lines[i - 1] === "" && lines[i] !== "") return i
+    i = i - 1
+  }
+  return -1
+}
+
+/** The last paragraph with both scans executed as loops. */
+//@ verify
+//@ ensures \result == lastParagraph(lines)
+//@ ensures \result == -1 || (2 <= \result && \result < textEnd(lines, lines.length))
+export function findLastParagraph(lines: ReadonlyArray<string>): number {
+  const end = findTextEnd(lines, lines.length)
+  return findParagraphStart(lines, end - 1)
+}
+
+/** The first name scan executed as a loop; each capture also uses its loop. */
+//@ verify
+//@ ensures \result == firstNamed(lines, at, end)
+//@ ensures \result == -1 || (at <= \result && \result < end && 0 <= \result && \result < lines.length)
+export function findFirstNamed(lines: ReadonlyArray<string>, at: number, end: number): number {
+  if (at < 0 || at >= end || at >= lines.length) return -1
+  let i = at
+  while (i < end && i < lines.length) {
+    //@ invariant 0 <= at && at <= i && i <= end && i <= lines.length
+    //@ invariant firstNamed(lines, at, end) == firstNamed(lines, i, end)
+    //@ decreases end - i
+    if (mythicalName(lines[i]!) !== "") return i
+    i = i + 1
+  }
+  return -1
+}
+
+/** The selected line's name with no recursive runtime scan. */
+//@ verify
+//@ ensures \result == nameAt(lines, at)
+export function readNameAt(lines: ReadonlyArray<string>, at: number): string {
+  return 0 <= at && at < lines.length ? mythicalName(lines[at]!) : ""
 }
