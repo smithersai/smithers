@@ -80,11 +80,14 @@ Smithers.Runtime.Bun({ version: ">=1.4.0" }), ... })` runs that suite through
 target binds that source to exact origins with
 `Smithers.HttpSecret(source, ["https://api.example.com"])`; the source alone is
 not egress authority. The child receives an unguessable placeholder. The
-loopback proxy resolves it once, only after an authorized destination is known,
-and removes an exact value echoed in the bounded response. A mismatched origin
-is denied before any upstream connection. The proxy cannot read an HTTPS
-`CONNECT` tunnel, so it refuses one to a declared audience and passes others
-through. A tool reaches an HTTPS audience through
+loopback proxy resolves it once per request, only after an authorized
+destination is known, and removes every exact value it has resolved during the
+run from every bounded response it returns, so a value an audience stored from
+one request does not come back in a later one. A mismatched origin is denied
+before any upstream connection. The proxy cannot read an HTTPS `CONNECT`
+tunnel, so it refuses one to a declared audience and passes others through
+without redaction: a value that an audience publishes can still be read
+through a tunnel to another host. A tool reaches an HTTPS audience through
 `Smithers.SecretOrigin("https://api.example.com")` in its argv or env: at spawn
 the token becomes a loopback origin that forwards to the audience over TLS and
 substitutes the placeholder. The plan refuses a target whose HTTPS audience no

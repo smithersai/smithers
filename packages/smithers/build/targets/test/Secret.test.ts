@@ -327,6 +327,26 @@ describe("SecretProxy vault", () => {
     expect(request.redactBytes(Buffer.from("echo real-value"))).toEqual(Buffer.from(`echo ${placeholder}`))
   })
 
+  it("redacts a resolved credential from every later request of the vault", () => {
+    const vault = SecretProxy.makeVault({ read: () => "real value" })
+    const placeholder = vault.mint(token)
+    const seeded = vault.request(audience, [{ placeholder: "{seed}", value: "seeded-value" }])
+    expect(seeded.substitutePath(`/${placeholder}`)).toBe("/real%20value")
+    // A later request resolves nothing itself, and still must not return the
+    // value an earlier request wrote out, in either spelling.
+    const later = vault.request("https://other.example.test")
+    expect(later.resolvedDeclarations()).toEqual([])
+    expect(later.redact("stored real value and real%20value")).toBe(`stored ${placeholder} and ${placeholder}`)
+    expect(later.redactBytes(Buffer.from("stored real value"))).toEqual(Buffer.from(`stored ${placeholder}`))
+    // A seed names one request's own destination and stays with that request.
+    expect(seeded.redact("seeded-value")).toBe("{seed}")
+    expect(later.redact("seeded-value")).toBe("seeded-value")
+    // Another vault never resolved the value and has nothing to protect.
+    const other = SecretProxy.makeVault({ read: () => "real value" })
+    other.mint(token)
+    expect(other.request(audience).redact("real value")).toBe("real value")
+  })
+
   it("resolves destination sources without minting a child credential", () => {
     const source = Secret.Secret("DESTINATION_URL")
     const vault = SecretProxy.makeVault({ read: () => "https://rpc.example.test" })
@@ -621,6 +641,68 @@ describe("SecretProxy server", () => {
     expect(result.status).toBe(200)
     expect(result.responseBody).toBe(`echo ${placeholder}`)
     expect(result.responseHeaders["x-echo"]).toBe(placeholder)
+  })
+
+  it("redacts a credential the audience stored when a later request reads it back", async () => {
+    // A write-then-read audience: it keeps the body of `/store` and returns it
+    // from `/fetch`, in the body and in a header.
+    let stored = ""
+    const upstream = NodeHttp.createServer((incoming, response) => {
+      const chunks: Array<Buffer> = []
+      incoming.on("data", (chunk: Buffer) => chunks.push(chunk))
+      incoming.on("end", () => {
+        if (incoming.url === "/store") {
+          stored = Buffer.concat(chunks).toString("utf8")
+          response.end("stored")
+          return
+        }
+        response.writeHead(200, { "x-stored": stored }).end(stored)
+      })
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    if (address === null || typeof address === "string") throw new Error("no upstream port")
+    const origin = `http://127.0.0.1:${address.port}`
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const placeholder = vault.mint(Secret.HttpSecret(token, [origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    const send = (
+      via: string,
+      path: string,
+      method: string,
+      body?: string
+    ): Promise<{ readonly status: number; readonly header: unknown; readonly body: string }> =>
+      new Promise((resolve, reject) => {
+        const outgoing = NodeHttp.request(
+          { host: "127.0.0.1", port: Number(new URL(via).port), method, path },
+          (response) => {
+            const chunks: Array<Buffer> = []
+            response.on("data", (chunk: Buffer) => chunks.push(chunk))
+            response.on("end", () =>
+              resolve({
+                status: response.statusCode ?? 0,
+                header: response.headers["x-stored"],
+                body: Buffer.concat(chunks).toString("utf8")
+              }))
+          }
+        )
+        outgoing.on("error", reject)
+        outgoing.end(body)
+      })
+    try {
+      const store = await send(proxy.endpoint, `${origin}/store`, "POST", `token=${placeholder}`)
+      expect(store).toEqual({ status: 200, header: undefined, body: "stored" })
+      expect(stored).toBe("token=real-value")
+      // The second request carries no placeholder, so it resolves nothing.
+      const fetched = await send(proxy.endpoint, `${origin}/fetch`, "GET")
+      expect(fetched).toEqual({ status: 200, header: `token=${placeholder}`, body: `token=${placeholder}` })
+      // The same read through the audience's brokered origin is redacted too.
+      const brokered = await send(await proxy.originFor(origin), "/fetch", "GET")
+      expect(brokered).toEqual({ status: 200, header: `token=${placeholder}`, body: `token=${placeholder}` })
+    } finally {
+      await proxy.close()
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
   })
 
   it("answers 502 when the declared secret is missing rather than sending a placeholder", async () => {

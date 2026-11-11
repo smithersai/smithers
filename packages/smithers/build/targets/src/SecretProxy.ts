@@ -9,13 +9,16 @@
  *
  * 1. **Request-scoped.** {@link Vault.request} opens an exact-origin boundary.
  *    It resolves each authorized placeholder once while constructing that
- *    request and replaces an exact value echoed in the response.
+ *    request. Its response has every credential value the vault has resolved
+ *    so far replaced, not only the ones this request resolved, so a value an
+ *    audience stored from one request is not handed back by a later one.
  * 2. **Child request fields.** {@link startProxy} runs a local HTTP proxy a
  *    spawned tool is pointed at. Plain-HTTP request headers and bodies are
  *    rewritten. HTTPS `CONNECT` streams remain opaque because the boundary
  *    does not terminate TLS, so a tunnel to a declared audience is refused
  *    before any connection reaches it. Tunnels to other hosts pass through,
- *    since a placeholder is worthless anywhere but this proxy.
+ *    since a placeholder is worthless anywhere but this proxy. Nothing that
+ *    returns through a tunnel is redacted.
  * 3. **Secret destination URLs.** {@link Proxy.urlFor} gives a child a
  *    loopback capability URL. The proxy resolves the real HTTP or HTTPS URL
  *    only when the child calls that capability, then performs the outbound
@@ -31,10 +34,17 @@
  *    audience receives a header credential: `S.SecretOrigin(audience)` in an
  *    exec target's argv or env resolves to that origin at spawn time.
  *
- * The value is read from the host environment at substitution time and kept
- * only in the request-local boundary, never in the durable vault. A run that
- * plans without executing, or never reaches an authorized request, never
+ * The value is read from the host environment at substitution time. From then
+ * on the vault holds it in memory for the rest of the run, only to redact it
+ * from later responses; it is never written to key material or to disk. A run
+ * that plans without executing, or never reaches an authorized request, never
  * reads the variable at all.
+ *
+ * Redaction is exact-match and covers what the proxy returns. It does not
+ * cover a value an audience transforms before returning it, and it does not
+ * cover an opaque `CONNECT` tunnel: a tool that sends a placeholder in a body
+ * or request target to an audience that publishes what it receives can read
+ * the value back through a tunnel to another host.
  *
  * @since 0.1.0
  */
@@ -174,9 +184,14 @@ export interface RequestBoundary {
   readonly substituteHeaders: (
     headers: Readonly<Record<string, string | ReadonlyArray<string> | undefined>>
   ) => Record<string, string | Array<string>>
-  /** Replaces resolved values in response text with their placeholders. */
+  /**
+   * Replaces protected values in response text with their placeholders.
+   *
+   * Protected means the values this boundary was seeded with and every
+   * credential value any boundary of the same vault has resolved so far.
+   */
   readonly redact: (text: string) => string
-  /** Replaces resolved values in response bytes with their placeholders. */
+  /** Replaces the same protected values in response bytes. */
   readonly redactBytes: (bytes: Uint8Array) => Buffer
   /**
    * The environment names this boundary has resolved so far, never a value.
@@ -260,6 +275,16 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
   const read: Read = declaredRead ?? ((name) => process.env[name])
   const byBinding = new Map<string, string>()
   const byPlaceholder = new Map<string, Secret.HttpCredential>()
+  // Every credential value a boundary of this vault has written into a
+  // request, keyed by the exact text that must never come back, so one value
+  // written in two encodings is two entries pointing at one placeholder. It
+  // outlives the request that resolved the value: an audience can store what
+  // one request sent and return it to a later request that resolved nothing.
+  const resolvedValues = new Map<string, string>()
+  const protectValue = (into: Map<string, string>, value: string, placeholder: string): void => {
+    if (value === "" || into.has(value)) return
+    into.set(value, placeholder)
+  }
   const resolveSecret = (secret: Secret.Secret): string => {
     const hostValue = read(secret.env)
     const value = hostValue === undefined ? secret.fallback : hostValue
@@ -306,15 +331,9 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
       const normalized = parsed.origin
       const resolved = new Map<string, string>()
       const declarations = new Set<string>()
-      // Protected text keyed by the exact bytes that must never leave, so one
-      // value written in two encodings is two entries pointing at one
-      // placeholder.
-      const protectedValues = new Map<string, string>()
-      const protectValue = (value: string, placeholder: string): void => {
-        if (value === "" || protectedValues.has(value)) return
-        protectedValues.set(value, placeholder)
-      }
-      for (const entry of protect ?? []) protectValue(entry.value, entry.placeholder)
+      // Seeds name this request's own destination, so they stay with it.
+      const seededValues = new Map<string, string>()
+      for (const entry of protect ?? []) protectValue(seededValues, entry.value, entry.placeholder)
       const replaceIn = (text: string, render: (value: string) => string): string => {
         if (byPlaceholder.size === 0 || !text.includes(placeholderPrefix)) return text
         return text.replace(placeholderPattern, (match) => {
@@ -330,17 +349,19 @@ export const makeVault = (options: { readonly read?: Read | undefined } = {}): V
           const value = previous ?? resolveSecret(credential.secret)
           if (previous === undefined) resolved.set(match, value)
           declarations.add(credential.secret.env)
-          protectValue(value, match)
+          protectValue(resolvedValues, value, match)
           const rendered = render(value)
-          protectValue(rendered, match)
+          protectValue(resolvedValues, rendered, match)
           return rendered
         })
       }
       const substitute = (text: string): string => replaceIn(text, (value) => value)
       // Longest first, so a value that contains another is replaced whole
-      // rather than leaving the remainder of it in the output.
+      // rather than leaving the remainder of it in the output. A seed wins
+      // over a resolved credential that happens to spell the same text.
       const protections = (): ReadonlyArray<readonly [string, string]> =>
-        [...protectedValues.entries()].sort((left, right) => right[0].length - left[0].length)
+        [...new Map([...resolvedValues, ...seededValues]).entries()]
+          .sort((left, right) => right[0].length - left[0].length)
       const redact = (text: string): string => {
         let output = text
         for (const [value, placeholder] of protections()) output = output.split(value).join(placeholder)
@@ -695,11 +716,14 @@ const audienceAt = (
  * can reach it. Requests arrive in absolute form, as an HTTP proxy requires.
  * Request paths, headers, and textual bodies are substituted only after the
  * exact destination origin is known. Upstream bodies are bounded and buffered
- * so exact resolved values can be replaced before the job sees the response.
+ * so every exact value the vault has resolved during the run can be replaced
+ * before the job sees the response, whichever request resolved it.
  *
  * `CONNECT` is tunnelled unless its authority is a declared audience. A
  * placeholder that leaves through a tunnel to any other host is inert: it
  * resolves only through this loopback proxy, and only for its own audiences.
+ * The proxy cannot read a tunnel, so it redacts nothing that returns through
+ * one.
  * A tunnel to an audience is refused, because the placeholder would arrive
  * there encrypted and unresolved. Secret-bearing HTTPS requests use a
  * brokered origin from {@link Proxy.originFor}, or a brokered destination

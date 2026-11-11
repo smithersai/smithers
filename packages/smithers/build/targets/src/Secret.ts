@@ -23,8 +23,10 @@
  *   therefore cannot carry a credential between machines.
  * - **Lazy, request-scoped resolution.** The host variable is read once when
  *   an authorized request needs it, not when PACKAGE.ts is evaluated or planned.
- *   Exact values echoed by the upstream are replaced before the response is
- *   returned to the job.
+ *   Every exact value resolved during the run is replaced in every response
+ *   the proxy returns to the job, so an audience that stored a value from one
+ *   request cannot hand it back in a later one. A response that arrives
+ *   through an opaque `CONNECT` tunnel to another host is not redacted.
  *
  * This replaces the previous model, where a target hardcoded an environment
  * variable name and the exec runner deleted it from every child's environment.

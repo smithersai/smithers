@@ -79,6 +79,11 @@ of it.
 
 ### Fixed
 
+- The secret proxy redacts every credential value its vault has resolved
+  during the run from every response it returns. Redaction covered only the
+  request that resolved the value, so a tool could store a placeholder at the
+  audience in one request and read the real value back in the next (#5056).
+
 - A bubblewrap-confined target that execs a package manager installed outside
   every grant (pnpm under `pnpm/action-setup`) no longer dies with
   `bwrap: execvp pnpm`: the program is resolved on the tool `PATH`, run by its
