@@ -78,6 +78,12 @@ and are interrupted after one second. A timeout records the
 `model_host.fallback_notification` span and a credential-free warning. Every
 resolved fallback credential is removed from text, reasoning, tool IDs, tool
 names, arguments and preflight reasons, including echoes split across chunks.
+Preflight reasons are cut again after JSON decoding, before context budgeting
+or reuse in the answer prompt. A reason emptied by redaction is invalid.
+Tool arguments are buffered until the call ends, then decoded string values
+and keys are cut before durable recording or dispatch. This also removes JSON
+escaped echoes split across provider chunks; safe formatting and numeric
+literals are preserved.
 Malformed message and tool entries are rejected with `400 request_invalid`
 before model resolution.
 

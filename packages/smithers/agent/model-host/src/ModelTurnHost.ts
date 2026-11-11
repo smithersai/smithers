@@ -14,6 +14,7 @@ import { AgentContext, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { createHostDiagnostics } from "./HostDiagnostics.ts"
 import type { HostDiagnostics } from "./HostDiagnostics.ts"
+import { cutCredentialJson } from "./internal/CredentialJson.ts"
 
 /**
  * Provider route and output controls for one model turn.
@@ -204,10 +205,16 @@ export const runModelTurn = <E>(
   diagnostics: HostDiagnostics = createHostDiagnostics()
 ): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError.ModelError | E, ModelStep.Requirements> =>
   Effect.suspend(() => {
-    const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
-    const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+    const additionalCredentials = [
+      ...(options.additionalCredentials ?? []),
+      ...(options.fallbacks ?? []).flatMap((
+        source
+      ) => [source.credential ?? "", ...(source.additionalCredentials ?? [])])
+    ]
+    const text = new StreamingCredentialCutter(options.credential, additionalCredentials)
+    const reasoning = new StreamingCredentialCutter(options.credential, additionalCredentials)
     const cut = (value: string): string => {
-      const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+      const cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
       return cutter.push(value) + cutter.finish()
     }
     const tools = new Map<string, PendingToolCall>()
@@ -251,7 +258,7 @@ export const runModelTurn = <E>(
           const call = {
             id: event.id,
             name: cut(pending.name),
-            arguments: cut(event.arguments ?? pending.arguments)
+            arguments: cutCredentialJson(event.arguments ?? pending.arguments, cut)
           }
           if (host !== undefined) {
             held.push(call)

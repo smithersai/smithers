@@ -47,6 +47,16 @@ export const runContextPreflight = (
     const decoded = ContextPreflight.ContextPreflightInputSchema.safeParse(raw)
     if (!decoded.success) return yield* Effect.fail(invalid())
     const input = decoded.data
+    const additionalCredentials = [
+      ...(options.additionalCredentials ?? []),
+      ...(options.fallbacks ?? []).flatMap((
+        source
+      ) => [source.credential ?? "", ...(source.additionalCredentials ?? [])])
+    ]
+    const cut = (value: string): string => {
+      const cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
+      return cutter.push(value) + cutter.finish()
+    }
     const started = performance.now()
     const durableContext = yield* Effect.context<ModelStep.Requirements>()
     const candidates = input.candidates.filter(({ item }) => !input.wikiOnly || item.kind === "page")
@@ -96,7 +106,7 @@ export const runContextPreflight = (
             params: options.outputTokenLimitSupported === false ? {} : { maxTokens: 2048 }
           })
           let output = ""
-          const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+          const cutter = new StreamingCredentialCutter(options.credential, additionalCredentials)
           let settled = false
           yield* Stream.runForEach(
             fastModelFallback(
@@ -122,8 +132,12 @@ export const runContextPreflight = (
               return bytes(output) > 65536 ? Effect.fail(invalid()) : Effect.void
             }
           )
-          const choices = yield* Effect.try({ try: () => Choices.parse(JSON.parse(output)), catch: invalid })
-          if (!settled || choices.some((choice) => choice.index >= recalled.length)) {
+          // JSON escapes can reconstruct an echo that the raw stream cutter never saw.
+          const choices = yield* Effect.try({
+            try: () => Choices.parse(JSON.parse(output)).map((choice) => ({ ...choice, reason: cut(choice.reason) })),
+            catch: invalid
+          })
+          if (!settled || choices.some((choice) => choice.index >= recalled.length || choice.reason.length === 0)) {
             return yield* Effect.fail(invalid())
           }
           reasons = new Map()

@@ -10,6 +10,7 @@ import { Action, RetryPolicy } from "@smthrs/flow"
 import { CanonicalJson, type Model, ModelError, ModelEvent, type ModelRequest } from "@smthrs/model"
 import { Effect, Exit, Queue, Schema, Stream } from "effect"
 import type { ModelSource } from "./FastModelFallback.ts"
+import { cutCredentialJson } from "./internal/CredentialJson.ts"
 import { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
 
 const Recorded = Schema.Struct({
@@ -70,7 +71,7 @@ const safeModel = (source: ModelSource): Model.Model => ({
         return tail === "" ? [] : [{ type, id, text: tail }]
       }
       let settled = false
-      const argumentsById = new Map<string, StreamingCredentialCutter>()
+      const argumentsById = new Map<string, string>()
       return source.model.stream(request).pipe(
         Stream.mapEffect((event): Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, ModelError.ModelError> => {
           if ("id" in event && cut(event.id) !== event.id) {
@@ -104,24 +105,23 @@ const safeModel = (source: ModelSource): Model.Model => ({
             case "tool-result":
               return Effect.succeed([{ ...event, output: cut(event.output) }])
             case "tool-call-start":
-              argumentsById.set(event.id, cutter())
+              argumentsById.set(event.id, "")
               return Effect.succeed([{ ...event, name: cut(event.name) }])
             case "tool-call-delta": {
               const value = argumentsById.get(event.id)
-              return Effect.succeed([{
-                ...event,
-                arguments: value === undefined ? cut(event.arguments) : value.push(event.arguments)
-              }])
+              // A complete JSON string is needed to cut escaped echoes. Keep
+              // partial arguments out of the journal until their call ends.
+              if (value === undefined) return Effect.succeed([{ ...event, arguments: cut(event.arguments) }])
+              argumentsById.set(event.id, value + event.arguments)
+              return Effect.succeed([])
             }
             case "tool-call-end": {
-              const tail = argumentsById.get(event.id)?.finish() ?? ""
+              const value = event.arguments ?? argumentsById.get(event.id)
               argumentsById.delete(event.id)
-              return Effect.succeed([
-                ...(tail === "" || event.arguments !== undefined
-                  ? []
-                  : [{ type: "tool-call-delta" as const, id: event.id, arguments: tail }]),
-                { ...event, ...(event.arguments === undefined ? {} : { arguments: cut(event.arguments) }) }
-              ])
+              return Effect.succeed([{
+                ...event,
+                ...(value === undefined ? {} : { arguments: cutCredentialJson(value, cut) })
+              }])
             }
             case "retry":
               return Effect.succeed([{ ...event, code: cut(event.code) }])
