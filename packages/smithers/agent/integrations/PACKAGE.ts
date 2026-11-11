@@ -17,7 +17,12 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   // Examples are linted and type-checked with the sources and run by the suite.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   cwd: "packages/smithers/agent/integrations"
 })
 

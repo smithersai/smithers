@@ -8,7 +8,9 @@ sidebar:
 This tutorial takes you from an empty directory to two working results: an
 authenticated call to the GitHub API through `GitHubClient`, and a comment on
 an issue posted as a durable flow step, journaled so a restart replays the
-recorded result instead of posting twice.
+recorded result instead of posting twice. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs steps 3 and 4 as Effect
+code.
 
 You need Node 22.19 or later and a GitHub token with issues write access to a
 repository you own. A classic token with `repo` scope on a test repository
@@ -84,7 +86,7 @@ import { FetchHttpClient } from "effect/http"
 const CommentFlow = Flow.make("comment-flow", {
   payload: GitHub.Actions.CommentOnIssuePayload,
   success: GitHub.Actions.Comment,
-  error: Core.ActionFailure.IntegrationFailure,
+  error: Core.ActionFailure.Failure,
   body: (input) => GitHub.Actions.CommentOnIssue.call(input)
 })
 
@@ -134,6 +136,62 @@ the issue. The action is `tier: "irreversible"`: the engine never retries it
 on its own, and the client never repeats a request. A write whose answer was
 lost reports `outcomeUnknown` instead. [Durable actions](./concepts/durable-actions.md)
 explains the contract.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the viewer read and the
+comment are `effect` functions, and `Viewer` is a `schema` declaration. A
+`.vibe` file reads no `process.env`, so both functions take the environment
+the client reads its token from, and both leave the `HttpClient` to the
+caller: provide `FetchHttpClient.layer` to reach GitHub, or a recording client
+as the test does.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Core, GitHub } from "@smthrs/integrations"
+
+/** Where the client reads `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. */
+type Environment = Readonly<Record<string, string | undefined>>
+
+schema Viewer {
+  readonly login: string
+}
+
+/** Asks GitHub whose token this is, over the `HttpClient` the caller provides. */
+export effect function viewer(env: Environment) {
+  const client = try GitHub.GitHubClient.make({}, env)
+  return try client.request("GET", "/user", undefined, { schema: Viewer })
+}
+
+/** One comment, posted as a durable flow step. */
+export const CommentFlow = Flow.make("comment-flow", {
+  payload: GitHub.Actions.CommentOnIssuePayload,
+  success: GitHub.Actions.Comment,
+  error: Core.ActionFailure.Failure,
+  body: (input) => GitHub.Actions.CommentOnIssue.call(input)
+})
+
+const layer = (env: Environment) =>
+  Layer.mergeAll(GitHub.Actions.layer, Interpreter.layer(CommentFlow)).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, GitHub.GitHubClient.layer({}, env), NodeCrypto.layer))
+  )
+
+/** Posts the comment; the engine journals the result under `executionId`. */
+export effect function comment(env: Environment, input: typeof GitHub.Actions.CommentOnIssuePayload.Type) {
+  const live = layer(env)
+  return try scoped(effect {
+    provide live {
+      return try CommentFlow.execute(input, { executionId: "run-comment-flow" })
+    }
+  })
+}
+```
 
 ## Next steps
 

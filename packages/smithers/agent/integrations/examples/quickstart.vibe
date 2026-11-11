@@ -1,0 +1,41 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Core, GitHub } from "@smthrs/integrations"
+
+/** Where the client reads `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. */
+type Environment = Readonly<Record<string, string | undefined>>
+
+schema Viewer {
+  readonly login: string
+}
+
+/** Asks GitHub whose token this is, over the `HttpClient` the caller provides. */
+export effect function viewer(env: Environment) {
+  const client = try GitHub.GitHubClient.make({}, env)
+  return try client.request("GET", "/user", undefined, { schema: Viewer })
+}
+
+/** One comment, posted as a durable flow step. */
+export const CommentFlow = Flow.make("comment-flow", {
+  payload: GitHub.Actions.CommentOnIssuePayload,
+  success: GitHub.Actions.Comment,
+  error: Core.ActionFailure.Failure,
+  body: (input) => GitHub.Actions.CommentOnIssue.call(input)
+})
+
+const layer = (env: Environment) =>
+  Layer.mergeAll(GitHub.Actions.layer, Interpreter.layer(CommentFlow)).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, GitHub.GitHubClient.layer({}, env), NodeCrypto.layer))
+  )
+
+/** Posts the comment; the engine journals the result under `executionId`. */
+export effect function comment(env: Environment, input: typeof GitHub.Actions.CommentOnIssuePayload.Type) {
+  const live = layer(env)
+  return try scoped(effect {
+    provide live {
+      return try CommentFlow.execute(input, { executionId: "run-comment-flow" })
+    }
+  })
+}

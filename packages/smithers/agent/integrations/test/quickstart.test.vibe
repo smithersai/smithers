@@ -1,0 +1,37 @@
+import { expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { comment, viewer } from "../examples/quickstart.vibe"
+
+const env = { SMITHERS_GITHUB_TOKEN: "test-token" }
+
+/** A GitHub that records each request and answers the two the walkthrough makes. */
+const github = () => {
+  const seen: Array<{ method: string; path: string; authorization: string | undefined }> = []
+  const http = HttpClient.make((request, url) => effect {
+    seen.push({ method: request.method, path: url.pathname, authorization: request.headers["authorization"] })
+    const answer = url.pathname === "/user"
+      ? HttpServerResponse.text(`{"login":"octocat"}`, { status: 200, contentType: "application/json" })
+      : HttpServerResponse.text(`{"id":1,"url":"https://api.github.com/repos/owner/repo/issues/comments/1"}`, { status: 201, contentType: "application/json" })
+    return HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(answer))
+  })
+  return { http, seen }
+}
+
+it.effect("reads the viewer with the token in the Authorization header, in one request", effect () => {
+  const { http, seen } = github()
+  provide HttpClient.HttpClient = http {
+    expect(try viewer(env)).toEqual({ login: "octocat" })
+  }
+  expect(seen).toHaveLength(1)
+  expect(seen[0]).toMatchObject({ method: "GET", path: "/user" })
+  expect(seen[0]!.authorization).toContain("test-token")
+})
+
+it.effect("posts the comment once, as a flow step", effect () => {
+  const { http, seen } = github()
+  const posted = comment(env, { owner: "owner", repo: "repo", issueNumber: 1, body: "Hello from Smithers." })
+  provide HttpClient.HttpClient = http {
+    expect(try posted).toEqual({ id: 1, url: "https://api.github.com/repos/owner/repo/issues/comments/1" })
+  }
+  expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual(["POST /repos/owner/repo/issues/1/comments"])
+})
