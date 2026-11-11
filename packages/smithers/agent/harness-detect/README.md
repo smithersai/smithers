@@ -35,6 +35,7 @@ Path formatting and `PATH` separators follow `host.platform`.
   `"crush version v0.1.11"` is `0.1.11`. The result has escape sequences and
   control characters stripped and is at most `VERSION_MAX_LENGTH` (64)
   characters, so a hostile binary cannot drive the terminal that renders it.
+  A probe that throws or rejects leaves that version `null`; other rows remain available.
 - **The account.** Per vendor, off this user's own files: `.claude.json`'s (in `CLAUDE_CONFIG_DIR` when set, then `~`)
   `oauthAccount` then `.credentials.json`, the Codex `auth.json` `id_token`'s
   `email` claim (decoded, never verified, never returned), the OpenCode
@@ -42,7 +43,11 @@ Path formatting and `PATH` separators follow `host.platform`.
   variable as the last signal. The status is one of `signed-in`, `api-key`,
   `binary-only`, `unavailable`. When `home` is not absolute, no credential
   files are consulted; binaries from absolute search dirs and API-key
-  environment variables still work.
+  environment variables still work. Emails, organization labels, provider names
+  and config-path labels have escape sequences, controls and bidi overrides stripped,
+  are trimmed, and are capped at `ACCOUNT_MAX_LENGTH` (256) characters per field.
+  Fields that become empty are omitted. A throwing credential read leaves that
+  row `binary-only`, without an account, and does not hide other harnesses.
 - **The model flag.** `harnessModelSpec(id)` gives the binary and the flag
   that precedes a model id, and `harnessModels(id)` adds the verified
   suggestions and the argv that lists models. Every entry is read off the
@@ -105,18 +110,22 @@ const host: HarnessHost = {
     }
   },
   version: async (binary) => {
-    const child = Bun.spawn([binary, "--version"], {
-      stdout: "pipe",
-      stderr: "ignore",
-      stdin: "ignore",
-      timeout: VERSION_TIMEOUT_MS,
-      killSignal: "SIGKILL",
-      // The probe sees the allowlist and nothing else, so a session token
-      // never reaches a CLI that is only reporting its version.
-      env: probeEnv(process.env)
-    })
-    const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()])
-    return code === 0 ? parseVersionLine(stdout) : null
+    try {
+      const child = Bun.spawn([binary, "--version"], {
+        stdout: "pipe",
+        stderr: "ignore",
+        stdin: "ignore",
+        timeout: VERSION_TIMEOUT_MS,
+        killSignal: "SIGKILL",
+        // The probe sees the allowlist and nothing else, so a session token
+        // never reaches a CLI that is only reporting its version.
+        env: probeEnv(process.env)
+      })
+      const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()])
+      return code === 0 ? parseVersionLine(stdout) : null
+    } catch {
+      return null
+    }
   }
 }
 
@@ -143,19 +152,25 @@ allowlist is shared so every adapter drops the same things.
 
 ## Exports
 
-| Export                                       | What it is                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------ |
-| `detectHarnessesWith(host)`                  | The whole table: one `Harness` row per contract id, in order       |
-| `HarnessHost`                                | The injected host interface                                        |
-| `HarnessId`                                  | One of `HARNESS_IDS`                                               |
-| `DETECTORS`                                  | The table itself: binary, launch argv, model table, sign-in signal |
-| `Detector`, `Signal`, `HarnessModels`        | The table's types                                                  |
-| `harnessCandidateDirs(host)`                 | The dirs searched before `PATH`, in order                          |
-| `findBinary(name, host)`                     | The first candidate dir, then `PATH` entry, holding a binary       |
-| `harnessModels(id)` / `harnessModelSpec(id)` | The model flag, suggestions and list argv                          |
-| `decodeJwtClaims(token)`                     | A JWT payload, unverified, never throwing                          |
-| `parseVersionLine(output)`                   | The version out of a CLI banner                                    |
-| `probeEnv(source)` / `PROBE_ENV_KEYS`        | The environment a `--version` probe child gets                     |
-| `modelProbeEnv(id, source)`                  | The environment a model-list probe child gets                      |
-| `VERSION_TIMEOUT_MS`                         | The budget one `--version` gets                                    |
-| `VERSION_MAX_LENGTH`                         | The longest version string `parseVersionLine` returns              |
+| Export                                       | What it is                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| `detectHarnessesWith(host)`                  | The whole table: one `Harness` row per contract id, in order        |
+| `HarnessHost`                                | The injected host interface                                         |
+| `HarnessId`                                  | One of `HARNESS_IDS`                                                |
+| `DETECTORS`                                  | The table itself: binary, launch argv, model table, sign-in signal  |
+| `Detector`, `Signal`, `HarnessModels`        | The table's types                                                   |
+| `harnessCandidateDirs(host)`                 | The dirs searched before `PATH`, in order                           |
+| `findBinary(name, host)`                     | The first candidate dir, then `PATH` entry, holding a binary        |
+| `harnessModels(id)` / `harnessModelSpec(id)` | The model flag, suggestions and list argv                           |
+| `decodeJwtClaims(token)`                     | A JWT payload, unverified, never throwing                           |
+| `parseVersionLine(output)`                   | The version out of a CLI banner                                     |
+| `probeEnv(source)` / `PROBE_ENV_KEYS`        | The environment a `--version` probe child gets                      |
+| `modelProbeEnv(id, source)`                  | The environment a model-list probe child gets                       |
+| `VERSION_TIMEOUT_MS`                         | The budget one `--version` gets                                     |
+| `ACCOUNT_MAX_LENGTH`                         | The longest email or label a harness account carries                |
+| `sanitizeDisplayText(value)`                 | Control-free, trimmed text before a display field applies its bound |
+| `VERSION_MAX_LENGTH`                         | The longest version string `parseVersionLine` returns               |
+
+Account field lengths are also enforced by `HarnessSchema` at the RPC boundary.
+`sanitizeDisplayText` is shared by account readers and `parseVersionLine`; callers
+of the sanitizer apply the bound appropriate to their field.

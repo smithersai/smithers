@@ -10,6 +10,7 @@
  * @since 0.1.0
  */
 
+export { ACCOUNT_MAX_LENGTH } from "@smthrs/rpc/LocalApp"
 export { detectHarnessesWith } from "./Detect.ts"
 export {
   decodeJwtClaims,
@@ -20,6 +21,7 @@ export {
   OPENCODE_KIMI_MODEL
 } from "./Detectors.ts"
 export type { Detector, HarnessModels, Signal } from "./Detectors.ts"
+export { sanitizeDisplayText } from "./DisplayText.ts"
 export { findBinary, harnessCandidateDirs } from "./HarnessHost.ts"
 export type { HarnessHost, HarnessId } from "./HarnessHost.ts"
 export {

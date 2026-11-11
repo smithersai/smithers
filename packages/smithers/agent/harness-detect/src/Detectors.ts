@@ -15,7 +15,8 @@
  */
 
 import type { HarnessModelSpec } from "@smthrs/rpc/AgentRoles"
-import type { Harness } from "@smthrs/rpc/LocalApp"
+import { ACCOUNT_MAX_LENGTH, type Harness } from "@smthrs/rpc/LocalApp"
+import { sanitizeDisplayText } from "./DisplayText.ts"
 import type { HarnessHost, HarnessId } from "./HarnessHost.ts"
 import {
   envDir,
@@ -83,7 +84,21 @@ export const OPENCODE_KIMI_MODEL = "kimi-for-coding/k3"
  */
 export const OPENCODE_CEREBRAS_MODEL = "cerebras/qwen-3.8-27b"
 
-const apiKey = (name: string): Signal => ({ status: "api-key", account: { label: name } })
+const accountText = (value: unknown): string =>
+  typeof value === "string"
+    ? sanitizeDisplayText(value).slice(0, ACCOUNT_MAX_LENGTH).replace(/[\uD800-\uDBFF]$/, "").trimEnd()
+    : ""
+
+const accountOf = (fields: { readonly email?: unknown; readonly label?: unknown }): NonNullable<Harness["account"]> => {
+  const email = accountText(fields.email)
+  const label = accountText(fields.label)
+  return {
+    ...(email === "" ? {} : { email }),
+    ...(label === "" ? {} : { label })
+  }
+}
+
+const apiKey = (name: string): Signal => ({ status: "api-key", account: accountOf({ label: name }) })
 
 /**
  * How a harness takes a model on its command line (docs/workbench-lanes/
@@ -147,10 +162,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
         const { emailAddress, organizationName } = oauth as Record<string, unknown>
         return {
           status: "signed-in",
-          account: {
-            ...(nonEmptyString(emailAddress) ? { email: emailAddress } : {}),
-            ...(nonEmptyString(organizationName) ? { label: organizationName } : {})
-          }
+          account: accountOf({ email: emailAddress, label: organizationName })
         }
       }
       if (host.isFile(join(configDir, ".credentials.json"))) return { status: "signed-in", account: null }
@@ -173,11 +185,11 @@ export const DETECTORS: ReadonlyArray<Detector> = [
         const { id_token, access_token } = tokens as Record<string, unknown>
         const claims = decodeJwtClaims(id_token)
         const email = claims?.email
-        if (nonEmptyString(email)) return { status: "signed-in", account: { email } }
+        if (nonEmptyString(email)) return { status: "signed-in", account: accountOf({ email }) }
         if (nonEmptyString(id_token) || nonEmptyString(access_token)) return { status: "signed-in", account: null }
       }
       if (nonEmptyString(auth?.OPENAI_API_KEY)) {
-        return { status: "api-key", account: { label: "auth.json OPENAI_API_KEY" } }
+        return { status: "api-key", account: accountOf({ label: "auth.json OPENAI_API_KEY" }) }
       }
       const key = firstEnv(host.env, ["OPENAI_API_KEY"])
       return key === undefined ? binaryOnly : apiKey(key)
@@ -196,7 +208,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       if (host.isFile(join(root, "oauth_creds.json"))) {
         const accounts = readJson(host, join(root, "google_accounts.json"))
         const active = accounts?.active
-        return { status: "signed-in", account: nonEmptyString(active) ? { email: active } : null }
+        return { status: "signed-in", account: nonEmptyString(active) ? accountOf({ email: active }) : null }
       }
       const key = firstEnv(host.env, ["GEMINI_API_KEY", "GOOGLE_API_KEY"])
       return key === undefined ? binaryOnly : apiKey(key)
@@ -213,7 +225,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const share = envDir(host, "KIMI_SHARE_DIR", join(host.home, ".kimi"))
       if (host.isFile(join(share, "credentials", "kimi-code.json"))) {
-        return { status: "signed-in", account: { label: "kimi-code" } }
+        return { status: "signed-in", account: accountOf({ label: "kimi-code" }) }
       }
       return binaryOnly
     }
@@ -244,7 +256,12 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       const providers = auth === null ? [] : Object.keys(auth).filter((id) => hasNonEmptyStringDeep(auth[id]))
-      if (providers.length > 0) return { status: "signed-in", account: { label: providers.join(", ") } }
+      if (providers.length > 0) {
+        return {
+          status: "signed-in",
+          account: accountOf({ label: providers.map(sanitizeDisplayText).filter((id) => id !== "").join(", ") })
+        }
+      }
       const key = firstEnv(host.env, [
         "OPENCODE_API_KEY",
         "ANTHROPIC_API_KEY",
@@ -279,7 +296,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["kimi-for-coding"])) {
-        return { status: "signed-in", account: { label: "kimi-for-coding" } }
+        return { status: "signed-in", account: accountOf({ label: "kimi-for-coding" }) }
       }
       const key = firstEnv(host.env, ["KIMI_API_KEY"])
       return key === undefined ? binaryOnly : apiKey(key)
@@ -305,7 +322,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["cerebras"])) {
-        return { status: "signed-in", account: { label: "cerebras" } }
+        return { status: "signed-in", account: accountOf({ label: "cerebras" }) }
       }
       const key = firstEnv(host.env, ["CEREBRAS_API_KEY"])
       return key === undefined ? binaryOnly : apiKey(key)
@@ -325,7 +342,9 @@ export const DETECTORS: ReadonlyArray<Detector> = [
         join(host.home, ".config", "crush", "crush.json")
       ]
       const found = configs.find((path) => hasNonEmptyStringDeep(readJsonAny(host, path)))
-      return found === undefined ? binaryOnly : { status: "signed-in", account: { label: tilde(host, found) } }
+      return found === undefined
+        ? binaryOnly
+        : { status: "signed-in", account: accountOf({ label: tilde(host, found) }) }
     }
   },
   {
@@ -339,7 +358,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       if (key !== undefined) return apiKey(key)
       const secrets = join(host.home, ".config", "amp", "secrets.json")
       return hasNonEmptyStringDeep(readJsonAny(host, secrets))
-        ? { status: "signed-in", account: { label: tilde(host, secrets) } }
+        ? { status: "signed-in", account: accountOf({ label: tilde(host, secrets) }) }
         : binaryOnly
     }
   },
@@ -358,7 +377,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
         ? join(host.home, ".cursor", "auth.json")
         : join(envDir(host, "XDG_CONFIG_HOME", join(host.home, ".config")), "cursor", "auth.json")
       return hasNonEmptyStringDeep(readJsonAny(host, auth))
-        ? { status: "signed-in", account: { label: tilde(host, auth) } }
+        ? { status: "signed-in", account: accountOf({ label: tilde(host, auth) }) }
         : binaryOnly
     }
   },
@@ -373,10 +392,12 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const auth = join(host.home, ".hermes", "auth.json")
       if (hasNonEmptyStringDeep(readJsonAny(host, auth))) {
-        return { status: "signed-in", account: { label: tilde(host, auth) } }
+        return { status: "signed-in", account: accountOf({ label: tilde(host, auth) }) }
       }
       const config = join(host.home, ".hermes", "config.yaml")
-      return host.isFile(config) ? { status: "signed-in", account: { label: tilde(host, config) } } : binaryOnly
+      return host.isFile(config)
+        ? { status: "signed-in", account: accountOf({ label: tilde(host, config) }) }
+        : binaryOnly
     }
   },
   {
@@ -388,7 +409,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       const { join } = hostPath(host)
       const auth = join(host.home, ".pi", "agent", "auth.json")
       return hasNonEmptyStringDeep(readJsonAny(host, auth))
-        ? { status: "signed-in", account: { label: tilde(host, auth) } }
+        ? { status: "signed-in", account: accountOf({ label: tilde(host, auth) }) }
         : binaryOnly
     }
   }

@@ -1,5 +1,5 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
-import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
+import { HARNESS_IDS, HarnessSchema } from "@smthrs/rpc/LocalApp"
 import { delimiter, join, posix, win32 } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
@@ -76,6 +76,167 @@ describe("version output at the detection boundary", () => {
       versions: { "/usr/bin/claude": output }
     }))
     expect(rows.find((row) => row.id === "claude")?.version).toBe(expected)
+  })
+})
+
+describe("failed host probes", () => {
+  test.each(["reject", "throw"] as const)("a version %s affects only its own row", async (failure) => {
+    const h = host({
+      binaries: ["/usr/bin/claude", "/usr/bin/codex"],
+      env: { ANTHROPIC_API_KEY: "credential" }
+    })
+    const rows = await detectHarnessesWith({
+      ...h,
+      version: (binary) => {
+        if (binary.endsWith("/codex")) {
+          if (failure === "throw") throw new Error("EACCES")
+          return Promise.reject(new Error("EACCES"))
+        }
+        return h.version(binary)
+      }
+    })
+    expect(rows.map((row) => row.id)).toEqual(HARNESS_IDS)
+    expect(rows.find((row) => row.id === "claude")).toMatchObject({
+      version: "1.2.3",
+      status: "api-key",
+      account: { label: "ANTHROPIC_API_KEY" }
+    })
+    expect(rows.find((row) => row.id === "codex")).toMatchObject({
+      binary: "/usr/bin/codex",
+      version: null,
+      status: "binary-only",
+      account: null
+    })
+    expect(rows.find((row) => row.id === "gemini")).toMatchObject({ status: "unavailable", version: null })
+  })
+
+  test.each(["readText", "isFile"] as const)("a throwing credential %s leaves a binary-only row", async (read) => {
+    const h = host({
+      binaries: ["/usr/bin/claude", "/usr/bin/codex"],
+      env: { OPENAI_API_KEY: "credential" }
+    })
+    const rows = await detectHarnessesWith({
+      ...h,
+      readText: (path) => {
+        if (read === "readText" && path.endsWith("/.claude.json")) throw new Error("EIO")
+        return h.readText(path)
+      },
+      isFile: (path) => {
+        if (read === "isFile" && path.endsWith("/.credentials.json")) throw new Error("EACCES")
+        return h.isFile(path)
+      }
+    })
+    expect(rows.map((row) => row.id)).toEqual(HARNESS_IDS)
+    expect(rows.find((row) => row.id === "claude")).toMatchObject({
+      binary: "/usr/bin/claude",
+      version: "1.2.3",
+      status: "binary-only",
+      account: null
+    })
+    expect(rows.find((row) => row.id === "codex")).toMatchObject({
+      version: "1.2.3",
+      status: "api-key",
+      account: { label: "OPENAI_API_KEY" }
+    })
+  })
+})
+
+describe("account display text", () => {
+  test.each([
+    [" \u001b]0;title\u0007\u001b[2Jperson@example.test\u001b[0m ", "person@example.test"],
+    ["\u001b]title\u001b\\Org", "Org"],
+    ["\u0000\u0007a\nb\r\t\u007f\u009b\u200e\u200f\u202a\u202e\u2066\u2069", "ab"],
+    [" José 日本語 🐈 ", "José 日本語 🐈"],
+    ["a\u061cb", "ab"],
+    ["\u061c", ""],
+    ["a".repeat(255), "a".repeat(255)],
+    ["a".repeat(256), "a".repeat(256)],
+    ["a".repeat(257), "a".repeat(256)],
+    ["a".repeat(255) + " b", "a".repeat(255)],
+    ["a".repeat(255) + "🐈", "a".repeat(255)],
+    ["a".repeat(254) + "🐈", "a".repeat(254) + "🐈"],
+    ["a".repeat(1_000_000), "a".repeat(256)],
+    ["\u001b[2J\u0007\u202e", ""],
+    ["  ", ""],
+    ["", ""]
+  ])("bounds and cleans every file-derived field (%#)", async (value, expected) => {
+    const h = host({
+      binaries: ["/usr/bin/claude", "/usr/bin/codex", "/usr/bin/gemini", "/usr/bin/opencode"],
+      env: { CLAUDE_CONFIG_DIR: "/config/claude", CODEX_HOME: "/config/codex", GEMINI_DIR: "/config/gemini" },
+      files: {
+        "/config/claude/.claude.json": JSON.stringify({
+          oauthAccount: { emailAddress: value, organizationName: value }
+        }),
+        "/config/codex/auth.json": JSON.stringify({ tokens: { id_token: jwt({ email: value }) } }),
+        "/config/gemini/oauth_creds.json": "{}",
+        "/config/gemini/google_accounts.json": JSON.stringify({ active: value }),
+        "/Users/u/.local/share/opencode/auth.json": JSON.stringify({ [value]: { key: "credential" } })
+      }
+    })
+    const rows = await detectHarnessesWith(h)
+    for (const id of ["claude", "codex", "gemini", "opencode"]) {
+      const row = rows.find((row) => row.id === id)!
+      expect(row.status).toBe("signed-in")
+      if (id === "claude" || id === "codex" || id === "gemini") {
+        expect(row.account?.email?.length ?? 0).toBeLessThanOrEqual(256)
+        expect(row.account?.email).toBe(expected === "" ? undefined : expected)
+      }
+      if (id === "claude" || id === "opencode") {
+        expect(row.account?.label?.length ?? 0).toBeLessThanOrEqual(256)
+        expect(row.account?.label).toBe(expected === "" ? undefined : expected)
+      }
+      expect(HarnessSchema.safeParse(row).success).toBe(true)
+    }
+  })
+
+  test("invalid account field types are omitted without losing sign-in status", async () => {
+    for (const value of [null, 42, [], {}, false]) {
+      const rows = await detectHarnessesWith(host({
+        binaries: ["/usr/bin/claude", "/usr/bin/codex", "/usr/bin/gemini"],
+        files: {
+          "/Users/u/.claude.json": JSON.stringify({ oauthAccount: { emailAddress: value, organizationName: value } }),
+          "/Users/u/.codex/auth.json": JSON.stringify({ tokens: { id_token: jwt({ email: value }) } }),
+          "/Users/u/.gemini/oauth_creds.json": "{}",
+          "/Users/u/.gemini/google_accounts.json": JSON.stringify({ active: value })
+        }
+      }))
+      for (const id of ["claude", "codex", "gemini"]) {
+        const row = rows.find((row) => row.id === id)!
+        expect(row.status).toBe("signed-in")
+        expect(row.account?.email).toBeUndefined()
+        expect(row.account?.label).toBeUndefined()
+      }
+    }
+  })
+
+  test("OpenCode cleans each provider before joining and caps the combined label", async () => {
+    const rows = await detectHarnessesWith(host({
+      binaries: ["/usr/bin/opencode"],
+      files: {
+        "/Users/u/.local/share/opencode/auth.json": JSON.stringify({
+          "\u001b[2J": { key: "credential" },
+          " \u001b[31mfirst\u001b[0m ": { key: "credential" },
+          ["second" + "x".repeat(300)]: { key: "credential" },
+          unused: {}
+        })
+      }
+    }))
+    expect(rows.find((row) => row.id === "opencode")?.account).toEqual({
+      label: ("first, second" + "x".repeat(300)).slice(0, 256)
+    })
+  })
+
+  test("a config directory used as an account label is also bounded and control-free", async () => {
+    const configDir = "/xdg/\u001b[31m" + "x".repeat(300)
+    const rows = await detectHarnessesWith(host({
+      binaries: ["/usr/bin/cursor-agent"],
+      platform: "linux",
+      env: { XDG_CONFIG_HOME: configDir },
+      files: { [configDir + "/cursor/auth.json"]: JSON.stringify({ token: "credential" }) }
+    }))
+    expect(rows.find((row) => row.id === "cursor-agent")?.account).toEqual({
+      label: ("/xdg/" + "x".repeat(300) + "/cursor/auth.json").slice(0, 256)
+    })
   })
 })
 

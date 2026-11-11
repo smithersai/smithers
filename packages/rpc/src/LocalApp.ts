@@ -34,6 +34,14 @@ export const HARNESS_IDS = [
 ] as const
 
 /**
+ * The longest email or label displayed for a harness account.
+ *
+ * @since 0.1.0
+ * @category constants
+ */
+export const ACCOUNT_MAX_LENGTH = 256
+
+/**
  * Validates harness values at the RPC boundary.
  *
  * @since 1.0.0
@@ -45,7 +53,10 @@ export const HarnessSchema = z.object({
   binary: z.string().nullable(),
   version: z.string().nullable(),
   status: z.enum(["signed-in", "api-key", "binary-only", "unavailable"]),
-  account: z.object({ email: z.string().optional(), label: z.string().optional() }).nullable(),
+  account: z.object({
+    email: z.string().max(ACCOUNT_MAX_LENGTH).optional(),
+    label: z.string().max(ACCOUNT_MAX_LENGTH).optional()
+  }).nullable(),
   launch: z.object({ argv: z.array(z.string()) }),
   /**
    * How this harness takes a model (the `HarnessModels` table in

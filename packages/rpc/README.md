@@ -1,6 +1,6 @@
 # @smthrs/rpc
 
-`LocalApp` defines harness, repository, file, and target records. `LocalLsp` defines code intelligence. `CloudTunnel` defines the cloud proxy, terminal tunnel, and sign-in contracts.
+`LocalApp` defines harness, repository, file, and target records. `HarnessSchema` bounds each account email and label to `ACCOUNT_MAX_LENGTH` (256) characters. `LocalLsp` defines code intelligence. `CloudTunnel` defines the cloud proxy, terminal tunnel, and sign-in contracts.
 
 Shared product contracts for the local host, browser, and server. Import them from the root, where each module is a namespace: `import { LocalApp, TargetGraph } from "@smthrs/rpc"`. The root reaches no `node:` or `bun:` built-in. One module stays off it: `FormInstructions.generated.ts`, whose `FORM_INSTRUCTION_FIELDS` is part of `UiInstruction`. The `@smthrs/rpc/<Module>` subpaths still resolve because existing TUI, package and site files import them; new code uses the root.
 

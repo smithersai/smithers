@@ -11,6 +11,7 @@
 
 import * as NodePath from "node:path"
 import { harnessModels } from "./Detectors.ts"
+import { sanitizeDisplayText } from "./DisplayText.ts"
 
 /**
  * How long one `--version` may take before it is reported as null.
@@ -28,12 +29,6 @@ export const VERSION_TIMEOUT_MS = 3000
  */
 export const VERSION_MAX_LENGTH = 64
 
-/** ANSI CSI and OSC sequences, then any remaining C0/C1 control or bidi override. */
-// eslint-disable-next-line no-control-regex -- control characters are exactly what this strips.
-const ESCAPE_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g
-// eslint-disable-next-line no-control-regex -- control characters are exactly what this strips.
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
-
 /**
  * The version out of a CLI's banner: "2.1.247 (Claude Code)" -> "2.1.247";
  * "crush version v0.1.11" -> "0.1.11"; else the first non-empty line.
@@ -47,7 +42,7 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u20
  */
 export const parseVersionLine = (output: string): string | null => {
   const firstLine = output.split("\n")
-    .map((line) => line.replace(ESCAPE_SEQUENCE, "").replace(CONTROL, "").trim())
+    .map(sanitizeDisplayText)
     .find((line) => line !== "")
   if (firstLine === undefined) return null
   const match = /\d+\.\d+(?:\.\d+)?[0-9A-Za-z.+-]*/.exec(firstLine)

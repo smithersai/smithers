@@ -92,6 +92,17 @@ describe("the harness wire model", () => {
     expect(parsed.models).toBeUndefined()
   })
 
+  test.each(["email", "label"])("bounds account %s at the wire boundary", (field) => {
+    for (const length of [0, 255, 256]) {
+      const row = { ...harness, account: { [field]: "x".repeat(length) } }
+      expect(HarnessSchema.parse(row)).toEqual(row)
+    }
+    for (const length of [257, 1_000_000]) {
+      const row = { ...harness, account: { [field]: "x".repeat(length) } }
+      expect(HarnessSchema.safeParse(row).success).toBe(false)
+    }
+  })
+
   test("an unknown harness id or sign-in state is refused, and a missing account is not the same as no account", () => {
     expect(HarnessSchema.safeParse({ ...harness, id: "claude-code" }).success).toBe(false)
     expect(HarnessSchema.safeParse({ ...harness, status: "logged-in" }).success).toBe(false)

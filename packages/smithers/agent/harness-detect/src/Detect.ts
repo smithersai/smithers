@@ -5,11 +5,19 @@
  */
 
 import type { Harness } from "@smthrs/rpc/LocalApp"
-import { DETECTORS } from "./Detectors.ts"
+import { type Detector, DETECTORS, type Signal } from "./Detectors.ts"
 import { findBinary } from "./HarnessHost.ts"
 import type { HarnessHost } from "./HarnessHost.ts"
 import { isAbsoluteHostPath } from "./internal/Read.ts"
 import { parseVersionLine } from "./Probe.ts"
+
+const readSignal = (detector: Detector, host: HarnessHost): Signal => {
+  try {
+    return detector.signal(host)
+  } catch {
+    return { status: "binary-only", account: null }
+  }
+}
 
 /**
  * Every harness id, in contract order, whether installed or not.
@@ -19,7 +27,9 @@ import { parseVersionLine } from "./Probe.ts"
  * parallel, so a caller waits for the slowest CLI once rather than for the
  * sum of them.
  * Returned versions are parsed, stripped of controls and bounded even when
- * the host supplies raw probe output. A relative home disables credential file
+ * the host supplies raw probe output. A failed version probe returns a null
+ * version; a failed credential read leaves that row binary-only. Neither
+ * failure hides other harnesses. A relative home disables credential file
  * reads; installed binaries and environment API-key signals still work.
  *
  * @category detection
@@ -29,10 +39,17 @@ export const detectHarnessesWith = async (host: HarnessHost): Promise<Array<Harn
   const signalHost = isAbsoluteHostPath(host, host.home) ? host : { ...host, isFile: () => false, readText: () => null }
   const found = DETECTORS.map((detector) => ({ detector, binary: findBinary(detector.binary, host) }))
   const versions = await Promise.all(
-    found.map(({ binary }) => (binary === null ? Promise.resolve(null) : host.version(binary)))
+    found.map(async ({ binary }) => {
+      if (binary === null) return null
+      try {
+        return await host.version(binary)
+      } catch {
+        return null
+      }
+    })
   )
   return found.map(({ binary, detector }, index) => {
-    const signal = binary === null ? null : detector.signal(signalHost)
+    const signal = binary === null ? null : readSignal(detector, signalHost)
     return {
       id: detector.id,
       displayName: detector.displayName,
