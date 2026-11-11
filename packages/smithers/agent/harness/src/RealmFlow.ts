@@ -164,7 +164,7 @@ export const version = digestSync(JSON.stringify({
   prelude,
   harden,
   compiler: getVersion(),
-  transport: 1,
+  transport: 2,
   limits: {
     memoryBytes: 64 * 1024 * 1024,
     stackBytes: QuickJSLifecycle.stackBytes,
@@ -221,7 +221,9 @@ export const step = (input: Input): Effect.Effect<Result, RealmFlowError, QuickJ
 try { const exports = {}; (0, eval)(${
               JSON.stringify("(function(exports, require) {" + compiled + "\n})")
             })(exports, require);
-result = __run(exports.default, ${JSON.stringify({ ...input, receipts: input.receipts ?? [] })}); }
+result = __run(exports.default, JSON.parse(${
+              JSON.stringify(JSON.stringify({ ...input, receipts: input.receipts ?? [] }))
+            })); }
 catch (error) { if (__refusal === undefined) throw error; }
 if (__refusal !== undefined) return JSON.stringify({ _tag: 'Refused', code: __refusal });
 const output = JSON.stringify(result); if (new TextEncoder().encode(output).byteLength > 262144) throw Error('output_limit'); return output; })()`

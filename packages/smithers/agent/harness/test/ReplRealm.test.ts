@@ -89,6 +89,106 @@ describe("sandbox boundary regressions", () => {
   })
 })
 
+describe("a cell that rewrites Array.prototype (#4820)", () => {
+  const frames = (
+    steps: ReadonlyArray<{ readonly cell: string; readonly flows?: Readonly<Record<string, Cell.FlowProjection>> }>,
+    limits?: Sandbox.Limits
+  ) =>
+    Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.make
+      const realm = yield* sandbox.openRealm!({ flows, limits })
+      const out: Array<Sandbox.RealmFrame> = []
+      for (const [index, step] of steps.entries()) {
+        out.push(
+          yield* realm.evaluate({
+            cell: Cell.source(step.cell),
+            frame: index,
+            call: succeeds,
+            ...(step.flows === undefined ? {} : { flows: step.flows })
+          })
+        )
+      }
+      return out
+    }).pipe(Effect.scoped)
+
+  const sabotage = `Array.prototype.indexOf = function () { return 0 }
+Array.prototype.push = function () { return 0 }
+Array.prototype.pop = function () { return undefined }
+Array.prototype.forEach = function () { throw new Error("forEach is gone") }
+Promise.prototype.then = function () { return "not a promise" }
+Object.defineProperty(Array.prototype, "0", { configurable: true, set: function () {} })
+Object.defineProperty(Object.prototype, "get", { configurable: true, value: function () { return 0 } })`
+
+  it("still weighs and names the realm, so the memory budget still refuses", async () => {
+    const run = await Effect.runPromise(frames([
+      { cell: `var big = "x".repeat(3 * 1024 * 1024)\n${sabotage}` },
+      { cell: "console.log('admitted')" }
+    ], { memoryBytes: 4 * 1024 * 1024 }))
+    expect(named(run[0]!.bindings, "big")).toMatchObject({ type: "string", size: `${3 * 1024 * 1024} chars` })
+    expect(run[1]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(run[1]!.prints).toBe("")
+  })
+
+  it("keeps ctx, console and a refreshed catalog working", async () => {
+    const refreshed = { echo: projection("echo"), other: projection("other") }
+    const run = await Effect.runPromise(frames([
+      { cell: sabotage },
+      {
+        cell: `var seen = await ctx.call("echo", { nested: [1, { deep: true }] })
+console.log(Object.keys(ctx.flows).join(","), Object.isFrozen(ctx.flows.other), seen.seen.nested[1].deep)
+ctx.done({ ok: [1, 2] })`,
+        flows: refreshed
+      }
+    ]))
+    expect(run[1]!.prints).toBe("echo,other true true")
+    expect(run[1]!.outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: JSON.stringify({ ok: [1, 2] }) }
+    })
+  })
+
+  it("answers a frame the realm cannot open in the error channel, not as a defect", async () => {
+    const wide: Record<string, Cell.FlowProjection> = {}
+    for (let index = 0; index < 400; index++) {
+      wide[`flow${index}`] = new Cell.FlowProjection({
+        name: `flow${index}`,
+        description: "z".repeat(8192),
+        capabilities: [],
+        tier: "sealed",
+        placement: Option.none(),
+        input: Option.none()
+      })
+    }
+    const failure = await Effect.runPromise(
+      frames([{ cell: "1", flows: wide }], { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER })
+        .pipe(Effect.flip)
+    )
+    expect(failure).toMatchObject({ code: "runtime_failed", message: "The realm could not open the frame" })
+  })
+})
+
+describe("host JSON reaching the realm (#4820)", () => {
+  it("keeps a __proto__ key in a flow's input schema as data", async () => {
+    const input = JSON.parse(
+      "{\"type\":\"object\",\"properties\":{\"__proto__\":{\"type\":\"string\"},\"a\":{\"type\":\"number\"}}}"
+    )
+    const catalog = {
+      echo: new Cell.FlowProjection({
+        name: "echo",
+        description: "The echo flow.",
+        capabilities: [],
+        tier: "sealed",
+        placement: Option.none(),
+        input: Option.some(input)
+      })
+    }
+    const run = await session([
+      "var props = ctx.flows.echo.input.properties\nconsole.log(JSON.stringify(Object.keys(props)), typeof props.type)"
+    ], { catalog })
+    expect(run[0]!.prints).toBe("[\"__proto__\",\"a\"] undefined")
+  })
+})
+
 describe("the declared verification", () => {
   // Rule 7 has a run keep its check as `verification = { flow, input }` and
   // reuse it unchanged. A call made with that very input is the run's check;

@@ -70,7 +70,8 @@ const preludeIntrinsics = `  var keysOf = Object.keys
   var render = String
   var Fault = TypeError
   var Deferred = Promise
-  var argumentsOf = Array.prototype.slice`
+  var argumentsOf = Array.prototype.slice
+  var settleWith = Function.prototype.call.bind(Promise.prototype.then)`
 
 /**
  * The realm-side helpers both preludes install.
@@ -80,9 +81,21 @@ const preludeIntrinsics = `  var keysOf = Object.keys
  * having to describe its own refusal.
  */
 const preludeHelpers = `${preludeIntrinsics}
+  // List work goes through these rather than \`Array.prototype\`, which a cell
+  // can rewrite: the catalog refresh and every \`ctx\` member run after cells.
+  // The descriptor has no prototype, so no \`get\` a cell put on
+  // \`Object.prototype\` turns it into an accessor.
+  var append = function (list, item) {
+    define(list, list.length, { __proto__: null, value: item, writable: true, enumerable: true, configurable: true })
+  }
+  var holds = function (list, item) {
+    for (var index = 0; index < list.length; index++) if (list[index] === item) return true
+    return false
+  }
   var freeze = function (value) {
     if (value !== null && typeof value === "object") {
-      keysOf(value).forEach(function (key) { freeze(value[key]) })
+      var keys = keysOf(value)
+      for (var index = 0; index < keys.length; index++) freeze(value[keys[index]])
       freezeValue(value)
     }
     return value
@@ -93,14 +106,15 @@ const preludeHelpers = `${preludeIntrinsics}
       if (value === null || typeof value === "string" || typeof value === "boolean") return
       if (typeof value === "number" && finite(value)) return
       if (typeof value !== "object") throw new Fault(label + " must be JSON-serializable")
-      if (seen.indexOf(value) >= 0) throw new Fault(label + " must be JSON-serializable")
+      if (holds(seen, value)) throw new Fault(label + " must be JSON-serializable")
       var prototype = prototypeOf(value)
       if (!isArray(value) && prototype !== objectPrototype && prototype !== null) {
         throw new Fault(label + " must be JSON-serializable")
       }
-      seen.push(value)
-      keysOf(value).forEach(function (key) { visit(value[key]) })
-      seen.pop()
+      append(seen, value)
+      var keys = keysOf(value)
+      for (var index = 0; index < keys.length; index++) visit(value[keys[index]])
+      seen.length = seen.length - 1
     }
     visit(input)
     return stringify(input)
@@ -115,7 +129,7 @@ const preludeHelpers = `${preludeIntrinsics}
   // the flow answered it; a value that has its own \`ok\` keeps it.
   var succeeded = function (value) {
     if (value !== null && typeof value === "object" && descriptorOf(value, "ok") === undefined) {
-      define(value, "ok", { value: true, writable: true, enumerable: false, configurable: true })
+      define(value, "ok", { __proto__: null, value: true, writable: true, enumerable: false, configurable: true })
     }
     return value
   }
@@ -127,7 +141,7 @@ const preludeHelpers = `${preludeIntrinsics}
     return settled.failure
   }
   var dispatch = function (flow, input, at, declared) {
-    return bridge(flow, input, at, declared ? "declared" : "").then(settleEnvelope)
+    return settleWith(bridge(flow, input, at, declared ? "declared" : ""), settleEnvelope)
   }
   // Whether a call is the run's own check: rule 7 has a cell keep it as
   // \`verification = { flow, input }\` and reuse it unchanged, so the call that
@@ -200,7 +214,7 @@ ${guard}        return dispatch(flow, encoded, encodedAt, declared)
       return send(encodeAt(at))
     },
     checkpoint: function () {
-${guard}      return pin().then(settleEnvelope)
+${guard}      return settleWith(pin(), settleEnvelope)
     },
     base: freeze(parse(${JSON.stringify(JSON.stringify(baseHandle))})),`
 
@@ -285,7 +299,7 @@ ${QuickJSLifecycle.prelude([])}
   // and it is cleared per frame by the function this prelude returns — a park
   // whose reason is refused is asked again inside the same frame, and a realm
   // still sealed from the refused attempt would answer that retry with nothing.
-  var catalog = freeze(${catalog})
+  var catalog = freeze(parse(${JSON.stringify(catalog)}))
   var sealed = null
   var sealedEnvelope = freeze(parse(${JSON.stringify(JSON.stringify(sealedCall))}))
   var unprintable = function (value, error) {
@@ -297,17 +311,17 @@ ${QuickJSLifecycle.prelude([])}
     var parts = []
     for (var index = 0; index < values.length; index++) {
       var value = values[index]
-      if (typeof value === "string") parts.push({ text: value })
-      else if (value === undefined) parts.push({ text: "undefined" })
+      if (typeof value === "string") append(parts, { text: value })
+      else if (value === undefined) append(parts, { text: "undefined" })
       else {
         var encoded = null
         var refused = false
-        try { encoded = stringify(value) } catch (error) { refused = true; parts.push({ text: unprintable(value, error) }) }
+        try { encoded = stringify(value) } catch (error) { refused = true; append(parts, { text: unprintable(value, error) }) }
         // JSON answers \`undefined\` rather than throwing for a value it has no
         // notation for at all — a function, a symbol — and those read best as
         // themselves. It throws only for a value it cannot walk, and that is
         // the one case where naming the reason beats printing "[object Object]".
-        if (!refused) parts.push(encoded === undefined ? { text: render(value) } : { json: parse(encoded) })
+        if (!refused) append(parts, encoded === undefined ? { text: render(value) } : { json: parse(encoded) })
       }
     }
     print(stringify(parts))
@@ -667,7 +681,16 @@ const weighDepth = 32
  * is measured here instead. See {@link openRealm}.
  */
 const panelProbe = (baseline: string): string =>
-  `(function (ownNames, descriptorOf, keysOf, isArray, stringify, String, mapSize, mapEntries, mapNext, setSize, setValues, setNext, skip) {
+  `(function (ownNames, descriptorOf, define, keysOf, isArray, stringify, String, mapSize, mapEntries, mapNext, setSize, setValues, setNext, skip) {
+  // Lists are grown, shrunk and searched without \`Array.prototype\`, which a
+  // cell can rewrite to skip every name or drop every reading.
+  var append = function (list, item) {
+    define(list, list.length, { __proto__: null, value: item, writable: true, enumerable: true, configurable: true })
+  }
+  var skipped = function (name) {
+    for (var index = 0; index < skip.length; index++) if (skip[index] === name) return true
+    return false
+  }
   return function () {
     var names = ownNames(globalThis)
     var out = []
@@ -704,7 +727,7 @@ const panelProbe = (baseline: string): string =>
       if (kind === "string") return 2 * value.length
       if (value === null || kind !== "object") return 8
       for (var up = 0; up < path.length; up++) if (path[up] === value) return 8
-      path.push(value)
+      append(path, value)
       var sum = 8
       // An array is walked by index so keysOf never allocates a second array as
       // long as the first. Each transient descriptor dies with its iteration,
@@ -730,7 +753,7 @@ const panelProbe = (baseline: string): string =>
           sum = sum + 2 * key.length
           sum = sum + weigh("value" in property ? property.value : undefined, depth + 1)
         }
-        path.pop()
+        path.length = path.length - 1
         return sum
       }
       // Collection entries live in internal slots, not own properties. Use
@@ -765,7 +788,7 @@ const panelProbe = (baseline: string): string =>
         if (property === undefined || !("value" in property)) sum = sum + 8
         else sum = sum + weigh(property.value, depth + 1)
       }
-      path.pop()
+      path.length = path.length - 1
       return sum
     }
     var dataProperty = function (value, name, fallbackValue) {
@@ -774,26 +797,26 @@ const panelProbe = (baseline: string): string =>
     }
     for (var index = 0; index < names.length; index++) {
       var name = names[index]
-      if (skip.indexOf(name) >= 0) continue
+      if (skipped(name)) continue
       var before = total
       try {
         var descriptor = descriptorOf(globalThis, name)
         if (descriptor === undefined || !("value" in descriptor)) {
           total = total + 8
-          out.push({ name: name, type: descriptor === undefined ? "unreadable" : "accessor", size: "", bytes: 8 })
+          append(out, { name: name, type: descriptor === undefined ? "unreadable" : "accessor", size: "", bytes: 8 })
           continue
         }
         var value = descriptor.value
         var kind = typeof value
         var bytes = weigh(value, 0)
         total = total + bytes
-        if (value === null) out.push({ name: name, type: "null", size: "", bytes: bytes })
-        else if (kind === "undefined") out.push({ name: name, type: "unset", size: "", bytes: bytes })
-        else if (kind === "string") out.push({ name: name, type: "string", size: value.length + " chars", bytes: bytes })
-        else if (kind === "function") out.push({ name: name, type: "function", size: "arity " + dataProperty(value, "length", 0), bytes: bytes })
-        else if (isArray(value)) out.push({ name: name, type: "array", size: dataProperty(value, "length", 0) + " items", bytes: bytes })
-        else if (kind === "object") out.push({ name: name, type: "object", size: keysOf(value).length + " keys", bytes: bytes })
-        else out.push({ name: name, type: kind, size: String(value), bytes: bytes })
+        if (value === null) append(out, { name: name, type: "null", size: "", bytes: bytes })
+        else if (kind === "undefined") append(out, { name: name, type: "unset", size: "", bytes: bytes })
+        else if (kind === "string") append(out, { name: name, type: "string", size: value.length + " chars", bytes: bytes })
+        else if (kind === "function") append(out, { name: name, type: "function", size: "arity " + dataProperty(value, "length", 0), bytes: bytes })
+        else if (isArray(value)) append(out, { name: name, type: "array", size: dataProperty(value, "length", 0) + " items", bytes: bytes })
+        else if (kind === "object") append(out, { name: name, type: "object", size: keysOf(value).length + " keys", bytes: bytes })
+        else append(out, { name: name, type: kind, size: String(value), bytes: bytes })
         if (partial) {
           partialRoot = name
           partialBytes = bytes
@@ -806,7 +829,7 @@ const panelProbe = (baseline: string): string =>
         // as partial rather than weighed at nothing. No accessor is invoked to
         // get here: every property read above goes through its own descriptor.
         total = before + 8
-        out.push({ name: name, type: "unreadable", size: "", bytes: 8 })
+        append(out, { name: name, type: "unreadable", size: "", bytes: 8 })
         partial = true
         partialRoot = name
         partialBytes = 8
@@ -820,6 +843,7 @@ const panelProbe = (baseline: string): string =>
 })(
   Object.getOwnPropertyNames,
   Object.getOwnPropertyDescriptor,
+  Object.defineProperty,
   Object.keys,
   Array.isArray,
   JSON.stringify,
@@ -1040,6 +1064,7 @@ const openRuntime = (
           `(function (defineProperty) {
   return function (object, key, value) {
     defineProperty(object, key, {
+      __proto__: null,
       value: value,
       writable: true,
       enumerable: true,
@@ -1297,14 +1322,23 @@ const openRuntime = (
         // The realm's own per-frame state: the seal a completion set. A frame
         // whose transition the harness refused is asked again inside the same
         // frame, so the retry has to open on an unsealed realm.
-        if (evaluation.flows === undefined) {
-          context.unwrapResult(enter(() => context.callFunction(openFrame, context.undefined))).dispose()
-        } else {
-          const catalog = context.newString(catalogOf(evaluation.flows))
-          const opened = enter(() => context.callFunction(openFrame, context.undefined, catalog))
-          catalog.dispose()
-          context.unwrapResult(opened).dispose()
+        const catalog = evaluation.flows === undefined ? undefined : context.newString(catalogOf(evaluation.flows))
+        const opened = enter(() =>
+          catalog === undefined
+            ? context.callFunction(openFrame, context.undefined)
+            : context.callFunction(openFrame, context.undefined, catalog)
+        )
+        catalog?.dispose()
+        if (opened.error !== undefined) {
+          const failure = context.dump(opened.error)
+          opened.error.dispose()
+          return yield* new Sandbox.SandboxError({
+            code: "runtime_failed",
+            message: "The realm could not open the frame",
+            cause: failure
+          })
         }
+        opened.value.dispose()
 
         // Whatever the frame produced, the prints are delivered with it and the
         // panel is read after it, so the answer is assembled in one place. A

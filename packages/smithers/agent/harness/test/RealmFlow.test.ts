@@ -26,6 +26,27 @@ it.effect("rebuilds the real flow and resumes from a validated action receipt", 
       value: 9
     })
   }))
+it.effect("hands the flow a __proto__ key in its payload and receipts as data (#4820)", () =>
+  Effect.gen(function*() {
+    const keyed =
+      `import { Flow, Action } from '@smthrs/flow'; import { Node } from '@smthrs/plan'; import { Schema } from 'effect';
+const Read = Action.make('read', {payload: {}, success: Schema.Unknown});
+const shape = (value) => [...Object.keys(value), String(value.admin)];
+export default Flow.make('keyed', {payload: {data: Schema.Unknown, read: Schema.Boolean},
+success: Schema.Array(Schema.String), body: Node.capture({}, ({data, read}) =>
+  read ? Read.call({}).pipe(Node.map(Node.capture({}, shape))) : Node.succeed(shape(data)))});`
+    const data = JSON.parse("{\"__proto__\":{\"admin\":true},\"a\":1}")
+    const payload = { source: keyed, payload: { data, read: false }, expectedTag: "keyed", allowedActions: ["read"] }
+    expect(yield* run(payload)).toEqual({ _tag: "Complete", value: ["__proto__", "a", "undefined"] })
+    const input = { ...payload, payload: { data: null, read: true } }
+    const first = yield* run(input)
+    expect(first._tag).toBe("Action")
+    if (first._tag !== "Action") return
+    expect(yield* run({ ...input, receipts: [{ ...first, outcome: { _tag: "Success", value: data } }] })).toEqual({
+      _tag: "Complete",
+      value: ["__proto__", "a", "undefined"]
+    })
+  }))
 it.effect("withholds host authority and nondeterministic globals", () =>
   Effect.gen(function*() {
     const isolated =
