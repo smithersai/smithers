@@ -274,11 +274,27 @@ const malformedExecution = (suiteCase: Case, execution: Execution): EvalError | 
   return undefined
 }
 
+// The output is copied once, here, because a value `structuredClone` rejects
+// (a function, a symbol, a stream) must fail only its own case. Copied later,
+// while score requests are built, the throw escapes every case boundary and
+// kills the whole run with a defect.
+const cloneOutput = (suiteCase: Case, execution: Execution): Effect.Effect<Execution, EvalError> =>
+  Effect.try({
+    try: () => ({ ...execution, output: structuredClone(execution.output) }),
+    catch: (cause) =>
+      new EvalError({
+        code: "executor",
+        message: "executor returned an output that is not structured-cloneable",
+        path: `${casePath(suiteCase.name)}.output`,
+        cause
+      })
+  })
+
 const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<CaseResult> =>
   Effect.suspend(() => executor.run(structuredClone(suiteCase))).pipe(
     Effect.flatMap((execution) => {
       const malformed = malformedExecution(suiteCase, execution)
-      return malformed === undefined ? Effect.succeed(execution) : Effect.fail(malformed)
+      return malformed === undefined ? cloneOutput(suiteCase, execution) : Effect.fail(malformed)
     }),
     Effect.map((execution): CaseResult => ({
       case: suiteCase.name,

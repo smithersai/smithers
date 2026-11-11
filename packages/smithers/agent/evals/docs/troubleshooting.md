@@ -102,6 +102,10 @@ The target flow failed for a case, or no executor was available.
   executor succeeded but returned a malformed execution. `path` is
   `cases['<name>'].stepKey` or `cases['<name>'].latencyMs`. Return the step
   key as a string and the latency in milliseconds as a number of 0 or more.
+- `Target failed for case '<name>': executor returned an output that is not
+  structured-cloneable`: the output holds a function, a symbol, a stream, or
+  anything else `structuredClone` rejects. `path` is `cases['<name>'].output`,
+  and the retained `cause` is the `DataCloneError`. Return plain data.
 - `No executor is available for case '<name>'`: the run was provided
   `CaseExecutor.makeNoop()` or `CaseExecutor.layerNoop`. Wire a real executor.
 

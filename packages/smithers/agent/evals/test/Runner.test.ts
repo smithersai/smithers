@@ -311,6 +311,32 @@ describe("Runner", () => {
     }
   })
 
+  // `Execution.output` is `unknown`, so a target can return a value
+  // `structuredClone` rejects. Cloned while score requests were built, it threw
+  // outside every case boundary: the run died with an untyped defect and the
+  // sibling case was never scored.
+  it("fails only the case whose executor returns an output that is not structured-cloneable", async () => {
+    const suite = await suiteOf("s", [binding], [{ name: "bad", input: "bad" }, { name: "good", input: "good" }])
+    const executor = executorFor((suiteCase) =>
+      Effect.succeed({
+        output: suiteCase.name === "bad" ? { text: "hi", close: () => {} } : suiteCase.input,
+        stepKey: suiteCase.name,
+        latencyMs: 0,
+        target
+      })
+    )
+    const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
+
+    const bad = result.cases[0]
+    expect(bad?.execution).toBeUndefined()
+    expect(bad?.error).toMatchObject({ code: "executor", path: "cases['bad'].output" })
+    expect(bad?.error?.message).toBe(
+      "Target failed for case 'bad': executor returned an output that is not structured-cloneable"
+    )
+    expect(result.cases[1]?.execution?.output).toBe("good")
+    expect(result.observations).toMatchObject([{ case: "good", kind: "score", score: 1 }])
+  })
+
   it("isolates mutating executors and scorers across sequential and concurrent runs", async () => {
     const executorSeen: unknown[] = []
     const scorerSeen: unknown[] = []
