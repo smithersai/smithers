@@ -324,8 +324,8 @@ describe("the workspace package contract", () => {
 
   it("reads both planners' overrides in one spelling, past pnpm's comments", () => {
     assert.deepEqual(
-      npmOverrides({ effect: "4.1.1", "vitest@5.0.0": { "happy-dom": "20.13.2" } }),
-      { effect: "4.1.1", "vitest@5.0.0>happy-dom": "20.13.2" }
+      npmOverrides({ effect: effectVersion, "vitest@5.0.0": { "happy-dom": "20.13.2" } }),
+      { effect: effectVersion, "vitest@5.0.0>happy-dom": "20.13.2" }
     )
     const planner = [
       "packages:",
@@ -334,15 +334,18 @@ describe("the workspace package contract", () => {
       "  # Why the pin exists.",
       "  \"vitest@5.0.0>happy-dom\": \"20.13.2\"",
       "",
-      "  effect: '4.1.1'",
+      `  effect: '${effectVersion}'`,
       "",
       "# The next block.",
       "patchedDependencies:",
       "  a: b",
       ""
     ].join("\n")
-    assert.deepEqual(pnpmOverrides(planner), { "vitest@5.0.0>happy-dom": "20.13.2", effect: "4.1.1" })
-    assert.throws(() => pnpmOverrides("overrides:\n  effect 4.1.1\n"), /unexpected override: effect 4\.1\.1/)
+    assert.deepEqual(pnpmOverrides(planner), { "vitest@5.0.0>happy-dom": "20.13.2", effect: effectVersion })
+    assert.throws(
+      () => pnpmOverrides(`overrides:\n  effect ${effectVersion}\n`),
+      new RegExp(`unexpected override: effect ${effectVersion.replaceAll(".", "\\.")}`)
+    )
     assert.throws(() => pnpmOverrides("packages: []\n"), /no overrides block/)
   })
 

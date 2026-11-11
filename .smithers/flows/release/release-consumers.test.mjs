@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { delimiter, dirname, join } from "node:path"
 import test from "node:test"
-import { satisfies } from "semver"
+import { inc, satisfies } from "semver"
 import {
   EXPECTED_EFFECT_VERSION,
   SUPPORTED_EFFECT_RANGE,
@@ -400,7 +400,8 @@ test("consumer tree refuses an off-pin Effect-family dependency even with one co
       const peer = name === "effect" ? {} : { peerDependencies: { effect: "^" + version } }
       writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version, ...peer }))
     }
-    const [earlier, later] = ["4.0.3", "4.1.0"]
+    // Derived from the pin, so the later adapter stays later after every Effect upgrade.
+    const [earlier, later] = ["4.0.3", inc(EXPECTED_EFFECT_VERSION, "minor")]
     install("effect", EXPECTED_EFFECT_VERSION)
     const profile = { name: "off-pin-family", dependencies: { effect: EXPECTED_EFFECT_VERSION } }
     // An adapter that needs a later Effect than the installed one: #2398.

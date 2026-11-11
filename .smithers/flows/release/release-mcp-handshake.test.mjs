@@ -6,6 +6,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
+import { inc } from "semver"
+
 import { EXPECTED_EFFECT_VERSION as pin } from "../../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import {
   assertEffectFamilyAccepts,
@@ -14,8 +16,12 @@ import {
   mcpInitialize
 } from "./release-mcp-handshake.mjs"
 
-/** A release after the tested one: what a caret edge resolves once upstream publishes it. */
-const newer = "4.1.0"
+/**
+ * A release after the tested one: what a caret edge resolves once upstream
+ * publishes it. Derived from the pin so it stays later than, and inside the
+ * caret range of, every pinned Effect release.
+ */
+const newer = inc(pin, "minor")
 const escaped = (version) => version.replaceAll(".", "\\.")
 
 const run = promisify(execFile)
@@ -148,7 +154,7 @@ test("an application on a later Effect keeps the adapters built for the tested r
     join(modules, "@effect/opaque/package.json"),
     JSON.stringify({ name: "@effect/opaque", version: newer })
   )
-  assert.throws(() => assertEffectFamilyAccepts(root, newer), /@effect\/opaque@4\.1\.0 \(peer effect undeclared\) at /)
+  assert.throws(() => assertEffectFamilyAccepts(root, newer), new RegExp(`@effect\\/opaque@${escaped(newer)} \\(peer effect undeclared\\) at `))
 })
 
 test("reads a pnpm store and accepts a tree on the one family version", async (t) => {
