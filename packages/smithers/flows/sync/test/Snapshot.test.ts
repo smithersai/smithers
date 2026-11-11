@@ -315,9 +315,13 @@ describe("public snapshot admission", () => {
         })
       expect(yield* Effect.flip(remote.snapshot(request))).toMatchObject({ code: "unauthorized" })
       expect(yield* Effect.flip(fetch(yield* SyncAuth.encodeCapability(forged)))).toMatchObject({
-        code: "unauthorized"
+        code: "unauthorized",
+        message: "The workspace capability signature is invalid"
       })
-      expect(yield* Effect.flip(fetch("malformed-header"))).toMatchObject({ code: "unauthorized" })
+      expect(yield* Effect.flip(fetch("malformed-header"))).toMatchObject({
+        code: "unauthorized",
+        message: "The workspace capability header is not a capability"
+      })
       expect(calls).toBe(0)
       expect(yield* fetch(yield* SyncAuth.encodeCapability(capability))).toEqual(snapshot)
       expect(calls).toBe(1)

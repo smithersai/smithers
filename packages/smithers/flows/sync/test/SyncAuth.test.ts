@@ -145,11 +145,76 @@ describe("SyncAuth", () => {
           const garbage = yield* withHeader("!!!not-base64url!!!")
           const notJson = yield* withHeader(Base64Url.encode("not json"))
           const notCapability = yield* withHeader(Base64Url.encode(JSON.stringify({ nope: true })))
-          return [forgedError, expiredError, garbage, notJson, notCapability].map((error) => (error as SyncError).code)
+          return [forgedError, expiredError, garbage, notJson, notCapability].map((error) => {
+            const { code, message } = error as SyncError
+            return { code, message }
+          })
         })
       )
 
-      expect(codes).toEqual(["unauthorized", "unauthorized", "unauthorized", "unauthorized", "unauthorized"])
+      // The message, not the code, separates this refusal from the server's
+      // refusal of an anonymous workspace read.
+      const notACapability = { code: "unauthorized", message: "The workspace capability header is not a capability" }
+      expect(codes).toEqual([
+        { code: "unauthorized", message: "The workspace capability signature is invalid" },
+        { code: "unauthorized", message: "The workspace capability has expired" },
+        notACapability,
+        notACapability,
+        notACapability
+      ])
+    }))
+
+  // An anonymous caller may read a branch with its branch capability, so a
+  // middleware that downgraded a bad header to anonymous would serve this read.
+  it.effect("refuses a branch read whose workspace header is invalid even with a valid branch capability", () =>
+    Effect.gen(function*() {
+      const [anonymous, refusals] = yield* program(
+        Effect.gen(function*() {
+          yield* writeEntry(branchRun, "branch text")
+          const branchCapability = yield* Effect.flatMap(
+            BranchShare.BranchShare,
+            (share) => share.mint({ branchId, capabilityId: "branch-cap", access: "read", ttlMs: 60_000 })
+          )
+          const workspace = yield* WorkspaceShare.WorkspaceShare
+          const minted = yield* workspace.mint({ capabilityId: "cap-stale", access: "read", ttlMs: 1_000 })
+          const forged = new WorkspaceShare.WorkspaceCapability({
+            claims: new WorkspaceShare.WorkspaceClaims({ ...minted.claims, capabilityId: "cap-other" }),
+            signature: minted.signature
+          })
+          const client = yield* RpcTest.makeClient(SyncRpcs)
+          const branchRead = client["Sync.Read"]({
+            protocolVersion: 1,
+            scope: { _tag: "Run", runId: branchRun },
+            cursors: [],
+            limit: 10,
+            capability: branchCapability
+          })
+          const served = yield* branchRead
+          const headers = [
+            "!!!not-base64url!!!",
+            Base64Url.encode("not json"),
+            yield* SyncAuth.encodeCapability(forged),
+            yield* SyncAuth.encodeCapability(minted)
+          ]
+          yield* TestClock.adjust(1_000)
+          const refused = yield* Effect.forEach(
+            headers,
+            (header) =>
+              Effect.flip(RpcClient.withHeaders(branchRead, { [SyncAuth.capabilityHeader]: header })).pipe(
+                Effect.map((error) => (error as SyncError).message)
+              )
+          )
+          return [served.entries.map((entry) => (entry.payload as { readonly text: string }).text), refused] as const
+        })
+      )
+
+      expect(anonymous).toEqual(["branch text"])
+      expect(refusals).toEqual([
+        "The workspace capability header is not a capability",
+        "The workspace capability header is not a capability",
+        "The workspace capability signature is invalid",
+        "The workspace capability has expired"
+      ])
     }))
 
   // `SyncAuth.layer` verified the header for `read` and dropped the granted
