@@ -1,0 +1,55 @@
+import { expect, it } from "@effect/vitest"
+import { applySandbox, decideSandbox, emptySandboxLedger, remainingMilliseconds, type SandboxLedger } from "../src/core/sandboxDecision.vibe"
+import { meter, monthOf, snapshotOf } from "../src/core/sandboxMeter.vibe"
+
+it.effect("subtracts exact usage while rounding only displayed remaining minutes up", () => effect {
+  const start = Date.UTC(2026, 10, 10)
+  const allowance = 36000000
+  let ledger: SandboxLedger = {
+    ...emptySandboxLedger("person", "contributor", allowance, monthOf(start), start),
+    sandboxes: [{ id: "box", conversation: "home", running: true }],
+  }
+  let months: Readonly<Record<string, number>> = {}
+  // The first two fractional totals are from sandboxes-live.json. Whole-minute boundaries and exhaustion follow.
+  for (const [elapsed, displayed] of [[0, 600], [1, 600], [9144, 600], [19288, 600], [59999, 600], [60000, 599], [60001, 599], [35999999, 1], [36000000, 0], [36000001, 0]] as const) {
+    const metered = try meter(ledger, months, start + elapsed, allowance)
+    ledger = metered.ledger
+    months = metered.months
+    const snapshot = snapshotOf(ledger, "home", 1, "")
+    try Effect.try(() => {
+      expect(ledger.usedMilliseconds).toBe(elapsed)
+      expect(months[String(ledger.month)]).toBe(elapsed)
+      expect(snapshot.allowance).toBe(600)
+      expect(snapshot.used * 60000).toBeCloseTo(elapsed, 6)
+      expect(snapshot.remaining).toBe(displayed)
+    })
+  }
+})
+
+it.effect("keeps partial usage after stopping and refuses a start at exact exhaustion", () => effect {
+  const start = Date.UTC(2026, 10, 10)
+  const allowance = 36000000
+  const running = {
+    ...emptySandboxLedger("person", "contributor", allowance, monthOf(start), start),
+    sandboxes: [{ id: "box", conversation: "home", running: true }],
+  }
+  const partial = try meter(running, {}, start + 9144, allowance)
+  const stop = decideSandbox(partial.ledger, {
+    type: "stop", owner: "person", role: "contributor", allowanceMilliseconds: allowance,
+    conversation: "home", sandboxId: "box", operationId: "stop-home", now: start + 9144, month: running.month,
+  })
+  try Effect.try(() => expect(stop.ok).toBe(true))
+  const stopped = stop.ok ? applySandbox(partial.ledger, stop.event) : stop.state
+  const later = try meter(stopped, partial.months, start + 120000, allowance)
+  const exhausted = try meter(running, {}, start + allowance, allowance)
+  const decision = decideSandbox(exhausted.ledger, {
+    type: "start", owner: "person", role: "contributor", allowanceMilliseconds: allowance,
+    conversation: "other", sandboxId: "other-box", operationId: "start-other", now: start + allowance, month: running.month,
+  })
+  try Effect.try(() => {
+    expect(later.ledger.usedMilliseconds).toBe(9144)
+    expect(remainingMilliseconds(allowance, later.ledger.usedMilliseconds)).toBe(35990856)
+    expect(snapshotOf(later.ledger, "home", 1, "")).toMatchObject({ status: "stopped", used: 0.1524, remaining: 600 })
+    expect(decision).toMatchObject({ ok: false, refusal: "out-of-minutes" })
+  })
+})

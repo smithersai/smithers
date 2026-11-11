@@ -41,6 +41,10 @@ remaining minutes are ceil(remaining milliseconds / 60,000); stopping does not r
 the first run's unimplemented per-interval rounding proposal. Nine 100 ms Start/Stop cycles consume 900 ms; rapid restarts cannot avoid metering. Used time remains exact, including delayed-alarm
 overage; remaining time clamps at zero. At zero the writer stops every running generation.
 
+Thus a Contributor's displayed 600 remains 600 through 59,999 ms used and becomes 599 at 60,000 ms;
+`test/sandboxAllowance.test.vibe` pins these boundaries, the live recording's fractional totals, partial usage after
+Stop and refusal at exact exhaustion.
+
 Each interval is split at every UTC month boundary and both buckets are retained. Clock rollback preserves the
 metering high-water mark, including rollback across a month boundary. Invalid Date/IEEE-754 inputs fail rather than
 resetting allowance. The integer kernel requires the exact safe-sum domain, checked by the host. On an impossible
