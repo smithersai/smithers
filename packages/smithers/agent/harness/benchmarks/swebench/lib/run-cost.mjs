@@ -27,7 +27,7 @@
  */
 import { existsSync, statSync } from "node:fs"
 import { jevSources, jevUsageOf } from "../jev-usage.ts"
-import { jevModel, usd } from "../prices.ts"
+import { jevModel, settlementUsd, usd } from "../prices.ts"
 import { journalRows } from "./journal-rows.mjs"
 
 const readJournalCost = (databasePath) => {
@@ -50,7 +50,6 @@ const readJournalCost = (databasePath) => {
   let unknown = false
   let dollars = 0
   let priceSource = "no model-settled events"
-  const usageBySeat = new Map()
   const jev = { calls: 0, inputTokens: 0, outputTokens: 0, interrupted: 0 }
   for (const row of rows) {
     const payload = JSON.parse(row.payload_json)
@@ -105,14 +104,7 @@ const readJournalCost = (databasePath) => {
     usage.cachedInputTokens += payload.usage?.cachedInputTokens ?? 0
     usage.outputTokens += payload.usage?.outputTokens ?? 0
     usage.reasoningTokens += payload.usage?.reasoningTokens ?? 0
-    const seatUsage = usageBySeat.get(seat) ?? { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
-    seatUsage.inputTokens += counters.inputTokens
-    seatUsage.cachedInputTokens += counters.cachedInputTokens ?? 0
-    seatUsage.outputTokens += counters.outputTokens
-    usageBySeat.set(seat, seatUsage)
-  }
-  for (const [model, counters] of usageBySeat) {
-    const priced = usd(model, counters)
+    const priced = settlementUsd(seat, payload)
     if (!Number.isFinite(priced.usd)) {
       unknown = true
       priceSource = priced.source

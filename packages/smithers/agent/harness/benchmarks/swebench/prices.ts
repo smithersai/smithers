@@ -73,12 +73,13 @@ for (const [id, price] of Object.entries(table)) {
   if (price.provider === "openai") prices[`openai:${id}`] = prices[id]!
 }
 /**
- * Computes USD for one run's token counts.
+ * Computes USD for one request's token counts.
  *
  * `inputTokens` is the provider's total prompt count and already contains
  * `cachedInputTokens`, so the cached share is billed at the cache-read rate and
  * only the remainder at the input rate. Reasoning tokens are part of the output
- * count and are not billed twice.
+ * count and are not billed twice. Disable rounding when summing requests,
+ * then round the total once so small calls are not rounded away.
  *
  * @category constructors
  * @since 0.1.0
@@ -90,7 +91,8 @@ export const usd = (
     readonly cachedInputTokens: number
     readonly outputTokens: number
     readonly cacheWriteTokens?: number
-  }
+  },
+  round = true
 ): { readonly usd: number | undefined; readonly source: string } => {
   const id = model?.replace(/^openai:/, "")
   const initial = id === undefined ? undefined : table[id]
@@ -109,5 +111,45 @@ export const usd = (
   const uncached = Math.max(0, tokens.inputTokens - tokens.cachedInputTokens)
   const metered = (uncached * rates.input + tokens.cachedInputTokens * rates.cacheRead
     + write * rates.cacheWrite + tokens.outputTokens * rates.output) / 1_000_000
-  return { usd: Math.round(metered * 10_000) / 10_000, source: "@smthrs/model rate card" }
+  return { usd: round ? Math.round(metered * 10_000) / 10_000 : metered, source: "@smthrs/model rate card" }
+}
+
+/**
+ * One settlement's unrounded charge, preferring the recorded provider or rate-card cost.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const settlementUsd = (
+  model: string | undefined,
+  payload: { readonly usage?: unknown; readonly costUsd?: unknown; readonly costSource?: unknown }
+): { readonly usd: number | undefined; readonly source: string } => {
+  const tokens = payload.usage as {
+    readonly inputTokens: number
+    readonly cachedInputTokens?: number
+    readonly outputTokens: number
+    readonly reasoningTokens?: number
+    readonly cacheWriteTokens?: number
+  } | undefined
+  if (
+    !tokens ||
+    ![
+      tokens.inputTokens,
+      tokens.outputTokens,
+      tokens.cachedInputTokens ?? 0,
+      tokens.reasoningTokens ?? 0,
+      tokens.cacheWriteTokens ?? 0
+    ].every((value) => Number.isFinite(value) && value >= 0)
+  ) {
+    return { usd: undefined, source: "unknown: invalid model usage" }
+  }
+  if (payload.costUsd !== undefined) {
+    return typeof payload.costUsd === "number" && Number.isFinite(payload.costUsd) && payload.costUsd >= 0
+      ? {
+        usd: payload.costUsd,
+        source: typeof payload.costSource === "string" ? payload.costSource : "journaled model cost"
+      }
+      : { usd: undefined, source: "unknown: invalid model cost" }
+  }
+  return usd(model, { ...tokens, cachedInputTokens: tokens.cachedInputTokens ?? 0 }, false)
 }

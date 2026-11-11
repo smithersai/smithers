@@ -48,7 +48,7 @@ import type { ControlSchema } from "../../../../control/src/index.ts"
 import * as Forensics from "../../../../src/Forensics.ts"
 import type * as AgentEvent from "../../src/AgentEvent.ts"
 import { jevCaller, jevCellQuestionsOf, jevUsageOf } from "./jev-usage.ts"
-import { jevModel, usd } from "./prices.ts"
+import { jevModel, settlementUsd, usd } from "./prices.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -180,6 +180,7 @@ interface RunNumbers {
   readonly seat: string | undefined
   readonly turns: number
   readonly modelCalls: number
+  readonly modelCost: { readonly usd: number | undefined; readonly source: string }
   readonly flowCalls: number
   readonly flowCallsRefused: number
   readonly editsAttempted: number
@@ -259,6 +260,9 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
   // Cached input and per-call duration are not in the digest, so they are read
   // from the same `model-settled` payloads the digest already counted.
   let cachedInputTokens = 0
+  let modelDollars: number | undefined = 0
+  let modelPriceSource = "no model-settled events"
+  const seats = new Map<string, string | undefined>()
   const callLatencyMs: Array<number> = []
   // Jev is metered on four other event types; `jev-usage.ts` owns which ones,
   // which caller each is and where each keeps its usage, so the scorecard and
@@ -290,6 +294,11 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     counts[name] = (counts[name] ?? 0) + 1
   }
   for (const row of rows) {
+    if (row.event_type === "control.agent.turn-opened") {
+      const payload = asRecord(JSON.parse(row.payload_json))
+      seats.set(row.run_id, typeof payload.seat === "string" ? payload.seat : undefined)
+      continue
+    }
     if (row.run_id !== cellRun) {
       cellRun = row.run_id
       cellCalledJev = false
@@ -357,6 +366,14 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     }
     modelCalls += 1
     const payload = asRecord(JSON.parse(row.payload_json))
+    const priced = settlementUsd(seats.get(row.run_id), payload)
+    if (priced.usd === undefined) {
+      modelDollars = undefined
+      modelPriceSource = priced.source
+    } else if (modelDollars !== undefined) {
+      modelDollars += priced.usd
+      modelPriceSource = priced.source
+    }
     const usage = asRecord(payload.usage)
     const cached = usage.cachedInputTokens
     if (typeof cached === "number") cachedInputTokens += cached
@@ -370,6 +387,10 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     seat,
     turns,
     modelCalls,
+    modelCost: {
+      usd: modelDollars === undefined ? undefined : Math.round(modelDollars * 10_000) / 10_000,
+      source: modelPriceSource
+    },
     flowCalls,
     flowCallsRefused,
     editsAttempted,
@@ -466,7 +487,7 @@ const rows = instances.map((id) => {
     cachedInputTokens: numbers?.cachedInputTokens ?? 0,
     outputTokens: numbers?.outputTokens ?? 0
   }
-  const priced = usd(model, tokens)
+  const priced = numbers?.modelCost ?? usd(model, tokens)
   const jevTokens = {
     inputTokens: numbers?.jevInputTokens ?? 0,
     cachedInputTokens: 0,

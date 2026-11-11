@@ -188,6 +188,7 @@ echo "== the full benchmark's ledger, queue and report"
 node "$S/fixtures/check-fullbench.mjs"
 node "$S/fixtures/check-fullbench-receipts.mjs"
 node "$S/fixtures/check-fullbench-budget.mjs"
+node "$S/fixtures/check-request-cost.mjs"
 node "$S/fixtures/check-fullbench-status.mjs"
 
 echo "== the driver's own wait for a worker that never finishes"

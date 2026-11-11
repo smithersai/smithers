@@ -1733,8 +1733,10 @@ bounded by `SWB_FULLBENCH_JOBS` instances — and a ledger it cannot read at all
 which pauses rather than being read as zero.
 
 Cost per instance is read from the archived journal by `lib/run-cost.mjs`, which
-sums the four token counters off `control.agent.model-settled` and prices them
-with the committed table in `prices.ts`. It deliberately does **not** go through
+sums each `control.agent.model-settled` charge separately, using its journaled
+`costUsd` when present or its own seat and token counts with the committed table
+in `prices.ts`. Long-context tiers apply per request; token totals are only for
+reporting. Charges are summed before rounding. It deliberately does **not** go through
 `lib/journal-facts.mjs`: that module imports the harness's own modules to rebuild
 the controller's decisions, and a benchmark running for days beside lanes that
 edit `packages/smithers/agent/harness` must not have its cost column stop working because
@@ -2704,7 +2706,9 @@ codex baseline:
   turns, model calls, and per-call latency when the journal carries it;
 - **cost** — input, cached and output tokens, and USD from `prices.ts`, in two
   columns: `flows USD` is the seat's model turns, and `Jev USD` is every reading
-  the run took of Jev, priced under the `typesafe-ai/jev` row. The journal
+  the run took of Jev, priced under the `typesafe-ai/jev` row. Model charges use
+  each settlement's journaled `costUsd` when present, otherwise its own seat and
+  request tokens; cumulative tokens never select a long-context tier. The journal
   meters Jev on three event types and the scorecard sums all three:
   `claim-demanded` (the completion brake), `supervisor-settled` (the per-frame
   supervisor) and the `jev` flow's own `cell-call-settled` result. A

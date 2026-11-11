@@ -211,13 +211,25 @@ const wave = () => {
     check(`${expected.id} baseline verdict`, row.baseline?.verdict, codex.verdict)
     check(`${expected.id} bucket`, row.callout, bucket(expected.graded, codex.verdict))
 
-    // Cost is the committed rate card applied to the reported tokens, recomputed
-    // here so a rate refresh moves the expectation with it.
-    const expectedUsd = usd("openai:gpt-5.6-sol", {
-      inputTokens: expected.inTok,
-      cachedInputTokens: 0,
-      outputTokens: expected.outTok
-    }).usd
+    // Cost is the committed rate card applied to each model call the fixture
+    // journal carries, summed, then rounded once. `make-fixture.mjs` spreads the
+    // recorded tokens evenly over the turns and gives the last turn the
+    // remainder; recomputed here so a rate refresh moves the expectation with
+    // it. Priced per call, a run whose total crosses a long-context threshold
+    // (pydata__xarray-7393 and pytest-dev__pytest-6197 both exceed 272,000
+    // input tokens) costs what its calls cost, never the long-context rate.
+    const perTurnInput = Math.floor(expected.inTok / expected.turns)
+    const perTurnOutput = Math.floor(expected.outTok / expected.turns)
+    const expectedUsd = Math.round(
+      Array.from({ length: expected.turns }, (_, turn) => {
+        const last = turn === expected.turns - 1
+        return usd("openai:gpt-5.6-sol", {
+          inputTokens: last ? expected.inTok - perTurnInput * (expected.turns - 1) : perTurnInput,
+          cachedInputTokens: 0,
+          outputTokens: last ? expected.outTok - perTurnOutput * (expected.turns - 1) : perTurnOutput
+        }, false).usd
+      }).reduce((total, call) => total + call, 0) * 10_000
+    ) / 10_000
     check(`${expected.id} usd`, row.cost.usd, expectedUsd)
 
     // Jev is priced apart from the seat: the fixture journal carries one
