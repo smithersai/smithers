@@ -12,8 +12,8 @@
  * @since 1.0.0
  */
 import * as Fault from "@smthrs/flow/Fault"
-import { Effect, Schema } from "effect"
-import { spawn } from "node:child_process"
+import { Effect, Option, Schema } from "effect"
+import { type ChildProcess, spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -95,12 +95,49 @@ export interface RunModuleOptions {
   readonly interpreter?: string
 }
 
+/** How long a stopping module may take to exit after `SIGTERM` before `SIGKILL`. */
+const stopGrace = "5 seconds"
+
+/**
+ * Stop a module's child and every process in its group, and wait until none
+ * remains, so cancelling an action is a barrier: nothing it started runs on.
+ * Windows has no process groups, so there it stops and waits for the child.
+ */
+const stop = (child: ChildProcess): Effect.Effect<void> => {
+  const pid = child.pid
+  if (pid === undefined) return Effect.void
+  // Sends `signal` and reports whether anything was left to receive it; signal
+  // 0 only probes. A group with no process left fails with ESRCH.
+  const send = (signal: NodeJS.Signals | 0): boolean => {
+    if (process.platform === "win32") {
+      if (child.exitCode !== null || child.signalCode !== null) return false
+      return signal === 0 || child.kill(signal)
+    }
+    try {
+      return process.kill(-pid, signal)
+    } catch {
+      return false
+    }
+  }
+  const gone: Effect.Effect<void> = Effect.suspend(() =>
+    send(0) ? Effect.sleep("20 millis").pipe(Effect.andThen(gone)) : Effect.void
+  )
+  return Effect.sync(() => send("SIGTERM")).pipe(
+    Effect.andThen(Effect.timeoutOption(gone, stopGrace)),
+    Effect.flatMap((stopped) =>
+      Option.isSome(stopped) ? Effect.void : Effect.sync(() => send("SIGKILL")).pipe(Effect.andThen(gone))
+    )
+  )
+}
+
 /**
  * Run `node <module> ...args`, or `<interpreter> <module> ...args`, and succeed
  * on exit 0. Node runs the module with VibeLang's loader when the checkout
  * installs it.
  *
- * Interrupting the effect stops the child's process group.
+ * Interrupting the effect stops the child's process group: it sends `SIGTERM`,
+ * waits up to five seconds, sends `SIGKILL` to whatever still runs, and
+ * completes only once no process of the group remains.
  *
  * @since 1.0.0
  * @category constructors
@@ -133,14 +170,6 @@ export const runModule = (
           ? Effect.void
           : Effect.fail(new ModuleFailed({ module: name, exitCode: code, signal: signal ?? null }))
       ))
-    return Effect.sync(() => {
-      if (child.exitCode !== null || child.pid === undefined) return
-      try {
-        if (process.platform === "win32") child.kill("SIGTERM")
-        else process.kill(-child.pid, "SIGTERM")
-      } catch {
-        child.kill("SIGTERM")
-      }
-    })
+    return stop(child)
   })
 }

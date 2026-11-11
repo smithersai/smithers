@@ -1,11 +1,11 @@
 /**
  * `runModule` over real child processes: the default Node interpreter, a named
- * shell interpreter, and the typed failure for a non-zero exit and for an
- * interpreter that cannot start.
+ * shell interpreter, the typed failure for a non-zero exit and for an
+ * interpreter that cannot start, and interruption as a stop barrier.
  */
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Fiber } from "effect"
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -96,5 +96,41 @@ test("preloads VibeLang's loader for a Node module when the checkout installs it
     assert.deepEqual(rest, ["--no-warnings"])
     assert.equal(loader, `--import=${import.meta.resolve("vibelang/register")}`)
     assert.deepEqual(vibeLangLoader(), [loader])
+  })
+})
+
+test("interrupting stops a module and its descendants that ignore SIGTERM before it completes", async () => {
+  await inScratch(async (directory) => {
+    const module = join(directory, "stubborn.mjs")
+    const ready = join(directory, "ready.json")
+    // The module and a descendant in its process group both ignore SIGTERM.
+    writeFileSync(
+      module,
+      [
+        "import { spawn } from 'node:child_process'",
+        "import { writeFileSync } from 'node:fs'",
+        "process.on('SIGTERM', () => {})",
+        "const stubborn = \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)\"",
+        "const descendant = spawn(process.execPath, ['-e', stubborn], { stdio: 'ignore' })",
+        "setTimeout(() => writeFileSync(process.argv[2], JSON.stringify([process.pid, descendant.pid])), 300)",
+        "setInterval(() => {}, 1000)"
+      ].join("\n")
+    )
+    const fiber = Effect.runFork(runModule(pathToFileURL(module), [ready]))
+    let pids: Array<number> = []
+    try {
+      while (!existsSync(ready)) await new Promise((resolve) => setTimeout(resolve, 20))
+      pids = JSON.parse(readFileSync(ready, "utf8")) as Array<number>
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      for (const pid of pids) assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `process ${pid} still runs`)
+    } finally {
+      for (const pid of pids) {
+        try {
+          process.kill(pid, "SIGKILL")
+        } catch {
+          // Already stopped.
+        }
+      }
+    }
   })
 })
