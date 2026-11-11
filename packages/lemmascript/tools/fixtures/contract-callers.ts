@@ -54,3 +54,51 @@ export function guardedOr(text: string): boolean {
   if (text.length === 0 || nine(text.charCodeAt(0))) found = true
   return found
 }
+
+//@ verify
+//@ ensures \result == text
+export function walk(text: string): string {
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ decreases text.length - i
+    i++
+  }
+  return text
+}
+
+//@ verify
+//@ ensures \result == (0 <= at && at < lines.length ? lines[at] : "")
+export function selected(lines: ReadonlyArray<string>, at: number): string {
+  return 0 <= at && at < lines.length ? walk(lines[at]!) : ""
+}
+
+//@ verify
+//@ ensures \result == (lines.length == 0 ? "" : lines[0])
+export function first(lines: ReadonlyArray<string>): string {
+  return lines.length === 0 ? "" : walk(lines[0]!)
+}
+
+//@ verify
+//@ ensures \result == n
+export function numberWalk(n: number): number {
+  let i = 0
+  while (i < 1) {
+    //@ invariant 0 <= i && i <= 1
+    //@ decreases 1 - i
+    i++
+  }
+  return n
+}
+
+//@ verify
+//@ ensures \result == (flag ? 1 : -1)
+export function naturalFirst(flag: boolean): number {
+  return flag ? 1 : numberWalk(-1)
+}
+
+//@ verify
+//@ ensures \result == (flag ? -1 : 1)
+export function negativeFirst(flag: boolean): number {
+  return flag ? -1 : numberWalk(1)
+}

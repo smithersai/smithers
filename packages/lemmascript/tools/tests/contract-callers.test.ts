@@ -8,7 +8,7 @@ import { narrowModule } from "../src/narrow.ts";
 import { transformModuleDafny } from "../src/transform.ts";
 import { emitDafnyFile } from "../src/dafny-emit.ts";
 import { resolveOptions } from "../src/config.ts";
-import { guardedIndex, guardedOr, lastNonzero, trailingZeros } from "../fixtures/contract-callers.ts";
+import { guardedIndex, guardedOr, lastNonzero, naturalFirst, negativeFirst, trailingZeros } from "../fixtures/contract-callers.ts";
 
 function emit(text: string): string {
   const project = new Project({ compilerOptions: { strict: true,
@@ -95,6 +95,8 @@ export function disjunction(n: number): boolean { return n <= 0 || positive(n) >
 test("guarded calls keep the empty and nonempty runtime cases", () => {
   assert.deepEqual(["", "9", "8"].map(guardedIndex), [false, true, false]);
   assert.deepEqual(["", "9", "8"].map(guardedOr), [true, true, false]);
+  assert.deepEqual([true, false].map(naturalFirst), [1, -1]);
+  assert.deepEqual([true, false].map(negativeFirst), [-1, 1]);
 });
 
 test("a pure call in a method condition stays under its index guard", () => {
@@ -114,4 +116,55 @@ export function guardedIndex(text: string): boolean {
   assert.match(method, /if \(\|text\| > 0\) \{/);
   const body = method.slice(method.indexOf("{") + 1);
   assert.doesNotMatch(body.slice(0, body.indexOf("if ")), /nine\(/);
+});
+
+test("a conditional keeps lifted branch calls under its index guard", () => {
+  const output = emit(`
+//@ verify
+//@ ensures \\result == text
+export function walk(text: string): string {
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ decreases text.length - i
+    i++
+  }
+  return text
+}
+//@ verify
+//@ ensures \\result == (0 <= at && at < lines.length ? lines[at] : "")
+export function selected(lines: ReadonlyArray<string>, at: number): string {
+  return 0 <= at && at < lines.length ? walk(lines[at]!) : ""
+}
+//@ verify
+//@ ensures \\result == (lines.length == 0 ? "" : lines[0])
+export function first(lines: ReadonlyArray<string>): string {
+  return lines.length === 0 ? "" : walk(lines[0]!)
+}
+`);
+  for (const name of ["selected", "first"]) {
+    const start = output.indexOf("method " + name);
+    const next = output.indexOf("\nmethod ", start + 1);
+    const method = output.slice(start, next < 0 ? undefined : next);
+    const body = method.slice(method.indexOf("{") + 1);
+    assert.match(body, /if /);
+    assert.doesNotMatch(body.slice(0, body.indexOf("if ")), /walk\(/);
+    assert.match(body, /walk\(lines\[/);
+  }
+});
+
+test("negative values and mixed natural/signed conditional arms stay signed", () => {
+  const project = new Project({ compilerOptions: { strict: true, target: ScriptTarget.ESNext, types: [] } });
+  const source = project.createSourceFile("signed.ts", `
+export function signed(n: number): number { return n }
+export function negative(): number { return -1 }
+export function naturalFirst(flag: boolean): number { return flag ? 1 : signed(-1) }
+export function signedFirst(flag: boolean): number { return flag ? signed(-1) : 1 }
+`);
+  const mod = resolveModule(extractModule(source));
+  for (const name of ["negative", "naturalFirst", "signedFirst"]) {
+    const stmt = mod.functions.find(f => f.name === name)!.body[0]!;
+    assert.equal(stmt.kind, "return");
+    if (stmt.kind === "return") assert.equal(stmt.value.ty.kind, "int", name);
+  }
 });

@@ -83,3 +83,7 @@ Generic union match lowering resolves the base declaration while retaining the i
 The optional-spread regression also reconstructs optional record fields: after path narrowing substitutes a present payload binder, optional wrapping uses the refined payload type, so Some is retained exactly once.
 
 Dafny method lowering keeps Boolean short-circuit right-operand calls under their evaluation guards, including their argument reads. The contract-callers fixture and emission regressions cover guarded string indexes.
+
+Dafny conditional expressions also keep lifted calls and their argument reads inside their selected branch. Both branches assign the typed result; no unselected call is evaluated. Guarded then/else index fixtures cover this lowering.
+
+Unary minus on a natural value is signed. Conditional arms joining natural and signed integers use the signed type in either order, so typed guarded temporaries preserve negative branches.

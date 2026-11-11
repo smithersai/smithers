@@ -127,6 +127,9 @@ function conditionalResultTy(thenTy: Ty, elseTy: Ty): Ty {
   // A real branch and an integral branch make a real conditional; lowering lifts the integral branch.
   const integral = (t: Ty) => t.kind === "int" || t.kind === "nat";
   if ((thenTy.kind === "real" && integral(elseTy)) || (elseTy.kind === "real" && integral(thenTy))) return { kind: "real" };
+  // Natural values embed in signed integers; branch order must not lose a negative arm.
+  if (integral(thenTy) && integral(elseTy) && (thenTy.kind === "int" || elseTy.kind === "int"))
+    return thenTy.kind === "int" ? thenTy : elseTy;
   let ty = thenTy.kind !== "unknown" ? thenTy : elseTy;
   if (thenTy.kind === "void" && elseTy.kind !== "void" && elseTy.kind !== "unknown") {
     ty = { kind: "optional", inner: elseTy };
@@ -942,7 +945,8 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
 
     case "unop": {
       const expr = resolveExpr(e.expr, ctx);
-      const ty: Ty = e.op === "!" ? { kind: "bool" } : e.op === "typeof" ? { kind: "string" } : expr.ty;
+      const ty: Ty = e.op === "!" ? { kind: "bool" } : e.op === "typeof" ? { kind: "string" }
+        : e.op === "-" && expr.ty.kind === "nat" ? { kind: "int" } : expr.ty;
       return { kind: "unop", op: e.op, expr, ty };
     }
 
