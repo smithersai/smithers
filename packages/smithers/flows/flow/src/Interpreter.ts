@@ -2177,8 +2177,11 @@ export interface ExecutionOptions extends Graph.BuildOptions {
   readonly onHeartbeat?: ((executionId: string) => Effect.Effect<void>) | undefined
 }
 
-/** Registers the interpreter and reachable child flows under one policy. @private */
-const makeLayer = <
+/**
+ * Registers the interpreter and reachable child flows under one policy, in the
+ * scope it runs in. @private
+ */
+const register = <
   Tag extends string,
   Payload extends AnyStructSchema,
   Success extends Schema.Top,
@@ -2188,11 +2191,12 @@ const makeLayer = <
   options: ExecutionOptions,
   reachable?: Set<AnyWithProps>,
   ifAbsent = false
-): Layer.Layer<
-  never,
+): Effect.Effect<
+  void,
   never,
   | FlowRuntime
   | Implementations
+  | Scope.Scope
   | Payload["DecodingServices"]
   | Payload["EncodingServices"]
   | Success["DecodingServices"]
@@ -2200,33 +2204,29 @@ const makeLayer = <
   | Error["DecodingServices"]
   | Error["EncodingServices"]
 > =>
-  Layer.effectDiscard(Effect.gen(function*() {
+  Effect.gen(function*() {
     const runtime = yield* FlowRuntime
     const registered = reachable ?? new Set<AnyWithProps>()
     if (registered.has(flow)) return
     // Lazy registration can be skipped by an independent live owner. Recheck
     // on later executions so releasing that owner permits fresh admission.
     if (!ifAbsent) registered.add(flow)
-    const scope = yield* Effect.scope
     const context = yield* Effect.context<Services | Scope.Scope>()
     const implementations = Context.get(context, Implementations)
     // Keep discovered declarations in the host registration scope, rather
     // than the executing parent's scope: handoffs outlive that parent.
     // Dynamic declarations erase their codec services, just like execute;
     // those services still come from the registering host's context.
+    // Register directly rather than building a layer: every execution
+    // rechecks its callees, and each layer build would leave a memo entry
+    // and its finalizer in the long-lived host scope (issue #4628).
     const registerReachable = (declaration: AnyWithProps): Effect.Effect<void> =>
-      Layer.buildWithScope(
-        makeLayer(
-          declaration as Flow<string, AnyStructSchema, Schema.Top, Schema.Top, any>,
-          { ...options, onHeartbeat: undefined },
-          registered,
-          true
-        ),
-        scope
-      ).pipe(
-        Effect.provide(context),
-        Effect.asVoid
-      ) as Effect.Effect<void>
+      register(
+        declaration as Flow<string, AnyStructSchema, Schema.Top, Schema.Top, any>,
+        { ...options, onHeartbeat: undefined },
+        registered,
+        true
+      ).pipe(Effect.provide(context)) as Effect.Effect<void>
     const middleware = Context.get(flow.annotations, ExecutionMiddleware)
     yield* runtime.register(
       flow,
@@ -2254,7 +2254,29 @@ const makeLayer = <
       >,
       { ifAbsent }
     )
-  }))
+  })
+
+/** Registers the interpreter and reachable child flows under one policy. @private */
+const makeLayer = <
+  Tag extends string,
+  Payload extends AnyStructSchema,
+  Success extends Schema.Top,
+  Error extends Schema.Top
+>(
+  flow: Flow<Tag, Payload, Success, Error, any>,
+  options: ExecutionOptions
+): Layer.Layer<
+  never,
+  never,
+  | FlowRuntime
+  | Implementations
+  | Payload["DecodingServices"]
+  | Payload["EncodingServices"]
+  | Success["DecodingServices"]
+  | Success["EncodingServices"]
+  | Error["DecodingServices"]
+  | Error["EncodingServices"]
+> => Layer.effectDiscard(register(flow, options))
 
 /**
  * Composes one flow and its implementation layers around one isolated registry.
