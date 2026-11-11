@@ -1179,7 +1179,7 @@ export const expandAnchoredSources = async (options: {
       const basename = NodePath.posix.basename(match)
       // PACKAGE/WORKSPACE modules are build declarations, not members of a
       // source glob. They remain available when named explicitly as S.file.
-      if (basename !== "PACKAGE.ts" && basename !== "WORKSPACE.ts") found.add(match)
+      if (!Input.isDeclarationFileName(basename) && basename !== "WORKSPACE.ts") found.add(match)
     }
   }
   return [...found].sort()

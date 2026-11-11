@@ -1,5 +1,6 @@
 /**
- * Ignore-blind PACKAGE.ts / WORKSPACE.ts discovery.
+ * Ignore-blind package declaration (PACKAGE.ts, PACKAGE.vibe) and
+ * WORKSPACE.ts discovery.
  *
  * Discovery walks the filesystem from the canonical workspace root and never
  * consults git: gitignore status is irrelevant, so a gitignored or generated
@@ -14,6 +15,7 @@
  * @since 0.1.0
  */
 
+import * as Input from "@smthrs/targets/Input"
 import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -45,7 +47,7 @@ export interface Discovery {
   readonly workspaceFile: string
   /** The `FACTORY.ts` beside the workspace file, when the workspace declares a factory. */
   readonly factoryFile?: string | undefined
-  /** Every exact-case `PACKAGE.ts` in the tree. */
+  /** Every exact-case package declaration (`PACKAGE.ts` or `PACKAGE.vibe`) in the tree. */
   readonly packageFiles: ReadonlyArray<string>
   /** The cache directory the walk pruned. */
   readonly cacheDirectory: string
@@ -244,18 +246,18 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
       if (walk.declaredPrune.has(childRelative)) walk.pruned.push(childRelative)
       continue
     }
-    if (child.name === "PACKAGE.ts" && !child.isDirectory()) {
+    if (Input.isDeclarationFileName(child.name) && !child.isDirectory()) {
       if (child.isSymbolicLink()) {
         throw new PackageError(
           "module_not_regular",
-          "PACKAGE.ts is a symbolic link; declaration modules must be regular files",
+          `${child.name} is a symbolic link; declaration modules must be regular files`,
           {
             path: childRelative
           }
         )
       }
       if (!child.isFile()) {
-        throw new PackageError("module_not_regular", "PACKAGE.ts is not a regular file", { path: childRelative })
+        throw new PackageError("module_not_regular", `${child.name} is not a regular file`, { path: childRelative })
       }
       walk.found.push(childRelative)
       continue
@@ -269,11 +271,7 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
 const admitDeclaration = async (root: string, relative: string): Promise<boolean> => {
   const entry = await SafeFs.resolveFile(NodePath.join(root, relative), {
     root,
-    what: relative.endsWith("WORKSPACE.ts")
-      ? "WORKSPACE.ts"
-      : relative.endsWith("FACTORY.ts")
-      ? "FACTORY.ts"
-      : "PACKAGE.ts",
+    what: NodePath.posix.basename(relative),
     symlinks: "reject"
   })
   return entry !== undefined
@@ -382,12 +380,14 @@ export const discover = async (
   }
   await walkDirectory(walk, "")
   const packageFiles = [...walk.found].sort(byCodeUnit)
-  // A symlinked PACKAGE.ts inside the walk already failed; re-admission here
+  // A symlinked declaration inside the walk already failed; re-admission here
   // closes the directory-rename race between the listing and the import.
   for (const file of packageFiles) {
     const admitted = await admitDeclaration(canonical, file)
     if (!admitted) {
-      throw new PackageError("module_missing", "PACKAGE.ts disappeared during discovery", { path: file })
+      throw new PackageError("module_missing", `${NodePath.posix.basename(file)} disappeared during discovery`, {
+        path: file
+      })
     }
   }
   const folded = new Map<string, string>()

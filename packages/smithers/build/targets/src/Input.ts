@@ -319,7 +319,12 @@ export const nodeModulesLockfiles: ReadonlyArray<string> = Object.freeze([
 export const nodeModulesPaths = (
   packageDir: string,
   declaration: NodeModules
-): { readonly directory: string; readonly manifest: string; readonly lockfiles: ReadonlyArray<string>; readonly tree: string } => {
+): {
+  readonly directory: string
+  readonly manifest: string
+  readonly lockfiles: ReadonlyArray<string>
+  readonly tree: string
+} => {
   const resolved = resolvePath(packageDir, declaration.path)
   const directory = resolved === "." ? "" : resolved
   const within = (name: string): string => directory === "" ? name : `${directory}/${name}`
@@ -588,7 +593,24 @@ const staticPrefix = (pattern: string): string => {
 const inputNoun = "declared input"
 const ignoreNoun = ".gitignore"
 const directoryNoun = "declared input directory"
-const declarationFileNames = ["PACKAGE.ts"] as const
+
+/**
+ * The file names that make a directory a package: a target declaration in
+ * TypeScript or in VibeLang. A directory holds at most one of them.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const declarationFileNames = ["PACKAGE.ts", "PACKAGE.vibe"] as const
+
+/**
+ * Checks whether a base name is one of the {@link declarationFileNames}.
+ *
+ * @category discovery
+ * @since 1.0.0
+ */
+export const isDeclarationFileName = (name: string): name is typeof declarationFileNames[number] =>
+  (declarationFileNames as ReadonlyArray<string>).includes(name)
 
 const insideEnteredRepository = (scan: Scan, relative: string): boolean => {
   for (const boundary of scan.enteredRepositories) {

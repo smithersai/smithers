@@ -14,6 +14,21 @@ read, so compiler options declared in the workspace do not apply: a `paths` alia
 does not resolve, and a relative import names the real file, extension included,
 as in `import { Package } from "../plan/PACKAGE.ts"`.
 
+A package written in VibeLang declares its targets in `PACKAGE.vibe` instead,
+with the same exports:
+
+```ts
+// packages/greeter/PACKAGE.vibe
+import { Smithers as S } from "@smthrs/targets"
+
+export const Package = S.Package({
+  targets: { sources: S.Filegroup({ srcs: [S.glob("src/**/*.vibe")] }) }
+})
+```
+
+VibeLang compiles it with the project's `tsconfig.json`. See
+[Workspace structure](structure.md#packagevibe).
+
 ## Targets are keys of the Package map
 
 A `PACKAGE.ts` exports one value named `Package`. Every key of its `targets` map

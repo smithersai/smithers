@@ -5,7 +5,8 @@ description: "Discovery, PACKAGE.ts placement, package boundaries, lazy evaluati
 
 Examples importing `buildAndCheckPackage` use the [local helper defined here](../reference/targets/standard-package.md). Create that file in your repository before using those examples.
 
-A smithers build workspace is a directory tree containing `PACKAGE.ts` files. The
+A smithers build workspace is a directory tree containing package declarations:
+`PACKAGE.ts` files, or `PACKAGE.vibe` files written in VibeLang. The
 workspace root is whatever `--workspace` points at, and it defaults to the
 process working directory.
 
@@ -23,8 +24,8 @@ process working directory.
    the resolved cache directory, and the fixed `.flows/store` subtree, then
    sorts by UTF-16 code unit.
 
-The listing is the workspace's view of itself. `PACKAGE.ts` files are the entries
-equal to `PACKAGE.ts` or ending in `/PACKAGE.ts`.
+The listing is the workspace's view of itself. Package declarations are the
+entries whose base name is `PACKAGE.ts` or `PACKAGE.vibe`.
 
 Host state is dropped unconditionally, even when git lists it. Replayable cache,
 scratch, and store content must never feed input discovery or a content digest.
@@ -74,6 +75,26 @@ packages/greeter/test/PACKAGE.ts  -> //packages/greeter/test
 
 There is no `subpackages` target and no visibility system. Nesting a `PACKAGE.ts`
 inside another package's directory simply creates a second package.
+
+### PACKAGE.vibe
+
+A package can declare its targets in VibeLang: `PACKAGE.vibe` in place of
+`PACKAGE.ts`. It exports the same `Package` value and gets the same package
+path, labels, input rules, and cache keys, so everything on this page that says
+`PACKAGE.ts` holds for it too. A rejected declaration names its `PACKAGE.vibe`
+line.
+
+```text
+PACKAGE.vibe                      -> //
+packages/greeter/PACKAGE.vibe     -> //packages/greeter
+```
+
+The CLI loads a `PACKAGE.vibe` through `vibelang/register`, from the optional
+`vibelang` peer of `@smthrs/build-cli` or the workspace's own install. VibeLang
+compiles a module with the nearest `tsconfig.json` above it, so that project
+must include the `PACKAGE.vibe` and resolve `@smthrs/targets`. The compiler runs
+only when a command loads a `.vibe` module; a workspace of `PACKAGE.ts` files
+never starts it.
 
 ## Lazy evaluation
 

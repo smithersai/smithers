@@ -9807,7 +9807,7 @@ Input expansion and remote-cache resolution. From `@smthrs/build-cli/Workspace`.
 | ----------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `ExpandedInput`                     | `{ declaration: Input.Declared; files: ReadonlyArray<FileDigest>; digest: string }` | One declared matcher after discovery and measurement.               |
 | `FileDigest`                        | `Input.FileDigest`                                                                  | A file and the digest that enters key material.                     |
-| `declarationFileNames`              | `readonly ["PACKAGE.ts"]`                                                           | The only target declaration filename.                               |
+| `declarationFileNames`              | `readonly ["PACKAGE.ts", "PACKAGE.vibe"]`                                           | The target declaration filenames, TypeScript and VibeLang.          |
 | `ResolvedRemoteCache`               | `{ endpoint; credentials; discovered? }`                                            | The remote-cache settings one command runs under.                   |
 | `ResolvedRemoteCacheCredentials`    | tagged union: `shared`, `split`, `public`, `anonymous`                              | Which credentials a workspace declared.                             |
 | `RemoteCacheAccess`                 | `ResolvedRemoteCache` plus `readToken()`, `writeToken()`, `publishNamespace`        | A resolved cache with the readers that fetch its credentials.       |
