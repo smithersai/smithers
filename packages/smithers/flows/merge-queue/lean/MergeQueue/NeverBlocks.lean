@@ -102,4 +102,30 @@ theorem free_slot_is_used {cfg : Config} {s : State} (checks : cfg.required ≠ 
   · rw [noPush] at busy
     cases busy
 
+/-- **A probe tests one ready change alone on the tip.** A probe that takes
+effect adds one run whose base is the target's tree and whose batch is that
+change at its current revision. -/
+theorem probe_is_on_the_tip {cfg : Config} {s : State} {id : ChangeId} (took : s.probe cfg id ≠ s) :
+    ∃ c ∈ s.changes, c.id = id ∧ c.status = .queued
+      ∧ (s.probe cfg id).runs = s.runs ++ [Run.mk s.nextRun s.main [c.part] []] := by
+  rcases s.probe_cases cfg id with refused | ⟨c, _, member, same, queued, _, _, eq⟩
+  · exact absurd refused took
+  · exact ⟨c, member, same, queued, by rw [eq]⟩
+
+/-- **An idle queue has probed every ready change.** When the policy has
+nothing to do and a run slot is free, every ready change is under test alone
+on the target's tree: a failing change is found without waiting for the
+changes ahead of it. -/
+theorem idle_means_every_change_is_probed {cfg : Config} {s : State} (idle : plan cfg s = none)
+    (slot : s.pendingCount cfg < cfg.maxRuns) :
+    ∀ c ∈ s.ready, ∃ r ∈ s.runs, r.tree = s.main ++ [c.part] := by
+  have none : s.nextProbe cfg = none := by
+    unfold plan at idle
+    (repeat' split at idle) <;> first | assumption | cases idle
+  unfold State.nextProbe at none
+  rw [if_neg (by omega)] at none
+  intro c member
+  have := List.find?_eq_none.mp none c member
+  simpa using this
+
 end MergeQueue

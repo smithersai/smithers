@@ -71,8 +71,8 @@ The queue is one function, `step(config, state, event)`. Every state change is
 an event, and every event has a guard: an event whose guard fails returns the
 state unchanged. Seven events arrive from outside (`enqueue`, `withdraw`,
 `result`, `fixed`, `gaveUp`, `foreign` for a commit someone else put on the
-target, and `land` when the target is seen on the tree the queue pushed). Four
-are the queue's own decisions (`start`, `push`, `blame`, `cancel`), and
+target, and `land` when the target is seen on the tree the queue pushed). Five
+are the queue's own decisions (`start`, `probe`, `push`, `blame`, `cancel`), and
 `plan(config, state)` picks the next one:
 
 1. **Push** the longest run that is live, complete and green: fast-forward the
@@ -84,7 +84,12 @@ are the queue's own decisions (`start`, `push`, `blame`, `cancel`), and
 4. **Start** the next run. With no known failure it extends the longest prefix
    under test by up to `maxBatch` changes, so later batches are tested
    speculatively on top of earlier ones. With the first `m` changes known to
-   fail together it tests a prefix halfway to `m`: bisection.
+   fail together it tests prefixes between the longest unfailed one and `m`,
+   one split point per free run slot: bisection, in parallel.
+5. **Probe** a ready change alone on the tip, with any run slot left. A probe
+   finds a failing change before it reaches the front of the queue, so it goes
+   to a fix agent without holding up the changes around it. Probes are why
+   throughput does not collapse when changes fail.
 
 Safety does not depend on `plan`. `step` checks every guard itself, so a wrong
 policy can waste CI time and cannot land an untested tree.

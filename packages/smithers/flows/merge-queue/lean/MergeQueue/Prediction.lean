@@ -139,6 +139,9 @@ theorem predictions_never_decide (cfg : Config) (s : State) (history : List (Che
   | start count =>
     simp only [step, State.start, ready, pending]
     split <;> rfl
+  | probe id =>
+    simp only [step, State.probe, pending]
+    (repeat' split) <;> rfl
   | land run =>
     simp only [step, State.land, State.landNow, findRun]
     split
@@ -247,6 +250,9 @@ theorem history_bounded {cfg : Config} {s : State} (reachable : Reachable cfg s)
       split <;> exact ih
     | push run =>
       simp only [step, State.push]
+      (repeat' split) <;> exact ih
+    | probe id =>
+      simp only [step, State.probe]
       (repeat' split) <;> exact ih
     | start count =>
       simp only [step, State.start]

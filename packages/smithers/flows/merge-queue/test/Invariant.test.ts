@@ -13,7 +13,20 @@ describe("the reference's theorems hold on the kernel", () => {
   it("covers landings, blames, fixes, verdicts and cancels", () => {
     const tags = new Set(all.filter((entry) => !same(entry.before, entry.after)).map((entry) => entry.event._tag))
     expect([...tags].sort()).toEqual(
-      ["blame", "cancel", "enqueue", "fixed", "foreign", "gaveUp", "land", "push", "result", "start", "withdraw"]
+      [
+        "blame",
+        "cancel",
+        "enqueue",
+        "fixed",
+        "foreign",
+        "gaveUp",
+        "land",
+        "probe",
+        "push",
+        "result",
+        "start",
+        "withdraw"
+      ]
     )
     expect(all.length).toBeGreaterThan(20_000)
   })

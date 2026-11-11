@@ -409,6 +409,28 @@ export const start = (config: Config, state: State, count: number): State => {
 }
 
 /**
+ * Tests one ready change alone on the target's tree. A probe is an ordinary
+ * run: it is blamed at its first failed check, and it can land if it is
+ * green. Its use is to find a failing change before it holds up the changes
+ * queued around it.
+ *
+ * @category decisions
+ * @since 0.1.0
+ */
+export const probe = (config: Config, state: State, id: number): State => {
+  const change = state.changes.find((entry) => entry.id === id && entry.status._tag === "queued")
+  if (change === undefined) return state
+  const candidate = [...state.main, part(change)]
+  return config.maxRuns <= pendingCount(config, state) || state.runs.some((run) => sameTree(tree(run), candidate))
+    ? state
+    : {
+      ...state,
+      runs: [...state.runs, { id: state.nextRun, base: state.main, batch: [part(change)], results: [] }],
+      nextRun: state.nextRun + 1
+    }
+}
+
+/**
  * Decides to fast-forward the target onto a run's tree. The run must be live
  * and its result complete and green, and no other push may be under way.
  * Nothing lands yet: the landing is recorded when the target is seen on that
@@ -539,6 +561,8 @@ export const step = (config: Config, state: State, event: Event): State => {
       return start(config, state, event.count)
     case "push":
       return push(config, state, event.run)
+    case "probe":
+      return probe(config, state, event.id)
     case "land":
       return land(config, state, event.run)
     case "blame":

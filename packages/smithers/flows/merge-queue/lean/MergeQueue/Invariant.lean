@@ -527,6 +527,82 @@ theorem Inv.start {cfg : Config} {s : State} (inv : Inv cfg s) (count : Nat) : I
           have ready := State.mem_ready.mp ((List.take_sublist count _).subset taken)
           exact ⟨d, ready.1, rfl, Nat.le_refl _⟩
 
+/-! ## Probe -/
+
+theorem Inv.probe {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.probe cfg id) := by
+  rcases s.probe_cases cfg id with refused | ⟨c, _, member, _, queued, room, _, took⟩
+  · rw [refused]; exact inv
+  · rw [took]
+    constructor
+    · exact inv.changeIds
+    · exact inv.seqs
+    · show ((s.runs ++ [_]).map Run.id).Nodup
+      simp only [List.map_append, List.map_cons, List.map_nil]
+      refine List.nodup_append.mpr ⟨inv.runIds, by simp, ?_⟩
+      intro a ha b hb
+      simp only [List.mem_singleton] at hb
+      subst hb
+      obtain ⟨r, inRuns, rfl⟩ := List.mem_map.mp ha
+      exact Nat.ne_of_lt (inv.runFresh r inRuns)
+    · intro r hr
+      rcases List.mem_append.mp hr with old | new
+      · exact Nat.lt_succ_of_lt (inv.runFresh r old)
+      · simp only [List.mem_singleton] at new
+        subst new
+        exact Nat.lt_succ_self _
+    · intro r hr
+      rcases List.mem_append.mp hr with old | new
+      · exact inv.runTrees r old
+      · simp only [List.mem_singleton] at new
+        subst new
+        show ((s.main ++ [c.part]).map Part.id).Nodup
+        simp only [List.map_append, List.map_cons, List.map_nil]
+        refine List.nodup_append.mpr ⟨inv.mainNodup, by simp, ?_⟩
+        intro a ha b hb
+        simp only [List.mem_singleton] at hb
+        subst hb
+        obtain ⟨p, inMain, rfl⟩ := List.mem_map.mp ha
+        obtain ⟨d, dMember, part, merged⟩ := inv.mainMerged p inMain
+        intro same
+        have : d = c := eq_of_nodup_map inv.changeIds dMember member (by rw [← part] at same; exact same)
+        subst this
+        rw [merged] at queued
+        cases queued
+    · intro r hr x hx
+      rcases List.mem_append.mp hr with old | new
+      · exact inv.resultsRequired r old x hx
+      · simp only [List.mem_singleton] at new
+        subst new
+        cases hx
+    · intro r hr
+      rcases List.mem_append.mp hr with old | new
+      · exact inv.resultsUnique r old
+      · simp only [List.mem_singleton] at new
+        subst new
+        simp
+    · exact inv.mainNodup
+    · exact inv.mainMerged
+    · exact inv.mergedMain
+    · exact inv.attempts
+    · exact inv.reasons
+    · exact inv.chain
+    · exact inv.landings
+    · show (s.runs ++ [_]).countP (Run.pending cfg) ≤ cfg.maxRuns
+      rw [List.countP_append, List.countP_singleton]
+      have room' : s.runs.countP (Run.pending cfg) < cfg.maxRuns := room
+      split <;> omega
+    · intro r hr p hp
+      rcases List.mem_append.mp hr with old | new
+      · exact inv.runRevs r old p hp
+      · simp only [List.mem_singleton] at new
+        subst new
+        rcases List.mem_append.mp hp with inMain | inBatch
+        · obtain ⟨d, dMember, part, _⟩ := inv.mainMerged p inMain
+          exact ⟨d, dMember, by rw [← part]; rfl, by rw [← part]; exact Nat.le_refl _⟩
+        · simp only [List.mem_singleton] at inBatch
+          subst inBatch
+          exact ⟨c, member, rfl, Nat.le_refl _⟩
+
 /-! ## Land -/
 
 theorem Inv.landNow {cfg : Config} {s : State} (inv : Inv cfg s) (run : RunId) : Inv cfg (s.landNow cfg run) := by
@@ -723,6 +799,7 @@ theorem Inv.step {cfg : Config} {s : State} (inv : Inv cfg s) (e : Event) : Inv 
   | gaveUp id attempt detail => exact inv.gaveUp id attempt detail
   | foreign id => exact inv.foreign id
   | push run => exact inv.push run
+  | probe id => exact inv.probe id
   | start count => exact inv.start count
   | land run => exact inv.land run
   | blame run => exact inv.blame run

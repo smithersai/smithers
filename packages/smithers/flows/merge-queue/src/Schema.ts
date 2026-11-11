@@ -165,6 +165,7 @@ export const Event = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("foreign"), id: Natural }),
   Schema.Struct({ _tag: Schema.Literal("start"), count: Natural }),
   Schema.Struct({ _tag: Schema.Literal("push"), run: Natural }),
+  Schema.Struct({ _tag: Schema.Literal("probe"), id: Natural }),
   Schema.Struct({ _tag: Schema.Literal("land"), run: Natural }),
   Schema.Struct({ _tag: Schema.Literal("blame"), run: Natural }),
   Schema.Struct({ _tag: Schema.Literal("cancel"), run: Natural })

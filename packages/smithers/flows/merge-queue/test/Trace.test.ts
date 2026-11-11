@@ -14,6 +14,7 @@ const events: ReadonlyArray<readonly [string, Event]> = [
   ["foreign 9", { _tag: "foreign", id: 9 }],
   ["start 2", { _tag: "start", count: 2 }],
   ["push 0", { _tag: "push", run: 0 }],
+  ["probe 3", { _tag: "probe", id: 3 }],
   ["land 0", { _tag: "land", run: 0 }],
   ["blame 0", { _tag: "blame", run: 0 }],
   ["cancel 0", { _tag: "cancel", run: 0 }]

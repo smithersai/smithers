@@ -14,7 +14,7 @@
  */
 
 import type { Change, Config, Event, Run, State } from "./Basic.ts"
-import { isTerminal, part, samePart, tree } from "./Basic.ts"
+import { isTerminal, part, samePart, sameTree, tree } from "./Basic.ts"
 import {
   before,
   complete,
@@ -151,8 +151,9 @@ export const doomed = (state: State, run: Run): boolean => {
 }
 
 /**
- * Whether a pending live run started under an older ready order. It keeps its
- * slot: the queue starts nothing new until it lands or fails.
+ * Whether a pending live run of several changes started under an older ready
+ * order. It keeps its slot: the queue starts nothing new until it lands or
+ * fails. A run of one change (a probe) never holds the queue.
  *
  * @category decisions
  * @since 0.1.0
@@ -160,6 +161,7 @@ export const doomed = (state: State, run: Run): boolean => {
 export const outOfOrder = (config: Config, state: State): boolean =>
   state.runs.some((run) =>
     live(state, run) !== undefined && prefixLength(state, run) === undefined && pending(config, run)
+    && run.batch.length !== 1
   )
 
 /**
@@ -199,6 +201,18 @@ export const nextStart = (config: Config, state: State): number | undefined => {
 }
 
 /**
+ * The next change to probe: with a free run slot, the first ready change that
+ * no run tests alone on the target's tree.
+ *
+ * @category decisions
+ * @since 0.1.0
+ */
+export const nextProbe = (config: Config, state: State): Change | undefined =>
+  config.maxRuns <= pendingCount(config, state)
+    ? undefined
+    : ready(state).find((change) => !state.runs.some((run) => sameTree(tree(run), [...state.main, part(change)])))
+
+/**
  * The landable run with the longest tree; the earliest such run on a tie.
  *
  * @category decisions
@@ -232,7 +246,7 @@ export const useless = (state: State, run: Run): boolean =>
 /**
  * The queue's next decision, or `undefined` when it has to wait for the world.
  * In order: push what can land, blame what can be blamed, cancel what is no
- * longer useful, then start the next run.
+ * longer useful, start the next run, then probe a ready change alone.
  *
  * @category decisions
  * @since 0.1.0
@@ -245,7 +259,9 @@ export const plan = (config: Config, state: State): Event | undefined => {
   const forgotten = state.runs.find((run) => useless(state, run))
   if (forgotten !== undefined) return { _tag: "cancel", run: forgotten.id }
   const count = nextStart(config, state)
-  return count === undefined ? undefined : { _tag: "start", count }
+  if (count !== undefined) return { _tag: "start", count }
+  const probed = nextProbe(config, state)
+  return probed === undefined ? undefined : { _tag: "probe", id: probed.id }
 }
 
 /**

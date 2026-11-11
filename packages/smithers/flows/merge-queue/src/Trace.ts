@@ -18,6 +18,7 @@
  * foreign <id>
  * start <count>
  * push <run>
+ * probe <id>
  * land <run>
  * blame <run>
  * cancel <run>
@@ -99,6 +100,8 @@ export const renderEvent = (event: Event): string => {
       return `foreign ${event.id}`
     case "push":
       return `push ${event.run}`
+    case "probe":
+      return `probe ${event.id}`
     case "start":
       return `start ${event.count}`
     case "land":
@@ -261,6 +264,8 @@ export const parseLine = (text: string): Line | undefined => {
       return event({ _tag: "foreign", id: first })
     case "push":
       return event({ _tag: "push", run: first })
+    case "probe":
+      return event({ _tag: "probe", id: first })
     case "start":
       return event({ _tag: "start", count: first })
     case "land":

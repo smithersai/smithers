@@ -66,6 +66,7 @@ const eventLine = (next: () => number, config: Config, state: State): string => 
   if (roll < 0.88) return `withdraw ${change?.id ?? below(next, 6)}`
   if (roll < 0.9) return `start ${below(next, 5)}`
   if (roll < 0.91) return `foreign ${next() < 0.8 ? 100 + state.changes.length : below(next, 6)}`
+  if (roll < 0.918) return `probe ${change?.id ?? below(next, 6)}`
   if (roll < 0.925) return `push ${run?.id ?? below(next, 8)}`
   if (roll < 0.94) return `land ${next() < 0.85 && state.pushing !== null ? state.pushing : run?.id ?? below(next, 8)}`
   if (roll < 0.96) return `blame ${run?.id ?? below(next, 8)}`

@@ -21,6 +21,7 @@ gaveup <id> <attempt> <detail to end of line>
 foreign <id>
 start <count>
 push <run>
+probe <id>
 land <run>
 blame <run>
 cancel <run>
@@ -74,6 +75,7 @@ def event : Event → String
   | .gaveUp id attempt detail => s!"gaveup {id} {attempt} {detail}"
   | .foreign id => s!"foreign {id}"
   | .push r => s!"push {r}"
+  | .probe id => s!"probe {id}"
   | .start count => s!"start {count}"
   | .land r => s!"land {r}"
   | .blame r => s!"blame {r}"
@@ -140,6 +142,7 @@ def line (text : String) : Option Line :=
     do pure (.event (.gaveUp (← id.toNat?) (← attempt.toNat?) (" ".intercalate detail)))
   | ["foreign", id] => do pure (.event (.foreign (← id.toNat?)))
   | ["push", r] => do pure (.event (.push (← r.toNat?)))
+  | ["probe", id] => do pure (.event (.probe (← id.toNat?)))
   | ["start", count] => do pure (.event (.start (← count.toNat?)))
   | ["land", r] => do pure (.event (.land (← r.toNat?)))
   | ["blame", r] => do pure (.event (.blame (← r.toNat?)))

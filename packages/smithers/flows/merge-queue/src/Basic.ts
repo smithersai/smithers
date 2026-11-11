@@ -211,7 +211,7 @@ export interface State {
  * What happens to the queue. `enqueue`, `withdraw`, `result`, `fixed`,
  * `gaveUp`, `foreign` (someone else put a commit on the target) and `land`
  * (the target was seen on the pushed tree) arrive from outside; `start`,
- * `push`, `blame` and `cancel` are what the queue decides, and `plan` chooses
+ * `probe`, `push`, `blame` and `cancel` are what the queue decides, and `plan` chooses
  * among them. Every event is safe at any time: `step` refuses one whose guard
  * does not hold.
  *
@@ -233,6 +233,7 @@ export type Event =
   | { readonly _tag: "foreign"; readonly id: number }
   | { readonly _tag: "start"; readonly count: number }
   | { readonly _tag: "push"; readonly run: number }
+  | { readonly _tag: "probe"; readonly id: number }
   | { readonly _tag: "land"; readonly run: number }
   | { readonly _tag: "blame"; readonly run: number }
   | { readonly _tag: "cancel"; readonly run: number }

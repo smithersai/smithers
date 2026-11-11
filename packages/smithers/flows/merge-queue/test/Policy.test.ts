@@ -8,6 +8,9 @@ import {
   fixBriefs,
   maxOf,
   minOf,
+  nextProbe,
+  nextStart,
+  outOfOrder,
   plan,
   prefixLength,
   renderEvent,
@@ -48,12 +51,30 @@ describe("plan: starting runs", () => {
     expect(decision("config required=1 maxAttempts=1 maxBatch=1 maxRuns=0", "enqueue 1 0")).toBe("wait")
   })
 
-  it("lets a pending run started under an older order keep its slot", () => {
-    const lines = [standard, "enqueue 1 0", "plan", "enqueue 2 9"]
+  it("lets a pending batch started under an older order keep its slot, and probes meanwhile", () => {
+    const lines = [standard, "enqueue 1 0", "enqueue 2 0", "plan", "enqueue 3 9"]
     const { config, state } = play(...lines)
     expect(prefixLength(state, state.runs[0]!)).toBeUndefined()
-    expect(plan(config, state)).toBeUndefined()
-    expect(decision(...lines, "result 0 1 pass 1", "result 0 2 pass 1")).toBe("push 0")
+    expect(outOfOrder(config, state)).toBe(true)
+    expect(nextStart(config, state)).toBeUndefined()
+    expect(decision(...lines)).toBe("probe 3")
+    expect(decision(...lines, "plan", "result 0 1 pass 1", "result 0 2 pass 1")).toBe("push 0")
+  })
+
+  it("a pending probe never holds the queue", () => {
+    const lines = [standard, "enqueue 1 0", "probe 1", "enqueue 2 9"]
+    const { config, state } = play(...lines)
+    expect(outOfOrder(config, state)).toBe(false)
+    expect(decision(...lines)).toBe("start 2")
+  })
+
+  it("probes each ready change once, while a run slot is free", () => {
+    const wide = "config required=1 maxAttempts=1 maxBatch=8 maxRuns=4 window=3 defaultDuration=60"
+    const { config, state } = play(wide, "enqueue 1 0", "enqueue 2 0", "enqueue 3 0")
+    const settled = settle(config, 10, state)
+    expect(settled.runs.map((run) => run.batch.map((entry) => entry.id))).toEqual([[1, 2, 3], [1], [2], [3]])
+    expect(nextProbe(config, settled)).toBeUndefined()
+    expect(nextProbe(config, { ...settled, runs: [] })?.id).toBe(1)
   })
 })
 

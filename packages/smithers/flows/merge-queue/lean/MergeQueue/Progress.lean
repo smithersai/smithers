@@ -223,6 +223,11 @@ theorem budget_push (cfg : Config) (s : State) (run : RunId) : (s.push cfg run).
   unfold State.push
   (repeat' split) <;> rfl
 
+/-- A probe does not touch the budget. -/
+theorem budget_probe (cfg : Config) (s : State) (id : ChangeId) : (s.probe cfg id).budget cfg = s.budget cfg := by
+  unfold State.probe
+  (repeat' split) <;> rfl
+
 /-- Results, starts and cancels do not touch the budget. -/
 theorem budget_unchanged (cfg : Config) (s : State) (e : Event)
     (kind : (∃ run check verdict duration, e = .result run check verdict duration) ∨ (∃ count, e = .start count)
@@ -247,6 +252,7 @@ theorem budget_never_rises (cfg : Config) (s : State) (e : Event) (notEnqueue : 
   | gaveUp id attempt detail => exact budget_gaveUp cfg s id attempt detail
   | foreign id => exact Nat.le_of_eq (budget_foreign cfg s id)
   | push run => exact Nat.le_of_eq (budget_push cfg s run)
+  | probe id => exact Nat.le_of_eq (budget_probe cfg s id)
   | start count => exact Nat.le_of_eq (budget_unchanged cfg s _ (Or.inr (Or.inl ⟨count, rfl⟩)))
   | land run =>
     by_cases took : s.land cfg run = s
@@ -403,7 +409,54 @@ theorem plan_takes_effect {cfg : Config} {s : State} {e : Event} (inv : Inv cfg 
             · obtain ⟨x, member, tree⟩ := List.any_eq_true.mp duplicate
               exact fresh x member (by simpa using tree)
           simp [step, took] at counter
-        · cases planned
+        · split at planned
+          · rename_i c next
+            cases planned
+            unfold State.nextProbe at next
+            split at next
+            · cases next
+            · rename_i slots
+              have inReady := State.mem_ready.mp (List.mem_of_find?_eq_some next)
+              have unprobed := List.find?_some next
+              simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at unprobed
+              intro same
+              rcases s.probe_cases cfg c.id with refused | ⟨d, _, dMember, dId, _, _, _, took⟩
+              · -- The probe was refused: impossible, its guard holds.
+                unfold State.probe at refused
+                have found : s.changes.find? (fun x => x.id == c.id && x.status.isQueued)
+                    = some c ∨ ∃ d, s.changes.find? (fun x => x.id == c.id && x.status.isQueued) = some d := by
+                  cases h : s.changes.find? (fun x => x.id == c.id && x.status.isQueued) with
+                  | none =>
+                    have := List.find?_eq_none.mp h c inReady.1
+                    simp [inReady.2] at this
+                  | some d => exact Or.inr ⟨d, rfl⟩
+                rcases found with isC | ⟨d, isD⟩
+                · simp only [isC] at refused
+                  split at refused
+                  · rename_i guard
+                    rcases guard with full | duplicate
+                    · omega
+                    · obtain ⟨x, member, tree⟩ := List.any_eq_true.mp duplicate
+                      exact unprobed x member (by simpa using tree)
+                  · have := congrArg State.nextRun refused
+                    simp at this
+                · have dHolds := List.find?_some isD
+                  simp only [Bool.and_eq_true, beq_iff_eq] at dHolds
+                  have dIs : d = c :=
+                    eq_of_nodup_map inv.changeIds (List.mem_of_find?_eq_some isD) inReady.1 dHolds.1
+                  subst dIs
+                  simp only [isD] at refused
+                  split at refused
+                  · rename_i guard
+                    rcases guard with full | duplicate
+                    · omega
+                    · obtain ⟨x, member, tree⟩ := List.any_eq_true.mp duplicate
+                      exact unprobed x member (by simpa using tree)
+                  · have := congrArg State.nextRun refused
+                    simp at this
+              · have counter := congrArg State.nextRun same
+                simp [step, took] at counter
+          · cases planned
 
 /-! ## No deadlock -/
 
@@ -459,9 +512,10 @@ theorem no_deadlock {cfg : Config} {s : State} (checks : cfg.required ≠ []) (s
           unfold State.nextStart at noStart
           have notFull : ¬cfg.maxRuns ≤ s.pendingCount cfg := by omega
           have inOrder : s.outOfOrder cfg = false := by
-            simp only [State.outOfOrder, List.any_eq_false, Bool.and_eq_true, not_and, Bool.not_eq_true]
-            intro r member _
-            exact settled r member
+            unfold State.outOfOrder
+            rw [List.any_eq_false]
+            intro r member
+            simp [settled r member]
           simp only [notFull, if_false, inOrder, Bool.false_eq_true] at noStart
           split at noStart
           · split at noStart

@@ -265,4 +265,27 @@ theorem State.fixed_of_fixing (s : State) {c : Change} (member : c ∈ s.changes
     List.any_eq_true.mpr ⟨c, member, by simp [fixing]⟩
   simp [found]
 
+/-- A probe is refused, or it adds one run on the target's tree plus one
+queued change. -/
+theorem State.probe_cases (cfg : Config) (s : State) (id : ChangeId) :
+    s.probe cfg id = s
+      ∨ ∃ c, s.changes.find? (fun c => c.id == id && c.status.isQueued) = some c
+          ∧ c ∈ s.changes ∧ c.id = id ∧ c.status = .queued ∧ s.pendingCount cfg < cfg.maxRuns
+          ∧ (∀ r ∈ s.runs, r.tree ≠ s.main ++ [c.part])
+          ∧ s.probe cfg id =
+            { s with
+              runs := s.runs ++ [Run.mk s.nextRun s.main [c.part] []]
+              nextRun := s.nextRun + 1 } := by
+  unfold State.probe
+  split
+  · exact Or.inl rfl
+  · rename_i c found
+    split
+    · exact Or.inl rfl
+    · rename_i guard
+      simp only [not_or, Nat.not_le, List.any_eq_true, beq_iff_eq, not_exists, not_and] at guard
+      have holds := List.find?_some found
+      simp only [Bool.and_eq_true, beq_iff_eq, Status.isQueued_iff] at holds
+      exact Or.inr ⟨c, found, List.mem_of_find?_eq_some found, holds.1, holds.2, guard.1, guard.2, rfl⟩
+
 end MergeQueue

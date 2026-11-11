@@ -8,20 +8,20 @@ Every export mirrors the definition of the same name in the Lean reference
 
 ## Vocabulary (`Basic`)
 
-| Export                                               | Meaning                                                                                                    |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `Part`                                               | One revision of one change: `{ id, rev }`.                                                                 |
-| `Tree`                                               | The parts applied to the target, in order.                                                                 |
-| `Change`                                             | A change the queue has seen: id, priority, arrival number, revision, fix attempts used, status.            |
-| `Status`                                             | `queued`, `fixing` (with the run that blamed it), `merged`, `unmergeable` (with a `Reason`), `withdrawn`.  |
-| `Reason`                                             | Why a change is unmergeable: `kind`, `detail` (never empty), `failures`, `attempts`.                       |
-| `Run`                                                | One CI run on one exact tree: `base` followed by `batch`, with streamed `results`.                         |
-| `Landing`                                            | The audit record of one landing.                                                                           |
-| `Config`                                             | `required`, `maxAttempts`, `maxBatch`, `maxRuns`, `window`, `defaultDuration`.                             |
-| `State`                                              | Everything the queue remembers; all of it durable.                                                         |
-| `Event`                                              | `enqueue`, `withdraw`, `result`, `fixed`, `gaveUp`, `foreign`, `land`, `start`, `push`, `blame`, `cancel`. |
-| `empty`                                              | The queue before anything has happened.                                                                    |
-| `part`, `tree`, `samePart`, `sameTree`, `isTerminal` | Accessors and comparisons.                                                                                 |
+| Export                                               | Meaning                                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Part`                                               | One revision of one change: `{ id, rev }`.                                                                          |
+| `Tree`                                               | The parts applied to the target, in order.                                                                          |
+| `Change`                                             | A change the queue has seen: id, priority, arrival number, revision, fix attempts used, status.                     |
+| `Status`                                             | `queued`, `fixing` (with the run that blamed it), `merged`, `unmergeable` (with a `Reason`), `withdrawn`.           |
+| `Reason`                                             | Why a change is unmergeable: `kind`, `detail` (never empty), `failures`, `attempts`.                                |
+| `Run`                                                | One CI run on one exact tree: `base` followed by `batch`, with streamed `results`.                                  |
+| `Landing`                                            | The audit record of one landing.                                                                                    |
+| `Config`                                             | `required`, `maxAttempts`, `maxBatch`, `maxRuns`, `window`, `defaultDuration`.                                      |
+| `State`                                              | Everything the queue remembers; all of it durable.                                                                  |
+| `Event`                                              | `enqueue`, `withdraw`, `result`, `fixed`, `gaveUp`, `foreign`, `land`, `start`, `probe`, `push`, `blame`, `cancel`. |
+| `empty`                                              | The queue before anything has happened.                                                                             |
+| `part`, `tree`, `samePart`, `sameTree`, `isTerminal` | Accessors and comparisons.                                                                                          |
 
 ## Transitions (`Step`)
 
@@ -30,8 +30,8 @@ Every export mirrors the definition of the same name in the Lean reference
 | `step(config, state, event)`                                               | The queue. Returns the given state when the event's guard fails.                       |
 | `run(config, state, events)`                                               | Applies events in order.                                                               |
 | `enqueue`, `withdraw`, `result`, `fixed`, `gaveUp`, `foreign`, `land`      | The events that arrive from outside. `land` is accepted only for the run being pushed. |
-| `start`, `push`, `blame`, `cancel`                                         | The queue's decisions.                                                                 |
-| `pushingRun`, `pushingPart`, `landNow`, `withdrawNow`                      | The push under way, and the inner steps `land` and `withdraw` guard.                   |
+| `start`, `probe`, `push`, `blame`, `cancel`                                | The queue's decisions. `probe` tests one ready change alone on the tip.                |
+| `pushingRun`, `pushingPart`, `landNow`, `withdrawNow`, `fixedNow`          | The push under way, and the inner steps `land`, `withdraw` and `fixed` guard.          |
 | `answered`, `passed`, `failed`, `complete`, `green`, `failures`, `pending` | Reading a run's results. `green` is the only result that lets a tree land.             |
 | `before`, `inOrder`, `ready`                                               | Landing order: priority, then arrival.                                                 |
 | `strip`, `partReady`, `live`                                               | Whether a run can still land or blame.                                                 |
@@ -39,14 +39,14 @@ Every export mirrors the definition of the same name in the Lean reference
 
 ## Policy (`Policy`)
 
-| Export                                                                                                                                   | Meaning                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `plan(config, state)`                                                                                                                    | The next decision, or `undefined` when the queue waits for the world.                                            |
-| `settle(config, fuel, state)`                                                                                                            | Applies decisions until there is none, at most `fuel` times.                                                     |
-| `landable`, `nextPush`, `blameable`, `evidence`, `doomed`, `useless`, `outOfOrder`                                                       | Why `plan` pushes, blames, keeps, cancels or waits.                                                              |
-| `prefixLength`, `failedPrefixes`, `unfailedPrefixes`, `shortestFailed`, `longestUnfailed`, `nextStart`, `bestLandable`, `minOf`, `maxOf` | Speculation and bisection.                                                                                       |
-| `wantsCi(config, state, run)`                                                                                                            | Whether CI should be running a run.                                                                              |
-| `fixBriefs(state)`, `ahead(state, change)`, `FixBrief`, `Ahead`                                                                          | What each fix agent is given: revision, attempt, failures so far, and the changes ahead with who is fixing them. |
+| Export                                                                                                                                                              | Meaning                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `plan(config, state)`                                                                                                                                               | The next decision, or `undefined` when the queue waits for the world.                                            |
+| `settle(config, fuel, state)`                                                                                                                                       | Applies decisions until there is none, at most `fuel` times.                                                     |
+| `landable`, `nextPush`, `blameable`, `evidence`, `doomed`, `useless`, `outOfOrder`                                                                                  | Why `plan` pushes, blames, keeps, cancels or waits.                                                              |
+| `prefixLength`, `failedPrefixes`, `unfailedPrefixes`, `shortestFailed`, `longestUnfailed`, `nextStart`, `bisectStep`, `nextProbe`, `bestLandable`, `minOf`, `maxOf` | Speculation, parallel bisection and probes.                                                                      |
+| `wantsCi(config, state, run)`                                                                                                                                       | Whether CI should be running a run.                                                                              |
+| `fixBriefs(state)`, `ahead(state, change)`, `FixBrief`, `Ahead`                                                                                                     | What each fix agent is given: revision, attempt, failures so far, and the changes ahead with who is fixing them. |
 
 ## Predicted durations (`Predict`)
 

@@ -199,6 +199,20 @@ def State.start (cfg : Config) (s : State) (count : Nat) : State :=
       runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch, results := [] }]
       nextRun := s.nextRun + 1 }
 
+/-- Test one ready change alone on the target's tree. A probe is an ordinary
+run: it is blamed at its first failed check, and it can land if it is green.
+Its use is to find a failing change before it holds up the changes queued
+around it. -/
+def State.probe (cfg : Config) (s : State) (id : ChangeId) : State :=
+  match s.changes.find? fun c => c.id == id && c.status.isQueued with
+  | none => s
+  | some c =>
+    if cfg.maxRuns ≤ s.pendingCount cfg ∨ s.runs.any (fun r => r.tree == s.main ++ [c.part]) then s
+    else
+      { s with
+        runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch := [c.part], results := [] }]
+        nextRun := s.nextRun + 1 }
+
 /-- Decide to fast-forward the target onto a run's tree. The run must be live
 and its result complete and green, and no other push may be under way. Nothing
 lands yet: the landing is recorded when the target is seen on that tree. -/
@@ -273,6 +287,7 @@ def step (cfg : Config) (s : State) : Event → State
   | .gaveUp id attempt detail => s.gaveUp id attempt detail
   | .foreign id => s.foreign id
   | .push run => s.push cfg run
+  | .probe id => s.probe cfg id
   | .start count => s.start cfg count
   | .land run => s.land cfg run
   | .blame run => s.blame cfg run

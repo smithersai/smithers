@@ -179,6 +179,9 @@ inductive Event where
   | land (run : RunId)
   /-- Test the first `count` ready changes on top of the target. -/
   | start (count : Nat)
+  /-- Test one ready change alone on the target, to find a failing change
+  before it holds up the changes around it. -/
+  | probe (id : ChangeId)
   /-- Fast-forward the target onto a run's tree. -/
   | push (run : RunId)
   /-- Send the only suspect of a failed run to a fix agent. -/

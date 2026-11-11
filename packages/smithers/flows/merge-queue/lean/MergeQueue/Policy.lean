@@ -83,10 +83,11 @@ def State.doomed (s : State) (r : Run) : Bool :=
       | some m => m < n
       | none => false
 
-/-- A pending live run started under an older ready order. It keeps its slot:
-the queue starts nothing new until it lands or fails. -/
+/-- A pending live run of several changes started under an older ready order.
+It keeps its slot: the queue starts nothing new until it lands or fails. A run
+of one change (a probe) never holds the queue. -/
 def State.outOfOrder (cfg : Config) (s : State) : Bool :=
-  s.runs.any fun r => (s.live r).isSome && (s.prefixLength r).isNone && r.pending cfg
+  s.runs.any fun r => (s.live r).isSome && (s.prefixLength r).isNone && r.pending cfg && r.batch.length != 1
 
 /-- How far the next bisection run reaches into a failing gap of `gap` changes
 with `free` run slots: the gap is cut into `free + 1` parts. With one slot it
@@ -112,6 +113,12 @@ def State.nextStart (cfg : Config) (s : State) : Option Nat :=
       let tested := s.longestUnfailed m
       if tested + 1 < m then some (tested + bisectStep (m - tested) (cfg.maxRuns - s.pendingCount cfg)) else none
 
+/-- The next change to probe: with a free run slot, the first ready change
+that no run tests alone on the target's tree. -/
+def State.nextProbe (cfg : Config) (s : State) : Option Change :=
+  if cfg.maxRuns ≤ s.pendingCount cfg then none
+  else s.ready.find? fun c => !s.runs.any (fun r => r.tree == s.main ++ [c.part])
+
 /-- The landable run with the longest tree; the earliest such run on a tie. -/
 def State.bestLandable (cfg : Config) (s : State) : Option Run :=
   s.runs.foldl
@@ -134,7 +141,7 @@ def State.useless (s : State) (r : Run) : Bool :=
 
 /-- The queue's next decision, or `none` when it has to wait for the world.
 In order: push what can land, blame what can be blamed, cancel what is no
-longer useful, then start the next run. -/
+longer useful, start the next run, then probe a ready change alone. -/
 def plan (cfg : Config) (s : State) : Option Event :=
   match s.nextPush cfg with
   | some r => some (.push r.id)
@@ -147,7 +154,10 @@ def plan (cfg : Config) (s : State) : Option Event :=
       | none =>
         match s.nextStart cfg with
         | some count => some (.start count)
-        | none => none
+        | none =>
+          match s.nextProbe cfg with
+          | some c => some (.probe c.id)
+          | none => none
 
 /-- Apply the policy's decisions until it has none left, at most `fuel` times. -/
 def settle (cfg : Config) : Nat → State → State

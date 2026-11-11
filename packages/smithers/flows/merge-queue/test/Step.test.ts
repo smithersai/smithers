@@ -14,6 +14,7 @@ import {
   landNow,
   live,
   part,
+  probe,
   push,
   pushingPart,
   pushingRun,
@@ -327,6 +328,28 @@ describe("foreign: someone else moved the target", () => {
     expect(state.runs).toEqual([])
     expect(state.main).toEqual([{ id: 50, rev: 0 }, { id: 1, rev: 0 }])
     expect(state.landed.at(-1)).toMatchObject({ run: 1, base: [{ id: 50, rev: 0 }], foreign: false })
+  })
+})
+
+describe("probe", () => {
+  it("tests one ready change alone on the target's tree, wherever it is in the queue", () => {
+    const { state } = play(standard, "enqueue 1 0", "enqueue 2 0", "enqueue 3 0", "probe 3")
+    expect(state.runs).toEqual([{ id: 0, base: [], batch: [{ id: 3, rev: 0 }], results: [] }])
+    expect(state.nextRun).toBe(1)
+  })
+
+  it("refuses a change that is not queued, a tree already under test and a full run limit", () => {
+    const before = play(standard, "enqueue 1 0", "enqueue 2 0", "withdraw 2", "probe 1")
+    expect(probe(before.config, before.state, 2)).toBe(before.state)
+    expect(probe(before.config, before.state, 9)).toBe(before.state)
+    expect(probe(before.config, before.state, 1)).toBe(before.state)
+    const full = play(standard, "enqueue 1 0", "enqueue 2 0", "enqueue 3 0", "probe 1", "probe 2")
+    expect(probe(full.config, full.state, 3)).toBe(full.state)
+  })
+
+  it("a failed probe is blamed at once, though changes are queued ahead of it", () => {
+    const { state } = play(standard, "enqueue 1 0", "enqueue 2 0", "probe 2", "result 0 1 fail 3", "blame 0")
+    expect(statuses(state)).toEqual({ 1: "queued", 2: "fixing" })
   })
 })
 

@@ -69,6 +69,7 @@ theorem main_moves_only_by_land {cfg : Config} {s : State} {e : Event} (moved : 
     exact absurd (by simp only [step, State.fixed, State.fixedNow]; split <;> rfl) moved
   | gaveUp id attempt detail => exact absurd rfl moved
   | push run => exact absurd (by simp only [step, State.push]; (repeat' split) <;> rfl) moved
+  | probe id => exact absurd (by simp only [step, State.probe]; (repeat' split) <;> rfl) moved
   | start count => exact absurd (by simp only [step, State.start]; split <;> rfl) moved
   | blame run => exact absurd (by simp only [step, State.blame]; (repeat' split) <;> rfl) moved
   | cancel run => exact absurd rfl moved
@@ -247,6 +248,9 @@ theorem ended_is_final (cfg : Config) {s : State} {c : Change} (member : c ∈ s
   | push run =>
     simp only [step, State.push]
     (repeat' split) <;> exact member
+  | probe id =>
+    simp only [step, State.probe]
+    (repeat' split) <;> exact member
   | start count =>
     simp only [step, State.start]
     split <;> exact member
@@ -293,6 +297,9 @@ theorem never_lost (cfg : Config) {s : State} {c : Change} (member : c ∈ s.cha
     · exact ⟨c, List.mem_append_left _ member, rfl, rfl⟩
   | push run =>
     simp only [step, State.push]
+    (repeat' split) <;> exact same
+  | probe id =>
+    simp only [step, State.probe]
     (repeat' split) <;> exact same
   | start count =>
     simp only [step, State.start]

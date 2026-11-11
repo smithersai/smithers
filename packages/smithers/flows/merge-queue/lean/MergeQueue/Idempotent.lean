@@ -165,6 +165,17 @@ theorem State.push_twice (cfg : Config) (s : State) (run : RunId) :
     unfold State.push
     simp only [busy]
 
+theorem State.probe_twice (cfg : Config) (s : State) (id : ChangeId) :
+    (s.probe cfg id).probe cfg id = s.probe cfg id := by
+  rcases s.probe_cases cfg id with refused | ⟨c, found, _, _, _, _, _, took⟩
+  · rw [refused, refused]
+  · rw [took]
+    unfold State.probe
+    simp only [found]
+    apply if_pos
+    right
+    simp [Run.tree]
+
 /-- **Delivering any event twice is the same as delivering it once.** -/
 theorem step_idempotent (cfg : Config) (s : State) (e : Event) : step cfg (step cfg s e) e = step cfg s e := by
   cases e with
@@ -175,6 +186,7 @@ theorem step_idempotent (cfg : Config) (s : State) (e : Event) : step cfg (step 
   | gaveUp id attempt detail => exact s.gaveUp_twice id attempt detail
   | foreign id => exact s.foreign_twice id
   | push run => exact s.push_twice cfg run
+  | probe id => exact s.probe_twice cfg id
   | start count => exact s.start_twice cfg count
   | land run => exact s.land_twice cfg run
   | blame run => exact s.blame_twice cfg run

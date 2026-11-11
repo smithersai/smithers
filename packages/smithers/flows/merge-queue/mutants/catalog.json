@@ -430,13 +430,13 @@
     "what": "Give two runs the same id.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "      nextRun := s.nextRun + 1 }",
-      "mutated": "      nextRun := s.nextRun }"
+      "original": "      runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch, results := [] }]\n      nextRun := s.nextRun + 1 }",
+      "mutated": "      runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch, results := [] }]\n      nextRun := s.nextRun }"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "      nextRun: state.nextRun + 1",
-      "mutated": "      nextRun: state.nextRun"
+      "original": "      runs: [...state.runs, { id: state.nextRun, base: state.main, batch, results: [] }],\n      nextRun: state.nextRun + 1",
+      "mutated": "      runs: [...state.runs, { id: state.nextRun, base: state.main, batch, results: [] }],\n      nextRun: state.nextRun"
     }
   },
   {
@@ -727,6 +727,76 @@
       "file": "src/Step.ts",
       "original": "      ? { ...change, rev: change.rev + 1, seq: state.nextSeq, status: { _tag: \"queued\" } }",
       "mutated": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }"
+    }
+  },
+  {
+    "name": "probe-over-the-run-limit",
+    "what": "Start a probe when no run slot is free.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "    if cfg.maxRuns ≤ s.pendingCount cfg ∨ s.runs.any (fun r => r.tree == s.main ++ [c.part]) then s",
+      "mutated": "    if cfg.maxRuns < s.pendingCount cfg ∨ s.runs.any (fun r => r.tree == s.main ++ [c.part]) then s"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  return config.maxRuns <= pendingCount(config, state) || state.runs.some((run) => sameTree(tree(run), candidate))\n    ? state\n    : {\n      ...state,\n      runs: [...state.runs, { id: state.nextRun, base: state.main, batch: [part(change)], results: [] }],",
+      "mutated": "  return config.maxRuns < pendingCount(config, state) || state.runs.some((run) => sameTree(tree(run), candidate))\n    ? state\n    : {\n      ...state,\n      runs: [...state.runs, { id: state.nextRun, base: state.main, batch: [part(change)], results: [] }],"
+    }
+  },
+  {
+    "name": "probe-a-change-that-ended",
+    "what": "Probe a change that is not queued any more.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  match s.changes.find? fun c => c.id == id && c.status.isQueued with",
+      "mutated": "  match s.changes.find? fun c => c.id == id with"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  const change = state.changes.find((entry) => entry.id === id && entry.status._tag === \"queued\")\n  if (change === undefined) return state\n  const candidate",
+      "mutated": "  const change = state.changes.find((entry) => entry.id === id)\n  if (change === undefined) return state\n  const candidate"
+    }
+  },
+  {
+    "name": "probe-on-a-stale-tip",
+    "what": "Build a probe on the empty tree instead of the target's tip.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "        runs := s.runs ++ [{ id := s.nextRun, base := s.main, batch := [c.part], results := [] }]",
+      "mutated": "        runs := s.runs ++ [{ id := s.nextRun, base := [], batch := [c.part], results := [] }]"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      runs: [...state.runs, { id: state.nextRun, base: state.main, batch: [part(change)], results: [] }],",
+      "mutated": "      runs: [...state.runs, { id: state.nextRun, base: [], batch: [part(change)], results: [] }],"
+    }
+  },
+  {
+    "name": "never-probe",
+    "what": "Never probe a ready change, so a failing change is found only when it reaches the front.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "          | some c => some (.probe c.id)\n          | none => none",
+      "mutated": "          | some _ => none\n          | none => none"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "  return probed === undefined ? undefined : { _tag: \"probe\", id: probed.id }",
+      "mutated": "  return probed === undefined ? undefined : undefined"
+    }
+  },
+  {
+    "name": "probes-hold-the-queue",
+    "what": "Let a pending probe stop the queue from starting its next run.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": " && r.pending cfg && r.batch.length != 1",
+      "mutated": " && r.pending cfg"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "    && run.batch.length !== 1\n",
+      "mutated": "\n"
     }
   }
 ]

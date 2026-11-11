@@ -120,15 +120,11 @@ const rows: Array<string> = []
 for (
   const [maxRuns, maxBatch, arrivalsPerRun] of [
     [1, 1, 1],
-    [1, 8, 4],
-    [4, 8, 16],
-    [8, 16, 64],
-    [8, 1, 4],
-    [16, 1, 8],
-    [32, 1, 16],
-    [32, 2, 32],
-    [64, 1, 32],
-    [64, 2, 64]
+    [8, 8, 4],
+    [16, 8, 8],
+    [32, 8, 16],
+    [64, 16, 32],
+    [64, 1, 32]
   ] as const
 ) {
   const config: Config = { required: [1], maxAttempts: 2, maxBatch, maxRuns, window: 20, defaultDuration: ciSeconds }
