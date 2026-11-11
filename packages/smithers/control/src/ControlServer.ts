@@ -6,11 +6,12 @@
 
 import { Cause, Context, Effect, Layer, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { RpcServer } from "effect/rpc"
+import { RpcSerialization, RpcServer } from "effect/rpc"
 import { Control } from "./Control.ts"
 import { Unauthorized } from "./ControlError.ts"
 import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
 import type { Principal } from "./ControlSchema.ts"
+import { protectProtocolDefects } from "./internal/RpcSerialization.ts"
 
 /**
  * Logs a content-free diagnostic for a failed RPC handler, and nothing for
@@ -219,4 +220,4 @@ const websocket = server.pipe(
 export const layerHttp = Layer.mergeAll(
   http,
   websocket
-)
+).pipe(Layer.updateService(RpcSerialization.RpcSerialization, protectProtocolDefects))

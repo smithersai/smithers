@@ -9,7 +9,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import type * as Undici from "@effect/platform-node/Undici"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
-import { Control as ControlService } from "@smthrs/control"
+import { Control as ControlService, ControlRpcs } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -972,9 +972,9 @@ describe("Application remote endpoint resolution", () => {
 
 /*
  * The control mount reads newline-delimited frames (`RpcSerialization.layerNdjson`
- * in `layerServer`). Effect 4.0.4's reader skips a line it cannot parse, where
- * the release candidates answered the whole body with one `Defect` frame and no
- * `Exit`. These cases pin what a caller of `/rpc` gets from the installed codec.
+ * in `layerServer`). A line it cannot parse refuses the whole body with one
+ * `Defect` frame and no `Exit`. The native frame's cause quotes the caller's
+ * bytes, so `ControlServer.layerHttp` redacts it to the shared defect message.
  */
 describe("NodeControl control mount framing", () => {
   const request = JSON.stringify({ _tag: "Request", id: "1", tag: "List", payload: { _tag: "flows" }, headers: [] })
@@ -1014,11 +1014,10 @@ describe("NodeControl control mount framing", () => {
 
     expect(alone).toMatchObject({ status: 200, frames: [answered] })
     for (const refused of [before, after, between]) {
-      expect(refused).toMatchObject({
+      expect(refused).toEqual({
         status: 200,
-        frames: [{ _tag: "Defect", defect: { name: "NdjsonDecodeError" } }]
+        frames: [{ _tag: "Defect", defect: { name: "Error", message: ControlRpcs.defectMessage } }]
       })
-      expect(refused!.frames).toHaveLength(1)
     }
   })
 
@@ -1026,11 +1025,10 @@ describe("NodeControl control mount framing", () => {
     const [garbage, truncated, next] = await answers(["not json\n", `${request.slice(0, 20)}\n`, `${request}\n`])
 
     for (const refused of [garbage, truncated]) {
-      expect(refused).toMatchObject({
+      expect(refused).toEqual({
         status: 200,
-        frames: [{ _tag: "Defect", defect: { name: "NdjsonDecodeError" } }]
+        frames: [{ _tag: "Defect", defect: { name: "Error", message: ControlRpcs.defectMessage } }]
       })
-      expect(refused!.frames).toHaveLength(1)
     }
     expect(next).toMatchObject({ status: 200, frames: [{ _tag: "Exit", requestId: "1", exit: { _tag: "Success" } }] })
   })

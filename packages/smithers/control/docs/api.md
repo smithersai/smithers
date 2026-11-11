@@ -649,6 +649,11 @@ This applies to every defect, including string defects and request-decoding fail
 The encoded shape is the one `Schema.Defect()` decodes,
 so older clients and servers read each other's defects.
 
+Malformed NDJSON refuses the whole body with a redacted `Defect` frame,
+including when a valid request shares the body. `ControlServer.layerHttp`
+preserves the transport codec when redacting protocol defects. A later valid
+request still runs.
+
 ## ScopedToken
 
 Scoped, expiring tokens minted under a gateway's bearer credential: an
