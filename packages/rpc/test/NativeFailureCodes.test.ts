@@ -20,7 +20,6 @@ import {
   refusalOf,
   storedRefusal
 } from "../src/Refusal.ts"
-import { agentFaultNote, agentRefusalText, refusalLead } from "../src/RefusalCopy.ts"
 import { WORKER_FAILURE_CODES, WORKER_FAILURES } from "../src/WorkerFailureCodes.ts"
 import { nativeRefusal } from "./refusalFixtures.ts"
 
@@ -106,14 +105,6 @@ describe("the native host's own failure registry", () => {
      */
     const faultOf = (code: NativeRouteCode): PlueFault => NATIVE_FAILURES[code].fault
     expect(NATIVE_ROUTE_CODES.filter((code) => faultOf(code) === "infra")).toEqual([])
-    for (const code of NATIVE_ROUTE_CODES) {
-      const refusal = await nativeRefusal(code, "x")
-      expect(refusalLead(refusal)).not.toContain("@fucory")
-      expect(refusalLead(refusal)).not.toContain("ran out")
-      expect(agentRefusalText(refusal)).not.toContain("@fucory")
-      /* Nor a deployment: nobody deployed the app on the reader's own box. */
-      expect(refusalLead(refusal)).not.toContain("deployment")
-    }
   })
 
   test("reads a code back to its own table and never to plue's", async () => {
@@ -193,12 +184,5 @@ describe("a native-host refusal as it reaches the app", () => {
       const refusal = await nativeRefusal(code, "x")
       expect(mayAutoRetry(refusal)).toBe(NATIVE_FAILURES[code].fault === "wait" && refusal.retryAfter !== null)
     }
-  })
-
-  test("tells the chat model the fault class for a native code too, through the string channel", async () => {
-    const note = agentFaultNote("native_node_missing — No Node.js >= 26.4 was found for the smithers-build CLI.")
-    expect(note).toContain("[fault=dependency code=native_node_missing]")
-    expect(note).not.toContain("@fucory")
-    expect(agentFaultNote("native_nothing_like_this — x")).toBeNull()
   })
 })

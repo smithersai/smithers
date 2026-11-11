@@ -452,8 +452,7 @@ export const isCapacityRefusal = (refusal: Refusal): boolean => refusal.code ===
  * which is the right thing to count: the next edit to such a line is one
  * character away from putting the wire's English on a screen. Asking here
  * keeps the read in the module that owns the shape, and hands the caller a
- * string it only compares. What a person reads is `refusalLine`
- * (@smthrs/rpc/RefusalCopy), never this.
+ * string it only compares. A person never reads this.
  *
  * @since 1.0.0
  * @category constants

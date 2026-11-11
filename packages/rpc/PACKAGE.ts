@@ -157,8 +157,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ApplicationTarget.ts",
         "src/CloudTunnel.ts",
         "src/AgentTurnJournal.ts",
-        "src/Refusal.ts",
-        "src/RefusalCopy.ts"
+        "src/Refusal.ts"
       ]
     },
     {
@@ -183,7 +182,7 @@ const securityReview = Smithers.SecurityReview({
         "A route contract that carries the local session token or journal read token in a query string.",
         "A WebSocket route that authorizes without the local-session subprotocol."
       ],
-      paths: ["src/LocalSession.ts", "src/CloudTunnel.ts", "src/AgentTurnJournal.ts", "src/AgentApiRoutes.ts"]
+      paths: ["src/CloudTunnel.ts", "src/AgentTurnJournal.ts", "src/AgentApiRoutes.ts"]
     },
     {
       id: "agent-context-prompt-injection",
@@ -218,15 +217,12 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "lsp-root-confinement",
-      title: "Code-intelligence paths stay inside the repository root and leak no host paths",
-      threat:
-        "A renderer script or language server output reads files outside the repository or learns the user's home directory layout.",
+      title: "Code-intelligence paths stay inside the repository root",
+      threat: "A renderer script reads files outside the repository through a code-intelligence request.",
       lookFor: [
-        "relativeToRoot accepting a target whose decoded segments contain .., ., empty, %2F, backslash or NUL, or a file:// authority different from the root's.",
-        "redactHostPaths leaving an absolute path or file:// URI of the host visible in hover or diagnostic text.",
         "A request schema (LspFileRequestSchema, LspPositionRequestSchema) documented as root-relative whose path field admits an absolute path with no host-side segment check named."
       ],
-      paths: ["src/LspWire.ts", "src/LocalLsp.ts"]
+      paths: ["src/LocalLsp.ts"]
     },
     {
       id: "failure-codes-codegen",

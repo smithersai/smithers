@@ -2,9 +2,8 @@
  * The root entry point of @smthrs/rpc. Consumers import this entry, never a deep path.
  * Each module is a namespace, so names stay qualified (`ConfiguredModel.planModelBinding`).
  *
- * Two modules stay off the root. `FormInstructions.generated.ts` is generated data whose one
- * export, `FORM_INSTRUCTION_FIELDS`, is part of {@link UiInstruction}. `testing/LiveDocRelay.ts`
- * is a test double, reached only by tests at `@smthrs/rpc/testing/LiveDocRelay`.
+ * One module stays off the root: `FormInstructions.generated.ts` is generated data whose one
+ * export, `FORM_INSTRUCTION_FIELDS`, is part of {@link UiInstruction}.
  *
  * @since 1.0.0
  */
@@ -35,11 +34,8 @@ export * as CloudTunnel from "./CloudTunnel.ts"
 export * as CommandsCard from "./CommandsCard.ts"
 export * as ConfiguredModel from "./ConfiguredModel.ts"
 export * as ConfirmCard from "./ConfirmCard.ts"
-export * as ContextLineCard from "./ContextLineCard.ts"
 export * as ContextPreflight from "./ContextPreflight.ts"
-export * as DebugApiCard from "./DebugApiCard.ts"
 export * as DiffCard from "./DiffCard.ts"
-export * as DocsCard from "./DocsCard.ts"
 export * as DocsPages from "./DocsPages.ts"
 export * as DraftCard from "./DraftCard.ts"
 export * as EntryRowCard from "./EntryRowCard.ts"
@@ -50,33 +46,21 @@ export * as FileRead from "./FileRead.ts"
 export * as FlowAuthoring from "./FlowAuthoring.ts"
 export * as FlowCard from "./FlowCard.ts"
 export * as FlowEdit from "./FlowEdit.ts"
-export * as FrontDoor from "./FrontDoor.ts"
 export * as GatewayWorkspace from "./GatewayWorkspace.ts"
 export * as Health from "./Health.ts"
 export * as HomeCard from "./HomeCard.ts"
-export * as HostCapabilities from "./HostCapabilities.ts"
-export * as Live from "./Live.ts"
-export * as LiveDoc from "./LiveDoc.ts"
 export * as LocalApp from "./LocalApp.ts"
 export * as LocalLsp from "./LocalLsp.ts"
-export * as LocalSession from "./LocalSession.ts"
-export * as LspWire from "./LspWire.ts"
-export * as MachineJson from "./MachineJson.ts"
-export * as MembersCard from "./MembersCard.ts"
 export * as MonitorCard from "./MonitorCard.ts"
 export * as Mythical from "./Mythical.ts"
 export * as NativeAgent from "./NativeAgent.ts"
 export * as NativeFailureCodes from "./NativeFailureCodes.ts"
-export * as NativeRepository from "./NativeRepository.ts"
 export * as NotificationPolicy from "./NotificationPolicy.ts"
 export * as PlueFailureCodes from "./PlueFailureCodes.ts"
 export * as PromptQueue from "./PromptQueue.ts"
 export * as ProposalCard from "./ProposalCard.ts"
-export * as PublicRepositoryMetadata from "./PublicRepositoryMetadata.ts"
 export * as Refusal from "./Refusal.ts"
-export * as RefusalCopy from "./RefusalCopy.ts"
 export * as RepositoryHome from "./RepositoryHome.ts"
-export * as RepositoryReads from "./RepositoryReads.ts"
 export * as RepositorySetup from "./RepositorySetup.ts"
 export * as RepositorySubjectPath from "./RepositorySubjectPath.ts"
 export * as RunCard from "./RunCard.ts"

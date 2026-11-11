@@ -45,8 +45,7 @@ export const RuntimeCapabilitySchema = z.enum([
   "billing.plans",
   "billing.checkout",
   "billing.portal",
-  // Cloud doors a host serves itself, declared by the host that opens them
-  // (packages/rpc/src/HostCapabilities.ts holds the per-host tables).
+  // Cloud doors a host serves itself, declared by the host that opens them.
   "cloud.terminal", // this origin tunnels workspace terminals (/api/cloud-ws/*)
   "code.intelligence", // File-card language servers run as member daemon sessions (/api/branches/{b}/lsp)
   "cloud.pat", // a host-held Smithers Cloud PAT session (/api/cloud-auth/*)

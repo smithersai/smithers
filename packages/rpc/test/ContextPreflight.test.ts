@@ -1,7 +1,6 @@
 import { expect, test } from "vitest"
 import { composeAgentInstructions } from "../src/AgentContext.ts"
 import type { AgentRuntimeContext } from "../src/AgentContext.ts"
-import { ContextLineCardSchema } from "../src/ContextLineCard.ts"
 import {
   ContextCandidateSchema,
   ContextPreflightFrameSchema,
@@ -29,16 +28,7 @@ const context: AgentRuntimeContext = {
 test("explicit empty selection excludes every browser-provided document", () => {
   expect(composeAgentInstructions("Answer", context, [])).toBe("Answer\n\nSelected context:\n[]")
 })
-test("historical lines without reasons remain decodable", () => {
-  expect(
-    ContextLineCardSchema.parse({
-      count: 1,
-      expanded: false,
-      actions: [],
-      items: [{ kind: "file", label: "old", ref: "old.ts" }]
-    })
-      .items[0]?.reason
-  ).toBeUndefined()
+test("a selected item without a reason is refused", () => {
   expect(SelectedContextItemSchema.safeParse({ kind: "file", label: "old", ref: "old.ts" }).success).toBe(false)
 })
 test("file and wiki candidates require revisions and preflight excludes issue candidates", () => {

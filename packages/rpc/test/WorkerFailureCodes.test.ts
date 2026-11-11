@@ -11,15 +11,6 @@ import {
   storedRefusal,
   workerRefusalEnvelope
 } from "../src/Refusal.ts"
-import {
-  agentFaultNote,
-  agentRefusalText,
-  INFRA_NOT_YOUR_FAULT,
-  refusalDoors,
-  refusalLead,
-  refusalSentence,
-  WORKER_REFUSAL_COPY
-} from "../src/RefusalCopy.ts"
 import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src/WorkerFailureCodes.ts"
 import { workerRefusal } from "./refusalFixtures.ts"
 
@@ -47,13 +38,6 @@ describe("the Worker's own failure registry", () => {
       expect(entry.status).toBeGreaterThanOrEqual(400)
       expect(entry.retryAfter).toBeGreaterThanOrEqual(0)
     }
-  })
-
-  test("names a written lead for every code — an unwritten one does not compile, and is not blank either", async () => {
-    for (const code of WORKER_FAILURE_CODES) {
-      expect(WORKER_REFUSAL_COPY[code].lead.trim()).not.toBe("")
-    }
-    expect(Object.keys(WORKER_REFUSAL_COPY).sort()).toEqual([...WORKER_FAILURE_CODES])
   })
 
   test("reads a code back to its own table and never to plue's", async () => {
@@ -131,75 +115,5 @@ describe("a Worker refusal as it reaches the app", () => {
       const refusal = await workerRefusal(code, "x")
       expect(mayAutoRetry(refusal)).toBe(WORKER_FAILURES[code].fault === "wait" && refusal.retryAfter !== null)
     }
-  })
-})
-
-describe("what a person is told about a Worker refusal", () => {
-  /*
-   * The product owner's infra line names ONE failure: the fleet is full and
-   * somebody has to buy more. No refusal the Worker writes is that failure —
-   * `no_capacity` is plue's — so borrowing the sentence here would send a
-   * reader to the wrong person about the wrong problem.
-   */
-  test("never borrows the capacity line for a failure that is not a full fleet", async () => {
-    for (const code of WORKER_FAILURE_CODES) {
-      const refusal = await workerRefusal(code, "x")
-      expect(refusalLead(refusal)).not.toContain("@fucory")
-      expect(agentRefusalText(refusal)).not.toContain("@fucory")
-    }
-  })
-
-  test("a misconfigured deployment is infra, says so, and says the honest thing about it", async () => {
-    const refusal = await workerRefusal("deployment_not_configured", "CHAT_URL is not configured on this deployment.")
-    expect(refusal.fault).toBe("infra")
-    const lead = refusalLead(refusal)
-    expect(lead).toBe(
-      "This deployment of Smithers isn't fully set up. Not your fault — and not something you can fix from here; whoever deployed it has to finish wiring it."
-    )
-    expect(lead).not.toBe(INFRA_NOT_YOUR_FAULT)
-    expect(lead).not.toContain("ran out")
-    expect(lead).toContain("Not your fault")
-    /* The words the deployment wrote still reach the reader, underneath. */
-    expect(refusalSentence(refusal)).toContain("CHAT_URL is not configured on this deployment.")
-    const agent = agentRefusalText(refusal)
-    expect(agent).toContain("fault=infra")
-    expect(agent).toContain("origin=worker")
-    expect(agent).toContain("do NOT say Smithers ran out of infra")
-  })
-
-  test("an absent seam gets the same audience and the same refusal to mention capacity", async () => {
-    const refusal = await workerRefusal("seam_not_configured", "Repository actions need the identity seam.")
-    expect(refusal.fault).toBe("infra")
-    expect(refusalLead(refusal)).toContain("doesn't have the piece that answers this")
-    expect(refusalLead(refusal)).not.toContain("ran out")
-  })
-
-  test("opens the doors each refusal actually has", async () => {
-    expect(refusalDoors(await workerRefusal("sign_in_required", "x"))).toContain("sign-in")
-    expect(refusalDoors(await workerRefusal("session_expired", "x"))).toContain("sign-in")
-    expect(refusalDoors(await workerRefusal("route_not_found", "x"))).toEqual([])
-    /* The report door stays carried and unattached: no surface renders it yet. */
-    expect(refusalDoors(await workerRefusal("deployment_not_configured", "x"))).toContain("report")
-    expect(refusalDoors(await workerRefusal("unexpected_failure", "x"))).toContain("report")
-  })
-
-  test("tells the chat model the fault class for a Worker code, not only a plue one", async () => {
-    const note = agentFaultNote("deployment_not_configured — CHAT_URL is not configured on this deployment.")
-    expect(note).toContain("[fault=infra code=deployment_not_configured]")
-    expect(note).not.toContain("@fucory")
-    expect(agentFaultNote("turn_rate_limited — that is 10 turns today.")).toContain("[fault=wait")
-    /* Still reads plue's vocabulary, and still refuses to guess from English. */
-    expect(agentFaultNote("no_capacity — no sandbox slots are free.")).toContain("[fault=infra code=no_capacity]")
-    expect(agentFaultNote("something went wrong")).toBeNull()
-  })
-
-  test("keeps the two infra audiences apart, which is the whole reason origin exists", async () => {
-    const fleetFull = refusalOf({ body: { code: "no_capacity", fault: "infra" }, status: 503, message: "full" })
-    const misconfigured = await workerRefusal("deployment_not_configured", "unset")
-    expect(fleetFull.origin).toBe("plue")
-    expect(misconfigured.origin).toBe("worker")
-    expect(fleetFull.fault).toBe(misconfigured.fault)
-    expect(refusalLead(fleetFull)).not.toBe(refusalLead(misconfigured))
-    expect(refusalLead(fleetFull)).toContain("@fucory")
   })
 })

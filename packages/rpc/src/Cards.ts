@@ -600,7 +600,7 @@ export type SearchItem = z.infer<typeof SearchItemSchema>
  * is, so it says: `user` when the request has to change (a qualifier this
  * wire cannot serve, a flow this host does not have, no target chosen), and
  * `dependency` when something Smithers reads from refused the read — a
- * sentence `refusalLine` (@smthrs/rpc/RefusalCopy) has already classified.
+ * sentence the seam has already classified.
  * Carrying the fault is what lets the card present the verdict through the
  * one failure presenter (`FailureNotice`) rather than paint error-shaped
  * text of its own, and what keeps a server's raw message, a stack or a

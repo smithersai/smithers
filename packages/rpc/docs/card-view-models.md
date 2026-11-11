@@ -20,7 +20,6 @@ recorded cards; view models do not replace that history decoder.
 | SetupCard          | SetupCardSchema, SetupCard                   | Address, the seven setup steps, this Mac, GitHub, repository and models   |
 | SettingsCard       | SettingsCardSchema, SettingsCard             | Setup fields plus capacity, parallel, laptop lines, health and Obsidian   |
 | EntryRowCard       | EntryRowCardSchema, EntryRowCard             | Author, title, summary, tone, TODO state, context and action              |
-| ContextLineCard    | ContextLineCardSchema, ContextLineCard       | Context count, items and expansion                                        |
 | BranchTreeNodeCard | BranchTreeNodeCardSchema, BranchTreeNodeCard | Recursive open-branch tree and presence                                   |
 | HomeCard           | HomeCardSchema, HomeCard                     | Main sync, attention, stack items, counts, machines and background runs   |
 | FileCard           | FileCardSchema, FileCard                     | Content, mode, diagnostics, hover, reveal, gone, outside and co-edit data |
@@ -30,7 +29,6 @@ recorded cards; view models do not replace that history decoder.
 | ToastCard          | ToastCardSchema, ToastStackCardSchema, ...   | Toasts, the toast stack, the edge map and per-member shell view state     |
 | TimelineCard       | TimelineCardSchema, TimelineCard             | One line per entry and the on-screen band                                 |
 | ConfirmCard        | ConfirmCardSchema, ConfirmCard               | Kind, action, summary, subject, who asked, review and receipt             |
-| MembersCard        | MembersCardSchema, MembersCard               | People, colours, roles, access, suspension and row actions                |
 | CommandsCard       | CommandsCardSchema, CommandsCard             | Command groups with synopsis, description and agent policy                |
 | FlowCard           | FlowCardSchema, FlowCard                     | Source, versions, step agents and merge-wait signals                      |
 | MonitorCard        | MonitorCardSchema, MonitorCard               | Attempts, step instances, phases, cells, waits, journal and replay        |
@@ -38,13 +36,11 @@ recorded cards; view models do not replace that history decoder.
 | BranchCard         | BranchCard (TypeScript metadata)             | Machine, item or scratch, rebase, presence, terminals and activity        |
 | TerminalCard       | TerminalCard (TypeScript metadata)           | Owner, agents, watchers, command and frozen state                         |
 | SecretsCard        | SecretsCardSchema, SecretsCard               | Secret names, scopes, bound hosts and row actions; no values              |
-| DocsCard           | DocsCard (TypeScript)                        | Bundled table of contents, page, anchor and not-found state               |
-| DebugApiCard       | DebugApiCard (TypeScript props)              | API operations, the selection, a pending mutation and the exchange        |
 | ProposalCard       | ProposalCardSchema, ProposalCard             | Evidence, references, state and the TODO it became                        |
 
 Each module also exports its View's props type, such as `TodoViewProps` or
-`CodeEditorViewProps`, and any card-specific view state, such as `FileView`,
-`RunView` or `DebugApiView`.
+`CodeEditorViewProps`, and any card-specific view state, such as `FileView`
+or `RunView`.
 
 Shared actor, person, state, tone, machine, merge and evidence schemas live in
 `CardPrimitives`. Every agent doing work, Smithers included (`agent:
