@@ -340,6 +340,42 @@ const assertNoSymlinks = (fs: SyncFsLike, root: string): void => {
 }
 
 /**
+ * The lock files jj-lib's WASI `FileLock` creates, relative to a workspace
+ * root. WASI has no `flock`, so a lock is a file made with `create_new` that
+ * only `Drop` removes, and a blocked acquire retries forever on the calling
+ * thread.
+ */
+const LOCK_FILES = [
+  ".jj/working_copy/working_copy.lock",
+  ".jj/repo/op_heads/heads/lock",
+  ".jj/repo/workspace_store/index.lock"
+] as const
+
+/**
+ * Removes the jj lock files a dead reactor left under each workspace root.
+ *
+ * A reactor releases every lock before its exchange returns, and the host must
+ * keep other workers from mutating the slice during an operation. So a lock
+ * that exists here, under the permit and before the reactor is entered, was
+ * left by a reactor that trapped or by a page that closed mid-operation. Left
+ * in place, the next acquire would spin forever inside one synchronous call.
+ * A missing lock, or a `.jj/repo` that is a file in a secondary workspace, is
+ * nothing to remove; any other failure fails the operation before it enters.
+ */
+const clearStaleLocks = (fs: SyncFsLike, roots: ReadonlyArray<string>): void => {
+  for (const root of new Set(roots.map((root) => root.replace(/\/+$/, "")))) {
+    for (const lock of LOCK_FILES) {
+      try {
+        fs.unlinkSync(`${root}/${lock}`)
+      } catch (cause) {
+        const code = (cause as { code?: unknown }).code
+        if (code !== "ENOENT" && code !== "ENOTDIR") throw cause
+      }
+    }
+  }
+}
+
+/**
  * Creates a `Jj` backed by a `flows_jj.wasm` module over a synchronous
  * filesystem slice.
  *
@@ -510,8 +546,9 @@ const create = (options: BrowserJjOptions): {
             }
             let text: string
             try {
-              // Keep the guard and the synchronous ABI call in one turn under
+              // Keep the guards and the synchronous ABI call in one turn under
               // the permit, before even auto-init can write repository state.
+              clearStaleLocks(host.fs, [root, String(request.root)])
               if (["snapshot", "status", "diff", "restore", "workspaceAdd", "opRestore"].includes(method)) {
                 assertNoSymlinks(host.fs, String(request.root))
               }

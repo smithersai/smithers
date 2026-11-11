@@ -73,6 +73,19 @@ descriptor the guest still held, and the next operation instantiates a fresh
 reactor from the bytes captured at the first read. A host-side refusal before
 the reactor is entered, such as the symlink scan, keeps the live reactor.
 
+### Leftover jj locks are removed
+
+jj-lib's WASI lock is a plain file that only a clean exit removes, and jj-lib
+waits for a held lock by retrying forever on the calling thread. A trap, or a
+tab closed mid-operation over a persistent mount, leaves the lock files behind.
+Before each operation enters the reactor, the layer removes
+`.jj/working_copy/working_copy.lock`, `.jj/repo/op_heads/heads/lock`, and
+`.jj/repo/workspace_store/index.lock` under the slice root and the operation's
+root. Under the operation permit no live reactor holds a lock, so any lock found
+there is stale. This relies on the host contract that no other worker mutates
+the slice during an operation. A lock the layer cannot remove fails the
+operation with `unknown` before the reactor is entered.
+
 ### Scoped disposal
 
 `layer` and `make` never dispose a reactor that did not trap; its descriptors

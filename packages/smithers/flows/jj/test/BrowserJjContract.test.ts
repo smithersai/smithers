@@ -193,3 +193,44 @@ it.effect("sealed operations refuse missing repositories without creating them",
       fsModule.rmSync(host, { recursive: true, force: true })
     }
   }), { timeout: 60_000 })
+
+it.effect(
+  "a lock left by a reactor that died mid-operation does not stop the next operation",
+  () =>
+    Effect.gen(function*() {
+      const host = fsModule.mkdtempSync(join(tmpdir(), "flows-jj-stale-lock-"))
+      try {
+        fsModule.mkdirSync(join(host, "repo"))
+        fsModule.writeFileSync(join(host, "repo", "note.txt"), "kept\n")
+        yield* (BrowserJj.make({ wasm: wasmBytes!, fs: rootedSyncFs(host), root: "/repo" }).snapshot("before"))
+        // A reactor killed mid-operation (a trap, a closed tab) never runs the
+        // `Drop` that removes jj-lib's WASI lock files; it leaves them empty.
+        const locks = [
+          "repo/.jj/working_copy/working_copy.lock",
+          "repo/.jj/repo/op_heads/heads/lock",
+          "repo/.jj/repo/workspace_store/index.lock"
+        ]
+        for (const lock of locks) fsModule.writeFileSync(join(host, lock), "")
+        // jj-lib waits for a held WASI lock by retrying forever on the calling
+        // thread. Bound that wait here, so a regression fails instead of hanging.
+        const rooted = rootedSyncFs(host)
+        let retries = 0
+        const bounded = {
+          ...rooted,
+          statSync: (path: string) => {
+            const stats = rooted.statSync(path)
+            if (/(?:\.lock|\/lock)$/.test(path) && ++retries > 100) {
+              throw Object.assign(new Error(`still waiting for ${path}`), { code: "EIO" })
+            }
+            return stats
+          }
+        }
+        const reloaded = BrowserJj.make({ wasm: wasmBytes!, fs: bounded, root: "/repo" })
+        expect(yield* (reloaded.status())).toContain("note.txt")
+        expect(locks.filter((lock) => fsModule.existsSync(join(host, lock)))).toEqual([])
+      } finally {
+        fsModule.rmSync(host, { recursive: true, force: true })
+      }
+    }),
+  { timeout: 60_000 }
+)

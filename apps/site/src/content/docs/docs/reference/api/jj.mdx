@@ -416,6 +416,12 @@ close the live reactor the same way when their scope closes, after which every
 operation fails with `unknown`. `layer` and `make` have no end of life beyond a
 trap; the live reactor's descriptors last as long as the page.
 
+Before each operation enters the reactor, the layer removes the jj lock files a
+dead reactor leaves behind under the slice root and the operation's root.
+jj-lib's WASI lock is a plain file that only a clean exit removes, and a held
+lock is waited for forever on the calling thread. See
+[Leftover jj locks are removed](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/guides/run-jj-in-a-browser.md#leftover-jj-locks-are-removed).
+
 `BrowserJj.layerUnsupported` is the layer for a host that ships no module. Every
 operation reports `not_installed`, the same code the Node adapter reports for a
 missing binary, so a caller needs no browser-specific branch. The command each

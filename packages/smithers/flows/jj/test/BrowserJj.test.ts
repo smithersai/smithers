@@ -18,12 +18,18 @@ import * as BrowserJj from "../src/browser/BrowserJj.ts"
 import { isJjError, Jj, type JjError, type JjFailure } from "../src/Jj.ts"
 import { emptyWasmModule, fakeFlowsJjWasm } from "./FakeFlowsJjWasm.ts"
 
-/** The fake module sees an empty workspace and existing repository metadata. */
+/**
+ * The fake module sees an empty workspace and existing repository metadata,
+ * with no jj lock files left behind to remove.
+ */
 const slice = {
   ...fs,
   statSync: () => fs.statSync(import.meta.filename),
   lstatSync: () => fs.lstatSync(import.meta.dirname),
-  readdirSync: () => []
+  readdirSync: () => [],
+  unlinkSync: (path: string): void => {
+    throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
+  }
 }
 
 /**
@@ -431,6 +437,59 @@ describe("BrowserJj over the fake ABI module", () => {
       expect(jjError(yield* Effect.flip(jj.status())).code).toBe("unknown")
       expect(jjError(yield* Effect.flip(jj.status())).code).toBe("unknown")
       expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(1)
+    }))
+
+  it.effect("removes leftover jj locks under the slice root and the request root before entering", () =>
+    Effect.gen(function*() {
+      const stderr: Array<string> = []
+      const unlinked: Array<string> = []
+      const options: BrowserJj.BrowserJjOptions = {
+        wasm: fakeFlowsJjWasm({ response: OK_ALL }),
+        // A secondary workspace's `.jj/repo` is a file, so its repo locks answer ENOTDIR.
+        fs: {
+          ...slice,
+          unlinkSync: (path: string) => {
+            unlinked.push(path)
+            if (path.startsWith("/lanes/a/.jj/repo/")) throw Object.assign(new Error("ENOTDIR"), { code: "ENOTDIR" })
+          }
+        },
+        root: "/repo/",
+        onStderr: (text) => stderr.push(text)
+      }
+      const jj = BrowserJj.make(options)
+      yield* (jj.workspaceAdd("a", "/lanes/a", "0a1b2c"))
+      const repoLocks = [
+        "/repo/.jj/working_copy/working_copy.lock",
+        "/repo/.jj/repo/op_heads/heads/lock",
+        "/repo/.jj/repo/workspace_store/index.lock"
+      ]
+      expect(unlinked).toEqual([
+        ...repoLocks,
+        ...repoLocks,
+        "/lanes/a/.jj/working_copy/working_copy.lock",
+        "/lanes/a/.jj/repo/op_heads/heads/lock",
+        "/lanes/a/.jj/repo/workspace_store/index.lock"
+      ])
+      expect(stderr.filter((entry) => entry !== "INIT")).toHaveLength(2)
+    }))
+
+  it.effect("fails without entering the reactor when a leftover jj lock cannot be removed", () =>
+    Effect.gen(function*() {
+      const stderr: Array<string> = []
+      const options: BrowserJj.BrowserJjOptions = {
+        wasm: fakeFlowsJjWasm({ response: OK_ALL }),
+        fs: {
+          ...slice,
+          unlinkSync: () => {
+            throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" })
+          }
+        },
+        onStderr: (text) => stderr.push(text)
+      }
+      const error = jjError(yield* Effect.flip(BrowserJj.make(options).status()))
+      expect(error).toMatchObject({ code: "unknown", method: "status", command: "jj status" })
+      expect(error.message).toBe("jj status: EACCES: permission denied")
+      expect(stderr).toEqual(["INIT"])
     }))
 
   it.effect("refuses every operation after scope disposal, including effects constructed before closure", () =>
