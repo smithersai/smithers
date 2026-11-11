@@ -29,6 +29,7 @@ import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
+import { inTemporaryDirectory } from "./inTemporaryDirectory.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-jj-lifetime-"))
 const marker = join(directory, "flows-jj-lifetime-shim")
@@ -91,7 +92,10 @@ describe.skipIf(process.platform === "win32")("NodeJj.layer", () => {
       process.env["PATH"] = `${directory}:${previousPath ?? ""}`
       try {
         const fiber = yield* Effect.forkChild(
-          Effect.exit(Effect.flatMap(Jj, (jj) => jj.status())).pipe(Effect.provide(budgeted(NodeJj.layer))),
+          Effect.exit(Effect.flatMap(Jj, (jj) => jj.status())).pipe(
+            Effect.provide(budgeted(NodeJj.layer)),
+            inTemporaryDirectory
+          ),
           { startImmediately: true }
         )
         yield* Effect.promise(waitForStart)

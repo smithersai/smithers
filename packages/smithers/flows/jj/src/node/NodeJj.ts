@@ -41,13 +41,14 @@ import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "node:child_process"
-import { readFileSync, realpathSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
+import { realpathSync, statSync } from "node:fs"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { stripVTControlCharacters } from "node:util"
 import { quoteGitPatchPaths } from "../internal/gitPatchPaths.ts"
 import { JjInternalFault } from "../internal/JjInternalFault.ts"
+import { NodeJjHost, type NodeJjHostService } from "../internal/NodeJjHost.ts"
 import { isJjError, Jj, JjError, jjErrorCause, RepositoryMutation } from "../Jj.ts"
 import { resolveJjBinary } from "./resolveJjBinary.ts"
 
@@ -326,9 +327,9 @@ const lockFailure = (method: string, cause: unknown): JjError =>
     message: `jj ${method}: repository lock failed: ${jjErrorCause(cause).message}`
   })
 
-const processIsAlive = (pid: number): boolean => {
+const processIsAlive = (host: NodeJjHostService, pid: number): boolean => {
   try {
-    process.kill(pid, 0)
+    host.kill(pid, 0)
     return true
   } catch (cause) {
     return !errnoIs(cause, "ESRCH")
@@ -352,14 +353,14 @@ const workspaceRootOf = (from: string): string | undefined => {
  * populated one; rmdir cannot delete that live lock. A read-then-unlink of a
  * single lock file would instead let two stale-lock reclaimers delete a new owner.
  */
-const removeLockOwner = async (lockPath: string, owner: string): Promise<void> => {
+const removeLockOwner = async (host: NodeJjHostService, lockPath: string, owner: string): Promise<void> => {
   try {
-    await unlink(join(lockPath, owner))
+    await host.unlink(join(lockPath, owner))
   } catch (cause) {
     if (!errnoIs(cause, "ENOENT")) throw cause
   }
   try {
-    await rmdir(lockPath)
+    await host.rmdir(lockPath)
   } catch (cause) {
     if (!errnoIs(cause, "ENOENT") && !errnoIs(cause, "ENOTEMPTY") && !errnoIs(cause, "EEXIST")) throw cause
   }
@@ -370,10 +371,10 @@ const removeLockOwner = async (lockPath: string, owner: string): Promise<void> =
  * the PID it names one process incarnation, and every thread of a process reads
  * the same value. Undefined where procfs is absent or unreadable.
  */
-const processStartOf = async (pid: number | "self"): Promise<string | undefined> => {
+const processStartOf = async (host: NodeJjHostService, pid: number | "self"): Promise<string | undefined> => {
   let stat: string
   try {
-    stat = await readFile(`/proc/${pid}/stat`, "utf8")
+    stat = await host.readFile(`/proc/${pid}/stat`)
   } catch {
     return undefined
   }
@@ -386,8 +387,8 @@ const processStartOf = async (pid: number | "self"): Promise<string | undefined>
 /** `hostname-pid-s<start>-random`, or `hostname-pid-random` where the start is unknown. */
 const ownerPattern = /^(.*)-(\d+)-(?:s(\d+)-)?[^-]+$/
 
-const lockOwnerOf = async (random: string): Promise<string> => {
-  const started = await processStartOf("self")
+const lockOwnerOf = async (host: NodeJjHostService, random: string): Promise<string> => {
+  const started = await processStartOf(host, "self")
   return `${hostname()}-${process.pid}-${started === undefined ? "" : `s${started}-`}${random}`
 }
 
@@ -396,22 +397,22 @@ const lockOwnerOf = async (random: string): Promise<string> => {
  * the PID now names a process that started at another time (a restarted
  * container's PID 1, or a PID reused after a reboot).
  */
-const lockOwnerIsDead = async (owner: string): Promise<boolean> => {
+const lockOwnerIsDead = async (host: NodeJjHostService, owner: string): Promise<boolean> => {
   const match = ownerPattern.exec(owner)
   if (match === null || match[1] !== hostname()) return false
   const pid = Number(match[2])
-  if (!processIsAlive(pid)) return true
+  if (!processIsAlive(host, pid)) return true
   const recorded = match[3]
   if (recorded === undefined) return false
-  const current = await processStartOf(pid)
+  const current = await processStartOf(host, pid)
   return current !== undefined && current !== recorded
 }
 
-const reclaimDeadLock = async (lockPath: string): Promise<void> => {
+const reclaimDeadLock = async (host: NodeJjHostService, lockPath: string): Promise<void> => {
   try {
-    const owners = await readdir(lockPath)
+    const owners = await host.readdir(lockPath)
     for (const owner of owners) {
-      if (await lockOwnerIsDead(owner)) await removeLockOwner(lockPath, owner)
+      if (await lockOwnerIsDead(host, owner)) await removeLockOwner(host, lockPath, owner)
     }
   } catch (cause) {
     if (!errnoIs(cause, "ENOENT")) throw cause
@@ -425,18 +426,18 @@ const candidatePrefix = ".smithers-lock-"
  * names a dead process. A live waiter's candidate, and one still empty because
  * its owner is about to write its entry, stay.
  */
-const sweepDeadCandidates = async (directory: string): Promise<void> => {
-  for (const name of await readdir(directory)) {
+const sweepDeadCandidates = async (host: NodeJjHostService, directory: string): Promise<void> => {
+  for (const name of await host.readdir(directory)) {
     if (!name.startsWith(candidatePrefix)) continue
     const candidate = join(directory, name)
     let owners: Array<string>
     try {
-      owners = await readdir(candidate)
+      owners = await host.readdir(candidate)
     } catch (cause) {
       if (errnoIs(cause, "ENOENT") || errnoIs(cause, "ENOTDIR")) continue
       throw cause
     }
-    const dead = await Promise.all(owners.map(lockOwnerIsDead))
+    const dead = await Promise.all(owners.map((owner) => lockOwnerIsDead(host, owner)))
     if (owners.length > 0 && dead.every(Boolean)) await rm(candidate, { recursive: true, force: true })
   }
 }
@@ -455,22 +456,23 @@ const acquireLockFile = (
   const cleanup = (run: () => Promise<unknown>) =>
     io(run).pipe(Effect.catch((failure) => Effect.logWarning("Failed to release the jj repository lock", failure)))
   return Effect.gen(function*() {
-    yield* io(() => sweepDeadCandidates(dirname(lockPath)))
+    const host = yield* NodeJjHost
+    yield* io(() => sweepDeadCandidates(host, dirname(lockPath)))
     const candidate = yield* Effect.acquireRelease(
       io(() => mkdtemp(join(dirname(lockPath), candidatePrefix))),
       (candidate) => cleanup(() => rm(candidate, { recursive: true, force: true }))
     )
-    const owner = yield* io(() => lockOwnerOf(candidate.slice(candidate.lastIndexOf("-") + 1)))
+    const owner = yield* io(() => lockOwnerOf(host, candidate.slice(candidate.lastIndexOf("-") + 1)))
     yield* io(() => writeFile(join(candidate, owner), "", { flag: "wx", mode: 0o600 }))
     const acquire = Effect.gen(function*() {
       for (;;) {
         const claimed = yield* io(async () => {
           try {
-            await rename(candidate, lockPath)
+            await host.rename(candidate, lockPath)
             return true
           } catch (cause) {
             if (!errnoIs(cause, "ENOTEMPTY") && !errnoIs(cause, "EEXIST")) throw cause
-            await reclaimDeadLock(lockPath)
+            await reclaimDeadLock(host, lockPath)
             return false
           }
         })
@@ -480,7 +482,7 @@ const acquireLockFile = (
         yield* Effect.interruptible(Effect.sleep("25 millis"))
       }
     })
-    yield* Effect.acquireRelease(acquire, () => cleanup(() => removeLockOwner(lockPath, owner)))
+    yield* Effect.acquireRelease(acquire, () => cleanup(() => removeLockOwner(host, lockPath, owner)))
   })
 }
 
@@ -489,9 +491,9 @@ const acquireLockFile = (
  * workspace holds it as `.jj/repo`; every later one holds a file naming it,
  * relative to that workspace's `.jj`.
  */
-const repositoryStoreOf = (root: string): string => {
+const repositoryStoreOf = (host: NodeJjHostService, root: string): string => {
   const store = join(root, ".jj", "repo")
-  return realpathSync(isDirectory(store) ? store : resolve(root, ".jj", readFileSync(store, "utf8").trim()))
+  return realpathSync(isDirectory(store) ? store : resolve(root, ".jj", host.readFileSync(store).trim()))
 }
 
 /** One in-process permit and one on-disk lock per key. */
@@ -533,8 +535,9 @@ const acquireRepositoryLocks = (method: string, from: string): Effect.Effect<voi
     if (root === undefined) {
       yield* acquireLock(method, `store:${resolve(from)}`, undefined)
     } else {
+      const host = yield* NodeJjHost
       const store = yield* Effect.try({
-        try: () => repositoryStoreOf(root),
+        try: () => repositoryStoreOf(host, root),
         catch: (cause) => lockFailure(method, cause)
       })
       yield* acquireLock(method, `store:${store}`, join(store, lockName))
@@ -648,7 +651,7 @@ const isFile = (path: string): boolean => {
  * slip a file past; {@link HOST_ONLY_CONFIG} keeps that race from starting a
  * program, but aliases would apply to that one command.
  */
-const unmigratedConfig = (directory: string): string | undefined => {
+const unmigratedConfig = (host: NodeJjHostService, directory: string): string | undefined => {
   let current = resolve(directory)
   for (;;) {
     const dotJj = join(current, ".jj")
@@ -658,7 +661,7 @@ const unmigratedConfig = (directory: string): string | undefined => {
       }
       let repository = join(dotJj, "repo")
       if (isFile(repository)) {
-        repository = resolve(dotJj, stripLineEnding(readFileSync(repository, "utf8")))
+        repository = resolve(dotJj, stripLineEnding(host.readFileSync(repository)))
       }
       return isFile(join(repository, "config.toml")) && !isFile(join(repository, "config-id"))
         ? join(repository, "config.toml")
@@ -680,29 +683,30 @@ const refuseUnmigratedConfig = (
   args: ReadonlyArray<string>,
   cwd: string | undefined
 ): Effect.Effect<void, JjError> =>
-  Effect.try({
-    try: () => unmigratedConfig(cwd ?? process.cwd()),
-    catch: (cause) =>
-      new JjError({
-        code: "unknown",
-        module: MODULE,
-        method,
-        command: commandOf(args),
-        message: `jj ${method}: could not inspect repository configuration`,
-        cause: jjErrorCause(cause)
-      })
-  }).pipe(Effect.flatMap((planted) =>
-    planted === undefined ? Effect.void : Effect.fail(
-      new JjError({
-        code: "unknown",
-        module: MODULE,
-        method,
-        command: commandOf(args),
-        message: `jj ${method}: refusing to run with unmigrated repository config ${planted}; `
-          + "jj would import it from the checkout. Review it, then run any jj command yourself to migrate it"
-      })
-    )
-  ))
+  Effect.flatMap(NodeJjHost, (host) =>
+    Effect.try({
+      try: () => unmigratedConfig(host, cwd ?? process.cwd()),
+      catch: (cause) =>
+        new JjError({
+          code: "unknown",
+          module: MODULE,
+          method,
+          command: commandOf(args),
+          message: `jj ${method}: could not inspect repository configuration`,
+          cause: jjErrorCause(cause)
+        })
+    }).pipe(Effect.flatMap((planted) =>
+      planted === undefined ? Effect.void : Effect.fail(
+        new JjError({
+          code: "unknown",
+          module: MODULE,
+          method,
+          command: commandOf(args),
+          message: `jj ${method}: refusing to run with unmigrated repository config ${planted}; `
+            + "jj would import it from the checkout. Review it, then run any jj command yourself to migrate it"
+        })
+      )
+    )))
 
 /** How one `jj` invocation reaches the operating system. */
 type Run = (method: string, args: ReadonlyArray<string>, cwd?: string) => Effect.Effect<string, JjError>

@@ -34,6 +34,7 @@ import { join } from "node:path"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
+import { inTemporaryDirectory } from "./inTemporaryDirectory.ts"
 
 const script = `#!/bin/sh
 case "$1" in
@@ -351,7 +352,8 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
   it.effect("builds the unbound spawner layer and runs operations through the host", () =>
     Effect.gen(function*() {
       const output = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
-        Effect.provide(Layer.provide(budgeted(NodeJj.layerSpawner), realSpawner))
+        Effect.provide(Layer.provide(budgeted(NodeJj.layerSpawner), realSpawner)),
+        inTemporaryDirectory
       )
       expect(output).toBe("the working copy is clean\n")
     }))

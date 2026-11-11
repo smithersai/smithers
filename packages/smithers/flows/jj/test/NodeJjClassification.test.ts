@@ -21,6 +21,7 @@ import { join } from "node:path"
 import { isJjError, Jj, type JjError } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
+import { inTemporaryDirectory } from "./inTemporaryDirectory.ts"
 
 const script = `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "jj 0.39.0"; exit 0; fi
@@ -373,7 +374,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
           expect(existsSync(started)).toBe(true)
           expect(existsSync(marker)).toBe(false)
           yield* Fiber.interrupt(fiber)
-        }).pipe(Effect.provide(budgeted(NodeJj.layer)))
+        }).pipe(Effect.provide(budgeted(NodeJj.layer)), inTemporaryDirectory)
       )
       // A fixed sleep sized the absence window against an unloaded machine, so a
       // delayed write from an unkilled child could land after the window closed
@@ -415,7 +416,7 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
           expect(existsSync(started)).toBe(true)
           expect(existsSync(marker)).toBe(false)
           yield* Fiber.interrupt(fiber)
-        }).pipe(Effect.provide(budgeted(NodeJj.layer)))
+        }).pipe(Effect.provide(budgeted(NodeJj.layer)), inTemporaryDirectory)
       )
       yield* (waitFor(marker))
 

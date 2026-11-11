@@ -1,59 +1,73 @@
-import { afterEach, describe, expect, it } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schedule from "effect/Schedule"
 import * as TestClock from "effect/testing/TestClock"
 import { execFileSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
-import { chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  rmdir,
+  unlink,
+  writeFile
+} from "node:fs/promises"
 import { hostname, tmpdir } from "node:os"
-import { join } from "node:path"
-import { vi } from "vitest"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
+import { nodeHost, NodeJjHost, type NodeJjHostService } from "../src/internal/NodeJjHost.ts"
 import { Jj, RepositoryMutation } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
+import { inTemporaryDirectory } from "./inTemporaryDirectory.ts"
 
-// Fault injection stays at the filesystem boundary; all unaffected calls use
-// real temporary directories and the public layer still spawns its CLI shim.
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>()
-  return {
-    ...actual,
-    readFile: vi.fn(actual.readFile),
-    rename: vi.fn(actual.rename),
-    readdir: vi.fn(actual.readdir),
-    rmdir: vi.fn(actual.rmdir),
-    unlink: vi.fn(actual.unlink)
-  }
-})
-const actualFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
-// Inject only a guard read failure after the real store pointer was resolved;
-// the filesystem locks remain real and the CLI shim must never be invoked.
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>()
-  return { ...actual, readFileSync: vi.fn(actual.readFileSync) }
-})
-const actualSyncFs = await vi.importActual<typeof import("node:fs")>("node:fs")
-afterEach(() => {
-  vi.resetAllMocks()
-  vi.restoreAllMocks()
-})
+// Faults enter through the `NodeJjHost` service: each case replaces the one
+// host call it breaks, every other call stays real, and the public layer still
+// spawns its CLI shim against real temporary directories.
+const withHost = (overrides: Partial<NodeJjHostService>) =>
+  Effect.provideService(NodeJjHost, { ...nodeHost, ...overrides })
 const errno = (code: string) => Object.assign(new Error(code), { code })
+/** `fault` answers the first call; every later call is the real one. */
+const once = <Args extends ReadonlyArray<unknown>, A>(
+  real: (...args: Args) => Promise<A>,
+  fault: (...args: Args) => Promise<A>
+) => {
+  let spent = false
+  return (...args: Args): Promise<A> => {
+    if (spent) return real(...args)
+    spent = true
+    return fault(...args)
+  }
+}
 // Fail the next read of one directory; every other read stays real.
 const failReaddirOnce = (target: string, code: string) => {
   let failed = false
-  const read = (path: string, options: unknown) => {
-    if (failed || path !== target) return actualFs.readdir(path, options as never)
+  return (path: string): Promise<Array<string>> => {
+    if (failed || path !== target) return nodeHost.readdir(path)
     failed = true
     return Promise.reject(errno(code))
   }
-  vi.mocked(readdir).mockImplementation(read as never)
 }
+
+/** The jj workspace holding this package, or the package itself in a git-only checkout. */
+const checkoutOf = (from: string): string => {
+  for (let directory = from;; directory = dirname(directory)) {
+    if (existsSync(join(directory, ".jj"))) return directory
+    if (dirname(directory) === directory) return from
+  }
+}
+const checkout = checkoutOf(fileURLToPath(new URL("..", import.meta.url)))
 
 const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.promise(async () => {
-      const root = await actualFs.realpath(await mkdtemp(join(tmpdir(), "flows-jj-lock-")))
+      const root = await realpath(await mkdtemp(join(tmpdir(), "flows-jj-lock-")))
       await mkdir(join(root, ".jj", "repo"), { recursive: true })
       await mkdir(join(root, "nested"))
       const binary = join(root, "jj-shim")
@@ -212,7 +226,11 @@ fi
           Effect.acquireUseRelease(
             // The first operation runs the version probe before it takes a lock.
             Effect.flatMap(Effect.provide(Jj, NodeJj.layerAt(root)), (jj) =>
-              Effect.forkChild(Effect.flip(jj.snapshot()))),
+              Effect.forkChild(
+                Effect.flip(jj.snapshot()).pipe(withHost({
+                  rename: once(nodeHost.rename, () => Promise.reject(errno("EACCES")))
+                }))
+              )),
             (snapshotting) =>
               Effect.gen(function*() {
                 yield* Effect.promise(async (signal) => {
@@ -230,10 +248,7 @@ fi
                 })
                 // The FIFO holds a real child; only the test clock advances.
                 yield* TestClock.adjust(5_200)
-                vi.mocked(rename).mockRejectedValueOnce(errno("EACCES"))
-                yield* Effect.promise(() =>
-                  gate.writeFile("jj 0.39.0\n")
-                )
+                yield* Effect.promise(() => gate.writeFile("jj 0.39.0\n"))
                 const error = yield* Fiber.join(snapshotting)
                 expect(error).toMatchObject({ code: "unknown", module: "NodeJj", method: "snapshot" })
                 expect(error.message).toContain("repository lock failed")
@@ -349,14 +364,21 @@ fi
             await writeFile(pointer, join(root, ".jj", "repo"))
           })
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(secondary))
-          vi.mocked(readFileSync).mockClear()
-          vi.mocked(readFileSync).mockImplementationOnce(actualSyncFs.readFileSync).mockImplementationOnce(() => {
-            throw errno(code)
-          })
-          const failure = yield* Effect.flip(jj.status())
+          // Resolving the store for its fence reads the pointer as well; only a
+          // read made once both fences are held is the config inspection.
+          const fenced: Array<string> = []
+          const failure = yield* Effect.flip(
+            jj.status().pipe(withHost({
+              readFileSync: (path) => {
+                if (!existsSync(join(root, ".jj", "repo", "smithers.lock"))) return nodeHost.readFileSync(path)
+                fenced.push(path)
+                throw errno(code)
+              }
+            }))
+          )
           expect(failure).toMatchObject({ code: "unknown", method: "status", cause: { code, message: code } })
           expect(failure.message).toContain("could not inspect repository configuration")
-          expect(vi.mocked(readFileSync).mock.calls.map(([path]) => path)).toEqual([pointer, pointer])
+          expect(fenced).toEqual([pointer])
           expect(existsSync(join(secondary, "started"))).toBe(false)
           expect(existsSync(join(secondary, ".jj", "smithers.lock"))).toBe(false)
           expect(existsSync(join(root, ".jj", "repo", "smithers.lock"))).toBe(false)
@@ -387,8 +409,11 @@ fi
       fixture((root) =>
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-          vi.mocked(rename).mockRejectedValueOnce(cause)
-          const error = yield* Effect.flip(jj.snapshot())
+          const error = yield* Effect.flip(
+            jj.snapshot().pipe(withHost({
+              rename: once(nodeHost.rename, () => Promise.reject(cause))
+            }))
+          )
           expect(error).toMatchObject({ code: "unknown", module: "NodeJj", method: "snapshot" })
           expect(error.message).toContain("repository lock failed")
           expect(yield* Effect.promise(() => readdir(join(root, ".jj")))).toEqual(["repo"])
@@ -401,9 +426,11 @@ fi
       fixture((root) =>
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-          vi.mocked(rename).mockRejectedValueOnce(errno(code))
-          failReaddirOnce(join(root, ".jj", "smithers.lock"), "ENOENT")
-          expect((yield* jj.snapshot()).commitId).toBe("0abc")
+          const snapshot = yield* jj.snapshot().pipe(withHost({
+            rename: once(nodeHost.rename, () => Promise.reject(errno(code))),
+            readdir: failReaddirOnce(join(root, ".jj", "smithers.lock"), "ENOENT")
+          }))
+          expect(snapshot.commitId).toBe("0abc")
         })
       ))
   }
@@ -412,9 +439,13 @@ fi
     fixture((root) =>
       Effect.gen(function*() {
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-        vi.mocked(rename).mockRejectedValueOnce(errno("ENOTEMPTY"))
-        failReaddirOnce(join(root, ".jj", "smithers.lock"), "EACCES")
-        expect((yield* Effect.flip(jj.snapshot())).message).toContain("EACCES")
+        const failure = yield* Effect.flip(
+          jj.snapshot().pipe(withHost({
+            rename: once(nodeHost.rename, () => Promise.reject(errno("ENOTEMPTY"))),
+            readdir: failReaddirOnce(join(root, ".jj", "smithers.lock"), "EACCES")
+          }))
+        )
+        expect(failure.message).toContain("EACCES")
         expect(existsSync(join(root, "started"))).toBe(false)
       })
     ))
@@ -428,15 +459,17 @@ fi
           await mkdir(lock)
           await writeFile(join(lock, `${hostname()}-2147483647-dead`), "")
         })
-        vi.mocked(unlink).mockImplementationOnce(async (path) => {
-          await actualFs.unlink(path)
-          throw errno("ENOENT")
-        })
-        vi.mocked(rmdir).mockImplementationOnce(async (path) => {
-          await actualFs.rmdir(path)
-          throw errno("ENOENT")
-        })
-        expect((yield* jj.snapshot()).commitId).toBe("0abc")
+        const snapshot = yield* jj.snapshot().pipe(withHost({
+          unlink: once(nodeHost.unlink, async (path) => {
+            await unlink(path)
+            throw errno("ENOENT")
+          }),
+          rmdir: once(nodeHost.rmdir, async (path) => {
+            await rmdir(path)
+            throw errno("ENOENT")
+          })
+        }))
+        expect(snapshot.commitId).toBe("0abc")
       })
     ))
 
@@ -471,15 +504,17 @@ fi
         })
         // Unreadable procfs for this process, an unparsable record for the
         // owner's PID: neither proves the owner a different incarnation.
-        const readProc = (path: string, options: unknown) => {
+        const readProc = (path: string) => {
           if (path === "/proc/self/stat") return Promise.reject(errno("ENOENT"))
           if (path === `/proc/${process.pid}/stat`) return Promise.resolve("garbage")
-          return actualFs.readFile(path, options as never)
+          return nodeHost.readFile(path)
         }
-        vi.mocked(readFile).mockImplementation(readProc as never)
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
         const refused = yield* Effect.flip(
-          jj.snapshot().pipe(Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 30))
+          jj.snapshot().pipe(
+            Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 30),
+            withHost({ readFile: readProc })
+          )
         )
         expect(refused.message).toContain("timed out waiting")
         expect(yield* Effect.promise(() => readdir(lock))).toEqual([owner])
@@ -522,11 +557,11 @@ fi
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
           const vanished = join(root, ".jj", ".smithers-lock-gone00")
           yield* Effect.promise(() => mkdir(vanished))
-          failReaddirOnce(vanished, code)
+          const snapshot = jj.snapshot().pipe(withHost({ readdir: failReaddirOnce(vanished, code) }))
           if (code === "ENOENT") {
-            expect((yield* jj.snapshot()).commitId).toBe("0abc")
+            expect((yield* snapshot).commitId).toBe("0abc")
           } else {
-            expect((yield* Effect.flip(jj.snapshot())).message).toContain("EACCES")
+            expect((yield* Effect.flip(snapshot)).message).toContain("EACCES")
             expect(existsSync(join(root, "started"))).toBe(false)
           }
         })
@@ -544,11 +579,14 @@ fi
             await mkdir(lock)
             await writeFile(join(lock, `${hostname()}-2147483647-dead`), "")
           })
-          vi.mocked(rmdir).mockImplementationOnce(async () => {
-            await writeFile(replacement, "")
-            throw errno(code)
-          })
-          const pending = yield* Effect.forkChild(jj.snapshot())
+          const pending = yield* Effect.forkChild(
+            jj.snapshot().pipe(withHost({
+              rmdir: once(nodeHost.rmdir, async () => {
+                await writeFile(replacement, "")
+                throw errno(code)
+              })
+            }))
+          )
           yield* until(async () => existsSync(replacement))
           yield* Fiber.interrupt(pending)
           expect(existsSync(replacement)).toBe(true)
@@ -557,13 +595,15 @@ fi
       ))
   }
 
-  for (const operation of [unlink, rmdir]) {
-    it.live(`keeps the result if lock release fails at ${operation.name}`, () =>
+  for (const operation of ["unlink", "rmdir"] as const) {
+    it.live(`keeps the result if lock release fails at ${operation}`, () =>
       fixture((root) =>
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-          vi.mocked(operation).mockRejectedValueOnce(errno("EACCES"))
-          expect((yield* jj.snapshot()).commitId).toBe("0abc")
+          const snapshot = yield* jj.snapshot().pipe(withHost({
+            [operation]: once(nodeHost[operation], () => Promise.reject(errno("EACCES")))
+          }))
+          expect(snapshot.commitId).toBe("0abc")
         })
       ))
   }
@@ -584,30 +624,36 @@ fi
             await mkdir(lock)
             await writeFile(join(lock, owner!), "")
           })
-          const kill = vi.spyOn(process, "kill").mockImplementation(() => {
-            throw errno(code!)
+          // The owner is inspected once its directory has been read, and, for a
+          // local PID, once that PID has been probed.
+          const kills: Array<readonly [number, number]> = []
+          let inspected!: () => void
+          const inspection = new Promise<void>((resolve) => {
+            inspected = resolve
           })
           const pending = yield* Effect.forkChild(Effect.flip(
             jj.snapshot().pipe(
-              Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 30)
+              Effect.provideService(NodeJj.RepositoryMutationTimeoutMs, 30),
+              withHost({
+                kill: (pid, signal) => {
+                  kills.push([pid, signal])
+                  inspected()
+                  throw errno(code!)
+                },
+                readdir: async (path) => {
+                  const names = await nodeHost.readdir(path)
+                  if (path === lock && code !== "EPERM") inspected()
+                  return names
+                }
+              })
             )
           ))
-          yield* Effect.promise(async (signal) => {
-            for (;;) {
-              signal.throwIfAborted()
-              const inspection = vi.mocked(readdir).mock.calls.findIndex(([path]) => path === lock)
-              if (inspection >= 0 && (code !== "EPERM" || kill.mock.calls.length > 0)) {
-                await vi.mocked(readdir).mock.results[inspection]!.value
-                return
-              }
-              await new Promise<void>((resolve) => setImmediate(resolve))
-            }
-          })
+          yield* Effect.promise(() => inspection)
           yield* TestClock.adjust(31)
           expect((yield* Fiber.join(pending)).message).toContain("timed out waiting")
           expect(existsSync(join(lock, owner!))).toBe(true)
-          if (code === "EPERM") expect(kill).toHaveBeenCalledWith(2147483647, 0)
-          else expect(kill).not.toHaveBeenCalled()
+          if (code === "EPERM") expect(kills).toContainEqual([2147483647, 0])
+          else expect(kills).toEqual([])
         })
       ))
   }
@@ -662,6 +708,46 @@ fi
         expect((yield* Effect.promise(() => readdir(lock))).sort()).toEqual([`${hostname()}-${process.pid}-other`])
         expect(yield* Effect.promise(() => readdir(join(root, ".jj")))).toEqual(["repo", "smithers.lock"])
         expect(existsSync(join(root, "started"))).toBe(false)
+      })
+    ))
+
+  it.live("fences an unbound layer run from a temporary directory there, never on this checkout", () =>
+    fixture((root) =>
+      Effect.gen(function*() {
+        // The shim runs while its operation holds both fences, so it sees
+        // whether the lock it names is held at that moment.
+        const shim = (lock: string) =>
+          Effect.promise(() =>
+            writeFile(
+              join(root, "jj-shim"),
+              `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "jj 0.39.0"; exit 0; fi
+pwd > "${root}/cwd"
+if [ -e "${lock}" ]; then : > "${root}/held"; else rm -f "${root}/held"; fi
+`
+            )
+          )
+        const status = Effect.flatMap(Effect.provide(Jj, NodeJj.layer), (jj) => jj.status())
+        // Positive control: run from a jj workspace, the unbound layer holds its lock.
+        yield* shim(join(root, ".jj", "smithers.lock"))
+        const previous = process.cwd()
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => process.chdir(root)),
+          () => status,
+          () => Effect.sync(() => process.chdir(previous))
+        )
+        expect(existsSync(join(root, "held"))).toBe(true)
+        expect((yield* Effect.promise(() => readFile(join(root, "cwd"), "utf8"))).trim()).toBe(root)
+        // The suites' unbound cases run this way: away from the checkout's `.jj`.
+        yield* shim(join(checkout, ".jj", "smithers.lock"))
+        const directory = yield* inTemporaryDirectory(Effect.gen(function*() {
+          const cwd = process.cwd()
+          yield* status
+          return cwd
+        }))
+        expect(existsSync(join(root, "held"))).toBe(false)
+        expect((yield* Effect.promise(() => readFile(join(root, "cwd"), "utf8"))).trim()).toBe(directory)
+        expect(process.cwd()).toBe(previous)
       })
     ))
 

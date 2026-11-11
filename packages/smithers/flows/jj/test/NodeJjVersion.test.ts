@@ -6,21 +6,13 @@ import * as Fiber from "effect/Fiber"
 import * as Logger from "effect/Logger"
 import * as References from "effect/References"
 import * as TestClock from "effect/testing/TestClock"
-import { execFileSync, spawn } from "node:child_process"
+import { execFileSync } from "node:child_process"
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { vi } from "vitest"
 import { Jj } from "../src/Jj.ts"
 import * as NodeJj from "../src/node/NodeJj.ts"
-
-// Observe cleanup at the real spawn boundary. Every invocation still starts
-// the fixture executable, and every signal is forwarded to the actual child.
-vi.mock("node:child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:child_process")>()
-  return { ...actual, spawn: vi.fn(actual.spawn) }
-})
-const actualChildProcess = await vi.importActual<typeof import("node:child_process")>("node:child_process")
+import { inTemporaryDirectory } from "./inTemporaryDirectory.ts"
 
 const withVersion = <A, E, R>(version: string, use: (root: string) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -63,12 +55,9 @@ const status = Effect.flatMap(Jj, (jj) => jj.status())
 // sleeps, or a wall-clock budget. Cancellation stops the readiness loop too.
 const withBlockedProbe = <A, E, R>(
   root: string,
-  use: (probe: {
-    readonly ready: Effect.Effect<number>
-    readonly kills: Array<NodeJS.Signals | number | undefined>
-  }) => Effect.Effect<A, E, R>
+  use: (probe: { readonly ready: Effect.Effect<number> }) => Effect.Effect<A, E, R>
 ) =>
-  Effect.acquireUseRelease(
+  Effect.flatMap(
     Effect.promise(async () => {
       execFileSync("mkfifo", [join(root, "hold")])
       await writeFile(
@@ -81,16 +70,6 @@ echo $$ > pid.tmp
 exec /bin/cat hold
 `
       )
-      const kills: Array<NodeJS.Signals | number | undefined> = []
-      vi.mocked(spawn).mockImplementation((...args) => {
-        const child = actualChildProcess.spawn(...args)
-        const kill = child.kill.bind(child)
-        child.kill = (signal) => {
-          kills.push(signal)
-          return kill(signal)
-        }
-        return child
-      })
       const ready = Effect.promise(async (signal) => {
         for (;;) {
           signal.throwIfAborted()
@@ -104,11 +83,28 @@ exec /bin/cat hold
           }
         }
       })
-      return { ready, kills }
+      return { ready }
     }),
-    use,
-    () => Effect.sync(() => vi.mocked(spawn).mockReset())
+    use
   )
+
+/**
+ * Whether `pid` exits within `withinMs` of real time. A probe blocked on its
+ * FIFO exits only when NodeJj kills it, and a killed one is reaped promptly.
+ */
+const exitsWithin = (pid: number, withinMs: number) =>
+  Effect.promise(async () => {
+    const deadline = Date.now() + withinMs
+    for (;;) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        return true
+      }
+      if (Date.now() > deadline) return false
+      await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    }
+  })
 
 // Both the real deadline regression and its early-budget negative control use
 // these exact assertions. A pending fiber alone can already be in cleanup.
@@ -118,7 +114,7 @@ const verifyStartupBudget = (budget: number) =>
     Effect.gen(function*() {
       const binary = join(root, "jj")
       const original = yield* Effect.promise(() => readFile(binary, "utf8"))
-      yield* withBlockedProbe(root, ({ ready, kills }) =>
+      yield* withBlockedProbe(root, ({ ready }) =>
         Effect.acquireUseRelease(
           Effect.forkChild(
             Effect.flip(Effect.provide(status, NodeJj.layerAt(root))).pipe(
@@ -128,15 +124,15 @@ const verifyStartupBudget = (budget: number) =>
           (building) =>
             Effect.gen(function*() {
               const pids: Array<number> = []
-              for (const earlier of [[], ["SIGKILL"]]) {
+              for (let attempt = 0; attempt < 2; attempt += 1) {
                 const pid = yield* ready
                 expect(pid).toBeGreaterThan(0)
                 pids.push(pid)
                 yield* TestClock.adjust(499)
-                expect(kills, "startup probe cleanup before 500 ms").toEqual(earlier)
+                expect(yield* exitsWithin(pid, 1_000), "startup probe cleanup before 500 ms").toBe(false)
                 expect(building.pollUnsafe()).toBeUndefined()
                 yield* TestClock.adjust(1)
-                expect(kills).toEqual([...earlier, "SIGKILL"])
+                expect(yield* exitsWithin(pid, 30_000)).toBe(true)
               }
               const error = yield* Fiber.join(building)
               expect(error).toMatchObject({
@@ -304,13 +300,13 @@ describe("NodeJj version requirement", () => {
         delete process.env.SMITHERS_JJ_PATH
         try {
           process.env.PATH = ""
-          const missing = yield* Effect.flip(Effect.provide(status, NodeJj.layer))
+          const missing = yield* Effect.flip(inTemporaryDirectory(Effect.provide(status, NodeJj.layer)))
           expect(missing.code).toBe("not_installed")
           yield* Effect.promise(() => chmod(join(root, "jj"), 0o644))
           process.env.PATH = root
           // Explicit non-executable candidates still reach spawn for EACCES diagnostics.
           process.env.SMITHERS_JJ_PATH = join(root, "jj")
-          const refused = yield* Effect.flip(Effect.provide(status, NodeJj.layer))
+          const refused = yield* Effect.flip(inTemporaryDirectory(Effect.provide(status, NodeJj.layer)))
           expect(refused.code).toBe("unknown")
         } finally {
           if (previousPath === undefined) delete process.env.PATH
@@ -349,9 +345,8 @@ describe("NodeJj version requirement", () => {
         expect(Cause.squash(exit.cause)).toMatchObject({
           name: "AssertionError",
           message: expect.stringContaining("startup probe cleanup before 500 ms"),
-          // The retry may have missed its 1 ms budget as well by then.
-          actual: expect.arrayContaining(["SIGKILL"]),
-          expected: []
+          actual: true,
+          expected: false
         })
       }
     }))
@@ -375,7 +370,7 @@ describe("NodeJj version requirement", () => {
           Array.from({ length: 3 }, () => Effect.provide(status, NodeJj.layerAt(root))),
           { concurrency: "unbounded" }
         )
-        yield* Effect.provide(status, NodeJj.layer)
+        yield* inTemporaryDirectory(Effect.provide(status, NodeJj.layer))
         expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
       })))
 
@@ -388,12 +383,12 @@ describe("NodeJj version requirement", () => {
           delete process.env.SMITHERS_JJ_PATH
           try {
             process.env.PATH = first
-            yield* Effect.provide(status, NodeJj.layer)
+            yield* inTemporaryDirectory(Effect.provide(status, NodeJj.layer))
             process.env.PATH = second
-            const error = yield* Effect.flip(Effect.provide(status, NodeJj.layer))
+            const error = yield* Effect.flip(inTemporaryDirectory(Effect.provide(status, NodeJj.layer)))
             expect(error.code).toBe("unsupported_version")
             process.env.PATH = first
-            yield* Effect.provide(status, NodeJj.layer)
+            yield* inTemporaryDirectory(Effect.provide(status, NodeJj.layer))
             expect(yield* Effect.promise(() => readFile(join(first, "probes"), "utf8"))).toBe("probe\n")
             expect(yield* Effect.promise(() => readFile(join(second, "probes"), "utf8"))).toBe("probe\n")
           } finally {
@@ -426,7 +421,7 @@ describe("NodeJj version requirement", () => {
         const layers = [NodeJj.layer, NodeJj.layerAt(root)]
         const services = yield* Effect.forEach(layers, (layer) => Effect.provide(Jj, layer))
         yield* Effect.promise(() => expect(stat(join(root, "probes"))).rejects.toMatchObject({ code: "ENOENT" }))
-        for (const jj of services) expect(yield* jj.status()).toBe("ok\n")
+        for (const jj of services) expect(yield* inTemporaryDirectory(jj.status())).toBe("ok\n")
         expect(yield* Effect.promise(() => readFile(join(root, "probes"), "utf8"))).toBe("probe\n")
       })))
 
