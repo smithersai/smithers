@@ -352,7 +352,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ClickedSignOut: () => runAccount(model, ModelDecision.clickedSignOut(accountScreen(model))),
     ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
     ClickedPeople: () => runAccount(model, ModelDecision.clickedPeople(accountScreen(model))),
-    LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: ArmDecision.pendingAfterPeople(accountOf(model).retry, accountOf(model).pending) } } }),
+    LoadedPeople: ({ members }) => ({ model: ModelWrite.peopleWrite(model, accountOf(model), members, ArmDecision.pendingAfterPeople(accountOf(model).retry, accountOf(model).pending)) }),
     ClosedPeople: () => runAccount(model, ModelDecision.closedPeople(accountScreen(model))),
     ToggledPeople: () => runAccount(model, ModelDecision.toggledPeople(accountScreen(model))),
     SelectedRole: ({ id, role }) => !ModelDecision.canSelectRole(accountOf(model).identity.role) ? { model } : runAccount(model, ModelDecision.selectedRole(accountScreen(model), id, role)),
@@ -489,17 +489,17 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return { model: { ...model, wikiEdit: { ...model.wikiEdit, ...step.state, ...(step.submission === "clear" ? { submission: undefined } : {}) } } }
     },
     ClickedWiki: ({ page }) => visitWiki(model, page),
-    WikiLocationChanged: ({ page }) => UpdateDecision.wikiLocationLeaves(page) ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
+    WikiLocationChanged: ({ page }) => UpdateDecision.wikiLocationLeaves(page) ? { model: ModelWrite.wikiLeaveWrite(model) } : visitWiki(model, page),
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
-    FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
+    FailedWiki: ({ request }) => ({ model: ModelWrite.wikiFailureWrite(model, model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading")) }),
     SucceededWiki: () => ({ model }),
     ClickedDocs: () => ({ model: ModelWrite.screenWrite(model, toggleScreenDocs(ScreenRead.screenOf(model))), ...(UpdateDecision.docsRevealsWiki(model.docs, model.client.conversation.pane) ? { commands: [RevealWiki({})] } : {}) }),
-    ClickedSplash: () => ({ model: { ...ModelWrite.screenWrite(model, showSplash(ScreenRead.screenOf(model))), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
+    ClickedSplash: () => ({ model: ModelWrite.issuesClosedWrite(ModelWrite.screenWrite(model, showSplash(ScreenRead.screenOf(model)))) }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => {
       const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
       return {
-        model: { ...model, draft: value, actions: { ...actionsOf(model), slash: menu.slash, highlight: 0 } },
+        model: ModelWrite.draftWrite(model, actionsOf(model), value, menu.slash),
         ...(menu.load ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
       }
     },
@@ -522,7 +522,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
-      return { model: { ...model, actions: { ...actionsOf(model), highlight: ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length) } } }
+      return { model: ModelWrite.highlightWrite(model, actionsOf(model), ModelDecision.slashHighlight(actionsOf(model).highlight, delta, menu.length)) }
     },
     PickedSlash: ({ name }) => name.startsWith("mode/") ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),
@@ -583,7 +583,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     ScrolledTranscript: ({ bottom, intent = model.followIntent }) => {
       const next = scrollFollow(model.surface, model.palette, model.following, model.followIntent, bottom, intent)
       if (next.stale) return { model }
-      return { model: { ...model, following: next.following, followIntent: next.followIntent } }
+      return { model: ModelWrite.followWrite(model, next.following, next.followIntent) }
     },
     ClickedLatest: () => ({ model: ModelWrite.screenWrite(model, latestScreen(ScreenRead.screenOf(model))), commands: [FocusComposer({})] }),
   }))
@@ -594,7 +594,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
   // Once an account has been observed, changing people still drops the prior person's pending write.
   const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, (accountOf(model).epoch > 0 || before.id !== "") && before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message)
   if (after2.kind === "issues" && issues !== undefined) {
-    return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
+    return { ...next, model: ModelWrite.afterIssuesWrite(next.model, issues, after.role, after2), commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }
   if (after2.kind === "measure") {
     return { ...next, commands: [...next.commands, MeasureTheatre({ target: next.model.theatre.target })] }
@@ -711,7 +711,7 @@ function receiveTour(model: Model, event: Machine.Event): Update.Return<Model, M
   if (receipt.kind === "ignore") return { model }
   let next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, tourClient } }
   if (receipt.present && state !== undefined) {
-    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: { ...next.model, tour: true, theatre: { step: state.step, target: TourDecision.tourTarget(state.target, model.theatre.target), paused: state.paused, sound: model.theatre.sound } }, commands: [PresentTour({ step: state.step, sound: model.theatre.sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
+    const presented: WithCommands<Update.Return<Model, Message, Factory | Actions>> = { model: ModelWrite.tourPresentWrite(next.model, state.step, TourDecision.tourTarget(state.target, model.theatre.target), state.paused), commands: [PresentTour({ step: state.step, sound: model.theatre.sound, active: true, paused: TourDecision.presentedPaused(state.paused, event.type) })] }
     next = receipt.drive ? driveWalkthrough(presented, state) : presented
   }
   if (receipt.end) return endTour(next.model)
@@ -723,7 +723,7 @@ function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Facto
   const model = next.model
   // Replay invokes exactly the messages attached to the person's controls. No parsed narration directives.
   const plan = TourDecision.walkthroughPlan(state.step, model.client.conversation.entries.some(entry => entry.clientId === `${walkthroughSession(model)}-walkthrough`))
-  let driven: Model = { ...next.model, palette: false, docs: "pane", surface: plan.surface, issues: { ...issueStateOf(model), open: false }, sandboxPane: "closed", actions: { ...actionsOf(model), slash: false, open: false, maximized: false } }
+  let driven: Model = ModelWrite.walkthroughWrite(next.model, issueStateOf(model), actionsOf(model), plan.surface)
   const commands = plan.keepsCommands ? [...next.commands] : []
   const send = (message: Message) => { const result = update(driven, message); driven = result.model; commands.push(...result.commands) }
   if (plan.ask) {
@@ -770,7 +770,7 @@ export function hasConversation(model: Model): boolean {
 /** ⌘K's /mock and /live load the page in that mode, the way the nav's switch does (startup.vibe saves it). */
 function switchMode(model: Model, to: string): Update.Return<Model, Message, Factory | Actions> {
   if (!UpdateDecision.switchesMode(to)) return { model }
-  return { model: { ...model, draft: "", palette: false, actions: { ...actionsOf(model), slash: false } }, commands: [SwitchMode({ to })] }
+  return { model: ModelWrite.modeSwitchWrite(model, actionsOf(model)), commands: [SwitchMode({ to })] }
 }
 
 function submit(model: Model): Update.Return<Model, Message, Factory | Actions> {
@@ -779,7 +779,7 @@ function submit(model: Model): Update.Return<Model, Message, Factory | Actions> 
   const kind = UpdateDecision.submitKind({ mode: text === "/mock" || text === "/live", sandbox: text === "/sandbox", slashed: text.startsWith("/"), selected: selected !== undefined, empty: text === "" })
   if (kind === "mode") return switchMode(model, text.slice(1))
   if (kind === "sandbox") {
-    const next = sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
+    const next = sandboxAction(ModelWrite.sandboxSubmitWrite(model), "start")
     return { ...next, commands: [...(next.commands ?? []), ClosePalette({ dock: true })] }
   }
   if (kind === "ignore") return { model }
@@ -787,17 +787,8 @@ function submit(model: Model): Update.Return<Model, Message, Factory | Actions> 
   const demonstration = UpdateDecision.demonstrates(model.tour, model.theatre.step, text === DEMO_QUESTION)
   const clientId = demonstration ? `${walkthroughSession(model)}-walkthrough` : `${model.session}-${model.sent + 1}`
   return {
-    model: {
-      ...model,
-      surface: "chat",
-      ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }),
-      palette: false,
-      draft: "",
-      sent: UpdateDecision.sentAfter(demonstration, model.sent),
-      client: Machine.post(model.client, clientId, text),
-      // Sending shows the new post and its answer, wherever the reader had scrolled.
-      following: true,
-    },
+    // Sending shows the new post and its answer, wherever the reader had scrolled.
+    model: ModelWrite.postWrite(model, Machine.post(model.client, clientId, text), UpdateDecision.sentAfter(demonstration, model.sent)),
     commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true })],
   }
 }
@@ -810,7 +801,7 @@ function launchAction(model: Model, name: string, door: "button" | "slash"): Upd
   if (launch === "tour") return learnMore(model)
   const text = door === "slash" ? model.draft.trim().split(/\s+/).slice(1).join(" ") : actions.input
   return {
-    model: { ...model, draft: "", actions: { ...actions, slash: false, starting: true, error: "" } },
+    model: ModelWrite.launchWrite(model, actions),
     commands: [RunAction({ name, text, door, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }), format: actions.commands.find((entry) => entry.name === name)!.input, ...(UpdateDecision.launchRetries(door === "button", actions.run) ? { retry: actions.run } : {}) })],
   }
 }
@@ -934,9 +925,9 @@ function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Messa
   if (plan === "reopen") return visitWiki(model, model.wikiEdit!.page)
   if (plan === "none" || page === undefined) return { model }
   const { editing, request } = WikiEditorDecision.openedWikiEditor(page, knownWikiSource(model, page), model.wikiEditRequest ?? 0)
-  if (plan === "open") return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
+  if (plan === "open") return { model: ModelWrite.wikiEditorWrite(model, editing, request), commands: [OpenWikiEditor({ page, request })] }
   const visit = visitWiki(model, page)
-  return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...visit.commands, OpenWikiEditor({ page, request })] }
+  return { model: ModelWrite.wikiEditorWrite(visit.model, editing, request), commands: [...visit.commands, OpenWikiEditor({ page, request })] }
 }
 
 /** The editor's fresh read: the repository's current source for the page and the person's stored draft. */

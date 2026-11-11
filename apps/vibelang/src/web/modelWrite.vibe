@@ -3,7 +3,7 @@
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
-import type { EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
+import type { AfterUpdate, EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
@@ -137,4 +137,128 @@ export function screenWrite(model: Model, screen: ScreenState): Model {
 //@ ensures \result == model
 export function screenKept(model: Model): Model {
   return screenWrite(model, screenOf(model))
+}
+
+/** The Model after ⌘K switches mode: the draft cleared, the palette and the slash menu over `actions` closed; nothing
+ *  else. */
+//@ verify
+//@ ensures \result == { ...model, draft: "", palette: false, actions: { ...actions, slash: false } }
+export function modeSwitchWrite(model: Model, actions: ActionView): Model {
+  return { ...model, draft: "", palette: false, actions: { ...actions, slash: false } }
+}
+
+/** The Model after an action launches: the draft cleared; over `actions`, the slash menu closed and the panel starting
+ *  with no error; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, draft: "", actions: { ...actions, slash: false, starting: true, error: "" } }
+export function launchWrite(model: Model, actions: ActionView): Model {
+  return { ...model, draft: "", actions: { ...actions, slash: false, starting: true, error: "" } }
+}
+
+/** The Model after a post: the chat shown with the palette closed and the draft cleared, the given client and sent
+ *  count, following on; the issues list closed when the Model has one, and absent when it has none; nothing else. */
+//@ verify
+//@ ensures model.issues === undefined ==> \result == { ...model, surface: "chat", palette: false, draft: "", sent: sent, client: client, following: true }
+//@ ensures model.issues !== undefined ==> \result == { ...model, surface: "chat", issues: { ...model.issues, open: false }, palette: false, draft: "", sent: sent, client: client, following: true }
+export function postWrite(model: Model, client: Model["client"], sent: number): Model {
+  const posted: Model = { ...model, surface: "chat", palette: false, draft: "", sent, client, following: true }
+  return model.issues === undefined ? posted : { ...posted, issues: { ...model.issues, open: false } }
+}
+
+/** The Model before `/sandbox` starts one: the chat shown, the palette closed, the draft cleared, the sandbox pane
+ *  docked; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }
+export function sandboxSubmitWrite(model: Model): Model {
+  return { ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }
+}
+
+/** The Model after the wiki editor opens: the editor and its request number; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, wikiEdit: editing, wikiEditRequest: request }
+export function wikiEditorWrite(model: Model, editing: NonNullable<Model["wikiEdit"]>, request: number): Model {
+  return { ...model, wikiEdit: editing, wikiEditRequest: request }
+}
+
+/** The Model after a received tour event presents its step: the tour on, the theatre at the walkthrough's step,
+ *  target and pause with the person's sound kept; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, tour: true, theatre: { step: step, target: target, paused: paused, sound: model.theatre.sound } }
+export function tourPresentWrite(model: Model, step: number, target: string, paused: boolean): Model {
+  return { ...model, tour: true, theatre: { step, target, paused, sound: model.theatre.sound } }
+}
+
+/** The Model a walkthrough step is replayed over: the plan's surface, the palette closed, docs docked, the issues list
+ *  closed over `issues`, the sandbox pane closed, and over `actions` the slash menu and panel closed and not
+ *  maximized; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, palette: false, docs: "pane", surface: surface, issues: { ...issues, open: false }, sandboxPane: "closed", actions: { ...actions, slash: false, open: false, maximized: false } }
+export function walkthroughWrite(model: Model, issues: NonNullable<Model["issues"]>, actions: ActionView, surface: Model["surface"]): Model {
+  return { ...model, palette: false, docs: "pane", surface, issues: { ...issues, open: false }, sandboxPane: "closed", actions: { ...actions, slash: false, open: false, maximized: false } }
+}
+
+/** The Model with its issues list closed: unchanged when it has no issues screen. */
+//@ verify
+//@ ensures model.issues === undefined ==> \result == model
+//@ ensures model.issues !== undefined ==> \result == { ...model, issues: { ...model.issues, open: false } }
+export function issuesClosedWrite(model: Model): Model {
+  return model.issues === undefined ? model : { ...model, issues: { ...model.issues, open: false } }
+}
+
+/** The Model after the location leaves the wiki: the splash with docs docked and the issues list closed when there is
+ *  one; nothing else. */
+//@ verify
+//@ ensures model.issues === undefined ==> \result == { ...model, surface: "splash", docs: "pane" }
+//@ ensures model.issues !== undefined ==> \result == { ...model, surface: "splash", docs: "pane", issues: { ...model.issues, open: false } }
+export function wikiLeaveWrite(model: Model): Model {
+  return issuesClosedWrite({ ...model, surface: "splash", docs: "pane" })
+}
+
+/** The Model after the draft changes: the draft, and over `actions` the slash menu as decided with the first entry
+ *  highlighted; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, draft: value, actions: { ...actions, slash: slash, highlight: 0 } }
+export function draftWrite(model: Model, actions: ActionView, value: string, slash: boolean): Model {
+  return { ...model, draft: value, actions: { ...actions, slash, highlight: 0 } }
+}
+
+/** The Model after the slash highlight moves: the highlight over `actions`; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...actions, highlight: highlight } }
+export function highlightWrite(model: Model, actions: ActionView, highlight: number): Model {
+  return { ...model, actions: { ...actions, highlight } }
+}
+
+/** The Model after a scroll the follow rule accepts: following and the follow intent; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, following: following, followIntent: followIntent }
+export function followWrite(model: Model, following: boolean, followIntent: number): Model {
+  return { ...model, following, followIntent }
+}
+
+/** The Model after a wiki page fails: the error when the proved `wikiFailureApplies` says the failure is the latest
+ *  loading request's (`applies`); otherwise nothing changes. */
+//@ verify
+//@ ensures applies ==> \result == { ...model, wikiStatus: "error" }
+//@ ensures !applies ==> \result == model
+export function wikiFailureWrite(model: Model, applies: boolean): Model {
+  return applies ? { ...model, wikiStatus: "error" } : model
+}
+
+/** The Model after the People list arrives: the members and the wait the proved `pendingAfterPeople` decides over
+ *  `account`; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, account: { ...account, members: members, pending: pending } }
+export function peopleWrite(model: Model, account: AccountState, members: AccountState["members"], pending: boolean): Model {
+  return { ...model, account: { ...account, members, pending } }
+}
+
+/** The Model after a changed person or role re-gates the issues screen: the new role; the dialog closed when the step
+ *  closes it; the retry dropped and the screen idle when the person changed; nothing else. */
+//@ verify
+//@ ensures !step.clearRetry ==> \result == { ...model, issues: { ...issues, role: role, dialog: step.closeDialog ? "" : issues.dialog } }
+//@ ensures step.clearRetry ==> \result == { ...model, issues: { ...issues, role: role, dialog: step.closeDialog ? "" : issues.dialog, retry: undefined, busy: false } }
+export function afterIssuesWrite(model: Model, issues: NonNullable<Model["issues"]>, role: NonNullable<Model["issues"]>["role"], step: AfterUpdate): Model {
+  const gated: NonNullable<Model["issues"]> = { ...issues, role, dialog: step.closeDialog ? "" : issues.dialog }
+  return { ...model, issues: step.clearRetry ? { ...gated, retry: undefined, busy: false } : gated }
 }
