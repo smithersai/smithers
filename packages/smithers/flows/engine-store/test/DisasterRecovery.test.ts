@@ -30,6 +30,7 @@ import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFile
 import { join, normalize, sep } from "node:path"
 import * as DisasterRecovery from "../src/DisasterRecovery.ts"
 import * as Migrations from "../src/Migrations.ts"
+import * as RunChangeFeed from "../src/RunChangeFeed.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
@@ -768,6 +769,69 @@ describe("fence", () => {
         waiting_reason: "released",
         owner_host_id: null
       })
+    }))
+
+  it.effect("rotates the change-feed source so a cursor from before the restore is refused", () =>
+    Effect.gen(function*() {
+      const { manifest, restored } = yield* restoredStore()
+      const result = yield* Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const feed = yield* RunChangeFeed.make()
+        yield* sql`
+          INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+          VALUES ('restored-run', 'suspended', 0, '{}')
+        `
+        // A consumer that caught up before the disaster holds this cursor.
+        const before = yield* feed.current
+        yield* DisasterRecovery.fence(manifest)
+        const after = yield* feed.current
+        const stale = yield* Effect.exit(feed.changesSince({ ...before, limit: 10 }))
+        const rebuilt = yield* feed.changesSince({ source: after.source, revision: 0, limit: 10 })
+        return { before, after, stale, rebuilt }
+      }).pipe(Effect.provide(restoredDatabase(restored.databaseFile)))
+
+      expect(result.after.source).toMatch(/^[0-9a-f]{32}$/)
+      expect(result.after.source).not.toBe(result.before.source)
+      expect(result.after.revision).toBe(result.before.revision)
+      expect(Exit.isFailure(result.stale) && Cause.squash(result.stale.cause)).toMatchObject({
+        code: "invalid_run",
+        message: "change cursor requires an explicit source rebuild"
+      })
+      expect(result.rebuilt.changes.map((change) => change.runId)).toEqual(["restored-run"])
+    }))
+
+  it.effect("fences a snapshot taken before the store had a change-feed source", () =>
+    Effect.gen(function*() {
+      const base = yield* root()
+      const backupDirectory = join(base, "backup")
+      const beforeSource = [1003, 1004, 1005, 3006, 3007, 3008, 3009, 3010]
+      const previous = Migrations.sets.map((set) => ({
+        ...set,
+        migrations: Object.fromEntries(
+          Object.entries(set.migrations).filter(([key]) =>
+            !beforeSource.includes(set.idOffset + Number(key.split("_")[0]))
+          )
+        )
+      }))
+      const manifest = yield* withCrypto(
+        backup({ directory: backupDirectory }).pipe(Effect.provide(Layer.mergeAll(
+          Layer.provideMerge(Layer.effectDiscard(DatabaseMigrations.run(previous)), TestDatabase.sqliteLayer),
+          NodeFileSystem.layer
+        )))
+      )
+      const restored = yield* run(
+        DisasterRecovery.restore({ backupDirectory, targetDirectory: join(base, "restored") })
+      )
+      const result = yield* Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const summary = yield* DisasterRecovery.fence(manifest)
+        const tables = yield* Dialect.tables(sql)
+        return { summary, tables: tables.map((table) => table.name) }
+      }).pipe(Effect.provide(restoredDatabase(restored.databaseFile)))
+
+      expect(result.summary).toEqual({ clearedClaims: 0, suspendedRuns: 0 })
+      expect(result.tables).toContain("flows_runs")
+      expect(result.tables).not.toContain("flows_run_source")
     }))
 
   const upgrades: ReadonlyArray<readonly [string, ReadonlyArray<number>]> = [

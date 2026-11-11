@@ -39,6 +39,7 @@
 
 import * as ArtifactBackupLease from "@smthrs/artifacts/ArtifactBackupLease"
 import { Sha256 } from "@smthrs/crypto"
+import * as Dialect from "@smthrs/database/Dialect"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Clock from "effect/Clock"
 import type * as EffectDigest from "effect/crypto/Digest"
@@ -310,6 +311,10 @@ export interface FencedRestoredStore extends RestoredStore {
 
 /**
  * What {@link fence} invalidated on the restored store.
+ *
+ * Fencing also rotates the execution source identity in
+ * `flows_run_source`, so every change-feed cursor taken before the restore
+ * fails `invalid_run` and its projection must be rebuilt.
  *
  * @since 0.1.0
  * @category models
@@ -819,13 +824,17 @@ export const restore = Effect.fn("DisasterRecovery.restore")(function*(options: 
  * The store's fence is `OwnerId` equality, so the epoch bump is fence
  * invalidation: in one serialized write transaction every pending claim is
  * cleared, every run that was `running` at backup time is suspended with its
- * owner and heartbeat cleared, and every consensus lease is deleted. A
+ * owner and heartbeat cleared, every consensus lease is deleted, and the
+ * execution source identity is rotated to a fresh random value. A
  * surviving pre-backup owner then fails every fenced operation against the
  * restored store — `heartbeat` and `transitionOwned` report `FenceLost`,
  * fenced journal appends fail `fence_lost` — exactly as a stale Temporal owner
  * fails its `rangeID` compare-and-swap. The suspended runs are claimable
  * immediately, without waiting out the heartbeat staleness cutoff and without
- * liveness evidence.
+ * liveness evidence. The restored store's revision is behind the history it
+ * lost, so a change-feed cursor from that history would otherwise resume
+ * against it and skip changes; the new source makes `RunChangeFeed` refuse
+ * every such cursor with "change cursor requires an explicit source rebuild".
  *
  * Every migration recorded in the manifest must remain applied with the same
  * ID and namespaced name. Forward additions within any installed block are
@@ -888,6 +897,11 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
         RETURNING run_id
       `.withoutTransform
       yield* sql`DELETE FROM flows_consensus_leases`.withoutTransform
+      // A snapshot taken before run-store migration 1003 has no source table.
+      const tables = yield* Dialect.tables(sql)
+      if (tables.some((table) => table.name === "flows_run_source")) {
+        yield* sql`UPDATE flows_run_source SET source = lower(hex(randomblob(16))) WHERE singleton = 1`.withoutTransform
+      }
       return { clearedClaims: claims.length, suspendedRuns: running.length } satisfies FenceSummary
     })
   ).pipe(Effect.mapError(sqlFailure("fence", "invalidating the persisted fences")))

@@ -132,6 +132,14 @@ operation against the restored store: `heartbeat` and `transitionOwned` report
 are claimable immediately, without waiting out the heartbeat staleness cutoff
 and without liveness evidence.
 
+Fencing also rotates the execution source identity in `flows_run_source`. The
+restored store's revision is behind the history the disaster lost, so a
+change-feed cursor from that history would otherwise resume against it and skip
+every change between the backup and the cursor. With a new source,
+`RunChangeFeed.changesSince` refuses every pre-restore cursor with `invalid_run`
+("change cursor requires an explicit source rebuild"). Rebuild each projection
+from revision zero against the new source.
+
 `FenceSummary` reports `clearedClaims` and `suspendedRuns`.
 
 Fencing requires every migration recorded in the manifest to remain applied

@@ -252,8 +252,10 @@ Migration assigns a random durable database identity, preserved across normal
 reopens. A different source or a feed checkpoint ahead of the source revision requires an
 explicit projection rebuild. A copied backup carries the original identity:
 do not independently write divergent copies or resume a rewound source against
-an existing projection. Source rotation and restore/rebuild orchestration remain
-host responsibilities; this port does not silently reset a consumer.
+an existing projection. `DisasterRecovery.fence` (and so `restoreAndFence`)
+rotates the source of a restored store, so pre-restore cursors are refused.
+Rotating any other copy and orchestrating the rebuild remain host
+responsibilities; this port does not silently reset a consumer.
 
 The engine's transaction is not a transaction across `control.db` and
 `engine.db`. Control still owns admission, actors and approval decisions.
