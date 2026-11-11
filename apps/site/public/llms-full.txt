@@ -4953,6 +4953,15 @@ The shell target flavors: `Shell.Build`, `Shell.Test`, `Shell.Run`, `Shell.Serve
 every host; wildcard selections omit the target on other hosts, and naming it
 there refuses the plan.
 
+`data` lists what a shell target reads: declared files and globs, targets whose
+outputs materialize before it runs, and `Target.subtree(pattern, name)`, which
+selects the target named `name` in every package under `pattern`. A glob in one
+package matches none of another package's files, so a check that reads other
+packages' sources names them by target:
+`data: [S.glob("src/**"), S.Target.subtree("//packages/...", "lib")]`. Each
+match is a graph edge: it runs first, its key enters the consumer's key, and
+`smthrs affected` selects the consumer when it is affected.
+
 `Host.bin(name)` resolves a declared host binary on PATH. Its resolved path
 and executable bytes enter the package executor's cache key, even when its
 version output is unchanged. Symlinks follow the target bytes. Shebang

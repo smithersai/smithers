@@ -2,6 +2,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Exec from "../src/Exec.ts"
+import * as Input from "../src/Input.ts"
 import * as Shell from "../src/Shell.ts"
 import * as Target from "../src/Target.ts"
 import * as ToolBuild from "../src/ToolBuild.ts"
@@ -187,6 +188,14 @@ describe("Target metadata traversal", () => {
       ]
     }))
     expect(metadata.dependencySelectors).toEqual([Target.subtree("//packages/...", "lib")])
+  })
+
+  it("takes a workspace subtree in a shell target's data as a graph dependency", () => {
+    const selector = Target.subtree("//packages/...", "lib")
+    const metadata = Target.metadata(Shell.Test({ shell: "true", data: [Input.glob("src/**"), selector] }))
+    expect(metadata.dependencies).toEqual([])
+    expect(metadata.dependencySelectors).toEqual([selector])
+    expect(metadata.inputs).toEqual([Input.glob("src/**")])
   })
 
   it("does not recurse forever through a cyclic array", () => {
