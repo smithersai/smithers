@@ -4658,6 +4658,9 @@ importers:
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
+      '@effect/platform-node':
+        specifier: 4.1.1
+        version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(vitest@5.0.0)

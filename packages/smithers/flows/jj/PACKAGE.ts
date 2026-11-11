@@ -5,7 +5,13 @@ import { Smithers } from "@smthrs/targets"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd: "packages/smithers/flows/jj",
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
+  tests: Smithers.glob("test/**/*.test.{ts,vibe}", { exclude: ["test/faults/**"] }),
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }]
 })
 
 /**

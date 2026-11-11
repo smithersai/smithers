@@ -1,0 +1,28 @@
+import { Jj } from "@smthrs/jj"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
+
+/** Binds jj to one absolute repository root, so a later working-directory change cannot redirect it. */
+export const jjAt = (repository: string) => NodeJj.layerAt(repository)
+
+/** Snapshots two versions of a file, diffs the recorded trees, and restores the first. */
+export effect function snapshotDiffRestore(repository: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const jj = try Jj
+  const note = path.join(repository, "note.txt")
+
+  // Capture the working-copy tree without closing or describing its change.
+  try fs.writeFileString(note, "first\n")
+  const first = try jj.snapshot("first note")
+
+  // Do the work a step would do.
+  try fs.writeFileString(note, "second\n")
+  const second = try jj.snapshot("second note")
+
+  // Compare the two recorded trees, not `@-` (the working-copy parent).
+  const diff = try jj.diff(first.commitId, second.commitId)
+
+  // Undo it. `restore` replaces the working copy with the recorded tree.
+  try jj.restore(first.commitId)
+  return { diff, restored: try fs.readFileString(note) }
+}

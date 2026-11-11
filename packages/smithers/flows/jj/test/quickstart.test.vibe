@@ -1,0 +1,14 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { jjAt, snapshotDiffRestore } from "../examples/quickstart.vibe"
+import { jjInstalled, makeRepository } from "./fixtures/repository.ts"
+
+it.effect.skipIf(!jjInstalled())("diffs two snapshots and restores the first", effect () => {
+  const repository = try Effect.try(() => makeRepository())
+  provide jjAt(repository), NodeServices.layer {
+    const { diff, restored } = try snapshotDiffRestore(repository)
+    expect(diff).toContain("diff --git a/note.txt b/note.txt")
+    expect(diff).toContain("-first\n+second")
+    expect(restored).toBe("first\n")
+  }
+})
