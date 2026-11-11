@@ -3,14 +3,14 @@ name: smithers
 description: >
   Drive Smithers durable flows for ordered agent stages, retries, approvals,
   bounded loops, and crash-safe work. Run existing flows or author TypeScript
-  flows with Flow.make, Action.make, and Effect v4. If SMITHERS_INSIDE_RUN is
+  or VibeLang flows with Flow.make, Action.make, and Effect v4. If SMITHERS_INSIDE_RUN is
   set, do the assigned step directly; never launch or steer another run.
 ---
 
 # Smithers
 
-A flow is ordinary TypeScript built from `Flow.make`, `Action.make`, and
-Effect. Completed actions are recorded; recovery resumes at the frontier.
+A flow is ordinary TypeScript or VibeLang built from `Flow.make`, `Action.make`,
+and Effect. Completed actions are recorded; recovery resumes at the frontier.
 Use Effect 4 (`effect@4.1.1`) and the Smithers 1.0 APIs. Read the owning package's
 README and docs before authoring. Never use JSX or 0.x APIs.
 
@@ -77,6 +77,22 @@ host composes that layer with FileSystem, Path, ChildProcessSpawner, HttpClient,
 and agent services (#2923). Export implementations directly; the host owns
 `Action.Implementations`. Acquire extra dependencies during layer construction
 so missing services are refused at load.
+
+## TypeScript or VibeLang
+
+[VibeLang](https://github.com/smithersai/vibelang) is TypeScript with syntax
+for Effect, and Smithers is being rewritten in it. A flow directory's entry is
+`flow.ts` or `flow.vibe`; discovery, `smthrs flow list`, and `smthrs flow start`
+treat them the same. `smthrs init --vibe` scaffolds `flow.vibe`. Both stay
+supported: write VibeLang when the project already has a `vibe.config.json` or
+`.vibe` sources, and TypeScript otherwise.
+
+Before writing `.vibe`, read the VibeLang skill at
+`node_modules/vibelang/skills/vibelang/SKILL.md`. Write `effect function` and
+`try` instead of `Effect.gen` and `yield*`, `error` instead of
+`Data.TaggedError`, and `catch` and `match` instead of `Effect.catchTag`.
+`vibelang --fix` rewrites TypeScript-style Effect forms. Code that needs
+`node:*` or Node globals stays in a `.ts` file the `.vibe` file imports.
 
 ## Authoring checklist (learned from real flows)
 
