@@ -23,17 +23,18 @@ This package handles both in the database rather than in your code:
   status, its owner, its heartbeat, whether cancellation was requested, and the
   executable state a resume re-enters. A restarted process reads that row
   instead of replaying a log to work out where it was.
-- **Every owned write carries a fence.** An owner identity is
-  `{ hostId, pid, nonce }`, and all three fields are compared inside the same
-  SQL statement as the mutation they guard. There is no window between checking
-  ownership and using it, so two processes cannot both win.
+- **Every owned write carries a fence.** The identity is `{ hostId, pid, nonce }`.
+  Owned run transitions and heartbeats consult `Consensus` inside the write
+  transaction. Attempt writes and cancellation acknowledgements check the
+  `running` run row's owner triple directly without consulting `Consensus`.
 - **Competition is a value, not an error.** Losing a race returns
   `AlreadyClaimed`, `HeartbeatFresh`, or `FenceLost` as an ordinary success
   value you branch on. The error channel is reserved for real defects such as an
   invalid argument or a corrupt row.
-- **Step attempts inherit the run's fence.** `AttemptStore` records when each
+- **Step attempts use the run-row fence.** `AttemptStore` records when each
   execution of a step started, the checkpoints it wrote, and how it ended, and
-  refuses every write from a process that no longer owns the run.
+  refuses every write whose owner differs from the `running` run row. If the
+  row and strategy lease disagree, attempt writes follow the row.
 
 The stores carry no database of their own. They are written against the
 driver-neutral [`@smthrs/database`](/api/database) contract, so the same code

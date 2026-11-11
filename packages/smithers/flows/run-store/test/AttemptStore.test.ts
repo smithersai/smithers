@@ -52,6 +52,46 @@ const createRun = (runId = "run-1") =>
   })
 
 describe("AttemptStore", () => {
+  for (const lease of ["absent", "different-owner"] as const) {
+    it.effect(
+      "fences all attempt mutations on the run row when the lease is " + lease,
+      () =>
+        migrated(Effect.gen(function*() {
+          yield* createRun()
+          const sql = yield* SqlClient.SqlClient
+          if (lease === "different-owner") {
+            yield* sql`INSERT INTO flows_consensus_leases (
+            run_id, owner_host_id, owner_pid, owner_nonce, granted_at_ms, heartbeat_at_ms
+          ) VALUES ('run-1', 'other-host', 99, 'other-nonce', 1, 1)`
+          }
+          const store = yield* AttemptStore
+          const id = { runId: "run-1", stepKeyDigest: "digest-row-fence", attempt: 0 }
+          const entry = { ...id, state: "running", startedAtMs: 1, meta: {} } as const
+          expect((yield* store.put(entry, owner))._tag).toBe("Inserted")
+          expect((yield* store.heartbeat(id.runId, id.stepKeyDigest, id.attempt, owner, 2))._tag).toBe("Updated")
+          expect((yield* store.patch(id, { checkpoint: { cursor: 2 } }, owner))._tag).toBe("Patched")
+          expect(
+            (yield* store.finish({ ...id, state: "completed", finishedAtMs: 3, outcome: { value: 42 } }, owner))._tag
+          )
+            .toBe("Finished")
+          const saved = Option.getOrThrow(yield* store.get(id))
+          expect(saved.outcome).toEqual({ value: 42 })
+          const active = { ...id, attempt: 1 }
+          expect((yield* store.put({ ...entry, ...active }, owner))._tag).toBe("Inserted")
+          const activeBefore = Option.getOrThrow(yield* store.get(active))
+          yield* sql`UPDATE flows_runs SET owner_nonce = 'replacement' WHERE run_id = 'run-1'`
+          expect((yield* store.put({ ...entry, ...active }, owner))._tag).toBe("FenceLost")
+          expect((yield* store.heartbeat(active.runId, active.stepKeyDigest, active.attempt, owner, 4))._tag).toBe(
+            "FenceLost"
+          )
+          expect((yield* store.patch(active, { outcome: { value: 0 } }, owner))._tag).toBe("FenceLost")
+          expect((yield* store.finish({ ...active, state: "failed", finishedAtMs: 5 }, owner))._tag).toBe("FenceLost")
+          expect(Option.getOrThrow(yield* store.get(active))).toEqual(activeBefore)
+          expect(Option.getOrThrow(yield* store.get(id))).toEqual(saved)
+        }))
+    )
+  }
+
   it.effect("round-trips an attempt and its opaque metadata", () =>
     Effect.gen(function*() {
       const result = yield* migrated(Effect.gen(function*() {

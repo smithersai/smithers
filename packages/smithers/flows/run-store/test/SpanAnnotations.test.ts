@@ -87,43 +87,66 @@ describe("SpanAnnotations", () => {
     ])
   })
 
-  it("closes an interrupted operation span with the interrupt outcome", async () => {
-    const spans: Array<Tracer.NativeSpan> = []
-    const tracer = Tracer.make({
-      span(options) {
-        const span = new Tracer.NativeSpan(options)
-        spans.push(span)
-        return span
-      }
-    })
-    // A writer that never completes parks `create` mid-operation, so the
-    // interruption below lands while its span is still open.
-    const hangingWriter = Layer.succeed(DurableWriter.DurableWriter)(
-      DurableWriter.DurableWriter.of({ write: () => Effect.never })
-    )
-
-    await Effect.runPromise(
-      Effect.gen(function*() {
-        const store = yield* RunStore
-        const fiber = yield* store.create("run-interrupted", "{}").pipe(
-          Effect.forkChild({ startImmediately: true })
-        )
-        yield* Effect.yieldNow
-        yield* Fiber.interrupt(fiber)
-      }).pipe(
-        Effect.provideService(Tracer.Tracer, tracer),
-        Effect.provide(RunStoreLive.layer.pipe(Layer.provide(hangingWriter))),
-        Effect.provide(Migrations.layer),
-        Effect.provide(TestDatabase.layer),
-        Effect.provide(TestClock.layer()),
-        Effect.provideService(Metric.MetricRegistry, new Map())
+  it.each(["create", "requestCancel", "requestCancelLineage", "acknowledgeCancel"] as const)(
+    "closes an interrupted %s span and counts the interruption",
+    async (method) => {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      // A writer that never completes parks the operation, so the
+      // interruption below lands while its span is still open.
+      const hangingWriter = Layer.succeed(DurableWriter.DurableWriter)(
+        DurableWriter.DurableWriter.of({ write: () => Effect.never })
       )
-    )
 
-    const created = spans.find((span) => span.name === "RunStore.create")
-    expect(created).toBeDefined()
-    expect(created!.attributes.get("outcome")).toBe("interrupt")
-  })
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const store = yield* RunStore
+          const operations = {
+            create: store.create("run-interrupted", "{}"),
+            requestCancel: store.requestCancel("run-interrupted", 0),
+            requestCancelLineage: store.requestCancelLineage("run-interrupted", 0),
+            acknowledgeCancel: store.acknowledgeCancel("run-interrupted", { hostId: "host", pid: 1, nonce: "n" }, 0)
+          }
+          const operation: Effect.Effect<unknown, RunStoreLive.RunStoreError> = operations[method]
+          const fiber = yield* operation.pipe(
+            Effect.forkChild({ startImmediately: true })
+          )
+          yield* Effect.yieldNow
+          yield* Fiber.interrupt(fiber)
+          const metric = method === "create"
+            ? Metric.withAttributes(
+              Metric.counter("flows_run_creations", { description: "Run creation calls by outcome" }),
+              { outcome: "interrupt" }
+            )
+            : Metric.withAttributes(
+              Metric.counter("flows_run_cancellations", { description: "Cancellation calls by operation and outcome" }),
+              {
+                op: method.replace(/(?<=[a-z])(?=[A-Z])/g, "_").toLowerCase(),
+                outcome: "interrupt"
+              }
+            )
+          expect((yield* Metric.value(metric)).count).toBe(1)
+        }).pipe(
+          Effect.provideService(Tracer.Tracer, tracer),
+          Effect.provide(RunStoreLive.layer.pipe(Layer.provide(hangingWriter))),
+          Effect.provide(Migrations.layer),
+          Effect.provide(TestDatabase.layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(Metric.MetricRegistry, new Map())
+        )
+      )
+
+      const created = spans.find((span) => span.name === "RunStore." + method)
+      expect(created).toBeDefined()
+      expect(created!.attributes.get("outcome")).toBe("interrupt")
+    }
+  )
 
   it("annotates domain outcomes and failures without replacing the operation exit", async () => {
     const spans: Array<Tracer.NativeSpan> = []
@@ -253,8 +276,8 @@ describe("SpanAnnotations", () => {
       .filter((span) => span.name === "RunStore.acknowledgeCancel")
       .map((span) => Object.fromEntries(span.attributes))
     expect(attributes).toEqual([
-      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
-      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
+      { runId: "run-ack", ownerHostId: owner.hostId, acknowledged: true, outcome: "acknowledged" },
+      { runId: "run-ack", ownerHostId: owner.hostId, acknowledged: false, outcome: "not_acknowledged" },
       { outcome: "failure" }
     ])
   })

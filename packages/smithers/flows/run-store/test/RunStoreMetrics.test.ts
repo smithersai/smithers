@@ -7,7 +7,7 @@ import type { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import { Clock, Effect, Exit, Metric } from "effect"
-import type * as SqlClient from "effect/sql/SqlClient"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as Migrations from "../src/Migrations.ts"
 import type { LivenessEvidence, OwnerId } from "../src/Ownership.ts"
@@ -37,6 +37,63 @@ const snapshot = (row: RunRow): RunSnapshot => ({
 })
 
 describe("RunStoreMetrics", () => {
+  it.effect("counts cancellation requests, refused acknowledgements, and failed calls", () =>
+    migrated(Effect.gen(function*() {
+      const store = yield* RunStore
+      const cancellations = Metric.counter("flows_run_cancellations", {
+        description: "Cancellation calls by operation and outcome"
+      })
+      const creations = Metric.counter("flows_run_creations", { description: "Run creation calls by outcome" })
+      const cancellationCount = (op: string, outcome: string) =>
+        count(Metric.withAttributes(cancellations, { op, outcome }))
+      yield* store.create("run-cancel-metrics", "{}")
+      expect(Exit.isFailure(yield* Effect.exit(store.create("run-cancel-metrics", "{}")))).toBe(true)
+      expect(yield* count(Metric.withAttributes(creations, { outcome: "success" }))).toBe(1)
+      expect(yield* count(Metric.withAttributes(creations, { outcome: "failure" }))).toBe(1)
+      expect(
+        yield* store.claimAndOwn(
+          "run-cancel-metrics",
+          {
+            status: "pending",
+            owner: null,
+            heartbeatAtMs: null
+          },
+          ownerA,
+          0
+        )
+      ).toEqual({ _tag: "Activated" })
+      // No request and a stale owner both preserve the boolean API's false.
+      expect(yield* store.acknowledgeCancel("run-cancel-metrics", ownerA, 1)).toBe(false)
+      expect((yield* store.requestCancel("run-cancel-metrics", 2))._tag).toBe("CancelRequested")
+      expect((yield* store.requestCancel("run-cancel-metrics", 3))._tag).toBe("AlreadyRequested")
+      expect((yield* store.requestCancel("missing-cancel", 3))._tag).toBe("NotFound")
+      expect(yield* store.acknowledgeCancel("run-cancel-metrics", ownerB, 4)).toBe(false)
+      expect(yield* store.acknowledgeCancel("run-cancel-metrics", ownerA, 5)).toBe(true)
+      expect(yield* store.acknowledgeCancel("run-cancel-metrics", ownerA, 6)).toBe(true)
+      const sql = yield* SqlClient.SqlClient
+      const saved = yield* sql<{ readonly ack: string }>`SELECT cancel_acknowledgement_json AS ack
+        FROM flows_runs WHERE run_id = 'run-cancel-metrics'`
+      expect(JSON.parse(saved[0]!.ack)).toEqual({ observedAtMs: 5, owner: ownerA })
+      expect((yield* store.requestCancelLineage("run-cancel-metrics", 7))._tag).toBe("AlreadyRequested")
+      expect((yield* store.requestCancelLineage("missing-cancel", 7))._tag).toBe("NotFound")
+      yield* store.create("run-lineage-cancel", "{}")
+      expect((yield* store.requestCancelLineage("run-lineage-cancel", 7))._tag).toBe("CancelRequested")
+      expect((yield* store.transitionOwned("run-cancel-metrics", ownerA, "completed"))._tag).toBe("Transitioned")
+      expect((yield* store.requestCancel("run-cancel-metrics", 8))._tag).toBe("Terminal")
+      expect((yield* store.requestCancelLineage("run-cancel-metrics", 8))._tag).toBe("Terminal")
+      expect(Exit.isFailure(yield* Effect.exit(store.requestCancel("", 9)))).toBe(true)
+      expect(Exit.isFailure(yield* Effect.exit(store.requestCancelLineage("", 9)))).toBe(true)
+      expect(Exit.isFailure(yield* Effect.exit(store.acknowledgeCancel("", ownerA, 9)))).toBe(true)
+      for (const op of ["request_cancel", "request_cancel_lineage"]) {
+        for (const outcome of ["cancel_requested", "already_requested", "terminal", "not_found", "failure"]) {
+          expect(yield* cancellationCount(op, outcome)).toBe(1)
+        }
+      }
+      expect(yield* cancellationCount("acknowledge_cancel", "acknowledged")).toBe(2)
+      expect(yield* cancellationCount("acknowledge_cancel", "not_acknowledged")).toBe(2)
+      expect(yield* cancellationCount("acknowledge_cancel", "failure")).toBe(1)
+    })))
+
   it.effect("pins every outcome label and every transition target attribute", () =>
     Effect.gen(function*() {
       expect(Object.keys(RunStoreMetrics.claim)).toEqual([

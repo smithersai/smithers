@@ -54,8 +54,7 @@ export const observeOutcome = <A extends { readonly _tag: string }>(
 
 /**
  * `observeOutcome` for operations whose success carries no domain outcome
- * tag: `create` inserts or fails, `get` returns the row or fails, and
- * `acknowledgeCancel` reports whether the guarded update matched. The span
+ * tag, such as `get`, which returns the row or fails. The span
  * still closes with `success`, `failure`, or `interrupt`.
  *
  * @since 1.0.0-rc.0

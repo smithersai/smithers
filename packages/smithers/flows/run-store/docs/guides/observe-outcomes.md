@@ -1,29 +1,38 @@
 ---
 title: "Observe store outcomes"
-description: "Read the fencing counters and spans the stores emit: the three counters and their attributes, what a span carries, how to wire an exporter, and how to assert on a counter in a test."
+description: "Read the fencing counters and spans the stores emit: the counters and their attributes, what a span carries, how to wire an exporter, and how to assert on a counter in a test."
 sidebar:
   order: 6
 ---
 
 A lost fence is a normal success value, so it never reaches an error channel and
 never appears in a log by default. The stores publish it as telemetry instead:
-every claim, heartbeat, and transition updates an attributed counter and closes a
+every creation, cancellation, claim, heartbeat, and transition updates an attributed counter and closes a
 span that says how it ended. Wire an exporter once and "who keeps stealing this
 run" becomes a query rather than a grep.
 
-## The three counters
+## The counters
 
 `RunStoreMetrics` defines the handles, and `RunStore` updates them as it decides
 each outcome. Every driver that writes through the store lands in the same
 counters.
 
-| Counter                 | Attributes      | What it counts                                                     |
-| ----------------------- | --------------- | ------------------------------------------------------------------ |
-| `flows_run_claims`      | `op`, `outcome` | Every ownership compare-and-swap, across all six claim operations. |
-| `flows_run_heartbeats`  | `outcome`       | Every fenced ownership heartbeat.                                  |
-| `flows_run_transitions` | `outcome`, `to` | Every fenced owned transition, by requested target status.         |
+| Counter                   | Attributes      | What it counts                                                     |
+| ------------------------- | --------------- | ------------------------------------------------------------------ |
+| `flows_run_claims`        | `op`, `outcome` | Every ownership compare-and-swap, across all six claim operations. |
+| `flows_run_heartbeats`    | `outcome`       | Every fenced ownership heartbeat.                                  |
+| `flows_run_transitions`   | `outcome`, `to` | Every fenced owned transition, by requested target status.         |
+| `flows_run_cancellations` | `op`, `outcome` | Cancellation requests and acknowledgements.                        |
+| `flows_run_creations`     | `outcome`       | Run creation calls.                                                |
 
-`op` is the operation in snake case: `claim`, `claim_and_own`, `activate`,
+Cancellation `op` is `request_cancel`, `request_cancel_lineage`, or
+`acknowledge_cancel`. Request outcomes are `cancel_requested`,
+`already_requested`, `terminal`, and `not_found`.
+Acknowledgements use `acknowledged` or `not_acknowledged`; the latter means
+the guarded update did not match (a lost row fence, no request, or no run).
+Creation uses `success`.
+
+Claim `op` is the operation in snake case: `claim`, `claim_and_own`, `activate`,
 `abandon_claim`, `recover_claim`, or `steal`. `outcome` is the result tag in
 snake case, so `HeartbeatFresh` is recorded as `heartbeat_fresh`. `to` on a
 transition is the target status you asked for, whether or not the write won.
@@ -123,7 +132,7 @@ are validated, so a call rejected as invalid input closes with `outcome` alone.
 | `RunStore.latestRound`          | `runId`                             | none             | `success`                                                                          |
 | `RunStore.requestCancel`        | `runId`                             | none             | request-cancel tag                                                                 |
 | `RunStore.requestCancelLineage` | `runId`                             | none             | request-cancel tag                                                                 |
-| `RunStore.acknowledgeCancel`    | `runId`                             | `ownerHostId`    | `success`                                                                          |
+| `RunStore.acknowledgeCancel`    | `runId`                             | `ownerHostId`    | `acknowledged`, `not_acknowledged`                                                 |
 | `RunStore.claim`                | `runId`                             | `claimantHostId` | claim tag                                                                          |
 | `RunStore.claimAndOwn`          | `runId`                             | `ownerHostId`    | claim-and-own tag                                                                  |
 | `RunStore.activate`             | `runId`                             | `claimantHostId` | activate tag                                                                       |
@@ -141,9 +150,9 @@ are validated, so a call rejected as invalid input closes with `outcome` alone.
 A `RunStore` outcome tag is the snake case form of the matching result type's
 `_tag`, `cancel_requested` for `requestCancel` or `fence_lost` for `heartbeat`.
 `RunStore.acknowledgeCancel` returns a boolean rather than a tagged result, so
-its span closes with `success` whether or not the guarded update matched. The
-`SpanAnnotations` test in this package asserts the exact attribute set of each
-`AttemptStore` span and of `acknowledgeCancel`; change both together.
+its span also carries `acknowledged: boolean` on a successful return and
+closes with `acknowledged` or `not_acknowledged` according to whether the
+guarded update matched. Its public return value remains a boolean.
 
 Failure causes are published to logs, spans, and telemetry, so they carry field
 names, lengths, and validity flags and never the value that failed. A

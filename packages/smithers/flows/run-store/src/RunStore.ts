@@ -20,13 +20,14 @@
  * clock, which is right for an in-process library over local SQLite and must
  * not cross a trust boundary.
  *
- * Arbitration itself — who holds the claim, who holds the lease, whether the
- * fence still stands — is delegated to `@smthrs/journal`'s injected
- * `Consensus` strategy. The run row mirrors the strategy's answer in the same
+ * Claim and lease arbitration, including owned transitions and heartbeats,
+ * delegates to `@smthrs/journal`'s injected `Consensus` strategy.
+ * The run row mirrors the strategy's answer in the same
  * write transaction, and every ownership transition the strategy grants is
  * appended to the run's `run-store` companion journal stream in that
  * transaction (see {@link OwnershipTransition}); heartbeats renew the lease
- * and never enter the journal.
+ * and never enter the journal. Cancellation acknowledgements check the running
+ * run-row owner directly without consulting the strategy.
  *
  * @since 0.1.0
  */
@@ -1418,7 +1419,14 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             )
           `.pipe(Effect.asVoid)
           )
-        }).pipe(observeExit)
+        }).pipe(
+          Effect.as({ _tag: "Success" } as const),
+          observeOutcome(
+            () => Metric.withAttributes(RunStoreMetrics.creations, { outcome: "success" }),
+            RunStoreMetrics.creations
+          ),
+          Effect.asVoid
+        )
     )
 
     const get = Effect.fn("RunStore.get")((runIdInput: string): Effect.Effect<RunRow, RunStoreError> =>
@@ -1489,7 +1497,10 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             return yield* classifyCancellationMiss("requestCancel", runId, current)
           })
         )
-      }).pipe(observeOutcome<RequestCancelOutcome>())
+      }).pipe(observeOutcome(
+        (outcome) => RunStoreMetrics.requestCancel[outcome._tag],
+        Metric.withAttributes(RunStoreMetrics.cancellations, { op: "request_cancel" })
+      ))
     )
 
     const requestCancelLineage = Effect.fn("RunStore.requestCancelLineage")((runIdInput: string, nowMsInput: number) =>
@@ -1525,7 +1536,10 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             return yield* classifyCancellationMiss("requestCancelLineage", runId, members)
           })
         )
-      }).pipe(observeOutcome<RequestCancelOutcome>())
+      }).pipe(observeOutcome(
+        (outcome) => RunStoreMetrics.requestCancelLineage[outcome._tag],
+        Metric.withAttributes(RunStoreMetrics.cancellations, { op: "request_cancel_lineage" })
+      ))
     )
 
     const claim = Effect.fn("RunStore.claim")((
@@ -2110,7 +2124,15 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         RETURNING run_id
       `.pipe(Effect.map((rows) => rows.length > 0))
         )
-      }).pipe(observeExit)
+      }).pipe(
+        Effect.tap((acknowledged) => Effect.annotateCurrentSpan({ acknowledged })),
+        Effect.map((acknowledged) => ({ _tag: acknowledged ? "Acknowledged" : "NotAcknowledged" } as const)),
+        observeOutcome(
+          (outcome) => RunStoreMetrics.acknowledgeCancel[outcome._tag],
+          Metric.withAttributes(RunStoreMetrics.cancellations, { op: "acknowledge_cancel" })
+        ),
+        Effect.map((outcome) => outcome._tag === "Acknowledged")
+      )
     )
 
     return RunStore.of({
@@ -2180,9 +2202,10 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<RunStor
  * Provides the database-backed `RunStore` over an explicitly injected
  * consensus strategy.
  *
- * Arbitration — claims, activation, steals, heartbeats, and fence checks — is
- * delegated to the `Consensus` service in context; the run row mirrors the
- * outcome in the same transaction. Provide the SAME strategy instance the
+ * Claims, activation, steals, heartbeats, and owned transitions delegate to
+ * the `Consensus` service in context; the run row mirrors the outcome in the
+ * same transaction. Cancellation acknowledgements use the run-row owner fence
+ * without consulting the strategy. Provide the SAME strategy instance the
  * journal fences through (`SqlJournal.layerWith`), because
  * `Consensus.layerLocal` keeps its leases per layer build.
  *

@@ -56,6 +56,30 @@ export const heartbeats = Metric.counter("flows_run_heartbeats", {
   description: "Fenced ownership heartbeats by outcome"
 })
 
+/**
+ * Counter over cancellation calls, dimensioned by `op` (`request_cancel`,
+ * `request_cancel_lineage`, or `acknowledge_cancel`) and `outcome`.
+ * Acknowledgements use `acknowledged` or `not_acknowledged`; requests use
+ * their result tag in snake case. Failed and interrupted calls also count.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const cancellations = Metric.counter("flows_run_cancellations", {
+  description: "Cancellation calls by operation and outcome"
+})
+
+/**
+ * Counter over run creation calls, dimensioned by `outcome` (`success`,
+ * `failure`, or `interrupt`).
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const creations = Metric.counter("flows_run_creations", {
+  description: "Run creation calls by outcome"
+})
+
 /** Rewrites an outcome tag (`AlreadyClaimed`) as an attribute value (`already_claimed`). */
 const attributeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase()
 
@@ -162,4 +186,35 @@ export const transition = byOutcome(
   transitions,
   {},
   ["Transitioned", "FenceLost", "NotFound", "GuardFailed"] as const
+)
+
+const cancellationTags = ["CancelRequested", "AlreadyRequested", "Terminal", "NotFound"] as const
+
+/**
+ * `cancellations` views for round-scoped cancellation requests.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const requestCancel = byOutcome(cancellations, { op: "request_cancel" }, cancellationTags)
+
+/**
+ * `cancellations` views for lineage-scoped cancellation requests.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const requestCancelLineage = byOutcome(cancellations, { op: "request_cancel_lineage" }, cancellationTags)
+
+/**
+ * `cancellations` views for accepted and refused cancellation acknowledgements.
+ * `NotAcknowledged` includes a lost row fence, a missing run, or no request.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const acknowledgeCancel = byOutcome(
+  cancellations,
+  { op: "acknowledge_cancel" },
+  ["Acknowledged", "NotAcknowledged"] as const
 )

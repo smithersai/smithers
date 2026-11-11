@@ -104,10 +104,10 @@ ownership unchanged.
   status, owner, heartbeat, cancellation request, and the executable state to
   re-enter, instead of replaying a log to work out where it was.
 - **Every owned write carries a fence.** An owner identity is
-  `{ hostId, pid, nonce }`, and every owned mutation asks the `Consensus`
-  strategy whether that identity still holds the run inside the same
-  serialized write transaction as the mutation it guards. There is no window
-  between checking ownership and using it, so two processes cannot both win.
+  `{ hostId, pid, nonce }`. Owned run transitions and heartbeats consult the
+  `Consensus` strategy inside the serialized write transaction. Attempt writes
+  and cancellation acknowledgements instead check the `running` run row's
+  owner triple in the mutation itself; they do not consult `Consensus`.
 - **Competition is a value, not an error.** Losing a race returns
   `AlreadyClaimed`, `HeartbeatFresh`, or `FenceLost` as an ordinary success
   value you branch on. The error channel is reserved for real defects: invalid
@@ -116,9 +116,10 @@ ownership unchanged.
   owner stopped writing, not that it stopped working. `steal` and `recoverClaim`
   additionally require `LivenessEvidence` about the recorded owner, bound to the
   exact instant it is spent, and every unknown probe answer is read as life.
-- **Step attempts inherit the run's fence.** `AttemptStore` records when each
+- **Step attempts use the run-row fence.** `AttemptStore` records when each
   execution of a step started, the checkpoints it wrote, and how it ended, and
-  refuses every write from a process that no longer owns the run.
+  refuses writes whose owner no longer matches the `running` run row. If that
+  row disagrees with the strategy lease, attempt writes follow the row.
 - **Persisted values are copied inert.** Run state, checkpoints, errors,
   outcomes, and metadata are walked into a frozen detached copy before
   persistence can yield, so a getter, a cycle, or a `toJSON` method is refused

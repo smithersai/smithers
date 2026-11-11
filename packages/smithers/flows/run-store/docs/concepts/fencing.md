@@ -27,10 +27,9 @@ one incarnation of that process from the next. The nonce is what makes a
 restarted process a different owner from its predecessor, and what lets two
 engines composed inside one process tell each other apart.
 
-Nothing is locked. Every owned write asks the injected `Consensus` strategy
-whether the complete triple still holds the run inside the same serialized
-write transaction as the mutation, and the run row is updated only after the
-strategy answers:
+Owned run transitions ask the injected `Consensus` strategy whether the
+complete triple still holds the run inside the same serialized write transaction
+as the mutation, and the run row is updated only after the strategy answers:
 
 ```ts
 const held = yield * consensus.guard(runId, owner) // fails fence_lost otherwise
@@ -136,11 +135,19 @@ in the same write transaction as the fence check. `{ cancelRequested:
 expressed inside the serialized transaction rather than as a read-then-write
 race. See [Cancel a run](../guides/cancel-a-run.md).
 
-## Attempts inherit the run's fence
+## Attempts use the run-row fence
 
 `AttemptStore` never carries its own ownership. `put`, `heartbeat`, `finish`,
 and `patch` each embed an `EXISTS` subquery over `flows_runs` requiring that
-the run is `running` and owned by the caller. One consequence is worth knowing
+the run is `running` and owned by the caller. These writes do not ask
+`Consensus.guard`: if the run row still names owner A but the strategy has no
+lease for A or names owner B, A's attempt writes can succeed even though
+`transitionOwned` and journal appends refuse A. `acknowledgeCancel` also uses
+the run-row fence. Keep the row mirror and the strategy aligned when composing
+or repairing stores.
+
+One consequence is worth knowing
 before you debug it: once a run reaches a terminal status its owner columns are
 cleared, so every later attempt write on that run reports `FenceLost`. A
-delayed write from a displaced owner cannot rewrite the winning row.
+delayed write from an owner displaced in the run row cannot rewrite the
+winning attempt.

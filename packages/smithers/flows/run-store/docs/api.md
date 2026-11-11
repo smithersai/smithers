@@ -151,7 +151,7 @@ const acknowledgeCancel: (runId: string, owner: OwnerId, nowMs: number) => Effec
 ```
 
 Records the first owner observation of cancellation intent under the running
-owner fence. Returns false when the run is missing, not running, has no intent,
+owner fence in the run row, without consulting `Consensus`. Returns false when the run is missing, not running, has no intent,
 or belongs to another owner. Repeated acknowledgements preserve the original
 owner and timestamp. This does not make the run terminal or prove cleanup ended.
 Engine snapshots expose the record separately from request and finish.
@@ -752,8 +752,9 @@ interface OwnerId {
 
 Defined by [`@smthrs/journal`](/api/journal), because it is the same token the
 journal accepts on durable appends, and re-exported here so ownership callers
-read one vocabulary. All three fields are compared in the same SQL statement as
-every owned mutation.
+read one vocabulary. Owned run transitions and heartbeats consult `Consensus`;
+attempt writes and cancellation acknowledgements compare the complete triple
+against the `running` run row without consulting the strategy.
 
 ### LivenessEvidence
 
@@ -890,21 +891,26 @@ counters appear in whatever registry the composition provides.
 const claims: Metric.Metric<number, Metric.CounterState<number>> // "flows_run_claims"
 const transitions: Metric.Metric<number, Metric.CounterState<number>> // "flows_run_transitions"
 const heartbeats: Metric.Metric<number, Metric.CounterState<number>> // "flows_run_heartbeats"
+const cancellations: Metric.Metric<number, Metric.CounterState<number>> // "flows_run_cancellations"
+const creations: Metric.Metric<number, Metric.CounterState<number>> // "flows_run_creations"
 ```
 
-Eight records map an outcome `_tag` to an attributed view of its counter, so an
+Eleven records map an outcome `_tag` to an attributed view of its counter, so an
 update or a read is a lookup rather than a branch:
 
-| Record         | Counter       | Keys                                                                                                |
-| -------------- | ------------- | --------------------------------------------------------------------------------------------------- |
-| `claim`        | `claims`      | `Claimed`, `NotFound`, `AlreadyClaimed`, `HeartbeatFresh`, `SnapshotChanged`                        |
-| `claimAndOwn`  | `claims`      | the above with `Activated` for `Claimed`, plus `EvidenceRequired`                                   |
-| `activate`     | `claims`      | `Activated`, `ClaimLost`, `SnapshotChanged`                                                         |
-| `abandonClaim` | `claims`      | `Abandoned`, `ClaimLost`                                                                            |
-| `recoverClaim` | `claims`      | `Recovered`, `NotFound`, `ClaimFresh`, `ClaimChanged`, `LivenessUnconfirmed`                        |
-| `steal`        | `claims`      | `Claimed`, `NotFound`, `AlreadyClaimed`, `HeartbeatFresh`, `SnapshotChanged`, `LivenessUnconfirmed` |
-| `heartbeat`    | `heartbeats`  | `Updated`, `FenceLost`, `NotFound`                                                                  |
-| `transition`   | `transitions` | `Transitioned`, `FenceLost`, `NotFound`, `GuardFailed`                                              |
+| Record                 | Counter         | Keys                                                                                                |
+| ---------------------- | --------------- | --------------------------------------------------------------------------------------------------- |
+| `claim`                | `claims`        | `Claimed`, `NotFound`, `AlreadyClaimed`, `HeartbeatFresh`, `SnapshotChanged`                        |
+| `claimAndOwn`          | `claims`        | the above with `Activated` for `Claimed`, plus `EvidenceRequired`                                   |
+| `activate`             | `claims`        | `Activated`, `ClaimLost`, `SnapshotChanged`                                                         |
+| `abandonClaim`         | `claims`        | `Abandoned`, `ClaimLost`                                                                            |
+| `recoverClaim`         | `claims`        | `Recovered`, `NotFound`, `ClaimFresh`, `ClaimChanged`, `LivenessUnconfirmed`                        |
+| `steal`                | `claims`        | `Claimed`, `NotFound`, `AlreadyClaimed`, `HeartbeatFresh`, `SnapshotChanged`, `LivenessUnconfirmed` |
+| `heartbeat`            | `heartbeats`    | `Updated`, `FenceLost`, `NotFound`                                                                  |
+| `transition`           | `transitions`   | `Transitioned`, `FenceLost`, `NotFound`, `GuardFailed`                                              |
+| `requestCancel`        | `cancellations` | `CancelRequested`, `AlreadyRequested`, `Terminal`, `NotFound`                                       |
+| `requestCancelLineage` | `cancellations` | `CancelRequested`, `AlreadyRequested`, `Terminal`, `NotFound`                                       |
+| `acknowledgeCancel`    | `cancellations` | `Acknowledged`, `NotAcknowledged`                                                                   |
 
 Each view carries `outcome` in snake case, and the `claims` views also carry `op`
 (`claim`, `claim_and_own`, `activate`, `abandon_claim`, `recover_claim`,
@@ -912,6 +918,13 @@ Each view carries `outcome` in snake case, and the `claims` views also carry `op
 because the target status is call input. A terminal transition also advances
 `runThroughput` from [`@smthrs/observability`](/api/observability). See
 [Observe store outcomes](./guides/observe-outcomes.md).
+
+Cancellation counters carry `op` (`request_cancel`, `request_cancel_lineage`,
+or `acknowledge_cancel`) and `outcome`. Creation counters carry `outcome`.
+`requestCancel`, `requestCancelLineage`, and `acknowledgeCancel` expose
+outcome-keyed views. An acknowledgement uses `Acknowledged` or
+`NotAcknowledged` internally for telemetry while the service returns a boolean.
+See [Observe store outcomes](./guides/observe-outcomes.md) for all labels.
 
 ## Migrations
 

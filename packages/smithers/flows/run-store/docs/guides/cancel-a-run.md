@@ -154,3 +154,10 @@ without a separate read.
   named outcome.
 - [Troubleshooting](../troubleshooting.md): what to change when a guard or a
   request keeps refusing.
+
+`acknowledgeCancel` checks the running run row's owner triple, not the
+`Consensus` strategy lease. Its span records `acknowledged: boolean` and an
+`acknowledged` or `not_acknowledged` outcome. Cancellation requests and
+acknowledgements increment `flows_run_cancellations` by operation and
+outcome, including failures and interruptions. See
+[Observe store outcomes](./observe-outcomes.md).
