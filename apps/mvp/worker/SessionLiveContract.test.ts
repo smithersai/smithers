@@ -34,7 +34,7 @@ test("every SessionStore table reader is classified, and live readers use sessio
   const source = sourceText(new URL("./SessionStore.ts", import.meta.url))
   const readers = tableReaders(new URL("./SessionStore.ts", import.meta.url))
   const live = ["reauthCandidate", "reauthenticateHost", "credentialStale", "createHostSession", "deploymentMember", "findHostLive", "findLive", "findLiveById", "authority", "held", "renew"]
-  const other = ["reauthenticate", "latestRole", "latestRoleVerifiedAt", "createSession", "ownerOf", "revokeHost", "hostOwnerOf", "signingOut", "forgetTokens", "replaceTokens", "setRole", "keepRole"]
+  const other = ["reauthenticate", "latestRole", "latestRoleVerifiedAt", "createSession", "ownerOf", "revokeHost", "hostOwnerOf", "signingOut", "forgetTokens", "replaceTokens", "setRole", "keepRole", "tokenHistory"]
   expect(readers.map(r => r.name).sort()).toEqual([...live, ...other].sort())
   for (const reader of readers.filter(r => live.includes(r.name))) {
     if (["findLive", "findLiveById"].includes(reader.name)) {
