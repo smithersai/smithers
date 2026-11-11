@@ -194,6 +194,8 @@ test("importing the release scripts reads no workspace tree", async () => {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }
+    // The membership reader imports the pinned `yaml` and `tinyglobby`.
+    await symlink(join(repoRoot, "node_modules"), join(fixture, "node_modules"), "dir")
     // A workspace whose only member is a valid engine package: a roster the
     // release check rejects, so an eager read cannot pass unnoticed.
     await writeFile(join(fixture, "pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n")
