@@ -47,6 +47,28 @@
 
 ### Fixed
 
+- `StandardFlows.shell` hands the cell what a timed-out `bash` command printed
+  as `error.output`, and its message says so: "The command timed out;
+  error.output holds what it printed before it was stopped." It used to answer
+  "The command timed out." and nothing else, so a test loop that printed a
+  line per case and hung returned none of them.
+- A markdown child no longer runs with more authority than its caller. The
+  call boundary read a declared `capabilities:` entry as one exact resource,
+  so a caller holding `fs:read:/app/?.txt` admitted a child declaring
+  `fs:read:/app/*.txt`, which the child then used as a pattern to read
+  `/app/secret.txt`. Each declaration is now admitted only where one grant of
+  the caller's envelope covers the whole pattern.
+- A markdown child runs every call through its caller's `Agent.Options.authorize`
+  hook. The child ran with no hook, so a host that denied `fs/write` but
+  permitted the child flow was bypassed when the child called `fs/write`. A
+  call the hook would park for approval is refused in the child's cell with
+  `capability_refused`, so a child still never parks its caller.
+- A markdown child no longer drains its caller's steering queue, parks on its
+  caller's `Budget.Parking` handler, or emits to its caller's
+  `AgentEvent.Observer`. The child's runner provided the caller's whole
+  captured context inside its overrides, which restored all three; it now
+  provides only the run services a child needs, outside the overrides.
+
 - `fail-only-report` retains commands that cannot start, exceed the output buffer,
   or terminate by signal as failed results for the analyzer, instead
   of dropping them and claiming the remaining commands all passed. Captured

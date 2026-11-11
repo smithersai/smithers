@@ -249,7 +249,11 @@ envelope `bash` declares for every call.
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside
 the schemas. Fails with `invalid_input`, `outside_declared_reads`,
 `outside_declared_writes`, `provider_unavailable` (a container with no
-transport), `outside_container`, `timeout`, or `command_failed`.
+transport), `outside_container`, `timeout`, or `command_failed`. A `timeout`
+carries `output`, a `StdError.PartialOutput`: the streams up to the moment the
+command was stopped, with the same flags and counts as `Bash.Output`, and
+`mutated` for a containerised command whose tree was measured on both sides.
+A containerised command's deadline is enforced inside the container.
 
 `Bash.sealed(container, { cwd })` is `Bash.run` sealed to one container. A
 call that names no container runs in `container`, in `cwd` when it names no

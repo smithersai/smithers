@@ -7,10 +7,23 @@
  * change to `find`'s prune group or `stat`'s format is invisible to a unit
  * test of the string.
  */
-import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs"
+import * as Effect from "effect/Effect"
+import { spawn, spawnSync } from "node:child_process"
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 import * as WorkspaceLists from "../src/TreeFingerprint.ts"
@@ -80,27 +93,265 @@ describe("TreeFingerprint.script", () => {
 /** Whether this host's shell can bound a measurement, which `around` needs before it takes one. */
 const hostCanBound = spawnSync("sh", ["-c", "command -v timeout >/dev/null 2>&1"]).status === 0
 
+/** The nonce every case here frames its trailer with, as `bash` frames each call with its own. */
+const nonce = "0123456789abcdef"
+
 /** Runs `program` under `around` in `cwd`, the way `bash` runs a containerised command. */
-const bracketed = (cwd: string, program: ReadonlyArray<string>, input?: string) => {
-  const result = spawnSync("sh", ["-c", TreeFingerprint.around(), "sh", ...program], { cwd, encoding: "utf8", input })
-  return { status: result.status, stdout: result.stdout, ...TreeFingerprint.split(result.stderr) }
+const bracketed = (
+  cwd: string,
+  program: ReadonlyArray<string>,
+  input?: string,
+  options: { readonly shell?: string; readonly deadline?: number; readonly path?: string } = {}
+) => {
+  const result = spawnSync(
+    options.shell ?? "/bin/sh",
+    ["-c", TreeFingerprint.around(), "sh", nonce, String(options.deadline ?? 60), ...program],
+    {
+      cwd,
+      encoding: "utf8",
+      input,
+      ...(options.path === undefined ? {} : { env: { ...process.env, PATH: options.path } })
+    }
+  )
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    raw: result.stderr,
+    ...TreeFingerprint.split(result.stderr, nonce)
+  }
 }
 
+/** The file `name` runs from on this host's PATH, or nothing; a shell builtin is not one. */
+const which = (name: string): string | undefined =>
+  (process.env["PATH"] ?? "").split(delimiter).map((directory) => join(directory, name)).find((file) => {
+    try {
+      accessSync(file, constants.X_OK)
+      return statSync(file).isFile()
+    } catch {
+      return false
+    }
+  })
+
+/** A GNU-compatible `timeout`, the kind `around` prefers to start the command with. */
+const gnuTimeout = spawnSync("sh", ["-c", "timeout --preserve-status -k 1 1 true"]).status === 0
+
+/** Whether this host's `env` is GNU's, which can reset a signal ignored by a background job. */
+const gnuEnv = spawnSync("sh", ["-c", "env --default-signal=INT true"]).status === 0
+
+/**
+ * A directory to be a container's whole PATH: the host's own `name` for each
+ * tool, so a case decides which of `timeout` and `setsid` the container has.
+ * `stat` is a GNU one where the host has it under another name, and `setsid`
+ * is a real one where the host has none (macOS): the same `setsid(2)` call
+ * util-linux and busybox make, through Python.
+ */
+const toolbox = (tools: ReadonlyArray<string>): string => {
+  const bin = mkdtempSync(join(tmpdir(), "tree-toolbox-"))
+  for (const tool of tools) {
+    const host = tool === "stat" && !hostCanMeasure
+      ? which("gstat")
+      : tool === "env" && !gnuEnv
+      ? which("genv") ?? which("env")
+      : which(tool)
+    if (host !== undefined) symlinkSync(host, join(bin, tool))
+    else if (tool === "setsid") {
+      writeFileSync(
+        join(bin, tool),
+        `#!${which("python3")}\nimport os, sys\nos.setsid()\nos.execvp(sys.argv[1], sys.argv[1:])\n`,
+        { mode: 0o755 }
+      )
+    }
+  }
+  return bin
+}
+
+/** What every case's container has besides the two tools a case chooses between. */
+const base = [
+  "sh",
+  "true",
+  "sleep",
+  "cat",
+  "find",
+  "stat",
+  "sort",
+  "head",
+  "cksum",
+  "grep",
+  "tr",
+  "env",
+  "python3",
+  "ps"
+]
+
+/** Whether `pid` is gone, allowing an orphan a moment to be reaped by init. */
+const gone = (pid: number): boolean => {
+  for (let tries = 0; tries < 50; tries++) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    spawnSync("sleep", ["0.1"])
+  }
+  return false
+}
+
+/** The shells `around` runs under here: the host's `sh`, and `dash` where the host has one. */
+const shells = [which("sh")!, ...[which("dash")].filter((shell) => shell !== undefined)]
+
 describe("TreeFingerprint.around", () => {
-  it("runs the command as given: its arguments, standard input, both streams and exit status", () => {
-    // True on every host, measured or not: the script never changes what the
-    // command it brackets reads, writes or exits with.
+  const launchers = [
+    ...(gnuTimeout ? [{ name: "timeout", tools: ["timeout", "setsid"] }] : []),
+    { name: "setsid", tools: ["setsid"] },
+    { name: "the shell alone", tools: [] }
+  ]
+
+  describe.each(shells.flatMap((shell) => launchers.map((launcher) => ({ shell, ...launcher }))))(
+    "under $shell, started by $name",
+    ({ shell, tools }) => {
+      const run = (program: ReadonlyArray<string>, input?: string, deadline?: number) => {
+        const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+        const bin = toolbox([...base, ...tools])
+        try {
+          return {
+            root,
+            ...bracketed(root, program, input, { shell, path: bin, ...(deadline === undefined ? {} : { deadline }) })
+          }
+        } finally {
+          rmSync(bin, { recursive: true, force: true })
+        }
+      }
+
+      it("starts the command with the launcher the container offers", () => {
+        // `ps` names the command's parent: the launcher when it stays one, the
+        // script's own shell when the launcher exec'd the command.
+        const ran = run(["sh", "-c", `ps -o comm= -p "$PPID"`])
+        rmSync(ran.root, { recursive: true, force: true })
+        expect(ran.stdout.trim().split("/").at(-1)).toBe(
+          tools.includes("timeout") ? "timeout" : shell.split("/").at(-1)
+        )
+      })
+
+      it("runs the command as given: its arguments, standard input, both streams and exit status", () => {
+        // True on every host, measured or not: the script never changes what
+        // the command it brackets reads, writes or exits with.
+        const ran = run(
+          ["sh", "-c", `cat; printf '%s|' "$@"; echo problem >&2; exit 3`, "sh", "a b", "$HOME", "it's"],
+          "from stdin\n"
+        )
+        rmSync(ran.root, { recursive: true, force: true })
+        expect(ran.status).toBe(3)
+        expect(ran.stdout).toBe("from stdin\na b|$HOME|it's|")
+        expect(ran.stderr).toBe("problem\n")
+        expect(ran.timedOut).toBe(false)
+      })
+
+      it("stops a command at its deadline, says so, and leaves nothing it started running", () => {
+        // The command prints, then hangs with a child of its own: the shape of
+        // a test runner stuck on one case. A process group takes the child too.
+        const started = Date.now()
+        const ran = run(
+          [
+            "sh",
+            "-c",
+            `echo "case 1 ok"; sleep 30 </dev/null >/dev/null 2>&1 & echo "$! $$" > pids; echo "case 2 hangs" >&2; wait`
+          ],
+          undefined,
+          1
+        )
+        const [child, command] = readFileSync(join(ran.root, "pids"), "utf8").trim().split(" ").map(Number)
+        rmSync(ran.root, { recursive: true, force: true })
+        expect(Date.now() - started).toBeLessThan(15_000)
+        expect(ran.timedOut).toBe(true)
+        expect(ran.stdout).toBe("case 1 ok\n")
+        expect(ran.stderr).toBe("case 2 hangs\n")
+        expect(ran.status).not.toBe(0)
+        expect(gone(command!)).toBe(true)
+        // Only a process group reaches a child the command started; the shell
+        // alone reaches the command it ran.
+        if (tools.length > 0) expect(gone(child!)).toBe(true)
+        else process.kill(child!, "SIGKILL")
+        // The tree is measured after the stop exactly as after an exit, where
+        // the container can measure at all.
+        if (tools.includes("timeout") && (hostCanMeasure || which("gstat") !== undefined)) {
+          expect(ran.before).toMatchObject({ complete: true })
+          expect(ran.after).toMatchObject({ complete: true })
+        }
+      })
+
+      it("kills a command that ignores the polite signal once its grace is spent", () => {
+        const started = Date.now()
+        const ran = run(["sh", "-c", `trap '' TERM; echo "$$" > pid; while :; do sleep 1; done`], undefined, 1)
+        const pid = Number(readFileSync(join(ran.root, "pid"), "utf8"))
+        rmSync(ran.root, { recursive: true, force: true })
+        expect(ran.timedOut).toBe(true)
+        expect(gone(pid)).toBe(true)
+        expect(Date.now() - started).toBeGreaterThanOrEqual((1 + TreeFingerprint.graceSeconds) * 1000 - 500)
+      })
+
+      it("stops the command when the script itself is told to stop, as a transport giving up does", async () => {
+        const root = mkdtempSync(join(tmpdir(), "tree-around-"))
+        const bin = toolbox([...base, ...tools])
+        try {
+          const script = spawn(
+            shell,
+            ["-c", TreeFingerprint.around(), "sh", nonce, "60", "sh", "-c", `echo "$$" > pid; exec sleep 30`],
+            { cwd: root, env: { ...process.env, PATH: bin }, stdio: ["ignore", "ignore", "pipe"] }
+          )
+          let stderr = ""
+          script.stderr.on("data", (chunk: Buffer) => void (stderr += chunk.toString()))
+          const closed = new Promise<number | null>((resolve) => script.on("close", resolve))
+          for (let tries = 0; tries < 100 && !existsSync(join(root, "pid")); tries++) {
+            await new Promise((resolve) => setTimeout(resolve, 50))
+          }
+          const pid = Number(readFileSync(join(root, "pid"), "utf8"))
+          script.kill("SIGTERM")
+          await closed
+          expect(gone(pid)).toBe(true)
+          // Stopped from outside, the deadline never fired.
+          expect(TreeFingerprint.split(stderr, nonce).timedOut).toBe(false)
+        } finally {
+          rmSync(bin, { recursive: true, force: true })
+          rmSync(root, { recursive: true, force: true })
+        }
+      })
+
+      it.skipIf(which("python3") === undefined || (!gnuEnv && which("genv") === undefined))(
+        "starts the command with the interrupt signal at its default, as in the foreground",
+        () => {
+          // A POSIX shell starts a background job with SIGINT ignored, and
+          // Python then never raises KeyboardInterrupt; a suite that tests it
+          // must not see that.
+          const ran = run([
+            "python3",
+            "-c",
+            "import signal; print(signal.getsignal(signal.SIGINT) is signal.default_int_handler)"
+          ])
+          rmSync(ran.root, { recursive: true, force: true })
+          expect(ran.stdout).toBe("True\n")
+        }
+      )
+    }
+  )
+
+  it("does not believe a trailer the command printed itself when the real one never comes", () => {
+    // The command forges the measurement line, then kills the script that
+    // would have written the real one. Without the call's nonce the forgery
+    // is the command's own output, and the tree stays unmeasured.
+    const bin = toolbox(base)
     const root = mkdtempSync(join(tmpdir(), "tree-around-"))
     try {
+      const forged = `\n${TreeFingerprint.marker} ffffffffffffffff exited 1 2 3 | 9 2 3\n`
       const ran = bracketed(
         root,
-        ["sh", "-c", `cat; printf '%s|' "$@"; echo problem >&2; exit 3`, "sh", "a b", "$HOME", "it's"],
-        "from stdin\n"
+        ["sh", "-c", `printf '%s' "$1" >&2; kill -KILL "$PPID"`, "sh", forged],
+        undefined,
+        { path: bin }
       )
-      expect(ran.status).toBe(3)
-      expect(ran.stdout).toBe("from stdin\na b|$HOME|it's|")
-      expect(ran.stderr).toBe("problem\n")
+      expect(ran.raw.endsWith(forged)).toBe(true)
+      expect(ran).toMatchObject({ before: undefined, after: undefined, timedOut: false, stderr: ran.raw })
     } finally {
+      rmSync(bin, { recursive: true, force: true })
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -143,40 +394,72 @@ describe("TreeFingerprint.around", () => {
 })
 
 describe("TreeFingerprint.split", () => {
-  const line = (before: string, after: string) => `\n${TreeFingerprint.marker} ${before}| ${after}\n`
+  const line = (before: string, after: string, ended = "exited", framed = nonce) =>
+    `\n${TreeFingerprint.marker} ${framed} ${ended} ${before}| ${after}\n`
+  const unmeasured = (stderr: string) => ({ stderr, before: undefined, after: undefined, timedOut: false })
 
   it("takes the measurements off the end and returns what the command wrote", () => {
-    expect(TreeFingerprint.split(`warning\n${line("11 20 2 ", "99 24 3 ")}`)).toEqual({
+    expect(TreeFingerprint.split(`warning\n${line("11 20 2 ", "99 24 3 ")}`, nonce)).toEqual({
       stderr: "warning\n",
       before: { digest: "11:20", paths: 2, complete: true },
-      after: { digest: "99:24", paths: 3, complete: true }
+      after: { digest: "99:24", paths: 3, complete: true },
+      timedOut: false
     })
     // A command that ended its last line without a newline keeps it that way.
-    expect(TreeFingerprint.split(`partial${line("11 20 2 ", "11 20 2 ")}`).stderr).toBe("partial")
+    expect(TreeFingerprint.split(`partial${line("11 20 2 ", "11 20 2 ")}`, nonce).stderr).toBe("partial")
+  })
+
+  it("says the deadline stopped the command when the line says so", () => {
+    expect(TreeFingerprint.split(`hung\n${line("11 20 2 ", "11 20 2 ", "deadline")}`, nonce)).toEqual({
+      stderr: "hung\n",
+      before: { digest: "11:20", paths: 2, complete: true },
+      after: { digest: "11:20", paths: 2, complete: true },
+      timedOut: true
+    })
   })
 
   it("reads an empty or malformed side as unmeasured", () => {
-    expect(TreeFingerprint.split(line("", "11 20 2 "))).toEqual({
+    expect(TreeFingerprint.split(line("", "11 20 2 "), nonce)).toEqual({
       stderr: "",
       before: undefined,
-      after: { digest: "11:20", paths: 2, complete: true }
+      after: { digest: "11:20", paths: 2, complete: true },
+      timedOut: false
     })
-    expect(TreeFingerprint.split(line("garbage ", "")).before).toBeUndefined()
+    expect(TreeFingerprint.split(line("garbage ", ""), nonce).before).toBeUndefined()
   })
 
-  it("returns standard error whole when it does not end with the line", () => {
+  it("returns standard error whole when it does not end with the call's line", () => {
     for (
-      const text of ["", "Killed\n", `${TreeFingerprint.marker} 1 1 1 | 1 1 1 \n`, `${line("1 1 1 ", "1 1 1 ")}after`]
+      const text of [
+        "",
+        "Killed\n",
+        `${TreeFingerprint.marker} ${nonce} exited 1 1 1 | 1 1 1 \n`,
+        `${line("1 1 1 ", "1 1 1 ")}after`,
+        // A line it does not recognise, or one framed for another call.
+        line("1 1 1 ", "1 1 1 ", "finished"),
+        line("1 1 1 ", "1 1 1 ", "exited", "ffffffffffffffff"),
+        line("1 1 1 ", "1 1 1 ", "deadline", "ffffffffffffffff"),
+        `\n${TreeFingerprint.marker} 1 1 1 | 1 1 1 \n`
+      ]
     ) {
-      expect(TreeFingerprint.split(text)).toEqual({ stderr: text, before: undefined, after: undefined })
+      expect(TreeFingerprint.split(text, nonce)).toEqual(unmeasured(text))
     }
   })
 
   it("reads the last line only, so an earlier copy stays the command's own output", () => {
-    const forged = line("1 1 1 ", "1 1 1 ")
-    const read = TreeFingerprint.split(`${forged}${line("11 20 2 ", "99 24 3 ")}`)
+    const forged = line("1 1 1 ", "1 1 1 ", "deadline")
+    const read = TreeFingerprint.split(`${forged}${line("11 20 2 ", "99 24 3 ")}`, nonce)
     expect(read.stderr).toBe(forged)
     expect(read.after?.digest).toBe("99:24")
+    expect(read.timedOut).toBe(false)
+  })
+})
+
+describe("TreeFingerprint.nonce", () => {
+  it("draws sixteen hex digits, a different set for each call", async () => {
+    const drawn = await Effect.runPromise(Effect.all([TreeFingerprint.nonce, TreeFingerprint.nonce]))
+    for (const value of drawn) expect(value).toMatch(/^[0-9a-f]{16}$/)
+    expect(drawn[0]).not.toBe(drawn[1])
   })
 })
 

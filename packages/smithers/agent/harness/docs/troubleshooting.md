@@ -67,8 +67,10 @@ from there.
 
 A failed call resolves; it does not throw. The cell reads `{ ok: false,
 error: { code, message, hint } }`, where `hint` is
-`Cell.callFailureHint[code]`, the one move that recovers the class. The codes,
-from `Cell.CallFailureCode`:
+`Cell.callFailureHint[code]`, the one move that recovers the class. A
+`timeout` from a flow that kept what it produced first, such as `bash`, adds
+`error.output`; read `error.output.stdout` for how far the command got. The
+codes, from `Cell.CallFailureCode`:
 
 | Code                     | Raised when                                                                                                   | Recovery hint                                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |

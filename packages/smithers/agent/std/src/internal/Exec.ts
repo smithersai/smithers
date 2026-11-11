@@ -41,6 +41,28 @@ export const ExecErrorCode = Schema.Literals(["timeout", "spawn_error", "argumen
 export type ExecErrorCode = typeof ExecErrorCode.Type
 
 /**
+ * What a command printed before its timeout stopped it: both streams, bounded
+ * and decoded exactly as a finished command's {@link ExecResult} would be.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const Captured = Schema.Struct({
+  stdout: Schema.String,
+  stderr: Schema.String,
+  stdoutDroppedBytes: Schema.Number,
+  stderrDroppedBytes: Schema.Number
+})
+
+/**
+ * What a command printed before its timeout stopped it.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Captured = typeof Captured.Type
+
+/**
  * A command that never produced an exit code.
  *
  * A non-zero exit is a successful {@link ExecResult}, not a failure; this
@@ -56,7 +78,12 @@ export class ExecError extends Schema.TaggedError<ExecError>()("@smthrs/std/Exec
   code: ExecErrorCode,
   message: Schema.String,
   /** The limit a `timeout` ran past, in milliseconds. */
-  limitMillis: Schema.optional(Schema.Number)
+  limitMillis: Schema.optional(Schema.Number),
+  /**
+   * What a `timeout` printed before it was stopped. Present on every timeout,
+   * with empty streams when the command printed nothing.
+   */
+  captured: Schema.optional(Captured)
 }) {}
 
 /**
@@ -229,48 +256,66 @@ const decodeEnds = (state: Ends): Capture => {
   return { text: elideMiddle(decoder.decode(head.subarray(0, kept)), droppedBytes, tail.text), droppedBytes }
 }
 
-const boundedTail = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  maxBytes: number,
-  overflow: Overflow | undefined
-): Effect.Effect<Capture, E> =>
-  Stream.runFold(stream, emptyTail, (state, chunk) => {
-    keepTail(state, chunk, maxBytes)
-    return state
-  }).pipe(Effect.map((state) =>
-    overflow === "refuse" && state.dropped > 0
-      ? { text: "", droppedBytes: state.dropped }
-      : decodeTail(state)
-  ))
+/**
+ * One stream's buffer: what it keeps of each chunk, and what it decodes to so
+ * far. It lives outside the effect that fills it, so a timeout that interrupts
+ * the reading still has every byte read before it.
+ */
+interface Retained {
+  readonly keep: (chunk: Uint8Array) => void
+  readonly read: () => Capture
+}
+
+/** Every byte, decoded once at the end: what a caller with no bound asked for. */
+const whole = (): Retained => {
+  const chunks: Array<Uint8Array> = []
+  let size = 0
+  return {
+    keep: (chunk) => {
+      chunks.push(chunk)
+      size += chunk.byteLength
+    },
+    read: () => ({ text: decoder.decode(join(chunks, size)), droppedBytes: 0 })
+  }
+}
+
+const boundedTail = (maxBytes: number, overflow: Overflow | undefined): Retained => {
+  const state = emptyTail()
+  return {
+    keep: (chunk) => keepTail(state, chunk, maxBytes),
+    read: () =>
+      overflow === "refuse" && state.dropped > 0
+        ? { text: "", droppedBytes: state.dropped }
+        : decodeTail(state)
+  }
+}
 
 /**
  * Keeps the first half of the bound and the last half. The head fills first,
  * and every byte after it passes through the tail, which drops from its front:
  * what falls out of the tail is the middle.
  */
-const boundedEnds = <E>(stream: Stream.Stream<Uint8Array, E>, maxBytes: number): Effect.Effect<Capture, E> => {
+const boundedEnds = (maxBytes: number): Retained => {
   const headBytes = Math.floor(maxBytes / 2)
-  return Stream.runFold(stream, (): Ends => ({ head: [], headBytes: 0, tail: emptyTail() }), (state, chunk) => {
-    const taken = Math.min(headBytes - state.headBytes, chunk.byteLength)
-    if (taken > 0) {
-      state.head.push(chunk.subarray(0, taken))
-      state.headBytes += taken
-    }
-    keepTail(state.tail, chunk.subarray(taken), maxBytes - headBytes)
-    return state
-  }).pipe(Effect.map(decodeEnds))
+  const state: Ends = { head: [], headBytes: 0, tail: emptyTail() }
+  return {
+    keep: (chunk) => {
+      const taken = Math.min(headBytes - state.headBytes, chunk.byteLength)
+      if (taken > 0) {
+        state.head.push(chunk.subarray(0, taken))
+        state.headBytes += taken
+      }
+      keepTail(state.tail, chunk.subarray(taken), maxBytes - headBytes)
+    },
+    read: () => decodeEnds(state)
+  }
 }
 
-const capture = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  maxBytes: number | undefined,
-  overflow: Overflow | undefined
-): Effect.Effect<Capture, E> =>
-  maxBytes === undefined
-    ? Effect.map(Stream.mkString(Stream.decodeText(stream)), (text) => ({ text, droppedBytes: 0 }))
-    : overflow === "ends"
-    ? boundedEnds(stream, maxBytes)
-    : boundedTail(stream, maxBytes, overflow)
+const retain = (maxBytes: number | undefined, overflow: Overflow | undefined): Retained =>
+  maxBytes === undefined ? whole() : overflow === "ends" ? boundedEnds(maxBytes) : boundedTail(maxBytes, overflow)
+
+const fill = <E>(stream: Stream.Stream<Uint8Array, E>, into: Retained): Effect.Effect<Capture, E> =>
+  Stream.runForEach(stream, (chunk) => Effect.sync(() => into.keep(chunk))).pipe(Effect.map(into.read))
 
 /**
  * A command whose arguments exceed the operating system's limit fails `execve`
@@ -291,7 +336,8 @@ const argumentsTooLong = (error: { readonly cause?: unknown }): ExecError | unde
 
 const unbounded = (
   command: string,
-  options: ExecOptions
+  options: ExecOptions,
+  buffers: { readonly stdout: Retained; readonly stderr: Retained }
 ): Effect.Effect<ExecResult, ExecError, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -321,11 +367,7 @@ const unbounded = (
     // command that fills a pipe blocks until the pipe is drained, so waiting
     // for exit first would deadlock on any output larger than the buffer.
     const [stdout, stderr, exitCode] = yield* Effect.all(
-      [
-        capture(handle.stdout, options.maxCaptureBytes, options.overflow),
-        capture(handle.stderr, options.maxCaptureBytes, options.overflow),
-        handle.exitCode
-      ],
+      [fill(handle.stdout, buffers.stdout), fill(handle.stderr, buffers.stderr), handle.exitCode],
       { concurrency: "unbounded" }
     )
     if (options.overflow === "refuse") {
@@ -367,7 +409,8 @@ const unbounded = (
  *
  * Cancellation is scope closure: the spawn is scoped, so an interrupted fiber
  * — including the one a `timeoutMs` interrupts — terminates the process rather
- * than leaking it.
+ * than leaking it. A timeout reports what the command printed before it was
+ * stopped as {@link ExecError} `captured`, bounded by the same options.
  *
  * @category execution
  * @since 1.0.0
@@ -376,19 +419,37 @@ export const exec = (
   command: string,
   options: ExecOptions = {}
 ): Effect.Effect<ExecResult, ExecError, ChildProcessSpawner.ChildProcessSpawner> =>
-  options.timeoutMs === undefined
-    ? unbounded(command, options)
-    : Effect.timeoutOrElse(unbounded(command, options), {
-      duration: options.timeoutMs,
-      orElse: () =>
-        Effect.fail(
+  Effect.suspend(() => {
+    // One pair per execution, filled as the streams arrive and read either
+    // when they end or when the timeout stops them.
+    const buffers = {
+      stdout: retain(options.maxCaptureBytes, options.overflow),
+      stderr: retain(options.maxCaptureBytes, options.overflow)
+    }
+    const run = unbounded(command, options, buffers)
+    if (options.timeoutMs === undefined) return run
+    const limitMillis = options.timeoutMs
+    return Effect.timeoutOrElse(run, {
+      duration: limitMillis,
+      orElse: () => {
+        const stdout = buffers.stdout.read()
+        const stderr = buffers.stderr.read()
+        return Effect.fail(
           new ExecError({
             code: "timeout",
-            message: `exec: \`${command}\` exceeded ${options.timeoutMs}ms`,
-            limitMillis: options.timeoutMs
+            message: `exec: \`${command}\` exceeded ${limitMillis}ms`,
+            limitMillis,
+            captured: {
+              stdout: stdout.text,
+              stderr: stderr.text,
+              stdoutDroppedBytes: stdout.droppedBytes,
+              stderrDroppedBytes: stderr.droppedBytes
+            }
           })
         )
+      }
     })
+  })
 
 /**
  * The model-facing failure code a command that never produced an exit code

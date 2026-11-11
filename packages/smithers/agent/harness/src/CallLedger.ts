@@ -41,6 +41,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Effect, Schema } from "effect"
 import * as elide from "./internal/elide.ts"
+import { failureOutput } from "./internal/failureOutput.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
 
@@ -449,11 +450,20 @@ export interface Settlement {
  * @slop
  */
 export const entry = (ordinal: number, call: Settlement): Entry => {
+  // A call stopped at its time limit holds what it produced first under
+  // `error.output`; the line says so and how big each part is, as it does
+  // for a result, so the next frame reads the name instead of asking again.
+  const output = call.ok ? undefined : failureOutput(call.value ?? null)
+  const said = clip(call.message ?? "failed", width)
   // `?? null` because a host can settle a call with no value at all: the
   // contract says `Json`, an implementation that returns nothing says
   // `undefined`, and canonical JSON refuses it. The ledger reports what the
   // cell saw, which for such a call is `null`.
-  const whole = CanonicalJson.stringify(call.ok ? call.value ?? null : { failed: call.message ?? "failed" })
+  const whole = CanonicalJson.stringify(
+    call.ok
+      ? call.value ?? null
+      : { failed: call.message ?? "failed", ...(output === undefined ? {} : { output }) }
+  )
   const mutates = call.mutates === true
   return new Entry({
     ordinal,
@@ -467,7 +477,7 @@ export const entry = (ordinal: number, call: Settlement): Entry => {
       ? clip(target(call.input) ?? target(call.value) ?? CanonicalJson.stringify(call.input), width)
       : subject(call.input),
     ok: call.ok,
-    digest: call.ok ? digest(call.value) : clip(call.message ?? "failed", width),
+    digest: call.ok ? digest(call.value) : output === undefined ? said : `${said} error.output: ${digest(output)}`,
     bytes: encoder.encode(whole).byteLength,
     mutates,
     payloadBytes: mutates ? payload(call.input) : 0,

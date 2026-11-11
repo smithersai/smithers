@@ -4,9 +4,10 @@
  * A failed call **resolves** with a `failure` `Cell.CallResult`; it does not
  * throw, and `Cell.callFailure` renders it as `{ ok: false, error }`. The shape
  * is fixed — `value` is `null`, because a refusal has no value to hand back,
- * except a timeout's, which records the limit it ran past (see {@link timedOut})
- * — so every boundary that refuses a call builds it here rather than repeating
- * the literal. The cell never sees `value` on a failure. An absent `code` is left absent rather than written as
+ * except a timeout's, which records the limit it ran past and what the flow
+ * produced before it (see {@link timedOut}) — so every boundary that refuses a
+ * call builds it here rather than repeating the literal. Of a failure's
+ * `value`, the cell sees only that output. An absent `code` is left absent rather than written as
  * `undefined`: the encoded result is the durable wire contract used in sealed
  * keys, and it means {@link Cell.defaultCallFailureCode}.
  *
@@ -33,11 +34,25 @@ export const refusal = (code: CallFailureCode | undefined, message: string): Cal
  * recorded as `{ limitMillis }` in `value`, so a host that guards timeouts
  * parks the run on the exact limit whichever clock enforced it.
  *
+ * `output` is what the flow produced before the limit stopped it, recorded
+ * beside the limit; the cell reads it as `error.output` (see
+ * `Cell.callFailure`). A timeout that records neither has `value` `null`.
+ *
  * @since 1.0.0-rc.1
  * @private
  */
-export const timedOut = (message: string, limitMillis: number): CallResult =>
-  CallResult.new({ outcome: "failure", value: { limitMillis }, code: "timeout", message })
+export const timedOut = (message: string, limitMillis: number | undefined, output?: Schema.Json): CallResult => {
+  const recorded = {
+    ...(limitMillis === undefined ? {} : { limitMillis }),
+    ...(output === undefined ? {} : { output })
+  }
+  return CallResult.new({
+    outcome: "failure",
+    value: Object.keys(recorded).length === 0 ? null : recorded,
+    code: "timeout",
+    message
+  })
+}
 
 /**
  * The limit a {@link timedOut} refusal recorded, when it recorded one.

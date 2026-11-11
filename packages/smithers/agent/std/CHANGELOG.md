@@ -20,6 +20,35 @@
 
 ### Fixed
 
+- A `bash` call past its time limit fails with `timeout` and carries what the
+  command printed before it was stopped as `output` (`StdError.PartialOutput`):
+  both streams cut on the same terms as a finished command's, their
+  `Truncated` flags and `DroppedBytes` counts, and `mutated` for a
+  containerised command measured on both sides. It used to carry nothing, so
+  a test loop that printed a line per case and hung returned no lines at all.
+  `Exec.exec` reports what a timed-out command printed as `ExecError.captured`.
+- A containerised `bash` call's deadline is enforced inside the container, in
+  the same transport call, by `TreeFingerprint.around`. The command, and its
+  process group where the container has GNU `timeout` or `setsid`, gets
+  `TERM`, then `KILL` after `TreeFingerprint.graceSeconds`; the script still
+  measures the tree and reports that the deadline fired. Killing the host's
+  `docker` process used to leave the command running beside later ones and,
+  over a transport that answers only when the call ends, lose every byte. The
+  host's clock is now a backstop at the deadline plus
+  `TreeFingerprint.overrunSeconds` and one round trip.
+- `TreeFingerprint.split` reads only a line framed with the call's nonce
+  (`TreeFingerprint.nonce`), so a command that prints the line's shape and
+  kills the script before the real line is written no longer fakes a
+  measurement or hides its own output. `split` now takes the nonce and
+  answers `timedOut`, and `around` takes the nonce and the deadline in
+  seconds as its first two arguments.
+
+- A batched commit receives each file's cooperative lock directory as `Read.BatchedChange.lock`, and a provider that
+  finds it held stops with `"locked"`, which the flows report with the ordinary path's `no_match` refusal naming the
+  lock. Batched and ordinary handlers now exclude each other, and of two batched edits racing on one file exactly one
+  lands.
+- `Read.Snapshot.canonical` for a path whose parent is absent is its nearest existing ancestor's resolution joined with
+  the rest of the path, where creating its parents puts it.
 - `Checkpoints.layerGit` no longer lets an agent redirect a host write through
   the workspace's `.git/config`. It refuses with `permission_denied` when that
   file is a symbolic link, a hard link, or not the regular file named there,

@@ -85,6 +85,32 @@ const referenced = (reference: Json): string | undefined =>
 
 const literal = (value: Json): string => JSON.stringify(value)
 
+/**
+ * Whether a node's structural keywords are all among the ones its form reads.
+ * A node that also carries one the form does not read (an `enum` beside an
+ * `anyOf`, `properties` with no `type`) would lose a constraint in the text.
+ */
+const only = (schema: Readonly<Record<string, Json>>, read: ReadonlyArray<string>): boolean =>
+  Object.keys(schema).every((keyword) => !structural.has(keyword) || read.includes(keyword))
+
+/** Whether a literal is a value of the `type` written beside it; no `type` admits any literal. */
+const fits = (value: Json, kind: Json): boolean => {
+  switch (kind) {
+    case undefined:
+      return true
+    case "string":
+    case "number":
+    case "boolean":
+      return typeof value === kind
+    case "integer":
+      return Number.isInteger(value)
+    case "null":
+      return value === null
+    default:
+      return false
+  }
+}
+
 const notesOf = (schema: Readonly<Record<string, Json>>): ReadonlyArray<string> =>
   bounds.flatMap(([keyword, label]) =>
     schema[keyword] === undefined
@@ -175,10 +201,10 @@ const object = (schema: Readonly<Record<string, Json>>, depth: number, scope: Sc
     const member = properties[name]
     const node = type(member, depth + 1, scope)
     if (node === undefined) return undefined
-    // A property a call may leave out: not required, or allowed to be null.
-    const nullable = node.text.endsWith(" | null")
-    const optional = !required.includes(name) || nullable
-    const text = nullable && node.text !== "null" ? node.text.slice(0, -" | null".length) : node.text
+    // Only `required` decides whether a call may leave a property out. One it
+    // may leave out needs no `null` to say so; a required one keeps it.
+    const optional = !required.includes(name)
+    const text = optional && node.text.endsWith(" | null") ? node.text.slice(0, -" | null".length) : node.text
     const comment = remarks(node)
     const key = /^[A-Za-z_$][\w$]*$/.test(name) ? name : literal(name)
     lines.push(
@@ -208,13 +234,17 @@ const type = (schema: Json, depth: number, scope: Scope): Node | undefined => {
     // What the reference says of itself comes before what its definition says.
     return named === undefined ? undefined : { ...named, said: said ?? named.said }
   }
-  if (schema.const !== undefined) return { text: literal(schema.const), notes, said }
+  if (schema.const !== undefined) {
+    if (!only(schema, ["const", "type"]) || !fits(schema.const, schema.type)) return undefined
+    return { text: literal(schema.const), notes, said }
+  }
   if (schema.enum !== undefined) {
-    if (!Array.isArray(schema.enum) || schema.enum.length === 0) return undefined
+    if (!only(schema, ["enum", "type"]) || !Array.isArray(schema.enum) || schema.enum.length === 0) return undefined
+    if (!schema.enum.every((member) => fits(member, schema.type))) return undefined
     return { text: schema.enum.map(literal).join(" | "), notes, said }
   }
   if (schema.anyOf !== undefined) {
-    if (!Array.isArray(schema.anyOf) || schema.type !== undefined) return undefined
+    if (!only(schema, ["anyOf"]) || !Array.isArray(schema.anyOf)) return undefined
     const node = union(schema.anyOf, depth, scope)
     return node === undefined ? undefined : { text: node.text, notes: [...notes, ...node.notes], said }
   }
@@ -224,8 +254,9 @@ const type = (schema: Json, depth: number, scope: Scope): Node | undefined => {
     case "integer":
     case "boolean":
     case "null":
-      return { text: schema.type, notes, said }
+      return only(schema, ["type"]) ? { text: schema.type, notes, said } : undefined
     case "array": {
+      if (!only(schema, ["type", "items"])) return undefined
       if (schema.items === undefined) return { text: "unknown[]", notes, said }
       const item = type(schema.items, depth, scope)
       if (item === undefined) return undefined
@@ -240,12 +271,14 @@ const type = (schema: Json, depth: number, scope: Scope): Node | undefined => {
       }
     }
     case "object": {
+      if (!only(schema, ["type", "properties", "required", "additionalProperties"])) return undefined
       const node = object(schema, depth, scope)
       return node === undefined ? undefined : { text: node.text, notes: [...notes, ...node.notes], said }
     }
     case undefined:
-      // A node that constrains nothing accepts any JSON value.
-      return { text: "unknown", notes, said }
+      // A node that constrains nothing accepts any JSON value. One that shapes
+      // a value without naming its type is not a form this module reads.
+      return only(schema, []) ? { text: "unknown", notes, said } : undefined
     default:
       return undefined
   }

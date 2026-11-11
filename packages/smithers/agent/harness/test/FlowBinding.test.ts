@@ -603,6 +603,43 @@ describe("FlowBinding.make", () => {
     )
   })
 
+  it("records what a timed-out flow produced beside its limit, and only when it is JSON", async () => {
+    const binding = FlowBinding.make({
+      flow: echo,
+      handler: (input) => Effect.fail({ text: input.text, detail: `${input.text} ran too long` }),
+      publicError: (error) => error.detail,
+      timedOut: (error) =>
+        error.text === "printed"
+          ? { limitMillis: 250, output: { stdout: "case 1 ok\n", stdoutTruncated: false } }
+          : error.text === "unlimited"
+          ? { output: { stdout: "case 1 ok\n" } }
+          : { limitMillis: 250, output: () => "not JSON" }
+    })
+
+    const printed = await Effect.runPromise(binding.run(call("echo", { text: "printed" })))
+    const unlimited = await Effect.runPromise(binding.run(call("echo", { text: "unlimited" })))
+    const opaque = await Effect.runPromise(binding.run(call("echo", { text: "opaque" })))
+
+    expect(printed).toStrictEqual(
+      Cell.CallResult.new({
+        outcome: "failure",
+        value: { limitMillis: 250, output: { stdout: "case 1 ok\n", stdoutTruncated: false } },
+        code: "timeout",
+        message: "Flow echo failed: printed ran too long"
+      })
+    )
+    expect(unlimited.value).toStrictEqual({ output: { stdout: "case 1 ok\n" } })
+    // Output the cell could not hold is dropped, never the failure itself.
+    expect(opaque).toStrictEqual(
+      Cell.CallResult.new({
+        outcome: "failure",
+        value: { limitMillis: 250 },
+        code: "timeout",
+        message: "Flow echo failed: opaque ran too long"
+      })
+    )
+  })
+
   it("bounds explicitly public handler failure text before it enters later frames", async () => {
     const binding = FlowBinding.make({
       flow: echo,

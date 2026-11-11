@@ -372,7 +372,9 @@ const collect = (options: {
       registry: options.registry ?? registryOf([]),
       // The standard flows declare real capabilities, so the run needs a real
       // envelope; an empty one refuses every declared capability by contract.
-      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+      // Whole authority is `*:**`: a declared pattern such as `fs:read:/**` is
+      // admitted only where a grant provably covers all of it.
+      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "**" })],
       flows: options.flows,
       plugins: options.plugins,
       authorize: options.authorize,
@@ -385,8 +387,15 @@ const collect = (options: {
     return collected
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
-/** How a rendered transport command spells the script `bash` runs a containerised command under. */
-const measured = `sh -c ${CommandLine.quote(TreeFingerprint.around())} sh`
+/**
+ * How a rendered transport command spells the script `bash` runs a
+ * containerised command under: its per-call nonce, named here as `<nonce>`,
+ * and the default deadline in seconds.
+ */
+const measured = `sh -c ${CommandLine.quote(TreeFingerprint.around())} sh <nonce> 600`
+
+/** A rendered transport command with its per-call nonce named, so a case can state the rest exactly. */
+const framed = (line: string): string => line.replace(/ sh [0-9a-f]{16} /, " sh <nonce> ")
 
 describe("standard capabilities are flows", () => {
   it("runs a std filesystem read, a std shell command, and a memory write through one call boundary", async () => {
@@ -740,7 +749,7 @@ ctx.done(probe.stdout.trim())`
     // container whose name begins with a dash cannot be read as a docker flag.
     // `bash` runs a containerised command under the script that measures its
     // tree either side of it, in the one transport call.
-    expect(spawned).toEqual([
+    expect(spawned.map(framed)).toEqual([
       `docker exec -i -w /testbed -- testbed ${measured} bash -lc 'exec "$@"' bash python3 -`
     ])
   })
@@ -803,7 +812,7 @@ ctx.done(seen.join(","))`
     // Every process started is the transport aimed at the sealed container:
     // the unnamed call ran there, in the sealed directory, and the call that
     // named another container started nothing.
-    expect(spawned).toEqual([
+    expect(spawned.map(framed)).toEqual([
       `docker exec -w /app -- testbed ${measured} bash -lc 'cat tests/test_outputs.py'`,
       `docker exec -w /srv -- testbed ${measured} bash -lc 'echo ok'`
     ])
@@ -898,7 +907,8 @@ ctx.done(suite.passed + " passed, " + suite.failed.join(","))`
     }))
     const settled = settledCalls(eventsOf(outcome))
     expect(settled.map((event) => event.result.message)).toEqual([
-      "Flow bash failed: The command timed out.",
+      // A shell timeout keeps what the command printed, here nothing, and says where.
+      "Flow bash failed: The command timed out; error.output holds what it printed before it was stopped.",
       "Flow test failed: The command timed out."
     ])
     // A command's own timeout is a timeout, the code a guarded host parks on (#2120).
@@ -2314,6 +2324,45 @@ ctx.done(ran.ok === false ? ran.error.message : ran.exitCode + ":" + ran.stdout.
         message: "Flow bash timed out after 0.3 seconds."
       })
       expect(ran?.durationMillis).toBeLessThan(5_000)
+    },
+    60_000
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "hands the cell what a command printed before its own timeout stopped it",
+    async () => {
+      // A test loop that printed a line per case and hung on one used to
+      // settle as "The command timed out." and nothing else.
+      const outcome = await drive(collect({
+        flows: [shell],
+        cells: [
+          `const ran = await ctx.call("bash", { command: "echo case-1-ok; echo case-2-starting >&2; exec sleep 30", timeoutMs: 1000 })
+ctx.done(ran.ok === false ? ran.error.code + ":" + ran.error.output.stdout.trim() : "finished")`
+        ]
+      }))
+
+      const [ran] = firstFrameSettledCalls(eventsOf(outcome))
+      expect(ran?.result).toMatchObject({
+        outcome: "failure",
+        code: "timeout",
+        message: "Flow bash failed: The command timed out; error.output holds what it printed before it was stopped.",
+        value: {
+          limitMillis: 1_000,
+          output: {
+            stdout: "case-1-ok\n",
+            stderr: "case-2-starting\n",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutDroppedBytes: 0,
+            stderrDroppedBytes: 0
+          }
+        }
+      })
+      // The cell read the output off the failure it was handed.
+      const resolved = eventsOf(outcome).find((event) => event._tag === "resolved")
+      expect(resolved?._tag === "resolved" ? resolved.message.content : []).toEqual([
+        { type: "text", text: "timeout:case-1-ok" }
+      ])
     },
     60_000
   )

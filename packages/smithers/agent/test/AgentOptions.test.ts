@@ -18,7 +18,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as CellTurn from "@smthrs/harness/CellTurn"
@@ -26,6 +26,7 @@ import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Monitor from "@smthrs/harness/Monitor"
 import type * as Relevance from "@smthrs/harness/Relevance"
+import * as Steering from "@smthrs/harness/Steering"
 import type * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder"
 import * as MemorySource from "@smthrs/memory/Source"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -44,6 +45,7 @@ import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
+import * as Budget from "../src/Budget.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import { callId } from "../src/internal/CallIdentity.ts"
@@ -185,10 +187,16 @@ type RunOptions = Omit<Agent.Options, "session" | "seat" | "prompt" | "registry"
   readonly contextWindowTokens?: number | undefined
   /** The judge; the offline completion judge when omitted. */
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  /** Run services a host provides around the run, beside the defaults. */
+  readonly ambient?: {
+    readonly steering: Steering.Source
+    readonly observer: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+    readonly parking: Budget.Parking["Service"]
+  } | undefined
 }
 
 /** Runs the production agent with exactly the options a case declares. */
-const collect = ({ evaluator, ...options }: RunOptions) =>
+const collect = ({ ambient, evaluator, ...options }: RunOptions) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
     const events: Array<AgentEvent.AgentEvent> = []
@@ -205,6 +213,12 @@ const collect = ({ evaluator, ...options }: RunOptions) =>
       })
     }).pipe(
       Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+      (run) =>
+        ambient === undefined ? run : run.pipe(
+          Effect.provideService(Steering.Source, ambient.steering),
+          Effect.provideService(AgentEvent.Observer, ambient.observer),
+          Effect.provideService(Budget.Parking, ambient.parking)
+        ),
       Effect.provide(Layer.merge(Agent.layerDefaults, evaluator ?? scriptedCompletionJudge))
     )
     return events
@@ -850,6 +864,9 @@ ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(an
     readonly self?: string | undefined
     readonly seats?: SeatResolver.Service | undefined
     readonly envelope?: ReadonlyArray<Capability.CapabilityPattern> | undefined
+    readonly authorize?: Agent.Options["authorize"]
+    readonly implementations?: ReadonlyMap<string, CellCalls.Implementation> | undefined
+    readonly ambient?: RunOptions["ambient"]
   }) => {
     const requests = { parent: [] as Array<ModelRequest.ModelRequest>, child: [] as Array<ModelRequest.ModelRequest> }
     const observed: Array<Observed> = []
@@ -864,6 +881,9 @@ ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(an
         capabilityEnvelope: declared.envelope ?? [],
         maxFrames: declared.maxFrames ?? 1,
         modelParams: declared.modelParams,
+        authorize: declared.authorize,
+        implementations: declared.implementations,
+        ambient: declared.ambient,
         children: {
           flows: [],
           seats: declared.seats ?? SeatResolver.makeNoop(),
@@ -977,7 +997,17 @@ ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(an
       ["admits", "*", "*", "**", "child said forty-two"],
       ["refuses", "*", "fs:read", "**", "needs *, which is outside this run's capability envelope"],
       // Neither one capability nor a pattern: nothing can cover it.
-      ["refuses", "bogus", "*", "**", "needs bogus, which is outside this run's capability envelope"]
+      ["refuses", "bogus", "*", "**", "needs bogus, which is outside this run's capability envelope"],
+      // `?` matches the one resource `/app/*.txt`, but the child would read the
+      // declaration as the set it names, `/app/secret.txt` included.
+      [
+        "refuses",
+        "fs:read:/app/*.txt",
+        "fs:read",
+        "/app/?.txt",
+        "needs fs:read:/app/*.txt, which is outside this run's capability envelope"
+      ],
+      ["admits", "fs:read:/app/a.txt", "fs:read", "/app/?.txt", "child said forty-two"]
     ] as const
   )(
     "%s a child that declares %s under a %s:%s envelope",
@@ -992,6 +1022,124 @@ ctx.done(typeof answer === "string" ? "child said " + answer : JSON.stringify(an
       expect(requests.child).toHaveLength(verdict === "admits" ? 1 : 0)
     }
   )
+
+  it("runs a child on none of its caller's steering, parking or observer", async () => {
+    const drained: Array<string | undefined> = []
+    const parent: Array<string> = []
+    const admitted: Array<string> = []
+    const { observed, settled } = await nested({
+      child: ["ctx.done(\"forty-two\")"],
+      // A second frame for each run, so each drains at its first boundary.
+      maxFrames: 2,
+      ambient: {
+        steering: Steering.makeNoop({
+          drain: (input) =>
+            Effect.succeed({
+              inserts: [],
+              seatChanges: [],
+              remaining: Steering.empty(),
+              queued: false,
+              duplicate: false
+            }).pipe(Effect.tap(() => Effect.sync(() => void drained.push(input.session))))
+        }),
+        observer: (event) => Effect.sync(() => void parent.push(event._tag)),
+        parking: Budget.Parking.of({
+          guardsTimeouts: true,
+          park: (exceeded) => Effect.die(exceeded),
+          trip: (timeout) => Effect.die(timeout),
+          admit: (subject) => Effect.sync(() => (admitted.push(subject), { _tag: "proceed", continued: 0 }))
+        })
+      }
+    })
+
+    expect(completedOutput(settled)).toBe("child said forty-two")
+    // The caller drained its own queue; the child drained none of it.
+    expect(drained.length).toBeGreaterThan(0)
+    expect(drained.every((session) => session === "session-1")).toBe(true)
+    // The caller's guard admitted the caller's one model step, frame and call,
+    // and nothing of the child's.
+    expect(admitted.filter((subject) => subject.startsWith("key1_"))).toHaveLength(1)
+    expect(admitted.some((subject) => subject.includes("/child/"))).toBe(false)
+    // The child's events reach the caller only through \`observe\`, which
+    // journals them as \`control.child.*\`; the caller's observer saw one turn.
+    expect(parent.filter((tag) => tag === "turn-opened")).toHaveLength(1)
+    expect(observed.map(({ event }) => event._tag)).toContain("turn-opened")
+  })
+
+  describe("a child keeps its caller's authorize hook and never parks on it", () => {
+    const write = `const result = await ctx.call("fs/write", {})
+ctx.done(result.ok === false ? result.error.code + " " + result.error.message : "wrote")`
+    const requested = Permission.PermissionRequired.new({
+      requestId: "perm-child",
+      capability: Capability.make("fs:write", "x"),
+      tier: "irreversible",
+      meta: {}
+    })
+    const failure = (cause: unknown) => Effect.fail(new HarnessError({ code: "engine_failed", message: "Ask", cause }))
+
+    it.each(
+      [
+        [
+          "a denial as the caller's cell would",
+          failure(Permission.permissionDenied(Capability.make("fs:write", "x"), "permission request denied")),
+          "child said capability_refused Ask"
+        ],
+        [
+          "a park as a refusal",
+          failure(requested),
+          "child said capability_refused Flow fs/write needs a person's approval for fs:write:x, which a child run cannot ask for."
+        ],
+        [
+          "an encoded park as a refusal",
+          failure(Schema.encodeUnknownSync(Permission.PermissionRequired)(requested)),
+          "child said capability_refused Flow fs/write needs a person's approval for fs:write:x, which a child run cannot ask for."
+        ]
+      ] as const
+    )("reads %s", async (_, verdict, expected) => {
+      const asked: Array<string> = []
+      const executed: Array<string> = []
+      const { observed, settled } = await nested({
+        child: [write],
+        entries: [worker, descriptor("fs/write")],
+        implementations: new Map<string, CellCalls.Implementation>([[
+          "fs/write",
+          (call) =>
+            Effect.sync(() => {
+              executed.push(call.flowName)
+              return Cell.CallResult.new({ outcome: "success", value: "ran" })
+            })
+        ]]),
+        authorize: (call) =>
+          Effect.suspend(() => {
+            asked.push(call.flowName)
+            return call.flowName === "fs/write" ? verdict : Effect.void
+          })
+      })
+
+      // The caller's hook admitted the worker and decided the child's write;
+      // the write never ran, and neither run parked.
+      expect(asked).toEqual(["worker", "fs/write"])
+      expect(executed).toEqual([])
+      expect(completedOutput(settled)).toBe(expected)
+      expect([...settled, ...observed.map(({ event }) => event)].map((event) => event._tag)).not.toContain(
+        "permission-required"
+      )
+    })
+
+    it("fails the child, not the caller, when the hook fails for any other reason", async () => {
+      const { settled } = await nested({
+        child: [write],
+        entries: [worker, descriptor("fs/write")],
+        implementations: new Map(),
+        authorize: (call) => call.flowName === "fs/write" ? failure("grant store down") : Effect.void
+      })
+
+      expect(JSON.parse(completedOutput(settled)!)).toMatchObject({
+        ok: false,
+        error: { code: "flow_failed", message: expect.stringContaining("Ask") }
+      })
+    })
+  })
 
   it("hides only the run's own markdown flow: a module flow of the same name is still offered", async () => {
     const { requests } = await nested({

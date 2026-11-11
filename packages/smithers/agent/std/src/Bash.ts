@@ -394,16 +394,24 @@ const precheck = (input: Input, path: Path.Path): Plan | StdError.StdError => {
   return outsideEnvelope(input, input.command ?? input.script!, path) ?? intent
 }
 
+/** The container a call runs in, the deadline it runs under there, and the nonce that frames its report. */
+interface Frame {
+  readonly container: string
+  readonly nonce: string
+  readonly seconds: number
+}
+
 /** The plan as the host will spawn it, once the container transport has had it. */
 const routed = (
   plan: Plan,
   input: Input,
-  transport: Option.Option<Container.Container>
+  transport: Option.Option<Container.Container>,
+  frame: Frame | undefined
 ): Effect.Effect<Plan, StdError.StdError> => {
-  if (input.container === undefined) return Effect.succeed(plan)
-  if (Option.isNone(transport)) return Effect.fail(Container.unavailable(input.container))
+  if (frame === undefined) return Effect.succeed(plan)
+  if (Option.isNone(transport)) return Effect.fail(Container.unavailable(frame.container))
   return Effect.map(
-    transport.value.exec(request(plan, input, input.container)),
+    transport.value.exec(request(plan, input, frame)),
     (routing): Plan => ({
       file: routing.file,
       args: routing.args,
@@ -441,14 +449,22 @@ const routed = (
  * host's workspace walk cannot see a container's filesystem, so the tree is
  * measured where it is; every way that can fail is read as "unmeasured" and
  * reported as an absent `mutated`, never as a tree that held still.
+ *
+ * The same script enforces the call's deadline inside the container. Killing
+ * the host's `docker` process stops neither the command, which ran on beside
+ * later ones, nor a transport that answers only when the exec ends from
+ * losing every byte the command printed. The script stops the command, still
+ * measures, and says in its line that the deadline fired.
  */
-const request = (plan: Plan, input: Input, container: string): Container.Request => ({
-  container,
+const request = (plan: Plan, input: Input, frame: Frame): Container.Request => ({
+  container: frame.container,
   file: "sh",
   args: [
     "-c",
     TreeFingerprint.around(),
     "sh",
+    frame.nonce,
+    String(frame.seconds),
     "bash",
     ...(plan.args === undefined
       ? ["-lc", plan.file]
@@ -460,10 +476,47 @@ const request = (plan: Plan, input: Input, container: string): Container.Request
 })
 
 /**
+ * How long past a containerised command's own overrun the host waits for the
+ * transport to answer: one round trip, measured at 2.8 s to a remote sandbox
+ * on 2026-11-11, with room for a slow one.
+ */
+const transportMillis = 15_000
+
+/** What a command printed, and its exit code unless the host's clock stopped it first. */
+interface Ran {
+  readonly captured: Exec.Captured
+  readonly exitCode: number | undefined
+}
+
+/** What a command printed, bounded, with the tree movement a container measured. */
+const printed = (
+  captured: Exec.Captured,
+  stderr: string,
+  mutated: boolean | undefined
+): StdError.PartialOutput => ({
+  stdout: captured.stdout,
+  stderr,
+  stdoutTruncated: captured.stdoutDroppedBytes > 0,
+  stderrTruncated: captured.stderrDroppedBytes > 0,
+  stdoutDroppedBytes: captured.stdoutDroppedBytes,
+  stderrDroppedBytes: captured.stderrDroppedBytes,
+  ...(mutated === undefined ? {} : { mutated })
+})
+
+/**
  * Executes a shell command through the permission-aware kernel service.
  *
  * Non-zero exit codes remain successful values. Only timeout, host, permission,
- * and declared-envelope pre-check failures use the typed error channel.
+ * and declared-envelope pre-check failures use the typed error channel. A
+ * timeout carries what the command printed before it was stopped as
+ * `output`, cut on the same terms as a finished command's.
+ *
+ * On this host the time limit is the host's own clock. In a container it is
+ * enforced inside the container by `TreeFingerprint.around`, in the same
+ * transport call, so the command is stopped where it runs and its output
+ * comes back even over a transport that answers only when the call ends. The
+ * host's clock then waits {@link TreeFingerprint.overrunSeconds} and one round
+ * trip longer, for a transport that never answers at all.
  *
  * @category handlers
  * @since 1.0.0
@@ -473,40 +526,54 @@ export const run = Effect.fn("Bash.run")(function*(
 ): Effect.fn.Return<Output, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Path.Path> {
   const intent = precheck(input, yield* Path.Path)
   if (intent instanceof StdError.StdError) return yield* Effect.fail(intent)
+  const limitMillis = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const frame: Frame | undefined = input.container === undefined ? undefined : {
+    container: input.container,
+    nonce: yield* TreeFingerprint.nonce,
+    seconds: TreeFingerprint.deadlineSeconds(limitMillis)
+  }
+  const transport = yield* Effect.serviceOption(Container.Container)
+  const spawned = yield* routed(intent, input, transport, frame)
+
   // The working directory belongs to the container. The transport supplies
   // any environment overrides its host process needs to forward into it.
-  const contained = input.container !== undefined
-  const transport = yield* Effect.serviceOption(Container.Container)
-  const spawned = yield* routed(intent, input, transport)
-
-  const result = yield* Exec.exec(spawned.file, {
-    ...(input.cwd === undefined || contained ? {} : { cwd: input.cwd }),
+  const ran = yield* Exec.exec(spawned.file, {
+    ...(input.cwd === undefined || frame !== undefined ? {} : { cwd: input.cwd }),
     ...(spawned.env === undefined ? {} : { env: spawned.env }),
-    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    timeoutMs: frame === undefined
+      ? limitMillis
+      : frame.seconds * 1000 + TreeFingerprint.overrunSeconds * 1000 + transportMillis,
     maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES,
     overflow: "ends",
     ...(spawned.args === undefined ? {} : { args: spawned.args }),
     ...(spawned.stdin === undefined ? {} : { stdin: spawned.stdin })
-  }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
-  // A containerised command ran between two measurements of its tree and
-  // ended its standard error with them; see `TreeFingerprint.around`.
-  const tree = contained ? TreeFingerprint.split(result.stderr) : undefined
+  }).pipe(
+    Effect.map((result): Ran => ({ captured: result, exitCode: result.exitCode })),
+    // A timeout always captures, so `captured` is present here.
+    Effect.catchIf(
+      (error) => error.code === "timeout",
+      (error) => Effect.succeed<Ran>({ captured: error.captured!, exitCode: undefined })
+    ),
+    Effect.mapError((error) => Exec.toStdError(spawned.quoted, error))
+  )
+  // A containerised command ran between two measurements of its tree, under
+  // its deadline, and ended its standard error with the report; see
+  // `TreeFingerprint.around`. A report framed for another call is the
+  // command's own output.
+  const tree = frame === undefined ? undefined : TreeFingerprint.split(ran.captured.stderr, frame.nonce)
   const mutated = tree === undefined ? undefined : TreeFingerprint.moved(tree.before, tree.after)
+  const output = printed(ran.captured, tree === undefined ? ran.captured.stderr : tree.stderr, mutated)
+  if (ran.exitCode === undefined || tree?.timedOut === true) {
+    return yield* Effect.fail(
+      new StdError.StdError({ code: "timeout", message: `Command timed out: ${spawned.quoted}`, limitMillis, output })
+    )
+  }
   // A command on this host may have changed files a language server holds
   // open; a container's files are not the ones it was sent.
-  if (!contained) yield* Diagnostics.refresh
+  if (frame === undefined) yield* Diagnostics.refresh
   // Exit codes alone cannot establish whether the shell refused to launch a
   // command or a launched runner chose that status after executing tests.
-  return {
-    exitCode: result.exitCode,
-    stdout: result.stdout,
-    stderr: tree === undefined ? result.stderr : tree.stderr,
-    stdoutTruncated: result.stdoutDroppedBytes > 0,
-    stderrTruncated: result.stderrDroppedBytes > 0,
-    stdoutDroppedBytes: result.stdoutDroppedBytes,
-    stderrDroppedBytes: result.stderrDroppedBytes,
-    ...(mutated === undefined ? {} : { mutated })
-  }
+  return { exitCode: ran.exitCode, ...output }
 })
 
 /**

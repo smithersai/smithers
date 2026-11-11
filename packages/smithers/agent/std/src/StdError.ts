@@ -48,6 +48,36 @@ export const Code = Schema.Literals([
 export type Code = typeof Code.Type
 
 /**
+ * What a command printed before its time limit stopped it, on the terms a
+ * finished command's output uses: each stream cut to its start and end past
+ * the shell flows' capture limit, with the bytes dropped between them counted.
+ *
+ * `mutated` is present when the command ran in a container whose working
+ * directory was measured before it started and after it was stopped: a
+ * command that ran out of time may still have changed files.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export const PartialOutput = Schema.Struct({
+  stdout: Schema.String,
+  stderr: Schema.String,
+  stdoutTruncated: Schema.Boolean,
+  stderrTruncated: Schema.Boolean,
+  stdoutDroppedBytes: Schema.Number,
+  stderrDroppedBytes: Schema.Number,
+  mutated: Schema.optional(Schema.Boolean)
+})
+
+/**
+ * What a command printed before its time limit stopped it.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type PartialOutput = typeof PartialOutput.Type
+
+/**
  * A recoverable standard-flow failure.
  *
  * Handlers keep ordinary outcomes (a non-zero exit code, an empty match set)
@@ -76,5 +106,7 @@ export class StdError extends Schema.TaggedError<StdError>()("@smthrs/std/StdErr
   /** At most 64 KiB of the language server's most recent stderr. */
   stderr: Schema.optional(Schema.String),
   /** The limit a `timeout` ran past, in milliseconds, when the flow knows it. */
-  limitMillis: Schema.optional(Schema.Number)
+  limitMillis: Schema.optional(Schema.Number),
+  /** What a `timeout` from a shell flow printed before it was stopped. */
+  output: Schema.optional(PartialOutput)
 }) {}

@@ -2385,18 +2385,23 @@ const callHandler = (
       return refusal("capability_refused", `Flow ${invocation.flow} is not model-invocable.`)
     }
     const envelope = CapabilitySet.fromPatterns(state.capabilityEnvelope)
+    // A declaration is authority the flow may then use, so it is read the way
+    // the flow reads it: as a pattern. One that names exactly one capability,
+    // an exact action over a literal resource, is decided exactly, so a glob
+    // grant still admits a resource it matches. Any other names a set, such as
+    // the bare `*` a markdown flow declares when its frontmatter names no
+    // `capabilities:`, and is admitted only where one grant covers all of it:
+    // `fs:read:/app/?.txt` matches the one resource `/app/*.txt` but never
+    // covers the set that pattern names.
     const refused = descriptor.capabilities.filter((declared) =>
-      Option.match(Capability.parse(declared), {
-        // A declaration that is not one capability may still be a pattern:
-        // the bare `*` a markdown flow declares when its frontmatter names no
-        // `capabilities:` is whole authority. It is admitted only where one
-        // pattern of the envelope covers all of it.
-        onNone: () =>
-          Option.match(Capability.parsePattern(declared), {
-            onNone: () => true,
-            onSome: (pattern) => !state.capabilityEnvelope.some((granted) => Capability.subsumes(granted, pattern))
-          }),
-        onSome: (capability) => !CapabilitySet.allows(envelope, capability)
+      Option.match(Capability.parsePattern(declared), {
+        onNone: () => true,
+        onSome: (claim) => {
+          const one = Capability.isLiteralResource(claim.resource) ? Capability.parse(declared) : Option.none()
+          return Option.isSome(one)
+            ? !CapabilitySet.allows(envelope, one.value)
+            : !state.capabilityEnvelope.some((granted) => Capability.subsumes(granted, claim))
+        }
       })
     )
     if (refused.length > 0) {
@@ -2502,7 +2507,9 @@ const callHandler = (
     )
     const durationMillis = elapsed(issuedAt, yield* Clock.currentTimeMillis)
     took.callMs += durationMillis
-    if (result.outcome === "success") ledger.push(...TruncatedOutput.captures(call.flowName, result.value))
+    // A failure's value is a record of the failure, and the one fragment it
+    // can hold is the output a timeout kept, which is cut like any result's.
+    ledger.push(...TruncatedOutput.captures(call.flowName, result.value))
     yield* emit(
       new AgentEvent.CellCallSettled({
         eventType: eventType.cellCallSettled,

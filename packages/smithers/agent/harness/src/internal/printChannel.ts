@@ -248,7 +248,8 @@ export const table = (value: Schema.Json): string | undefined => {
  * A match list becomes numbered source lines; other records become a table.
  * An object with exactly one such member becomes that object's other members
  * as JSON, then the member's name, count and rendered list. An exact failed-call
- * envelope becomes its code, message and optional hint. Everything else is
+ * envelope becomes its code, message and optional hint, then on the next line
+ * its `output` when a timed-out call carried one. Everything else is
  * canonical JSON as before.
  *
  * Tables save repeated keys but pay for every column boundary, including
@@ -273,10 +274,13 @@ export const render = (value: Schema.Json): string => {
     Object.keys(value).length === 2 && value.ok === false &&
     isRecord<Schema.Json>(error) &&
     typeof error.code === "string" && typeof error.message === "string" &&
-    Object.keys(error).every((key) => key === "code" || key === "message" || key === "hint") &&
+    Object.keys(error).every((key) => key === "code" || key === "message" || key === "hint" || key === "output") &&
     (!Object.hasOwn(error, "hint") || typeof error.hint === "string")
   ) {
-    return `failed (${error.code}): ${error.message}${Object.hasOwn(error, "hint") ? ` — hint: ${error.hint}` : ""}`
+    // What a timed-out call produced follows its one line, once.
+    return `failed (${error.code}): ${error.message}${Object.hasOwn(error, "hint") ? ` — hint: ${error.hint}` : ""}${
+      Object.hasOwn(error, "output") ? `\n${render(error.output!)}` : ""
+    }`
   }
   const tabled = Object.entries(value).flatMap(([key, member]) => {
     const rendered = matchList(member) ?? table(member)

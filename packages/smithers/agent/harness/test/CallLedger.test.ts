@@ -4,6 +4,7 @@
  * These cases fix what a line says and what it never says: a line names the
  * call and the shape of its result, and it carries no payload at all.
  */
+import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CallLedger from "../src/CallLedger.ts"
@@ -185,6 +186,27 @@ describe("CallLedger.remember", () => {
     const ledger = CallLedger.remember([], [settlement("edit", { path: "a/b.py" }, null, "oldString does not occur")])
     expect(ledger[0]?.ok).toBe(false)
     expect(ledger[0]?.digest).toBe("oldString does not occur")
+  })
+
+  it("says how much output a timed-out call holds, under the name the cell reads it by", () => {
+    const output = {
+      stdout: "case 1 ok\ncase 2 ok\n",
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      stdoutDroppedBytes: 0,
+      stderrDroppedBytes: 0
+    }
+    const message = "Flow bash failed: The command timed out after 1000 ms."
+    const [line] = CallLedger.remember([], [
+      { flow: "bash", input: { command: "pytest" }, ok: false, value: { limitMillis: 1_000, output }, message }
+    ])
+    expect(line?.digest).toBe(
+      `${message} error.output: stderr=0b stderrDroppedBytes=0 stderrTruncated=false stdout=20b stdoutDroppedBytes=0 stdoutTruncated=false`
+    )
+    // The size is what the cell holds: the message and the output it can read.
+    expect(line?.bytes).toBe(new TextEncoder().encode(CanonicalJson.stringify({ failed: message, output })).byteLength)
+    expect(CallLedger.render([line!])).toContain(`— FAILED: ${message} error.output: stderr=0b`)
   })
 
   it("records a failure the flow said nothing about", () => {

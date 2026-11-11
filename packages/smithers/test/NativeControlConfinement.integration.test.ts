@@ -276,11 +276,19 @@ it("runs a sealed host's bash and test in its one container through the docker C
       )
       expect(result.outcome, JSON.stringify(result)).toBe("success")
       expect(result.value).toMatchObject({ exitCode: 0, stdout: "1 passed in 0.1s\n" })
-      // One exec: the login shell runs between two measurements of /app, inside the same call.
+      // One exec: the login shell runs between two measurements of /app, inside the same call,
+      // under the call's nonce and its deadline in seconds, enforced inside the container.
       expect(dockerCalls().map((entry) => entry.argv.slice(0, 7))).toEqual([
         ["exec", "-w", "/app", "--", "benchmark-cell", "sh", "-c"]
       ])
-      expect(dockerCalls()[0]!.argv.slice(-4)).toEqual(["sh", "bash", "-lc", "ls -la"])
+      expect(dockerCalls()[0]!.argv.slice(-6)).toEqual([
+        "sh",
+        expect.stringMatching(/^[0-9a-f]{16}$/),
+        "600",
+        "bash",
+        "-lc",
+        "ls -la"
+      ])
       const tested = yield* flow("test")!.run(call({ against: "workspace" }, "test"))
       expect(tested.outcome, JSON.stringify(tested)).toBe("success")
       expect(tested.value).toMatchObject({ exitCode: 0, passed: 1 })

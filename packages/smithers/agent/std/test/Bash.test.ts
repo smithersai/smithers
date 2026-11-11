@@ -34,11 +34,17 @@ interface Spawned {
  * script-carrying call is observed here at the spawner boundary, which is
  * exactly where the payload stops being text and becomes data.
  */
-/** The argv with the tree-measuring wrapper (`sh -c <around> sh`) taken off: the command as it runs inside it. */
+/**
+ * The argv with the tree-measuring wrapper (`sh -c <around> sh <nonce> <deadline>`)
+ * taken off: the command as it runs inside it.
+ */
 const unwrapped = (args: ReadonlyArray<string>): ReadonlyArray<string> => {
   const at = args.indexOf(TreeFingerprint.around())
-  return at === -1 ? args : [...args.slice(0, at - 2), ...args.slice(at + 2)]
+  return at === -1 ? args : [...args.slice(0, at - 2), ...args.slice(at + 4)]
 }
+
+/** The nonce a containerised call framed its wrapper's line with, read off the argv it spawned. */
+const nonceOf = (args: ReadonlyArray<string>): string => args[args.indexOf(TreeFingerprint.around()) + 2] ?? ""
 
 /** Every spawn as the caller's own command, with the measurement that brackets a containerised one left out. */
 const commands = (spawns: ReadonlyArray<Spawned>): ReadonlyArray<Spawned> =>
@@ -1031,19 +1037,29 @@ describe("Bash", () => {
         return Effect.never
       }
     })
+    // A containerised call's host clock is only the backstop for a transport
+    // that never answers, past the wrapper's own deadline; the test clock
+    // reaches it without waiting.
     const exit = await execute(
-      Effect.exit(Bash.run({
-        mode: "unhermetic",
-        container: "swebench-1",
-        env: { DATABASE_PASSWORD: "s3cret-value" },
-        command: "pytest",
-        timeoutMs: 1
-      })).pipe(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.exit(Bash.run({
+          mode: "unhermetic",
+          container: "swebench-1",
+          env: { DATABASE_PASSWORD: "s3cret-value" },
+          command: "pytest",
+          timeoutMs: 1
+        })).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust(
+          TreeFingerprint.deadlineSeconds(1) * 1000 + TreeFingerprint.overrunSeconds * 1000 + 15_000
+        )
+        return yield* Fiber.join(fiber)
+      }).pipe(
         Effect.provide(Layer.mergeAll(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(stalled),
           Layer.succeed(Container.Container)(Container.makeCommand()),
           Path.layer
-        ))
+        )),
+        Effect.provide(TestClock.layer())
       )
     )
 
@@ -1088,7 +1104,7 @@ describe("Bash", () => {
    * looked like before and after the command and nothing else.
    */
   const measuring = (
-    answer: { readonly stderr: string; readonly exitCode?: number },
+    answer: { readonly stderr: string | ((nonce: string) => string); readonly exitCode?: number },
     spawns: Array<Spawned>
   ) =>
     Layer.mergeAll(
@@ -1110,7 +1126,9 @@ describe("Bash", () => {
               kill: () => Effect.void,
               stdin: Sink.drain,
               stdout: Stream.empty,
-              stderr: Stream.make(new TextEncoder().encode(answer.stderr)),
+              stderr: Stream.make(new TextEncoder().encode(
+                typeof answer.stderr === "string" ? answer.stderr : answer.stderr(nonceOf(standard.args.map(plainWord)))
+              )),
               all: Stream.empty,
               getInputFd: () => Sink.drain,
               getOutputFd: () => Stream.empty,
@@ -1122,8 +1140,11 @@ describe("Bash", () => {
       Path.layer
     )
 
-  /** The line `around` writes for two measurements, either of which may be empty. */
-  const trailer = (before: string, after: string) => `\n${TreeFingerprint.marker} ${before}| ${after}\n`
+  /** The line `around` writes for the call's nonce and two measurements, either of which may be empty. */
+  const trailer = (before: string, after: string, ended = "exited") => (nonce: string) =>
+    `\n${TreeFingerprint.marker} ${nonce} ${ended} ${before}| ${after}\n`
+  /** Standard error the command wrote, then the call's line. */
+  const after = (stderr: string, line: (nonce: string) => string) => (nonce: string) => `${stderr}${line(nonce)}`
 
   const contained = { mode: "unhermetic", container: "task-1", cwd: "/app", command: "python3 fix.py" } as const
 
@@ -1134,7 +1155,7 @@ describe("Bash", () => {
     const spawns: Array<Spawned> = []
     const output = await execute(Effect.provide(
       Bash.run(contained),
-      measuring({ stderr: `warning: slow\n${trailer("11 20 2 ", "99 24 3 ")}`, exitCode: 3 }, spawns)
+      measuring({ stderr: after("warning: slow\n", trailer("11 20 2 ", "99 24 3 ")), exitCode: 3 }, spawns)
     ))
     expect(output.mutated).toBe(true)
     // The measurement's line is the harness's, not the command's.
@@ -1154,10 +1175,14 @@ describe("Bash", () => {
       "-c",
       TreeFingerprint.around(),
       "sh",
+      nonceOf(spawns[0]!.args),
+      // The deadline, in whole seconds, enforced inside the container.
+      String(Bash.DEFAULT_TIMEOUT_MS / 1000),
       "bash",
       "-lc",
       "python3 fix.py"
     ])
+    expect(nonceOf(spawns[0]!.args)).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it("reports a tree that held still as unmoved, so a read-only container call still counts as one", async () => {
@@ -1171,7 +1196,7 @@ describe("Bash", () => {
   })
 
   it("reports nothing when the tree could not be measured, never an unchanged tree", async () => {
-    const unmeasured = async (stderr: string) => {
+    const unmeasured = async (stderr: string | ((nonce: string) => string)) => {
       const spawns: Array<Spawned> = []
       const output = await execute(Effect.provide(Bash.run(contained), measuring({ stderr }, spawns)))
       expect(output.exitCode).toBe(0)
@@ -1196,10 +1221,50 @@ describe("Bash", () => {
     const forged = `${TreeFingerprint.marker} 1 1 1 | 1 1 1 \n`
     const output = await execute(Effect.provide(
       Bash.run(contained),
-      measuring({ stderr: `${forged}${trailer("11 20 2 ", "99 24 3 ")}` }, spawns)
+      measuring({ stderr: after(forged, trailer("11 20 2 ", "99 24 3 ")) }, spawns)
     ))
     expect(output.mutated).toBe(true)
     expect(output.stderr).toBe(forged)
+  })
+
+  it("reads a line framed for another call as the command's own output", async () => {
+    // A command that prints the line's whole shape, and is then killed before
+    // the script writes the real one, still cannot name this call's nonce.
+    const spawns: Array<Spawned> = []
+    const forged = trailer("1 1 1 ", "9 9 9 ", "deadline")("ffffffffffffffff")
+    const output = await execute(Effect.provide(Bash.run(contained), measuring({ stderr: forged }, spawns)))
+    expect(output).toMatchObject({ exitCode: 0, stderr: forged })
+    expect(output.mutated).toBeUndefined()
+  })
+
+  it("fails a command the container's deadline stopped, with what it printed and what it changed", async () => {
+    const stopped = async (line: (nonce: string) => string) => {
+      const spawns: Array<Spawned> = []
+      const exit = await execute(Effect.provide(
+        Effect.exit(Bash.run({ ...contained, timeoutMs: 1_500 })),
+        measuring({ stderr: after("case 2 hangs\n", line), exitCode: 124 }, spawns)
+      ))
+      // The deadline is whole seconds inside the container, never shorter than asked.
+      expect(spawns[0]?.args[spawns[0].args.indexOf(TreeFingerprint.around()) + 3]).toBe("2")
+      return Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
+    }
+    expect(await stopped(trailer("11 20 2 ", "99 24 3 ", "deadline"))).toMatchObject({
+      code: "timeout",
+      limitMillis: 1_500,
+      output: {
+        stdout: "",
+        stderr: "case 2 hangs\n",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        stdoutDroppedBytes: 0,
+        stderrDroppedBytes: 0,
+        mutated: true
+      }
+    })
+    // A side the container could not measure says nothing about the tree.
+    const unmeasured = await stopped(trailer("", "99 24 3 ", "deadline"))
+    expect(unmeasured?.output).toMatchObject({ stderr: "case 2 hangs\n" })
+    expect(unmeasured?.output).not.toHaveProperty("mutated")
   })
 
   it("measures nothing for a command that runs on the host", async () => {
@@ -1208,12 +1273,12 @@ describe("Bash", () => {
     const spawns: Array<Spawned> = []
     const output = await execute(Effect.provide(
       Bash.run({ mode: "unhermetic", command: "true" }),
-      measuring({ stderr: trailer("11 20 2 ", "99 24 3 ") }, spawns)
+      measuring({ stderr: trailer("11 20 2 ", "99 24 3 ")("0123456789abcdef") }, spawns)
     ))
     expect(output.mutated).toBeUndefined()
     // A host command runs as itself, and what it writes is its own.
     expect(spawns.some((spawn) => spawn.args.includes(TreeFingerprint.around()))).toBe(false)
-    expect(output.stderr).toBe(trailer("11 20 2 ", "99 24 3 "))
+    expect(output.stderr).toBe(trailer("11 20 2 ", "99 24 3 ")("0123456789abcdef"))
   })
 
   it("refuses a container when the host binds no transport", async () => {
@@ -1433,6 +1498,130 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
     )
     const exit = await execute(Effect.provide(Effect.exit(failing(declared)), NodePath.layer))
     expect(Exit.isFailure(exit) && Option.getOrUndefined(Cause.findErrorOption(exit.cause))?.code).toBe("timeout")
+  })
+})
+
+/**
+ * A command that runs out of time has still printed what it got through. A
+ * test loop that printed one line per case and hung on one used to come back
+ * as "The command timed out." and nothing else, twice, for twenty minutes of
+ * a benchmark run. These run real processes on this host, and through the
+ * container wrapper with a transport that runs it here.
+ */
+describe.skipIf(process.platform === "win32")("Bash past its time limit", () => {
+  const spawning = Layer.merge(
+    Layer.provide(NodeChildProcessSpawner.layer, Layer.merge(NodeFileSystem.layer, Path.layer)),
+    Path.layer
+  )
+  /** A container transport whose container is this host: the wrapper runs here, for real. */
+  const local = Layer.succeed(Container.Container)(
+    Container.make({ exec: (request) => Effect.succeed({ file: request.file, args: request.args }) })
+  )
+  const failure = async (input: Bash.Input, transport?: typeof local) => {
+    const exit = await execute(Effect.provide(
+      Effect.exit(Bash.run(input)),
+      transport === undefined ? spawning : Layer.merge(spawning, transport)
+    ))
+    expect(Exit.isFailure(exit)).toBe(true)
+    return Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
+  }
+  /** Prints a line per case, flushing each, then hangs on the third: the shape of the run that lost twenty minutes. */
+  const hangs = `printf 'case 1 ok\\n'; printf 'case 2 ok\\n'; printf 'case 3 starting\\n' >&2; exec sleep 30`
+
+  it("fails with code timeout and carries what the command printed", async () => {
+    expect(await failure({ mode: "unhermetic", command: hangs, timeoutMs: 1_000 })).toMatchObject({
+      code: "timeout",
+      limitMillis: 1_000,
+      message: `Command timed out: ${hangs}`,
+      output: {
+        stdout: "case 1 ok\ncase 2 ok\n",
+        stderr: "case 3 starting\n",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        stdoutDroppedBytes: 0,
+        stderrDroppedBytes: 0
+      }
+    })
+  }, 30_000)
+
+  it("keeps the start and end of output past the capture limit, and counts the rest", async () => {
+    const half = MAX_SHELL_OUTPUT_BYTES / 2
+    const error = await failure({
+      mode: "unhermetic",
+      command: "printf 'HEAD\\n'; head -c 40000 /dev/zero | tr '\\0' x; printf '\\nTAIL\\n'; exec sleep 30",
+      timeoutMs: 1_500
+    })
+    const printed = `HEAD\n${"x".repeat(40_000)}\nTAIL\n`
+    expect(error?.output).toMatchObject({
+      stdout: `${printed.slice(0, half)}\n[10011 bytes omitted]\n${printed.slice(-half)}`,
+      stdoutTruncated: true,
+      stdoutDroppedBytes: 10_011
+    })
+  }, 30_000)
+
+  it("stops a containerised command at its deadline inside the container and still reports", async () => {
+    // The transport call returns normally: the wrapper's deadline fired, not
+    // the host's backstop, which is far later.
+    const started = Date.now()
+    const error = await failure({ mode: "unhermetic", container: "local", command: hangs, timeoutMs: 1_000 }, local)
+    expect(Date.now() - started).toBeLessThan(TreeFingerprint.overrunSeconds * 1000)
+    expect(error).toMatchObject({
+      code: "timeout",
+      limitMillis: 1_000,
+      output: { stdout: "case 1 ok\ncase 2 ok\n", stderr: "case 3 starting\n", stdoutTruncated: false }
+    })
+    // The wrapper's own line is the harness's, never the command's output.
+    expect(error?.output?.stderr).not.toContain(TreeFingerprint.marker)
+  }, 60_000)
+
+  it("returns a command that finishes in time exactly as before", async () => {
+    for (const transport of [undefined, local]) {
+      const output = await execute(Effect.provide(
+        Bash.run({
+          mode: "unhermetic",
+          command: "printf done",
+          timeoutMs: 10_000,
+          ...(transport === undefined ? {} : { container: "local" })
+        }),
+        transport === undefined ? spawning : Layer.merge(spawning, transport)
+      ))
+      expect(output).toMatchObject({ exitCode: 0, stdout: "done", stderr: "", stdoutTruncated: false })
+    }
+  }, 60_000)
+
+  it("gives up on a transport that never answers at the deadline plus the wrapper's overrun", async () => {
+    // A dead transport is the one case the host clock decides. The failure
+    // still names the limit the caller asked for, not the backstop.
+    const stalled = ChildProcessSpawner.makeNoop({ spawn: () => Effect.never })
+    const backstop = 1_000 + TreeFingerprint.overrunSeconds * 1000 + 15_000
+    const outcome = await execute(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.exit(
+          Bash.run({ mode: "unhermetic", container: "c", command: "x", timeoutMs: 1_000 })
+        )
+          .pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust(backstop - 1)
+        const early = fiber.pollUnsafe()
+        yield* TestClock.adjust(1)
+        return { early, exit: yield* Fiber.join(fiber) }
+      }).pipe(
+        Effect.provide(Layer.mergeAll(
+          Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(stalled),
+          Layer.succeed(Container.Container)(Container.makeCommand()),
+          Path.layer
+        )),
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(outcome.early).toBeUndefined()
+    expect(Exit.isFailure(outcome.exit)).toBe(true)
+    if (Exit.isFailure(outcome.exit)) {
+      expect(Option.getOrUndefined(Cause.findErrorOption(outcome.exit.cause))).toMatchObject({
+        code: "timeout",
+        limitMillis: 1_000,
+        output: { stdout: "", stderr: "" }
+      })
+    }
   })
 })
 

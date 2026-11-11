@@ -98,10 +98,14 @@ Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetc
 
 The single typed failure every handler uses.
 
-| Export     | Type                                    | Meaning                                                                                                                              |
-| ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Code`     | `Schema.Literals` and the matching type | The closed list of failure codes.                                                                                                    |
-| `StdError` | `Schema.TaggedError` class              | `{ code, message, path?, base_digest?, current_digest?, method?, rpcError?, stderr?, limitMillis? }`, tagged `@smthrs/std/StdError`. |
+| Export          | Type                                    | Meaning                                                                                                                                       |
+| --------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Code`          | `Schema.Literals` and the matching type | The closed list of failure codes.                                                                                                             |
+| `PartialOutput` | `Schema.Struct` and the matching type   | What a command printed before its time limit stopped it: `stdout`, `stderr`, their `Truncated` flags and `DroppedBytes` counts, `mutated?`.   |
+| `StdError`      | `Schema.TaggedError` class              | `{ code, message, path?, base_digest?, current_digest?, method?, rpcError?, stderr?, limitMillis?, output? }`, tagged `@smthrs/std/StdError`. |
+
+A `timeout` from `bash` carries `output`: the command's streams up to the
+moment it was stopped, cut on the same terms as a finished command's.
 
 ```ts
 import { StdError } from "@smthrs/std"
@@ -297,24 +301,40 @@ answers differ under the reserved `mutated` key. The harness reads `true` as
 a measured write, the way it reads `invalidProbe` as a measured refusal.
 
 Both measurements ride in the transport call that runs the command: `bash`
-spawns `sh -c <around> sh bash -lc <command>`, so a containerised command is
-one round trip. `around` writes the measurements as the last line of standard
-error and `split` takes them off before the result is returned.
+spawns `sh -c <around> sh <nonce> <deadline-seconds> bash -lc <command>`, so a
+containerised command is one round trip. `around` writes the measurements as
+the last line of standard error, framed with the call's nonce, and `split`
+takes them off before the result is returned. A line framed with any other
+nonce, one the command printed itself included, is the command's own output.
 
-| Export                  | Type                                                | Meaning                                                                                                                                        |
-| ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                                                                                 |
-| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into: every name the search walk skips, including both scratch checkout directories, plus `venv` and `target`. |
-| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                                                                                             |
-| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.                                                                      |
-| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                                                                                 |
-| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
-| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
-| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
-| `marker`                | `"__smithers_tree__"`                               | The word `around` starts its line of standard error with.                                                                                      |
-| `measureSeconds`        | `60`                                                | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
-| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script that measures, runs `"$@"` with its own stdin and streams, measures again and exits with the command's status.          |
-| `split`                 | `(stderr: string) => { stderr, before?, after? }`   | Separates `around`'s last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
+The same script enforces the call's deadline inside the container. At the
+deadline it sends the command `TERM`, then `KILL` after `graceSeconds`, still
+takes the second measurement, and its line says `deadline`, so `bash` fails
+with `timeout` carrying everything the command printed. It starts the command
+with a GNU-compatible `timeout` where the container has one, else `setsid`,
+so the whole process group is stopped; with neither it reaches the command
+alone. A POSIX shell starts the command with `SIGINT` and `SIGQUIT` ignored;
+GNU `env` puts them back where the container has it. The host's own clock is
+a backstop at the deadline plus `overrunSeconds` and one transport round trip.
+
+| Export                  | Type                                                                       | Meaning                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                   | `"mutated"`                                                                | The reserved output key a flow reports a measured write under.                                                                                 |
+| `defaultPrune`          | `ReadonlyArray<string>`                                                    | Directory names never descended into: every name the search walk skips, including both scratch checkout directories, plus `venv` and `target`. |
+| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                                                    | Name suffixes left out, compiled output above all.                                                                                             |
+| `maxPaths`              | `50000`                                                                    | The bound past which a listing is a prefix and reports `complete: false`.                                                                      |
+| `Measurement`           | interface                                                                  | `{ digest, paths, complete }`.                                                                                                                 |
+| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string`                        | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
+| `parse`                 | `(stdout: string) => Measurement \| undefined`                             | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
+| `moved`                 | `(before?, after?) => boolean \| undefined`                                | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
+| `marker`                | `"__smithers_tree__"`                                                      | The word `around` starts its line of standard error with.                                                                                      |
+| `measureSeconds`        | `60`                                                                       | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
+| `graceSeconds`          | `2`                                                                        | How long a command stopped at its deadline has between `TERM` and `KILL`.                                                                      |
+| `overrunSeconds`        | `122`                                                                      | The most `around` adds to its command's deadline: two measurements and the grace.                                                              |
+| `nonce`                 | `Effect<string>`                                                           | Sixteen fresh hex digits that frame one call's line.                                                                                           |
+| `deadlineSeconds`       | `(limitMillis: number) => number`                                          | A deadline in whole seconds, rounded up, at least one.                                                                                         |
+| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string`                        | The POSIX shell script that measures, runs `"$@"` under the deadline with its own stdin and streams, measures again and exits with its status. |
+| `split`                 | `(stderr: string, nonce: string) => { stderr, before?, after?, timedOut }` | Separates the call's last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
 
 Identity, not content: size and mtime per file, so a rewrite that restores
 both is invisible, exactly as it is to the host walk. Every tool the script

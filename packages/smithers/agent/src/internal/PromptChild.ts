@@ -13,21 +13,24 @@
  */
 
 import * as Capability from "@smthrs/capability/Capability"
-import type { FlowRuntime } from "@smthrs/flow"
+import * as Permission from "@smthrs/capability/Permission"
+import { FlowRuntime } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
-import type * as Sandbox from "@smthrs/harness/Sandbox"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
 import type { Child, Children, Options, Service } from "../Agent.ts"
 import * as Budget from "../Budget.ts"
-import type * as QuotaPolicy from "../QuotaPolicy.ts"
+import * as QuotaPolicy from "../QuotaPolicy.ts"
 import { agentOutcome } from "./AgentOutcome.ts"
 import { callId } from "./CallIdentity.ts"
 import { declaredEffort } from "./Effort.ts"
@@ -69,6 +72,28 @@ export const withoutSelf = (discovered: Registry.Registry, self: string | undefi
 }
 
 /**
+ * The caller's `authorize`, as a child runs it: what the hook would park for a
+ * person's approval is refused in the child's cell instead, because nobody
+ * answers a child and its park would park the caller.
+ */
+const neverAsks = (authorize: NonNullable<Options["authorize"]>): NonNullable<Options["authorize"]> => (call) =>
+  authorize(call).pipe(
+    Effect.mapError((error) =>
+      Option.match(Schema.decodeUnknownOption(Permission.PermissionRequired)(error.cause), {
+        onNone: () => error,
+        onSome: (request) =>
+          new HarnessError({
+            code: error.code,
+            message: `Flow ${call.flowName} needs a person's approval for ${
+              Capability.format(request.capability)
+            }, which a child run cannot ask for.`,
+            cause: Permission.permissionDenied(request.capability, "a child run cannot ask for approval")
+          })
+      })
+    )
+  )
+
+/**
  * The options one child runs under: the caller's, with what a child must not
  * inherit replaced. See `Agent.Children`.
  */
@@ -99,8 +124,9 @@ const childOptions = (
     // One level deep: a run with neither shows no markdown flow.
     promptRunner: undefined,
     children: undefined,
-    // Nothing a child does may park its caller.
-    authorize: undefined,
+    // The caller's hook decides every call the child makes, and nothing a
+    // child does may park its caller.
+    authorize: parent.authorize === undefined ? undefined : neverAsks(parent.authorize),
     approvalChannel: false,
     capacity: { ...parent.capacity, park: false },
     memory: undefined,
@@ -129,42 +155,57 @@ export const runner = (input: {
   /** The options the caller runs under. */
   readonly parent: Options
   readonly children: Children
-  /** The caller's run services, captured where its run started. */
+  /**
+   * The caller's run services, captured where its run started. A child takes
+   * only the {@link Services} from it, whatever else the capture holds.
+   */
   readonly services: Context.Context<Services>
   /** The loop the caller runs on, and so the one its children run on. */
   readonly run: Service["run"]
-}): CellCalls.PromptRunner =>
-(prompt) =>
-  Effect.gen(function*() {
-    const id = callId(prompt.call.identity)
-    const child: Child = {
-      callId: id,
-      flow: prompt.call.flowName,
-      session: `${input.parent.session}/child/${id}`
-    }
-    const declared = Option.getOrUndefined(prompt.descriptor.model)
-    const ids = declared === undefined ? [] : typeof declared === "string" ? [declared] : declared
-    const outcome = yield* Effect.gen(function*() {
-      const seats = ids.length === 0
-        ? [input.parent.seat, ...(input.parent.fallbackSeats ?? [])]
-        : yield* Effect.forEach(ids, (seat) => input.children.seats.resolve(seat, ids[0]))
-      return yield* agentOutcome(
-        input.run(childOptions(input.parent, input.children, child, prompt, seats)),
-        (event) => input.children.observe(child, event)
+}): CellCalls.PromptRunner => {
+  const services = Context.pick(
+    FlowRuntime.FlowRuntime,
+    FlowRuntime.FlowInstance,
+    Sandbox.Sandbox,
+    Budget.Budget,
+    QuotaPolicy.QuotaClassifier,
+    Evaluator.Evaluator
+  )(input.services)
+  return (prompt) =>
+    Effect.gen(function*() {
+      const id = callId(prompt.call.identity)
+      const child: Child = {
+        callId: id,
+        flow: prompt.call.flowName,
+        session: `${input.parent.session}/child/${id}`
+      }
+      const declared = Option.getOrUndefined(prompt.descriptor.model)
+      const ids = declared === undefined ? [] : typeof declared === "string" ? [declared] : declared
+      const outcome = yield* Effect.gen(function*() {
+        const seats = ids.length === 0
+          ? [input.parent.seat, ...(input.parent.fallbackSeats ?? [])]
+          : yield* Effect.forEach(ids, (seat) => input.children.seats.resolve(seat, ids[0]))
+        return yield* agentOutcome(
+          input.run(childOptions(input.parent, input.children, child, prompt, seats)),
+          (event) => input.children.observe(child, event)
+        )
+      }).pipe(
+        // Innermost first: each step below overrides what is outside it, so
+        // what a child must not share is taken away inside the caller's
+        // services, never under them.
+        Effect.provideService(Steering.Source, Steering.makeNoop()),
+        // The caller's observer checkpoints the caller's events, not these.
+        Effect.provideService(AgentEvent.Observer, () => Effect.void),
+        // A budget the child spends fails the child; the caller parks on it at
+        // its own next model call, where an operator's raise is meant for.
+        Effect.updateContext((context: Context.Context<Services>) => Context.omit(Budget.Parking)(context)),
+        Effect.provideContext(services),
+        Effect.result
       )
-    }).pipe(
-      Effect.provideContext(input.services),
-      Effect.provideService(Steering.Source, Steering.makeNoop()),
-      // The caller's observer checkpoints the caller's events, not these.
-      Effect.provideService(AgentEvent.Observer, () => Effect.void),
-      // A budget the child spends fails the child; the caller parks on it at
-      // its own next model call, where an operator's raise is meant for.
-      Effect.updateContext((context: Context.Context<never>) => Context.omit(Budget.Parking)(context)),
-      Effect.result
-    )
-    if (outcome._tag === "Failure") return failed(child.flow, outcome.failure.message)
-    if (outcome.success._tag === "FramesExhausted") {
-      return failed(child.flow, `it ended ${outcome.success.frames} frames without calling ctx.done`)
-    }
-    return Cell.CallResult.new({ outcome: "success", value: outcome.success.output })
-  })
+      if (outcome._tag === "Failure") return failed(child.flow, outcome.failure.message)
+      if (outcome.success._tag === "FramesExhausted") {
+        return failed(child.flow, `it ended ${outcome.success.frames} frames without calling ctx.done`)
+      }
+      return Cell.CallResult.new({ outcome: "success", value: outcome.success.output })
+    })
+}

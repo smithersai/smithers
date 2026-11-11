@@ -665,6 +665,13 @@ projects a failed result into the fixed envelope the cell observes:
 { "ok": false, "error": { "code": "...", "message": "...", "hint": "..." } }
 ```
 
+A call its flow stopped at a time limit adds `error.output`, what the flow
+produced before it was stopped, such as the lines a command printed. The
+output travels beside the message, never inside it, so it is printed once:
+the print channel renders the envelope's one line and then the output, and the
+call ledger's line for the call names `error.output` and the size of each
+part. Of a failure's `value`, `output` is the only member the cell sees.
+
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
 flow's own value, unwrapped, and an object or array value also answers `.ok`
@@ -1323,9 +1330,12 @@ schema. `FlowBinding.make` passes existing `HarnessError`
 values through unchanged; only permission requirements and denials are
 converted to code `suspended`. A handler error the binding's `timedOut`
 classifies becomes a `timeout` call result whose `value` records
-`{ limitMillis }` when the error says its limit: `bash` and `test` classify a
-command past its given or default limit, and `agent/await` a wait that gave
-up. Other handler errors become opaque `flow_failed` call results. Either carries only the safe
+`{ limitMillis }` when the error says its limit, and `output` when the
+classifier returns what the flow produced before the limit stopped it (output
+that is not JSON is dropped): `bash` and `test` classify a command past its
+given or default limit, `bash` with what the command printed, and
+`agent/await` a wait that gave up. Return as `output` only what the flow would
+have returned had it finished: the cell reads it and the journal keeps it. Other handler errors become opaque `flow_failed` call results. Either carries only the safe
 `publicError` text the binding supplies.
 
 ## StructuredOutput

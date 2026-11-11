@@ -186,6 +186,30 @@ came from. `@smthrs/harness` reads the `Truncated` flags to refuse exactly that.
 
 `timeoutMs` defaults to `Bash.DEFAULT_TIMEOUT_MS`, ten minutes.
 
+## A command that runs out of time
+
+A command past `timeoutMs` is stopped and the call fails with `timeout`. The
+failure carries what the command printed before it was stopped as `output`:
+`stdout`, `stderr`, their `Truncated` flags and `DroppedBytes` counts, cut on
+the same terms as a finished command's. A test loop that prints a line per
+case and hangs on one still says which cases passed.
+
+```ts
+const result = await ctx.call("bash", { command: "pytest -x tests", timeoutMs: 60_000 })
+if (result.ok === false && result.error.code === "timeout") {
+  console.log(result.error.output.stdout)
+}
+```
+
+In a container the deadline is enforced inside the container, in the same
+transport call: the command, and its process group where the container can
+give it one, gets `TERM`, then `KILL` two seconds later. The call still comes
+back with everything printed, and with `mutated` when the tree was measured
+before the command started and after it stopped. A transport that answers only
+when the call ends loses nothing. See
+[`TreeFingerprint`](../api.md#treefingerprint) for the tools the container
+needs.
+
 ## The invalid-probe flag
 
 A non-zero exit is a runner's verdict about the code it ran. It is not a verdict

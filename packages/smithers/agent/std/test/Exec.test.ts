@@ -195,6 +195,61 @@ describe.skipIf(process.platform === "win32")("Exec capture", () => {
     }).pipe(Effect.provide(host)), 30_000)
 })
 
+/**
+ * A command its timeout stops has still printed something, and that is the
+ * one record of how far it got. A test loop that prints a line per case and
+ * hangs on the fortieth answered `exec: … exceeded 600000ms` and nothing else,
+ * twice, for twenty minutes of a benchmark run.
+ */
+describe.skipIf(process.platform === "win32")("Exec timeout", () => {
+  /** Prints to both streams, then outlives any limit these cases set. */
+  const printsThenHangs = (stdout: string, stderr: string) =>
+    Exec.exec("sh", {
+      args: ["-c", `printf '%s' "$1"; printf '%s' "$2" >&2; exec sleep 30`, "sh", stdout, stderr],
+      timeoutMs: 1_000,
+      maxCaptureBytes: 64,
+      overflow: "ends"
+    })
+
+  it.live("reports what the command printed before its timeout stopped it", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(printsThenHangs("case 1 ok\ncase 2 ok\n", "warning: slow\n"))
+      expect(error).toMatchObject({ code: "timeout", limitMillis: 1_000 })
+      expect(error.captured).toEqual({
+        stdout: "case 1 ok\ncase 2 ok\n",
+        stderr: "warning: slow\n",
+        stdoutDroppedBytes: 0,
+        stderrDroppedBytes: 0
+      })
+    }).pipe(Effect.provide(host)), 30_000)
+
+  it.live("keeps both ends of output past the bound and counts what it dropped", () =>
+    Effect.gen(function*() {
+      const printed = `${"a".repeat(40)}${"b".repeat(100)}${"c".repeat(40)}`
+      const error = yield* Effect.flip(printsThenHangs(printed, ""))
+      expect(error.captured?.stdout).toBe(`${"a".repeat(32)}\n[116 bytes omitted]\n${"c".repeat(32)}`)
+      expect(error.captured?.stdoutDroppedBytes).toBe(116)
+    }).pipe(Effect.provide(host)), 30_000)
+
+  it.live("stops the process it timed out", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(Exec.exec("sh", {
+        args: ["-c", `echo "$$"; exec sleep 30`],
+        timeoutMs: 1_000
+      }))
+      const pid = Number(error.captured?.stdout.trim())
+      expect(pid).toBeGreaterThan(0)
+      // The spawn is scoped, so the interrupt that ended the wait ended it too.
+      expect(() => process.kill(pid, 0)).toThrow()
+    }).pipe(Effect.provide(host)), 30_000)
+
+  it.live("returns a command that finished in time exactly as before", () =>
+    Effect.gen(function*() {
+      const result = yield* Exec.exec("sh", { args: ["-c", "printf done"], timeoutMs: 10_000 })
+      expect(result).toEqual({ stdout: "done", stderr: "", exitCode: 0, stdoutDroppedBytes: 0, stderrDroppedBytes: 0 })
+    }).pipe(Effect.provide(host)), 30_000)
+})
+
 describe("Exec refuses partial capture", () => {
   for (const stream of ["stdout", "stderr"] as const) {
     it.live(`refuses overflowing ${stream}`, () =>

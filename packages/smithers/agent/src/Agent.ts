@@ -390,14 +390,18 @@ export interface Child {
  * - its catalog is {@link flows}, and it is offered no markdown flow, so
  *   children nest one level deep;
  * - its capability envelope is what the flow's `capabilities:` declares,
- *   which the call boundary admitted only within the caller's envelope; a
- *   flow that declares none claims whole authority and is admitted only by a
- *   caller that holds it;
- * - it never parks the caller: no `authorize`, no approval channel, no
- *   capacity park and no budget park, so a quota or budget refusal fails the
- *   child instead;
- * - it is given no opening memory and no output check, writes no memory, and
- *   drains no steering.
+ *   read as patterns, which the call boundary admitted only where one grant
+ *   of the caller's envelope covers each whole pattern; a flow that declares
+ *   none claims whole authority and is admitted only by a caller that holds
+ *   it;
+ * - the caller's `authorize` decides each call the child makes, and a call it
+ *   would park for a person's approval is refused in the child's cell as
+ *   `capability_refused` instead;
+ * - it never parks the caller: no approval channel, no capacity park and no
+ *   budget park, so a quota or budget refusal fails the child instead;
+ * - it is given no opening memory and no output check, writes no memory,
+ *   drains none of the caller's steering, and reaches the caller's event
+ *   observer only through `observe`.
  *
  * It spends the caller's `Budget` and runs inside the caller's call, so it can
  * neither outspend nor outlive the run that called it. Its answer is the

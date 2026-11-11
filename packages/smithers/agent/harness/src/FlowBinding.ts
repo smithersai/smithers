@@ -341,9 +341,17 @@ export interface Options<
    * limit, and a host that guards timeouts parks the run on it with this
    * limit. Absent, every failure is `flow_failed`. Like `publicError`, it
    * never receives a `HarnessError`, which escalates first.
+   *
+   * `output` is what the flow produced before its limit stopped it, such as
+   * the lines a command printed. The cell reads it as `error.output`, and it
+   * is journaled with the call, so return only what the flow would have
+   * returned had it finished: model-facing values, never a raw cause. Output
+   * that is not JSON is dropped.
    */
   readonly timedOut?:
-    | ((error: Exclude<E, HarnessError>) => { readonly limitMillis?: number | undefined } | undefined)
+    | ((
+      error: Exclude<E, HarnessError>
+    ) => { readonly limitMillis?: number | undefined; readonly output?: unknown } | undefined)
     | undefined
 }
 
@@ -430,11 +438,10 @@ export const make = <
             ? `Flow ${descriptor.name} failed.`
             : `Flow ${descriptor.name} failed: ${message}`
           const timeout = options.timedOut?.(failure)
-          return timeout === undefined
-            ? refusal("flow_failed", rendered)
-            : timeout.limitMillis === undefined
-            ? refusal("timeout", rendered)
-            : timedOut(rendered, timeout.limitMillis)
+          if (timeout === undefined) return refusal("flow_failed", rendered)
+          // What the cell cannot hold as JSON it is not shown; the timeout stands.
+          const output = timeout.output === undefined ? undefined : asJson(timeout.output)
+          return timedOut(rendered, timeout.limitMillis, output?._tag === "Success" ? output.success : undefined)
         }
         const encoded = encodeOutput(produced.success)
         if (encoded._tag === "Failure") {

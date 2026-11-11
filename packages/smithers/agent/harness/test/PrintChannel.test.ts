@@ -379,6 +379,16 @@ describe("printChannel.render", () => {
       .toBe("failed ():  — hint: ")
   })
 
+  it("renders a failed call's output once, after its one-line failure", () => {
+    const output = { stderr: "", stdout: "case 1 ok\n" }
+    expect(printChannel.render({
+      ok: false,
+      error: { code: "timeout", message: "The command timed out.", hint: "Narrow it.", output }
+    })).toBe(`failed (timeout): The command timed out. — hint: Narrow it.\n${CanonicalJson.stringify(output)}`)
+    expect(printChannel.render({ ok: false, error: { code: "timeout", message: "late", output: "partial" } }))
+      .toBe("failed (timeout): late\npartial")
+  })
+
   it("keeps failed-call envelopes with extra keys or invalid shapes as canonical JSON", () => {
     const error = { code: "flow_failed", message: "File not found" }
     for (

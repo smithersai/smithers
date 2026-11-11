@@ -12,8 +12,34 @@
 - `CellCalls.Prompt.descriptor`: a prompt runner receives the markdown flow's
   declaration beside the call and the rendered text, so it can read the flow's
   `model` and frontmatter.
+- A call its flow stopped at a time limit shows the cell what the flow
+  produced first as `error.output`, beside `code`, `message` and `hint`.
+  `FlowBinding.Options.timedOut` may return that `output`; the call result
+  records it in `value` beside `limitMillis`. The print channel renders it once
+  after the envelope's line, the call ledger's line names `error.output` and
+  the size of each part, and a truncated stream in it is guarded against a
+  later write like any result's.
 
 ### Fixed
+
+- `CellTurn` admits a flow's declared capability as the pattern the flow
+  holds. It read a declaration such as `fs:read:/app/*.txt` as one exact
+  resource, which the grant `fs:read:/app/?.txt` matches, and admitted
+  authority the grant never covered. A declaration that names exactly one
+  capability is still decided exactly; any other is admitted only where one
+  grant covers the whole pattern, so `proc:spawn:**` is now refused under
+  `proc:spawn:*`, and the standard flows' `fs:read:/**` is refused under a
+  `*:*` envelope. Grant whole authority as `*:**`.
+
+- The flow catalog's compact input type marks a property optional only when
+  the schema does not require it. A required property that may be null was
+  printed `parent?: string`, so a call written from the catalog could omit it
+  and fail validation; it now reads `parent: string | null`.
+- The compact input type is printed only for a schema it reads whole. A node
+  that pairs keywords the renderer reads one at a time (an `enum` beside an
+  `anyOf`, `properties` with no `type`, a literal that is not a value of the
+  `type` beside it) lost a constraint in the text; the catalog now prints
+  that flow's JSON Schema document instead.
 
 - A flow that declares the whole-authority `*`, which is what discovery gives
   a markdown flow whose frontmatter names no `capabilities:`, is callable from a

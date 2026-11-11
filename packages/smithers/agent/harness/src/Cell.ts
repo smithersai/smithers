@@ -27,6 +27,7 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Context, Effect, Option, Result, Schema } from "effect"
 import { HarnessError } from "./HarnessError.ts"
+import { failureOutput } from "./internal/failureOutput.ts"
 import { cellBlocks } from "./internal/fence.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
@@ -869,7 +870,9 @@ export const decodeTransition = decodeBoundary(Transition, "transition")
  * spent ~$0.46 on the same class across five frames.
  *
  * The shape is fixed and small — `{ ok: false, error: { code, message, hint } }`
- * — because a cell branches on `.ok` and reads `.error.code`. A successful call
+ * — because a cell branches on `.ok` and reads `.error.code`. A call its flow
+ * stopped at a time limit adds `error.output`, what the flow produced first: a
+ * command's printed lines are the one record of how far it got. A successful call
  * still resolves with the flow's own value, unwrapped, so the ordinary
  * `result.stdout` shape a cell is trained on is unchanged; an object or array
  * value also answers `.ok` as `true` (not enumerable), so a cell that guards
@@ -881,12 +884,14 @@ export const decodeTransition = decodeBoundary(Transition, "transition")
  */
 export const callFailure = (result: CallResult): Schema.Json => {
   const code = result.code ?? defaultCallFailureCode
+  const output = failureOutput(result.value)
   return {
     ok: false,
     error: {
       code,
       message: result.message ?? "The flow call failed",
-      hint: callFailureHint[code]
+      hint: callFailureHint[code],
+      ...(output === undefined ? {} : { output })
     }
   }
 }

@@ -40,8 +40,11 @@ Do the sub-task in the arguments, then call ctx.done with what you found.
 - Leave out `capabilities:` to give the child the caller's whole authority.
   A flow that names none claims every capability, and only a caller that
   holds every capability may call it. A flow that names a list runs with that
-  list, and the call is refused with `capability_refused` unless the caller
-  holds all of it.
+  list, read as patterns, and the call is refused with `capability_refused`
+  unless one of the caller's grants covers each whole pattern. A grant of
+  `fs:read:/app/?.txt` admits `fs:read:/app/a.txt` and refuses
+  `fs:read:/app/*.txt`, because the child would read every `.txt` file in
+  `/app` under that pattern.
 
 The child's prompt is the flow's body followed by `args`.
 
@@ -52,11 +55,16 @@ A child is the same agent loop as its caller, run inside the caller's call:
 - The caller's host flows: file flows, `bash`, `jev`, and the rest. On a host
   sealed to a container (`SMITHERS_BASH_CONTAINER`), the child's flows reach
   that one container and nothing on the host.
+- The caller's `authorize` hook, which decides every call the child makes. A
+  call the hook would park for a person's approval is refused in the child's
+  cell with `capability_refused` instead.
 - No `wait` and no `ask`, and no approval channel. A quota or budget refusal
   fails the child rather than parking. A child never parks its caller.
 - No markdown flow. Children nest one level deep.
 - No opening memory, no memory writes, and no steering. Operator messages
   reach the caller at its next frame.
+- None of the caller's event observer. A child's events reach the caller's
+  journal only as `control.child.*` records.
 - The caller's budget and time. The child spends the run's budget, and it
   runs inside the caller's call, so it cannot outlive the caller's frame. A
   long child needs a call that names its time:

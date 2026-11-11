@@ -51,8 +51,42 @@ describe("SchemaSignature.render", () => {
       required: ["parent", "name"],
       additionalProperties: false
     })
-    // Either way a call may write no string there; `?` says so in one mark.
-    expect(SchemaSignature.render(schema)).toBe("{\n  parent?: string\n  name: string\n}")
+    // `{}` fails this schema and `{ parent: null }` passes it: `parent` is required.
+    expect(SchemaSignature.render(schema)).toBe("{\n  parent: string | null\n  name: string\n}")
+  })
+
+  it("answers nothing for a node whose keywords it would only half read", () => {
+    const answered = (schema: unknown) => SchemaSignature.render(document(schema))
+    // `"b"` fails the `anyOf`; printing the `enum` alone would admit it.
+    expect(answered({ type: "string", enum: ["a", "b"], anyOf: [{ const: "a" }] })).toBeUndefined()
+    expect(answered({ const: "a", enum: ["a", "b"] })).toBeUndefined()
+    expect(answered({ anyOf: [{ type: "string" }], properties: { x: { type: "string" } } })).toBeUndefined()
+    // An object's shape with no `type` to say it is one.
+    expect(answered({ properties: { x: { type: "string" } }, required: ["x"] })).toBeUndefined()
+    expect(answered({ type: "string", properties: {} })).toBeUndefined()
+    expect(answered({ type: "array", items: { type: "string" }, required: [] })).toBeUndefined()
+    expect(answered({ type: "object", items: { type: "string" } })).toBeUndefined()
+    // A literal that is not a value of the type beside it describes no value at all.
+    expect(answered({ type: "integer", const: 1.5 })).toBeUndefined()
+    expect(answered({ type: "null", enum: [null, 0] })).toBeUndefined()
+    expect(answered({ type: "object", const: {} })).toBeUndefined()
+  })
+
+  it("prints a literal beside the type that agrees with it", () => {
+    const schema = document({
+      type: "object",
+      properties: {
+        version: { type: "integer", const: 2 },
+        on: { type: "boolean", enum: [true] },
+        none: { type: "null", const: null },
+        ratio: { type: "number", enum: [0.5, 1] }
+      },
+      required: ["version", "on", "none", "ratio"],
+      additionalProperties: false
+    })
+    expect(SchemaSignature.render(schema)).toBe(
+      "{\n  version: 2\n  on: true\n  none: null\n  ratio: 0.5 | 1\n}"
+    )
   })
 
   it("prints literals, unions, arrays, records and the number a schema spells three ways", () => {

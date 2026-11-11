@@ -1812,7 +1812,10 @@ Bindings explicitly publish host-authored refusal messages through
 `FlowBinding.Options.publicError`. Shell, test, and search errors with codes
 `command_failed` or `request_failed` remain opaque because their messages can
 carry process diagnostics. A `timeout` publishes fixed text: "The command timed
-out." A command the operating system refused for the size of its arguments
+out." A `bash` timeout keeps what the command printed before it was stopped
+and says so: "The command timed out; error.output holds what it printed before
+it was stopped." The streams themselves travel as the call's `error.output`
+(`StdError.PartialOutput`), beside the message, never inside it. A command the operating system refused for the size of its arguments
 (`E2BIG`) is the caller's own input: it fails with `invalid_input` and fixed
 text naming the cause and the fix, never the command line. Search `invalid_pattern` errors use fixed corrective text because native
 search can return raw stderr. The portable validator's specific reason is

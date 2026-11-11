@@ -91,16 +91,29 @@ const publicRefusal = (error: { readonly message: string }): string => error.mes
 /**
  * Shell/test execution failures may contain OS diagnostics. A command bound's
  * harness failure ({@link withinCallLimit}) escalates before any binding
- * reads its error, so `FlowBinding` never hands one here.
+ * reads its error, so `FlowBinding` never hands one here. A timeout that kept
+ * what the command printed says where the cell reads it, and the output itself
+ * travels beside the message, never inside it (see {@link commandTimedOut}).
  */
 const publicExecutionError = (error: StdError): string | undefined => {
-  if (error.code === "timeout") return "The command timed out."
+  if (error.code === "timeout") {
+    return error.output === undefined
+      ? "The command timed out."
+      : "The command timed out; error.output holds what it printed before it was stopped."
+  }
   return error.code === "command_failed" || error.code === "request_failed" ? undefined : error.message
 }
 
-/** A command past its own limit (given or default) is a timeout; see `FlowBinding.Options.timedOut`. */
-const commandTimedOut = (error: StdError): { readonly limitMillis?: number | undefined } | undefined =>
-  error.code === "timeout" ? { limitMillis: error.limitMillis } : undefined
+/**
+ * A command past its own limit (given or default) is a timeout, and what it
+ * printed before it was stopped is the call's output; see
+ * `FlowBinding.Options.timedOut`. That output is what the flow would have
+ * returned had the command finished, so it is as public as a result.
+ */
+const commandTimedOut = (
+  error: StdError
+): { readonly limitMillis?: number | undefined; readonly output?: unknown } | undefined =>
+  error.code === "timeout" ? { limitMillis: error.limitMillis, output: error.output } : undefined
 
 /**
  * A command handler under the host's command bound, `limitMillis`.

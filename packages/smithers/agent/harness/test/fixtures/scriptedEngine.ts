@@ -3,6 +3,7 @@ import { Model } from "@smthrs/model"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
 import * as Cell from "../../src/Cell.ts"
 import * as EngineLike from "../../src/EngineLike.ts"
+import type * as FlowBinding from "../../src/FlowBinding.ts"
 import { HarnessError } from "../../src/HarnessError.ts"
 import * as Plan from "../../src/Plan.ts"
 
@@ -37,6 +38,8 @@ export type CallStep =
     /** What kind of failure the flow's binding reports for the run's record. */
     readonly kind?: Cell.FailureKind | undefined
   }
+  /** The call runs through a real executable binding, which settles it as a host would. */
+  | { readonly _tag: "Bound"; readonly binding: FlowBinding.Binding }
   | { readonly _tag: "PermissionRequired"; readonly request: Permission.PermissionRequired }
   | { readonly _tag: "Interrupt" }
   /** A durable wait inside the call: the host parks the run, as a flow engine does. */
@@ -181,6 +184,8 @@ export const make = (
                 : Effect.flatMap(Cell.Failures, (report) => report(step.kind!)),
               Cell.CallResult.new({ outcome: "failure", value: null, message: step.message })
             )
+          case "Bound":
+            return step.binding.run(request)
           case "PermissionRequired":
             return Effect.fail(
               new HarnessError({

@@ -7237,7 +7237,10 @@ Bindings explicitly publish host-authored refusal messages through
 `FlowBinding.Options.publicError`. Shell, test, and search errors with codes
 `command_failed` or `request_failed` remain opaque because their messages can
 carry process diagnostics. A `timeout` publishes fixed text: "The command timed
-out." A command the operating system refused for the size of its arguments
+out." A `bash` timeout keeps what the command printed before it was stopped
+and says so: "The command timed out; error.output holds what it printed before
+it was stopped." The streams themselves travel as the call's `error.output`
+(`StdError.PartialOutput`), beside the message, never inside it. A command the operating system refused for the size of its arguments
 (`E2BIG`) is the caller's own input: it fails with `invalid_input` and fixed
 text naming the cause and the fix, never the command line. Search `invalid_pattern` errors use fixed corrective text because native
 search can return raw stderr. The portable validator's specific reason is
@@ -21164,6 +21167,13 @@ projects a failed result into the fixed envelope the cell observes:
 { "ok": false, "error": { "code": "...", "message": "...", "hint": "..." } }
 ```
 
+A call its flow stopped at a time limit adds `error.output`, what the flow
+produced before it was stopped, such as the lines a command printed. The
+output travels beside the message, never inside it, so it is printed once:
+the print channel renders the envelope's one line and then the output, and the
+call ledger's line for the call names `error.output` and the size of each
+part. Of a failure's `value`, `output` is the only member the cell sees.
+
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
 flow's own value, unwrapped, and an object or array value also answers `.ok`
@@ -21822,9 +21832,12 @@ schema. `FlowBinding.make` passes existing `HarnessError`
 values through unchanged; only permission requirements and denials are
 converted to code `suspended`. A handler error the binding's `timedOut`
 classifies becomes a `timeout` call result whose `value` records
-`{ limitMillis }` when the error says its limit: `bash` and `test` classify a
-command past its given or default limit, and `agent/await` a wait that gave
-up. Other handler errors become opaque `flow_failed` call results. Either carries only the safe
+`{ limitMillis }` when the error says its limit, and `output` when the
+classifier returns what the flow produced before the limit stopped it (output
+that is not JSON is dropped): `bash` and `test` classify a command past its
+given or default limit, `bash` with what the command printed, and
+`agent/await` a wait that gave up. Return as `output` only what the flow would
+have returned had it finished: the cell reads it and the journal keeps it. Other handler errors become opaque `flow_failed` call results. Either carries only the safe
 `publicError` text the binding supplies.
 
 ## StructuredOutput
@@ -41574,7 +41587,7 @@ const host = yield * Sandbox.hostContext(session)
 
 `existing(options)` serves the session contract over a container the caller already runs and owns, such as a benchmark's task container, reached through a transport of `@smthrs/std/Container`'s shape: `exec(request)` answers with the host command that runs one program in the container. A host passes the transport its `bash` flow uses, so its file operations take the same route as its commands. Nothing runs until the session is asked for something, and closing a scope leaves the container as it was.
 
-Every command, read, and write is one `/bin/sh -c` through the transport, run in `workdir` unless the command names another directory. File bytes come back as base64, so a transport whose output channel carries only text returns them intact, and go in on standard input unchanged. The caller's environment travels as for `make`, through standard input to an `env(1)` prefix; the transport's host command gets the least-authority environment plus the plan's own `env`, such as the variables a container CLI finds its daemon by. `readFile` answers a directory with `BadResource`, an absent path with `NotFound`, and a path the container's user may not read with `PermissionDenied`, as the platform implementations do. The other file operations are the Linux ones `make`'s sessions have, including `@smthrs/std`'s batched file calls: `read` and `ls` take one transport call and `edit`, `write`, and `apply_patch` two, where the separate operations took up to ten. The guest needs `sh`, `base64`, and GNU or BusyBox utilities. The session declares no `kill`: a container engine does not pass the end of its client process on to the process it started, so use it for short commands such as file operations.
+Every command, read, and write is one `/bin/sh -c` through the transport, run in `workdir` unless the command names another directory. File bytes come back as base64, so a transport whose output channel carries only text returns them intact, and go in on standard input unchanged. The caller's environment travels as for `make`, through standard input to an `env(1)` prefix; the transport's host command gets the least-authority environment plus the plan's own `env`, such as the variables a container CLI finds its daemon by. `readFile` answers a directory with `BadResource`, an absent path with `NotFound`, and a path the container's user may not read with `PermissionDenied`, as the platform implementations do. The other file operations are the Linux ones `make`'s sessions have, including `@smthrs/std`'s batched file calls: `read` and `ls` take one transport call and `edit`, `write`, and `apply_patch` two, where the separate operations took up to ten. A commit holds the same `.smithers-*.lock` directories as the ordinary path inside the guest from before its final version check until it ends, and keeps every byte of a path through command substitution, including a trailing newline. A file whose owner the guest's user cannot assign is rewritten in place, as `@smthrs/std`'s ordinary path does; a refusal worded `Operation not permitted` (`EPERM`) reads `PermissionDenied`, as on Node. The guest needs `sh`, `base64`, and GNU or BusyBox utilities. The session declares no `kill`: a container engine does not pass the end of its client process on to the process it started, so use it for short commands such as file operations.
 
 ### KubernetesSandbox
 
@@ -42406,10 +42419,14 @@ Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetc
 
 The single typed failure every handler uses.
 
-| Export     | Type                                    | Meaning                                                                                                                              |
-| ---------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Code`     | `Schema.Literals` and the matching type | The closed list of failure codes.                                                                                                    |
-| `StdError` | `Schema.TaggedError` class              | `{ code, message, path?, base_digest?, current_digest?, method?, rpcError?, stderr?, limitMillis? }`, tagged `@smthrs/std/StdError`. |
+| Export          | Type                                    | Meaning                                                                                                                                       |
+| --------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Code`          | `Schema.Literals` and the matching type | The closed list of failure codes.                                                                                                             |
+| `PartialOutput` | `Schema.Struct` and the matching type   | What a command printed before its time limit stopped it: `stdout`, `stderr`, their `Truncated` flags and `DroppedBytes` counts, `mutated?`.   |
+| `StdError`      | `Schema.TaggedError` class              | `{ code, message, path?, base_digest?, current_digest?, method?, rpcError?, stderr?, limitMillis?, output? }`, tagged `@smthrs/std/StdError`. |
+
+A `timeout` from `bash` carries `output`: the command's streams up to the
+moment it was stopped, cut on the same terms as a finished command's.
 
 ```ts
 import { StdError } from "@smthrs/std"
@@ -42605,24 +42622,40 @@ answers differ under the reserved `mutated` key. The harness reads `true` as
 a measured write, the way it reads `invalidProbe` as a measured refusal.
 
 Both measurements ride in the transport call that runs the command: `bash`
-spawns `sh -c <around> sh bash -lc <command>`, so a containerised command is
-one round trip. `around` writes the measurements as the last line of standard
-error and `split` takes them off before the result is returned.
+spawns `sh -c <around> sh <nonce> <deadline-seconds> bash -lc <command>`, so a
+containerised command is one round trip. `around` writes the measurements as
+the last line of standard error, framed with the call's nonce, and `split`
+takes them off before the result is returned. A line framed with any other
+nonce, one the command printed itself included, is the command's own output.
 
-| Export                  | Type                                                | Meaning                                                                                                                                        |
-| ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                                                                                 |
-| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into: every name the search walk skips, including both scratch checkout directories, plus `venv` and `target`. |
-| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                                                                                             |
-| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.                                                                      |
-| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                                                                                 |
-| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
-| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
-| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
-| `marker`                | `"__smithers_tree__"`                               | The word `around` starts its line of standard error with.                                                                                      |
-| `measureSeconds`        | `60`                                                | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
-| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script that measures, runs `"$@"` with its own stdin and streams, measures again and exits with the command's status.          |
-| `split`                 | `(stderr: string) => { stderr, before?, after? }`   | Separates `around`'s last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
+The same script enforces the call's deadline inside the container. At the
+deadline it sends the command `TERM`, then `KILL` after `graceSeconds`, still
+takes the second measurement, and its line says `deadline`, so `bash` fails
+with `timeout` carrying everything the command printed. It starts the command
+with a GNU-compatible `timeout` where the container has one, else `setsid`,
+so the whole process group is stopped; with neither it reaches the command
+alone. A POSIX shell starts the command with `SIGINT` and `SIGQUIT` ignored;
+GNU `env` puts them back where the container has it. The host's own clock is
+a backstop at the deadline plus `overrunSeconds` and one transport round trip.
+
+| Export                  | Type                                                                       | Meaning                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                   | `"mutated"`                                                                | The reserved output key a flow reports a measured write under.                                                                                 |
+| `defaultPrune`          | `ReadonlyArray<string>`                                                    | Directory names never descended into: every name the search walk skips, including both scratch checkout directories, plus `venv` and `target`. |
+| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                                                    | Name suffixes left out, compiled output above all.                                                                                             |
+| `maxPaths`              | `50000`                                                                    | The bound past which a listing is a prefix and reports `complete: false`.                                                                      |
+| `Measurement`           | interface                                                                  | `{ digest, paths, complete }`.                                                                                                                 |
+| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string`                        | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
+| `parse`                 | `(stdout: string) => Measurement \| undefined`                             | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
+| `moved`                 | `(before?, after?) => boolean \| undefined`                                | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
+| `marker`                | `"__smithers_tree__"`                                                      | The word `around` starts its line of standard error with.                                                                                      |
+| `measureSeconds`        | `60`                                                                       | How long one measurement inside `around` may take; a longer one is unmeasured.                                                                 |
+| `graceSeconds`          | `2`                                                                        | How long a command stopped at its deadline has between `TERM` and `KILL`.                                                                      |
+| `overrunSeconds`        | `122`                                                                      | The most `around` adds to its command's deadline: two measurements and the grace.                                                              |
+| `nonce`                 | `Effect<string>`                                                           | Sixteen fresh hex digits that frame one call's line.                                                                                           |
+| `deadlineSeconds`       | `(limitMillis: number) => number`                                          | A deadline in whole seconds, rounded up, at least one.                                                                                         |
+| `around`                | `(options?: { prune?, ignoreSuffixes? }) => string`                        | The POSIX shell script that measures, runs `"$@"` under the deadline with its own stdin and streams, measures again and exits with its status. |
+| `split`                 | `(stderr: string, nonce: string) => { stderr, before?, after?, timedOut }` | Separates the call's last line from the command's standard error; standard error without it is returned whole, unmeasured.                     |
 
 Identity, not content: size and mtime per file, so a rewrite that restores
 both is invisible, exactly as it is to the host walk. Every tool the script

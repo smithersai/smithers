@@ -24,6 +24,7 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import * as FlowBinding from "../src/FlowBinding.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import { compactable } from "../src/internal/compactable.ts"
 import type * as compactionMarks from "../src/internal/compactionMarks.ts"
@@ -547,6 +548,44 @@ console.log(kept)`
       reached: 0,
       text: "Flow worker needs bogus, which is outside this run's capability envelope."
     })
+  })
+
+  it("admits a declaration with a glob only where one grant covers the whole set it names", async () => {
+    // `?` matches the one character `*`, so read as one resource the
+    // declaration fits the grant; read as the set it names, it reaches
+    // `/app/secret.txt`, which the grant never covered.
+    const call = async (envelope: ReadonlyArray<string>, declared: string) => {
+      const { engine, events } = await run({
+        script: [
+          emits(
+            `const answer = await ctx.call("worker", {})
+             ctx.done(answer?.ok === false ? answer.error.message : "ran")`
+          )
+        ],
+        flows: [descriptor("worker", { capabilities: [declared] })],
+        state: { ...state(), capabilityEnvelope: envelope.map(pattern) }
+      })
+      const output = of(events, "resolved")[0]?.message.content[0]
+      return { reached: engine.recorder.calls.length, text: output?.type === "text" ? output.text : "" }
+    }
+
+    expect(await call(["fs:read:/app/?.txt"], "fs:read:/app/*.txt")).toEqual({
+      reached: 0,
+      text: "Flow worker needs fs:read:/app/*.txt, which is outside this run's capability envelope."
+    })
+    expect(await call(["proc:spawn:*"], "proc:spawn:**")).toEqual({
+      reached: 0,
+      text: "Flow worker needs proc:spawn:**, which is outside this run's capability envelope."
+    })
+    // A family action names a set too, even over one literal resource.
+    expect(await call(["fs:read:/app/a.txt"], "fs:*:/app/a.txt")).toEqual({
+      reached: 0,
+      text: "Flow worker needs fs:*:/app/a.txt, which is outside this run's capability envelope."
+    })
+    expect(await call(["fs:*:/app/**"], "fs:*:/app/a.txt")).toEqual({ reached: 1, text: "ran" })
+    expect(await call(["fs:read:/app/**"], "fs:read:/app/*.txt")).toEqual({ reached: 1, text: "ran" })
+    // One capability is still decided exactly: the glob grant matches it.
+    expect(await call(["fs:read:/app/?.txt"], "fs:read:/app/a.txt")).toEqual({ reached: 1, text: "ran" })
   })
 
   it("parks durably when a call needs a permission the run does not hold", async () => {
@@ -1486,6 +1525,51 @@ describe("CellTurn read-only cap", () => {
     expect(texts.at(-1)).toContain("Read-only discipline")
     expect(texts.at(-2)).toContain("realm holds")
     expect(texts.at(-2)).toContain("Calls this run has settled")
+  })
+
+  it("shows a cell what a command printed before its time limit, and lists that call as timed out", async () => {
+    // A test loop that printed one line per case and hung was answered
+    // "Flow bash failed: The command timed out." and nothing else, twice, for
+    // twenty minutes. The flow's binding now keeps what it printed.
+    const output = {
+      stdout: "case 1 ok\ncase 2 ok\n",
+      stderr: "case 3 starting\n",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      stdoutDroppedBytes: 0,
+      stderrDroppedBytes: 0
+    }
+    const bash = FlowBinding.make({
+      flow: {
+        name: "bash",
+        input: Schema.Struct({ command: Schema.String }),
+        output: Schema.Struct({ stdout: Schema.String }),
+        capabilities: [],
+        effects: undefined
+      },
+      handler: () => Effect.fail({ limitMillis: 1_000, output }),
+      publicError: () => "The command timed out after 1000 ms; error.output holds what it printed.",
+      timedOut: (error) => error
+    })
+    const { failure, model } = await run({
+      flows: [bash.descriptor],
+      script: [
+        emits(
+          `const r = await ctx.call("bash", { command: "pytest -x" })\n` +
+            `console.log(r.ok === false ? r.error.code + ":" + r.error.output.stdout : r.stdout)`
+        ),
+        emits(`ctx.done("done")`)
+      ],
+      calls: [{ _tag: "Bound", binding: bash }]
+    })
+    expect(failure).toBeUndefined()
+    // The cell read the output from the failure it was handed.
+    expect(observationsOf(model, 1)).toContain("timeout:case 1 ok\ncase 2 ok")
+    // The next frame's index line says the call timed out and what it holds.
+    expect(stateSection(model.recorder.requests[1])).toContain(
+      "— FAILED: Flow bash failed: The command timed out after 1000 ms; error.output holds what it printed. " +
+        "error.output: stderr=16b stderrDroppedBytes=0 stderrTruncated=false stdout=20b stdoutDroppedBytes=0 stdoutTruncated=false"
+    )
   })
 
   it("records a demanded frame that writes before continuing", async () => {
@@ -5073,6 +5157,30 @@ describe("CellTurn truncated output", () => {
     expect(text).toContain("byte-identical")
     expect(text).toContain("bash cut stdout and dropped 24071 bytes")
     expect(text).toContain("git checkout or git restore")
+  })
+
+  it("refuses a write of bytes a timed-out call's output kept truncated", async () => {
+    // A command stopped at its limit keeps its output cut on the same terms
+    // as a finished one, so the same fragment guard reads it.
+    const timedOut = FlowBinding.make({
+      flow: {
+        name: "bash",
+        input: Schema.Struct({ mode: Schema.String, command: Schema.String }),
+        output: Schema.Struct({ stdout: Schema.String }),
+        capabilities: [],
+        effects: undefined
+      },
+      handler: () => Effect.fail({ limitMillis: 1_000, output: truncatedShellResult.value }),
+      timedOut: (error) => error
+    })
+    const { engine, events } = await run({
+      script: [emits(restoring("write").replace("content: out.stdout", "content: out.error.output.stdout"))],
+      flows: [timedOut.descriptor, ...restoreFlows.slice(1)],
+      calls: [{ _tag: "Bound", binding: timedOut }]
+    })
+    expect(engine.recorder.calls.map((call) => call.flowName)).toEqual(["bash"])
+    const resolved = of(events, "resolved")[0]?.message.content[0]
+    expect(resolved?.type === "text" ? resolved.text : "").toContain("bash cut stdout and dropped 24071 bytes")
   })
 
   it.each(["command", "script"])("refuses an undeclared shell write of truncated data via %s", async (program) => {

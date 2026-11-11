@@ -374,3 +374,30 @@ describe("Cell.callOf and Cell.displayDescriptor", () => {
     })
   })
 })
+
+describe("Cell.callFailure", () => {
+  it("shows a timed-out call's output under error.output, beside the code, message and hint", () => {
+    const output = { stdout: "case 1 ok\n", stderr: "", stdoutTruncated: false }
+    expect(Cell.callFailure(Cell.CallResult.new({
+      outcome: "failure",
+      value: { limitMillis: 1_000, output },
+      code: "timeout",
+      message: "Flow bash failed: The command timed out after 1000 ms."
+    }))).toStrictEqual({
+      ok: false,
+      error: {
+        code: "timeout",
+        message: "Flow bash failed: The command timed out after 1000 ms.",
+        hint: Cell.callFailureHint.timeout,
+        output
+      }
+    })
+  })
+
+  it("adds nothing for a failure that recorded no output", () => {
+    for (const value of [null, { limitMillis: 5 }, "output", ["output"]]) {
+      expect(Cell.callFailure(Cell.CallResult.new({ outcome: "failure", value, code: "timeout", message: "late" })))
+        .toStrictEqual({ ok: false, error: { code: "timeout", message: "late", hint: Cell.callFailureHint.timeout } })
+    }
+  })
+})
