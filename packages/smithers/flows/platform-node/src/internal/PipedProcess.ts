@@ -215,16 +215,22 @@ export const spawn = (
             const fd of [
               physicalFds[1]!,
               physicalFds[2]!,
-              ...descriptors.additional.filter(({ config }) => config.type === "output").map(({ fd }) => fd)
+              ...descriptors.additional.filter(({ config }) => config.type !== "input").map(({ fd }) => fd)
             ]
           ) {
             const pipe = child.stdio[fd]
             pipe?.on("readable", () => {})
+            const duplex = descriptors.additional.some((declared) =>
+              declared.fd === fd && declared.config.type === "duplex"
+            )
+            // A duplex descriptor keeps its writer for the caller, and stays
+            // writable after the child closes its own write side.
+            if (duplex && pipe !== null && pipe !== undefined && "allowHalfOpen" in pipe) pipe.allowHalfOpen = true
             // POSIX sockets can close the unused writer independently. Bun
             // needs this to retain buffered output after child exit. Windows
             // named-pipe shutdown instead starts libuv's EOF timer, which can
             // close both directions before the child writes. Leave it open.
-            if (process.platform !== "win32" && fd > 2 && pipe !== null && pipe !== undefined && "end" in pipe) {
+            else if (process.platform !== "win32" && fd > 2 && pipe !== null && pipe !== undefined && "end" in pipe) {
               pipe.end()
             }
           }
@@ -326,11 +332,12 @@ export const spawn = (
     const inputs = new Map<number, ChildProcessHandle["stdin"]>()
     const outputs = new Map<number, ChildProcessHandle["stdout"]>()
     for (const { fd, config } of descriptors.additional) {
-      if (config.type === "input") {
+      if (config.type !== "input") outputs.set(fd, output(fd, config.sink))
+      if (config.type !== "output") {
         const sink = input(fd)
         inputs.set(fd, sink)
         if (config.stream !== undefined) yield* Stream.run(config.stream, sink).pipe(Effect.forkScoped)
-      } else outputs.set(fd, output(fd, config.sink))
+      }
     }
     const handle = makeHandle({
       pid: ProcessId(state.child.pid!),

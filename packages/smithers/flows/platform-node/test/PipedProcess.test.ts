@@ -68,6 +68,30 @@ const fakeChild = () =>
   })
 
 describe("native pipe adapter", () => {
+  it.skipIf(process.platform === "win32")(
+    "carries both directions over a declared duplex descriptor",
+    async () => {
+      const script =
+        "const net=require('node:net');const socket=new net.Socket({fd:3,readable:true,writable:true,allowHalfOpen:true});let text='';socket.on('data',b=>{text+=b.toString()});socket.on('end',()=>socket.end('echo:'+text))"
+      const result = await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const handle = yield* PipedProcess.spawn(
+            ChildProcess.make(process.execPath, ["-e", script], { additionalFds: { fd3: { type: "duplex" } } }),
+            undefined
+          )
+          return yield* Effect.all([
+            text(handle.getOutputFd(3)),
+            Stream.make(new TextEncoder().encode("ping")).pipe(
+              Stream.run(handle.getInputFd(3)),
+              Effect.andThen(handle.exitCode)
+            )
+          ], { concurrency: "unbounded" })
+        })).pipe(Effect.timeout("5 seconds"))
+      )
+      expect(result).toEqual(["echo:ping", 0])
+    }
+  )
+
   it("rereferencing a native handle restores finalizer ownership", async () => {
     await withNativeFailure(async (child) => {
       child.kill.mockImplementation(() => {

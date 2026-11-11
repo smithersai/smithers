@@ -155,6 +155,27 @@ describe("contained pipeline wiring", () => {
     }).pipe(Effect.provide(test.layer), Effect.scoped)
   })
 
+  it.effect("feeds a duplex destination descriptor and keeps its read side", () => {
+    const test = fixture()
+    const sink = Sink.forEach((_chunk: Uint8Array) => Effect.void) as never
+    return Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      yield* spawner.spawn(ChildProcess.pipeTo(
+        ChildProcess.make("first"),
+        ChildProcess.make("last", [], { additionalFds: { fd7: { type: "duplex", sink } } }),
+        { to: "fd7" }
+      ))
+      const fd = test.commands[1]!.options.additionalFds?.fd7 as {
+        type: string
+        sink: unknown
+        stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>
+      }
+      expect(fd.type).toBe("duplex")
+      expect(fd.sink).toBe(sink)
+      expect(yield* textOf(fd.stream)).toBe("out:first")
+    }).pipe(Effect.provide(test.layer), Effect.scoped)
+  })
+
   for (const failures of [[], ["first"], ["last"], ["first", "last"]]) {
     it.effect(`attempts every leg in reverse order and reports failures ${failures.join(",")}`, () => {
       const test = fixture(failures)

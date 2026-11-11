@@ -33,11 +33,14 @@ const withInput = (
   }
   const fd = to === undefined ? undefined : ChildProcess.parseFdName(to)
   if (fd !== undefined) {
+    const name = ChildProcess.fdName(fd) as `fd${number}`
+    const declared = command.options.additionalFds?.[name]
     return ChildProcess.make(command.command, command.args, {
       ...command.options,
       additionalFds: {
         ...command.options.additionalFds,
-        [ChildProcess.fdName(fd)]: { type: "input", stream }
+        // A duplex target keeps its read side; only its input is replaced.
+        [name]: declared?.type === "duplex" ? { ...declared, stream } : { type: "input", stream }
       }
     })
   }

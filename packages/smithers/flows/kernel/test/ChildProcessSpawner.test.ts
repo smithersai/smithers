@@ -592,7 +592,8 @@ describe("ChildProcessSpawner", () => {
         fd3: { type: "input", stream: Stream.empty },
         fd4: { type: "output", sink: byteSink as never },
         fd5: { type: "input" },
-        fd6: { type: "output" }
+        fd6: { type: "output" },
+        fd7: { type: "duplex", stream: Stream.empty, sink: byteSink as never }
       }
     })
     const right = ChildProcess.make("consumer", ["safe"], {
@@ -618,7 +619,8 @@ describe("ChildProcessSpawner", () => {
               fd3: { type: "input" },
               fd4: { type: "output" },
               fd5: { type: "input" },
-              fd6: { type: "output" }
+              fd6: { type: "output" },
+              fd7: { type: "duplex", stream: Stream.empty, sink: byteSink }
             }
           }
         },

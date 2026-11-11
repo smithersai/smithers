@@ -98,25 +98,20 @@ const snapshotAdditionalFds = (
     }
     const config = descriptor.value as ChildProcess.AdditionalFdConfig
     const type = data(config, "type")
-    if (type === "input") {
-      const stream = Object.getOwnPropertyDescriptor(config, "stream")
-      snapshot[name as `fd${number}`] = Object.freeze({
-        type,
-        ...(stream === undefined ? {} : "value" in stream ? { stream: stream.value } : (() => {
-          throw new TypeError("additional fd stream must be a data property")
-        })())
-      })
-    } else if (type === "output") {
-      const sink = Object.getOwnPropertyDescriptor(config, "sink")
-      snapshot[name as `fd${number}`] = Object.freeze({
-        type,
-        ...(sink === undefined ? {} : "value" in sink ? { sink: sink.value } : (() => {
-          throw new TypeError("additional fd sink must be a data property")
-        })())
-      })
-    } else {
+    if (type !== "input" && type !== "output" && type !== "duplex") {
       throw new TypeError("additional file descriptor type is invalid")
     }
+    const stream = type === "output" ? undefined : Object.getOwnPropertyDescriptor(config, "stream")
+    const sink = type === "input" ? undefined : Object.getOwnPropertyDescriptor(config, "sink")
+    snapshot[name as `fd${number}`] = Object.freeze({
+      type,
+      ...(stream === undefined ? {} : "value" in stream ? { stream: stream.value } : (() => {
+        throw new TypeError("additional fd stream must be a data property")
+      })()),
+      ...(sink === undefined ? {} : "value" in sink ? { sink: sink.value } : (() => {
+        throw new TypeError("additional fd sink must be a data property")
+      })())
+    })
   }
   return Object.freeze(snapshot)
 }
