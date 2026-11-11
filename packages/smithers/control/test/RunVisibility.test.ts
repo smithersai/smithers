@@ -202,7 +202,8 @@ describe("run visibility per principal", () => {
           }),
           signal: rpc.Signal({ runId, signal: { name: "ready", payload: null }, idempotencyKey: `signal:${runId}` }),
           cancel: rpc.Cancel({ runId, reason: "hijack", idempotencyKey: `cancel:${runId}` }),
-          resume: rpc.Resume({ runId, reason: "hijack", idempotencyKey: `resume:${runId}` })
+          resume: rpc.Resume({ runId, reason: "hijack", idempotencyKey: `resume:${runId}` }),
+          runResume: rpc.Run({ _tag: "Resume", runId, idempotencyKey: `run-resume:${runId}`, allowCodeDrift: true })
         })
         const refusals = (rpc: Client, runId: string) =>
           Effect.forEach(
@@ -228,7 +229,8 @@ describe("run visibility per principal", () => {
         return { a, local, others, engine, missing, service, untouched, own, operatorCancel }
       })
     )
-    const refused = (runId: string) => ["steer", "signal", "cancel", "resume"].map((name) => [name, runId] as const)
+    const refused = (runId: string) =>
+      ["steer", "signal", "cancel", "resume", "runResume"].map((name) => [name, runId] as const)
     expect(observed.others).toEqual(refused(observed.a))
     expect(observed.engine).toEqual(refused(observed.local))
     expect(observed.missing).toEqual(refused("run-404"))
