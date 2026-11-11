@@ -109,3 +109,24 @@ describe("physical model call budgets", () => {
     })
   })
 })
+
+// DUR-2: these callbacks run at the durable model step's ledger boundary; they never start an app retry loop.
+for (const phase of ["release", "admit", "record"] as const) {
+  it.live(`reports an unreachable ${phase} after one ledger attempt`, () => effect {
+    let attempts = 0
+    const unavailable = effect () => { attempts += 1; throw new Budget.AccountingUnavailable({ phase: "record", runId: "test", message: "faulty ledger" }) }
+    const ledger = {
+      admit: () => phase === "admit" ? unavailable() : succeed(true),
+      spend: (_day: string, key: string) => (phase === "release" ? key === "run" : phase === "record" && key.startsWith("model/")) ? unavailable().pipe(Effect.asVoid) : Effect.void,
+    }
+    const meter = callBudget(try Effect.orDie(Budget.make({})), ledger, "run", "2026-11-11", ceiling)
+    const outcome = try Effect.result(effect {
+      const receipt = try meter.reserveCall!(request)
+      try meter.recordCall!(receipt, { totalTokens: 7 }, true)
+    })
+    try Effect.try(() => {
+      expect(outcome).toMatchObject({ _tag: "Failure", failure: { _tag: "flows/agent/BudgetAccountingUnavailable" } })
+      expect([attempts, meter.ledgerUnavailable()]).toEqual([1, true])
+    })
+  })
+}

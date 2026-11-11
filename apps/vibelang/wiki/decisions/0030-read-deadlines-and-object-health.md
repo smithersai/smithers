@@ -107,3 +107,28 @@ five-second bound never ran. The workerd suite's host builds plain objects and n
 
 The lane report records the executed commands, counts, exit codes and landed commits. The lead deploys main and
 checks production. This lane does not deploy or claim that the unavailable production storage has been inspected.
+
+## Amendment: physical-call ledger failures (2026-11-11, lane vl-bench resume 8)
+
+`a2de30ee` added an app-level `Effect.retry` to `CallBudget.vibe`: three retries with exponential delays starting at
+50 ms. That violates DUR-2. Remove that retry, rather than adding another retrying step inside the model step's
+provider boundary. Each ledger callback attempts its operation once and fails closed as accounting unavailable.
+An unpaid physical call retains its ceiling; neither a draft nor a reply can claim success after that failure.
+
+The model step seals its answer before accounting. Removing the hidden retry does not reissue a provider call or
+erase its receipt. The existing writer settlement action still owns its two-minute engine policy (`draftSpend`);
+that action settles the run's key and cannot repair a different physical-call key. Thus a physical-call ledger
+outage now ends visibly as `budget` after one failed attempt, not after two minutes. This is an explicit removal
+of the former app retry, not a performance improvement or a claim that the engine retried physical accounting.
+A future physical-accounting retry must be an engine step with a sealed receipt and an engine deadline.
+
+Regression: `test/callBudget.test.vibe` injects an unreachable ledger at parent release, physical admission and
+physical settlement. Every boundary returns accounting unavailable, marks the outage and attempts the ledger once.
+The old code attempts four times and fails these cases. Draft/reviewer/reply regressions check terminal budget
+classification, one provider request and retained reservations. The benchmark's charge-attempt oracle is one.
+No new dependency or retry mechanism.
+
+The earlier draft/reviewer tests failed the first parent release and expected the hidden app retry to recover it.
+Their fault now targets the final run-key settlement only: parent release and physical charge succeed, final
+settlement fails once, and the engine retries that step. Exact phase counts (three run-key attempts, one physical
+charge) and one model request distinguish the engine settlement policy from the removed callback retry.

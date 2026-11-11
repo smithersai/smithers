@@ -1,7 +1,7 @@
 // Each physical provider invocation owns a durable receipt, including reissues inside one model step.
 import { Budget } from "@smthrs/agent"
 import { HarnessError } from "@smthrs/harness"
-import { Clock, Effect, Schedule, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { SecureRandom } from "effect/crypto"
 
 interface Ledger {
@@ -17,7 +17,7 @@ const unavailable = (cause: unknown) => new Budget.AccountingUnavailable({ phase
 
 /** A call meter that also says whether the day's ledger was unreachable during the run. */
 export interface CallBudget extends Budget.Service {
-  /** Whether a ledger operation of this run stayed unavailable through its retries. The harness's error loses the cause's tag. */
+  /** Whether a ledger operation of this run was unavailable. The harness's error loses the cause's tag. */
   readonly ledgerUnavailable: () => boolean
 }
 
@@ -25,11 +25,10 @@ export interface CallBudget extends Budget.Service {
 export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string, admittedDay: string, parentCeiling: number): CallBudget {
   let outage = false
   /**
-   * A ledger operation retried through a brief outage, then reported unavailable. Admission and settlement are keyed
-   * and idempotent (worker/budgetDecision.vibe), so a retry never holds or charges twice.
+   * One ledger attempt, then accounting unavailable. DUR-2: the flow engine owns retries, never this callback.
+   * The model step seals its receipt before recording usage; a failed charge retains its reservation (0030).
    */
   const steady = <A>(operation: Effect.Effect<A, unknown>) => operation.pipe(
-    Effect.retry({ times: 3, schedule: Schedule.exponential("50 millis") }),
     Effect.tapError(() => Effect.sync(() => { outage = true })),
     Effect.mapError(unavailable),
   )

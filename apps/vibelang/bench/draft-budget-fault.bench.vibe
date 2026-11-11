@@ -35,14 +35,14 @@ it("an unreachable budget ends a completed wiki draft visibly without generating
     const ledger = try Ref.get(values)
     try Effect.try(() => {
       expect(answer).toBe("budget")
-      expect(charges).toBeGreaterThan(1)
+      expect(charges).toBe(1)
       expect(counted).toBe(1)
       expect(calls).toBe(1)
       expect(ledger[Budget.SPENT] ?? 0).toBe(0)
       expect(ledger[Budget.RESERVED]).toBe(WIKI_CEILING)
     })
   }))).run({ ...slow, iterations: 1 })
-  await runPromise(artifact("wiki-draft-budget-deadline", "One complete real wiki draft whose model call's charge (`model/<id>`) repeatedly meets an injected faulty Spend service; the run's own release reaches the real budget. Actual agent/QuickJS and scripted HTTP model, production writer and memory flow engine, real wall clock and the call meter's unmodified ledger retries (worker/CallBudget.vibe). Require final budget refusal within a three-minute caller deadline, multiple failed charge attempts, one failure counter, one model request, zero charged tokens and the retained reservation. Setup, policy waits and assertions included.", ["One observation, no tail percentile or throughput claim. The ledger retries dominate the duration. Scripted local model has no inference latency; memory journal/ledger, not workerd/SQLite or real Budget RPC/network failure. No GitHub credential or write."], result))
+  await runPromise(artifact("wiki-draft-budget-deadline", "One complete real wiki draft whose model call's charge (`model/<id>`) meets an injected faulty Spend service; the run's own release reaches the real budget. Actual agent/QuickJS and scripted HTTP model, production writer and memory flow engine, real wall clock and one physical charge attempt (worker/CallBudget.vibe, decision 0030). Require final budget refusal within a three-minute caller deadline, exactly one failed charge attempt, one failure counter, one model request, zero charged tokens and the retained reservation. Setup, policy waits and assertions included.", ["One observation, no tail percentile or throughput claim. The former hidden app retries are removed (DUR-2). Scripted local model has no inference latency; memory journal/ledger, not workerd/SQLite or real Budget RPC/network failure. No GitHub credential or write."], result))
 })
 
 

@@ -12,24 +12,11 @@ import { Unreachable } from "../worker/Unreachable.vibe"
 import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
 import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
-import { ledger, within } from "./support/durableWriters.vibe"
+import { ledger, within, settlementFaultOnce } from "./support/durableWriters.vibe"
 
 const VIP: IssueRequest = { op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples.", example: "case (a, b) -> a", prior: "ML", assignee: "" }
 const PAGE = { page: "roadmap", source: "# Roadmap", ask: "Shorter." }
 const answering = (output: unknown): Scripted => ({ kind: "stream", pieces: [cell(JSON.stringify(output))], prompt: 3, completion: 4 })
-
-/** A day's budget that admits every draft and refuses its first charge, the call's release of the run's hold. */
-function refusingOnce() {
-  const log = { charges: 0 }
-  const spend: Spend.Shape = {
-    admit: () => succeed(true),
-    spend: () => effect {
-      log.charges += 1
-      if (log.charges === 1) throw new Unreachable({ what: "budget" })
-    },
-  }
-  return { log, spend }
-}
 
 /**
  * A day's budget that admits each draft's run, and for each model call either cannot record its charge
@@ -99,14 +86,14 @@ it.live("the wiki agent's draft must be the asked page with text; a failed model
   expect(refused.log).toEqual({ admitted: 1, spent: 0, calls: 0, tokens: 0, unreported: 0 })
 }))
 
-it.live("both writers retry a charge the ledger refuses once, and still answer", () => scoped(effect {
-  const vipBudget = refusingOnce()
+it.live("both writers retry their final settlement through the engine without reissuing a model call", () => scoped(effect {
+  const vipBudget = settlementFaultOnce()
   expect(try parsed(try vip([answering({ title: "T", summary: "S", example: "E", prior: "P" })], vipBudget.spend))).toMatchObject({ title: "T" })
-  // Refused release, its retry, the call's charge, then the run's settlement.
-  expect(vipBudget.log.charges).toBe(4)
-  const wikiBudget = refusingOnce()
+  // Healthy release and physical charge, refused final settlement, then its engine retry.
+  expect(vipBudget.log).toEqual({ charges: 4, runSpends: 3, physicalCharges: 1 })
+  const wikiBudget = settlementFaultOnce()
   expect(try parsed(try wiki([answering({ page: "roadmap", text: "# R\n" })], wikiBudget.spend))).toEqual({ page: "roadmap", text: "# R\n" })
-  expect(wikiBudget.log.charges).toBe(4)
+  expect(wikiBudget.log).toEqual({ charges: 4, runSpends: 3, physicalCharges: 1 })
 }))
 
 it.live("an agent seam without a model refuses no-model when asked directly", () => scoped(effect {
