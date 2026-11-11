@@ -4,26 +4,30 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import { spawn, spawnSync } from "node:child_process"
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
-import { pidDirectory } from "../src/internal/pidDirectory.ts"
+import { userPidDirectory } from "../src/internal/pidDirectory.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-command-sandbox-")))
+const pidDirectory = userPidDirectory(String(process.getuid!()))
 afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
@@ -374,6 +378,46 @@ describe("CommandSandbox", () => {
       }).pipe(Effect.provide(platform)),
     30_000
   )
+
+  it.effect("keeps pidfiles in a directory private to the user", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      mkdirSync(pidDirectory, { recursive: true })
+      chmodSync(pidDirectory, 0o777)
+      const session = yield* CommandSandbox.make({ spawner, prefix: [], workdir: join(root, "private") }).acquire(
+        "private"
+      )
+      expect(statSync(pidDirectory).mode & 0o777).toBe(0o700)
+      chmodSync(pidDirectory, 0o777)
+      expect(yield* (yield* session.spawn("true", {})).exitCode).toBe(0)
+      expect(statSync(pidDirectory).mode & 0o777).toBe(0o700)
+    }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
+
+  it.effect("refuses a pidfile directory another user owns, and one with no user id", () =>
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner
+      const user = (name: string, uid: string) => {
+        const bin = join(root, `id-${name}`)
+        mkdirSync(bin, { recursive: true })
+        writeFileSync(join(bin, "id"), `#!/bin/sh\necho ${uid}\n`, { mode: 0o755 })
+        return CommandSandbox.make({ spawner, prefix: ["env", `PATH=${bin}:/usr/bin:/bin`], workdir: join(root, name) })
+      }
+      // This user creates the directory, so it belongs to someone other than the user `id` names.
+      const other = "4294967294"
+      const planted = userPidDirectory(other)
+      yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(planted, { recursive: true, force: true })))
+      const refused = yield* Effect.flip(user("foreign", other).acquire("foreign"))
+      expect(refused).toMatchObject({
+        code: "unavailable",
+        message: `env's pidfile directory ${planted} is not private to user ${other}`
+      })
+      expect(readdirSync(planted)).toEqual([])
+      expect(existsSync(join(root, "foreign"))).toBe(false)
+      expect(yield* Effect.flip(user("nameless", "nobody").acquire("nameless"))).toMatchObject({
+        code: "unavailable",
+        message: "env reported no numeric user id"
+      })
+    }).pipe(Effect.scoped, Effect.provide(platform)), 30_000)
 
   it.effect("serves the GNU metadata operations only to a Linux guest", () =>
     Effect.gen(function*() {

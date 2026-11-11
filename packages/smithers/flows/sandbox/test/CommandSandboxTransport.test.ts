@@ -14,9 +14,11 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { afterAll } from "vitest"
 import * as CommandSandbox from "../src/CommandSandbox/index.ts"
-import { pidDirectory } from "../src/internal/pidDirectory.ts"
+import { userPidDirectory } from "../src/internal/pidDirectory.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import { platform } from "./helpers/containedPlatform.ts"
+
+const pidDirectory = userPidDirectory(String(process.getuid!()))
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sandbox-transport-")))
 afterAll(() => rmSync(root, { recursive: true, force: true }))

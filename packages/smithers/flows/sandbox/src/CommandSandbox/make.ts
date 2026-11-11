@@ -18,7 +18,7 @@ import { execSession } from "../internal/execSession.ts"
 import { finalizeWithin } from "../internal/finalizeWithin.ts"
 import { linuxFileSystem } from "../internal/linuxFileSystem.ts"
 import { gather, type GatheredRun } from "../internal/localProcess.ts"
-import { pidDirectory } from "../internal/pidDirectory.ts"
+import { userPidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { Provider } from "../Sandbox/Provider.ts"
@@ -124,10 +124,24 @@ export const make = (options: CommandSandboxOptions): Provider => {
   return {
     acquire: (id) =>
       Effect.gen(function*() {
-        const probed = yield* run(shell(`uname -s; ${bootProbe}`))
-        const [kernel, ...rest] = new TextDecoder().decode(probed.stdout).split("\n")
+        const probed = yield* run(shell(`uname -s; id -u; ${bootProbe}`))
+        const [kernel, uid = "", ...rest] = new TextDecoder().decode(probed.stdout).split("\n")
         let boot = rest.join("").trim()
-        const pids = `${pidDirectory}/${sessionSlug(id)}`
+        if (!/^[0-9]+$/.test(uid)) return yield* Effect.fail(unreachable(`${name} reported no numeric user id`))
+        // The machine may be shared with other users, and a directory another
+        // user owns could have its pidfiles swapped for links or foreign pids.
+        // Every command first makes the user's own directory private and
+        // refuses one the user does not own; /tmp's sticky bit keeps others
+        // from replacing it after the check.
+        const base = userPidDirectory(uid)
+        const pids = `${base}/${sessionSlug(id)}`
+        const ownPids =
+          `(umask 077 && mkdir -p ${base} && set -- $(ls -ldn ${base}) && [ "$3" = ${uid} ] && chmod 700 ${base} && ` +
+          `mkdir -p ${pids})`
+        const owned = yield* run(shell(ownPids))
+        if (owned.code !== 0) {
+          return yield* Effect.fail(unreachable(`${name}'s pidfile directory ${base} is not private to user ${uid}`))
+        }
         const silent = unreachable(`${name} stopped answering; the command may still be running there`)
         const restarted = unreachable(`${name} restarted; the command it was running is gone`)
         /** The pidfile of each spawned command's argv, whose boot id sits beside it. */
@@ -218,13 +232,14 @@ export const make = (options: CommandSandboxOptions): Provider => {
           launch: watched,
           shell,
           // Every step must succeed before the command runs: a missing cwd
-          // runs nothing. The pid directory is made again per command, since
-          // a restart wipes /tmp, and the command records the boot it runs on.
+          // runs nothing. The pid directory is made and checked again per
+          // command, since a restart wipes /tmp, and the command records the
+          // boot it runs on.
           spawn: ({ command, cwd, pidfile, record }) => {
             const argv = shell(
               [
                 `cd ${CommandLine.quote(cwd)}`,
-                `mkdir -p ${pids}`,
+                ownPids,
                 `(${bootProbe}) > ${pidfile}.boot`,
                 ...record,
                 `{ ${command}\n}`

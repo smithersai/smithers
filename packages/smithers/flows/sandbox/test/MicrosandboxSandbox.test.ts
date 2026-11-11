@@ -16,6 +16,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { credentialFiles } from "../src/internal/credentialFiles.ts"
 import { elapsed } from "../src/internal/deadline.ts"
 import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import * as MicrosandboxSandbox from "../src/MicrosandboxSandbox/index.ts"
@@ -2690,6 +2691,35 @@ describe("MicrosandboxSandbox snapshots", () => {
       expect(holding(fake.snapshots.get("base.1")!.disk!, token)).toEqual([])
     }))
 
+  it.effect("removes every credential-only file of every home before capture, with no secret registered", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      fake.plant("prepared", ownership("installation-a", "host"))
+      const disk = fake.machineRoot("prepared")
+      // An interactive sign-in the host never held, so it cannot be listed in `secrets`.
+      for (const home of ["root", "home/dev"]) {
+        for (const file of [...credentialFiles, ".config/anthropic/key"]) {
+          mkdirSync(join(disk, home, file, ".."), { recursive: true })
+          if (file !== ".config/anthropic") writeFileSync(join(disk, home, file), "signed-in")
+        }
+        writeFileSync(join(disk, home, ".ssh", "id_ed25519.pub"), "ssh-ed25519 AAAA")
+      }
+      expect(
+        yield* MicrosandboxSandbox.captureSnapshot({
+          sdk: fake.sdk,
+          machine: "prepared",
+          family: "base",
+          member: "1",
+          secrets: []
+        })
+      ).toBe("base.1")
+      const captured = fake.snapshots.get("base.1")!.disk!
+      for (const home of ["root", "home/dev"]) {
+        for (const file of credentialFiles) expect(existsSync(join(captured, home, file))).toBe(false)
+        expect(readFileSync(join(captured, home, ".ssh", "id_ed25519.pub"), "utf8")).toBe("ssh-ed25519 AAAA")
+      }
+    }))
+
   it.effect("searches for a multi-line secret's longest line, so an armor line elsewhere does not refuse", () =>
     Effect.gen(function*() {
       const fake = fakeSdk()
@@ -2757,10 +2787,15 @@ describe("MicrosandboxSandbox snapshots", () => {
 
   it.effect("refuses to capture a disk it could not scrub, with the guest's words", () =>
     Effect.gen(function*() {
-      const fake = fakeSdk()
+      let locked = ""
+      // The removal of the machine may delete what the scrub could not.
+      const fake = fakeSdk({ destroyFailure: () => void chmodSync(locked, 0o700) })
       fake.plant("prepared", ownership("installation-a", "host"))
-      // A directory where a credential file belongs: `rm -f` cannot remove it.
-      mkdirSync(join(fake.machineRoot("prepared"), "root", ".netrc"), { recursive: true })
+      // A credential file in a directory the scrub cannot write: `rm` cannot remove it.
+      locked = join(fake.machineRoot("prepared"), "root", ".aws")
+      mkdirSync(locked, { recursive: true })
+      writeFileSync(join(locked, "credentials"), "signed-in")
+      chmodSync(locked, 0o500)
       const refused = yield* Effect.flip(
         MicrosandboxSandbox.captureSnapshot({
           sdk: fake.sdk,
@@ -2772,7 +2807,7 @@ describe("MicrosandboxSandbox snapshots", () => {
       )
       expect(refused.code).toBe("unavailable")
       expect(refused.message).toMatch(
-        /^microsandbox: the disk of prepared could not be scrubbed of credentials \(exit 2\): rm: .*\.netrc/
+        /^microsandbox: the disk of prepared could not be scrubbed of credentials \(exit 2\): rm: .*\.aws\/credentials/
       )
       expect(fake.snapshots.size).toBe(0)
       expect(fake.machines.has("prepared")).toBe(false)

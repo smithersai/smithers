@@ -15,6 +15,14 @@
 
 ### Security
 
+- `MicrosandboxSandbox.captureSnapshot` and `DirectorySandbox` forks remove one shared list of credential-only home
+  files. Capture now also removes `.claude.json`, `.claude.json.backup`, `.config/anthropic`, and the SSH private keys
+  `ssh` reads by default; forks now also leave behind git, netrc, PyPI, GitHub CLI, Cargo, AWS, Google Cloud, Gemini,
+  Copilot, and OpenCode credentials and those SSH keys (#4685).
+- `CommandSandbox` keeps pidfiles under `/tmp/.smthrs-sbx-<uid>`, made mode `0700` by `acquire` and every command, and
+  refuses with `unavailable` a directory another user owns, so another user of a shared machine cannot redirect pidfile
+  writes or signals. The guest needs `id` (#4685).
+
 - `MicrosandboxSandbox` drops the `scripts` option: the pinned runtime rewrites registered scripts in the
   guest-writable `/.msb` share by path, so a guest link there could redirect the write to a host file (#3252).
 

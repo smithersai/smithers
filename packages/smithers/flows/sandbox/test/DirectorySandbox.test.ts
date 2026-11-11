@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
+import { credentialFiles } from "../src/internal/credentialFiles.ts"
 import type { RemoteProcess } from "../src/RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import * as Sandbox from "../src/Sandbox/index.ts"
@@ -368,7 +369,7 @@ describe("DirectorySandbox", () => {
     budget
   )
 
-  it.effect("forks without vendor sign-ins, and keeps concurrent batches apart", () =>
+  it.effect("forks without credential files, and keeps concurrent batches apart", () =>
     Effect.gen(function*() {
       const directory = yield* provider
       const { fs } = yield* services
@@ -376,9 +377,12 @@ describe("DirectorySandbox", () => {
       yield* Effect.scoped(
         Effect.gen(function*() {
           const parent = yield* directory.acquire("fan/home")
-          yield* parent.writeFile(`${parent.workdir}/.codex/auth.json`, encode("{}"))
-          yield* parent.writeFile(`${parent.workdir}/.claude.json`, encode("{}"))
-          yield* parent.writeFile(`${parent.workdir}/.config/anthropic/key`, encode("sk"))
+          for (
+            const login of [...credentialFiles.filter((file) => file !== ".config/anthropic"), ".config/anthropic/key"]
+          ) {
+            yield* parent.writeFile(`${parent.workdir}/${login}`, encode("signed-in"))
+          }
+          yield* parent.writeFile(`${parent.workdir}/.ssh/id_ed25519.pub`, encode("kept"))
           yield* parent.writeFile(`${parent.workdir}/.codex/config.toml`, encode("kept"))
           const first = yield* Effect.scoped(
             Effect.gen(function*() {
@@ -387,10 +391,11 @@ describe("DirectorySandbox", () => {
               // The inner batch closed; the outer child is untouched.
               expect(yield* fs.exists(other!.workdir)).toBe(false)
               expect(yield* fs.exists(child!.workdir)).toBe(true)
-              for (const login of [".codex/auth.json", ".claude.json", ".config/anthropic/key"]) {
+              for (const login of credentialFiles) {
                 expect(yield* fs.exists(`${child!.workdir}/${login}`)).toBe(false)
               }
               expect(yield* fs.readFileString(`${child!.workdir}/.codex/config.toml`)).toBe("kept")
+              expect(yield* fs.readFileString(`${child!.workdir}/.ssh/id_ed25519.pub`)).toBe("kept")
               return child!
             })
           )

@@ -20,6 +20,7 @@
 import * as Effect from "effect/Effect"
 import { attemptIn } from "../internal/attempt.ts"
 import { encodeBase64 } from "../internal/base64.ts"
+import { credentialFiles } from "../internal/credentialFiles.ts"
 import { recordedNetwork } from "../internal/microsandboxNetwork.ts"
 import { runGuest } from "../internal/microsandboxProcess.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
@@ -68,32 +69,6 @@ export const snapshotFamily = (name: string): string | undefined => {
 }
 
 /**
- * Files that hold nothing but credentials, relative to a home directory:
- * git's store, netrc, PyPI, GitHub CLI, Cargo, AWS, Google Cloud, and the
- * agent CLIs' sign-ins.
- * {@link captureSnapshot} removes these from every home before it captures.
- * Files that mix credentials with configuration, such as `.npmrc` or Docker's
- * `config.json`, stay; the secret search refuses one that holds a token.
- */
-const credentialFiles: ReadonlyArray<string> = [
-  ".git-credentials",
-  ".netrc",
-  ".pypirc",
-  ".config/gh/hosts.yml",
-  ".cargo/credentials.toml",
-  ".aws/credentials",
-  ".config/gcloud/application_default_credentials.json",
-  ".config/gcloud/credentials.db",
-  ".config/gcloud/access_tokens.db",
-  ".claude/.credentials.json",
-  ".codex/auth.json",
-  ".gemini/oauth_creds.json",
-  ".config/github-copilot/hosts.json",
-  ".config/github-copilot/apps.json",
-  ".local/share/opencode/auth.json"
-]
-
-/**
  * Removes {@link credentialFiles} from `/root` and every `/home/*`, then,
  * with patterns on standard input, lists every file under `/` outside the
  * kernel's own trees whose bytes hold one: grep exits 0 with a list, 1 with
@@ -102,7 +77,7 @@ const credentialFiles: ReadonlyArray<string> = [
  */
 const scrubScript = (search: boolean): string =>
   [
-    `for home in root home/*; do rm -f -- ${
+    `for home in root home/*; do rm -rf -- ${
       credentialFiles.map((file) => `"$home/${file}"`).join(" ")
     } || exit 2; done`,
     ...search
@@ -279,7 +254,8 @@ export interface CaptureOptions {
  * the disk would reach all of them. Before the capture the machine is started
  * if stopped, the credential files of `/root` and every `/home/*` are removed
  * (git's store, `.netrc`, `.pypirc`, GitHub CLI, Cargo, AWS, Google Cloud,
- * and the Claude, Codex, Gemini, Copilot, and OpenCode sign-ins), and the
+ * the Claude, Anthropic, Codex, Gemini, Copilot, and OpenCode sign-ins, and
+ * the SSH private keys `ssh` reads by default), and the
  * whole disk is searched for the longest line of every value in `secrets`,
  * raw, base64 or base64url at any alignment, percent-encoded, or
  * JSON-escaped; a value still found anywhere
