@@ -19,12 +19,15 @@ export effect function update(owner: string, repo: string, number: number, input
   return try client.request("PATCH", path, input, { schema: WithAssignees, retryUnsafeWrites: true })
 }
 
-/** Add a GitHub sub-issue by its numeric database ID, moving it only when explicitly requested. */
-export effect function link(owner: string, repo: string, parent: number, childId: number) {
+/**
+ * Add a GitHub sub-issue by its numeric database ID. A child that already has a parent moves only with
+ * `replaceParent: true`; otherwise GitHub refuses the link.
+ */
+export effect function link(owner: string, repo: string, parent: number, childId: number, options: { readonly replaceParent?: boolean } = {}) {
   const client = try GitHubClient
   const path = try issuePath(owner, repo, parent)
   if (!Number.isSafeInteger(childId) || childId <= 0) throw new IntegrationError("invalid-config", "Expected a sub-issue ID.", { retryable: false })
-  return try client.request("POST", `${path}/sub_issues`, { sub_issue_id: childId, replace_parent: true }, { schema: Issue })
+  return try client.request("POST", `${path}/sub_issues`, { sub_issue_id: childId, replace_parent: options.replaceParent === true }, { schema: Issue })
 }
 
 /** Read assignments without changing the established Issue codec's public shape. */

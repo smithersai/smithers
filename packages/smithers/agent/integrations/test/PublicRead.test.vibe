@@ -166,6 +166,33 @@ describe("a signed-out read through smithers.sh", () => {
     })
   })
 
+  it.effect("a repository made private or delisted drops the copy: smithers.sh's forbidden is never served stale", () => effect {
+    const world: World = { seen: [], answer: () => ok(file("hello")) }
+    let reason: PublicRead.Reason | undefined = undefined
+    const token: PublicRead.Token = (read) => reason === undefined ? installationToken(read) : Effect.fail(new PublicRead.PublicReadRefused({ reason }))
+    const network = broker(world, { token })
+    const store = try ReadCache.memoryStore()
+    const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
+    const client = try ReadCache.make({ store, upstream: transport })
+    const readme = ReadCache.observeStale(GitHub.Contents.getText("smithersai", "vibelang", "README.md").pipe(GitHub.Calls.withToken(Redacted.make(""), api), Effect.provideService(HttpClient.HttpClient, client)))
+    try readme
+    try TestClock.adjust("1 minute")
+    reason = "unavailable"
+    const unavailable = try readme
+    try TestClock.adjust("1 minute")
+    reason = "forbidden"
+    const forbidden = try Effect.flip(readme)
+    reason = undefined
+    network.state.down = true
+    const after = try Effect.flip(readme)
+    try Effect.try(() => {
+      expect([Option.getOrUndefined(unavailable.value)?.text, unavailable.stale]).toEqual(["hello", 0])
+      expect(forbidden.details?.["status"]).toBe(403)
+      expect(after.details?.["status"]).toBeUndefined()
+      expect(world.seen).toHaveLength(1)
+    })
+  })
+
   it.effect("a server error serves the copy stale, and a changed file replaces it", () => effect {
     const world: World = { seen: [], answer: () => ok(file("hello")) }
     const site = try siteOver(world)
@@ -423,13 +450,19 @@ describe("the site's transport", () => {
     })
   })
 
-  it.effect("a refusal from smithers.sh fails the read; it is never GitHub's answer", () => effect {
+  it.effect("smithers.sh's forbidden answers as its 403, never GitHub's; any other refusal fails the read", () => effect {
     const world: World = { seen: [], answer: () => ok({ id: 11 }) }
     const network = broker(world)
     const transport = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, network.http))
-    const refused = try Effect.flip(transport.execute(HttpClientRequest.get(api + "/repos/smithersai/smithers")))
+    const tokenless = broker(world, { token: () => Effect.fail(new PublicRead.PublicReadRefused({ reason: "unavailable" })) })
+    const refusing = try PublicRead.site({ origin, brokerOrigin, secret }).pipe(Effect.provideService(HttpClient.HttpClient, tokenless.http))
+    const forbidden = try transport.execute(HttpClientRequest.get(api + "/repos/smithersai/smithers"))
+    const unavailable = try Effect.flip(refusing.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang")))
+    const tooLarge = try Effect.flip(transport.execute(HttpClientRequest.get(api + "/repos/smithersai/vibelang/contents/" + "a".repeat(PublicRead.MAX_BODY))))
     try Effect.try(() => {
-      expect(refused._tag).toBe("HttpClientError")
+      expect([forbidden.status, forbidden.headers[PublicRead.REFUSAL], forbidden.headers[PublicRead.ANSWERED]]).toEqual([403, "forbidden", undefined])
+      expect(unavailable._tag).toBe("HttpClientError")
+      expect(tooLarge._tag).toBe("HttpClientError")
       expect(world.seen).toEqual([])
     })
   })
@@ -577,7 +610,24 @@ describe("smithers.sh's installation tokens", () => {
     const renewed = try token(reads[0]!)
     try Effect.try(() => {
       expect([Redacted.value(first), Redacted.value(kept), Redacted.value(renewed)]).toEqual(["minted-1", "minted-1", "minted-2"])
-      expect(world.seen.map((seen) => [seen.path, seen.authorization])).toEqual([["/repos/smithersai/vibelang", "Bearer minted-1"], ["/repos/smithersai/vibelang", "Bearer minted-2"]])
+      // Each use past a minute confirms visibility again with the held token.
+      expect(world.seen.map((seen) => [seen.path, seen.authorization])).toEqual([["/repos/smithersai/vibelang", "Bearer minted-1"], ["/repos/smithersai/vibelang", "Bearer minted-1"], ["/repos/smithersai/vibelang", "Bearer minted-2"]])
+    })
+  })
+  it.effect("a repository made private is refused within a minute, though its held token still reads it", () => effect {
+    const state: App = { mints: 0, repository: { id: 11, private: false }, expiresAt: 3_600_000 }
+    const { world, token } = try tokens(state)
+    try token(reads[0]!)
+    state.repository = { id: 11, private: true }
+    try TestClock.adjust("59 seconds")
+    const held = try token(reads[0]!)
+    try TestClock.adjust("2 seconds")
+    const hidden = try Effect.flip(token(reads[0]!))
+    state.repository = { id: 11, private: false }
+    const reopened = try token(reads[0]!)
+    try Effect.try(() => {
+      expect([Redacted.value(held), hidden.reason, Redacted.value(reopened)]).toEqual(["minted-1", "forbidden", "minted-2"])
+      expect(world.seen.map((seen) => seen.authorization)).toEqual(["Bearer minted-1", "Bearer minted-1", "Bearer minted-2"])
     })
   })
   it.effect("refuses a repository whose id changed or that is private, and says unavailable when GitHub fails", () => effect {

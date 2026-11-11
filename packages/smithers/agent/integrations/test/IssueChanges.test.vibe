@@ -93,6 +93,24 @@ describe("issue changes over a real socket", () => {
     try promise(() => fixture.close())
   })
 
+  it.effect("links a sub-issue without taking it from its current parent unless asked to", () => effect {
+    const fixture = try promise(() => startFixture((request, response) => {
+      if (request.method === "POST" && request.url === "/repos/o/r/issues/5/sub_issues") return json(response, 201, wireIssue)
+      json(response, 404, { message: "Not Found" })
+    }))
+    provide GitHub.GitHubClient.layer({ token: "person-only", apiBaseUrl: fixture.origin }, {}).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      try GitHub.IssueChanges.link("o", "r", 5, 77)
+      try GitHub.IssueChanges.link("o", "r", 5, 78, { replaceParent: true })
+      try Effect.try(() => {
+        const posts = fixture.requests.filter((request) => request.method === "POST").map((request) => JSON.parse(request.body))
+        expect(posts).toEqual([{ sub_issue_id: 77, replace_parent: false }, { sub_issue_id: 78, replace_parent: true }])
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
   it.effect("rejects a non-positive sub-issue id before any request", () => effect {
     const faulty: GitHub.GitHubClient.GitHubClient = {
       request: () => Effect.die("Unexpected request"), count: () => Effect.die("Unexpected count"),

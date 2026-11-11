@@ -114,9 +114,10 @@ describe("starting a request", () => {
     expect(begin(first.state, T0, "core")).toEqual({ admitted: false, reason: "budget", until: T0 + 60_000 })
     // Another resource's budget is its own.
     expect(begin(first.state, T0, "graphql").admitted).toBe(true)
-    // A window that has reset no longer binds, and is not spent.
+    // A window that has reset no longer binds, and is not spent; the request still counts in flight.
     const reset = begin(first.state, T0 + 60_000, "core")
-    expect(reset.admitted && reset.state).toBe(first.state)
+    expect(reset.admitted && reset.state.budgets).toBe(first.state.budgets)
+    expect(reset.admitted && reset.state.inFlight).toEqual({ core: 2 })
     expect(currentBudget(first.state, T0 + 60_000, "core")).toBeUndefined()
   })
 })
@@ -139,12 +140,12 @@ describe("finishing a request", () => {
     expect(state.budgets["core"]).toEqual({ limit: 5000, remaining: 4999, resetAt: T0 + 3_600_000 })
   })
 
-  it("keeps the lower count within a window, replaces it in a new one, and ignores a late answer", () => {
+  it("follows GitHub's count within a window and in a new one, and ignores a late answer", () => {
     const at = (remaining: string, reset: number) =>
       headers({ "x-ratelimit-limit": "5000", "x-ratelimit-remaining": remaining, "x-ratelimit-reset": resetIn(reset) })
     const base: State = { ...emptyState, budgets: { core: { limit: 5000, remaining: 10, resetAt: T0 + 60_000 } } }
     const same = finish(base, T0, { resource: "core", limited: false, headers: at("12", 60_000) }, limits).state
-    expect(same.budgets["core"]?.remaining).toBe(10)
+    expect(same.budgets["core"]?.remaining).toBe(12)
     const lower = finish(base, T0, { resource: "core", limited: false, headers: at("3", 60_000) }, limits).state
     expect(lower.budgets["core"]?.remaining).toBe(3)
     const next = finish(base, T0, { resource: "core", limited: false, headers: at("4999", 120_000) }, limits).state
@@ -155,6 +156,56 @@ describe("finishing a request", () => {
     const expired =
       finish(base, T0 + 60_000, { resource: "core", limited: false, headers: at("7", 61_000) }, limits).state
     expect(expired.budgets["core"]?.remaining).toBe(7)
+  })
+
+  it("never drains on requests GitHub did not charge: 304s that report the same count, and sends with no response", () => {
+    const at = headers({
+      "x-ratelimit-limit": "5000",
+      "x-ratelimit-remaining": "4999",
+      "x-ratelimit-reset": resetIn(3_600_000)
+    })
+    let state = finish(emptyState, T0, { resource: "core", limited: false, headers: at }, limits).state
+    for (let request = 0; request < 5000; request++) {
+      const admission = begin(state, T0 + request, "core")
+      if (!admission.admitted) throw new Error(`refused at request ${request}: ${admission.reason}`)
+      state = finish(admission.state, T0 + request, { resource: "core", limited: false, headers: at }, limits).state
+    }
+    expect(state.budgets["core"]?.remaining).toBe(4999)
+    const lost = begin(state, T0, "core")
+    if (!lost.admitted) throw new Error("expected admission")
+    expect(lost.state.budgets["core"]?.remaining).toBe(4998)
+    expect(finish(lost.state, T0, { resource: "core", limited: false }, limits).state.budgets["core"]?.remaining).toBe(
+      4999
+    )
+  })
+
+  it("subtracts the requests still in flight from GitHub's count", () => {
+    const at = (remaining: string) =>
+      headers({ "x-ratelimit-limit": "5000", "x-ratelimit-remaining": remaining, "x-ratelimit-reset": resetIn(60_000) })
+    let state: State = emptyState
+    for (let request = 0; request < 3; request++) {
+      const admission = begin(state, T0, "core")
+      if (!admission.admitted) throw new Error("expected admission")
+      state = admission.state
+    }
+    expect(state.inFlight).toEqual({ core: 3 })
+    state = finish(state, T0, { resource: "core", limited: false, headers: at("100") }, limits).state
+    expect([state.budgets["core"]?.remaining, state.inFlight]).toEqual([98, { core: 2 }])
+    state = finish(state, T0, { resource: "core", limited: false, headers: at("1") }, limits).state
+    expect(state.budgets["core"]?.remaining).toBe(0)
+    state = finish(state, T0, { resource: "core", limited: false, headers: at("1") }, limits).state
+    expect([state.budgets["core"]?.remaining, state.inFlight]).toEqual([1, { core: 0 }])
+    // A response that names another resource has none of that resource's requests in flight.
+    const named = headers({
+      "x-ratelimit-limit": "30",
+      "x-ratelimit-remaining": "29",
+      "x-ratelimit-reset": resetIn(60_000),
+      "x-ratelimit-resource": "search"
+    })
+    expect(
+      finish(state, T0, { resource: "core", limited: false, headers: named }, limits).state.budgets["search"]?.remaining
+    )
+      .toBe(29)
   })
 
   it("ignores missing, malformed, or past budget headers", () => {

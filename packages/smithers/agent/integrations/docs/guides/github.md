@@ -307,7 +307,8 @@ the shape.
 
 `GitHub.Calls.withToken` supplies an explicit redacted user credential and never reads an ambient token.
 Smithers' app reuses this wrapper. `GitHub.IssueChanges.get` reads assignments, `update` changes supplied labels,
-assignees or state, and `link` writes GitHub's sub-issue relationship by the child's database ID. Coordinates are
+assignees or state, and `link` writes GitHub's sub-issue relationship by the child's database ID. A child that already has a parent
+moves only with `{ replaceParent: true }`; otherwise GitHub refuses the link. Coordinates are
 validated before a credential-bearing request. An ambiguous link is reported as an unknown outcome; the client
 does not repeat it. Use a durable step and reconcile from GitHub before another write.
 

@@ -79,7 +79,7 @@ run("a private repository is never read, even when the registry lists it", Effec
   github.private = true
   const { setup, http } = yield* configuredWith(github)
   const failure = yield* Effect.flip(readme(yield* siteOver(setup, http)))
-  expect(failure.details?.["status"]).toBeUndefined()
+  expect(failure.details?.["status"]).toBe(403)
   expect(github.calls.filter((call) => call.path.includes("/contents/"))).toEqual([])
 }))
 
@@ -112,6 +112,6 @@ run("a site with no reads signs in and reads nothing", Effect.gen(function*() {
   const { setup, http } = yield* configuredWith(github, { HOSTED_AUTH_SITES: JSON.stringify([{ origin: site, secret }]) })
   expect(setup?.sites).toEqual([{ origin: site, secret: expect.anything(), reads: [] }])
   const failure = yield* Effect.flip(readme(yield* siteOver(setup, http)))
-  expect(failure.details?.["status"]).toBeUndefined()
+  expect(failure.details?.["status"]).toBe(403)
   expect(github.minted).toEqual([])
 }))

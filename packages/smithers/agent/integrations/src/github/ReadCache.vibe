@@ -1,6 +1,7 @@
 // A hosted site's cache of public GitHub reads (decision 0165, public reads). Every GET is kept with its ETag and
 // revalidated with a conditional request, which GitHub answers 304 at no rate-limit cost. When GitHub or smithers.sh
-// refuses, the last good copy answers, marked stale. A request to GitHub, once sent, runs to its end detached from the
+// cannot answer, the last good copy answers, marked stale; when either says the page is gone or no longer public, the
+// copy is dropped. A request to GitHub, once sent, runs to its end detached from the
 // reader and is shared by every reader of its URL, so a reader that stops waiting (its patience spent, or its own
 // deadline) still leaves GitHub's answer stored for the next.
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
@@ -12,6 +13,8 @@ export const FRESH_FOR = 30_000
 export const MAX_ENTRY = 1_048_576
 /** On a stale answer: when GitHub last confirmed the copy, in milliseconds since the epoch. */
 export const STALE = "x-smithers-stale"
+/** On smithers.sh's own refusal of a public read, never on GitHub's answer: `forbidden` or `unavailable`. */
+export const REFUSAL = "x-smithers-refusal"
 export type Outcome = "fresh" | "revalidated" | "stored" | "stale" | "slow" | "dropped" | "too_large" | "miss_failed"
 
 /** The site's storage. A failure is a miss, never a failed read: implementations catch their own. */
@@ -117,7 +120,8 @@ export effect function make(options: { readonly store: Store; readonly upstream:
       }
       return { _tag: "answer", status: 200, headers, text } as Settled
     }
-    if ((response.status === 404 || response.status === 410) && entry !== undefined) {
+    // Gone, or smithers.sh will no longer read it (made private, delisted): no copy outlives it.
+    if ((response.status === 404 || response.status === 410 || headers[REFUSAL] === "forbidden") && entry !== undefined) {
       try options.store.remove(key)
       try record("dropped")
     }

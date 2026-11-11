@@ -452,8 +452,10 @@ The limiter the [GitHub proxy](#githubproxy) runs for each principal, so a
 machine stays inside GitHub's documented limits. Before a request it waits for
 a write slot (`POST`, `PATCH`, `PUT`, `DELETE`: 1 s apart, at most 80 a minute
 and 500 an hour), a concurrency permit (50), the pause a limit response
-imposed, and the primary budget of the request's resource, modeled from every
-response's `x-ratelimit-*` headers. A `403` or `429` limit response pauses
+imposed, and the primary budget of the request's resource, modeled as the latest
+response's `x-ratelimit-remaining` less the requests still in flight, so a
+request GitHub does not charge (a `304`, or one that never got a response)
+does not drain it. A `403` or `429` limit response pauses
 every caller: for `retry-after`, until `x-ratelimit-reset` when the budget is
 spent, or for at least a minute, doubling while limits persist. A wait longer
 than `maxWait` fails `rate-limited` without running the request.

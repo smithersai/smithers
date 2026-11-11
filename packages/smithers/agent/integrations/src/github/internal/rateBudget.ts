@@ -138,6 +138,8 @@ export interface State {
   readonly budgets: Readonly<Record<string, Budget>>
   /** Start instants of the writes booked in the last hour, ascending. */
   readonly writes: ReadonlyArray<number>
+  /** Requests started and not yet finished, by the resource they were admitted on. */
+  readonly inFlight: Readonly<Record<string, number>>
 }
 
 /**
@@ -146,7 +148,7 @@ export interface State {
  * @since 1.0.0
  * @private
  */
-export const emptyState: State = { pausedUntil: 0, backoffMs: 0, budgets: {}, writes: [] }
+export const emptyState: State = { pausedUntil: 0, backoffMs: 0, budgets: {}, writes: [], inFlight: {} }
 
 const HOUR = 3_600_000
 const MINUTE = 60_000
@@ -233,8 +235,8 @@ export const currentBudget = (state: State, now: number, resource: string): Budg
 
 /**
  * Starts a request on `resource` when the pause and the primary budget allow
- * it, spending one unit of the modeled budget so concurrent requests do not
- * all spend the last one.
+ * it, counting it in flight and spending one unit of the modeled budget so
+ * concurrent requests do not all spend the last one.
  *
  * @since 1.0.0
  * @private
@@ -242,11 +244,17 @@ export const currentBudget = (state: State, now: number, resource: string): Budg
 export const begin = (state: State, now: number, resource: string): Admission => {
   if (state.pausedUntil > now) return { admitted: false, until: state.pausedUntil, reason: "paused" }
   const budget = currentBudget(state, now, resource)
-  if (budget === undefined) return { admitted: true, state }
-  if (budget.remaining <= 0) return { admitted: false, until: budget.resetAt, reason: "budget" }
+  if (budget !== undefined && budget.remaining <= 0) return { admitted: false, until: budget.resetAt, reason: "budget" }
+  const inFlight = { ...state.inFlight, [resource]: (state.inFlight[resource] ?? 0) + 1 }
   return {
     admitted: true,
-    state: { ...state, budgets: { ...state.budgets, [resource]: { ...budget, remaining: budget.remaining - 1 } } }
+    state: budget === undefined
+      ? { ...state, inFlight }
+      : {
+        ...state,
+        inFlight,
+        budgets: { ...state.budgets, [resource]: { ...budget, remaining: budget.remaining - 1 } }
+      }
   }
 }
 
@@ -285,6 +293,10 @@ const numeric = (headers: HeaderLookup | undefined, name: string): number | unde
  * the budget, and on a limit response a pause for every caller. `pause` is
  * set when this outcome moved the pause later.
  *
+ * The budget follows GitHub's latest count less the requests still in flight,
+ * so a request GitHub did not charge (a `304`, or one that never arrived)
+ * stops costing its modeled unit once it finishes.
+ *
  * @since 1.0.0
  * @private
  */
@@ -300,19 +312,28 @@ export const finish = (
   const remaining = numeric(headers, "x-ratelimit-remaining")
   const resetSeconds = numeric(headers, "x-ratelimit-reset")
   const resetAt = resetSeconds === undefined ? undefined : Math.min(resetSeconds * 1000, now + limits.maxPauseMs)
+  const inFlight = { ...state.inFlight, [outcome.resource]: Math.max((state.inFlight[outcome.resource] ?? 0) - 1, 0) }
   let budgets = state.budgets
   if (limit !== undefined && remaining !== undefined && resetAt !== undefined && resetAt > now) {
     const previous = currentBudget(state, now, resource)
     // A response from an earlier window arrives late; it says nothing about this one.
     if (previous === undefined || previous.resetAt <= resetAt) {
-      const sameWindow = previous !== undefined && previous.resetAt === resetAt
       budgets = {
         ...budgets,
-        [resource]: { limit, resetAt, remaining: sameWindow ? Math.min(previous.remaining, remaining) : remaining }
+        [resource]: { limit, resetAt, remaining: Math.max(remaining - (inFlight[resource] ?? 0), 0) }
+      }
+    }
+  } else if (headers === undefined) {
+    // No response: GitHub never counted the request, so its modeled unit comes back.
+    const previous = currentBudget(state, now, outcome.resource)
+    if (previous !== undefined) {
+      budgets = {
+        ...budgets,
+        [outcome.resource]: { ...previous, remaining: Math.min(previous.remaining + 1, previous.limit) }
       }
     }
   }
-  const settled: State = { ...state, budgets }
+  const settled: State = { ...state, budgets, inFlight }
   if (!outcome.limited) return { state: settled.backoffMs === 0 ? settled : { ...settled, backoffMs: 0 } }
   const retryAfter = numeric(headers, "retry-after")
   // Every limit response doubles the backoff, so a limit that persists waits
