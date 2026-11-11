@@ -45,6 +45,7 @@ const suite = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/release-redaction.test.ts"),
     Smithers.file("//.smithers/flows/test/release-io.test.ts"),
     Smithers.file("//.smithers/flows/test/release-operations.test.ts"),
+    Smithers.file("//.smithers/flows/test/release-retry.test.ts"),
     Smithers.file("//.smithers/flows/test/publication.test.ts"),
     Smithers.file("//.smithers/flows/test/review-flow.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-wiki-relay.test.ts"),

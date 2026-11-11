@@ -1,10 +1,8 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Graph, HumanTask } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
-import { NodeRuntime } from "@smthrs/platform-node"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { Effect, Exit, Layer, Option, Schedule, Schema } from "effect"
+import { Effect, Exit, type Layer, Option, Schedule, Schema, type Scope } from "effect"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
@@ -13,10 +11,10 @@ import ReleaseContent from "../release-content/flow.ts"
 import Release from "../release/flow.ts"
 import { contentInput, releaseInput } from "./input.ts"
 import { atomicWrite, inside, maybeRead } from "./io.ts"
+import { inspect, readLayer, retryStep, stepTimings } from "./retry.ts"
 import { runtime } from "./runtime.ts"
 import { ContentInput, ReleaseInput, StoredRun } from "./schema.ts"
 
-const root = resolve(import.meta.dirname, "../../..")
 const help = `Smithers release workflows (Node 26.4+, pnpm and jj required)
 
 pnpm release:content --input '{"version":"1.0.0-rc.0","from":"v0.35.0"}'
@@ -28,10 +26,14 @@ human approval before writes/publication. --input-file accepts a JSON file.
 
 --run <id>      Create/reopen a named run with the same input and model settings.
 --resume <id>   Reopen the stored run without resupplying its input.
+--retry <id>    Start a new run that retries the settled run <id> from the step
+                it failed at. Earlier steps are served from <id>'s record.
+--from <step>   With --retry: the step to run again from, by action name
+                (release/smoke) or node id, instead of the failed step.
 --model <seat>  Use the CLI provider seat (default openai:gpt-6-sol).
 --max-tokens N  Total model token budget (default 250000).
 
-pnpm release:status <id>          Read stored status without starting the engine.
+pnpm release:status <id>          Read stored status and step timing without starting the engine.
 pnpm release:answer <id> true     Approve the current human task and resume.
 pnpm release:answer <id> false    Decline the current human task and resume.
 
@@ -46,15 +48,19 @@ const idOf = (value: string) => {
   }
   return value
 }
-const paths = (id: string) => {
-  const directory = `.flows/releases/runs/${idOf(id)}`
-  return { directory, record: `${directory}/run.json`, filename: join(root, directory, "engine.db") }
+const directoryOf = (id: string) => `.flows/releases/runs/${idOf(id)}`
+/** A run's record and review sit in its own directory; a retry's database is its first run's. */
+const paths = (root: string, id: string, retry?: StoredRun["retry"]) => {
+  const directory = directoryOf(id)
+  return {
+    directory,
+    record: `${directory}/run.json`,
+    filename: join(root, directoryOf(retry?.store ?? id), "engine.db")
+  }
 }
-const report = async (id: string, result: unknown) => {
-  const review = await maybeRead(await inside(root, `${paths(id).directory}/review.json`))
-  process.stdout.write(
-    JSON.stringify({ ...result as object, ...(review ? { review: JSON.parse(review) } : {}) }, null, 2) + "\n"
-  )
+const report = async ({ root, write }: Host, id: string, result: unknown) => {
+  const review = await maybeRead(await inside(root, `${directoryOf(id)}/review.json`))
+  write(JSON.stringify({ ...result as object, ...(review ? { review: JSON.parse(review) } : {}) }, null, 2) + "\n")
 }
 const statusEffect = (id: string) =>
   Effect.gen(function*() {
@@ -79,6 +85,8 @@ const drive = (stored: StoredRun, answer?: boolean) =>
       })
     }
     if (stored.kind === "release") {
+      // Admits the retry, or joins the one an earlier process admitted under this id.
+      if (stored.retry) yield* Release.retryFrom(stored.retry.of, { step: stored.retry.step, executionId: stored.id })
       yield* Release.execute(Schema.decodeUnknownSync(ReleaseInput)(stored.input), {
         executionId: stored.id,
         discard: true
@@ -91,6 +99,9 @@ const drive = (stored: StoredRun, answer?: boolean) =>
         return { id: stored.id, result: result.value.exit.value }
       }
     } else {
+      if (stored.retry) {
+        yield* ReleaseContent.retryFrom(stored.retry.of, { step: stored.retry.step, executionId: stored.id })
+      }
       yield* ReleaseContent.execute(Schema.decodeUnknownSync(ContentInput)(stored.input), {
         executionId: stored.id,
         discard: true
@@ -106,10 +117,25 @@ const drive = (stored: StoredRun, answer?: boolean) =>
     return yield* statusEffect(stored.id)
   })
 
-export const main = async (argv: ReadonlyArray<string>) => {
+/** Where a release command runs: the checkout, the engine host over one run database, and its output. */
+export interface Host {
+  readonly root: string
+  readonly runtime: (
+    options: Parameters<typeof runtime>[0]
+  ) => Layer.Layer<Exclude<Effect.Services<ReturnType<typeof drive>>, Scope.Scope>, unknown>
+  readonly write: (text: string) => void
+}
+const live: Host = {
+  root: resolve(import.meta.dirname, "../../.."),
+  runtime,
+  write: (text) => void process.stdout.write(text)
+}
+
+export const main = async (argv: ReadonlyArray<string>, host: Host = live) => {
+  const { root } = host
   const command = argv[0]
   if (argv.includes("--help") || command === undefined) {
-    process.stdout.write(help)
+    host.write(help)
     return
   }
   const { values, positionals } = parseArgs({
@@ -121,6 +147,8 @@ export const main = async (argv: ReadonlyArray<string>) => {
       "input-file": { type: "string" },
       run: { type: "string" },
       resume: { type: "string" },
+      retry: { type: "string" },
+      from: { type: "string" },
       model: { type: "string" },
       "max-tokens": { type: "string" },
       plan: { type: "boolean", default: false }
@@ -128,17 +156,21 @@ export const main = async (argv: ReadonlyArray<string>) => {
   })
   if (command === "status" || command === "answer") {
     const id = idOf(positionals[0] ?? "")
-    const path = paths(id)
-    const stored = await readStored(await inside(root, path.record))
+    const stored = await readStored(await inside(root, paths(root, id).record))
+    const path = paths(root, id, stored.retry)
     if (command === "status") {
       const status = await Effect.runPromise(Effect.scoped(
-        statusEffect(id).pipe(Effect.provide(
-          NodeRuntime.storage(path.filename, root).pipe(
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))
-          )
-        ))
+        Effect.gen(function*() {
+          const inspection = yield* inspect(id)
+          return {
+            ...(yield* statusEffect(id)),
+            ...(stored.retry ? { retry: stored.retry } : {}),
+            ...(inspection.run.failure ? { failure: inspection.run.failure } : {}),
+            steps: stepTimings(inspection)
+          }
+        }).pipe(Effect.provide(readLayer(path.filename, root)))
       ))
-      await report(id, status)
+      await report(host, id, status)
       return
     }
     if (positionals.length !== 2 || !["true", "false"].includes(positionals[1]!)) {
@@ -147,25 +179,39 @@ export const main = async (argv: ReadonlyArray<string>) => {
     const result = await Effect.runPromise(
       Effect.scoped(
         drive(stored, positionals[1] === "true").pipe(
-          Effect.provide(runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens }))
+          Effect.provide(
+            host.runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens })
+          )
         )
       )
     )
-    await report(id, result)
+    await report(host, id, result)
     return
   }
   if (command !== "release" && command !== "release-content") throw new Error(`Unknown command: ${command}`)
   if (positionals.length) throw new Error("Unexpected positional arguments")
   if (values.input && values["input-file"]) throw new Error("Use either --input or --input-file")
   const id = idOf(values.resume ?? values.run ?? `${command}-${randomUUID()}`)
-  const path = paths(id)
+  if (values.from && !values.retry) throw new Error("--from names the step a --retry starts from")
   let stored: StoredRun
   if (values.resume) {
-    if (values.input || values["input-file"] || values.model || values["max-tokens"] || values.run) {
+    if (values.input || values["input-file"] || values.model || values["max-tokens"] || values.run || values.retry) {
       throw new Error("--resume uses the stored input and settings")
     }
-    stored = await readStored(await inside(root, path.record))
+    stored = await readStored(await inside(root, paths(root, id).record))
     if (stored.kind !== command) throw new Error("Run belongs to a different workflow")
+  } else if (values.retry) {
+    if (values.input || values["input-file"] || values.model || values["max-tokens"]) {
+      throw new Error("--retry uses the stored input and settings")
+    }
+    const source = await readStored(await inside(root, paths(root, values.retry).record))
+    if (source.kind !== command) throw new Error("Run belongs to a different workflow")
+    const step = await Effect.runPromise(Effect.scoped(
+      Effect.flatMap(inspect(source.id), (inspection) => retryStep(inspection, values.from)).pipe(
+        Effect.provide(readLayer(paths(root, source.id, source.retry).filename, root))
+      )
+    ))
+    stored = { ...source, id, retry: { of: source.id, step, store: source.retry?.store ?? source.id } }
   } else {
     const supplied: unknown = JSON.parse(
       values["input-file"] ? await readFile(resolve(values["input-file"]), "utf8") : values.input ?? "{}"
@@ -184,7 +230,7 @@ export const main = async (argv: ReadonlyArray<string>) => {
     const graph = stored.kind === "release"
       ? Graph.build(Release, Schema.decodeUnknownSync(ReleaseInput)(stored.input))
       : Graph.build(ReleaseContent, Schema.decodeUnknownSync(ContentInput)(stored.input))
-    process.stdout.write(
+    host.write(
       JSON.stringify(
         {
           kind: stored.kind,
@@ -197,7 +243,8 @@ export const main = async (argv: ReadonlyArray<string>) => {
     )
     return
   }
-  const host = runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens })
+  const path = paths(root, id, stored.retry)
+  const engine = host.runtime({ root, filename: path.filename, model: stored.model, maxTokens: stored.maxTokens })
   const previous = await maybeRead(await inside(root, path.record))
   if (previous && !isDeepStrictEqual(Schema.decodeUnknownSync(StoredRun)(JSON.parse(previous)), stored)) {
     throw new Error("Run ID already belongs to different input/settings; use --resume or a new ID")
@@ -206,9 +253,9 @@ export const main = async (argv: ReadonlyArray<string>) => {
   if (!previous) {
     await atomicWrite(root, path.record, JSON.stringify(Schema.encodeSync(StoredRun)(stored), null, 2) + "\n")
   }
-  process.stdout.write(`Run ${id}; state ${path.directory}\n`)
-  const result = await Effect.runPromise(Effect.scoped(drive(stored).pipe(Effect.provide(host))))
-  await report(id, result)
+  host.write(`Run ${id}; state ${path.directory}\n`)
+  const result = await Effect.runPromise(Effect.scoped(drive(stored).pipe(Effect.provide(engine))))
+  await report(host, id, result)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
