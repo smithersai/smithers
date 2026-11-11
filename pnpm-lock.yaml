@@ -3401,6 +3401,9 @@ importers:
       '@smthrs/registry':
         specifier: 1.0.0-rc.17
         version: link:../../agent/registry
+      '@smthrs/sandbox':
+        specifier: 1.0.0-rc.17
+        version: link:../../flows/sandbox
       '@smthrs/targets':
         specifier: 1.0.0-rc.17
         version: link:../targets

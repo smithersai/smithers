@@ -57,6 +57,12 @@ describe("Workspace refusal types", () => {
       "Workspace received unknown option \"typo\""
     ],
     [
+      "a remotes value that is not an S.Remotes declaration",
+      () => WorkspaceDeclaration.Workspace("fixture", { ...options, remotes: { remotes: {} } } as never),
+      TypeError,
+      "Workspace remotes must be an S.Remotes declaration"
+    ],
+    [
       "a non-object discovery",
       () => WorkspaceDeclaration.Workspace("fixture", { ...options, discovery: 42 } as never),
       TypeError,
@@ -216,6 +222,121 @@ describe("Sandboxes declarations", () => {
     [{ broken: { _tag: "SandboxUnknown" } }, TypeError, "Sandboxes entry \"broken\" is not a sandbox declaration"]
   ])("rejects an invalid sandbox table", (value, Constructor, message) => {
     const error = thrown(() => WorkspaceDeclaration.Sandboxes(value as never))
+    expect(error).toBeInstanceOf(Constructor)
+    expect(error.message).toBe(message)
+  })
+})
+
+describe("Remote declarations", () => {
+  it("keeps a command remote as inert frozen data, with the default CLI and no setup", () => {
+    const remote = WorkspaceDeclaration.Remote.Command({ machines: [["ssh", "box-1"], []], workdir: "/srv/ci" })
+
+    expect(remote).toEqual({
+      _tag: "RemoteCommand",
+      machines: [["ssh", "box-1"], []],
+      workdir: "/srv/ci",
+      setup: [],
+      cli: ["npx", "--no", "smthrs"]
+    })
+    expect(remote.cli).toBe(WorkspaceDeclaration.defaultRemoteCli)
+    expect(Object.isFrozen(remote)).toBe(true)
+    expect(Object.isFrozen(remote.machines)).toBe(true)
+    expect(Object.isFrozen(remote.machines[0])).toBe(true)
+    expect(Object.isFrozen(remote.setup)).toBe(true)
+    expect(WorkspaceDeclaration.isRemoteDeclaration(remote)).toBe(true)
+  })
+
+  it("copies the declared setup and CLI, so a later edit to the caller's arrays changes nothing", () => {
+    const machines = [["docker", "exec", "-i", "ci"]]
+    const setup = ["pnpm install --frozen-lockfile"]
+    const cli = ["pnpm", "exec", "smthrs"]
+    const remote = WorkspaceDeclaration.Remote.Command({ machines, workdir: "/work", setup, cli })
+    machines[0]!.push("extra")
+    setup.push("rm -rf /")
+    cli.push("--extra")
+
+    expect(remote).toEqual({
+      _tag: "RemoteCommand",
+      machines: [["docker", "exec", "-i", "ci"]],
+      workdir: "/work",
+      setup: ["pnpm install --frozen-lockfile"],
+      cli: ["pnpm", "exec", "smthrs"]
+    })
+    expect(Object.isFrozen(remote.cli)).toBe(true)
+  })
+
+  it.each([
+    [null, "Remote.Command options must be an object"],
+    [{ machines: [[]], workdir: "/w", hosts: [] }, "Remote.Command received unknown option \"hosts\""],
+    [{ workdir: "/w" }, "Remote.Command machines must be a non-empty array of argv prefixes, one per machine"],
+    [
+      { machines: [], workdir: "/w" },
+      "Remote.Command machines must be a non-empty array of argv prefixes, one per machine"
+    ],
+    [
+      { machines: ["ssh box"], workdir: "/w" },
+      "Remote.Command machines must be a non-empty array of argv prefixes, one per machine"
+    ],
+    [
+      { machines: [[1]], workdir: "/w" },
+      "Remote.Command machines must be a non-empty array of argv prefixes, one per machine"
+    ],
+    [
+      { machines: [["a\0b"]], workdir: "/w" },
+      "Remote.Command machines must be a non-empty array of argv prefixes, one per machine"
+    ],
+    [{ machines: [[]] }, "Remote.Command workdir must be an absolute guest path"],
+    [{ machines: [[]], workdir: "relative" }, "Remote.Command workdir must be an absolute guest path"],
+    [{ machines: [[]], workdir: "/a\0b" }, "Remote.Command workdir must be an absolute guest path"],
+    [
+      { machines: [[]], workdir: "/w", setup: "pnpm install" },
+      "Remote.Command setup must be an array of non-empty shell commands"
+    ],
+    [
+      { machines: [[]], workdir: "/w", setup: [""] },
+      "Remote.Command setup must be an array of non-empty shell commands"
+    ],
+    [{ machines: [[]], workdir: "/w", cli: [] }, "Remote.Command cli must be a non-empty array of non-empty words"],
+    [
+      { machines: [[]], workdir: "/w", cli: ["smthrs", ""] },
+      "Remote.Command cli must be a non-empty array of non-empty words"
+    ],
+    [
+      { machines: [[]], workdir: "/w", cli: "smthrs" },
+      "Remote.Command cli must be a non-empty array of non-empty words"
+    ]
+  ])("rejects an invalid command remote %j", (value, message) => {
+    const error = thrown(() => WorkspaceDeclaration.Remote.Command(value as never))
+    expect(error).toBeInstanceOf(TypeError)
+    expect(error.message).toBe(message)
+  })
+})
+
+describe("Remotes declarations", () => {
+  const remote = WorkspaceDeclaration.Remote.Command({ machines: [[]], workdir: "/w" })
+
+  it("brands and freezes each validated declaration, and reaches the workspace", () => {
+    const remotes = WorkspaceDeclaration.Remotes({ boxes: remote, local_pair: remote })
+
+    expect(WorkspaceDeclaration.isRemotesDeclaration(remotes)).toBe(true)
+    expect(WorkspaceDeclaration.isRemotesDeclaration(null)).toBe(false)
+    expect(WorkspaceDeclaration.isRemotesDeclaration({ remotes: {} })).toBe(false)
+    expect(Object.isFrozen(remotes)).toBe(true)
+    expect(Object.isFrozen(remotes.remotes)).toBe(true)
+    expect(Object.keys(remotes.remotes)).toEqual(["boxes", "local_pair"])
+    expect(WorkspaceDeclaration.Workspace("fixture", { ...options, remotes }).remotes).toBe(remotes)
+  })
+
+  it("adds no remotes key to a workspace that declares none", () => {
+    expect(Object.hasOwn(WorkspaceDeclaration.Workspace("fixture", options), "remotes")).toBe(false)
+  })
+
+  it.each([
+    [null, TypeError, "Remotes requires a name-to-remote record"],
+    [{ "bad name": remote }, Error, "Remotes name is not a legal reference name: \"bad name\""],
+    [{ broken: { _tag: "RemoteUnknown" } }, TypeError, "Remotes entry \"broken\" is not a remote declaration"]
+  ])("rejects an invalid remote table", (value, Constructor, message) => {
+    const error = thrown(() => WorkspaceDeclaration.Remotes(value as never))
     expect(error).toBeInstanceOf(Constructor)
     expect(error.message).toBe(message)
   })

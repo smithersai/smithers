@@ -98,6 +98,8 @@ export { gitDiff, glob, nodeModules, pnpmWorkspace } from "./Input.ts"
 export { Workspace } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */
 export { Cache, Flags, Host, Sandbox, Sandboxes } from "./WorkspaceDeclaration.ts"
+/** @category constructors @since 1.0.0 */
+export { Remote, Remotes } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */
 export { make as LocalRepository } from "./LocalRepository.ts"
 /** @category constructors @since 1.0.0 */

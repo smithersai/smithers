@@ -90,10 +90,11 @@ policy in `.smithers/factory.json`.
 
 `ci` also takes:
 
-| Option      | Type              | Default | Meaning                                                         |
-| ----------- | ----------------- | ------- | --------------------------------------------------------------- |
-| `--shard`   | `<index>/<count>` | none    | Run one part of the selected roots; see [Shards](#shards).      |
-| `--timings` | path, repeatable  | none    | Earlier `--results-file` files whose durations weigh the split. |
+| Option      | Type              | Default | Meaning                                                                                               |
+| ----------- | ----------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `--shard`   | `<index>/<count>` | none    | Run one part of the selected roots; see [Shards](#shards).                                            |
+| `--remote`  | name              | none    | Run the parts on the machines an `S.Remotes` entry declares; see [Remote machines](#remote-machines). |
+| `--timings` | path, repeatable  | none    | Earlier `--results-file` files whose durations weigh the split.                                       |
 
 Exclusive targets run alone after ready ordinary work drains, regardless of
 `--jobs`. Dependencies keep their ordering. Explicit labels, including
@@ -148,8 +149,51 @@ talking to each other.
   replays it.
 - A part past the last root runs nothing and passes. `--plan` prints the part.
 
-`--timings` without `--shard`, an unreadable file, or a file that isn't a
-results file refuses the run before any declaration loads.
+`--timings` without `--shard` or `--remote`, an unreadable file, or a file
+that isn't a results file refuses the run before any declaration loads.
+
+### Remote machines
+
+`ci --remote <name>` places the parts on machines itself. The workspace
+declares them as an `S.Remotes` entry, one argv prefix per machine:
+
+```ts
+remotes: S.Remotes({
+  boxes: S.Remote.Command({
+    machines: [["ssh", "ci-1"], ["ssh", "ci-2"]],
+    workdir: "/var/tmp/smthrs-ci",
+    setup: ["pnpm install --frozen-lockfile"]
+  })
+})
+```
+
+```sh
+smthrs ci //... --remote boxes --timings last-run.json --results-file this-run.json
+```
+
+The coordinator plans locally and splits the roots across the machines as
+`--shard` would. For each machine with roots, at the same time, it sends the
+workspace tree as one tar archive, runs `setup`, runs `ci` on that machine's
+roots, and reads its results file back. Every line a machine prints is
+streamed prefixed with `machine <n>:`.
+
+- The parts merge into one summary in the local plan's order. A label several
+  machines ran keeps its worst status and its longest duration; counts and
+  `ok` are recomputed. The coordinator's `--results-file` records it and is a
+  valid `--timings` file for the next run.
+- A lost machine (its transport failed, or its results file is missing,
+  unreadable, or leaves out a root it was given) runs its part once more on a
+  fresh session. A second loss reports each of
+  the part's roots `failed` with `machine <n> was lost: <reason>`.
+- `--plan` prints the plan and `remote.machines`, the roots each machine would
+  run, and contacts no machine.
+- Interrupting the run ends every machine's command and closes its session.
+
+An undeclared name, `--remote` with `--shard`, and `--remote` with
+`--known-red` refuse the run before any target runs. `--known-red` is refused
+because a machine's results file carries no failure diagnostics to
+fingerprint. See [Run CI on other machines](./guides/run-ci-on-other-machines.md)
+for every option and the limits.
 
 ### Known-red targets
 

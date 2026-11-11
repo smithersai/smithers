@@ -715,6 +715,7 @@
     "@smthrs/plan": "1.0.0-rc.17",
     "@smthrs/platform-node": "1.0.0-rc.17",
     "@smthrs/registry": "1.0.0-rc.17",
+    "@smthrs/sandbox": "1.0.0-rc.17",
     "@smthrs/targets": "1.0.0-rc.17",
     "ignore": "7.0.8",
     "incur": "0.5.1",

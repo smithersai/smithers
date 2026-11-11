@@ -15,9 +15,11 @@ import metadata from "@smthrs/build-cli/package.json" with { type: "json" }
 import * as Config from "@smthrs/targets/Config"
 import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
+import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import { Context, Effect, Layer } from "effect"
 import { identity } from "effect/Function"
 import { Cli, z } from "incur"
+import { randomUUID } from "node:crypto"
 import type { FileHandle } from "node:fs/promises"
 import * as NodeFs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -27,11 +29,13 @@ import * as Audience from "./Audience.ts"
 import { publishNamespaceFromEnvironment } from "./Cache.ts"
 import * as CacheAdmin from "./CacheAdmin.ts"
 import * as Diagnostic from "./Diagnostic.ts"
+import { layerNonInteractiveNodeServices } from "./engine.ts"
 import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
 import * as GoCache from "./internal/GoCache.ts"
+import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
 import * as KnownRed from "./KnownRed.ts"
@@ -114,7 +118,10 @@ const ciOptions = lifecycleOptions.extend({
     "Run one part of the selection, as <index>/<count>; parts are balanced by the durations --timings measured"
   ),
   timings: z.array(z.string()).optional().describe(
-    "A --results-file of an earlier run whose durations weigh the --shard split; repeatable, later files win"
+    "A --results-file of an earlier run whose durations weigh the --shard or --remote split; repeatable, later files win"
+  ),
+  remote: z.string().optional().describe(
+    "Run the selection across the machines this S.Remotes entry declares, one part each, and merge their results"
   )
 })
 
@@ -183,6 +190,7 @@ export interface ExecutionFlags extends WorkspaceFlags {
 interface CiFlags extends ExecutionFlags {
   readonly shard?: string | undefined
   readonly timings?: ReadonlyArray<string> | undefined
+  readonly remote?: string | undefined
 }
 
 /**
@@ -634,6 +642,8 @@ const packageGraph = async (
 interface CiPlan extends Executor.MergedPlan {
   readonly verb: "ci"
   readonly pattern: string
+  /** Under `--remote`, the roots each declared machine would run. */
+  readonly remote?: { readonly name: string; readonly machines: ReadonlyArray<RemoteCi.Part> } | undefined
 }
 
 /** Removes executor-private fields from the stable plan envelope. */
@@ -846,7 +856,17 @@ const runCi = async (
   reporter: Reporter.Reporter
 ): Promise<CiPlan | Executor.Summary> => {
   // The split is refused before any declaration loads: a mistyped part must not cost a plan.
-  if (flags.shard === undefined && flags.timings !== undefined) throw new Error("--timings needs --shard")
+  if (flags.remote !== undefined && flags.shard !== undefined) {
+    throw new Error("--remote and --shard are exclusive: --remote splits the run across its machines itself")
+  }
+  if (flags.remote !== undefined && flags.knownRed !== undefined) {
+    throw new Error(
+      "--remote does not take --known-red yet: a machine's results file carries no failure diagnostics to fingerprint"
+    )
+  }
+  if (flags.shard === undefined && flags.remote === undefined && flags.timings !== undefined) {
+    throw new Error("--timings needs --shard or --remote")
+  }
   const shard = flags.shard === undefined ? undefined : Shards.parse(flags.shard)
   const measured = new Map<string, number>()
   for (const path of flags.timings ?? []) {
@@ -860,6 +880,7 @@ const runCi = async (
   }
   const index = await openPackageIndex(flags, config)
   const pattern = patterns.join(" ")
+  const remote = flags.remote === undefined ? undefined : remoteOf(index, flags.remote)
   {
     const cacheDirectory = flags.cacheDir === undefined
       ? index.workspace.cache.directory
@@ -925,6 +946,7 @@ const runCi = async (
       edges: plan.workList.flatMap((node) => node.dependencies.map((from) => ({ from, to: node.label }))),
       warnings: []
     })))
+    if (remote !== undefined) return runRemote(index, remote, whole, measured, pattern, flags, config, reporter)
     const merged = shard === undefined ? whole : Shards.select(whole, shard, measured)
     if (flags.plan) return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) }
     // Services and key-only dependencies are planned but never scheduled.
@@ -957,6 +979,89 @@ const runCi = async (
       )
     )
   }
+}
+
+/** The declared remote `--remote` names, or a refusal that lists the declared names. */
+const remoteOf = (
+  index: PackageIndex.PackageIndex,
+  name: string
+): { readonly name: string; readonly declaration: WorkspaceDeclaration.RemoteDeclaration } => {
+  const declared = index.workspace.remotes?.remotes ?? {}
+  const declaration = Object.hasOwn(declared, name) ? declared[name] : undefined
+  if (declaration === undefined) {
+    const names = Object.keys(declared)
+    throw new Error(
+      `--remote ${name} is not declared; ${
+        names.length === 0 ? "the workspace declares no remotes" : `the workspace declares ${names.join(", ")}`
+      } (S.Workspace remotes)`
+    )
+  }
+  return { name, declaration }
+}
+
+/**
+ * `ci --remote`: splits the merged plan's roots across the declared machines,
+ * ships the workspace tree to each, runs `ci` there on its roots, and merges
+ * the results files into one summary in the local plan's order.
+ */
+const runRemote = async (
+  index: PackageIndex.PackageIndex,
+  remote: { readonly name: string; readonly declaration: WorkspaceDeclaration.RemoteDeclaration },
+  whole: Executor.MergedPlan,
+  measured: ReadonlyMap<string, number>,
+  pattern: string,
+  flags: CiFlags,
+  config: RuntimeConfig,
+  reporter: Reporter.Reporter
+): Promise<CiPlan | Executor.Summary> => {
+  const parts = Shards.split(whole.roots, measured, remote.declaration.machines.length)
+    .map((roots, position) => ({ machine: position + 1, roots }))
+  if (flags.plan) {
+    return {
+      verb: "ci",
+      pattern,
+      ...whole,
+      targets: whole.targets.map(plannedTarget),
+      remote: { name: remote.name, machines: parts }
+    }
+  }
+  const started = Date.now()
+  const cacheDirectory = cacheDirectoryOf(index, flags)
+  // The listing every declared glob agrees with: .gitignore applied, host state and the cache never shipped.
+  const paths = await Input.discoverFiles(index.root, { cacheDirectory, signal: config.signal })
+  const files = await Promise.all(paths.map(async (path) => {
+    const absolute = NodePath.join(index.root, path)
+    const [stats, content] = await Promise.all([NodeFs.stat(absolute), NodeFs.readFile(absolute)])
+    return { path, mode: stats.mode, mtimeMs: stats.mtimeMs, content }
+  }))
+  const jobs = Executor.resolveJobs(flags.jobs)
+  reporter.begin({ verb: "ci", pattern, jobs, targets: whole.targets })
+  const rows = await Effect.runPromise(
+    RemoteCi.run({
+      remote: remote.declaration,
+      runId: randomUUID(),
+      tree: RemoteCi.pack(files),
+      parts,
+      // A machine reports to a person: plain status lines, whatever its own environment detects.
+      flags: [
+        "--audience",
+        "human",
+        "--ui",
+        "plain",
+        ...(flags.cache ? [] : ["--no-cache"]),
+        ...(flags.cacheDir === undefined ? [] : ["--cache-dir", flags.cacheDir]),
+        ...(flags.jobs === undefined ? [] : ["--jobs", String(flags.jobs)]),
+        ...(flags.failFast === true ? ["--fail-fast"] : [])
+      ],
+      output: reporter.note,
+      provider: (machine, workdir) => RemoteCi.providerOf(remote.declaration, machine, workdir)
+    }).pipe(Effect.provide(layerNonInteractiveNodeServices)),
+    { signal: config.signal }
+  )
+  const summary = RemoteCi.merge(whole.targets, rows, { pattern, jobs, durationMs: Date.now() - started })
+  for (const report of summary.results) reporter.targetFinished(report)
+  reporter.summary(summary)
+  return rememberExecution(index, Promise.resolve(summary))
 }
 
 /** Every outcome an execution command can return before settling. */

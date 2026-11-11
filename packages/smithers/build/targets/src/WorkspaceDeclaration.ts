@@ -1,7 +1,8 @@
 /**
  * The WORKSPACE.ts declaration surface: `S.Workspace(name, options)` and the
  * typed service declarations it composes — `S.Cache`, `S.Host`, `S.Flags`,
- * `S.Npm.NodeModules`, `S.Nix.Environment`, `S.Sandboxes`, and `S.Sandbox.*`.
+ * `S.Npm.NodeModules`, `S.Nix.Environment`, `S.Sandboxes`, `S.Sandbox.*`,
+ * `S.Remotes`, and `S.Remote.*`.
  *
  * Every constructor is inert: it validates and freezes data, performs no
  * I/O, and constructs no target. The build CLI's workspace loader validates
@@ -433,6 +434,178 @@ export const Sandboxes = (sandboxes: Readonly<Record<string, SandboxDeclaration>
 }
 
 /**
+ * Schema for one remote declaration: the machines `smthrs ci --remote <name>`
+ * places the parts of a run on.
+ *
+ * `RemoteCommand` reaches each machine through an argv prefix, the one
+ * `@smthrs/sandbox`'s `CommandSandbox` takes. `machines` holds one prefix per
+ * machine, and a run has as many parts as there are machines.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RemoteDeclaration = Schema.Union([
+  Schema.TaggedStruct("RemoteCommand", {
+    machines: Schema.Array(Schema.Array(Schema.String)),
+    workdir: Schema.NonEmptyString,
+    setup: Schema.Array(Schema.String),
+    cli: Schema.Array(Schema.String)
+  })
+])
+
+/**
+ * One remote declaration.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RemoteDeclaration = typeof RemoteDeclaration.Type
+
+/**
+ * Checks whether a value is a remote declaration.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export const isRemoteDeclaration: (value: unknown) => value is RemoteDeclaration = Schema.is(RemoteDeclaration)
+
+/**
+ * Options accepted by `S.Remote.Command`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RemoteCommandOptions {
+  /**
+   * One argv prefix per machine: `["ssh", "box-1"]`, `["docker", "exec",
+   * "-i", "ci"]`, or `[]` for the machine running the coordinator.
+   */
+  readonly machines: ReadonlyArray<ReadonlyArray<string>>
+  /** The absolute guest directory each run takes a fresh subdirectory of, one per part. */
+  readonly workdir: string
+  /** Shell commands run in order in the shipped tree before the targets, such as the dependency install. */
+  readonly setup?: ReadonlyArray<string> | undefined
+  /** The words that start the CLI on the machine. Default {@link defaultRemoteCli}. */
+  readonly cli?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * The words that start the CLI on a machine when a remote declares none: the
+ * workspace's own installed `smthrs`, which `setup` installs.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultRemoteCli: ReadonlyArray<string> = Object.freeze(["npx", "--no", "smthrs"])
+
+const remoteCommandOptions: ReadonlySet<string> = new Set(["machines", "workdir", "setup", "cli"])
+
+/** Whether a value is an array of strings with no NUL, which no argv or shell text can carry. */
+const isTextArray = (value: unknown): value is ReadonlyArray<string> =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string" && !entry.includes("\0"))
+
+/**
+ * The remote constructors, `S.Remote`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Remote = Object.freeze({
+  /** Machines reached through an argv prefix each, as `@smthrs/sandbox`'s `CommandSandbox` reaches them. */
+  Command: (options: RemoteCommandOptions): RemoteDeclaration => {
+    if (typeof options !== "object" || options === null) {
+      throw new TypeError("Remote.Command options must be an object")
+    }
+    for (const key of Object.getOwnPropertyNames(options)) {
+      if (!remoteCommandOptions.has(key)) {
+        throw new TypeError(`Remote.Command received unknown option ${JSON.stringify(key)}`)
+      }
+    }
+    const { cli, machines, setup, workdir } = options
+    if (!Array.isArray(machines) || machines.length === 0 || !machines.every(isTextArray)) {
+      throw new TypeError("Remote.Command machines must be a non-empty array of argv prefixes, one per machine")
+    }
+    if (typeof workdir !== "string" || !workdir.startsWith("/") || workdir.includes("\0")) {
+      throw new TypeError("Remote.Command workdir must be an absolute guest path")
+    }
+    if (setup !== undefined && (!isTextArray(setup) || setup.includes(""))) {
+      throw new TypeError("Remote.Command setup must be an array of non-empty shell commands")
+    }
+    if (cli !== undefined && (!isTextArray(cli) || cli.length === 0 || cli.includes(""))) {
+      throw new TypeError("Remote.Command cli must be a non-empty array of non-empty words")
+    }
+    return Object.freeze({
+      _tag: "RemoteCommand",
+      machines: Object.freeze(machines.map((prefix) => Object.freeze([...prefix]))),
+      workdir,
+      setup: Object.freeze([...(setup ?? [])]),
+      cli: cli === undefined ? defaultRemoteCli : Object.freeze([...cli])
+    })
+  }
+})
+
+/**
+ * Runtime marker for the workspace remotes declaration.
+ *
+ * @category type ids
+ * @since 1.0.0
+ */
+export const RemotesTypeId: unique symbol = Symbol.for("smithers-build/Remotes") as never
+
+/**
+ * The workspace remotes declaration: a validated name-to-remote record.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RemotesDeclaration {
+  readonly [RemotesTypeId]: typeof RemotesTypeId
+  readonly remotes: Readonly<Record<string, RemoteDeclaration>>
+}
+
+/**
+ * Checks whether a value is the workspace remotes declaration.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export const isRemotesDeclaration = (value: unknown): value is RemotesDeclaration => {
+  if (typeof value !== "object" || value === null) return false
+  const descriptor = Object.getOwnPropertyDescriptor(value, RemotesTypeId)
+  return descriptor !== undefined && "value" in descriptor && descriptor.value === RemotesTypeId
+}
+
+/**
+ * Declares the machines `smthrs ci --remote <name>` runs on, by name.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const Remotes = (remotes: Readonly<Record<string, RemoteDeclaration>>): RemotesDeclaration => {
+  if (typeof remotes !== "object" || remotes === null) {
+    throw new TypeError("Remotes requires a name-to-remote record")
+  }
+  const validated: Record<string, RemoteDeclaration> = {}
+  for (const name of Object.getOwnPropertyNames(remotes)) {
+    if (!flagName.test(name)) throw new Error(`Remotes name is not a legal reference name: ${JSON.stringify(name)}`)
+    const declaration = remotes[name]
+    if (!isRemoteDeclaration(declaration)) {
+      throw new TypeError(`Remotes entry ${JSON.stringify(name)} is not a remote declaration`)
+    }
+    validated[name] = declaration
+  }
+  const value = Object.create(null) as { remotes: Readonly<Record<string, RemoteDeclaration>> }
+  Object.defineProperty(value, RemotesTypeId, {
+    configurable: false,
+    enumerable: false,
+    value: RemotesTypeId,
+    writable: false
+  })
+  value.remotes = Object.freeze(validated)
+  return Object.freeze(value) as unknown as RemotesDeclaration
+}
+
+/**
  * The git hook events a workspace may bind targets to.
  *
  * @category constants
@@ -481,6 +654,8 @@ export interface WorkspaceDeclaration {
   readonly host: HostDeclaration | undefined
   readonly memory: SmithersCloudDeclaration | undefined
   readonly sandboxes: SandboxesDeclaration | undefined
+  /** The machines `smthrs ci --remote <name>` runs on; see {@link Remotes}. */
+  readonly remotes?: RemotesDeclaration | undefined
   readonly agents: AgentsDeclaration | undefined
   readonly gitHooks: GitHooks | undefined
   readonly repos: Readonly<Record<string, LocalRepository.Declaration>> | undefined
@@ -549,6 +724,7 @@ export interface WorkspaceOptions {
   readonly host?: HostDeclaration | undefined
   readonly memory?: SmithersCloudDeclaration | undefined
   readonly sandboxes?: SandboxesDeclaration | undefined
+  readonly remotes?: RemotesDeclaration | undefined
   readonly agents?: AgentsDeclaration | undefined
   readonly gitHooks?: GitHooks | undefined
   readonly repos?: Readonly<Record<string, LocalRepository.Declaration>> | undefined
@@ -570,6 +746,7 @@ const knownOptions: ReadonlySet<string> = new Set([
   "host",
   "memory",
   "sandboxes",
+  "remotes",
   "agents",
   "gitHooks",
   "repos",
@@ -705,6 +882,9 @@ export const Workspace = (name: string, options: WorkspaceOptions): WorkspaceDec
   if (options.sandboxes !== undefined && !isSandboxesDeclaration(options.sandboxes)) {
     throw new TypeError("Workspace sandboxes must be an S.Sandboxes declaration")
   }
+  if (options.remotes !== undefined && !isRemotesDeclaration(options.remotes)) {
+    throw new TypeError("Workspace remotes must be an S.Remotes declaration")
+  }
   if (options.agents !== undefined && !isAgentsDeclaration(options.agents)) {
     throw new TypeError("Workspace agents must be an S.Agents declaration")
   }
@@ -806,6 +986,7 @@ export const Workspace = (name: string, options: WorkspaceOptions): WorkspaceDec
   value["host"] = options.host
   value["memory"] = options.memory
   value["sandboxes"] = options.sandboxes
+  if (options.remotes !== undefined) value["remotes"] = options.remotes
   value["agents"] = options.agents
   value["gitHooks"] = gitHooks
   value["repos"] = repos

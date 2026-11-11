@@ -111,7 +111,7 @@ describe("smthrs ci --shard", () => {
         "--results-file",
         results
       ])
-      expect(served.exitCode, served.stderr).toBe(0)
+      expect(served.exitCode, served.stderr + served.stdout).toBe(0)
       ran.push(await labels(results))
     }
     // 900 + the 5 ms dependency root against three 300s.
@@ -155,7 +155,7 @@ describe("smthrs ci --shard", () => {
     const root = await fixture()
     const results = NodePath.join(root, "out", "empty.json")
     const served = await serve(root, ["ci", "//:c", "--shard", "2/2", "--results-file", results])
-    expect(served.exitCode, served.stderr).toBe(0)
+    expect(served.exitCode, served.stderr + served.stdout).toBe(0)
     expect(await labels(results)).toEqual([])
   }, 120_000)
 

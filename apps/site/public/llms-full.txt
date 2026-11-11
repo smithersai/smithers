@@ -5073,6 +5073,8 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.Host`                   | constructor        | The host surface: the workspace declaration constructor, and `Host.bin(name)` for one declared binary.                                                                               |
 | `Smithers.Sandbox`                | constructor        | The sandbox implementation constructors.                                                                                                                                             |
 | `Smithers.Sandboxes`              | constructor        | Declares the workspace sandbox implementations by name.                                                                                                                              |
+| `Smithers.Remote`                 | constructor        | The remote constructors.                                                                                                                                                             |
+| `Smithers.Remotes`                | constructor        | Declares the machines `smthrs ci --remote <name>` runs on, by name.                                                                                                                  |
 | `Smithers.LocalRepository`        | constructor        | Declares an opaque child Smithers workspace at a workspace-relative path.                                                                                                            |
 | `Smithers.Owners`                 | namespace          | `Owners.declare` validates an `owners` option, and `Owners.Codeowners` and `Owners.Tree` project every declaration into `.github/CODEOWNERS` and the per-directory `OWNERS` tree.    |
 | `Smithers.Teams`                  | constructor        | Validates a team roster: team names are login-shaped, members are logins, and every list is deduplicated and sorted.                                                                 |
@@ -9411,7 +9413,7 @@ https://smithers.sh/docs/reference/api/build-cli/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/build-cli/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/build-cli/docs)
 
-> **Related APIs:** [`@smthrs/build`](/docs/reference/api/build/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/targets`](/docs/reference/api/targets/)
+> **Related APIs:** [`@smthrs/build`](/docs/reference/api/build/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/targets`](/docs/reference/api/targets/)
 
 ```ts
 import { cli, makeCli, Planner, Workspace } from "@smthrs/build-cli"
@@ -45867,6 +45869,14 @@ says it exists.
     `lineage_changed`.
 11. Cancel the claimed children, recording each on the audit as it lands.
 12. Suspend the run with the state derived at the frame and close the audit.
+
+The SQL audit opens with a quarantine wait in the same transaction and clears
+it only when the audit closes. Engine stale-run recovery cannot take over an
+open rewind, including one whose owner died. The archive transaction also
+writes the frame state to the run row. A post-commit failure attempts to finish
+under the held lease before returning the original error; if settlement fails,
+the audit remains open for startup recovery. Every deferred `Busy` outcome is
+logged as a warning with its audit id, code, and reason.
 
 Step 10 is the recovery commit point. The audit records the journal `generation`
 before truncation. When a committed phase was not persisted, recovery requires

@@ -34,6 +34,25 @@ platform's own mechanism is not wanted, and `S.Sandbox.None()` to turn
 build-target confinement off. See
 [Hermeticity](../concepts/actions-and-boundaries.md#hermeticity).
 
+`remotes` names the machines `smthrs ci --remote <name>` splits a run across.
+Each entry is `S.Remote.Command({ machines, workdir, setup?, cli? })`: one argv
+prefix per machine (`["ssh", "ci-1"]`, `["docker", "exec", "-i", "ci"]`, or `[]`
+for this machine), an absolute directory on each machine, the shell commands
+that prepare the shipped tree, and the words that start the CLI there:
+
+```ts
+remotes: S.Remotes({
+  boxes: S.Remote.Command({
+    machines: [["ssh", "ci-1"], ["ssh", "ci-2"]],
+    workdir: "/var/tmp/smthrs-ci",
+    setup: ["pnpm install --frozen-lockfile"]
+  })
+})
+```
+
+See
+[Run CI on other machines](../../build-cli/docs/guides/run-ci-on-other-machines.md).
+
 `S.Workspace` validates its options and performs no I/O, so evaluating the
 module stays pure. For the full option list and every refusal, see
 [the workspace reference](../reference/config.md).

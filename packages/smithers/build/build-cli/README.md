@@ -62,6 +62,7 @@ the full documentation lives in
 - Guides: [selecting targets](./docs/guides/select-targets.md),
   [inspecting a workspace](./docs/guides/inspect-a-workspace.md),
   [remote caching](./docs/guides/share-a-remote-cache.md),
+  [running CI on other machines](./docs/guides/run-ci-on-other-machines.md),
   [scaffolding an app](./docs/guides/scaffold-an-app.md), and
   [embedding the CLI](./docs/guides/embed-the-cli.md).
 - [Troubleshooting](./docs/troubleshooting.md) and the
