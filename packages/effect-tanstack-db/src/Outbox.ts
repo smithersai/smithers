@@ -406,22 +406,27 @@ const readWrite = (stored: string): { readonly name: string; readonly rows: Read
  * Upgrades every stored write an older build made, before the library loads
  * them: rewrites one it can bring forward, and moves one it can't to
  * `parked:<id>`. Each is logged and counted in `carried`; a storage that fails
- * leaves the write as it was.
+ * leaves the write as it was, and the pass goes on to the next one.
  */
-const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
-  Effect.gen(function*() {
-    const keys = yield* Effect.tryPromise(() => storage.keys())
-    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) {
+const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) => {
+  const logged = <E>(effect: Effect.Effect<void, E>) =>
+    effect.pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("outbox couldn't upgrade its writes").pipe(Effect.annotateLogs({ error: errorName(error) }))
+      )
+    )
+  const one = (key: string) =>
+    Effect.gen(function*() {
       const stored = yield* Effect.tryPromise(() => storage.get(key))
-      if (stored === null) continue
+      if (stored === null) return
       const upgraded = upgrade.write(stored)
-      if (upgraded._tag === "Current") continue
+      if (upgraded._tag === "Current") return
       const { name } = readWrite(stored)
       if (upgraded._tag === "Upgraded") {
         yield* Effect.tryPromise(() => storage.set(key, upgraded.value))
         yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "upgraded", reason: "none" }), 1)
         yield* Effect.logInfo("outbox write upgraded").pipe(Effect.annotateLogs({ name }))
-        continue
+        return
       }
       const parked: StoredParked = { reason: upgraded.reason, name, write: stored }
       yield* Effect.tryPromise(() =>
@@ -432,13 +437,12 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
       yield* Effect.logWarning("outbox write parked").pipe(
         Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })
       )
-    }
-  }).pipe(
-    Effect.catch((error) =>
-      Effect.logWarning("outbox couldn't upgrade its writes").pipe(Effect.annotateLogs({ error: errorName(error) }))
-    ),
-    Effect.withSpan("outbox.carry")
-  )
+    })
+  return logged(Effect.gen(function*() {
+    const keys = yield* Effect.tryPromise(() => storage.keys())
+    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) yield* logged(one(key))
+  })).pipe(Effect.withSpan("outbox.carry"))
+}
 
 /** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
 const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
@@ -563,12 +567,15 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         const keys = (await options.storage.keys()).filter((key) =>
           !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX))
         )
-        if (options.principal === undefined) return keys
+        // The library loads only writes at this build's versions: one the upgrade pass didn't reach stays stored
+        // for a later start to carry.
+        const upgrade = migrated ? options.upgrade : undefined
+        if (options.principal === undefined && upgrade === undefined) return keys
         const own: Array<string> = []
         for (const key of keys) {
           const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null
-          if (!sealed(key, stored)) own.push(key)
-          else seal(stored!, "load")
+          if (sealed(key, stored)) seal(stored!, "load")
+          else if (stored === null || upgrade === undefined || upgrade.write(stored)._tag === "Current") own.push(key)
         }
         return own
       }

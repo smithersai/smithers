@@ -321,3 +321,45 @@ describe("a storage that fails", () => {
     expect([...storage.entries]).toEqual(before)
   })
 })
+
+describe("a write the upgrade pass didn't reach", () => {
+  // The rows of each write the next build sends: at least `count`, then none more for a while.
+  const sending = (storage: Storage, count: number) =>
+    nextBuildProgram(storage, ({ sent }) =>
+      Effect.gen(function*() {
+        yield* Effect.promise(() => until(() => expect(sent.length).toBeGreaterThanOrEqual(count)))
+        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 200)))
+        return sent.map(({ rows }) => rows)
+      }))
+  const sentRows = (storage: Storage, count: number) => Effect.runPromise(sending(storage, count))
+
+  test("stays stored and unsent, while the writes after it are carried, and is carried on the next start", async () => {
+    const storage = memoryStorage()
+    await oldBuild(storage, [note("a", 1), note("b", 2)])
+    let failures = 1
+    const failingOnce = {
+      ...storage,
+      set: (key: string, value: string) =>
+        key.startsWith("tx:") && failures-- > 0 ? Promise.reject(new Error("quota")) : storage.set(key, value)
+    }
+    const { logs, result } = await withLogs(sending(failingOnce, 1))
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual([expect.objectContaining({ tags: [] })])
+    expect(logs.map(({ message }) => (message as Array<unknown>)[0])).toContain("outbox couldn't upgrade its writes")
+    const later = await sentRows(storage, 1)
+    expect([...result, ...later].flat().map((row) => (row as NoteV2).id).sort()).toEqual(["a", "b"])
+    expect(later.flat()).toEqual([expect.objectContaining({ tags: [] })])
+  })
+
+  test("because the storage couldn't list them is never sent as its old row", async () => {
+    const storage = memoryStorage()
+    await oldBuild(storage, [note("a", 1)])
+    let failures = 1
+    const failingOnce = {
+      ...storage,
+      keys: () => failures-- > 0 ? Promise.reject(new Error("quota")) : storage.keys()
+    }
+    expect(await sentRows(failingOnce, 0)).toEqual([])
+    expect(await sentRows(storage, 1)).toEqual([[{ id: "a", text: "a", n: 1, tags: [] }]])
+  })
+})
