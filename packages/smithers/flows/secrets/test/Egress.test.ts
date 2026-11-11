@@ -1,5 +1,5 @@
 import { Effect, Exit, Fiber, Layer, Stream } from "effect"
-import { HttpBody, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { Egress } from "../src/index.ts"
 import {
@@ -651,5 +651,30 @@ describe("Egress.execute", () => {
       )
       expect(Exit.hasInterrupts(exit)).toBe(true)
     }
+  })
+})
+
+describe("extension request methods", () => {
+  test("keeps PROPFIND and its audit method when the upstream fails", async () => {
+    const seen: Array<string> = []
+    const client = HttpClient.make((request) =>
+      Effect.sync(() => {
+        seen.push(request.method)
+      }).pipe(Effect.andThen(Effect.die(new Error("upstream unavailable"))))
+    )
+    const recorded = audit()
+    const response = await Effect.runPromise(
+      Egress.forward(
+        HttpServerRequest.fromWeb(new Request("https://registry.npmjs.org/", { method: "PROPFIND" })),
+        { secrets: [], allow: ["registry.npmjs.org"] }
+      ).pipe(Effect.provide(Layer.mergeAll(
+        Layer.succeed(HttpClient.HttpClient, client),
+        vault({}),
+        recorded.layer
+      )))
+    )
+    expect(response.status).toBe(502)
+    expect(seen).toEqual(["PROPFIND"])
+    expect(recorded.entries).toContainEqual(expect.objectContaining({ method: "PROPFIND", outcome: "forwarded" }))
   })
 })
