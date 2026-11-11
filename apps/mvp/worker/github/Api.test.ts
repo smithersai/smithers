@@ -219,7 +219,7 @@ describe("POST /api/github/webhook", () => {
 
   test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
     const sha = "d".repeat(40)
-    const pushEvent = { ref: "refs/heads/feature/x", after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }
+    const pushEvent = { ref: "refs/heads/feature/x", before: "c".repeat(40), after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }
     const on = await githubHarness(runtime, { repoFlows: true })
     const id = crypto.randomUUID()
     expect((await on.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", pushEvent, { id }))).status).toBe(200)

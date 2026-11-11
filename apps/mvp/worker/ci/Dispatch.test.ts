@@ -16,11 +16,13 @@ const runtime = testFile("ci_dispatch")
 beforeEach(() => reset(runtime))
 
 const SHA = "c".repeat(40)
+const BEFORE = "b".repeat(40)
+const ZEROS = "0".repeat(40)
 const repository = { full_name: "acme/widgets", default_branch: "main" }
 
 describe("requestOf", () => {
   test("a push to a branch, or of a tag, at its new head; trusted, since pushing needs write access", () => {
-    expect(Dispatch.requestOf("push", "d1", { ref: "refs/heads/feature/x", after: SHA, repository })).toEqual(Option.some({
+    expect(Dispatch.requestOf("push", "d1", { ref: "refs/heads/feature/x", before: BEFORE, after: SHA, repository })).toEqual(Option.some({
       delivery: "d1",
       repo: "acme/widgets",
       defaultBranch: "main",
@@ -32,18 +34,33 @@ describe("requestOf", () => {
       sha: SHA,
       trusted: true,
     }))
-    expect(Dispatch.requestOf("push", "d2", { ref: "refs/tags/v1", after: SHA, repository })).toMatchObject(
+    expect(Dispatch.requestOf("push", "d2", { ref: "refs/tags/v1", before: ZEROS, after: SHA, created: true, repository })).toMatchObject(
       Option.some({ branch: null, tag: "v1" }),
     )
   })
 
+  test("a push is admitted as every host admits it: its ref and both commits named, a new ref only when created", () => {
+    const push = { ref: "refs/heads/x", before: BEFORE, after: SHA, repository }
+    expect(Dispatch.requestOf("push", "d", push)).toMatchObject(Option.some({ sha: SHA, branch: "x" }))
+    // No `before`: the delivery doesn't say what the ref moved from.
+    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", after: SHA, repository })).toEqual(Option.none())
+    // A ref from nothing that the delivery doesn't call created, and a ref to nothing that it doesn't call deleted.
+    expect(Dispatch.requestOf("push", "d", { ...push, before: ZEROS })).toEqual(Option.none())
+    expect(Dispatch.requestOf("push", "d", { ...push, before: ZEROS, created: true })).toMatchObject(Option.some({ sha: SHA }))
+    expect(Dispatch.requestOf("push", "d", { ...push, after: ZEROS })).toEqual(Option.none())
+    // A deleted ref that still names a commit, and a ref that is neither a branch nor a tag.
+    expect(Dispatch.requestOf("push", "d", { ...push, deleted: true })).toEqual(Option.none())
+    expect(Dispatch.requestOf("push", "d", { ...push, ref: "refs/pull/7/head" })).toEqual(Option.none())
+  })
+
   test("no dispatch for a deleted ref, another event, or a payload that isn't one", () => {
-    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", after: "0".repeat(40), deleted: true, repository }))
+    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", before: BEFORE, after: ZEROS, deleted: true, repository }))
       .toEqual(Option.none())
     expect(Dispatch.requestOf("issues", "d", { action: "opened", repository })).toEqual(Option.none())
     expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x" })).toEqual(Option.none())
-    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", after: "not-a-sha", repository })).toEqual(Option.none())
-    expect(Dispatch.requestOf("push", "bad delivery!", { ref: "refs/heads/x", after: SHA, repository })).toEqual(Option.none())
+    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", before: BEFORE, after: "not-a-sha", repository })).toEqual(Option.none())
+    expect(Dispatch.requestOf("push", "d", { ref: "refs/heads/x", before: BEFORE, after: SHA })).toEqual(Option.none())
+    expect(Dispatch.requestOf("push", "bad delivery!", { ref: "refs/heads/x", before: BEFORE, after: SHA, repository })).toEqual(Option.none())
   })
 
   test("a pull request at its head, against its base; trusted only from the repository itself and a Member or above", () => {

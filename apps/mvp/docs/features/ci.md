@@ -156,7 +156,7 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 
 | Row | Matches |
 |---|---|
-| `on: "github.push"` | a push to a branch: every branch, or the `branches` globs; a tag only when `tags` names it; a trigger with only `tags` runs on no branch. A deleted ref never runs |
+| `on: "github.push"` | a push to a branch: every branch, or the `branches` globs; a tag only when `tags` names it; a trigger with only `tags` runs on no branch. A deleted ref never runs, nor a push that doesn't name its ref and both commits: `GitHub.Payload.pushSource` (`@smthrs/integrations`) admits a push, here and in the `smthrs` host's repository flows alike |
 | `on: "github.pull_request"` | `opened`, `synchronize` and `reopened`, or the `actions` it names; against every base branch, or the `branches` globs |
 | `on: "manual"` | no event: the flows a person may run by hand (`Triggers.manualFlows`), each once, with its `title` |
 | `branches`, `tags` | globs: `*` is any run of characters but `/`, `**` any run at all; matched without regular expressions, so no pattern backtracks |

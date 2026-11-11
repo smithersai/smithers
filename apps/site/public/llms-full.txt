@@ -22847,6 +22847,12 @@ Schemas for the webhook payloads this package types: `User`, `Repository`,
 `IssueCommentEvent`, and `PushEvent`. Every schema validates the fields a
 caller is likely to read and passes everything else through untouched.
 
+| Export        | Signature                                               | Notes                                                                                                                                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pushSource`  | `(payload: unknown) => Result<PushSource, PushRefusal>` | The source a `push` delivery names. Every host that starts work on a push admits it through this function. Never throws.                                                                                                                                                                             |
+| `PushSource`  | type                                                    | `{ kind: "commit", ref, branch, tag, before, after }` for the commit a ref now points at (exactly one of `branch` and `tag` is set; `before` is forty zeros for a created ref), or `{ kind: "deleted", ref }`.                                                                                       |
+| `PushRefusal` | `"malformed" \| "deleted_identity" \| "no_candidate"`   | `malformed`: `ref` is not under `refs/heads/` or `refs/tags/`, or `before` or `after` is not a 40-hex commit id. `deleted_identity`: `deleted` is set but `after` is not forty zeros, or `before` is. `no_candidate`: `after` is forty zeros with nothing deleted, or `before` is without `created`. |
+
 ### GitHub.Actions
 
 The durable GitHub actions. [Durable actions](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/durable-actions.md)
