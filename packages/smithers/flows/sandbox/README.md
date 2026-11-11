@@ -13,7 +13,7 @@ liveness for flows. A provider adapts its SDK session to one of two seams:
 `RemoteChildProcessSpawner.Provider`, which can only run a command line, or
 `Sandbox.Provider`, which owns a machine's whole lifecycle and its filesystem.
 This package derives Effect's host services, two conformance suites, health,
-and supervision from those seams, and ships ten machine providers built on
+and supervision from those seams, and ships eleven machine providers built on
 them.
 
 It implements no isolation of its own. What a sandbox does and does not prevent
@@ -45,6 +45,7 @@ Every namespace below is also its own import subpath.
 | `DaytonaSandbox`            | `@smthrs/sandbox/DaytonaSandbox`            | The Daytona sandbox provider.                                                 |
 | `AwsSandbox`                | `@smthrs/sandbox/AwsSandbox`                | The AWS ECS task provider.                                                    |
 | `CloudflareSandbox`         | `@smthrs/sandbox/CloudflareSandbox`         | The Cloudflare Durable Object provider.                                       |
+| `HttpSandbox`               | `@smthrs/sandbox/HttpSandbox`               | The provider for machines held behind an HTTP service, and that service.      |
 | `SandboxHealth`             | `@smthrs/sandbox/SandboxHealth`             | Sandbox health-check contracts.                                               |
 | `SandboxSupervision`        | `@smthrs/sandbox/SandboxSupervision`        | Heartbeat supervision over a remote sandbox session.                          |
 | `SandboxTools`              | `@smthrs/sandbox/SandboxTools`              | Typed tools on a working copy: run, read, write, list, git status and diff.   |

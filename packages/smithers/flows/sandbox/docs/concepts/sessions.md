@@ -56,6 +56,7 @@ the finalizer does:
 | `DaytonaSandbox`      | `get(name)` before `create`                                     | nothing; teardown deletes the sandbox                                |
 | `AwsSandbox`          | `ListTasks` by the `startedBy` tag adopts a leftover            | nothing; `StopTask` runs on the scope                                |
 | `CloudflareSandbox`   | the Durable Object id is derived from the key                   | nothing; the object is destroyed, unless `retained` keeps it running |
+| `HttpSandbox`         | the service's retained provider acquires the key's machine      | nothing; `DELETE` destroys the machine                               |
 | `JustBashSandbox`     | not applicable, the session is in process                       | nothing; the directory is removed                                    |
 
 Read the middle column as crash recovery, not as storage. Only

@@ -67,6 +67,8 @@
     "./AwsSandbox/*": null,
     "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
     "./CloudflareSandbox/*": null,
+    "./HttpSandbox": "./src/HttpSandbox/index.ts",
+    "./HttpSandbox/*": null,
     "./DaytonaSandbox": "./src/DaytonaSandbox/index.ts",
     "./DaytonaSandbox/*": null,
     "./JustBashSandbox": "./src/JustBashSandbox/index.ts",
@@ -285,6 +287,17 @@
         }
       },
       "./CloudflareSandbox/*": null,
+      "./HttpSandbox": {
+        "import": {
+          "types": "./dist/esm/HttpSandbox/index.d.ts",
+          "default": "./dist/esm/HttpSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpSandbox/index.d.ts",
+          "default": "./dist/cjs/HttpSandbox/index.js"
+        }
+      },
+      "./HttpSandbox/*": null,
       "./DaytonaSandbox": {
         "import": {
           "types": "./dist/esm/DaytonaSandbox/index.d.ts",

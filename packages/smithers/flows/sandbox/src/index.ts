@@ -74,6 +74,9 @@ export * as AwsSandbox from "./AwsSandbox/index.ts"
 /** The Cloudflare Durable Object provider. */
 export * as CloudflareSandbox from "./CloudflareSandbox/index.ts"
 
+/** The provider that reaches machines held by an HTTP service, and the handler that service mounts. */
+export * as HttpSandbox from "./HttpSandbox/index.ts"
+
 /** Sandbox health-check contracts. */
 export * as SandboxHealth from "./SandboxHealth/index.ts"
 

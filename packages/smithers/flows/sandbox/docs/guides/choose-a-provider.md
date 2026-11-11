@@ -1,16 +1,16 @@
 ---
 title: "Choose a provider"
-description: "Pick one of the ten bundled machine providers by what you need from it, construct it, and look one up by name at the host's composition root."
+description: "Pick one of the eleven bundled machine providers by what you need from it, construct it, and look one up by name at the host's composition root."
 sidebar:
   order: 4
 ---
 
-All ten providers implement `Sandbox.Provider`, so the composition around them
+All eleven providers implement `Sandbox.Provider`, so the composition around them
 is identical and only the construction differs. Choose on four questions: what
 boundary you need, whether output has to be byte exact, whether you need to
 stop a running command, and what the provider costs to run.
 
-## The ten, side by side
+## The eleven, side by side
 
 | Provider              | A machine is                                                         | Needs                                               | Byte-exact command output | Declares `kill` |
 | --------------------- | -------------------------------------------------------------------- | --------------------------------------------------- | ------------------------- | --------------- |
@@ -24,9 +24,10 @@ stop a running command, and what the provider costs to run.
 | `DaytonaSandbox`      | one named Daytona sandbox                                            | a Daytona client                                    | no                        | no              |
 | `AwsSandbox`          | one Fargate task                                                     | ECS, the `aws` CLI, and `session-manager-plugin`    | no                        | yes             |
 | `CloudflareSandbox`   | one Sandbox Durable Object of a declared instance type               | a Worker binding, or one per declared instance type | no                        | no              |
+| `HttpSandbox`         | a machine a retained provider holds behind an HTTP service           | the service's URL, a token, and an `HttpClient`     | yes                       | yes             |
 
 "Byte-exact command output" is about a command's own `stdout` and `stderr`.
-File transfer is byte exact on all ten, so a caller that needs bytes out of a
+File transfer is byte exact on all eleven, so a caller that needs bytes out of a
 command has the command write a file and reads that back with `readFile`.
 
 A provider without `kill` cannot stop one command without tearing down the
@@ -132,4 +133,6 @@ already realised.
 ## Read next
 
 - [Place a flow body on a machine](./place-a-flow-body-on-a-machine.md).
+- [Reach sandboxes behind an HTTP service](./reach-sandboxes-behind-an-http-service.md):
+  serve a provider that only runs in one place, such as a Worker, to every host.
 - [Limits](../limits.md): where a provider buffers whole, and what that costs.

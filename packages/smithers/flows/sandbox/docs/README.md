@@ -32,9 +32,10 @@ provider contracts, and everything else derives from it:
   `stdin: "inherit"`, extra file descriptors, or `kill` on a provider that
   declares none each fail before anything starts.
 
-Nine providers ship with the package: `DirectorySandbox`, `JustBashSandbox`,
-`ContainerSandbox`, `KubernetesSandbox`, `MicrosandboxSandbox`,
-`VercelSandbox`, `DaytonaSandbox`, `AwsSandbox`, and `CloudflareSandbox`. None
+Eleven providers ship with the package: `DirectorySandbox`, `JustBashSandbox`,
+`CommandSandbox`, `ContainerSandbox`, `KubernetesSandbox`, `MicrosandboxSandbox`,
+`VercelSandbox`, `DaytonaSandbox`, `AwsSandbox`, `CloudflareSandbox`, and
+`HttpSandbox`, which reaches a retained one held behind an HTTP service. None
 of them costs the package a vendor dependency: an SDK arrives as an injected
 structural slice and a command-line tool arrives as an injected spawner, so you
 install only what the backend you picked needs.
@@ -141,7 +142,7 @@ next.
 
 ## Where to go next
 
-- [Installation](./installation.md): import forms, and what each of the ten
+- [Installation](./installation.md): import forms, and what each of the eleven
   providers expects you to supply.
 - [Quickstart](./quickstart.md): the walkthrough behind the example above,
   including what the health verdict does and does not mean.
@@ -151,8 +152,10 @@ next.
   what a session changed and land it on the host as one jj change.
 - [Run a long command](./guides/run-a-long-command.md): start a command detached,
   park the run while it runs, and collect its result once.
-- [Choose a provider](./guides/choose-a-provider.md): the ten side by side, by
+- [Choose a provider](./guides/choose-a-provider.md): the eleven side by side, by
   boundary, byte exactness, and cost to run.
+- [Reach sandboxes behind an HTTP service](./guides/reach-sandboxes-behind-an-http-service.md):
+  serve a retained provider over HTTP and reach its machines from any host.
 - [Write a provider](./guides/write-a-provider.md) and
   [Prove a provider](./guides/prove-a-provider.md): adapt your own backend and
   hold it to the conformance suites.

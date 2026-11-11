@@ -63,22 +63,23 @@ structural slice and a command-line tool arrives as an injected spawner, so
 adding a backend costs this package no dependency and costs you only what that
 backend needs.
 
-| Provider              | You supply                                                                                                                    | Installed where                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `DirectorySandbox`    | An Effect `FileSystem` and a lifecycle-backed `ChildProcessSpawner`.                                                          | The host process.                                                                   |
-| `JustBashSandbox`     | A [`just-bash`](https://www.npmjs.com/package/just-bash) `Bash` instance and a `FileSystem` mounted over the same tree.       | The host process, or the browser page.                                              |
-| `CommandSandbox`      | A `ChildProcessSpawner` and an argv prefix that reaches the machine, such as `ssh`. The guest needs `sh`, `env`, `base64`.    | The machine running the provider.                                                   |
-| `ContainerSandbox`    | A `ChildProcessSpawner`, a Docker-compatible CLI, host `/dev/stdin` for creation env, and guest `sh`, `env`, `base64`.        | The machine running the provider.                                                   |
-| `KubernetesSandbox`   | A `ChildProcessSpawner`, `kubectl` on `PATH`, and a cluster context. The guest image must carry `sh`, `env`, and `base64`.    | The machine running the provider, plus the cluster.                                 |
-| `MicrosandboxSandbox` | The [`microsandbox`](https://www.npmjs.com/package/microsandbox) SDK module, and a Microsandbox host that can boot a microVM. | Both.                                                                               |
-| `VercelSandbox`       | The `@vercel/sandbox` SDK module, and either an OIDC token or a token, team id, and project id.                               | The host process.                                                                   |
-| `DaytonaSandbox`      | A configured Daytona client from the vendor SDK.                                                                              | The host process.                                                                   |
-| `AwsSandbox`          | An ECS client and CLI spawner; `exec.streamingSpawner` is required for file writes, stdin, and spawn env.                     | The machine running the provider, plus an ECS cluster with execute-command enabled. |
-| `CloudflareSandbox`   | The `@cloudflare/sandbox` `getSandbox` function and a Worker binding to a deployed Durable Object namespace.                  | The Worker.                                                                         |
+| Provider              | You supply                                                                                                                                                  | Installed where                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `DirectorySandbox`    | An Effect `FileSystem` and a lifecycle-backed `ChildProcessSpawner`.                                                                                        | The host process.                                                                   |
+| `JustBashSandbox`     | A [`just-bash`](https://www.npmjs.com/package/just-bash) `Bash` instance and a `FileSystem` mounted over the same tree.                                     | The host process, or the browser page.                                              |
+| `CommandSandbox`      | A `ChildProcessSpawner` and an argv prefix that reaches the machine, such as `ssh`. The guest needs `sh`, `env`, `base64`.                                  | The machine running the provider.                                                   |
+| `ContainerSandbox`    | A `ChildProcessSpawner`, a Docker-compatible CLI, host `/dev/stdin` for creation env, and guest `sh`, `env`, `base64`.                                      | The machine running the provider.                                                   |
+| `KubernetesSandbox`   | A `ChildProcessSpawner`, `kubectl` on `PATH`, and a cluster context. The guest image must carry `sh`, `env`, and `base64`.                                  | The machine running the provider, plus the cluster.                                 |
+| `MicrosandboxSandbox` | The [`microsandbox`](https://www.npmjs.com/package/microsandbox) SDK module, and a Microsandbox host that can boot a microVM.                               | Both.                                                                               |
+| `VercelSandbox`       | The `@vercel/sandbox` SDK module, and either an OIDC token or a token, team id, and project id.                                                             | The host process.                                                                   |
+| `DaytonaSandbox`      | A configured Daytona client from the vendor SDK.                                                                                                            | The host process.                                                                   |
+| `AwsSandbox`          | An ECS client and CLI spawner; `exec.streamingSpawner` is required for file writes, stdin, and spawn env.                                                   | The machine running the provider, plus an ECS cluster with execute-command enabled. |
+| `CloudflareSandbox`   | The `@cloudflare/sandbox` `getSandbox` function and a Worker binding to a deployed Durable Object namespace.                                                | The Worker.                                                                         |
+| `HttpSandbox`         | An Effect `HttpClient`, the URL of a service that mounts `HttpSandbox.serve`, and its token. The guest needs `sh`, `tail` and `head`; `kill` walks `/proc`. | The host process; `serve` runs where its retained provider runs.                    |
 
 Because the SDK slices are structural, you can satisfy them with a test double
 instead of the vendor package, which is how the package's own suite proves
-seven of the ten providers. See
+seven of the eleven providers. See
 [Test against a scripted machine](./guides/testing.md).
 
 ## Browser bundles

@@ -219,11 +219,11 @@ network, and a suite run without these options says nothing about confinement.
 
 **Some backends change a command's output bytes.** Output is byte-exact
 through `DirectorySandbox`, `ContainerSandbox`, `KubernetesSandbox`,
-`MicrosandboxSandbox`. It is not through `JustBashSandbox`, `VercelSandbox`,
+`MicrosandboxSandbox`, and `HttpSandbox`. It is not through `JustBashSandbox`, `VercelSandbox`,
 `DaytonaSandbox`, or `CloudflareSandbox`, whose APIs report a
 command's output as a string that is re-encoded as UTF-8, and `AwsSandbox`
 reframes output through a pseudo-terminal, which normalizes line endings and
-interleaves standard error. File transfer is byte-exact on all ten, so a
+interleaves standard error. File transfer is byte-exact on all eleven, so a
 caller that needs bytes out of a command has the command write a file and reads
 that back. The full table is on [Limits](../limits.md).
 
@@ -259,6 +259,6 @@ Ask the question in this order.
 
 ## Read next
 
-- [Choose a provider](../guides/choose-a-provider.md): the ten, side by side,
+- [Choose a provider](../guides/choose-a-provider.md): the eleven, side by side,
   with what each costs to run.
 - [Limits](../limits.md): what this package bounds and what it buffers whole.

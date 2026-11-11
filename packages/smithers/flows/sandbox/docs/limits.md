@@ -13,17 +13,18 @@ placing an agent's file tools on a machine should know which is which.
 | `Session.readFile`, `Session.writeFile` | none. A file crosses whole, in memory, on every provider                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | a command's `stdout` and `stderr`       | none. `RemoteChildProcessSpawner` and the probe helpers collect a command's output whole                                                                                                                                                                                                                                                                                                                                                                                  |
 | `Sandbox.fileSystem.readDirectory`      | none, and a listing is materialized twice: once as probe output and once as the parsed entries                                                                                                                                                                                                                                                                                                                                                                            |
+| `HttpSandbox` file transfer             | `writeFile` sends at most `chunkBytes` (default 16 MiB) per request; `readFile` answers a file whole in one response, so a file must fit what the service and its proxies pass in one response                                                                                                                                                                                                                                                                            |
 | `AwsSandbox` command output             | none, and buffered whole by construction: the Session Manager channel carries one session's output as a single stream that is parsed after it ends                                                                                                                                                                                                                                                                                                                        |
 | `AwsSandbox` file writes                | require `ExecTransport.streamingSpawner`; one streaming session per `chunkBytes` bytes (default 3072, enforced range 1 through 65536 before base64). Payload travels on stdin. A 64 MiB write at the default needs roughly 22,000 sequential sessions                                                                                                                                                                                                                     |
 
 Command output is byte-exact through `DirectorySandbox`, `ContainerSandbox`,
-`KubernetesSandbox`, and `MicrosandboxSandbox`. It is not through
+`KubernetesSandbox`, `MicrosandboxSandbox`, and `HttpSandbox`. It is not through
 `JustBashSandbox`, `VercelSandbox`, `DaytonaSandbox`, or `CloudflareSandbox`, whose vendor
 APIs report a command's output as a string: what those providers stream is that
 string re-encoded as UTF-8, so a command writing a tarball or a compiled binary
 to stdout comes back changed. `AwsSandbox` reframes output through a
 pseudo-terminal, which normalizes line endings and interleaves standard error.
-File transfer is byte-exact on all ten when the required transport is supplied, so a caller that needs bytes out of a
+File transfer is byte-exact on all eleven when the required transport is supplied, so a caller that needs bytes out of a
 command has it write a file and reads that back with `readFile`.
 
 `JustBashSandbox` serializes commands across every session on one provider.

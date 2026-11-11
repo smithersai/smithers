@@ -9498,6 +9498,17 @@
           }
         },
         "./CloudflareSandbox/*": null,
+        "./HttpSandbox": {
+          "import": {
+            "types": "./dist/esm/HttpSandbox/index.d.ts",
+            "default": "./dist/esm/HttpSandbox/index.js"
+          },
+          "require": {
+            "types": "./dist/cjs/HttpSandbox/index.d.ts",
+            "default": "./dist/cjs/HttpSandbox/index.js"
+          }
+        },
+        "./HttpSandbox/*": null,
         "./DaytonaSandbox": {
           "import": {
             "types": "./dist/esm/DaytonaSandbox/index.d.ts",
@@ -9585,6 +9596,10 @@
         "DaytonaSandbox/make.d.ts": "cbb04b294e0250a14f85a2b7fef6c558528a625bf09dd045058de7a2c1ca4a27",
         "DirectorySandbox/index.d.ts": "03cdd7fb5964a8a990f0a4b64c78221b15ad78d4167603d70f52a96e5c9f50c3",
         "DirectorySandbox/make.d.ts": "9df0d9d036a55c903c4de62f79b5d46554eaf71029d6dd92ea543d33c1d33c52",
+        "HttpSandbox/index.d.ts": "378bfb396023457d4be80f51af60c62f1cfa885c6e85f5baa935db0b5db5981b",
+        "HttpSandbox/make.d.ts": "abf6232c6899a4c25674875c3de5746209af64e8687e46997c10cc759d8c4db3",
+        "HttpSandbox/protocol.d.ts": "3a551913dab2bc6a175dee688692a5e4faa2a9ff74a3b3711405fa189f9811bb",
+        "HttpSandbox/serve.d.ts": "6b6ec137202e30ae291dba694f993c276dc0ca70678824fdb103d1cd6c43a2fd",
         "JustBashSandbox/JustBashLike.d.ts": "fa607c15b988f52a48ad410c139bf6af045f41095a89cdf5c89ec26a1fc2fce6",
         "JustBashSandbox/index.d.ts": "05cbea3b8240ab2ec8e1ddda948ddf965af873e3b0b9317b9c5ae9f11ba3f653",
         "JustBashSandbox/make.d.ts": "cee098297b02dff3457fb72bdbd4bf31055d322409cc1a407eb07e2d15beb67c",
@@ -9661,7 +9676,7 @@
         "VercelSandbox/Sdk.d.ts": "e740f20b370598b7a0d81e96f77cf03a1cd44ce25473cc0fbf2f09299004c8d2",
         "VercelSandbox/index.d.ts": "ba4e6e533ef9cd2fa68382b07ba808b78437160c94a46a4a5f420c3b0a4dbc77",
         "VercelSandbox/make.d.ts": "7763d6eda7a5928d6bbef5c19892010c6f7b014407aedd2d1458928c49e3d2a4",
-        "index.d.ts": "ff5de5933498030894f6719665a4bd440df9b1ec889b23bbf3815ffe5b7c047c",
+        "index.d.ts": "a069e47bda9293069e2167238e0ba9bbbe5f0830060de5c590d85f462df7faea",
         "internal/MicrosandboxReattachRefusal.d.ts": "a27e0963e509bffe86a433d1f221ef197e68d7e5c208be740107f57d9674c247",
         "internal/attempt.d.ts": "7c83e3cf8e170917a393f290cee45adaaae02849bc16445739be67e1e131ceaf",
         "internal/base64.d.ts": "ec5d4cefd1183cb5eb9513bb7081dd506feae020a02861b8eb3c7775e941cd8c",
