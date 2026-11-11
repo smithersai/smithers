@@ -1,5 +1,6 @@
+import { actionRoot } from "./apiObjectDecision.vibe"
 import { indexedRun, matchingFlow, sameRun } from "../src/actions/actionHostDecision.vibe"
-import { isReplyChild } from "../src/core/actionRunDecision.vibe"
+import { isReplyChild, replyChildId } from "../src/core/actionRunDecision.vibe"
 import { cancelFlow, startConflict } from "./actionsDecision.vibe"
 // Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -14,7 +15,7 @@ import type { Storage } from "./Objects.vibe"
 
 export interface Runs {
   start(request: RunRequest, role: Role): (string | null)!Unreachable
-  request(id: string): (RunRequest | undefined)!Unreachable
+  request(id: string, exact?: boolean): (RunRequest | undefined)!Unreachable
   read(id: string): ReadonlyArray<Run>!Unreachable
   cancel(id: string, role: Role, owner: string): (string | null)!Unreachable
 }
@@ -46,7 +47,19 @@ function identityConflict() {
   )
 }
 
+const routeKey = (id: string) => `action-root/${id}`
+
 export function directory(hostId: string, storage: Storage, runs: Runs, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
+  const starts = Semaphore.makeUnsafe(1)
+  /** New requests reserve an explicit route for their root and child; older objects resolve by stored requests. */
+  effect function root(id: string) {
+    const stored = try promise(() => storage.get(routeKey(id)))
+    if (typeof stored === "string") return stored
+    const parent = actionRoot(id)
+    if (parent === id || (try runs.request(id, true)) !== undefined) return id
+    const request = try runs.request(parent, true)
+    return request?.flow === "vibelang/Post" ? parent : id
+  }
   effect function list(flow: string) {
     const stored = try promise(() => storage.list({ prefix: "action-index/" }))
     const ids = [...stored.values()] as ReadonlyArray<string>
@@ -56,16 +69,27 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     // once, from its own conversation.
     return rows.flatMap((read, at) => read.filter((run) => indexedRun(run.id, ids[at], indexed.has(run.id)))).filter((run) => matchingFlow(flow, run.flow)).sort((a, b) => b.started - a.started)
   }
-  effect function start(request: RunRequest, role: Role) {
+  effect function submit(request: RunRequest, role: Role) {
     const currentRole = try authority.role(request.owner ?? "")
     if (!allowed(currentRole, registration(request.flow))) return "forbidden"
-    const original = try runs.request(request.id)
+    const original = try runs.request(request.id, true)
     if (startConflict(original === undefined ? undefined : JSON.stringify(original), JSON.stringify(request))) return "conflict"
+    const routed = try root(request.id)
+    if (routed !== request.id) return "conflict"
+    if (request.flow === "vibelang/Post") {
+      const child = replyChildId(request.id)
+      const reserved = try promise(() => storage.get(routeKey(child)))
+      if ((reserved !== undefined && reserved !== request.id) || (try runs.request(child, true)) !== undefined) return "conflict"
+    }
     // The steps act on the request admitted above, with the role decided above. The journaled payload is that request
     // decoded, whose keys follow the schema's order; storing the admitted object keeps a replay's conflict check (a
     // JSON comparison with the caller's request) byte-identical.
     const runtime = CloudflareRuntime.layer({ hostId, executionId: `request/${request.id}`, flow: RequestAction._tag }, Interpreter.layerWithImplementations(RequestAction, Layer.mergeAll(
-      IndexRequest.toLayer(() => Effect.as(promise(() => storage.put(`action-index/${request.id}`, request.id)), null)),
+      IndexRequest.toLayer(() => Effect.as(promise(() => storage.put({
+        [`action-index/${request.id}`]: request.id,
+        [routeKey(request.id)]: request.id,
+        ...(request.flow === "vibelang/Post" ? { [routeKey(replyChildId(request.id))]: request.id } : {}),
+      })), null)),
       StartRequest.toLayer(() => runs.start(request, currentRole)),
     ))).pipe(Layer.provide(ObjectDatabase.layer(storage)))
     return try Effect.orDie(Effect.provide(effect {
@@ -79,6 +103,7 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
       )
     }, runtime))
   }
+  const start = (request: RunRequest, role: Role) => Semaphore.withPermits(starts, 1)(submit(request, role))
   effect function cancel(id: string, role: Role, owner = "") {
     const currentRole = try authority.role(owner)
     const run = (try runs.read(id)).find(run => sameRun(run.id, id))
@@ -98,5 +123,5 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
     if (original === undefined) return "not-found"
     return try start({ ...original, ...caller, owner, id: next, door: "button" }, role)
   }
-  return { list, start, cancel, rerun }
+  return { root, list, start, cancel, rerun }
 }

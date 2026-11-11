@@ -865,6 +865,10 @@ export const make = (
               budget.reserveCall!(request).pipe(
                 Effect.mapError((error) => error instanceof HarnessError.HarnessError ? error : accountingFailed(error))
               ),
+            checkpointCall: budget.checkpointCall === undefined
+              ? undefined
+              : (call) =>
+                budget.checkpointCall!(call.receipt, call.usage, call.settled).pipe(Effect.mapError(accountingFailed)),
             recordCall: budget.recordCall === undefined
               ? undefined
               : (call) =>

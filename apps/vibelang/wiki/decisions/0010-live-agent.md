@@ -104,3 +104,22 @@ next physical call is refused because the day is spent also reports `budget`. Ot
 existing reason. Each regression runs the real agent and memory flow engine with a faulty `Spend` Effect service;
 the scripted local HTTP model is asked once for an unrecordable charge, and never for a refused admission.
 The spec review still settles its own run key before reporting the physical-call failure.
+
+## Terminal reply accounting
+
+The conversation object persists each admission before its Budget RPC. The SDK's optional `Budget.Service.checkpointCall`
+records each usage report in an uninterruptible stream finalizer before the model result can be sealed.
+A lost response therefore retains the original day, receipt, ceiling and known usage. Resumable host interruptions
+keep those reservations for replay.
+
+After cancellation or deadline failure, the object's existing SDK execution host runs a separate
+`vibelang/reply/Accounting` flow before forgetting the terminal reply. Its settlement step retries through the
+engine when Budget is unreachable; cancellation of the reply cannot cancel this flow. The step uses its execution
+ID as an idempotency key for automatic recovery. Repeated settlement is idempotent in Budget. Known usable usage charges its reported count, an unfinished physical call charges its
+ceiling, and an unused initial admission releases its hold with a zero charge. An ambiguous unused admission
+closes at zero under the original receipt, so a late admission cannot recreate its hold. The provider cannot start
+until admission is durably confirmed. The flow logs `vibelang.reply.accounting` with the outcome and receipt
+count; it records no prompts, answers or provider messages.
+
+Regression tests inspect the real daily ledger after mid-stream cancellation, a deadline and Budget recovery,
+including an object restart. They also retain the hold on a resumable interruption.

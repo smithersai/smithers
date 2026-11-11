@@ -159,3 +159,14 @@ the run ID, epoch and generation when observation ends, without payloads or tran
 The implementation uses the existing Effect streams, Foldkit subscriptions and `@smthrs/ui-css` catalog entry.
 Regression coverage includes the real runtime losing a follow before another client cancels, explicit reconnect,
 missing runs, terminal receipts, stale messages, independent runs, property checks, the fuzz oracle and Chromium.
+
+## Root IDs and reply children
+
+A caller's root ID may end in `-reply`. The directory durably records its object route at admission and reserves
+a `Post`'s generated reply ID in the same write. A root and a generated child cannot reuse the same public ID in
+either order. Starts serialize within the object incarnation; the persisted routes survive a restart.
+Submission checks the exact root object, while reads, event streams, listing, cancellation and reruns share the
+recorded route. Older requests resolve by exact stored root request, then a stored `Post` parent.
+A different `Tour` request in the prefix object's journal cannot reject or redirect a suffix root.
+The regression exercises `Post` and `Tour` roots, duplicate submission, both collision orders and concurrent admission
+through the API Worker's production namespace adapters.

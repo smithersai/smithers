@@ -1,0 +1,119 @@
+// A terminal execution settles its outstanding model receipts in a separate durable flow. A yielded drive keeps
+// its holds for replay; cancellation and deadlines cannot cancel the settlement flow.
+import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { Node } from "@smthrs/plan"
+import type { Storage } from "./Objects.vibe"
+import type { Spend } from "./Reply.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+
+const Receipt = Schema.Struct({
+  day: Schema.String, reply: Schema.String, ceiling: Schema.Number,
+  admitted: Schema.NullOr(Schema.Literals([true])), tokens: Schema.Number, reported: Schema.Boolean,
+})
+type Receipt = typeof Receipt.Type
+const prefix = (execution: string) => `reply-accounting/${execution}/`
+const receiptKey = (execution: string, day: string, reply: string) => `${prefix(execution)}${day}/${reply}`
+
+/** Write accounting intent before the RPC: even a lost admission response must be reconciled at termination. */
+export function tracked(storage: Storage, execution: string, spend: Spend.Shape): Spend.Shape {
+  const checkpoint = effect (day: string, reply: string, tokens: number, reported: boolean) => {
+    const key = receiptKey(execution, day, reply)
+    const pending = try promise(() => storage.get(key))
+    if (pending !== undefined) {
+      const receipt = try Effect.orDie(Schema.decodeUnknownEffect(Receipt)(pending))
+      try promise(() => storage.put(key, { ...receipt, tokens, reported }))
+    }
+  }
+  return {
+    checkpoint: (day, reply, tokens, reported) => Effect.uninterruptible(checkpoint(day, reply, tokens, reported)),
+    admit: effect (day, reply, ceiling) => {
+      const key = receiptKey(execution, day, reply)
+      const receipt: Receipt = { day, reply, ceiling, admitted: null, tokens: 0, reported: !reply.startsWith("model/") }
+      try Effect.uninterruptible(promise(() => storage.put(key, receipt)))
+      const admitted = try spend.admit(day, reply, ceiling)
+      if (admitted) try promise(() => storage.put(key, { ...receipt, admitted }))
+      else try promise(() => storage.delete(key))
+      return admitted
+    },
+    spend: effect (day, reply, tokens, reported, ceiling) => {
+      const key = receiptKey(execution, day, reply)
+      // A receipt already settled is still sent to Budget, whose receipt makes replay idempotent.
+      try Effect.uninterruptible(checkpoint(day, reply, tokens, reported))
+      try spend.spend(day, reply, tokens, reported, ceiling)
+      try promise(() => storage.delete(key))
+    },
+  }
+}
+
+const Settle = Action.make("vibelang/reply/accounting/settle", {
+  payload: { execution: Schema.String, receipts: Schema.Array(Receipt) }, success: Schema.Null, error: Unreachable,
+  implementationVersion: "1",
+  idempotencyKey: payload => payload.execution,
+  retryPolicy: RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 30_000, jitterRatio: 0 }),
+})
+const Settlement = Flow.make("vibelang/reply/Accounting", {
+  description: "Settles a terminal reply's outstanding token reservations.",
+  modelInvocable: false,
+  payload: { execution: Schema.String, receipts: Schema.Array(Receipt) }, success: Schema.Null, error: Unreachable,
+  body: Node.capture({}, payload => Settle.call(payload)),
+})
+const CLEANUP = "reply-settlement/"
+
+/** Separate host metadata, sharing the object's SQLite engine and its alarm. */
+function cleanupStorage(storage: Storage): ExecutionObject.Storage {
+  return {
+    get: <A>(key: string) => promise(() => storage.get(CLEANUP + key) as Promise<A | undefined>),
+    put: (key, value) => promise(() => storage.put(CLEANUP + key, value)),
+    delete: key => promise(() => storage.delete(CLEANUP + key)),
+    setAlarm: at => promise(() => storage.setAlarm(at)),
+    // Forgetting cleanup must leave a wake for the parent even if the isolate stops before its next drive.
+    deleteAlarm: () => Clock.currentTimeMillis.pipe(Effect.flatMap(at => promise(() => storage.setAlarm(at)))),
+  }
+}
+
+function runtime(hostId: string, storage: Storage, intent: ExecutionObject.Intent, spend: Spend.Shape) {
+  const layer = Interpreter.layerWithImplementations(Settlement, Settle.toLayer(effect payload => {
+    for (const receipt of payload.receipts) {
+      // A lost admission response cannot have issued a provider call: tracked.admit persists true before returning.
+      // Closing that receipt at zero releases any hold and fences a late admission even while capacity is full.
+      // Budget's charge receipt also makes an already applied settlement harmless to repeat.
+      try spend.spend(receipt.day, receipt.reply, receipt.tokens, receipt.reported || receipt.admitted === null, receipt.ceiling)
+      try promise(() => storage.delete(receiptKey(payload.execution, receipt.day, receipt.reply)))
+    }
+    try Effect.logInfo("vibelang.reply.accounting").pipe(Effect.annotateLogs({ outcome: "settled", receipts: payload.receipts.length }))
+    return null
+  }, { implementationVersion: "1" }))
+  return CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, layer).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+}
+
+/** Finish cleanup before the terminal intent can be forgotten or another reply dispatched. */
+export effect function alarm<R>(hostId: string, storage: Storage, spend: Spend.Shape, drive: ExecutionObject.Outcome!!R, router: ExecutionObject.Router) {
+  const now = try Clock.currentTimeMillis
+  const cleanup = cleanupStorage(storage)
+  const options = { flows: [Settlement], runtime: (intent: ExecutionObject.Intent) => runtime(hostId, storage, intent, spend), router, settledRetentionMs: 0 }
+  const existing = try cleanup.get<string>(ExecutionObject.intentKey)
+  if (existing !== undefined) {
+    const result = try ExecutionObject.alarm(cleanup, options)
+    if (result._tag !== "Forgotten" && result._tag !== "Settled") return result
+    // The main execution still has its terminal intent. Keep its final forgetting alarm after cleanup.
+    try promise(() => storage.setAlarm(now))
+    if (result._tag === "Settled") return result
+  }
+  const raw = try promise(() => storage.get(ExecutionObject.intentKey))
+  const intent = raw === undefined ? undefined : try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw))
+  // The platform's terminal marker survives crashes between settlement and starting this flow.
+  const settled = try promise(() => storage.get(ExecutionObject.settledKey))
+  if (intent !== undefined && settled !== undefined) {
+    const receipts = try Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(Receipt))([...(try promise(() => storage.list({ prefix: prefix(intent.executionId) }))).values()]))
+    if (receipts.length > 0) {
+      const pending = try Effect.orDie(ExecutionObject.intent(Settlement, { executionId: `accounting/${intent.executionId}`, payload: { execution: intent.executionId, receipts } }))
+      try Effect.orDie(ExecutionObject.start(cleanup, pending, Effect.void))
+      return try ExecutionObject.alarm(cleanup, options)
+    }
+  }
+  const result = try drive
+  // An alarm after a terminal drive starts settlement before the platform can forget its intent.
+  if (result._tag === "Settled") try promise(() => storage.setAlarm(now))
+  return result
+}

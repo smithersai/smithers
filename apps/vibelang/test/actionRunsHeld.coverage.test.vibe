@@ -11,6 +11,9 @@ import { Factory } from "../src/core/Factory.vibe"
 import * as HistoryActions from "../worker/HistoryActions.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
 import * as Objects from "../worker/Objects.vibe"
+import * as Daily from "../worker/Budget.vibe"
+import { INPUT_CEILING } from "../worker/CallBudget.vibe"
+import { MAX_ANSWER_TOKENS } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { world, request, history } from "./support/actionObjects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
@@ -84,6 +87,9 @@ describe("a run's reply in flight", () => {
         expect(try replyOf("stream-held", object.sequencer)).toEqual({ done: true, error: "Cancelled", state: "cancelled" })
         expect(snapshot.entries.find((entry) => entry.author === "agent")?.text).toBe("")
         expect(try scripted.calls).toBe(1)
+        for (let turn = 0; turn < 4; turn++) try restarted.alarm(w.spend, model, product)
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(0)
+        expect(try promise(() => w.budgetStorage.get(Daily.SPENT))).toBe(INPUT_CEILING + MAX_ANSWER_TOKENS)
       }
     }
   }), 60_000)

@@ -28,7 +28,7 @@ import type { Principal } from "../src/history/roles.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
 import { type Exporter, off } from "./HistoryExport.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
-import { actionRoot, alarmAgent, bootstrapsHistory, alarmName, alarmOwner, crossOriginRefused, draftForbidden, pendingPost, readsPostOwner, recordsParticipation, sandboxRole, signedOutRoute, writeActor } from "./apiObjectDecision.vibe"
+import { alarmAgent, bootstrapsHistory, alarmName, alarmOwner, crossOriginRefused, draftForbidden, pendingPost, readsPostOwner, recordsParticipation, sandboxRole, signedOutRoute, writeActor } from "./apiObjectDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
 import { publicReads, readSetup, type ReadSetup } from "./PublicReads.vibe"
@@ -86,6 +86,7 @@ export interface AccountsShape extends ObjectStartup.Health {
   readonly participation: (cookie: string | undefined) => void!!RuntimeContext
 }
 export interface ActionDirectoryShape extends ObjectStartup.Health {
+  readonly root: (id: string) => string!!RuntimeContext
   readonly list: (flow: string) => ReadonlyArray<Run>!!RuntimeContext
   readonly start: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
   readonly rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => (string | null)!!RuntimeContext
@@ -280,8 +281,8 @@ function actionIndexBody(state: ObjectState, accounts: Namespace<AccountsShape>,
     const runtime = try RuntimeContext
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const runs: ActionDirectory.Runs = {
-      request: effect (id) => {
-        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
+      request: effect (id, exact) => {
+        const object = try objectOf(conversations, `action-${exact === true ? id : try directory.root(id)}`, "action")
         return try reached(runtime, "action", object.actionRequest())
       },
       start: effect (request, role) => {
@@ -289,16 +290,17 @@ function actionIndexBody(state: ObjectState, accounts: Namespace<AccountsShape>,
         return try Effect.orDie(reached(runtime, "action", object.startAction(request, role)))
       },
       read: effect (id) => {
-        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
+        const object = try objectOf(conversations, `action-${try directory.root(id)}`, "action")
         return try Effect.orDie(reached(runtime, "action", object.actionRuns()))
       },
       cancel: effect (id, role, owner) => {
-        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
+        const object = try objectOf(conversations, `action-${try directory.root(id)}`, "action")
         return try Effect.orDie(reached(runtime, "action", object.cancelAction(id, role, owner)))
       },
     }
     const directory = ActionDirectory.directory(hostId, state.raw.storage, runs, actionIdentity(accounts, runtime))
     return {
+      root: (id: string) => Effect.orDie(directory.root(id)),
       list: directory.list,
       start: (request: RunRequest, role: Role) => Effect.orDie(directory.start(request, role)),
       rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => Effect.orDie(directory.rerun(id, next, role, owner, caller)),
@@ -435,6 +437,10 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         return try reached(runtime, "history", object.fetch(request))
       },
     }
+    const actionRoot = effect (id: string) => {
+      const index = try objectOf(actions, "vibelang", "actions")
+      return try reached(runtime, "actions", index.root(id))
+    }
     const actionApi: ActionsApi = {
       rerun: effect (id, next, role, owner, caller) => {
         const object = try objectOf(actions, "vibelang", "actions")
@@ -453,12 +459,12 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         return try reached(runtime, "actions", object.cancel(id, role, owner))
       },
       read: effect (id) => {
-        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
+        const object = try objectOf(conversations, `action-${try actionRoot(id)}`, "action")
         return try reached(runtime, "action", object.actionRuns())
       },
       events: effect (id) => {
         const request = try HttpServerRequest.HttpServerRequest
-        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
+        const object = try objectOf(conversations, `action-${try actionRoot(id)}`, "action")
         return try reached(runtime, "action", object.fetch(request))
       },
     }
@@ -471,4 +477,4 @@ export const budgetObject = (...args: Parameters<typeof budgetBody>) => ObjectSt
 export const historyObject = (...args: Parameters<typeof historyBody>) => ObjectStartup.make("History", args[0], historyBody(...args), { page: true, write: true, act: true, fetch: true, alarm: true })
 export const accountsObject = (...args: Parameters<typeof accountsBody>) => ObjectStartup.make("ProjectAccounts", args[0], accountsBody(...args), { draftWiki: true, current: true, role: true, allowed: true, participation: true, fetch: true })
 export const conversationObject = (...args: Parameters<typeof conversationBody>) => ObjectStartup.make("Conversation", args[0], conversationBody(...args), { startAction: true, actionRequest: true, actionRuns: true, cancelAction: true, post: true, read: true, openWiki: true, controlTour: true, tour: true, endTour: true, fetch: true, alarm: true })
-export const actionIndexObject = (...args: Parameters<typeof actionIndexBody>) => ObjectStartup.make("ActionIndex", args[0], actionIndexBody(...args), { list: true, start: true, rerun: true, cancel: true })
+export const actionIndexObject = (...args: Parameters<typeof actionIndexBody>) => ObjectStartup.make("ActionIndex", args[0], actionIndexBody(...args), { root: true, list: true, start: true, rerun: true, cancel: true })

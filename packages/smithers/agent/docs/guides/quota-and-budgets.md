@@ -324,6 +324,11 @@ physical call supplies `reserveCall` and `recordCall` on its `Budget.Service`:
 
 - `reserveCall(request)` runs before each provider stream opens and returns a
   receipt string with no credentials in it.
+- An optional `checkpointCall(receipt, usage, settled)` durably records usage as
+  the provider stream closes, before the result can be sealed. It runs in an
+  uninterruptible finalizer and does not charge the ledger. A host that settles
+  cancelled or expired runs separately uses this handoff so terminal cleanup
+  can retain known usage even when `recordCall` never begins.
 - The receipt, the call's final usage and whether its stream settled are saved
   with the sealed answer.
 - `recordCall(receipt, usage, settled)` runs after sealing, once per receipt. It

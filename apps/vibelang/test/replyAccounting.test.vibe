@@ -1,0 +1,126 @@
+// @vitest-environment node
+// Real reply hosts, a real daily ledger, and an injected unavailable Budget transport.
+import { describe, expect, it } from "@effect/vitest"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import * as Daily from "../worker/Budget.vibe"
+import * as Accounting from "../worker/ReplyAccounting.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+describe("reply accounting recovery", () => {
+  it.live("persists an ambiguous admission and known usage before an unreachable settlement", () => effect {
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const budget = try Objects.budget(storage, 100)
+    let lost = true
+    const transport = {
+      admit: effect (_day: string, key: string, ceiling: number) => {
+        const accepted = try budget.admit(key, ceiling)
+        if (lost) throw new Unreachable({ what: "budget" })
+        return accepted
+      },
+      spend: effect (_day: string, key: string, used: number, reported: boolean, ceiling: number) => {
+        if (lost) throw new Unreachable({ what: "budget" })
+        try budget.spend(key, used, reported, ceiling)
+      },
+    }
+    const tracked = Accounting.tracked(storage, "reply/m1", transport)
+    expect((try exit(tracked.admit("day", "model/one", 20)))._tag).toBe("Failure")
+    expect(try promise(() => storage.get(Daily.RESERVED))).toBe(20)
+    expect((try exit(tracked.spend("day", "model/one", 7, true, 20)))._tag).toBe("Failure")
+    const pending = [...(try promise(() => storage.list({ prefix: "reply-accounting/" }))).values()]
+    expect(pending).toEqual([{ day: "day", reply: "model/one", ceiling: 20, admitted: null, tokens: 7, reported: true }])
+    lost = false
+    // A restarted incarnation reads the same persisted accounting; Budget's receipts make replay harmless.
+    const restarted = Accounting.tracked(storage, "reply/m1", transport)
+    try restarted.spend("day", "model/one", 7, true, 20)
+    try restarted.spend("day", "model/one", 7, true, 20)
+    expect(try promise(() => storage.get(Daily.RESERVED))).toBe(0)
+    expect(try promise(() => storage.get(Daily.SPENT))).toBe(7)
+    expect((try promise(() => storage.list({ prefix: "reply-accounting/" }))).size).toBe(0)
+  })
+
+  for (const scenario of [
+    { name: "unused admission", key: "r1", lostAdmission: false, refused: false, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "unfinished call", key: "model/one", lostAdmission: false, refused: false, used: undefined, chargedBeforeLoss: false, expected: 20 },
+    { name: "lost admission response", key: "model/one", lostAdmission: true, refused: false, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "refused admission", key: "model/one", lostAdmission: false, refused: true, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "lost refusal response", key: "model/one", lostAdmission: true, refused: true, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "lost refusal response after capacity reopens", key: "model/one", lostAdmission: true, refused: false, full: true, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "lost refusal before capacity reopens", key: "model/one", lostAdmission: true, refused: false, full: true, reopenAfter: true, used: undefined, chargedBeforeLoss: false, expected: 0 },
+    { name: "lost usage charge", key: "model/one", lostAdmission: false, refused: false, used: 3, chargedBeforeLoss: false, expected: 3 },
+    { name: "lost settlement response", key: "model/one", lostAdmission: false, refused: false, used: 3, chargedBeforeLoss: true, expected: 3 },
+  ]) {
+    it.live(`reconciles ${scenario.name} once in the terminal accounting flow`, () => effect {
+      const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+      const daily = try Objects.budget(storage, scenario.refused ? 0 : 100)
+      if ("full" in scenario) expect(try daily.admit("other", 100)).toBe(true)
+      let lost = true
+      const transport = {
+        admit: effect (_day: string, key: string, ceiling: number) => {
+          const admitted = try daily.admit(key, ceiling)
+          if (lost && scenario.lostAdmission) throw new Unreachable({ what: "budget" })
+          return admitted
+        },
+        spend: effect (_day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+          expect(_day).toBe("original-day")
+          if (lost && !scenario.chargedBeforeLoss) throw new Unreachable({ what: "budget" })
+          try daily.spend(key, tokens, reported, ceiling)
+          if (lost) throw new Unreachable({ what: "budget" })
+        },
+      }
+      const tracked = Accounting.tracked(storage, "reply/m1", transport)
+      try exit(tracked.admit("original-day", scenario.key, 20))
+      if (scenario.used !== undefined) try exit(tracked.spend("original-day", scenario.key, scenario.used, true, 20))
+      const sequencer = try Objects.conversation(storage)
+      try Objects.post("accounting", storage, sequencer, "a1", "Ada", "Question")
+      const history = readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" })))
+      const model = { model: undefined, unusable: "unset" }
+      // A real reply execution reaches a terminal receipt. Only then may the accounting host release its holds.
+      try Objects.alarm("accounting", storage, sequencer, transport, model, history)
+      expect((try sequencer.read(0)).entries.find(entry => entry.author === "agent")?.done).toBe(true)
+      lost = false
+      if ("full" in scenario && !("reopenAfter" in scenario)) try daily.spend("other", 0, true, 100)
+      for (let turn = 0; turn < 5; turn++) try Objects.alarm("accounting", storage, sequencer, transport, model, history)
+      if ("reopenAfter" in scenario) {
+        try daily.spend("other", 0, true, 100)
+        // A delayed admission for a terminal receipt cannot recreate a hold after cleanup.
+        expect(try daily.admit(scenario.key, 20)).toBe(false)
+      }
+      expect((try promise(() => storage.get(Daily.RESERVED))) ?? 0).toBe(0)
+      expect((try promise(() => storage.get(Daily.SPENT))) ?? 0).toBe(scenario.expected)
+      expect((try promise(() => storage.list({ prefix: "reply-accounting/" }))).size).toBe(0)
+    }, 60_000)
+  }
+  it.live("keeps a retrying cleanup's receipt and parent intent until its transport recovers", () => effect {
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const daily = try Objects.budget(storage, 100)
+    let interrupted = true
+    const transport = {
+      admit: (_day: string, key: string, ceiling: number) => daily.admit(key, ceiling),
+      spend: effect (_day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+        if (interrupted) return try Effect.interrupt
+        try daily.spend(key, tokens, reported, ceiling)
+      },
+    }
+    const tracked = Accounting.tracked(storage, "reply/m1", transport)
+    expect(try tracked.admit("day", "model/one", 20)).toBe(true)
+    try tracked.checkpoint!("day", "model/one", 3, true, 20)
+    const sequencer = try Objects.conversation(storage)
+    try Objects.post("retrying-accounting", storage, sequencer, "a1", "Ada", "Question")
+    const history = readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" })))
+    const model = { model: undefined, unusable: "unset" }
+    expect((try Objects.alarm("retrying-accounting", storage, sequencer, transport, model, history))._tag).toBe("Settled")
+    expect((try Objects.alarm("retrying-accounting", storage, sequencer, transport, model, history))._tag).toBe("Retrying")
+    expect((try Objects.alarm("retrying-accounting", storage, sequencer, transport, model, history))._tag).toBe("Retrying")
+    expect(try promise(() => storage.get(Daily.RESERVED))).toBe(20)
+    expect((try promise(() => storage.list({ prefix: "reply-accounting/" }))).size).toBe(1)
+    expect((try promise(() => storage.list({ prefix: "reply-settlement/" }))).size).toBeGreaterThan(0)
+    interrupted = false
+    for (let turn = 0; turn < 5; turn++) try Objects.alarm("retrying-accounting", storage, sequencer, transport, model, history)
+    expect(try promise(() => storage.get(Daily.RESERVED))).toBe(0)
+    expect(try promise(() => storage.get(Daily.SPENT))).toBe(3)
+    expect((try promise(() => storage.list({ prefix: "reply-accounting/" }))).size).toBe(0)
+  }, 60_000)
+
+})

@@ -1,3 +1,4 @@
+import * as ReplyAccounting from "./ReplyAccounting.vibe"
 import { initialDispatch, probeDispatch, finishDispatch } from "./liveDispatchDecision.vibe"
 // What each Durable Object runs, whoever hosts it: the Alchemy objects the API Worker deploys (Api.vibe) and the plain
 // ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
@@ -271,12 +272,12 @@ export effect function alarm(
   model: ChatModel.Shape,
   history: HistoryReader,
 ) {
-  const outcome = try ExecutionObject.alarm(executionStorage(storage), {
+  const outcome = try ReplyAccounting.alarm(hostId, storage, spend, ExecutionObject.alarm(executionStorage(storage), {
     flows: [Reply, Tour],
     runtime: (intent) => executionLayer(hostId, storage, sequencer, intent, { spend, model, history }),
     router: unrouted,
     settledRetentionMs: SETTLED_RETENTION_MS,
-  })
+  }), unrouted)
   try sequencer.ensureDispatched()
   return outcome
 }
@@ -288,7 +289,7 @@ function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.S
     Layer.succeed(HistoryTools, { history: active.history }),
     Layer.succeed(Replies, repliesOf(sequencer)),
     Layer.succeed(Tours, toursOf(sequencer, tourWaker(hostId, storage))),
-    Layer.succeed(Spend, active.spend), Layer.succeed(ChatModel, active.model),
+    Layer.succeed(Spend, ReplyAccounting.tracked(storage, intent.executionId, active.spend)), Layer.succeed(ChatModel, active.model),
   )
   return CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
     Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(services),
@@ -297,12 +298,19 @@ function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.S
 
 /** One SDK host per action-object incarnation: cancellation interrupts the active drive and survives reload. */
 export function executionHost(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, admit?: () => boolean!!) {
-  return ExecutionObject.make(executionStorage(storage), {
+  const host = ExecutionObject.make(executionStorage(storage), {
     flows: [Reply, Tour], router: unrouted, settledRetentionMs: SETTLED_RETENTION_MS,
     runtime: (intent) => Layer.unwrap(effect { return executionLayer(hostId, storage, sequencer, intent, (try ActiveExecution).services) }),
     canStart: admit,
-    afterAlarm: sequencer.ensureDispatched(),
   })
+  return {
+    ...host,
+    alarm: effect () => {
+      const outcome = try ReplyAccounting.alarm(hostId, storage, (try ActiveExecution).services.spend, host.alarm(), unrouted)
+      try sequencer.ensureDispatched()
+      return outcome
+    },
+  }
 }
 
 /** A cancelled intent may have been refused before the SDK admitted any execution row. */

@@ -333,6 +333,8 @@ export interface RecordOptions {
     >)
     | undefined
   readonly onCall?: ((call: CallReceipt) => void) | undefined
+  /** Durable usage handoff, in the stream finalizer before any model result can be sealed. */
+  readonly checkpointCall?: ((call: CallReceipt) => Effect.Effect<void, HarnessError.HarnessError>) | undefined
   /** Observes that a provider invocation was actually issued, not merely considered. */
   readonly onStart?: (() => void) | undefined
   /** The overrun budget of one provider call; absent or zero disarms it. */
@@ -462,7 +464,7 @@ export const recordModelStep = (
             ))
           )),
           Effect.onExit((exit) =>
-            Effect.sync(() => {
+            Effect.gen(function*() {
               if (receipt === undefined) return
               const call = {
                 receipt,
@@ -471,6 +473,7 @@ export const recordModelStep = (
               }
               receipts.push(call)
               options.onCall?.(call)
+              if (options.checkpointCall !== undefined) yield* options.checkpointCall(call)
             })
           )
         )
@@ -830,6 +833,7 @@ export interface Dispatch {
     >
     | undefined
   readonly reserveCall?: RecordOptions["reserveCall"]
+  readonly checkpointCall?: RecordOptions["checkpointCall"]
   readonly recordCall?: ((call: CallReceipt) => Effect.Effect<void, HarnessError.HarnessError>) | undefined
   /** The last word, inside the step, on whether a recorded value is sealed. */
   readonly settle?: ((recorded: Recorded) => Effect.Effect<Recorded, ModelError.ModelError>) | undefined
@@ -943,6 +947,7 @@ export const dispatch = (
             issued = true
           },
           reserveCall: options.reserveCall,
+          checkpointCall: options.checkpointCall,
           onCall: (call) => {
             receipts.push(call)
           },

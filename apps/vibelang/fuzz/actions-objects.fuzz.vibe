@@ -46,7 +46,7 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
         { op: "cancel" as const, id: flow * 3 + 2, flow, well: true, role: "maintainer" as const },
       ])
       for (const op of [...lifecycle, ...ops]) {
-        const id = `arun${op.id % 16}`
+        const id = `arun${op.id % 16}${op.id % 3 === 0 ? "-reply" : ""}`
         const flow = FLOWS[op.flow % FLOWS.length]!
         if (op.op === "demote") {
           try device.accounts!.choose(op.role)
@@ -58,7 +58,7 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
           if (answer === null) used.add(id)
         }
         if (op.op === "rerun") {
-          const next = `anext${op.id % 16}`
+          const next = `anext${op.id % 16}${op.id % 2 === 0 ? "-reply" : ""}`
           const answer = try w.directory.rerun(id, next, op.role, w.person.id)
           if (answer !== null && !refusals.includes(answer)) return false
           if (answer === null) used.add(next)

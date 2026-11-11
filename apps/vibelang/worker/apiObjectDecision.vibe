@@ -1,7 +1,7 @@
 // The API Worker's object-body decisions (0018, third-lane batch 21). `apiObjects.vibe` calls these; object stubs, RPCs,
 // storage reads and Effect execution stay host boundaries there.
 
-/** The conversation an action run lives in: a reply run `<id>-reply` lives in `<id>`'s object. */
+/** The candidate parent spelling of a reply child; the directory verifies persisted root requests before routing. */
 //@ verify
 //@ ensures id.endsWith("-reply") ==> \result + "-reply" == id
 //@ ensures !id.endsWith("-reply") ==> \result == id

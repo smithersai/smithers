@@ -518,6 +518,15 @@ export interface Service {
       AccountingUnavailable | HarnessError.HarnessError
     >)
     | undefined
+  /**
+   * Durably checkpoints a physical call's usage before its answer is sealed.
+   * Runs uninterruptibly as the provider stream closes. Hosts that reconcile
+   * terminal executions use it to retain usage even when cancellation prevents
+   * the later ledger settlement. This records usage; it does not charge it.
+   */
+  readonly checkpointCall?:
+    | ((receipt: string, usage: ModelEvent.Usage, settled: boolean) => Effect.Effect<void, AccountingUnavailable>)
+    | undefined
   /** Idempotently reconciles a physical call's receipt, after its answer is sealed. */
   readonly recordCall?:
     | ((receipt: string, usage: ModelEvent.Usage, settled: boolean) => Effect.Effect<void, AccountingUnavailable>)

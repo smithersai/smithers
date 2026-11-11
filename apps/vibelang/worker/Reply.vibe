@@ -50,6 +50,7 @@ export service Replies {
  * the provider `reported` them and the whole `ceiling` when it did not, and frees the reservation.
  */
 export service Spend {
+  readonly checkpoint?: (day: string, reply: string, tokens: number, reported: boolean, ceiling: number) => void!!
   admit(day: string, reply: string, ceiling: number): boolean!Unreachable
   spend(day: string, reply: string, tokens: number, reported: boolean, ceiling: number): void!Unreachable
 }

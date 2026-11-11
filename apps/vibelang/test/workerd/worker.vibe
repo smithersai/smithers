@@ -314,19 +314,21 @@ export class History {
 
 /** Plain workerd host of the same production directory and SQLite engine. */
 export class ActionIndex {
-  constructor(readonly state: State, readonly env: Env) {}
+  readonly directory: ReturnType<typeof ActionDirectory.directory>
+  constructor(readonly state: State, readonly env: Env) {
+    const runs: ActionDirectory.Runs = {
+      request: (id, exact) => reach("action", async () => (await call(env.CONVERSATION, `action-${exact === true ? id : await Effect.runPromise(this.directory.root(id))}`, "action/request", {}) ?? undefined) as RunRequest | undefined),
+      start: (request, role) => reach("action", () => call(env.CONVERSATION, `action-${request.id}`, "action/start", { request, role }) as Promise<string | null>),
+      read: (id) => reach("action", async () => call(env.CONVERSATION, `action-${await Effect.runPromise(this.directory.root(id))}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
+      cancel: (id, role, owner) => reach("action", async () => call(env.CONVERSATION, `action-${await Effect.runPromise(this.directory.root(id))}`, "action/cancel", { id, role, owner }) as Promise<string | null>),
+    }
+    this.directory = ActionDirectory.directory(state.id.toString(), state.storage, runs, actionIdentity(env))
+  }
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const args = await request.json() as { readonly flow: string; readonly id: string; readonly request: RunRequest; readonly role: Role; readonly next: string; readonly owner: string; readonly caller?: { readonly name: string; readonly actor: "person" | "agent" } }
-    const env = this.env
-    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
-    const runs: ActionDirectory.Runs = {
-      request: (id) => reach("action", async () => (await call(env.CONVERSATION, `action-${root(id)}`, "action/request", {}) ?? undefined) as RunRequest | undefined),
-      start: (request, role) => reach("action", () => call(env.CONVERSATION, `action-${request.id}`, "action/start", { request, role }) as Promise<string | null>),
-      read: (id) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
-      cancel: (id, role, owner) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/cancel", { id, role, owner }) as Promise<string | null>),
-    }
-    const directory = ActionDirectory.directory(this.state.id.toString(), this.state.storage, runs, actionIdentity(env))
+    const directory = this.directory
+    if (url.pathname === "/root") return json(await Effect.runPromise(directory.root(args.id)))
     if (url.pathname === "/list") return json(await Effect.runPromise(directory.list(args.flow)))
     if (url.pathname === "/start") return json(await Effect.runPromise(directory.start(args.request, args.role)))
     if (url.pathname === "/rerun") return json(await Effect.runPromise(directory.rerun(args.id, args.next, args.role, args.owner, args.caller)))
@@ -405,15 +407,14 @@ export default {
             return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
           })),
     }
-    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
     const actions: ActionsApi = {
       rerun: (id, next, role, owner, caller) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "rerun", { id, next, role, owner, caller }) as Promise<string | null>),
       list: (flow) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "list", { flow }) as Promise<ReadonlyArray<Run>>),
       start: (request, role) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "start", { request, role }) as Promise<string | null>),
       cancel: (id, role, owner) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "cancel", { id, role, owner }) as Promise<string | null>),
-      read: (id) => reach("action", () => call(env.CONVERSATION, `action-${root(id)}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
+      read: (id) => reach("action", async () => call(env.CONVERSATION, `action-${await call(env.ACTION_INDEX, "vibelang", "root", { id })}`, "action/runs", {}) as Promise<ReadonlyArray<Run>>),
       events: (id) => Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) => reach("action", async () => {
-        const object = env.CONVERSATION.get(env.CONVERSATION.idFromName(`action-${root(id)}`))
+        const object = env.CONVERSATION.get(env.CONVERSATION.idFromName(`action-${await call(env.ACTION_INDEX, "vibelang", "root", { id })}`))
         return HttpServerResponse.raw(await object.fetch("https://object/events", { signal: request.signal }))
       })),
     }

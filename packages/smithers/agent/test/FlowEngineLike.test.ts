@@ -409,6 +409,7 @@ describe("FlowEngineLike.make", () => {
     let reserved = 0
     let attempts = 0
     const receipts: Array<string> = []
+    const checkpoints: Array<{ receipt: string; settled: boolean }> = []
     const outcome = await drive(Effect.gen(function*() {
       const budget: Budget.Service = {
         ...Budget.makeUnbounded(),
@@ -417,8 +418,13 @@ describe("FlowEngineLike.make", () => {
             reserved++
             return "physical-call-1"
           }),
+        checkpointCall: (receipt, _usage, settled) =>
+          Effect.sync(() => {
+            checkpoints.push({ receipt, settled })
+          }),
         recordCall: (receipt) =>
           Effect.suspend(() => {
+            expect(checkpoints).toEqual([{ receipt, settled: true }])
             receipts.push(receipt)
             return ++attempts === 1
               ? Effect.fail(
@@ -438,7 +444,67 @@ describe("FlowEngineLike.make", () => {
     expect(completed(outcome)).toBe("recovered")
     expect(calls).toEqual(["test-model"])
     expect(reserved).toBe(1)
+    expect(checkpoints).toEqual([{ receipt: "physical-call-1", settled: true }])
     expect(receipts).toEqual(["physical-call-1", "physical-call-1"])
+  })
+
+  it("finishes the usage checkpoint under interruption before a model result can be sealed", async () => {
+    const checkpoints: Array<InternalModelStep.CallReceipt> = []
+    await Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const model = Model.make({
+        stream: () =>
+          Stream.make(
+            ModelEvent.ModelEvent.Usage({ totalTokens: 7 }),
+            ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+          )
+      })
+      const running = yield* InternalModelStep.recordModelStep(model, request("checkpoint"), {
+        reissue: false,
+        final: true,
+        reserveCall: () => Effect.succeed("physical-checkpoint"),
+        checkpointCall: (call) =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(Effect.sync(() => {
+              checkpoints.push(call)
+            }))
+          )
+      }).pipe(Effect.forkChild)
+      yield* Deferred.await(entered)
+      const cancelling = yield* Fiber.interrupt(running).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      expect(checkpoints).toEqual([])
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(cancelling)
+      expect(checkpoints).toEqual([{ receipt: "physical-checkpoint", usage: { totalTokens: 7 }, settled: true }])
+    }).pipe(Effect.scoped, Effect.runPromise)
+  })
+
+  it("does not seal an answer whose usage checkpoint failed", async () => {
+    let sealed = false
+    const calls: Array<string> = []
+    const outcome = await drive(Effect.gen(function*() {
+      return yield* InternalModelStep.dispatch({
+        name: "failed-checkpoint",
+        key: "failed-checkpoint-key",
+        request: request("checkpoint"),
+        reserveCall: () => Effect.succeed("physical-checkpoint"),
+        checkpointCall: () =>
+          Effect.fail(new HarnessError({ code: "engine_failed", message: "checkpoint unavailable" })),
+        settle: (recorded) =>
+          Effect.sync(() => {
+            sealed = true
+            return recorded
+          }),
+        model: countingModel(calls),
+        retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
+      })
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(sealed).toBe(false)
+    expect(calls).toEqual(["test-model"])
   })
 
   it("refuses a physical provider call before model invocation", async () => {

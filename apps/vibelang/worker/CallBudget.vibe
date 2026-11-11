@@ -5,6 +5,7 @@ import { Clock, Effect, Schema } from "effect"
 import { SecureRandom } from "effect/crypto"
 
 interface Ledger {
+  readonly checkpoint?: (day: string, key: string, used: number, reported: boolean, ceiling: number) => Effect.Effect<void, unknown>
   admit(day: string, key: string, ceiling: number): Effect.Effect<boolean, unknown>
   spend(day: string, key: string, used: number, reported: boolean, ceiling: number): Effect.Effect<void, unknown>
 }
@@ -51,6 +52,12 @@ export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string
       if (!admitted) return yield* Effect.fail(new HarnessError.HarnessError({ code: "engine_failed", cause: { _tag: "vibelang/DailyBudgetExceeded" }, message: "The daily model budget is spent" }))
       return yield* Schema.encodeEffect(Receipt)({ day, key, ceiling }).pipe(Effect.mapError(unavailable))
     }),
+    checkpointCall: ledger.checkpoint === undefined ? undefined : effect (receipt, usage, settled) => {
+      const call = try Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))
+      const usable = try Effect.try(() => settled && Budget.reportsTokens(usage)).pipe(Effect.mapError(unavailable))
+      const used = try Effect.try(() => usable ? Budget.tokensOf(usage) : 0).pipe(Effect.mapError(unavailable))
+      try ledger.checkpoint!(call.day, call.key, used, usable, call.ceiling).pipe(Effect.mapError(unavailable))
+    },
     recordCall: (receipt, usage, settled) => Effect.gen(function*() {
       const call = yield* Schema.decodeUnknownEffect(Receipt)(receipt).pipe(Effect.mapError(unavailable))
       const usable = settled && Budget.reportsTokens(usage)

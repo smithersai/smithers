@@ -1,0 +1,198 @@
+// @vitest-environment node
+// Real reply hosts, a real daily ledger, and an injected unavailable Budget transport.
+import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import * as Daily from "../worker/Budget.vibe"
+import { REASONS, REPLY_CEILING } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { world, request, history } from "./support/actionObjects.vibe"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+
+describe("terminal reply settlement", () => {
+  it.live("keeps admission held for a resumable host interruption", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("aresumable")
+        const interrupted = Runs.make("aresumable", object.storage, { ...object.sequencer, history: () => Effect.interrupt }, w.authority)
+        expect(try interrupted.start(request("aresumable", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        const model = { model: scripted.model, unusable: "" }
+        try interrupted.alarm(w.spend, model, product)
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        expect((try object.sequencer.read(0)).entries.find(entry => entry.author === "agent")?.done).toBe(false)
+        expect((try promise(() => object.storage.list({ prefix: "reply-settlement/" }))).size).toBe(0)
+        expect(try scripted.calls).toBe(0)
+      }
+    }
+  }), 60_000)
+
+  it.live("releases an unused admission after terminal cancellation without calling the model", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("acancelunused")
+        const interrupted = Runs.make("acancelunused", object.storage, { ...object.sequencer, history: () => Effect.interrupt }, w.authority)
+        const model = { model: scripted.model, unusable: "" }
+        expect(try interrupted.start(request("acancelunused", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        try interrupted.alarm(w.spend, model, product)
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        expect(try scripted.calls).toBe(0)
+        expect(try interrupted.cancel("acancelunused-reply", "maintainer", w.person.id)).toBeNull()
+        const restarted = Runs.make("acancelunused", object.storage, try Objects.conversation(object.storage), w.authority)
+        for (let turn = 0; turn < 6; turn++) try restarted.alarm(w.spend, model, product)
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(0)
+        expect((try promise(() => w.budgetStorage.get(Daily.SPENT))) ?? 0).toBe(0)
+        expect(try scripted.calls).toBe(0)
+        expect((try Runs.read(object.sequencer)).find(run => run.id === "acancelunused-reply")?.state).toBe("cancelled")
+      }
+    }
+  }), 60_000)
+
+  it.live("settles a cancelled sealed answer at its known usage when Budget recovers", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("acancelcharge")
+        const model = { model: scripted.model, unusable: "" }
+        const metered = try Deferred.make<void>()
+        let available = false
+        let transferred = false
+        const unavailable = {
+          admit: w.spend.admit,
+          spend: effect (day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+            if (!transferred && !key.startsWith("model/")) {
+              transferred = true
+              return try w.spend.spend(day, key, tokens, reported, ceiling)
+            }
+            if (key.startsWith("model/") && reported && tokens === 7) try Deferred.succeed(metered, undefined)
+            if (!available) throw new Unreachable({ what: "budget" })
+            try w.spend.spend(day, key, tokens, reported, ceiling)
+          },
+        }
+        expect(try object.host.start(request("acancelcharge", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        const running = try Effect.forkScoped(exit(object.host.alarm(unavailable, model, product)))
+        try timeout(Deferred.await(metered), "20 seconds")
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        expect(try object.host.cancel("acancelcharge-reply", "maintainer", w.person.id)).toBeNull()
+        try timeout(Fiber.join(running), "15 seconds")
+        available = true
+        const restarted = Runs.make("acancelcharge", object.storage, try Objects.conversation(object.storage), w.authority)
+        for (let turn = 0; turn < 6; turn++) try restarted.alarm(unavailable, model, product)
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(0)
+        expect(try promise(() => w.budgetStorage.get(Daily.SPENT))).toBe(7)
+        expect(try scripted.calls).toBe(1)
+        expect((try Runs.read(object.sequencer)).find(run => run.id === "acancelcharge-reply")?.state).toBe("cancelled")
+      }
+    }
+  }), 60_000)
+
+  it.effect("settles a deadline failure's known small charge after Budget recovers, across a restart", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Answer.\"")], prompt: 3, completion: 4 }])
+        const object = try w.object("adeadline")
+        const model = { model: scripted.model, unusable: "" }
+        const metered = try Deferred.make<void>()
+        const cleanupStarted = try Deferred.make<void>()
+        const cleanupRetried = try Deferred.make<void>()
+        let cleanupPhase = 0
+        let available = false
+        let transferred = false
+        const unavailable = {
+          admit: w.spend.admit,
+          spend: effect (day: string, key: string, tokens: number, reported: boolean, ceiling: number) => {
+            // Let physical-call accounting take over the initial run reservation.
+            if (!transferred && !key.startsWith("model/")) {
+              transferred = true
+              return try w.spend.spend(day, key, tokens, reported, ceiling)
+            }
+            if (key.startsWith("model/") && reported && tokens === 7) {
+              try Deferred.succeed(metered, undefined)
+              if (cleanupPhase === 1) try Deferred.succeed(cleanupStarted, undefined)
+              if (cleanupPhase === 2) try Deferred.succeed(cleanupRetried, undefined)
+            }
+            if (!available) throw new Unreachable({ what: "budget" })
+            try w.spend.spend(day, key, tokens, reported, ceiling)
+          },
+        }
+        expect(try object.host.start(request("adeadline", "vibelang/Post", { text: "Question?" }, w.person.id), "maintainer")).toBeNull()
+        // Stop the host before advancing time: no virtual fractional retry wake becomes a stored timestamp.
+        const running = try forkChild(object.host.alarm(unavailable, model, product))
+        try TestClock.withLive(timeout(Deferred.await(metered), "20 seconds")).pipe(
+          Effect.mapError(() => new Error("deadline test: model usage was not checkpointed")),
+        )
+        try TestClock.withLive(timeout(Fiber.interrupt(running), "10 seconds"))
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        expect(try scripted.calls).toBe(1)
+        try TestClock.adjust("6 minutes")
+        const expiredSequencer = try Objects.conversation(object.storage)
+        const expired = Runs.make("adeadline", object.storage, expiredSequencer, w.authority)
+        const expiredDrive = try forkChild(expired.alarm(unavailable, model, product))
+        const expiredOutcome = try TestClock.withLive(timeout(Fiber.join(expiredDrive), "20 seconds")).pipe(
+          Effect.mapError(() => new Error("deadline test: expired reply drive did not finish")),
+        )
+        expect(expiredOutcome._tag).toBe("Settled")
+        const snapshot = try expiredSequencer.read(0)
+        expect(snapshot.entries.find(entry => entry.author === "agent")).toMatchObject({ done: true, error: REASONS.failed })
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        const storedEvents = [...(try promise(() => object.storage.list({ prefix: "event/" }))).values()]
+        expect(try Effect.try(() => storedEvents.filter(event => !Schema.is(EventSchema)(event)).map(event => {
+          const header = event as { type?: unknown; seq?: unknown; at?: unknown; attempt?: unknown }
+          return { type: header.type, seq: header.seq, at: header.at, attempt: header.attempt }
+        }))).toEqual([])
+        const restarted = Runs.make("adeadline", object.storage, try Objects.conversation(object.storage), w.authority)
+        cleanupPhase = 1
+        const settling = try forkChild(restarted.alarm(unavailable, model, product))
+        try TestClock.withLive(timeout(Deferred.await(cleanupStarted), "20 seconds")).pipe(
+          Effect.mapError(() => new Error("deadline test: first cleanup did not contact Budget")),
+        )
+        try TestClock.withLive(timeout(Fiber.interrupt(settling), "10 seconds"))
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        // Another unavailable incarnation must keep the same charge without reissuing the model.
+        try TestClock.adjust("1 minute")
+        const stillUnavailable = Runs.make("adeadline", object.storage, try Objects.conversation(object.storage), w.authority)
+        cleanupPhase = 2
+        const retrying = try forkChild(stillUnavailable.alarm(unavailable, model, product))
+        try TestClock.withLive(timeout(Deferred.await(cleanupRetried), "20 seconds")).pipe(
+          Effect.mapError(() => new Error("deadline test: restarted cleanup did not contact Budget")),
+        )
+        try TestClock.withLive(timeout(Fiber.interrupt(retrying), "10 seconds"))
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(REPLY_CEILING)
+        available = true
+        try TestClock.adjust("1 minute")
+        const recovered = Runs.make("adeadline", object.storage, try Objects.conversation(object.storage), w.authority)
+        for (let turn = 0; turn < 6; turn++) {
+          const recovering = try forkChild(recovered.alarm(unavailable, model, product))
+          try TestClock.withLive(timeout(Fiber.join(recovering), "10 seconds"))
+        }
+        expect(try promise(() => w.budgetStorage.get(Daily.RESERVED))).toBe(0)
+        expect(try promise(() => w.budgetStorage.get(Daily.SPENT))).toBe(7)
+        expect(try scripted.calls).toBe(1)
+        expect((try promise(() => object.storage.list({ prefix: "reply-accounting/" }))).size).toBe(0)
+      }
+    }
+  }), 60_000)
+})

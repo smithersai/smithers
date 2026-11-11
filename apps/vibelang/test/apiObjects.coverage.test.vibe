@@ -352,3 +352,79 @@ it.effect("the health route waits for the actual instance while a cold initializ
     expect(body.objects.History?.startup).toBe("unreachable")
   })
 }))
+
+describe("root action ids with the reply suffix", () => {
+  for (const flow of ["vibelang/Post", "vibelang/Tour"]) {
+    it.live(`starts, reads, lists, streams, replays and cancels a ${flow} root ending in -reply`, () => scoped(effect {
+      const w = try world(true, 1000000, "unusable")
+      const { ask, signIn } = browser(w)
+      try signIn
+      const input = flow === "vibelang/Post" ? { text: "Question" } : {}
+      // A different root with the prefix must not redirect this request or cause a false identity conflict.
+      expect((try ask("POST", "/api/actions/runs", { id: "asuffix", flow: "vibelang/Tour", input: {}, door: "button" })).status).toBe(202)
+      const body = { id: "asuffix-reply", flow, input, door: "button" }
+      expect((try ask("POST", "/api/actions/runs", body)).status).toBe(202)
+      expect((try ask("POST", "/api/actions/runs", body)).status).toBe(202)
+      expect((try ask("POST", "/api/actions/runs", { ...body, input: { text: "Different" } })).status).toBe(409)
+      const found = try ask("GET", "/api/actions/runs/asuffix-reply")
+      expect(found.status).toBe(200)
+      expect(found.body).toMatchObject({ id: body.id, flow })
+      // Existing objects have requests and an index but no explicit routes.
+      const directoryStorage = try w.storageOf("actions", "vibelang")
+      for (const key of (try promise(() => directoryStorage.list({ prefix: "action-root/" }))).keys()) {
+        try promise(() => directoryStorage.delete(key))
+      }
+      expect((try ask("GET", "/api/actions/runs/asuffix-reply")).body).toMatchObject({ id: body.id, flow })
+      const listed = try ask("GET", "/api/actions/runs")
+      expect(try Effect.try(() => listed.body.filter((run: { id: string }) => run.id === body.id))).toHaveLength(1)
+      const events = try ask("GET", "/api/actions/runs/asuffix-reply/events")
+      expect([events.status, events.type]).toEqual([200, "text/event-stream"])
+      expect((try ask("DELETE", "/api/actions/runs/asuffix-reply")).status).toBe(200)
+      expect((try ask("GET", "/api/actions/runs/asuffix")).body.state).toBe("running")
+      expect((try ask("POST", "/api/actions/runs/asuffix-reply/rerun", { id: "anext-reply" })).status).toBe(202)
+      expect((try ask("GET", "/api/actions/runs/anext-reply")).body.flow).toBe(flow)
+    }))
+  }
+})
+
+
+describe("root and generated-child identity collisions", () => {
+  it.live("reserves a Post child identity before its reply starts, and keeps it after cancellation", () => scoped(effect {
+    const w = try world(true, 1000000, "unusable")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect((try ask("POST", "/api/actions/runs", { id: "afamily", flow: "vibelang/Post", input: { text: "Question" }, door: "button" })).status).toBe(202)
+    const collision = { id: "afamily-reply", flow: "vibelang/Tour", input: {}, door: "button" }
+    expect((try ask("POST", "/api/actions/runs", collision)).status).toBe(409)
+    try call(w, "conversation", "action-afamily", "alarm")
+    const directoryStorage = try w.storageOf("actions", "vibelang")
+    try promise(() => directoryStorage.delete("action-root/afamily-reply"))
+    expect((try ask("GET", "/api/actions/runs/afamily-reply")).body.flow).toBe("vibelang/Reply")
+    expect((try ask("DELETE", "/api/actions/runs/afamily-reply")).status).toBe(200)
+    expect((try ask("POST", "/api/actions/runs", collision)).status).toBe(409)
+    expect((try ask("GET", "/api/actions/runs/afamily-reply")).body.flow).toBe("vibelang/Reply")
+    const listed = (try ask("GET", "/api/actions/runs")).body
+    expect(try Effect.try(() => listed.filter((run: { id: string }) => run.id === "afamily-reply"))).toHaveLength(1)
+  }))
+
+  it.live("refuses a Post whose child id already names a root", () => scoped(effect {
+    const w = try world(true, 1000000, "unusable")
+    const { ask, signIn } = browser(w)
+    try signIn
+    expect((try ask("POST", "/api/actions/runs", { id: "afamily-reply", flow: "vibelang/Tour", input: {}, door: "button" })).status).toBe(202)
+    expect((try ask("POST", "/api/actions/runs", { id: "afamily", flow: "vibelang/Post", input: { text: "Question" }, door: "button" })).status).toBe(409)
+    expect((try ask("DELETE", "/api/actions/runs/afamily-reply")).status).toBe(200)
+    expect((try ask("GET", "/api/actions/runs/afamily-reply")).body.state).toBe("cancelled")
+  }))
+
+  it.live("serializes concurrent root and child reservations", () => scoped(effect {
+    const w = try world(true, 1000000, "unusable")
+    const { ask, signIn } = browser(w)
+    try signIn
+    const answers = try all([
+      ask("POST", "/api/actions/runs", { id: "arace", flow: "vibelang/Post", input: { text: "Question" }, door: "button" }),
+      ask("POST", "/api/actions/runs", { id: "arace-reply", flow: "vibelang/Tour", input: {}, door: "button" }),
+    ], { concurrency: "unbounded" })
+    expect(answers.map(answer => answer.status).sort()).toEqual([202, 409])
+  }))
+})
