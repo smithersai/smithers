@@ -77,6 +77,45 @@ describe("durable execution snapshots", () => {
     }))
   })
 
+  it("gives a pack flow a new admissible identity after a project lockfile change", async () => {
+    await run(Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-pack-lockfiles-" })
+      const pack = `${root}/.smithers/packs/fixture`
+      yield* fs.makeDirectory(`${pack}/flows/snapshot`, { recursive: true })
+      yield* fs.writeFileString(`${pack}/flows/snapshot/flow.ts`, source)
+      yield* fs.writeFileString(`${pack}/flows/snapshot/helper.ts`, "export const value = \"approved\"")
+      yield* fs.writeFileString(`${root}/pnpm-lock.yaml`, "lockfileVersion: 9\n# approved\n")
+      const load = () => Effect.succeed({ default: flow })
+      const snapshots = yield* Snapshot.makeFileSystem({ root })
+      yield* Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        const before = yield* registry.get("snapshot")
+        const approved = Descriptor.executionDigest(before)!
+        yield* snapshots.pin(yield* Executable.fromDescriptor(before, { delegates: [], load }))
+        yield* fs.writeFileString(`${root}/pnpm-lock.yaml`, "lockfileVersion: 9\n# changed\n")
+        yield* registry.refresh()
+        const after = yield* registry.get("snapshot")
+        const digest = Descriptor.executionDigest(after)!
+        expect(digest).not.toBe(approved)
+        yield* snapshots.pin(yield* Executable.fromDescriptor(after, { delegates: [], load }))
+        expect((yield* snapshots.restore(digest)).descriptor.lockfiles).toEqual(after.lockfiles)
+        // The run admitted before the change still refuses its drifted dependencies.
+        expect((yield* snapshots.restore(approved).pipe(Effect.flip)).code).toBe("lockfile_changed")
+      }).pipe(Effect.provide(Registry.layerProject({
+        root,
+        packs: {
+          runtimeVersion: "1.0.0-rc.0",
+          installed: [{
+            dir: pack,
+            origin: "installed",
+            manifest: { name: "fixture", version: "1.0.0", flows: ["flows"] } as never
+          }]
+        }
+      })))
+    }))
+  })
+
   it("binds lockfiles to one execution identity across machines and refuses drift before import", async () => {
     await run(Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem

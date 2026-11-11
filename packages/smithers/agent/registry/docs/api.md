@@ -811,6 +811,7 @@ interface Config {
 interface PackConfig {
   readonly installed: ReadonlyArray<Pack.Installed>
   readonly runtimeVersion: string
+  readonly lockfileRoot?: string | undefined
 }
 ```
 
@@ -822,6 +823,12 @@ the same name. Precedence among packs is the pack's `origin`, not caller order.
 `runtimeVersion` is required rather than optional because it is the only thing
 a pack's `requires.smithers` can be checked against. An optional field would
 silently skip the check for every caller that forgot it.
+
+`lockfileRoot` binds every pack descriptor to that root's lockfiles, as a
+source's `lockfileRoot` does. A lockfile change then gives a pack flow a new
+execution identity that admission can approve. Without it, the first admitted
+snapshot keeps refusing the flow with `lockfile_changed` after any lockfile
+change.
 
 ### Registry.make, Registry.layer
 
@@ -880,7 +887,8 @@ carries its `provenance.pack`, a name two packs both define is reported as
 `shadowed`, and every pack's `requires.smithers` is checked against
 `PackConfig.runtimeVersion`. The runtime version rides inside `PackConfig`
 rather than beside it, so a caller cannot ask for packs without saying what
-their range is checked against.
+their range is checked against. `layerProject` sets `PackConfig.lockfileRoot`
+to `root` unless the caller names one.
 
 A project with no `.smithers/flows/` directory has no project entries. The
 source stays configured with `optionalRoot: true`, so every `refresh()` checks

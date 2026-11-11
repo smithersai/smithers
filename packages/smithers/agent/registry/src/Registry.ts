@@ -65,6 +65,14 @@ export interface PackConfig {
   readonly installed: ReadonlyArray<Pack.Installed>
   /** The runtime version every pack's `requires.smithers` is checked against. */
   readonly runtimeVersion: string
+  /**
+   * The dependency root whose lockfiles every pack descriptor binds, as a
+   * {@link Source}'s `lockfileRoot` does. Lockfile drift then gives a pack
+   * flow a new execution identity that admission can approve, instead of
+   * leaving its retained snapshot refusing every later run.
+   * {@link layerProject} sets the project root.
+   */
+  readonly lockfileRoot?: string | undefined
 }
 
 /**
@@ -183,7 +191,8 @@ const ownedConfig = (config: Config): Config => ({
       : {
         packs: {
           installed: [...config.packs.installed],
-          runtimeVersion: config.packs.runtimeVersion
+          runtimeVersion: config.packs.runtimeVersion,
+          ...(config.packs.lockfileRoot === undefined ? {} : { lockfileRoot: config.packs.lockfileRoot })
         }
       })
   })
@@ -306,8 +315,11 @@ const scanPacks = (
       // so it is merged with the pack's scan warnings rather than left at the
       // boundary: `registry.warnings()` is where an operator reads both.
       const warnings: Array<DiscoveryWarning> = [...pack.warnings ?? []]
+      const sources = yield* Pack.sources(pack, path)
       const sourceScans = yield* Effect.forEach(
-        yield* Pack.sources(pack, path),
+        config.lockfileRoot === undefined
+          ? sources
+          : sources.map((source) => ({ ...source, lockfileRoot: config.lockfileRoot })),
         (source) => Effect.map(Effect.result(discovery.scan(source)), (scan) => ({ source, scan })),
         { concurrency: sourceScanConcurrency }
       )
@@ -650,7 +662,9 @@ export const layerProject = (
       return layer({
         snapshots: options.snapshots,
         sources: projectSources(path, options),
-        ...(options.packs === undefined ? {} : { packs: options.packs })
+        ...(options.packs === undefined
+          ? {}
+          : { packs: { ...options.packs, lockfileRoot: options.packs.lockfileRoot ?? options.root } })
       }).pipe(Layer.provide(discoveryLayer))
     })
   )
