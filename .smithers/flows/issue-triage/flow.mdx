@@ -52,3 +52,8 @@ specific request for missing input. Carry the matching `status:reproduced` or
 status is discarded and replaced by a generic request for more evidence. Use
 only allowed labels from the context.
 Do not close the issue, assign a person, promise a fix, or write any other file.
+
+The publisher updates its own marked comment across all comment pages. Each
+publication reconciles the allowlisted `status:*` and `pr:*` labels with the
+latest report, removing obsolete statuses and checks while preserving other
+labels. An incomplete comment lookup fails without posting another comment.

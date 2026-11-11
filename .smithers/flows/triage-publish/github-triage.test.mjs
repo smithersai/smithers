@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { createServer } from "node:http"
+import { once } from "node:events"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
@@ -52,6 +54,13 @@ describe("GitHub triage report contract", () => {
     assert.equal(validateReport({ ...base, labels: ["security:trusted"] }, "issue"), null)
     assert.equal(validateReport({ ...base, comment: "x".repeat(60_001) }, "issue"), null)
   })
+
+  for (const label of ["toString", "constructor", "__proto__", "hasOwnProperty", "valueOf"]) {
+    it(`rejects inherited label ${label}`, () => {
+      const base = fallbackReport("issue", "invalid")
+      assert.equal(validateReport({ ...base, labels: [...base.labels, label] }, "issue"), null)
+    })
+  }
 
   it("accepts every report example the triage flows document", () => {
     for (const kind of ["issue", "pr"]) {
@@ -134,7 +143,7 @@ describe("GitHub triage entry point", () => {
 describe("GitHub triage publisher", () => {
   // The flow runs repository tests between prepare and apply, so anything in
   // .triage/ except the report may have been rewritten by untrusted code.
-  const publish = async ({ comments, report, expected = 7, event = { issue: { number: 7 } }, login }) => {
+  const publish = async ({ comments, report, expected = 7, event = { issue: { number: 7 } }, login, labels = [], repeat = 1, failPage }) => {
     const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs")
     const { tmpdir } = await import("node:os")
     const { join } = await import("node:path")
@@ -147,6 +156,7 @@ describe("GitHub triage publisher", () => {
       login: process.env.TRIAGE_BOT_LOGIN
     }
     const calls = []
+    let closeServer
     try {
       mkdirSync(join(root, ".triage"))
       writeFileSync(join(root, ".triage/context.json"), JSON.stringify({ kind: "issue", repository: "victim/elsewhere", number: 999 }))
@@ -158,16 +168,59 @@ describe("GitHub triage publisher", () => {
       process.env.GITHUB_REPOSITORY = "owner/repo"
       if (login === undefined) delete process.env.TRIAGE_BOT_LOGIN
       else process.env.TRIAGE_BOT_LOGIN = login
-      globalThis.fetch = async (url, options = {}) => {
-        const call = { url: String(url), method: options.method ?? "GET", body: options.body ? JSON.parse(options.body) : undefined }
+      // Exercise the real HTTP client against a stateful local GitHub service.
+      // Only routing changes; pagination, mutation and error responses cross HTTP.
+      const server = createServer(async (request, response) => {
+        const url = new URL(request.url, "https://api.github.com")
+        const chunks = []
+        for await (const chunk of request) chunks.push(chunk)
+        const bytes = Buffer.concat(chunks).toString()
+        const call = { url: url.href, method: request.method, body: bytes ? JSON.parse(bytes) : undefined }
         calls.push(call)
-        const payload = call.method === "GET" && call.url.includes("/comments") ? comments : {}
-        return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } })
+        let payload = {}
+        const page = Number(url.searchParams.get("page") ?? 1)
+        const paginate = (rows) => rows.slice((page - 1) * 100, page * 100)
+        if (call.method === "GET" && url.pathname.endsWith("/comments")) {
+          if (page === failPage) {
+            response.writeHead(503)
+            response.end("unavailable")
+            return
+          }
+          payload = paginate(comments)
+        } else if (url.pathname.endsWith("/issues/7/labels")) {
+          if (call.method === "GET") payload = paginate(labels).map((name) => ({ name }))
+          if (call.method === "POST") for (const label of call.body.labels) if (!labels.includes(label)) labels.push(label)
+        } else if (call.method === "DELETE") {
+          const label = decodeURIComponent(url.pathname.split("/").at(-1))
+          const index = labels.indexOf(label)
+          if (index >= 0) labels.splice(index, 1)
+          response.writeHead(204)
+          response.end()
+          return
+        }
+        if (call.method === "POST" && url.pathname.endsWith("/issues/7/comments")) {
+          comments.push({ id: comments.length + 1, user: { login: login ?? BOT_LOGIN }, body: call.body.body })
+        }
+        if (call.method === "PATCH") {
+          const comment = comments.find(({ id }) => id === Number(url.pathname.split("/").at(-1)))
+          assert.ok(comment, "only an existing comment can be updated")
+          comment.body = call.body.body
+        }
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(JSON.stringify(payload))
+      })
+      server.listen(0, "127.0.0.1")
+      await once(server, "listening")
+      closeServer = () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+      const origin = `http://127.0.0.1:${server.address().port}`
+      globalThis.fetch = (url, options) => previous.fetch(new URL(new URL(url).pathname + new URL(url).search, origin), options)
+      for (let run = 0; run < repeat; run++) {
+        const result = await apply(report.kind, expected, eventPath)
+        assert.equal(result.number, 7)
       }
-      const result = await apply("issue", expected, eventPath)
-      assert.equal(result.number, 7)
       return calls
     } finally {
+      await closeServer?.()
       process.chdir(previous.cwd)
       globalThis.fetch = previous.fetch
       for (
@@ -224,6 +277,57 @@ describe("GitHub triage publisher", () => {
     assert.equal(calls.some(({ method, url }) => method === "POST" && url.endsWith("/issues/7/comments")), false)
     await assert.rejects(publish({ comments, report, login: "a b" }), /TRIAGE_BOT_LOGIN is not a GitHub login/)
     assert.equal(botLogin(""), BOT_LOGIN)
+  })
+
+  for (const count of [99, 100, 200]) {
+    it(`maintains one bot comment after ${count} user comments across replay`, async () => {
+      const comments = Array.from({ length: count }, (_, id) => ({ id: id + 1, user: { login: "author" }, body: "User comment" }))
+      const calls = await publish({ comments, report, repeat: 3 })
+      assert.equal(comments.filter((comment) => comment.user.login === BOT_LOGIN).length, 1)
+      assert.equal(calls.filter(({ method, url }) => method === "POST" && url.endsWith("/issues/7/comments")).length, 1)
+      assert.equal(calls.filter(({ method }) => method === "PATCH").length, 2)
+    })
+  }
+
+  it("refuses to post when a later comment page cannot be read", async () => {
+    const comments = Array.from({ length: 100 }, (_, id) => ({ id, user: { login: "author" }, body: "User comment" }))
+    await assert.rejects(publish({ comments, report, failPage: 2 }), /503/)
+    assert.equal(comments.length, 100)
+  })
+
+  it("removes obsolete reproduction labels while preserving human and classification labels", async () => {
+    const labels = ["status:needs-author", "area:engine", "kind:docs", "human:priority"]
+    await publish({ comments: [], report, labels, repeat: 2 })
+    assert.deepEqual(new Set(labels), new Set(["status:reproduced", "kind:bug", "area:engine", "kind:docs", "human:priority"]))
+  })
+
+  it("reconciles managed labels beyond the first page", async () => {
+    const unrelated = Array.from({ length: 100 }, (_, index) => `human:${index}`)
+    const labels = [...unrelated, "status:needs-author", "pr:missing-tests"]
+    await publish({ comments: [], report, labels })
+    assert.deepEqual(new Set(labels), new Set([...unrelated, ...report.labels]))
+  })
+
+  it("removes stale PR readiness and checks on retriage", async () => {
+    const labels = ["status:ready-for-review", "pr:missing-docs", "pr:size-large", "human:priority"]
+    const pr = {
+      kind: "pr",
+      summary: "Tests need work.",
+      comment: "Please add focused tests.",
+      labels: ["pr:missing-tests"],
+      checks: { description: "pass", tests: "needs-work", docs: "pass", size: "pass" }
+    }
+    await publish({ comments: [], report: pr, labels, event: { pull_request: { number: 7 } }, repeat: 2 })
+    assert.deepEqual(new Set(labels), new Set(["pr:missing-tests", "human:priority"]))
+  })
+
+  it("publishes the evidence fallback for an inherited label", async () => {
+    for (const label of ["toString", "constructor", "__proto__"]) {
+      const calls = await publish({ comments: [], report: { ...report, labels: [...report.labels, label] } })
+      const post = calls.find(({ method, url }) => method === "POST" && url.endsWith("/issues/7/comments"))
+      assert.match(post.body.body, /smallest command or flow/)
+      assert.deepEqual(calls.find(({ method, url }) => method === "POST" && url.endsWith("/issues/7/labels")).body.labels, ["status:needs-author"])
+    }
   })
 
   it("posts model-written text without live @mentions", async () => {

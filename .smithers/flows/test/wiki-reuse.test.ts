@@ -140,6 +140,9 @@ test(
       await writeFile(join(root, file), await readFile(join(sourceRoot, file)))
     }
     await writeFile(join(root, "answer.ts"), "export const answer = 42\n")
+    await mkdir(join(root, "generated"))
+    await writeFile(join(root, "generated/answer.ts"), "export const answer = 42\n")
+    await writeFile(join(root, "generated/omitted.ts"), "x".repeat(40_001))
     for (const id of ["first", "second", "independent"]) {
       await writeFile(
         join(root, `${id}.md`),
@@ -148,12 +151,13 @@ test(
     }
     const pages: Input["pages"] = ["first", "second", "independent"].map((id) => ({
       id,
-      title: id,
+      title: id === "independent" ? "Answer" : id,
       purpose: "Find the answer.",
       kind: "current",
       document: `${id}.md`,
       inputs: ["answer.ts", ...(id === "independent" ? [] : policySources)],
-      related: []
+      related: [],
+      ...(id === "independent" ? { sourceDirectory: "generated" } : {})
     }))
     const counts: Record<string, number> = {}
     const model = Model.make({
@@ -169,16 +173,16 @@ test(
           assert.ok(page, "scripted provider must receive one of the fixture's exact evidence snapshots")
           counts[page] = (counts[page] ?? 0) + 1
           const review = {
-            sections: [{
-              id: "section-1",
+            sections: (page === "independent" ? ["section-1", "section-2"] : ["section-1"]).map((id) => ({
+              id,
               verdict: "supported",
               explanation: "The exported constant supports this explanation.",
               citations: [{
-                path: "answer.ts",
+                path: page === "independent" ? "generated/answer.ts" : "answer.ts",
                 line: page === "first" && counts[page] === 2 ? 999 : 1,
                 quote: "export const answer = 42"
               }]
-            }]
+            }))
           }
           return Stream.fromIterable([
             ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "review" }),
@@ -265,6 +269,19 @@ test(
       assert.equal(page.verification.provenance.originRunId, "wiki-original")
       assert.equal(page.verification.provenance.reusedFrom.runId, "wiki-original")
     }
+    const generatedBefore = snapshot.pages.find((page: { id: string }) => page.id === "independent")
+    await writeFile(join(root, "generated/oversized.ts"), "x".repeat(40_001))
+    await incremental("wiki-inventory-changed", "wiki-reused")
+    assert.deepEqual(counts, { first: 1, second: 1, independent: 2 }, "inventory changes invalidate generated reviews")
+    snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
+    const generatedAfter = snapshot.pages.find((page: { id: string }) => page.id === "independent")
+    assert.equal(generatedAfter.contentDigest, generatedBefore.contentDigest, "the skipped file does not change prose")
+    assert.notEqual(
+      generatedAfter.inputDigest,
+      generatedBefore.inputDigest,
+      "the full inventory still defines identity"
+    )
+    assert.equal(generatedAfter.verification.provenance.reusedFrom, null)
     const changedSections = await Effect.runPromise(Effect.scoped(
       SectionsProbe.execute({
         spec: pages[0]!,
@@ -274,11 +291,11 @@ test(
     ))
     assert.equal(changedSections, "review section boundaries changed")
     await writeFile(join(root, "first.md"), "# first\n\nThe answer remains 42.\n")
-    await incremental("wiki-one-changed", "wiki-reused")
+    await incremental("wiki-one-changed", "wiki-inventory-changed")
     t.diagnostic("One changed page reviewed; its neighbor reused")
     assert.deepEqual(
       counts,
-      { first: 3, second: 1, independent: 1 },
+      { first: 3, second: 1, independent: 2 },
       "the changed page repairs its citation once without rerunning either unaffected page"
     )
     snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
@@ -288,7 +305,7 @@ test(
     t.diagnostic("Changed reviewer invoked for all pages")
     assert.deepEqual(
       counts,
-      { first: 4, second: 2, independent: 2 },
+      { first: 4, second: 2, independent: 3 },
       "changing the reviewer cannot borrow a prior model's result"
     )
     snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
@@ -300,7 +317,7 @@ test(
     await incremental("wiki-policy-changed", "wiki-model-changed", "another-model")
     assert.deepEqual(
       counts,
-      { first: 5, second: 3, independent: 3 },
+      { first: 5, second: 3, independent: 4 },
       "policy changes invalidate even the page with unchanged source inputs"
     )
     snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))

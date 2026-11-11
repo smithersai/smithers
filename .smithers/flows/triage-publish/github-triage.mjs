@@ -46,7 +46,7 @@ export function validateReport(value, expectedKind) {
   if (!object(value) || value.kind !== expectedKind || !text(value.summary, 500) || !text(value.comment)) return null
   if (!Array.isArray(value.labels) || value.labels.length > 5) return null
   const labels = [...new Set(value.labels)]
-  if (labels.some((label) => typeof label !== "string" || !(label in LABELS))) return null
+  if (labels.some((label) => typeof label !== "string" || !Object.hasOwn(LABELS, label))) return null
 
   if (expectedKind === "issue") {
     if (!object(value.reproduction)) return null
@@ -210,6 +210,19 @@ export async function apply(kind, expectedNumber, eventPath = process.env.GITHUB
     report = fallbackReport(kind, cause instanceof Error ? cause.message : String(cause))
   }
   for (const label of report.labels) await ensureLabel(context.repository, label)
+  const labelsPath = `/repos/${context.repository}/issues/${context.number}/labels`
+  const currentLabels = []
+  for (let page = 1;; page++) {
+    const labels = await api(`${labelsPath}?per_page=100&page=${page}`)
+    currentLabels.push(...labels)
+    if (labels.length < 100) break
+  }
+  for (const { name } of currentLabels) {
+    if (
+      Object.hasOwn(LABELS, name) && (name.startsWith("status:") || name.startsWith("pr:")) &&
+      !report.labels.includes(name)
+    ) await api(`${labelsPath}/${encodeURIComponent(name)}`, { method: "DELETE" })
+  }
   await api(`/repos/${context.repository}/issues/${context.number}/labels`, {
     method: "POST",
     body: JSON.stringify({ labels: report.labels }),
@@ -218,8 +231,12 @@ export async function apply(kind, expectedNumber, eventPath = process.env.GITHUB
 
   const marker = `<!-- smithers-${kind}-triage -->`
   const body = `${marker}\n## Smithers ${kind === "issue" ? "issue" : "PR"} triage\n\n${neutralizeMentions(report.comment)}\n\n<sub>${neutralizeMentions(report.summary)}</sub>`
-  const comments = await api(`/repos/${context.repository}/issues/${context.number}/comments?per_page=100`)
-  const existing = findOwnComment(comments, marker, login)
+  let existing
+  for (let page = 1;; page++) {
+    const comments = await api(`/repos/${context.repository}/issues/${context.number}/comments?per_page=100&page=${page}`)
+    existing = findOwnComment(comments, marker, login)
+    if (existing || comments.length < 100) break
+  }
   await api(existing ? `/repos/${context.repository}/issues/comments/${existing.id}` : `/repos/${context.repository}/issues/${context.number}/comments`, {
     method: existing ? "PATCH" : "POST",
     body: JSON.stringify({ body }),

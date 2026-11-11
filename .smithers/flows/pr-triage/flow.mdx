@@ -54,3 +54,8 @@ Each check is `pass`, `needs-work`, or `not-applicable`. Add
 corresponding `pr:missing-tests`, `pr:missing-docs`, or `pr:size-large` label
 for each failed check. Use only allowed labels from the context and write no
 other file.
+
+The publisher updates its own marked comment across all comment pages. Each
+publication reconciles the allowlisted `status:*` and `pr:*` labels with the
+latest report, removing obsolete statuses and checks while preserving other
+labels. An incomplete comment lookup fails without posting another comment.

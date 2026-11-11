@@ -24,7 +24,7 @@ A failed semantic review writes its findings in a `needs-changes` preview and fa
 
 ## Reuse unchanged reviews
 
-Incremental generation reuses supported reviews from a terminal run through the journal and attempt store. It requires the same reviewer ID and review-policy sources, matches the page specification, input, content and section digests, and revalidates citations; changed pages and uncertain assessments in the selected prior execution require a new model review.
+Incremental generation reuses supported reviews from a terminal run through the journal and attempt store. It requires the same reviewer ID and review-policy sources, matches the page specification, input, content and section digests, and revalidates citations. It recaptures generated directory pages through the same collector, including the full inventory of files omitted from their bounded summaries; changed pages and uncertain assessments in the selected prior execution require a new model review.
 
 The configured coding host keys that reuse on the identity of its review task: a digest of the review policy sources (`policySources` in `.smithers/flows/wiki/reuse.ts`), injected by the bundler into the deployed artifact. Nothing else in the host build is covered, so a host deploy that leaves the review task alone keeps prior reviews reusable.
 

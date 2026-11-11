@@ -257,15 +257,19 @@ export const reuseOperations = (options: ReuseOptions) => {
         // is internally intact; the destination also recaptures and reassesses it.
         if (
           (yield* digest(old.value.evidence.markdown)) !== old.value.evidence.contentDigest ||
-          (yield* digest(
-              canonical({
-                policy: 2,
-                spec: old.value.evidence.spec,
-                sources: old.value.evidence.sources.map(({ path, digest }) => ({ path, digest }))
-              })
-            )) !== old.value.evidence.inputDigest ||
           !(yield* Effect.forEach(old.value.evidence.sources, (source) =>
             digest(source.text).pipe(Effect.map((hash) => hash === source.digest)))).every(Boolean)
+        ) {
+          continue
+        }
+        // Recapture using the collector's identity, including generated-page
+        // policy and the complete inventory, even when some files were omitted
+        // from the bounded evidence. Missing or changed inputs are not reusable.
+        const collectedNow = yield* Effect.result(ops.collect(old.value.evidence.spec))
+        if (
+          collectedNow._tag === "Failure" ||
+          collectedNow.success.inputDigest !== old.value.evidence.inputDigest ||
+          collectedNow.success.contentDigest !== old.value.evidence.contentDigest
         ) {
           continue
         }
