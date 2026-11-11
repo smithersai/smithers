@@ -15,7 +15,7 @@ import * as ModelError from "@smthrs/model/ModelError"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
 import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Deferred, Effect, type Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Deferred, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -953,6 +953,50 @@ console.log(kept)`
     expect(outcome._tag).toBe("Failure")
     expect(of(events, "aborted")).toHaveLength(1)
     expect(of(events, "turn-closed").at(-1)?.outcome).toBe("aborted")
+  })
+
+  // The flow engine parks by interrupting the run's fiber, the same signal a
+  // cancel sends. Its witness, not the interruption, decides the journal.
+  const parkedRun = async (engine: ScriptedEngine.Fixture, model: ReturnType<typeof ScriptedModel.make>) => {
+    const events: Array<AgentEvent.AgentEvent> = []
+    const outcome = await CellTurn.run({
+      state: state({ approvalChannel: true }),
+      flows: [descriptor("fs/list", { capabilities: ["fs:read:**"] })]
+    }).pipe(
+      Stream.runForEach((event) => Effect.sync(() => events.push(event))),
+      Effect.provide(Layer.mergeAll(engine.layer, QuickJSSandbox.layer, Steering.layerNoop(), confidentEvaluator)),
+      Effect.exit,
+      Effect.runPromise
+    )
+    expect(model.recorder.requests).toHaveLength(1)
+    return { events, outcome }
+  }
+
+  it("journals a park the engine interrupts for as suspended, not aborted", async () => {
+    const model = ScriptedModel.make([emits(`ctx.park("waiting-input", "which branch?")`)])
+    const engine = ScriptedEngine.make(model.model, [], undefined, true, true, "interrupt")
+    const { events, outcome } = await parkedRun(engine, model)
+
+    // The park still ends the run's fiber: the host resumes it later.
+    expect(outcome._tag).toBe("Failure")
+    expect(of(events, "suspended")[0]?.reason.code).toBe("waiting-input")
+    expect(of(events, "aborted")).toHaveLength(0)
+    expect(engine.recorder.suspend).toHaveLength(1)
+  })
+
+  it("closes a frame parked inside a flow call as suspended, not aborted", async () => {
+    const model = ScriptedModel.make([
+      emits(
+        `await ctx.call("fs/list", { path: "." })
+         ctx.done("unreachable")`
+      )
+    ])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Park" }], undefined, true, true, "interrupt")
+    const { events, outcome } = await parkedRun(engine, model)
+
+    expect(outcome._tag).toBe("Failure")
+    expect(of(events, "aborted")).toHaveLength(0)
+    expect(of(events, "turn-closed").at(-1)).toMatchObject({ stopReason: "error", outcome: "suspended" })
   })
 })
 

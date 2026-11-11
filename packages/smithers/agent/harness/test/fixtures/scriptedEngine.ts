@@ -39,6 +39,8 @@ export type CallStep =
   }
   | { readonly _tag: "PermissionRequired"; readonly request: Permission.PermissionRequired }
   | { readonly _tag: "Interrupt" }
+  /** A durable wait inside the call: the host parks the run, as a flow engine does. */
+  | { readonly _tag: "Park" }
 
 /**
  * Calls observed at the engine boundary.
@@ -114,7 +116,14 @@ export const make = (
    * the controller turns into a catchable `checkpoint_unavailable`. Defaults to
    * a host that pins, because that is what a production composition does.
    */
-  pins = true
+  pins = true,
+  /**
+   * How the host parks the run. `"fail"` is the default `EngineLike`: its
+   * `suspend` fails with code `suspended` and it has no `isSuspended` witness.
+   * `"interrupt"` is the production flow engine: it marks the run parked,
+   * interrupts its fiber, and answers `isSuspended`.
+   */
+  parking: "fail" | "interrupt" = "fail"
 ): Fixture => {
   const workspace: { value: string | undefined; complete: boolean } = { value: tree, complete: treeComplete }
   const recorder: Recorder = {
@@ -129,6 +138,7 @@ export const make = (
     walks: []
   }
   let callIndex = 0
+  let parked = false
   const spent = (at: string): Effect.Effect<void> =>
     Effect.map(EngineLike.Spend, (label) => {
       recorder.spends.push({
@@ -181,6 +191,11 @@ export const make = (
             )
           case "Interrupt":
             return Effect.interrupt
+          case "Park":
+            return Effect.suspend(() => {
+              parked = true
+              return Effect.interrupt
+            })
         }
       }),
     // The fixture keeps no journal: single-pass tests execute the boundary,
@@ -207,8 +222,15 @@ export const make = (
           )
       )
     }),
+    ...(parking === "interrupt" ? { isSuspended: Effect.sync(() => parked) } : {}),
     suspend: (reason) => {
       recorder.suspend.push(reason)
+      if (parking === "interrupt") {
+        return Effect.suspend(() => {
+          parked = true
+          return Effect.interrupt
+        })
+      }
       return Effect.fail(
         new HarnessError({
           code: "suspended",

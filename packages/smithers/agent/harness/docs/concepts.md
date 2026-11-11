@@ -228,8 +228,11 @@ used by completion and supervision. Replayed drains preserve that distinction;
 legacy drains without an instruction list retain their original interpretation.
 
 Interruption emits one `Aborted` event throughout the run, including realm setup,
-catalog refresh, relevance readings and engine suspension. An active frame also
-closes as aborted and retains its interrupted model-call receipt.
+catalog refresh and relevance readings. An active frame also closes as aborted
+and retains its interrupted model-call receipt. A durable park is not an abort,
+even when the engine parks by interrupting the run: when `EngineLike.isSuspended`
+reports the park, the run emits no `Aborted`, and a frame parked inside a call
+closes with outcome `suspended`.
 
 A host's notes ride a drain beside the person's inserts (`Drain.notes`): the
 model reads them after the supervisor's messages and before the person's, and

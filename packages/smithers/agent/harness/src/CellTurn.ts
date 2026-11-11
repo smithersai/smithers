@@ -4899,13 +4899,29 @@ export const run = (
     // every event already offered stays observable ahead of whatever ended the
     // run. An interruption is forwarded rather than swallowed: a durable park
     // arrives as one, and turning it into a clean end would report a suspended
-    // run as a finished one.
+    // run as a finished one. The host's witness tells the park from a cancel,
+    // so a park is never journaled as an abort.
     return Effect.onExit(
       Effect.scoped(loop.pipe(
         Effect.onInterrupt(() =>
           Effect.gen(function*() {
             // Cover setup, catalog/relevance reads and post-frame work as well as the frame.
             if (active?.spent.interrupted !== undefined) yield* active.spent.interrupted()
+            if (yield* (yield* EngineLike.EngineLike).isSuspended ?? Effect.succeed(false)) {
+              // A park between frames already said `suspended`; one inside a
+              // frame closes that frame as parked, like a permission park.
+              if (active !== undefined) {
+                yield* emit(
+                  new AgentEvent.TurnClosed({
+                    eventType: eventType.turnClosed,
+                    stopReason: "error",
+                    outcome: "suspended",
+                    ...(yield* frameTime(active.frame, active.spent))
+                  })
+                )
+              }
+              return
+            }
             yield* emit(
               new AgentEvent.Aborted({
                 eventType: eventType.aborted,
