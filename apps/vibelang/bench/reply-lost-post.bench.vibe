@@ -1,0 +1,51 @@
+// @vitest-environment node
+// A reply whose post its conversation's store no longer holds, as a store restored from an older copy answers: the
+// production reply flow on the memory engine, with the real sequencer over that store. The start is refused, so the
+// reply composes nothing, asks no budget or model and writes no event (worker/Reply.vibe, `canComposeReply`).
+import { it, expect } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import type { Event } from "../src/core/conversation.vibe"
+import { Reply, Tours } from "../src/core/flows.vibe"
+import { repliesOf, toursOf } from "../worker/Objects.vibe"
+import { readerOver } from "../worker/HistoryObject.vibe"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { ChatModel, registration, Replies, Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+/** One reply to `m1` over a conversation store that lost it: the flow's answer, the store's writes and what it asked. */
+effect function lostPost() {
+  const writes = try Ref.make<ReadonlyArray<Event>>([])
+  // The restored copy holds no events, so the post the reply's execution names is gone.
+  const sequencer = try Sequencer.make({ read: () => succeed([]), write: (event) => Ref.update(writes, (events) => [...events, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+  let asked = 0
+  const unreachable = (what: string) => Effect.suspend(() => { asked += 1; return fail(new Unreachable({ what })) })
+  const spend: Spend.Shape = { admit: () => unreachable("budget"), spend: () => unreachable("budget") }
+  const model = { model: { generate: () => Effect.die("no model call"), stream: () => Stream.die("no model call") }, unusable: "" } as unknown as ChatModel.Shape
+  const outcomes: Array<unknown> = []
+  const logger = Logger.make((entry) => {
+    if (entry.message === "vibelang.reply" || Array.isArray(entry.message) && entry.message.includes("vibelang.reply")) outcomes.push(entry.fiber.getRef(References.CurrentLogAnnotations).outcome)
+  })
+  const flows = registration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Replies, repliesOf(sequencer)), Layer.succeed(Tours, toursOf(sequencer, () => Effect.void)), Layer.succeed(Spend, spend), Layer.succeed(ChatModel, model),
+      Layer.succeed(HistoryTools, { history: readerOver(() => unreachable("history"), () => unreachable("history")) }),
+    )),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  const answer = try engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+  return { answer, writes: (try Ref.get(writes)).length, asked, outcomes, entries: (try sequencer.read(0)).entries.length }
+}
+
+it("a reply whose post the store lost is refused and composes nothing", { timeout: 120_000 }, async ({ bench }) => {
+  const seen: Array<unknown> = []
+  const result = await workload(bench, "reply-lost-post", "async", async () => {
+    seen.push(await runPromise(scoped(lostPost())))
+  }).run(slow)
+  expect(seen.length).toBeGreaterThan(0)
+  for (const each of seen) expect(each).toEqual({ answer: null, writes: 0, asked: 0, outcomes: ["refused"], entries: 0 })
+  await runPromise(artifact("reply-lost-post", "Vitest built-in bench; the production reply flow registration on the memory flow engine with the real sequencer over a conversation store whose reads hold no events, as one restored from an older copy. Each sample builds a fresh engine and executes the reply to post m1. Checks the flow answers null, logs outcome refused once, writes no event and asks the budget, history and model nothing. Setup and assertions included.", ["Memory engine and an in-memory store, not workerd SQLite or Durable Object storage.", "The lost post is an injected store answer, not a real restore."], result))
+})

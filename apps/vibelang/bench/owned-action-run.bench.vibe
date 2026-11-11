@@ -1,0 +1,74 @@
+// @vitest-environment node
+// An agent's Post action run for the project's maintainer: the production bodies of worker/Api.vibe in workerd
+// (worker/apiObjects.vibe) with sign-in configured and the deterministic model service. The run's trusted props name the
+// initial maintainer, so the action identity asks the accounts object for that owner's role, and the reply's wiki
+// draft tool reaches the owner's draft RPC (0017, "Defensive lines decided").
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import * as Sse from "effect/encoding/Sse"
+import { serveApiObjects } from "../test/support/workerd.vibe"
+import { modelService } from "./fixtures.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const http = runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+const props = { "x-bench-props": JSON.stringify({ actionOwner: "1", actionName: "Bench" }) }
+const Reply = Schema.Struct({ type: Schema.String, id: Schema.optional(Schema.String), text: Schema.optional(Schema.String) })
+
+/** One owned Post run: its start, its settled read, and the reply the agent's tools wrote. */
+effect function ownedRun(origin: string, id: string) {
+  const started = try http.execute(HttpClientRequest.post(`${origin}/api/actions/runs`).pipe(HttpClientRequest.setHeaders(props), HttpClientRequest.bodyText(JSON.stringify({ id, flow: "vibelang/Post", input: { text: "Bench tools." }, door: "button" }), "application/json")))
+  const events = try http.execute(HttpClientRequest.get(`${origin}/api/actions/runs/${id}/events`).pipe(HttpClientRequest.setHeaders(props)))
+  const replies = try events.stream.pipe(
+    Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()),
+    Stream.mapEffect((event) => Schema.decodeUnknownEffect(Schema.fromJsonString(Reply))(event.data)),
+    Stream.filter((event) => event.type.startsWith("Reply")), Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed"),
+    Stream.runCollect, Effect.timeout("60 seconds"),
+  )
+  const read = try http.execute(HttpClientRequest.get(`${origin}/api/actions/runs/${id}`).pipe(HttpClientRequest.setHeaders(props)))
+  const run = (try read.json) as { readonly state: string; readonly actor: string }
+  const list = Array.from(replies)
+  const text = list.filter((event) => event.type === "ReplyDelta").map((event) => event.text ?? "").join("")
+  const reply = (try Effect.try(() => JSON.parse(text))) as Record<string, unknown>
+  return {
+    started: started.status, state: run.state, actor: run.actor, last: list.at(-1)?.type,
+    reply,
+  }
+}
+
+it("an agent's Post run for the maintainer reaches the owner's role and wiki draft", { timeout: 240_000 }, async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApiObjects({
+        CHAT_DAILY_TOKENS: "2000000",
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+        GITHUB_CLIENT_ID: "Iv1.bench", GITHUB_CLIENT_SECRET: "benchmark-only", VIBELANG_ORIGIN: "http://127.0.0.1",
+        VIBELANG_INITIAL_MAINTAINER_ID: "1", SESSION_SECRET: "benchmark-only-signing-secret-32-chars",
+        SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        AUTH_BROKER_ORIGIN: "https://broker.invalid", AUTH_BROKER_SITE_SECRET: "benchmark-only-public-read-site-key",
+      }), (served) => promise(served.dispose))
+      let run = 0
+      const seen: Array<unknown> = []
+      const owned = workload(bench, "api-objects-maintainer-action-run", "async", async () => {
+        seen.push(await runPromise(ownedRun(api.origin, `a-maintainer-${++run}`)))
+      })
+      const result = try tryPromise(() => owned.run(slow))
+      try Effect.try(() => {
+        expect(seen.length).toBeGreaterThan(0)
+        for (const each of seen) expect(each).toEqual({
+          started: 202, state: "passed", actor: "agent", last: "ReplyFinished",
+          // A maintainer may start a commit, so History answers that `bench` is unknown, not forbidden (a viewer's answer).
+          // The owner's draft passes authorization and runs the wiki writer, which refuses the deterministic model's
+          // answer as no draft.
+          reply: {
+            outline: true, wiki: true, docs: true, started: { id: "", refusal: "unknown" },
+            drafted: { ok: false, error: { code: "flow_failed", message: "Flow vibelang/wiki/draft failed: draft", hint: expect.any(String) } },
+          },
+        })
+      })
+      try artifact("api-objects-maintainer-action-run", "Vitest built-in bench; the production bodies of worker/Api.vibe in real workerd SQLite through apiFetch and alarms, sign-in configured with fixture-only secrets and VIBELANG_INITIAL_MAINTAINER_ID=1, the deterministic HTTP model service. Each sample starts a vibelang/Post action run whose trusted props name owner 1, follows the run's events until the reply settles and reads the run. Checks the 202 start, the passed agent run, ReplyFinished, and the reply's tool answers: History Start refused unknown (a maintainer's answer), the wiki draft refused draft by the writer, outline, wiki and docs opened. Setup excluded; start through settlement included.", ["Deterministic model; no inference latency, and its answer is no wiki draft, so the draft measures the writer's refusal.", "The maintainer comes from VIBELANG_INITIAL_MAINTAINER_ID and trusted props, not a GitHub sign-in; no GitHub request.", "Objects reach each other by fetch, not Alchemy RPC."], result)
+    }
+  }))
+})

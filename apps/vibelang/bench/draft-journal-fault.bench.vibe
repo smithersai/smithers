@@ -1,0 +1,92 @@
+// @vitest-environment node
+// A draft or review whose journal read fails after admission: the production writers on the Cloudflare runtime over
+// SQLite, with a faulty storage service (fuzz/faulty-store.ts) failing the journal's entry read. Each charges its
+// whole ceiling, frees its reservation and answers its failure; none answers a draft or charges zero (0017).
+import { it, expect } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Digest, SecureRandom } from "effect/crypto"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { agentLayer, writer, VIP_CEILING } from "../worker/VipDraft.vibe"
+import { wikiAgentLayer, wikiWriter, WIKI_CEILING } from "../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers, REVIEW_CEILING } from "../worker/SpecificationReviewers.vibe"
+import { budget, type Storage } from "../worker/Objects.vibe"
+import { faultyStore } from "../fuzz/faulty-store.ts"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const Outcome = Flow.make("bench/draft-journal-fault/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+const ENTRY_READ = /SELECT run_id, seq, event_id[\s\S]*FROM flows_journal_events[\s\S]*ORDER BY seq ASC/
+type Kind = "wiki" | "vip" | "specification"
+type Services = FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom
+
+/** One durable execution of `program` on the production Cloudflare runtime over `storage`. */
+effect function execution<S>(storage: Storage, layer: Layer.Layer<S>, program: string!never!(S | Services)) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
+    try engine.register(Outcome, () => Effect.provide(program, services) as never)
+  })
+  const runtime = CloudflareRuntime.layer({ hostId: "bench-draft-journal", executionId: "bench/draft-journal-fault", flow: Outcome._tag }, registration.pipe(Layer.provide(layer))).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(WebCrypto.layer),
+  )
+  const context = try Layer.build(runtime)
+  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: "bench/draft-journal-fault", payload: {} })
+}
+
+/** What one writer's failed journal read leaves: its answer, faults, model calls, the day's ledger and usage warnings. */
+effect function faulted(kind: Kind) {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (storage) => sync(() => storage.close()))
+  const store = faultyStore(raw as unknown as Storage)
+  const day = try budget(store.storage, 1_000_000)
+  // The journal's entry read fails from admission until the writer has answered; then the store heals so the engine
+  // can persist that answer.
+  const spend: Spend.Shape = {
+    admit: (_day, reply, ceiling) => day.admit(reply, ceiling).pipe(Effect.tap(() => sync(() => store.fail(ENTRY_READ)))),
+    spend: (_day, reply, tokens, reported, ceiling) => day.spend(reply, tokens, reported, ceiling),
+  }
+  const output = kind === "wiki" ? { page: "roadmap", text: "# Shorter\n" } : kind === "vip" ? { title: "T", summary: "S", example: "E", prior: "P" } : { verdict: "LGTM", grade: "A", review: "Consistent." }
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify(output))], prompt: 3, completion: 4 }])
+  const spending = Layer.succeed(Spend, spend)
+  const chat = Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })
+  const concluded = <A, R>(program: A!{ readonly reason: string }!R) =>
+    Effect.result(program).pipe(Effect.map((result) => result._tag === "Success" ? "answered" : result.failure.reason), Effect.ensuring(sync(() => store.fail())))
+  const warnings: Array<unknown> = []
+  const logger = Logger.make((entry) => {
+    if (entry.message === "vibelang.budget.usage" || Array.isArray(entry.message) && entry.message.includes("vibelang.budget.usage")) warnings.push(entry.fiber.getRef(References.CurrentLogAnnotations).outcome)
+  })
+  const run = <S>(layer: Layer.Layer<S>, program: string!never!(S | Services)) => execution(store.storage, layer, program) as unknown as string!unknown!Scope.Scope
+  const answer = try (match (kind) {
+    when "wiki": run(wikiWriter.pipe(Layer.provide(wikiAgentLayer), Layer.provide(chat), Layer.provide(spending)), concluded(effect { return try (try WikiWriter).draft({ page: "roadmap", source: "# Roadmap", ask: "Shorter." }) }));
+    when "vip": run(writer.pipe(Layer.provide(agentLayer), Layer.provide(chat), Layer.provide(spending)), concluded(effect { return try (try VipWriter).draft({ op: "draft", key: "bench", number: 0, parent: 0, title: "T", text: "S", example: "E", prior: "P", assignee: "" }) }));
+    when "specification": run(
+      liveSpecificationReviewers.pipe(Layer.provide(spending), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...scripted.values, SPEC_REVIEW_SOL: JSON.stringify(scripted.record) })))),
+      concluded(effect { return try (try SpecificationReviewers).review("sol", { revision: 1, text: "# Spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }) }),
+    );
+  }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+  return {
+    answer, faulted: store.faults() > 0, calls: try scripted.calls, warnings,
+    spent: try promise(() => raw.get("spent")), reserved: try promise(() => raw.get("reserved")), charges: (try promise(() => raw.list({ prefix: "reply/" }))).size,
+  }
+}
+
+it("a draft or review whose journal read fails charges its ceiling and answers its failure", { timeout: 300_000 }, async ({ bench }) => {
+  const seen: Array<unknown> = []
+  const result = await workload(bench, "draft-journal-fault", "async", async () => {
+    seen.push(await runPromise(scoped(effect { return [try faulted("wiki"), try faulted("vip"), try faulted("specification")] })))
+  }).run(slow)
+  expect(seen.length).toBeGreaterThan(0)
+  for (const each of seen) expect(each).toEqual([
+    { answer: "draft", faulted: true, calls: 0, warnings: ["unavailable"], spent: WIKI_CEILING, reserved: 0, charges: 1 },
+    { answer: "draft", faulted: true, calls: 0, warnings: ["unavailable"], spent: VIP_CEILING, reserved: 0, charges: 1 },
+    { answer: "review", faulted: true, calls: 0, warnings: ["unavailable"], spent: REVIEW_CEILING, reserved: 0, charges: 1 },
+  ])
+  await runPromise(artifact("draft-journal-fault", "Vitest built-in bench; the production wiki writer, VIP writer and Sol specification reviewer, each in one fresh durable execution on the Cloudflare runtime over node:sqlite object storage, with the real Budget object and a scripted HTTP model. A faulty storage service fails the journal's entry read from admission until the writer answers. Each sample runs all three; checks the failure answer, zero model calls, one usage warning with outcome unavailable, the whole ceiling charged once and the reservation freed. Setup and assertions included.", ["Scripted local model; the fault stops the agent before any model call, so no inference latency.", "node:sqlite object storage, not workerd; the fault is an injected storage service, not a real SQLite outage."], result))
+})

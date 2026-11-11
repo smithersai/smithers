@@ -1,0 +1,23 @@
+// @vitest-environment node
+// The first real Cloudflare Container run (d7d3245c, VL-35 and VL-36) replayed through @smthrs/testing's HttpRecording:
+// the product's Factory client drives start, command, checkpoint, restore, metering and sweep against the recorded
+// exchanges, with no network and no token. It measures the client's lifecycle overhead, not a Container's.
+import { it, expect } from "@effect/vitest"
+import { HttpRecording } from "@smthrs/testing"
+import { HttpClient } from "effect/http"
+import { expectLifecycle, lifecycle, normalize, RECORDING, REPLAY_ORIGIN } from "../test/support/sandboxesLive.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("a recorded Container lifecycle replays through the product's sandbox client", { timeout: 120_000 }, async ({ bench }) => {
+  const recording = await runPromise(HttpRecording.load(RECORDING))
+  const remaining: Array<number> = []
+  const result = await workload(bench, "sandbox-live-replay", "async", async () => {
+    const client = HttpRecording.replay(recording, { normalize })
+    const run = await runPromise(scoped(Effect.provideService(lifecycle(REPLAY_ORIGIN, "replayed"), HttpClient.HttpClient, client)))
+    expectLifecycle(run, false)
+    remaining.push(client.remaining())
+  }).run(slow)
+  expect(remaining.length).toBeGreaterThan(0)
+  expect(remaining.every((count) => count === 0)).toBe(true)
+  await runPromise(artifact("sandbox-live-replay", "Vitest built-in bench; test/recordings/sandboxes-live.json (a real Container run on the vl-test stage, 2026-11-10 18:32 PST) replayed by HttpRecording.replay with a fresh replay client per sample. The product's LiveFactory runs Start, a write, Stop (checkpoint), Start (restore), a read, Stop and the probe sweep. Checks every recorded exchange is claimed, both commands answer saved, generations 1 and 2, contributor role and metered minutes that never decrease. Setup and assertions included.", ["Replayed responses: no Container, network or Cloudflare latency; the recorded run took 26.7 s live.", "Runs the client side only: the worker's SandboxAccounts and SandboxMachine bindings ran on the deployed stage when it was recorded."], result))
+})
