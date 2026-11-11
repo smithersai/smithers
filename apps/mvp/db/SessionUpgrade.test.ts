@@ -45,7 +45,12 @@ test("upgrades main's issue-tree schema without skipping session migrations or r
       yield* sql`INSERT INTO issue_relations (child_id, child_repo_id, parent_id, parent_repo_id, observed_at)
         VALUES ('github/upgrade/repo#2', 'github/upgrade/repo', 'github/upgrade/repo#1', 'github/upgrade/repo', now())`
 
-      expect(yield* Database.migrate).toEqual(sessionSteps.map((name, index) => [109 + index, name]))
+      // The session steps run first, in order, none skipped; then every migration main published after them.
+      const later = Object.keys(Database.migrations).filter((name) => Number(name.slice(0, 4)) > 108 + sessionSteps.length).sort()
+      expect(yield* Database.migrate).toEqual([
+        ...sessionSteps.map((name, index) => [109 + index, name]),
+        ...later.map((name) => [Number(name.slice(0, 4)), name.slice(5)]),
+      ])
       expect(yield* Database.migrate).toEqual([])
       expect(yield* sql`SELECT child_id, parent_id FROM issue_relations`).toEqual([
         { child_id: "github/upgrade/repo#2", parent_id: "github/upgrade/repo#1" },
