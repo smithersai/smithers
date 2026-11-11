@@ -58,7 +58,7 @@ const auditRow = (detail?: unknown): Audit => ({
 /**
  * A run double that can actually be claimed.
  *
- * Recovery claims every row it acts on, including a suspended unowned one: the
+ * Recovery claims every non-terminal row it acts on, including a suspended unowned one: the
  * rollback it may run reverses external effects and restores a jj workspace,
  * and doing that unfenced let a concurrent engine claim the run and start
  * executing it mid-rollback. A double that refuses every claim therefore no
@@ -93,9 +93,9 @@ const claimable = (
         return { _tag: "Activated" as const }
       }),
     heartbeat: () => Effect.succeed({ _tag: "Updated" as const }),
-    transitionOwned: (_runId, transitionOwner, status, stateJson) =>
+    transitionOwned: (_runId, transitionOwner, status, stateJson, guard) =>
       Effect.gen(function*() {
-        if (status === "pending") {
+        if (status === "pending" && (guard?.restorePending !== true || stateJson === undefined)) {
           return yield* Effect.fail(
             new RunStore.RunStoreError({
               code: "invalid_run",
@@ -106,6 +106,7 @@ const claimable = (
           )
         }
         if (row.owner?.nonce !== transitionOwner.nonce) return { _tag: "FenceLost" as const }
+        if (status === "pending" && row.stateJson !== stateJson) return { _tag: "GuardFailed" as const }
         row = {
           ...row,
           status,
@@ -167,7 +168,7 @@ const runRecovery = (
 }
 
 describe("Recovery ownership arbitration", () => {
-  it.effect("rolls an originally pending run back to suspended and closes the audit", () =>
+  it.effect("rolls an originally pending run back to pending and closes the audit", () =>
     Effect.gen(function*() {
       const runs = claimable(baseRow({ status: "pending", owner: null, heartbeatAtMs: null }))
       const { audits, outcomes } = yield* runRecovery(runs, {
@@ -185,7 +186,7 @@ describe("Recovery ownership arbitration", () => {
 
       expect(outcomes).toEqual([{ _tag: "RolledBack", auditId: "audit" }])
       expect(runs.state()).toMatchObject({
-        status: "suspended",
+        status: "pending",
         owner: null,
         heartbeatAtMs: null,
         claim: null,
@@ -194,7 +195,7 @@ describe("Recovery ownership arbitration", () => {
       expect(audits[0]).toMatchObject({ status: "failed", detail: { phase: "rolled_back" } })
     }))
 
-  it.effect("releases an originally pending run to suspended and keeps the audit open after a store failure", () =>
+  it.effect("releases an originally pending run to pending and keeps the audit open after a store failure", () =>
     Effect.gen(function*() {
       const runs = claimable(baseRow({ status: "pending", owner: null, heartbeatAtMs: null }))
       const { audits, outcomes } = yield* runRecovery(runs, {
@@ -216,7 +217,7 @@ describe("Recovery ownership arbitration", () => {
         error: { code: "unknown", message: "could not inspect archive commit for audit" }
       })
       expect(runs.state()).toMatchObject({
-        status: "suspended",
+        status: "pending",
         owner: null,
         heartbeatAtMs: null,
         claim: null,

@@ -1,5 +1,6 @@
 import { build } from "esbuild"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 
 describe("browser bundle", () => {
@@ -8,6 +9,7 @@ describe("browser bundle", () => {
       entryPoints: ["src/index.ts"],
       absWorkingDir: fileURLToPath(new URL("..", import.meta.url)),
       bundle: true,
+      plugins: [vibelang({ project: "tsconfig.test.json" })],
       platform: "browser",
       format: "esm",
       write: false,

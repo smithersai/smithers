@@ -544,7 +544,7 @@ describe("SQL public TimeTravel frame validation mirror", () => {
           expect(row.stateJson).toBe(stateJson)
           expect(audits).toHaveLength(1)
           if (restoration === "restored") {
-            expect(row).toMatchObject({ status: "suspended", owner: null, heartbeatAtMs: null, claim: null })
+            expect(row).toMatchObject({ status: "pending", owner: null, heartbeatAtMs: null, claim: null })
             expect(audits[0]!.status).toBe("failed")
             expect(JSON.parse(audits[0]!.detail)).toMatchObject({ phase: "rolled_back", originalStatus: "pending" })
             expect(yield* store.pendingAudits()).toEqual([])

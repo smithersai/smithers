@@ -157,6 +157,90 @@ const runRecovery = (
   )
 
 describe("Recovery", () => {
+  for (const status of ["completed", "failed", "cancelled"] as const) {
+    for (const committed of [true, false]) {
+      it.effect(
+        "resolves a " + status + " run's " + (committed ? "committed" : "uncommitted") +
+          " audit without changing the run",
+        () =>
+          Effect.gen(function*() {
+            yield* Migrations.run
+            const sql = yield* SqlClient.SqlClient
+            const runs = yield* RunStore.make.pipe(Effect.provide(SqlConsensus.layer))
+            const store = MemoryTimeTravelStore.make()
+            const value = audit(committed ? "archive_committed" : "compensated", {
+              handlerReceipts: compensation.handlerReceipts
+            })
+            yield* store.writeAudit(value)
+            yield* sql`
+            INSERT INTO flows_runs (run_id, status, created_at_ms, finished_at_ms, state_json)
+            VALUES ('run', ${status}, 0, 25, '{"cursor":7}')
+          `
+            const before = yield* runs.get("run")
+            let rollbacks = 0
+            const registry = yield* EffectHandlerRegistry.make([{
+              kind: "send",
+              tier: "irreversible",
+              requiresIdempotencyKey: true,
+              residue: () => "message residue",
+              revert: () => Effect.succeed({ value: "sent" }),
+              rollback: () =>
+                Effect.sync(() => {
+                  rollbacks += 1
+                })
+            }])
+            const outcomes = yield* runRecovery(store, runs, Jj.makeNoop({}), registry, !committed)
+            expect(outcomes).toEqual([{ _tag: committed ? "Completed" : "RolledBack", auditId: value.id }])
+            expect(yield* runs.get("run")).toEqual(before)
+            expect(rollbacks).toBe(committed ? 0 : 1)
+            expect(store.state().audits[0]).toMatchObject({
+              status: committed ? "completed" : "failed",
+              detail: { phase: committed ? "completed" : "rolled_back" }
+            })
+            expect(yield* runRecovery(store, runs, Jj.makeNoop({}), registry, !committed)).toEqual([])
+            expect(rollbacks).toBe(committed ? 0 : 1)
+          }).pipe(Effect.provide(TestDatabase.layer))
+      )
+    }
+  }
+
+  for (const fault of [undefined, "archivedAt", "stateAt"] as const) {
+    it.effect("releases a pending recovery with " + (fault ?? "no fault"), () =>
+      Effect.gen(function*() {
+        yield* Migrations.run
+        const sql = yield* SqlClient.SqlClient
+        const runs = yield* RunStore.make.pipe(Effect.provide(SqlConsensus.layer))
+        const base = MemoryTimeTravelStore.make()
+        const store = {
+          ...base,
+          ...(fault === "stateAt" ? { stateAt: () => Effect.fail(error("unknown", "frame state unavailable")) } : {}),
+          ...(fault === "archivedAt"
+            ? { archivedAt: () => Effect.fail(error("unknown", "archive evidence unavailable")) }
+            : {})
+        }
+        const value = audit(fault === "stateAt" ? "archive_committed" : "compensated")
+        yield* store.writeAudit({ ...value, detail: { ...value.detail as AuditDetail, originalStatus: "pending" } })
+        yield* sql`
+          INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+          VALUES ('run', 'pending', 0, '{"cursor":7}')
+        `
+        const outcomes = yield* runRecovery(
+          store,
+          runs,
+          Jj.makeNoop({}),
+          EffectHandlerRegistry.makeNoop(),
+          fault !== "archivedAt"
+        )
+        expect(outcomes).toMatchObject([{ _tag: fault === undefined ? "RolledBack" : "Busy" }])
+        expect(yield* runs.get("run")).toMatchObject({
+          status: fault === "stateAt" ? "suspended" : "pending",
+          owner: null,
+          heartbeatAtMs: null,
+          claim: null,
+          stateJson: "{\"cursor\":7}"
+        })
+      }).pipe(Effect.provide(TestDatabase.layer)))
+  }
   for (const committed of [true, false]) {
     for (const claimedOnly of [false, true]) {
       it.effect(`recovers a stale ${claimedOnly ? "claim" : "running child"} ${committed ? "after" : "before"} commit`, () =>

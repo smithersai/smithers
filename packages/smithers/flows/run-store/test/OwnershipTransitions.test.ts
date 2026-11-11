@@ -65,6 +65,76 @@ const fact = (runId: string, transition: string, owner: OwnerId, grantedAtMs: nu
 })
 
 describe("ownership transitions on the run-store companion stream", () => {
+  it.effect("restores a temporarily activated pending snapshot and releases its consensus lease", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* store.create("run-restore", "{\"cursor\":7}")
+      expect(yield* store.claimAndOwn("run-restore", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+      expect(
+        yield* store.transitionOwned("run-restore", ownerA, "pending", "{\"cursor\":7}", {
+          restorePending: true
+        })
+      ).toEqual({ _tag: "Transitioned" })
+      const restored = yield* store.get("run-restore")
+      expect(restored).toMatchObject({
+        status: "pending",
+        owner: null,
+        heartbeatAtMs: null,
+        claim: null,
+        finishedAtMs: null,
+        stateJson: "{\"cursor\":7}"
+      })
+      expect((yield* facts("run-restore")).at(-1)).toEqual(fact("run-restore", "released", ownerA, null))
+      expect(yield* store.claimAndOwn("run-restore", restored, ownerB, 0)).toEqual({ _tag: "Activated" })
+      expect(
+        yield* store.transitionOwned("run-restore", ownerA, "pending", "{\"cursor\":7}", {
+          restorePending: true
+        })
+      ).toEqual({ _tag: "FenceLost" })
+      expect((yield* store.get("run-restore")).owner).toEqual(ownerB)
+      expect(
+        yield* store.transitionOwned("missing", ownerA, "pending", "{}", {
+          restorePending: true
+        })
+      ).toEqual({ _tag: "NotFound" })
+    })))
+
+  it.effect("refuses pending restoration without an explicit guard and unchanged state", () =>
+    run(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* store.create("run-guard", "{\"cursor\":7}")
+      yield* store.claimAndOwn("run-guard", pending, ownerA, 0)
+      const before = yield* store.get("run-guard")
+      expect(yield* Effect.flip(store.transitionOwned("run-guard", ownerA, "pending", before.stateJson)))
+        .toMatchObject({ code: "invalid_run" })
+      expect(
+        yield* Effect.flip(store.transitionOwned("run-guard", ownerA, "pending", undefined, {
+          restorePending: true
+        }))
+      ).toMatchObject({ code: "invalid_run" })
+      expect(
+        yield* Effect.flip(store.transitionOwned("run-guard", ownerA, "pending", before.stateJson, {
+          restorePending: false
+        } as unknown as RunStoreLive.TransitionGuard))
+      ).toMatchObject({ code: "invalid_run" })
+      expect(
+        yield* store.transitionOwned("run-guard", ownerA, "pending", "{\"cursor\":8}", {
+          restorePending: true
+        })
+      ).toEqual({ _tag: "GuardFailed" })
+      expect(
+        yield* store.transitionOwned("run-guard", ownerA, "pending", before.stateJson, {
+          restorePending: true,
+          cancelRequested: "present"
+        })
+      ).toEqual({ _tag: "GuardFailed" })
+      expect(yield* store.get("run-guard")).toEqual(before)
+      expect((yield* facts("run-guard")).map((entry) => entry.eventType)).toEqual([
+        "flows.consensus.claimed",
+        "flows.consensus.activated"
+      ])
+    })))
+
   it.effect("records claim, activation and release in order, and leaves the run's own stream empty", () =>
     run(Effect.gen(function*() {
       const store = yield* RunStore

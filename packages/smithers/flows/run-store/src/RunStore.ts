@@ -274,7 +274,12 @@ export interface CreateOptions {
  * @category models
  */
 export const TransitionGuard = Schema.Struct({
-  cancelRequested: Schema.optional(Schema.Literals(["absent", "present"] as const))
+  cancelRequested: Schema.optional(Schema.Literals(["absent", "present"] as const)),
+  /**
+   * Restore a temporarily activated pending run. Requires a supplied stateJson
+   * equal to the persisted state; a changed state returns GuardFailed.
+   */
+  restorePending: Schema.optional(Schema.Literal(true))
 })
 
 /**
@@ -964,7 +969,7 @@ const snapshotGuard = (
 ): Effect.Effect<TransitionGuard | undefined, RunStoreError> =>
   Effect.suspend(() => {
     if (input === undefined) return Effect.succeed(undefined)
-    const fields = inertRecord(input, new Set(["cancelRequested"]))
+    const fields = inertRecord(input, new Set(["cancelRequested", "restorePending"]))
     if (fields === undefined) {
       return Effect.fail(invalidRunError("transitionOwned", "guard", "must be an inert exact guard"))
     }
@@ -972,7 +977,14 @@ const snapshotGuard = (
     if (cancelRequested !== undefined && cancelRequested !== "absent" && cancelRequested !== "present") {
       return Effect.fail(invalidRunError("transitionOwned", "guard.cancelRequested"))
     }
-    return Effect.succeed(Object.freeze(cancelRequested === undefined ? {} : { cancelRequested }))
+    const restorePending = fields.restorePending
+    if (restorePending !== undefined && restorePending !== true) {
+      return Effect.fail(invalidRunError("transitionOwned", "guard.restorePending"))
+    }
+    return Effect.succeed(Object.freeze({
+      ...(cancelRequested === undefined ? {} : { cancelRequested }),
+      ...(restorePending === undefined ? {} : { restorePending })
+    }))
   })
 
 const ownerFromColumns = (
@@ -1956,7 +1968,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
       Effect.gen(function*() {
         const runId = yield* snapshotRunId("transitionOwned", runIdInput)
         const owner = yield* snapshotOwner("transitionOwned", "owner", ownerInput)
-        if (!Schema.is(RunStatus)(toStatusInput) || toStatusInput === "pending") {
+        if (!Schema.is(RunStatus)(toStatusInput)) {
           return yield* Effect.fail(invalidRunError("transitionOwned", "toStatus"))
         }
         const toStatus = toStatusInput
@@ -1968,6 +1980,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             stateJsonValid: isJsonString(stateInput)
           })
         const guard = yield* snapshotGuard(guardInput)
+        if (toStatus === "pending" && (guard?.restorePending !== true || state === null)) {
+          return yield* Effect.fail(invalidRunError("transitionOwned", "toStatus"))
+        }
         yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId, to: toStatus })
         const transitionedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const outcome = yield* writeRun(
@@ -1987,7 +2002,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             if (!held || !rowOwnedBy(row, owner)) return fenceLost
             const guardBlocked = (guard?.cancelRequested === "absent" && row.cancelRequestedAtMs !== null) ||
               (guard?.cancelRequested === "present" && row.cancelRequestedAtMs === null)
-            if (guardBlocked) return guardFailed
+            if (guardBlocked || (toStatus === "pending" && row.stateJson !== state)) return guardFailed
             if (toStatus === "running") {
               yield* sql`
                 UPDATE flows_runs

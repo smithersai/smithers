@@ -5,7 +5,7 @@ import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),

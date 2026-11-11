@@ -534,6 +534,7 @@ export const makeWith = (
           : Effect.logError("time-travel: startup recovery closed an audit as failed")).pipe(
             Effect.annotateLogs({
               auditId: outcome.auditId,
+              runId: outcome.runId,
               code: outcome.error.code,
               reason: outcome.error.message
             })

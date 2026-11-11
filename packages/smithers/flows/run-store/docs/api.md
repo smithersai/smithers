@@ -267,7 +267,11 @@ const transitionOwned: (
 The only way to move a run you own. `running` keeps the owner and rewrites only
 the state. `suspended` clears the owner, the heartbeat, and the claim and leaves
 `finished_at_ms` null. `completed`, `failed`, and `cancelled` clear the same
-columns and stamp `finished_at_ms`. `pending` fails with `invalid_run`. An
+columns and stamp `finished_at_ms`. Restoring `pending` requires
+`{ restorePending: true }` and a supplied `stateJson` identical to the current
+persisted state; changed state returns `GuardFailed`. Use this only to release a
+temporarily activated pending snapshot. Without that guard or state, `pending`
+fails with `invalid_run`. An
 omitted `stateJson` leaves the column as recorded; a supplied one replaces it
 whole. The guard is compiled into the same `UPDATE` as the ownership fence.
 
@@ -420,8 +424,14 @@ a lineage of one.
 #### TransitionGuard
 
 ```ts
-const TransitionGuard: Schema.Struct<{ cancelRequested: Schema.optional<Schema.Literals<["absent", "present"]>> }>
-type TransitionGuard = { readonly cancelRequested?: "absent" | "present" }
+const TransitionGuard: Schema.Struct<{
+  cancelRequested: Schema.optional<Schema.Literals<["absent", "present"]>>
+  restorePending: Schema.optional<Schema.Literal<true>>
+}>
+type TransitionGuard = {
+  readonly cancelRequested?: "absent" | "present"
+  readonly restorePending?: true
+}
 ```
 
 An extra compare-and-swap predicate over first-class run metadata, compiled into

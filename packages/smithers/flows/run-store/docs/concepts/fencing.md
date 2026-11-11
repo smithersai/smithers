@@ -127,7 +127,9 @@ what happens to the ownership columns:
   `finished_at_ms` null. The run is parked and claimable again.
 - `completed`, `failed`, and `cancelled` clear the same columns and stamp
   `finished_at_ms`. A terminal row is never claimed, activated, or reopened.
-- `pending` is refused with `invalid_run`. A run does not go back to unstarted.
+- `pending` restores a temporarily activated pending snapshot only with
+  `{ restorePending: true }` and the unchanged `stateJson`. A changed state
+  returns `GuardFailed`; omitting the guard or state returns `invalid_run`.
 
 A transition may also carry a `TransitionGuard`, an extra predicate evaluated
 in the same write transaction as the fence check. `{ cancelRequested:

@@ -17,6 +17,7 @@ import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
@@ -34,7 +35,12 @@ describe("Rewind archive commit boundary", () => {
       "interrupt",
       "post-commit failure",
       "journal evidence failure",
-      "archive evidence failure"
+      "archive evidence failure",
+      "owner read failure",
+      "owner host changed",
+      "owner pid changed",
+      "owner nonce changed",
+      "cancelled before settlement"
     ] as const
   ) {
     it.effect(`preserves the committed archive after ${scenario}`, () =>
@@ -80,6 +86,11 @@ describe("Rewind archive commit boundary", () => {
         const committed = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>()
         const release = yield* Deferred.make<void>()
         let archiveReturned = false
+        const settlementOwner = {
+          hostId: scenario === "owner host changed" ? "replacement-host" : owner.hostId,
+          pid: scenario === "owner pid changed" ? owner.pid + 1 : owner.pid,
+          nonce: scenario === "owner nonce changed" ? "replacement-nonce" : owner.nonce
+        }
         const store: TimeTravelStore["Service"] = {
           ...base,
           archivedAt: (...args) =>
@@ -98,6 +109,19 @@ describe("Rewind archive commit boundary", () => {
                   Effect.sync(() => {
                     archiveReturned = true
                   })
+                ),
+                Effect.tap(() =>
+                  Effect.gen(function*() {
+                    if (scenario === "cancelled before settlement") {
+                      yield* runs.transitionOwned("run", owner, "cancelled")
+                    } else if (
+                      scenario === "owner host changed" || scenario === "owner pid changed" ||
+                      scenario === "owner nonce changed"
+                    ) {
+                      yield* sql`UPDATE flows_runs SET owner_host_id = ${settlementOwner.hostId}, owner_pid = ${settlementOwner.pid},
+                        owner_nonce = ${settlementOwner.nonce} WHERE run_id = 'run'`
+                    }
+                  }).pipe(Effect.mapError((cause) => error("unknown", "settlement owner change failed", cause)))
                 ),
                 Effect.tap(() =>
                   scenario !== "interrupt"
@@ -131,7 +155,20 @@ describe("Rewind archive commit boundary", () => {
                 ? Effect.fail(new Journal.JournalError({ code: "read_failed", message: "journal evidence unreadable" }))
                 : journal.entries(options)
           }),
-          Effect.provideService(RunStore.RunStore, runs),
+          Effect.provideService(RunStore.RunStore, {
+            ...runs,
+            get: (runId) =>
+              archiveReturned && scenario === "owner read failure"
+                ? Effect.fail(
+                  new RunStore.RunStoreError({
+                    code: "persistence_failed",
+                    method: "get",
+                    message: "owner unreadable",
+                    cause: undefined
+                  })
+                )
+                : runs.get(runId)
+          }),
           Effect.provideService(EffectHandlerRegistry.EffectHandlerRegistry, registry),
           Effect.provide(CacheStore.layerNoop({ get: () => Effect.succeed(Option.none()) })),
           Effect.provideService(
@@ -171,7 +208,10 @@ describe("Rewind archive commit boundary", () => {
           expect(yield* base.pendingAudits()).toEqual([])
           return
         }
-        expect(yield* runs.get("run")).toMatchObject({ status: "running", owner })
+        expect(yield* runs.get("run")).toMatchObject({
+          status: scenario === "cancelled before settlement" ? "cancelled" : "running",
+          owner: scenario === "cancelled before settlement" ? null : settlementOwner
+        })
         expect(yield* base.pendingAudits()).toMatchObject([{
           id: "audit",
           status: "in_progress",
@@ -182,6 +222,19 @@ describe("Rewind archive commit boundary", () => {
               : "archive_committed"
           }
         }])
+        if (scenario === "cancelled before settlement") {
+          const before = yield* runs.get("run")
+          const outcomes = yield* Recovery.recover({ owner, livenessEvidence: () => Effect.succeed(undefined) }).pipe(
+            Effect.provideService(TimeTravelStore, base),
+            Effect.provideService(RunStore.RunStore, runs),
+            Effect.provideService(EffectHandlerRegistry.EffectHandlerRegistry, registry),
+            Effect.provideService(Jj.Jj, Jj.makeNoop({}))
+          )
+          expect(outcomes).toEqual([{ _tag: "Completed", auditId: "audit" }])
+          expect(yield* runs.get("run")).toEqual(before)
+          expect(yield* base.pendingAudits()).toEqual([])
+          expect(rollbacks).toEqual([])
+        }
       }).pipe(Effect.provide(persistence)))
   }
 })

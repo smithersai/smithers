@@ -38,9 +38,11 @@ written. The cause names the field and what was wrong with it. The common ones:
 - **An identifier that is not durable text.** Run ids, step key digests, lineage
   ids, owner host ids and nonces, and attempt state names must be non-empty, at
   most 1,024 UTF-16 units, free of NUL, and free of lone surrogates.
-- **`toStatus: "pending"`.** A run does not go back to unstarted.
+- **`toStatus: "pending"`.** Only restoration of a temporarily activated pending
+  snapshot is allowed: supply `{ restorePending: true }` and the unchanged
+  `stateJson`. A changed state returns `GuardFailed`.
 - **A malformed `TransitionGuard`.** `cancelRequested` accepts only `"absent"`
-  or `"present"`, and the guard object takes no other key.
+  or `"present"`; `restorePending` accepts only `true`. Other keys are refused.
 - **A value the JSON boundary refused.** The complaint names the rule: "contains
   an accessor", "contains a cycle", "contains a non-plain object", "contains a
   sparse or accessor array member", "contains an enumerable symbol", "contains a

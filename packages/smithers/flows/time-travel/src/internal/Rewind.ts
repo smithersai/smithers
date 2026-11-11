@@ -1220,7 +1220,9 @@ const settleFailure = (
           }
         }
         yield* finish(context, progress, {
-          pendingChildren: progress.detail!.pendingChildren ?? []
+          // The live protocol persists this plan before attempting commit.
+          // Startup recovery supplies the default for legacy audit detail.
+          pendingChildren: progress.detail!.pendingChildren!
         }, lease)
       })).pipe(
         Effect.catchCause((settlement) =>
@@ -1277,10 +1279,9 @@ const settleFailure = (
       const restored = yield* runs.transitionOwned(
         options.runId,
         options.owner,
-        // Pending is not a transition target; suspended clears the rewind
-        // owner while preserving the run's resumable state.
-        claimed.row.status === "pending" ? "suspended" : claimed.row.status,
-        claimed.row.stateJson
+        claimed.row.status,
+        claimed.row.stateJson,
+        claimed.row.status === "pending" ? { restorePending: true } : undefined
       ).pipe(
         Effect.mapError((cause) => RunRow.failure("restore run state", cause)),
         Effect.exit

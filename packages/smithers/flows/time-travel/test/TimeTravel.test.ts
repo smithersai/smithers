@@ -24,6 +24,7 @@ import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
 import * as Random from "effect/Random"
+import * as References from "effect/References"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as CompensationHandlers from "../src/CompensationHandlers.ts"
@@ -273,6 +274,66 @@ describe("TimeTravel", () => {
       expect(store.state().audits).toEqual([])
       expect(store.state().records.map((entry) => entry.seq)).toEqual([0, 1])
     }))
+
+  it.effect("logs deferred recovery with its audit, run and reason without exposing state", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      yield* store.writeAudit({
+        id: "audit-busy",
+        runId: "run",
+        frame: { lineageId, seq: 0 },
+        status: "in_progress",
+        detail: {
+          version: 1,
+          phase: "compensated",
+          originalStatus: "pending",
+          suffixCount: 0,
+          warnings: [],
+          cancelledChildren: []
+        }
+      })
+      const logs: Array<{ level: string; message: unknown; annotations: unknown }> = []
+      yield* Effect.void.pipe(
+        Effect.provide(
+          TimeTravel.layerWith({
+            isAlive: () => Effect.succeed(true)
+          }).pipe(Layer.provide(Layer.mergeAll(
+            Layer.succeed(TimeTravelStore)(store),
+            Layer.succeed(RunStore.RunStore)(RunStore.makeNoop({
+              get: () =>
+                Effect.succeed(makeRow({
+                  status: "running",
+                  owner: { hostId: "live", pid: 42, nonce: "live" },
+                  heartbeatAtMs: 0,
+                  stateJson: "{\"value\":\"private-state\"}"
+                }))
+            })),
+            Layer.succeed(Journal.Journal)(journalOf(store)),
+            Layer.succeed(Jj.Jj)(Jj.makeNoop({})),
+            CacheStore.layerNoop()
+          )))
+        ),
+        Effect.provide(Logger.layer([Logger.make<unknown, void>((options) => {
+          logs.push({
+            level: options.logLevel,
+            message: String(options.message),
+            annotations: options.fiber.getRef(References.CurrentLogAnnotations)
+          })
+        })]))
+      )
+      expect(logs).toContainEqual({
+        level: "Warn",
+        message: "time-travel: startup recovery deferred an audit",
+        annotations: expect.objectContaining({
+          auditId: "audit-busy",
+          runId: "run",
+          code: "busy",
+          reason: "run run is still live"
+        })
+      })
+      expect(JSON.stringify(logs)).not.toContain("private-state")
+      expect(yield* store.pendingAudits()).toHaveLength(1)
+    })))
 
   it.effect("reports an audit startup recovery closed as failed", () =>
     Effect.gen(function*() {

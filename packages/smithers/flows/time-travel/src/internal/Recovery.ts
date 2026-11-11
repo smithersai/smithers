@@ -62,8 +62,8 @@ export interface Options {
 export type Outcome =
   | { readonly _tag: "Completed"; readonly auditId: string }
   | { readonly _tag: "RolledBack"; readonly auditId: string }
-  | { readonly _tag: "Busy"; readonly auditId: string; readonly error: TimeTravelFailure }
-  | { readonly _tag: "Failed"; readonly auditId: string; readonly error: TimeTravelFailure }
+  | { readonly _tag: "Busy"; readonly auditId: string; readonly runId: string; readonly error: TimeTravelFailure }
+  | { readonly _tag: "Failed"; readonly auditId: string; readonly runId: string; readonly error: TimeTravelFailure }
 
 const isAuditDetail = Schema.is(AuditDetail)
 
@@ -89,6 +89,9 @@ const acquire = (
     const row = yield* runs.get(audit.runId).pipe(
       Effect.mapError((cause) => RunRow.failure("read recovery run", cause))
     )
+    // Terminal rows cannot execute or be claimed again. Resolve their audit
+    // without reviving them or replacing the operator's terminal decision.
+    if (RunStore.isTerminalRunStatus(row.status)) return row
     if (row.status === "running" && row.owner !== null && sameOwner(row.owner, options.owner)) {
       return row
     }
@@ -306,7 +309,7 @@ const terminalFailure = (
         Effect.annotateLogs({ auditId: audit.id, runId: audit.runId, step: "terminal_failure" })
       )
     ),
-    Effect.as({ _tag: "Failed" as const, auditId: audit.id, error: failure })
+    Effect.as({ _tag: "Failed" as const, auditId: audit.id, runId: audit.runId, error: failure })
   )
 
 const recoverOne = (
@@ -338,7 +341,7 @@ const recoverOne = (
      * `acquire` used to hand back an unclaimed suspended row and let the
      * rollback run unfenced, so a concurrent engine could claim the run and
      * start executing it while recovery restored the workspace underneath.
-     * It now claims every row it acts on. That makes the release the other half
+     * It claims every non-terminal row it acts on. That makes release the other half
      * of the contract: a failure after the claim used to leave the run
      * `running` under the recovery identity with a heartbeat nobody renews, so
      * the ownership is restored on every exit path, and a heartbeat pulses for
@@ -349,21 +352,24 @@ const recoverOne = (
     // journal no longer records, so a failed pass gives the run back with the
     // state derived at the frame instead.
     let frameState: string | undefined
+    let archiveWasCommitted = false
     // Set while handler rollbacks ran but the stripped detail is not yet
     // persisted. A retry would read the old detail and repeat non-idempotent
     // rollbacks, so a failure in that window stays terminal.
     let rollbackUnrecorded = false
     let releaseProblem: string | undefined
     const release = (status: RunStore.RunStatus) =>
-      Effect.suspend(() =>
-        acquired === undefined
+      Effect.suspend(() => {
+        // A committed rewind stays suspended, even when it began pending.
+        const target = archiveWasCommitted ? "suspended" : status
+        return acquired === undefined
           ? Effect.void
           : Effect.exit(runs.transitionOwned(
             audit.runId,
             options.owner,
-            // Pending cannot be restored directly; suspended releases ownership.
-            status === "pending" ? "suspended" : status,
-            frameState ?? acquired.stateJson
+            target,
+            frameState ?? acquired.stateJson,
+            target === "pending" ? { restorePending: true } : undefined
           )).pipe(
             Effect.flatMap((released) =>
               Effect.sync(() => {
@@ -375,17 +381,53 @@ const recoverOne = (
               })
             )
           )
-      )
+      })
+    const rollback = Effect.suspend(() =>
+      Effect.gen(function*() {
+        if (detail.compensation !== undefined) {
+          const compensated = detail.compensation
+          const { compensation: _, ...stripped } = detail
+          // A successful rollback is a non-idempotent fact. Persist it
+          // before the ownership restoration can fail, so another recovery
+          // pass never repeats those handler rollbacks. The guard
+          // interrupts this body when the fence is lost, so the rollback
+          // and its record are one uninterruptible unit.
+          yield* Effect.uninterruptible(
+            Effect.sync(() => (rollbackUnrecorded = true)).pipe(
+              Effect.andThen(Compensation.rollback(compensated, options.compensationTimeout)),
+              Effect.andThen(Effect.sync(() => (detail = stripped))),
+              Effect.andThen(store.updateAudit(audit.id, { detail: stripped })),
+              Effect.andThen(Effect.sync(() => (rollbackUnrecorded = false)))
+            )
+          )
+        }
+      })
+    )
     const recoveryExit = yield* Effect.exit(
       Effect.uninterruptible(
         Effect.gen(function*() {
           const acquiredRow = yield* acquire(runs, audit, options)
+          if (RunStore.isTerminalRunStatus(acquiredRow.status)) {
+            const committed = yield* archiveCommitted(journal, store, audit, detail)
+            if (!committed) yield* rollback
+            detail = yield* resolvePending(runs, audit, detail, options, committed)
+            yield* store.updateAudit(audit.id, {
+              status: committed ? "completed" : "failed",
+              detail: {
+                ...detail,
+                phase: committed ? "completed" : "rolled_back",
+                ...(committed ? {} : { failure: "startup recovery rolled back an uncommitted rewind" })
+              }
+            })
+            return { _tag: committed ? "Completed" as const : "RolledBack" as const, auditId: audit.id }
+          }
           acquired = acquiredRow
           // The release below is itself an owned transition, so it runs inside
           // the held lease, before the heartbeat stops.
           return yield* Lease.withHeldLease(audit.runId, options.owner, (lease) =>
             lease.guard(Effect.gen(function*() {
               const committed = yield* archiveCommitted(journal, store, audit, detail)
+              archiveWasCommitted = committed
               if (committed) {
                 // The live run row still carries the post-frame state the rewind
                 // truncated. Derive the state at the surviving frame just as the
@@ -417,30 +459,15 @@ const recoverOne = (
                 return { _tag: "Completed" as const, auditId: audit.id }
               }
 
-              if (detail.compensation !== undefined) {
-                const compensated = detail.compensation
-                const { compensation: _, ...stripped } = detail
-                // A successful rollback is a non-idempotent fact. Persist it
-                // before the ownership restoration can fail, so another recovery
-                // pass never repeats those handler rollbacks. The guard
-                // interrupts this body when the fence is lost, so the rollback
-                // and its record are one uninterruptible unit.
-                yield* Effect.uninterruptible(
-                  Effect.sync(() => (rollbackUnrecorded = true)).pipe(
-                    Effect.andThen(Compensation.rollback(compensated, options.compensationTimeout)),
-                    Effect.andThen(Effect.sync(() => (detail = stripped))),
-                    Effect.andThen(store.updateAudit(audit.id, { detail: stripped })),
-                    Effect.andThen(Effect.sync(() => (rollbackUnrecorded = false)))
-                  )
-                )
-              }
+              yield* rollback
               detail = yield* resolvePending(runs, audit, detail, options, false)
               yield* lease.releasing
               const restored = yield* runs.transitionOwned(
                 audit.runId,
                 options.owner,
-                detail.originalStatus === "pending" ? "suspended" : detail.originalStatus,
-                acquiredRow.stateJson
+                detail.originalStatus,
+                acquiredRow.stateJson,
+                detail.originalStatus === "pending" ? { restorePending: true } : undefined
               ).pipe(
                 Effect.mapError((cause) => RunRow.failure("restore recovered run", cause))
               )
@@ -472,6 +499,7 @@ const recoverOne = (
       return {
         _tag: "Busy" as const,
         auditId: audit.id,
+        runId: audit.runId,
         error: error(
           failure.code,
           `${failure.message}; could not give ownership back: ${releaseProblem}`,
@@ -492,7 +520,7 @@ const recoverOne = (
     // live rewind's own bookkeeping; a recovery pass that stamped a message
     // on it would clobber the phase the owner is still advancing.
     if (!rollbackUnrecorded && retryable(recoveryExit.cause, failure)) {
-      return { _tag: "Busy" as const, auditId: audit.id, error: failure }
+      return { _tag: "Busy" as const, auditId: audit.id, runId: audit.runId, error: failure }
     }
     return yield* terminalFailure(store, audit, detail, failure)
   })

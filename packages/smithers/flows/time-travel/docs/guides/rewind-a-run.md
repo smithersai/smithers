@@ -396,9 +396,9 @@ in the Smithers examples on GitHub.
 | `unknown`             | The store, the journal, or an unmapped host failure. The cause is attached.                                          |
 
 If a rewind fails after claiming the run but before commit, successful rollback
-restores the saved run state and releases ownership as `suspended`, including
-when the run was originally
-`pending`. Startup recovery uses the same restoration rule. The audit closes
+restores the saved run state and its original `pending` or `suspended` status,
+then releases ownership. A refused rewind of a pending run remains eligible
+for automatic engine admission. Startup recovery uses the same restoration rule. The audit closes
 as `failed` after restoration succeeds. If ownership cannot be released, the
 audit stays `in_progress` for recovery; the error keeps its original code and
 attaches the restoration problem as its cause. See

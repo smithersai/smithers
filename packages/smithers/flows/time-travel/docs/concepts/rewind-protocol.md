@@ -126,7 +126,7 @@ new audits.
 
 One audit it will not resolve is one whose run a live process still holds. That
 one is declined: it keeps its `in_progress` status, stays in `pendingAudits`,
-and a warning identifies the deferred audit. Nothing is written to the audit,
+and a warning identifies the audit, run, error code and reason. Nothing is written to the audit,
 so a later build finishes it. Recording it `failed`
 would close it terminally and drop it from `pendingAudits` forever, and a
 rewind a living process still owns is never stolen.
@@ -150,8 +150,14 @@ A supplied check can only ever refuse a takeover, never widen one. The evidence
 recovery hands the run store is always `lease-expired`, and the store
 re-verifies that claim inside the same write.
 
+If the run is already `completed`, `failed` or `cancelled`, recovery leaves its
+status, state and ownership unchanged. It rolls back an uncommitted rewind or
+closes a committed archive's audit as `completed` without claiming the terminal
+run. An uncommitted rewind of a pending run restores `pending`, so refusing a
+rewind does not remove the run from engine admission.
+
 When recovery does close an audit as failed, it logs it at error level with the
-audit id, the code, and the reason, so an operator learns about a rewind that
+audit id, run id, code and reason, so an operator learns about a rewind that
 could not be finished without reading the audit table by hand.
 
 ## Fork lanes are reclaimed on the same build
