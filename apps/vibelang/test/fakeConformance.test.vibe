@@ -183,8 +183,12 @@ it.live("every real GitHub recording conforms to the fuzz fake", () => scoped(ef
     expect(names.length).toBeGreaterThan(0)
     let exchanges = 0
     const failures: Array<string> = []
+    let github = 0
     for (const name of names) {
       const recording = try HttpRecording.load(path.join(directory, name))
+      // Only real-GitHub recordings are the fake's contract (VL-38); another service's (sandboxes-live.json) isn't.
+      if (!recording.exchanges.every((exchange) => new URL(exchange.request.url).host === "api.github.com")) continue
+      github++
       const fake = try initial(recording)
       timing(recording, fake)
       const client = fakeClient(fake)
@@ -252,6 +256,7 @@ it.live("every real GitHub recording conforms to the fuzz fake", () => scoped(ef
       }
       try Effect.logInfo("fake conformance recording").pipe(Effect.annotateLogs({ recording: name, exchanges: recording.exchanges.length }))
     }
+    expect(github).toBeGreaterThan(0)
     expect(failures).toEqual([])
     try Metric.update(Metric.counter("vibelang.test.fake_conformance.exchanges"), exchanges)
     try Effect.logInfo("fake conformance complete").pipe(Effect.annotateLogs({ recordings: names.length, exchanges }))
