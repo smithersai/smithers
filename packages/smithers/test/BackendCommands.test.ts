@@ -835,6 +835,39 @@ describe("configuration and agent conversations", () => {
       status: "stale"
     })
   })
+  it("fetches a changed docs URL unconditionally instead of reusing the old URL's validators", async () => {
+    const first = await fixture({ SMITHERS_AGENT_DOCS_URL: "https://docs.example.test/first" })
+    first.exec.mockResolvedValue("checkout")
+    first.request.mockResolvedValue({ login: "owner" })
+    // Both resources carry the same validators, so a conditional request to either answers 304.
+    const fetch = vi.fn(async (url: string, init: RequestInit) =>
+      Object.keys(init.headers ?? {}).length
+        ? new Response(null, { status: 304 })
+        : new Response(`# Docs\nServed from ${url}.`, {
+          headers: { etag: "v1", "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT" }
+        })
+    )
+    vi.stubGlobal("fetch", fetch)
+    expect(object(await ask(first.c, { prompt: "docs" }, options)).docs_status).toMatchObject({
+      source: "network",
+      status: "fresh"
+    })
+    const second = await fixture({
+      SMITHERS_AGENT_DOCS_URL: "https://docs.example.test/second",
+      XDG_CACHE_HOME: first.home
+    })
+    second.exec.mockResolvedValue("checkout")
+    second.request.mockResolvedValue({ login: "owner" })
+    const result = object(await ask(second.c, { prompt: "docs" }, options))
+    expect(fetch.mock.calls[1]![0]).toBe("https://docs.example.test/second")
+    expect(fetch.mock.calls[1]![1].headers).toEqual({})
+    expect(result.docs_status).toMatchObject({
+      url: "https://docs.example.test/second",
+      source: "network",
+      status: "fresh"
+    })
+    expect(result.response).toContain("docs.example.test/second")
+  })
   it("returns offline context without making signed-out summary fail", async () => {
     const { c, exec, exit } = await fixture({ SMITHERS_TOKEN: "" })
     exec.mockImplementation(() => {

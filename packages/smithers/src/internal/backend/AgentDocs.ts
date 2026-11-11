@@ -101,8 +101,11 @@ export const ask: Handler = async (c, a, o) => {
   )
   let text = "", metadata: Values = {}, status: Values = { url, status: "unavailable", source: "none" }
   try {
-    metadata = object(JSON.parse(await readFile(join(cache, "llms-full.json"), "utf8")))
-    if (metadata.url === url) text = await readFile(join(cache, "llms-full.txt"), "utf8")
+    const cached = object(JSON.parse(await readFile(join(cache, "llms-full.json"), "utf8")))
+    if (cached.url === url) {
+      text = await readFile(join(cache, "llms-full.txt"), "utf8")
+      metadata = cached /* validators belong to this URL's loaded representation */
+    }
   } catch { /* no cache */ }
   try {
     const response = await fetch(url, {
