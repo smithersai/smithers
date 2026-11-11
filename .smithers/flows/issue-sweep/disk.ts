@@ -35,22 +35,23 @@ const bounded = (effect: Effect.Effect<unknown, unknown>, duration: Duration.Inp
     Effect.ignore
   )
 
+/** Whether the host has the floor plus `reserveBytes` free now; never cleans or waits. */
+export const makeDiskCheck = (options: DiskOptions = {}) => (reserveBytes = 0) =>
+  Effect.try({
+    try: () => {
+      const bytes = (options.freeBytes ?? statfsFree)()
+      if (!Number.isFinite(bytes) || bytes < 0) throw new Error("invalid free-space reading")
+      return bytes >= (options.minimum ?? diskFloor) + reserveBytes
+    },
+    catch: (cause) => new HostFailed({ message: `disk probe: ${String(cause)}` })
+  })
+
 /** Cleanup once per admission attempt, recheck, then wait without repeating destructive work. */
 export const makeDiskGate = (options: DiskOptions = {}) => (reserveBytes = 0) =>
   turn.withPermits(1)(Effect.gen(function*() {
-    const probe = options.freeBytes ?? statfsFree
-    const required = (options.minimum ?? diskFloor) + reserveBytes
-    const free = () =>
-      Effect.try({
-        try: () => {
-          const bytes = probe()
-          if (!Number.isFinite(bytes) || bytes < 0) throw new Error("invalid free-space reading")
-          return bytes
-        },
-        catch: (cause) => new HostFailed({ message: `disk probe: ${String(cause)}` })
-      })
+    const roomy = () => makeDiskCheck(options)(reserveBytes)
     const clean = (effect: Effect.Effect<unknown, unknown>) => bounded(effect, options.cleanupTimeout)
-    if ((yield* free()) >= required) return
+    if (yield* roomy()) return
     if (options.cleanGo !== undefined) {
       yield* clean(options.cleanGo)
     } else {
@@ -61,7 +62,7 @@ export const makeDiskGate = (options: DiskOptions = {}) => (reserveBytes = 0) =>
     }
     yield* clean(options.prunePnpm ?? run("pnpm", ["store", "prune"]))
     yield* clean(options.reapSettled ?? Effect.suspend(() => reapSettled))
-    while ((yield* free()) < required) yield* Effect.sleep(options.interval ?? "30 seconds")
+    while (!(yield* roomy())) yield* Effect.sleep(options.interval ?? "30 seconds")
   }))
 
 export const awaitHostDisk = makeDiskGate()

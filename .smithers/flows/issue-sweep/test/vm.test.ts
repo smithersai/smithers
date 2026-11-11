@@ -871,6 +871,37 @@ test("durable capacity ignores ordinary issue machines and enforces disk only fo
   }
 })
 
+test("a new job waiting for disk never blocks reattaching a retained job", async () => {
+  const fake = fakeSdk(() => ok)
+  const old = await held(makeJob({ sdk: fake.sdk, freeBytes: fakeFreeBytes, refresh: false }), "old#g1")
+  await old.close()
+  let free = 0
+  const restarted = makeJob({
+    sdk: fake.sdk,
+    freeBytes: () => free,
+    minFreeBytes: 1,
+    diskInterval: "5 millis",
+    diskCleanup: { cleanGo: Effect.void, prunePnpm: Effect.void, reapSettled: Effect.void },
+    maxVms: 2,
+    maxAgents: 2,
+    refresh: false
+  })
+  const waiting = Effect.runFork(Effect.scoped(restarted.acquire("new#g1")))
+  try {
+    await Effect.runPromise(Effect.sleep("20 millis"))
+    const reattached = await Effect.runPromise(
+      Effect.scoped(restarted.acquire("old#g1")).pipe(Effect.timeout("2 seconds"))
+    )
+    assert.equal(reattached.remoteId, old.session.remoteId)
+    assert.equal(fake.created.length, 1, "the new job still waits for disk")
+    free = 2
+    await Effect.runPromise(Fiber.join(waiting).pipe(Effect.timeout("2 seconds")))
+    assert.equal(fake.created.length, 2)
+  } finally {
+    await Effect.runPromise(Fiber.interrupt(waiting))
+  }
+})
+
 test("new durable admission reaps dead ephemeral machines once while unknown durable executions survive", async () => {
   const fake = fakeSdk(() => ok)
   const deadHolder = `${hostname()}:99999999`

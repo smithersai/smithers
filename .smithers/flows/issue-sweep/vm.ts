@@ -25,7 +25,7 @@
  * Build the snapshot once per Smithers main (about two minutes):
  *   node .smithers/flows/issue-sweep/test/vm-image.ts
  */
-import { type DiskOptions, makeDiskGate } from "./disk.ts"
+import { type DiskOptions, makeDiskCheck, makeDiskGate } from "./disk.ts"
 export { statfsFree } from "./disk.ts"
 import { BunGarbageCollector } from "@smthrs/platform-bun"
 import { NodeGarbageCollector } from "@smthrs/platform-node"
@@ -507,6 +507,14 @@ export const makeJob = (options: Options = {}): Sandbox.Provider & { readonly sl
         ...(snapshot === undefined ? {} : { "issue-sweep.snapshot": snapshot })
       }
     })
+  const disk: DiskOptions = {
+    ...options.diskCleanup,
+    interval: options.diskInterval,
+    freeBytes: options.freeBytes,
+    minimum: options.minFreeBytes
+  }
+  const unavailable = (cause: { readonly message: string }) =>
+    new RemoteChildProcessSpawner.ProviderError({ code: "unavailable", message: cause.message })
   return {
     slots,
     retained: true,
@@ -514,7 +522,7 @@ export const makeJob = (options: Options = {}): Sandbox.Provider & { readonly sl
       Effect.gen(function*() {
         yield* Effect.acquireRelease(slots.take(1), () => slots.release(1))
         while (true) {
-          const session = yield* admissions.withPermits(1)(Effect.gen(function*() {
+          const admitted = yield* admissions.withPermits(1)(Effect.gen(function*() {
             yield* prepareMachine(sdk)
             let retained = yield* jobMachines(sdk)
             const existing = retained.find(({ labels }) => labels["issue-sweep.job"] === key)
@@ -530,17 +538,9 @@ export const makeJob = (options: Options = {}): Sandbox.Provider & { readonly sl
               reaped = true
               retained = yield* jobMachines(sdk)
             }
-            if (retained.length >= (options.maxVms ?? 24)) return undefined
-            yield* makeDiskGate({
-              ...options.diskCleanup,
-              interval: options.diskInterval,
-              freeBytes: options.freeBytes,
-              minimum: options.minFreeBytes
-            })().pipe(
-              Effect.mapError((cause) =>
-                new RemoteChildProcessSpawner.ProviderError({ code: "unavailable", message: cause.message })
-              )
-            )
+            if (retained.length >= (options.maxVms ?? 24)) return "full" as const
+            // Wait for disk outside admission so a reattachment never queues behind it.
+            if (!(yield* Effect.mapError(makeDiskCheck(disk)(), unavailable))) return "disk" as const
             const snapshot = options.snapshot ?? (yield* latestImage(sdk))
             const provider = machines(key, snapshot)
             const opened = yield* provider.acquire(key)
@@ -551,8 +551,9 @@ export const makeJob = (options: Options = {}): Sandbox.Provider & { readonly sl
             }
             return opened
           }))
-          if (session !== undefined) return session
-          yield* Effect.sleep("100 millis")
+          if (admitted === "disk") yield* Effect.mapError(makeDiskGate(disk)(), unavailable)
+          else if (admitted === "full") yield* Effect.sleep("100 millis")
+          else return admitted
         }
       }),
     attach: (session) => machines(session.id).attach!(session),
