@@ -40,6 +40,8 @@ interface RunRecord {
 /** The world, its services and what tests read from it. */
 export interface World {
   readonly layer: Layer.Layer<Inbox | Ci | Fixer | Target>
+  /** Only the inbox and the fix agents, for tests whose CI and target are real. */
+  readonly people: Layer.Layer<Inbox | Fixer>
   /** Every command that changed something, in order. */
   readonly log: Array<string>
   /** Every tree the target has been on, in order, starting empty. */
@@ -212,6 +214,7 @@ export const makeWorld = (config: Config, script: Script = {}): World => {
       Layer.succeed(Fixer, fixer),
       Layer.succeed(Target, target)
     ),
+    people: Layer.merge(Layer.succeed(Inbox, inbox), Layer.succeed(Fixer, fixer)),
     log,
     targets,
     pushed,

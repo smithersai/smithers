@@ -31,6 +31,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import type { Part, Tree } from "./Basic.ts"
 import { samePart, sameTree } from "./Basic.ts"
@@ -70,8 +71,8 @@ export const Ledger = Schema.Struct({
   sources: Schema.Array(Pinned),
   /** The commit each part became in a candidate, and foreign commits. */
   pinned: Schema.Array(Pinned),
-  /** The candidates built so far: the tree, and the commit of each part after the tip it was built on. */
-  candidates: Schema.Array(Schema.Struct({ tree: Schema.String, commits: Schema.Array(Schema.String) })),
+  /** The candidate commit built for each tree. A tree's prefixes have entries of their own. */
+  candidates: Schema.Array(Schema.Struct({ tree: Schema.String, commit: Schema.String })),
   /** The id the next foreign commit gets. */
   foreign: Natural
 })
@@ -169,7 +170,10 @@ export const make = (
       if (exists) return yield* decodeLedger(yield* fs.readFileString(options.ledger))
       const genesis = yield* tipCommit
       if (genesis === undefined) return yield* unavailable(`no bookmark ${options.bookmark}`)
-      return { genesis, sources: [], pinned: [], candidates: [], foreign: firstForeign }
+      // Written at once: the queue's tree is what follows this commit, for good.
+      const created = { genesis, sources: [], pinned: [], candidates: [], foreign: firstForeign }
+      yield* fs.writeFileString(options.ledger, JSON.stringify(created) + "\n")
+      return created
     }).pipe(
       Effect.catchTag("PlatformError", (error) => Effect.fail(unavailable(error.message))),
       Effect.catchTag(
@@ -218,12 +222,20 @@ export const make = (
         const { ledger, parts } = yield* read
         const batch = strip(parts, tree)
         if (batch === undefined) return { _tag: "stale" } as const
-        const made = ledger.candidates.find((entry) => entry.tree === key(tree))
-        const last = made?.commits.at(-1) ?? parts.at(-1)?.commit ?? ledger.genesis
-        if (made !== undefined || batch.length === 0) return { _tag: "built", commit: last, ledger, batch } as const
-        const commits: Array<string> = []
-        let onto = last
-        for (const part of batch) {
+        // One commit per prefix of the tree, shared by every candidate that
+        // starts with that prefix. So two runs that test the same parts in the
+        // same order test the same commit, and a longer candidate descends
+        // from a shorter one: landing the shorter never strands the longer.
+        const candidates = [...ledger.candidates]
+        const pinned = [...ledger.pinned]
+        let onto = parts.at(-1)?.commit ?? ledger.genesis
+        for (const [index, part] of batch.entries()) {
+          const prefix = key(tree.slice(0, parts.length + index + 1))
+          const made = candidates.find((entry) => entry.tree === prefix)
+          if (made !== undefined) {
+            onto = made.commit
+            continue
+          }
           const source = ledger.sources.find((entry) => samePart(entry, part))
           if (source === undefined) return yield* unavailable(`no commit registered for ${part.id}.${part.rev}`)
           const duplicated = yield* jj(["duplicate", "-r", source.commit, "--onto", onto])
@@ -236,33 +248,34 @@ export const make = (
           )
           if (conflict === "true") {
             yield* jj(["abandon", change])
+            yield* save({ ...ledger, candidates, pinned })
             return { _tag: "conflict", part } as const
           }
-          commits.push(commit!)
           onto = commit!
+          candidates.push({ tree: prefix, commit: onto })
+          pinned.push({ ...part, commit: onto })
         }
-        const next = {
-          ...ledger,
-          pinned: [...ledger.pinned, ...batch.map((part, index) => ({ ...part, commit: commits[index]! }))],
-          candidates: [...ledger.candidates, { tree: key(tree), commits }]
-        }
-        yield* save(next)
-        return { _tag: "built", commit: onto, ledger: next, batch } as const
+        if (candidates.length !== ledger.candidates.length) yield* save({ ...ledger, candidates, pinned })
+        return { _tag: "built", commit: onto } as const
       })
+
+    // One operation at a time: each reads the ledger, may run jj, and writes the
+    // ledger back, and CI builds candidates for several runs at once.
+    const lock = yield* Semaphore.make(1)
+    const one = <A>(effect: Effect.Effect<A, Unavailable>): Effect.Effect<A, Unavailable> =>
+      Semaphore.withPermit(lock, effect)
 
     return {
       register: (part, commit) =>
-        Effect.flatMap(load, (ledger) =>
+        one(Effect.flatMap(load, (ledger) =>
           save({
             ...ledger,
             sources: [...ledger.sources.filter((entry) => !samePart(entry, part)), { ...part, commit }]
-          })),
-      tip,
-      candidate: (tree) =>
-        Effect.map(build(tree), (built): Candidate =>
-          built._tag === "built" ? { _tag: "built", commit: built.commit } : built),
+          }))),
+      tip: one(tip),
+      candidate: (tree) => one(build(tree)),
       advance: (from, to) =>
-        Effect.gen(function*() {
+        one(Effect.gen(function*() {
           const current = yield* tip
           if (!sameTree(current, from)) {
             return
@@ -272,7 +285,7 @@ export const make = (
             return yield* unavailable(`no candidate to land for ${key(to)}`)
           }
           yield* jj(["bookmark", "set", options.bookmark, "-r", built.commit])
-        })
+        }))
     }
   })
 

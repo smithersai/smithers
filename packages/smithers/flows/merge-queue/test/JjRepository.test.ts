@@ -9,7 +9,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawnerModule from "effect/process/ChildProcessSpawner"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -103,6 +103,31 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
     expect(await run(queue.tip)).toEqual(tree([1, 0], [2, 0]))
   })
 
+  it("two candidates that start with the same parts share those commits, so landing one never strands the other", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    await run(queue.register({ id: 1, rev: 0 }, repo.change("one.txt", "one\n")))
+    await run(queue.register({ id: 2, rev: 0 }, repo.change("two.txt", "two\n")))
+    const long = await run(queue.candidate(tree([1, 0], [2, 0])))
+    const short = await run(queue.candidate(tree([1, 0])))
+    const commit = (candidate: JjRepository.Candidate): string => candidate._tag === "built" ? candidate.commit : ""
+    expect(repo.jj("log", "--no-graph", "-r", `${commit(short)} & ::${commit(long)}`, "-T", "commit_id").trim())
+      .toBe(commit(short))
+    await run(queue.advance([], tree([1, 0])))
+    await run(queue.advance(tree([1, 0]), tree([1, 0], [2, 0])))
+    expect(repo.head()).toBe(commit(long))
+  })
+
+  it("remembers where it started: a commit that lands before anything else is still seen", async () => {
+    const repo = repository()
+    const queue = await run(JjRepository.make(repo.options))
+    expect(await run(queue.tip)).toEqual([])
+    repo.jj("bookmark", "set", "main", "-r", repo.change("other.txt", "theirs\n"))
+    expect(await run(queue.tip)).toEqual(tree([JjRepository.firstForeign, 0]))
+    const reopened = await run(JjRepository.make(repo.options))
+    expect(await run(reopened.tip)).toEqual(tree([JjRepository.firstForeign, 0]))
+  })
+
   it("advance is a compare-and-swap: it does nothing when the bookmark is not on `from`", async () => {
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
@@ -186,6 +211,11 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
       }).pipe(Effect.provide(broken))
     )
     expect(cannotSpawn).toContain("jj could not run")
+    const readOnly = join(repo.path, "read-only.json")
+    const frozen = await run(JjRepository.make({ ...repo.options, ledger: readOnly }))
+    await run(frozen.tip)
+    chmodSync(readOnly, 0o444)
+    expect(await detail(frozen.register({ id: 1, rev: 0 }, "x"))).not.toBe("")
     const ledgerIsDirectory = await run(JjRepository.make({ ...repo.options, ledger: repo.path }))
     expect(await detail(ledgerIsDirectory.tip)).not.toBe("")
     // A jj whose `duplicate` prints nothing the queue can read: the real spawner, with that one command replaced.
@@ -211,7 +241,7 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
     expect(unreadable).toContain("printed no new commit")
     const stuck = await runExit(
       Effect.flatMap(Target, (target) => target.wait([])).pipe(
-        Effect.timeout("40 millis"),
+        Effect.timeout("600 millis"),
         Effect.provide(JjRepository.target(none, "5 millis"))
       )
     )
