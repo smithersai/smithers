@@ -26,11 +26,19 @@ effect function answerOf(http: HttpClient.HttpClient, request: HttpClientRequest
 const post = (origin: string, path: string, body: unknown) =>
   HttpClientRequest.post(`${origin}${path}`).pipe(HttpClientRequest.bodyText(JSON.stringify(body)))
 
-/** Serves `handle(api, ·)` for `ask`, with the identity `role`'s person when given. */
-effect function serving(api: ActionsHttp.ActionsApi, role: "viewer" | "maintainer", ask: (http: HttpClient.HttpClient, origin: string) => void!unknown) {
+/** The principals a request can carry: a signed-out viewer, a named maintainer, one without a name, and an agent. */
+const principals = {
+  viewer: { owner: "", role: "viewer" as const },
+  maintainer: { owner: "1", role: "maintainer" as const, name: "Ada" },
+  nameless: { owner: "3", role: "maintainer" as const },
+  agent: { owner: "2", role: "maintainer" as const, agent: true },
+}
+
+/** Serves `handle(api, ·)` for `ask`, with the identity `who` names. */
+effect function serving(api: ActionsHttp.ActionsApi, who: keyof typeof principals, ask: (http: HttpClient.HttpClient, origin: string) => void!unknown) {
   const identity = Layer.succeed(ActionIdentity.ActionIdentity, {
-    request: () => succeed(role === "viewer" ? { owner: "", role: "viewer" as const } : { owner: "1", role: "maintainer" as const, name: "Ada" }),
-    role: () => succeed(role),
+    request: () => succeed(principals[who]),
+    role: () => succeed(principals[who].role),
   })
   provide NodeHttpServer.layerTest {
     try HttpServer.serveEffect(effect {
@@ -50,6 +58,7 @@ const run: Run = { id: "a-1", flow: "vibelang/Post", door: "button", actor: "per
 /** An api that records its calls and answers `refusals` for the named verbs. */
 function fakeApi(refusals: Record<string, string | null> = {}) {
   const calls: Array<string> = []
+  const callers: Array<unknown> = []
   const api: ActionsHttp.ActionsApi = {
     list: (flow) => {
       calls.push(`list:${flow}`)
@@ -59,8 +68,9 @@ function fakeApi(refusals: Record<string, string | null> = {}) {
       calls.push(`start:${request.id}:${request.flow}:${request.owner ?? ""}:${request.actor}:${role}`)
       return succeed(refusals["start"] ?? null)
     },
-    rerun: (id, next, role, owner) => {
+    rerun: (id, next, role, owner, caller) => {
       calls.push(`rerun:${id}:${next}:${role}:${owner}`)
+      callers.push(caller)
       return succeed(refusals["rerun"] ?? null)
     },
     cancel: (id, role, owner) => {
@@ -76,7 +86,7 @@ function fakeApi(refusals: Record<string, string | null> = {}) {
       return succeed(HttpServerResponse.text(`data: {}\n\n`))
     },
   }
-  return { calls, api }
+  return { calls, callers, api }
 }
 
 describe("the actions protocol", () => {
@@ -153,6 +163,35 @@ describe("the actions protocol", () => {
         expect([reran.status, reran.body]).toEqual([404, { code: "gone" }])
         expect([cancelled.status, cancelled.body]).toEqual([403, { code: "forbidden" }])
       })
+    })
+  }), 30_000)
+
+  it.live("a rerun names its caller; a forbidden start or rerun, or an unreadable rerun body, is refused", () => scoped(effect {
+    const nameless = fakeApi()
+    try serving(nameless.api, "nameless", (http, origin) => effect {
+      const reran = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "a-2" }))
+      const unreadable = try answerOf(http, HttpClientRequest.post(`${origin}/api/actions/runs/a-1/rerun`).pipe(HttpClientRequest.bodyText("{")))
+      try Effect.try(() => expect([reran.status, unreadable.status, unreadable.body]).toEqual([202, 400, { code: "input" }]))
+    })
+    const agent = fakeApi()
+    try serving(agent.api, "agent", (http, origin) => effect {
+      const reran = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "a-3" }))
+      try Effect.try(() => expect(reran.status).toBe(202))
+    })
+    const refused = fakeApi({ start: "forbidden", rerun: "forbidden" })
+    try serving(refused.api, "maintainer", (http, origin) => effect {
+      const started = try answerOf(http, post(origin, "/api/actions/runs", { id: "a-4", flow: "vibelang/Post", input: {}, door: "button" }))
+      const reran = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "a-5" }))
+      try Effect.try(() => {
+        expect([started.status, started.body]).toEqual([403, { code: "forbidden" }])
+        expect([reran.status, reran.body]).toEqual([403, { code: "forbidden" }])
+      })
+    })
+    try Effect.try(() => {
+      expect(nameless.calls).toEqual(["rerun:a-1:a-2:maintainer:3"])
+      expect([...nameless.callers, ...agent.callers, ...refused.callers]).toEqual([
+        { name: "Guest", actor: "person" }, { name: "Guest", actor: "agent" }, { name: "Ada", actor: "person" },
+      ])
     })
   }), 30_000)
 

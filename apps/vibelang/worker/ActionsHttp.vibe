@@ -42,7 +42,7 @@ export effect function handle(api: ActionsApi, url: URL) {
     return refusal === null ? json({ id: body.id }, 202) : json({ code: refusal }, refusal === "forbidden" ? 403 : 409)
   }
   const parts = url.pathname.slice(`${ACTIONS_PATH}/runs/`.length).split("/")
-  const id = parts[0] ?? ""
+  const id = parts[0]! // split always yields a first part
   if (!/^a[a-zA-Z0-9-]{1,64}$/.test(id)) return json({ code: "not-found" }, 404)
   if (request.method === "POST" && parts.length === 2 && parts[1] === "rerun") {
     const raw = try boundedBody()

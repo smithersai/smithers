@@ -2215,3 +2215,12 @@ No source, test, benchmark or fuzz target imports it, and no mutation case names
 through `reserve`, `settle` and `canCharge`. Its two lines and three branches were the file's whole gap, and the
 benchmark lane had recorded it as unused (0017). Deleted with its `Charge` type instead of covered; the function
 inventory in 0018 is regenerated, and the module's remaining proofs pass.
+
+## Action protocol callers and refusals (lane vl-coverage2, 2026-11-10)
+
+`worker/ActionsHttp.vibe` had five gaps. A rerun now runs as a maintainer without a name (the run records `Guest`)
+and as an agent (`agent`); a start and a rerun the actions API refuses as `forbidden` answer 403; an unreadable rerun
+body answers 400 without reaching the API (`test/actionsHttp.coverage.test.vibe`). The fifth, `parts[0] ?? ""`, could
+not run: `split` always yields a first part, so the fallback is gone. Making a forbidden rerun answer 404 fails the new
+case (1 of 10). The file has no uncovered statement, function or branch in the focused run.
+
