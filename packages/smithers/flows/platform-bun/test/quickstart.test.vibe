@@ -1,0 +1,23 @@
+import { expect, it } from "@effect/vitest"
+import { BunHost } from "@smthrs/platform-bun"
+import { contained, fileAndCommand } from "../examples/quickstart.vibe"
+import { ownerPid } from "./fixtures/ownerPid.ts"
+
+it.live("runs a file operation and a command through BunHost.layer", effect () => {
+  provide BunHost.layer {
+    try scoped(effect {
+      const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      expect(try fileAndCommand(directory)).toEqual({
+        listed: "report.txt",
+        readBack: "written through the host filesystem"
+      })
+    })
+  }
+})
+
+it.live("records the contained child during the scope and clears it after", effect () => {
+  const { afterScope, duringScope } = try contained(ownerPid)
+  expect(duringScope).toHaveLength(1)
+  expect(duringScope[0]).toMatchObject({ hostId: "quickstart", ownerPid, commandDigest: "sleep" })
+  expect(afterScope).toEqual([])
+})

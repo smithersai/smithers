@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs one program against the Bun host twice: first on the plain
 bundle, then with process containment turned on. By the end you will have
 executed a real child process through the host surface and seen its record
-appear in, and disappear from, the process ledger.
+appear in, and disappear from, the process ledger. Each step
+below is TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs
+both programs as Effect code.
 
 ## Prerequisites
 
@@ -150,6 +152,51 @@ Give it a durable half by swapping `ProcessLedger.makeMemory` for
 `ProcessLedger.layer`, which writes through a [`@smthrs/journal`](/api/journal)
 `Journal`. Then a crashed host's records survive, and the next incarnation
 kills what the last one abandoned while its layer is built.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) both programs are
+`effect` functions, and the caller provides `BunHost.layer` to the first. A
+`.vibe` file reads no Node globals, so `fileAndCommand` takes the directory to
+work in and `contained` takes the owner pid the TypeScript read from
+`process.pid`. `scoped` closes the contained host's scope before the second
+ledger read.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { BunHost } from "@smthrs/platform-bun"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/** Writes and reads a file, then lists it with a real `ls`. It asks for two host services by tag and names Bun nowhere. */
+export effect function fileAndCommand(directory: string) {
+  const fs = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+
+  try fs.writeFileString(`${directory}/report.txt`, "written through the host filesystem\n")
+  const readBack = try fs.readFileString(`${directory}/report.txt`)
+  const listed = try spawner.string(ChildProcess.make("ls", ["report.txt"], { cwd: directory }))
+
+  return { listed: listed.trim(), readBack: readBack.trim() }
+}
+
+/** Spawns `sleep 30` under containment and reads the process ledger during and after the scope. */
+export effect function contained(ownerPid: number) {
+  const ledger = try ProcessLedger.makeMemory({ hostId: "quickstart", ownerPid })
+  const host = Layer.provide(BunHost.layerContained({ graceMs: 500 }), Layer.succeed(ProcessLedger.ProcessLedger, ledger))
+
+  const duringScope = try scoped(Effect.provide(effect {
+    const spawner = try ChildProcessSpawner
+    try spawner.spawn(ChildProcess.make("sleep", ["30"]))
+    return try ledger.live
+  }, host))
+
+  return { afterScope: try ledger.live, duringScope }
+}
+```
 
 ## Where to go next
 

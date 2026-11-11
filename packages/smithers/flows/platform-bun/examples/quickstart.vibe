@@ -1,0 +1,30 @@
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { BunHost } from "@smthrs/platform-bun"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/** Writes and reads a file, then lists it with a real `ls`. It asks for two host services by tag and names Bun nowhere. */
+export effect function fileAndCommand(directory: string) {
+  const fs = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+
+  try fs.writeFileString(`${directory}/report.txt`, "written through the host filesystem\n")
+  const readBack = try fs.readFileString(`${directory}/report.txt`)
+  const listed = try spawner.string(ChildProcess.make("ls", ["report.txt"], { cwd: directory }))
+
+  return { listed: listed.trim(), readBack: readBack.trim() }
+}
+
+/** Spawns `sleep 30` under containment and reads the process ledger during and after the scope. */
+export effect function contained(ownerPid: number) {
+  const ledger = try ProcessLedger.makeMemory({ hostId: "quickstart", ownerPid })
+  const host = Layer.provide(BunHost.layerContained({ graceMs: 500 }), Layer.succeed(ProcessLedger.ProcessLedger, ledger))
+
+  const duringScope = try scoped(Effect.provide(effect {
+    const spawner = try ChildProcessSpawner
+    try spawner.spawn(ChildProcess.make("sleep", ["30"]))
+    return try ledger.live
+  }, host))
+
+  return { afterScope: try ledger.live, duringScope }
+}
