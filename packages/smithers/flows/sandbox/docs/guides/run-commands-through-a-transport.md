@@ -57,8 +57,9 @@ is why `SandboxSupervision` is built on `makeOpened`.
 
 ## What the adapter does with the command
 
-The command reaches the provider as the string `CommandLine.render` produces,
-with `cwd` and `env` alongside it. A `PipedCommand` renders into one line, so
+The command reaches the provider as the string `CommandLine.renderForExecution`
+produces, with `cwd` and `env` alongside it. A `Redacted` argument arrives as
+its value; the command a `PlatformError` names shows it as `<redacted>`. A `PipedCommand` renders into one line, so
 the `|` reaches the remote shell.
 
 Failures are normalized: `timeout` becomes `TimedOut`, `unavailable` and

@@ -91,6 +91,30 @@ describe("RemoteChildProcessSpawner", () => {
       expect(provider.state.commands).toEqual(["printf 'a b' | grep a"])
     }))
 
+  it.effect("runs a Redacted argument revealed and keeps it out of the error text", () =>
+    Effect.gen(function*() {
+      const secret = "Authorization: Bearer guest-token"
+      const provider = RemoteChildProcessSpawner.TestRemote.make({
+        scripts: {
+          [`curl -H '${secret}'`]: { stdout: "ok" },
+          [`curl -H '${secret}' -f`]: {
+            failure: new RemoteChildProcessSpawner.ProviderError({ code: "spawn_error", message: "refused" })
+          }
+        }
+      })
+      const run = (extra: ReadonlyArray<string>) =>
+        Effect.flatMap(
+          ChildProcessSpawner,
+          (spawner) => spawner.string(ChildProcess.make("curl", ["-H", Redacted.make(secret), ...extra]))
+        ).pipe(Effect.provide(RemoteChildProcessSpawner.layer(provider)))
+
+      expect(yield* run([])).toBe("ok")
+      const failed = yield* Effect.flip(run(["-f"]))
+      expect(provider.state.commands).toEqual([`curl -H '${secret}'`, `curl -H '${secret}' -f`])
+      expect(failed.message).toContain("curl -H '<redacted>' -f")
+      expect(failed.message).not.toContain("guest-token")
+    }))
+
   it.effect("renders shell commands under the exact unquoted line the provider executes", () =>
     Effect.gen(function*() {
       const provider = RemoteChildProcessSpawner.TestRemote.make({

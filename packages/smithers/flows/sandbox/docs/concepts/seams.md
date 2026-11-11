@@ -32,9 +32,11 @@ to satisfy Effect's `ChildProcessSpawner`, which is what
 `RemoteChildProcessSpawner.layer` produces from it, and it is not enough to
 place work, because there is no filesystem.
 
-The command reaches the provider as the string `CommandLine.render` produces.
+The command reaches the provider as the string `CommandLine.renderForExecution`
+produces, which reveals a `Redacted` argument.
 [`@smthrs/kernel`](/api/kernel) checks `proc:spawn` against
-`CommandLine.resource`, which starts from that string and adds a `sh -c`
+`CommandLine.resource`, which starts from the `CommandLine.render` string,
+where that argument reads `<redacted>`, and adds a `sh -c`
 wrapper for a shell line holding control syntax, an `env <NAME>… --` prefix
 for overridden environment names, and a `cwd <path> --` prefix for a
 directory outside the workspace.
