@@ -144,8 +144,14 @@ class FakeSandbox {
     if (this.destroyed) throw new CloudflareError("SESSION_DESTROYED", "sandbox destroyed")
   }
 
-  private hostPath(path: string): string {
+  hostPath(path: string): string {
     return path === root || path.startsWith(`${root}/`) ? path : join(this.root, path)
+  }
+
+  // File APIs translate guest paths into this machine's real tree. The shell transport must translate the
+  // guest's reserved temporary staging paths too, so commands and file APIs see the same staged input.
+  private hostCommand(command: string): string {
+    return command.replaceAll(/(?:\/var)?\/tmp\/\.smthrs-stdin/g, (path) => this.hostPath(path))
   }
 
   async mkdir(path: string, options?: { readonly recursive?: boolean | undefined }): Promise<{ path: string }> {
@@ -213,7 +219,7 @@ class FakeSandbox {
       this.failExec = undefined
       throw cause
     }
-    const result = await runSh(command, this.hostPath(options?.cwd ?? "/"), options?.env)
+    const result = await runSh(this.hostCommand(command), this.hostPath(options?.cwd ?? "/"), options?.env)
     if (this.execExitOverride !== undefined) {
       const exitCode = this.execExitOverride
       this.execExitOverride = undefined
@@ -230,7 +236,7 @@ class FakeSandbox {
       this.failStart = undefined
       throw cause
     }
-    const running = runSh(command, this.hostPath(options?.cwd ?? "/"), options?.env)
+    const running = runSh(this.hostCommand(command), this.hostPath(options?.cwd ?? "/"), options?.env)
     const mode = this.processExitMode
     const events = this.events
     const process: {
@@ -615,7 +621,7 @@ describe("CloudflareSandbox", () => {
           const staged = machine.events.find((event) =>
             event.startsWith("write:")
           )!.slice(6, -7)
-          expect(existsSync(staged)).toBe(true)
+          expect(existsSync(machine.hostPath(staged))).toBe(true)
           expect(warnings).toHaveLength(1)
         })).pipe(Effect.provide(Logger.layer([Logger.make((entry) => {
           if (entry.logLevel === "Warn") warnings.push(entry)
@@ -673,7 +679,7 @@ describe("CloudflareSandbox", () => {
       // spawn's scope closed.
       const staged = workerBinding.instances.flatMap((instance) =>
         instance.events.flatMap((event) => {
-          const match = /^write:(.*\/\.smthrs-stdin\/[0-9a-f]{32}):base64$/.exec(event)
+          const match = /^write:(.*\/\.smthrs-stdin\/[0-9a-f]{32}\/[0-9a-f]{32}):base64$/.exec(event)
           return match === null ? [] : [match[1]!]
         })
       )
@@ -709,7 +715,7 @@ describe("CloudflareSandbox", () => {
       }
     }), 30_000)
 
-  it.effect("delivers stdin through the workspace redirect and roots a relative cwd", () =>
+  it.effect("delivers stdin through the temporary redirect and roots a relative cwd", () =>
     Effect.gen(function*() {
       const workerBinding = binding()
       const workdir = join(root, "stdin-ws")
@@ -722,15 +728,11 @@ describe("CloudflareSandbox", () => {
           )
           expect(copied.code).toBe(0)
           expect(Array.from(yield* session.readFile(`${workdir}/stdin-copy.bin`))).toEqual(Array.from(bytes))
-          // The staged input is gone once the command ends. The assertion names
-          // the session-private directory rather than a file, because the
-          // staged name is random: "this one literal path is absent" holds just
-          // as well for an implementation that leaks every file it ever staged.
-          const staging = `${workdir}/.smthrs-stdin`
-          const leftovers = yield* Effect.scoped(
-            Effect.flatMap(session.spawn(`test -d '${staging}' && ls -1A '${staging}'`, {}), output)
-          )
-          expect(leftovers).toEqual({ stdout: "", stderr: "", code: 0 })
+          const staged = workerBinding.instances.flatMap((instance) => instance.events)
+            .find((event) => /^write:.*\/\.smthrs-stdin\//.test(event))!
+            .slice("write:".length, -":base64".length)
+          expect(staged.startsWith(workdir + "/")).toBe(false)
+          expect(existsSync(workerBinding.instances[0]!.hostPath(staged))).toBe(false)
           yield* Effect.scoped(Effect.asVoid(session.spawn("mkdir -p sub", {})))
           const rooted = yield* Effect.scoped(Effect.flatMap(session.spawn("pwd", { cwd: "./sub/" }), output))
           expect(rooted).toEqual({ stdout: `${workdir}/sub\n`, stderr: "", code: 0 })

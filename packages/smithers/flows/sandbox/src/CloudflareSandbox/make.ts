@@ -166,7 +166,7 @@ const processOf = (stdout: string, stderr: string, exitCode: number): RemoteProc
  * an invented one.
  *
  * The SDK's command options carry no input channel, so `spawn` stages
- * `options.stdin` as a workspace file and redirects the command from it, and
+ * `options.stdin` as a temporary file outside the checkout and redirects the command from it, and
  * a relative `cwd` is rooted at the session workdir. File payloads use the
  * SDK's base64 encoding and the text is read from the result's `content`
  * field. This preserves arbitrary bytes without importing host modules.
@@ -244,7 +244,7 @@ export const make = <Binding>(options: CloudflareSandboxOptions<Binding>): Provi
       })
 
     // The SDK's exec and process options carry no standard input, so the
-    // bytes are staged as a workspace file and the command reads from it.
+    // bytes are staged as a temporary file outside the checkout and the command reads from it.
     const redirect = stdinRedirect({
       workdir,
       writeFile,

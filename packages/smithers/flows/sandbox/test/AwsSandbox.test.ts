@@ -12,7 +12,6 @@ import {
   existsSync,
   mkdtempSync,
   openSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -584,9 +583,13 @@ describe("AwsSandbox", () => {
         yield* acquired(transportProvider(fakeEcs(), cli, { workdir: workspace }), (session) =>
           Effect.gen(function*() {
             yield* output(session, "true", { stdin: encoder.encode("private input") })
-            const files = readdirSync(join(workspace, ".smthrs-stdin"))
-            expect(files).toHaveLength(1)
-            expect(existsSync(join(workspace, ".smthrs-stdin", files[0]!))).toBe(true)
+            const file = cli.calls.flatMap(({ remote }) =>
+              remote.match(/\/tmp\/\.smthrs-stdin\/[0-9a-f]{32}\/[0-9a-f]{32}/g) ?? []
+            )[0]!
+            expect(file).toMatch(/^\/tmp\/\.smthrs-stdin\/[0-9a-f]{32}\/[0-9a-f]{32}$/)
+            expect(existsSync(file)).toBe(true)
+            expect(existsSync(join(workspace, ".smthrs-stdin"))).toBe(false)
+            rmSync(file)
             expect(warnings).toHaveLength(1)
           })).pipe(Effect.provide(Logger.layer([Logger.make((entry) => {
             if (entry.logLevel === "Warn") warnings.push(entry)
@@ -1293,6 +1296,8 @@ describe("AwsSandbox", () => {
       const settle = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve))).pipe(
         Effect.repeat({ times: 4 })
       )
+      // Acquisition itself is asynchronous; measure intervals only after its first SDK read has begun.
+      yield* settle.pipe(Effect.repeat({ until: () => fake.describeInputs.length > 0 }))
       const reads: Array<number> = []
       for (const wait of [0, 3_999, 1, 7_999, 1, 9_999, 1]) {
         yield* TestClock.adjust(wait)

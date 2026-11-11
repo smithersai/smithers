@@ -91,6 +91,68 @@ describe("RemoteChildProcessSpawner", () => {
       expect(provider.state.commands).toEqual(["printf 'a b' | grep a"])
     }))
 
+  it.effect.each<ChildProcess.CommandOptions>([
+    { cwd: "/work/reports" },
+    { env: { TZ: "UTC" } },
+    { env: { REMOVED: undefined } }
+  ])("refuses a later pipeline stage's distinct settings: %j", (options) =>
+    Effect.gen(function*() {
+      const provider = RemoteChildProcessSpawner.TestRemote.make({})
+      for (const nested of [false, true]) {
+        const right = ChildProcess.make("right", [], options)
+        const command = ChildProcess.pipeTo(
+          ChildProcess.make("left"),
+          nested ? ChildProcess.pipeTo(ChildProcess.make("middle"), right) : right
+        )
+        const error = yield* Effect.flip(
+          Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(command)).pipe(
+            Effect.provide(RemoteChildProcessSpawner.layer(provider))
+          )
+        )
+        expect(reason(error)).toBe("BadArgument")
+        expect(error.message).toContain(options.cwd === undefined ? "environment" : "working directory")
+        expect(provider.state.commands).toEqual([])
+      }
+    }))
+
+  it.effect.each<[ChildProcess.CommandOptions, ChildProcess.CommandOptions]>([
+    [{ env: { TZ: "UTC" } }, { env: { TZ: "GMT" } }],
+    [{ env: { A: undefined } }, { env: { B: undefined } }],
+    [{ env: { SECRET: Redacted.make("first") } }, { env: { SECRET: Redacted.make("second") } }]
+  ])("refuses differing environment keys or values without exposing them", ([left, right]) =>
+    Effect.gen(function*() {
+      const provider = RemoteChildProcessSpawner.TestRemote.make({})
+      const command = ChildProcess.pipeTo(ChildProcess.make("left", [], left), ChildProcess.make("right", [], right))
+      const error = yield* Effect.flip(
+        Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(command)).pipe(
+          Effect.provide(RemoteChildProcessSpawner.layer(provider))
+        )
+      )
+      expect(reason(error)).toBe("BadArgument")
+      expect(error.message).toContain("environment")
+      expect(error.message).not.toContain("first")
+      expect(error.message).not.toContain("second")
+      expect(provider.state.commands).toEqual([])
+    }))
+
+  it.effect("accepts matching later-stage settings and omitted overrides", () =>
+    Effect.gen(function*() {
+      const provider = RemoteChildProcessSpawner.TestRemote.make({
+        scripts: { "left | middle | right": { stdout: "ok" } }
+      })
+      const command = ChildProcess.pipeTo(
+        ChildProcess.make("left", [], { cwd: "/work", env: { TZ: "UTC", SECRET: Redacted.make("same") } }),
+        ChildProcess.pipeTo(
+          ChildProcess.make("middle"),
+          ChildProcess.make("right", [], { cwd: "/work", env: { SECRET: Redacted.make("same"), TZ: "UTC" } })
+        )
+      )
+      const result = yield* Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(command)).pipe(
+        Effect.provide(RemoteChildProcessSpawner.layer(provider))
+      )
+      expect(result).toBe("ok")
+    }))
+
   it.effect("runs a Redacted argument revealed and keeps it out of the error text", () =>
     Effect.gen(function*() {
       const secret = "Authorization: Bearer guest-token"

@@ -3,7 +3,7 @@
  * through.
  *
  * `AwsSandbox`, `VercelSandbox`, `DaytonaSandbox`, and `CloudflareSandbox` all
- * put a command's standard input in a workspace file because their transports
+ * put a command's standard input in a temporary file outside the checkout because their transports
  * take a command line and nothing else, so a caller's script, patch, or
  * credential blob lives on the machine for as long as this module leaves it
  * there. The provider suites prove the happy path end to end; these cases
@@ -16,7 +16,7 @@ import * as Exit from "effect/Exit"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { stdinRedirect } from "../src/internal/stdinRedirect.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 
@@ -24,14 +24,14 @@ import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts
  * A target that records what it was asked to do, and can fail the write the
  * way a chunked one does: after some of the bytes are already on the machine.
  */
-const recorded = (options: { readonly failWrite?: boolean } = {}) => {
+const recorded = (options: { readonly failWrite?: boolean; readonly workdir?: string } = {}) => {
   const writes: Array<string> = []
   const removals: Array<string> = []
   return {
     writes,
     removals,
     target: {
-      workdir: "/workspace/",
+      workdir: options.workdir ?? "/workspace/",
       writeFile: (path: string, _content: Uint8Array) => {
         writes.push(path)
         return options.failWrite === true
@@ -49,6 +49,33 @@ const recorded = (options: { readonly failWrite?: boolean } = {}) => {
 }
 
 describe("stdinRedirect", () => {
+  it.effect.each([
+    "/tmp",
+    "/tmp/",
+    "/tmp/../tmp",
+    "/tmp/.smthrs-stdin",
+    "/tmp/.smthrs-stdin/child"
+  ])("selects a disjoint staging directory for checkout %s", (workdir) =>
+    Effect.gen(function*() {
+      const { target, writes } = recorded({ workdir })
+      yield* Effect.scoped(stdinRedirect(target)("cat", new Uint8Array([1])))
+      expect(writes[0]).toMatch(/^\/var\/tmp\/\.smthrs-stdin\/[0-9a-f]{32}\/[0-9a-f]{32}$/)
+    }))
+
+  it.effect.each(["/", "//", "/tmp/.."])(
+    "refuses staged input for root checkout %s before writing",
+    (workdir) =>
+      Effect.gen(function*() {
+        const { target, writes, removals } = recorded({ workdir })
+        const error = yield* Effect.flip(Effect.scoped(stdinRedirect(target)("cat", new Uint8Array([1]))))
+        expect(error.code).toBe("spawn_error")
+        expect(error.message).toContain("outside the checkout")
+        expect(writes).toEqual([])
+        expect(removals).toEqual([])
+        expect(yield* Effect.scoped(stdinRedirect(target)("true", undefined))).toBe("true")
+      })
+  )
+
   for (
     const { command, name, stdout } of [
       { name: "a trailing comment", command: "cat # trailing comment", stdout: "staged input\n" },
@@ -82,6 +109,38 @@ describe("stdinRedirect", () => {
     )
   }
 
+  it.effect("keeps staged input outside the checkout even when removal fails", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const workdir = yield* Effect.acquireRelease(
+        Effect.sync(() => mkdtempSync(join(tmpdir(), "smthrs-stdin-checkout-"))),
+        (path) => Effect.sync(() => rmSync(path, { recursive: true, force: true }))
+      )
+      const files: Array<string> = []
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const file of files) rmSync(file, { force: true })
+        })
+      )
+      yield* Effect.scoped(Effect.gen(function*() {
+        const target = {
+          workdir,
+          writeFile: (path: string, content: Uint8Array) =>
+            Effect.sync(() => {
+              files.push(path)
+              mkdirSync(dirname(path), { recursive: true })
+              writeFileSync(path, content)
+            }),
+          remove: () => Effect.fail(new ProviderError({ code: "unknown", message: "removal failed" }))
+        }
+        const line = yield* stdinRedirect(target)("cat", new TextEncoder().encode("private input"))
+        const result = spawnSync("/bin/sh", ["-c", line], { cwd: workdir, encoding: "utf8" })
+        expect(result.status, result.stderr).toBe(0)
+        expect(result.stdout).toBe("private input")
+        expect(relative(workdir, files[0]!)).toMatch(/^\.\.\//)
+      }))
+      expect(existsSync(files[0]!)).toBe(true)
+    })))
+
   it.effect("leaves a command with no input alone", () =>
     Effect.gen(function*() {
       const { removals, target, writes } = recorded()
@@ -92,7 +151,7 @@ describe("stdinRedirect", () => {
       expect(removals).toEqual([])
     }))
 
-  it.effect("stages input below the workspace and takes it away when the scope closes", () =>
+  it.effect("stages input outside the workspace and takes it away when the scope closes", () =>
     Effect.gen(function*() {
       const { removals, target, writes } = recorded()
       const line = yield* Effect.scoped(
@@ -104,7 +163,7 @@ describe("stdinRedirect", () => {
       )
       const staged = writes[0]!
 
-      expect(staged).toMatch(/^\/workspace\/\.smthrs-stdin\/[0-9a-f]{32}$/)
+      expect(staged).toMatch(/^\/tmp\/\.smthrs-stdin\/[0-9a-f]{32}\/[0-9a-f]{32}$/)
       expect(line).toBe(`(\ncat > out\n) < ${CommandLine.quote(staged)}`)
       expect(removals).toEqual([staged])
     }))

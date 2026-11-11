@@ -147,6 +147,63 @@ const recording = (asked: Array<string>, stdout: string): Sandbox.Session => ({
 })
 
 describe("SandboxTools.start, observe, collect and cancel", () => {
+  it.live("retains completed pre-upgrade long command receipts", () =>
+    Effect.gen(function*() {
+      const box = machine()
+      const key = "p".repeat(120) + "tail"
+      const previous = join(box.calls, "command-" + "p".repeat(120), "tail")
+      mkdirSync(previous, { recursive: true })
+      writeFileSync(join(previous, "pid"), "0 123 - -")
+      writeFileSync(join(previous, "exit"), "0 0")
+      writeFileSync(join(previous, "out"), "previous")
+      writeFileSync(join(previous, "err"), "")
+      const result = yield* box.inSession((session) =>
+        Effect.gen(function*() {
+          const options = { key, callsDirectory: box.calls }
+          const started = yield* SandboxTools.start(session, { tool: "run", command: "touch reran" }, options)
+          expect(started).toEqual({ pid: 0, startedAt: 123 })
+          expect(yield* SandboxTools.observe(session, options)).toMatchObject({ state: "finished", exitCode: 0 })
+          yield* SandboxTools.cancel(session, options)
+          expect(existsSync(join(previous, "cancelled"))).toBe(true)
+          expect(existsSync(join(session.workdir, "reran"))).toBe(false)
+          return yield* SandboxTools.collect(session, options)
+        })
+      )
+      expect(result).toMatchObject({ stdout: "previous" })
+    }), slow)
+
+  it.live(
+    "keeps long command keys independent of their prefixes and cancellation markers",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        const prefix = "k".repeat(120) // "command-" plus this key fills one encoded chunk.
+        const longer = prefix + ".."
+        for (const key of [longer, prefix]) {
+          const started = yield* box.inSession((session) =>
+            SandboxTools.start(session, { tool: "run", command: "echo once" }, { key, callsDirectory: box.calls })
+          )
+          expect(started.pid).toBeGreaterThan(1)
+          expect(yield* finished(box, key)).toMatchObject({ state: "finished", exitCode: 0 })
+          const collected = yield* box.inSession((session) =>
+            SandboxTools.collect(session, { key, callsDirectory: box.calls })
+          )
+          expect(collected.stdout).toBe("once\n")
+        }
+        const other = prefix + "."
+        yield* box.inSession((session) => SandboxTools.cancel(session, { key: other, callsDirectory: box.calls }))
+        expect(existsSync(join(box.calls, "cancelled"))).toBe(false)
+        const cancelled = yield* box.inSession((session) =>
+          SandboxTools.observe(session, { key: other, callsDirectory: box.calls })
+        )
+        expect(cancelled.state).toBe("lost")
+        expect(
+          yield* box.inSession((session) => SandboxTools.collect(session, { key: prefix, callsDirectory: box.calls }))
+        ).toMatchObject({ stdout: "once\n" })
+      }),
+    slow
+  )
+
   it.live(
     "start answers at once; the command outlives its exec session, runs once and collects as often as asked",
     () =>

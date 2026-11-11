@@ -199,7 +199,8 @@ const leftmostOptions = (command: ChildProcess.Command): ChildProcess.CommandOpt
 const validateCommand = (
   command: ChildProcess.Command,
   acceptsStdin: boolean,
-  leftmost = true
+  leftmost = true,
+  first = leftmostOptions(command)
 ): Effect.Effect<void, PlatformError.PlatformError> => {
   if (command._tag === "PipedCommand") {
     if (command.options.from !== undefined && command.options.from !== "stdout") {
@@ -209,9 +210,24 @@ const validateCommand = (
       return Effect.fail(rejected(`a remote session cannot pipe to ${command.options.to}`))
     }
     return Effect.andThen(
-      validateCommand(command.left, acceptsStdin, leftmost),
-      validateCommand(command.right, acceptsStdin, false)
+      validateCommand(command.left, acceptsStdin, leftmost, first),
+      validateCommand(command.right, acceptsStdin, false, first)
     )
+  }
+  if (!leftmost) {
+    if (command.options.cwd !== undefined && command.options.cwd !== first.cwd) {
+      return Effect.fail(rejected("a remote pipeline cannot override a later stage's working directory"))
+    }
+    if (command.options.env !== undefined) {
+      const env = guestEnvironment(command.options.env)!
+      const initial = guestEnvironment(first.env) ?? {}
+      if (
+        Object.keys(env).length !== Object.keys(initial).length
+        || Object.entries(env).some(([name, value]) => !Object.hasOwn(initial, name) || initial[name] !== value)
+      ) {
+        return Effect.fail(rejected("a remote pipeline cannot override a later stage's environment"))
+      }
+    }
   }
   // `"inherit"` is the one input option the seam can neither honor nor
   // report through the handle. `"pipe"` and `"ignore"` are honest here — the

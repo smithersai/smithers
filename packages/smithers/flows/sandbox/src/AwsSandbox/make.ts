@@ -793,7 +793,7 @@ export const make = (input: AwsSandboxOptions): Provider => {
             }
           })
         // The session is a pseudo-terminal with no input channel of its own, so
-        // standard input is staged as a workspace file and redirected.
+        // standard input is staged as a temporary file outside the checkout and redirected.
         const redirect = stdinRedirect({
           workdir,
           writeFile,

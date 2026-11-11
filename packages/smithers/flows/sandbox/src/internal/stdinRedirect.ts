@@ -1,5 +1,5 @@
 /**
- * Delivers standard input through a workspace file for transports without an
+ * Delivers standard input through a temporary file outside the checkout for transports without an
  * input channel.
  *
  * @since 0.1.0
@@ -7,8 +7,9 @@
 
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
+import * as Path from "effect/Path"
 import type * as Scope from "effect/Scope"
-import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
+import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { finalizeWithin } from "./finalizeWithin.ts"
 
 /**
@@ -28,8 +29,8 @@ export interface StdinTarget {
   readonly remove: (path: string) => Effect.Effect<void, ProviderError>
 }
 
-/** The session-private directory staged input lives in, below the workspace. */
-const stagingDirectory = ".smthrs-stdin"
+/** Staged input stays outside the checkout, so capture cannot include it even if cleanup fails. */
+const stagingDirectories = ["/tmp/.smthrs-stdin", "/var/tmp/.smthrs-stdin"]
 
 /**
  * An unguessable file name.
@@ -55,7 +56,7 @@ const staged = (): string => {
  *
  * Most vendor execution APIs take a command line and nothing else, so the
  * only way to satisfy the session contract's "spawn delivers stdin" is to put
- * the bytes where the command can reach them: a file in the workspace, read
+ * the bytes where the command can reach them: a temporary file outside the checkout, read
  * through an ordinary redirection.
  *
  * The file's lifetime is the spawn's scope, not the command's own good
@@ -74,7 +75,7 @@ const staged = (): string => {
  * had already delivered on the machine with nothing registered to take them
  * away, for the life of the machine and across a reattach.
  *
- * What the staging guarantees is an unguessable name inside the workspace and
+ * What the staging guarantees is an unguessable name in a session-private temporary directory and
  * a removal attempt on scope closure, bounded to five seconds and warned on
  * failure. It does not set a mode or an owner on the directory: the session's
  * own writeFile is the only channel a provider
@@ -93,11 +94,26 @@ export const stdinRedirect = (target: StdinTarget): (
   command: string,
   stdin: Uint8Array | undefined
 ) => Effect.Effect<string, ProviderError, Scope.Scope> => {
-  const directory = `${target.workdir.replace(/\/+$/, "")}/${stagingDirectory}`
+  const session = staged()
   return (command, stdin) => {
     if (stdin === undefined) return Effect.succeed(command)
     return Effect.gen(function*() {
-      const file = `${directory}/${staged()}`
+      const path = yield* Path.Path
+      const workdir = path.normalize(target.workdir).replace(/\/+$/, "") || "/"
+      const directory = stagingDirectories.find((candidate) =>
+        candidate !== workdir
+        && !candidate.startsWith(workdir === "/" ? "/" : `${workdir}/`)
+        && !workdir.startsWith(`${candidate}/`)
+      )
+      if (directory === undefined) {
+        return yield* Effect.fail(
+          new ProviderError({
+            code: "spawn_error",
+            message: "sandbox standard input requires a staging directory outside the checkout"
+          })
+        )
+      }
+      const file = `${directory}/${session}/${staged()}`
       // The name is claimed, and its removal registered, before anything is
       // written to it: a chunked write that fails partway has already put
       // bytes on the machine.
@@ -115,6 +131,6 @@ export const stdinRedirect = (target: StdinTarget): (
       )
       yield* target.writeFile(file, stdin)
       return `(\n${command}\n) < ${CommandLine.quote(file)}`
-    })
+    }).pipe(Effect.provide(Path.layer))
   }
 }

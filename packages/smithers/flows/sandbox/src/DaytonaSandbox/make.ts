@@ -114,7 +114,7 @@ const networkSettings = (network: NetworkPolicy | undefined) => {
  * than fabricating a second copy of it.
  *
  * A relative spawn `cwd` is rooted at the session workdir per the session
- * contract, and `options.stdin` is delivered through a workspace file —
+ * contract, and `options.stdin` is delivered through a temporary file outside the checkout —
  * `executeCommand` takes a command line and nothing else, so the redirect in
  * `internal/stdinRedirect` is the only honest route.
  *
@@ -258,7 +258,7 @@ export const make = (options: DaytonaSandboxOptions): Provider => {
             )
           })
         // `executeCommand` takes a command line and nothing else, so a
-        // command's standard input is staged as a workspace file and the line
+        // command's standard input is staged as a temporary file outside the checkout and the line
         // is rewritten to read from it.
         const redirect = stdinRedirect({
           workdir,

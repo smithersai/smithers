@@ -651,21 +651,16 @@ describe("VercelSandbox", () => {
   it.effect("delivers standard input, roots relative cwds, and drains text reads", () =>
     Effect.gen(function*() {
       const faults: Faults = {}
-      const { sdk } = fakeSdk(faults)
+      const { recorded, sdk } = fakeSdk(faults)
       const work = dir("behavior")
       yield* acquired(VercelSandbox.make({ sdk, workdir: work }), (session) =>
         Effect.gen(function*() {
           const bytes = new Uint8Array([0, 1, 2, 255, 10, 13, 7])
           expect(yield* output(session, "cat > stdin-copy.bin", { stdin: bytes })).toEqual({ stdout: "", code: 0 })
           expect(yield* session.readFile(`${work}/stdin-copy.bin`)).toEqual(bytes)
-          // The redirect stages input in the session-private directory and
-          // takes it away when the spawn's scope closes. The assertion names
-          // the directory rather than a file, because the staged name is
-          // random: "this one literal path is absent" holds just as well for an
-          // implementation that leaks every file it ever staged.
-          const staging = `${work}/.smthrs-stdin`
-          expect(yield* output(session, `test -d '${staging}' && ls -1A '${staging}'`))
-            .toEqual({ stdout: "", code: 0 })
+          const staged = recorded.writes.find(({ path }) => path.includes("/.smthrs-stdin/"))!.path
+          expect(staged.startsWith(work + "/")).toBe(false)
+          expect(existsSync(staged)).toBe(false)
 
           expect((yield* output(session, "mkdir -p nested/leaf")).code).toBe(0)
           expect((yield* output(session, "pwd", { cwd: "nested/leaf" })).stdout).toBe(`${work}/nested/leaf\n`)

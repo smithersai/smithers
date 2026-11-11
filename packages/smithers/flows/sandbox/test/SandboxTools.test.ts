@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, expectTypeOf } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
+import { stdinRedirect } from "../src/internal/stdinRedirect.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
 import * as SandboxTools from "../src/SandboxTools/index.ts"
@@ -165,6 +166,69 @@ describe("SandboxTools run", () => {
             expect(replay).toEqual(first)
             expect(first).toMatchObject({ stdout: "once\n" })
           }
+        }), { git: false }),
+    slow
+  )
+
+  it.effect(
+    "keeps chunk prefixes, record names and dot chunks independent in either order",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          for (const suffix of ["x", "exit", "out", "pid", "child", "identity", "cancelled", ".", ".."]) {
+            for (const longestFirst of [true, false]) {
+              const prefix = `fence-${++ids}`.padEnd(128, "a")
+              const pair = [prefix, prefix + suffix]
+              if (longestFirst) pair.reverse()
+              for (const id of pair) {
+                const command = `printf %s ${id.length}`
+                const first = yield* exec(session, { tool: "run", command }, id)
+                expect(first).toMatchObject({ stdout: String(id.length) })
+                expect(yield* exec(session, { tool: "run", command: "echo wrong" }, id)).toEqual(first)
+              }
+            }
+          }
+          for (const id of [".", ".."]) {
+            expect(yield* exec(session, { tool: "run", command: "echo safe" }, id))
+              .toMatchObject({ stdout: "safe\n" })
+          }
+          expect(existsSync(join(calls, "cancelled"))).toBe(false)
+        }), { git: false }),
+    slow
+  )
+
+  it.effect(
+    "refuses relative calls directories before starting commands",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const options = { callId: "relative", key: "relative", callsDirectory: "calls" }
+          expect(yield* failure(SandboxTools.execute(session, { tool: "run", command: "touch ran" }, options)))
+            .toMatchObject({ reason: "path" })
+          expect(yield* failure(SandboxTools.start(session, { tool: "run", command: "touch ran" }, options)))
+            .toMatchObject({ reason: "path" })
+          expect(yield* failure(SandboxTools.cancel(session, options))).toMatchObject({ reason: "path" })
+          expect(existsSync(join(session.workdir, "ran"))).toBe(false)
+        }), { git: false }),
+    slow
+  )
+
+  it.effect(
+    "replays a pre-upgrade long receipt without rerunning the command",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const prefix = `previous-${++ids}`.padEnd(128, "z")
+          const id = prefix + "tail"
+          const previous = join(calls, prefix, "tail")
+          mkdirSync(previous, { recursive: true })
+          writeFileSync(join(previous, "identity"), JSON.stringify(id))
+          writeFileSync(join(previous, "exit"), "0 0")
+          writeFileSync(join(previous, "out"), "previous")
+          writeFileSync(join(previous, "err"), "")
+          expect(yield* exec(session, { tool: "run", command: "touch reran" }, id))
+            .toMatchObject({ stdout: "previous", exitCode: 0 })
+          expect(existsSync(join(session.workdir, "reran"))).toBe(false)
         }), { git: false }),
     slow
   )
@@ -604,6 +668,45 @@ const loggingGit = (session: Sandbox.Session, log: string): Sandbox.Session => {
 }
 
 describe("SandboxTools checkpoint and restore", () => {
+  it.effect(
+    "excludes active and unsuccessfully removed stdin from checkpoints",
+    () =>
+      onMachine((session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const staged: Array<string> = []
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              for (const file of staged) rmSync(file, { force: true })
+            })
+          )
+          yield* Effect.scoped(Effect.gen(function*() {
+            const target = {
+              ...session,
+              writeFile: (path: string, content: Uint8Array) => {
+                staged.push(path)
+                return session.writeFile(path, content)
+              },
+              remove: () => Effect.fail(new ProviderError({ code: "unknown", message: "removal failed" }))
+            }
+            const line = yield* stdinRedirect(target)(
+              "printf intended > change.txt",
+              new TextEncoder().encode("private-input-marker")
+            )
+            expect(yield* exec(session, { tool: "run", command: line })).toMatchObject({ exitCode: 0 })
+            const active = yield* SandboxTools.checkpoint(session)
+            expect(new TextDecoder().decode(active.patch)).toContain("+intended")
+            expect(new TextDecoder().decode(active.patch)).not.toContain("private-input-marker")
+            expect(new TextDecoder().decode(active.patch)).not.toContain(".smthrs-stdin")
+          }))
+          expect(existsSync(staged[0]!)).toBe(true)
+          const after = yield* SandboxTools.checkpoint(session)
+          expect(new TextDecoder().decode(after.patch)).not.toContain("private-input-marker")
+          expect(new TextDecoder().decode(after.patch)).not.toContain(".smthrs-stdin")
+        }))
+      ),
+    slow
+  )
+
   it.effect(
     "stages from the checkout's own index, so only the files that changed are read, and carries the same patch",
     () =>

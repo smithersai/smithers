@@ -526,19 +526,11 @@ describe("DaytonaSandbox", () => {
           yield* session.writeFile("rooted.bin", new Uint8Array([42]))
           expect(Array.from(yield* session.readFile(`${work}/rooted.bin`))).toEqual([42])
 
-          // Standard input is staged in the session-private directory,
-          // delivered, and taken away when the spawn's scope closes.
-          //
-          // The assertion names the DIRECTORY, not a file. The staged name is
-          // random, so asserting one literal path is absent proves nothing: it
-          // holds just as well for an implementation that leaks every file it
-          // ever staged. `test -d` says the redirect staged where it claims to,
-          // and the empty listing says nothing survived the command.
           expect(yield* output(session, "cat > stdin-copy.bin", { stdin: bytes })).toEqual({ stdout: "", code: 0 })
           expect(yield* session.readFile(`${work}/stdin-copy.bin`)).toEqual(bytes)
-          const staging = `${work}/.smthrs-stdin`
-          expect(yield* output(session, `test -d '${staging}' && ls -1A '${staging}'`))
-            .toEqual({ stdout: "", code: 0 })
+          const staged = fake.recorded.uploads.find(({ path }) => path.includes("/.smthrs-stdin/"))!.path
+          expect(staged.startsWith(work + "/")).toBe(false)
+          expect(existsSync(staged)).toBe(false)
 
           // `executeCommand` merges standard error into its one output, so
           // the text arrives on stdout and stderr is honestly empty.

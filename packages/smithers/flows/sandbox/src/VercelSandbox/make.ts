@@ -154,7 +154,7 @@ const resolveCredentials = (
  * profile scripts, and anything those print lands ahead of the command's own
  * standard output, which callers parse as data. A relative `cwd` is rooted
  * at the session workdir per the session contract, and `options.stdin` is
- * delivered through a workspace file — the `@vercel/sandbox` 3.2.1
+ * delivered through a temporary file outside the checkout — the `@vercel/sandbox` 3.2.1
  * `RunCommandParams` carries no input channel (its `stdout`/`stderr` fields
  * are Writables for output), so the redirect in `internal/stdinRedirect` is
  * the only honest route.
@@ -308,7 +308,7 @@ export const make = (options: VercelSandboxOptions): Provider => {
           })
         // `runCommand` takes no standard input (verified against the
         // `@vercel/sandbox` 3.2.1 typings), so a command's input is staged as
-        // a workspace file and the command line is rewritten to read from it.
+        // a temporary file outside the checkout and the command line is rewritten to read from it.
         const redirect = stdinRedirect({
           workdir,
           writeFile,

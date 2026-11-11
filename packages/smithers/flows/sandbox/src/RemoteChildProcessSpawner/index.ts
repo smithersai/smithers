@@ -42,7 +42,9 @@
  * - **No pipeline routing between processes.** A `PipedCommand` is rendered
  *   into the single command line the remote side parses, so the `|` reaches the
  *   remote shell rather than this adapter. A non-default `from` or `to` cannot
- *   survive that rendering and is rejected.
+ *   survive that rendering and is rejected. A later stage with an explicit
+ *   `cwd` or `env` that differs from the first stage is also rejected before
+ *   spawning; the provider receives only the first stage's settings.
  * - **No extra file descriptors.** `getInputFd` returns `Sink.drain` and
  *   `getOutputFd` returns `Stream.empty` — the same answer
  *   `NodeChildProcessSpawner` gives for a descriptor that was never configured.

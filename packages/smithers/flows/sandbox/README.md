@@ -62,7 +62,7 @@ Standard input is not optional. A provider that declares `stdin: true` receives
 a command's input collected whole; a provider that does not is handed an
 input-fed command's refusal instead, so the bytes are never silently dropped.
 Additional file descriptors, `stdin: "inherit"`, custom shell paths, detached
-processes, and non-default pipeline routing fail with a `BadArgument`
+processes, non-default pipeline routing, and later-stage `cwd` or `env` overrides that differ from the first stage fail with a `BadArgument`
 `PlatformError`, because the provider contract cannot preserve their semantics.
 Output `pipe`, `ignore`, and `inherit` options and output sinks are
 honored by the adapter.
@@ -184,6 +184,8 @@ between attempts. Custom conflict strategies run as separate actions. The raw
 ### Command receipt identities
 
 Command call IDs are encoded injectively as UTF-16 code units; `/`, `_`, percent, Unicode and long IDs have distinct
-fences. New run fences store the exact identity before execution. A pre-upgrade run fence without identity metadata
+fences. Interior path components end in `+`, so no fence is another call's parent; dot-only components are encoded.
+A relative `callsDirectory` is refused. New run fences store the exact identity before execution. A pre-upgrade run fence without identity metadata
 is ambiguous and returns `ToolLost`; it is never executed again and never reported as another call's success.
-The old files remain available for inspection. Async command names retain their existing safe-name paths.
+The old files remain available for inspection. Single-component async command names retain their existing safe-name paths. Recorded long fences remain readable
+and are reused instead of starting a second command.

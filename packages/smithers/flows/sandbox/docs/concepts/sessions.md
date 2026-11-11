@@ -111,7 +111,7 @@ action, and the retry acquires the key again.
 
 Most vendor execution APIs take a command line and nothing else, so a session
 with no input channel satisfies its "spawn delivers stdin" obligation by
-writing the bytes into the workspace and redirecting the command from the file.
+writing the bytes into a temporary directory outside the checkout and redirecting the command from the file.
 The command runs verbatim inside a subshell with its own exit status. Newlines
 separate it from the subshell delimiters, preserving trailing shell comments
 and heredoc terminators on the final line.
@@ -120,7 +120,10 @@ Two properties of that staging are guarantees, and one commonly assumed
 property is not:
 
 - The name is unguessable, drawn from Web Crypto, under a session-private
-  `.smthrs-stdin` directory in the workspace. A per-session counter was not
+  directory under `/tmp/.smthrs-stdin` or `/var/tmp/.smthrs-stdin`, selected
+  to stay outside the checkout. A checkout rooted at `/` refuses staged input
+  with `spawn_error` before writing because no outside directory exists. Capture, checkpoint
+  and `git add -A` cannot include staged input while it exists or after cleanup fails. A per-session counter was not
   unguessable: it reset on every acquire, so a reattached machine started again
   at the first name and could read the previous incarnation's input, which is
   where a caller puts a script, a patch, or a credential blob.

@@ -585,8 +585,12 @@ printf '%s %s %s %s\\n' "$code" "$timed" $(($(wc -c <"$d/out"))) $(($(wc -c <"$d
 head -c "$max" -- "$d/out"
 head -c "$max" -- "$d/err"`
 
+/** Prefer a recorded pre-upgrade chunked fence when no current fence exists, so an upgrade never reruns work. */
+const PREVIOUS_FENCE = `if [ ! -d "$d" ] && [ -d "$previous" ]; then d=$previous; fi`
+
 /** The runner `$1` with the rest of its arguments, in the foreground, the first time its fence `$2` is made. */
-const RUN = `d=$2; max=$6
+const RUN = `d=$2; max=$6; previous=$9
+${PREVIOUS_FENCE}
 # Old lossy fences carry no identity. Refuse an ambiguous old receipt rather than executing again or returning
 # another call's output. New fences record the exact JSON string identity before starting the command.
 if [ "$d" != "$7" ] && [ -d "$7" ]; then
@@ -597,18 +601,32 @@ if [ -d "$d" ]; then
 fi
 umask 002
 mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
-if mkdir -- "$d" 2>/dev/null; then printf '%s' "$8" >"$d/identity" || exit 125; sh -c "$1" sandbox-run "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 || exit 125; fi
+if mkdir -- "$d" 2>/dev/null; then printf '%s' "$8" >"$d/identity" || exit 125; sh -c "$1" sandbox-run "$d" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 || exit 125; fi
 ${ANSWER}`
 
 /** The fence directory of `id` under `callsDirectory`, when that is an absolute guest path. */
-const fenceOf = (callsDirectory: string, id: string): string | undefined => {
+const fenceOf = (callsDirectory: string, id: string, previous = false): string | undefined => {
+  if (!callsDirectory.startsWith("/")) return undefined
   const calls = resolve("/", callsDirectory)
   if (calls === undefined) return undefined
   // Encode UTF-16 code units injectively, including percent and lone surrogates. Chunk long names so no component
   // exceeds the guest filesystem's filename limit; slash is never confused with an underscore or a chunk boundary.
   const encoded = id.replaceAll(/[^A-Za-z0-9._-]/g, (char) => `%${char.charCodeAt(0).toString(16).padStart(4, "0")}`)
   const chunks = encoded.match(/.{1,128}/g) ?? ["%empty"]
-  return `${calls}/${chunks.join("/")}`
+  // Dot-only legacy components were traversal, never an unambiguous receipt.
+  if (previous) {
+    return chunks.some((chunk) => chunk === "." || chunk === "..")
+      ? undefined
+      : `${calls}/${chunks.join("/")}`
+  }
+  // Only interior components carry '+', which the encoding never emits. A leaf can therefore never be another
+  // call's parent, or collide with its receipt files. Dot-only components must not traverse the guest filesystem.
+  return `${calls}/${
+    chunks.map((chunk, index) => {
+      const safe = chunk === "." || chunk === ".." ? chunk.replaceAll(".", "%002e") : chunk
+      return index < chunks.length - 1 ? `${safe}+` : safe
+    }).join("/")
+  }`
 }
 
 /** A command's result from an `ANSWER`'s output: its exit code, whether it timed out, and its kept streams. */
@@ -649,8 +667,12 @@ const run = (session: Session, call: typeof Run.Type, options: ExecuteOptions) =
         cwd,
         call.command,
         String(max),
-        `${resolve("/", options.callsDirectory)}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`,
-        JSON.stringify(options.callId)
+        // Dot-only legacy names were traversal, never a call's own receipt.
+        options.callId === "." || options.callId === ".."
+          ? fence
+          : `${resolve("/", options.callsDirectory)}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`,
+        JSON.stringify(options.callId),
+        fenceOf(options.callsDirectory, options.callId, true) ?? fence
       ]),
       2 * max + 128
     )
@@ -936,14 +958,15 @@ export type Observed = typeof Observed.Type
  * control, the first time its fence `$2` is made, then answers its pid and
  * start once it recorded them, waiting at most five seconds by the clock.
  */
-const START = `d=$2
+const START = `d=$2; previous=$6
+${PREVIOUS_FENCE}
 umask 002
 mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
 if mkdir -- "$d" 2>/dev/null; then
   if command -v setsid >/dev/null 2>&1; then
-    setsid sh -c "$1" sandbox-command "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &
+    setsid sh -c "$1" sandbox-command "$d" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &
   else
-    (set -m 2>/dev/null; sh -c "$1" sandbox-command "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &)
+    (set -m 2>/dev/null; sh -c "$1" sandbox-command "$d" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &)
   fi
 fi
 end=$(($(date +%s) + 5))
@@ -957,10 +980,11 @@ printf '%s %s\\n' "$pid" "$at"`
 /**
  * Whether the command under fence `$1` runs: its runner, which waits for the
  * command and then records how it ended, lives in the box that started it.
- * With `$2` seconds to wait, it first waits that long at most for the exit,
+ * With `$3` seconds to wait, it first waits that long at most for the exit,
  * looking every 50 ms, and stops waiting once the runner is gone.
  */
-const OBSERVE = `d=$1; w=\${2:-0}
+const OBSERVE = `d=$1; w=\${3:-0}; previous=$2
+${PREVIOUS_FENCE}
 ${IDENT}
 alive() {
   [ -f "$d/pid" ] && read -r pid at box id <"$d/pid" && [ "$pid" -gt 1 ] && [ "$(ident 1)" = "$box" ] &&
@@ -980,7 +1004,8 @@ if [ ! -f "$d/exit" ] && alive; then
 fi
 if [ -f "$d/exit" ]; then read -r code timed <"$d/exit"; printf 'finished %s %s\\n' "$code" "$timed"; else printf 'lost\\n'; fi`
 
-const COLLECT = `d=$1; max=$2
+const COLLECT = `d=$1; max=$2; previous=$3
+${PREVIOUS_FENCE}
 ${ANSWER}`
 
 /**
@@ -990,7 +1015,8 @@ ${ANSWER}`
  * started it: TERM, up to five seconds for them to go, then KILL. A command
  * that finished, or whose pid now names another process, is left alone.
  */
-const CANCEL = `d=$1
+const CANCEL = `d=$1; previous=$2
+${PREVIOUS_FENCE}
 ${IDENT}
 umask 002
 mkdir -p -- "$d" 2>/dev/null || exit 125
@@ -1046,7 +1072,10 @@ const commandFence = (options: CommandOptions) => {
       : `_${byte.toString(16).padStart(2, "0")}`)
   ).join("")
   const fence = fenceOf(options.callsDirectory, `command-${name}`)
-  return fence === undefined ? refused("path") : Effect.succeed(fence)
+  return fence === undefined ? refused("path") : Effect.succeed({
+    current: fence,
+    previous: fenceOf(options.callsDirectory, `command-${name}`, true) ?? fence
+  })
 }
 
 /**
@@ -1082,7 +1111,7 @@ export const start = (
       const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds
       const { code, stdout } = yield* gather(
         session,
-        script(START, [RUNNER, fence, String(timeout), cwd, call.command]),
+        script(START, [RUNNER, fence.current, String(timeout), cwd, call.command, fence.previous]),
         128
       )
       if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
@@ -1110,7 +1139,11 @@ export const observe = (
     Effect.gen(function*() {
       const fence = yield* commandFence(options)
       const wait = Math.min(limits.maxObserveWaitSeconds, Math.max(0, Math.ceil((options.waitMs ?? 0) / 1000)))
-      const { code, stdout } = yield* gather(session, script(OBSERVE, [fence, String(wait)]), 128)
+      const { code, stdout } = yield* gather(
+        session,
+        script(OBSERVE, [fence.current, fence.previous, String(wait)]),
+        128
+      )
       if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
       const [state, first, second] = text(stdout).trim().split(" ")
       return state === "running"
@@ -1139,7 +1172,11 @@ export const collect = (
     Effect.gen(function*() {
       const fence = yield* commandFence(options)
       const max = limits.outputBytes
-      const { code, stdout } = yield* gather(session, script(COLLECT, [fence, String(max)]), 2 * max + 128)
+      const { code, stdout } = yield* gather(
+        session,
+        script(COLLECT, [fence.current, String(max), fence.previous]),
+        2 * max + 128
+      )
       if (code !== 0) return yield* Effect.fail(failedWith(code))
       return answered(stdout)
     })
@@ -1160,7 +1197,7 @@ export const cancel = (session: Session, options: CommandOptions): Effect.Effect
     "cancel",
     Effect.gen(function*() {
       const fence = yield* commandFence(options)
-      const { code } = yield* gather(session, script(CANCEL, [fence]), 0)
+      const { code } = yield* gather(session, script(CANCEL, [fence.current, fence.previous]), 0)
       if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
     })
   )
