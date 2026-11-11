@@ -133,6 +133,33 @@ describe.skipIf(!jjInstalled)("NodeJj workspaces and restore", () => {
       yield* Effect.promise(() => rm(parent, { recursive: true, force: true }))
     }))
 
+  it.effect("pins a lane to the parent workspace's @ and @-, not the lane's", () =>
+    Effect.gen(function*() {
+      const tracked = join(repository, "pinned-at.txt")
+      const added = join(repository, "pinned-at-added.txt")
+      const atLane = join(repository, "..", `pinned-at-${process.pid}`)
+      const parentLane = join(repository, "..", `pinned-at-parent-${process.pid}`)
+      yield* Effect.promise(() => writeFile(tracked, "base\n"))
+      execFileSync("jj", ["commit", "-m", "base"], { cwd: repository, stdio: "ignore" })
+      // Uncommitted work in the parent's @: an edit and a new file.
+      yield* Effect.promise(() => writeFile(tracked, "work\n"))
+      yield* Effect.promise(() => writeFile(added, "new\n"))
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("pinned-at", atLane, "@")))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("pinned-at-parent", parentLane, "@-")))
+
+      expect(readFileSync(join(atLane, "pinned-at.txt"), "utf8")).toBe("work\n")
+      expect(readFileSync(join(atLane, "pinned-at-added.txt"), "utf8")).toBe("new\n")
+      expect(readFileSync(join(parentLane, "pinned-at.txt"), "utf8")).toBe("base\n")
+      expect(existsSync(join(parentLane, "pinned-at-added.txt"))).toBe(false)
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("pinned-at")))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("pinned-at-parent")))
+      yield* Effect.promise(() =>
+        Promise.all([atLane, parentLane].map((lane) => rm(lane, { recursive: true, force: true })))
+      )
+    }))
+
   it.effect("rejects an ambiguous revset before creating a lane, then accepts the same name", () =>
     Effect.gen(function*() {
       const lane = join(repository, "..", `ambiguous-revset-${process.pid}`)

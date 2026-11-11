@@ -1025,6 +1025,39 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
     })
 
   /**
+   * The one commit a validated revset names in the parent workspace, as a
+   * revset that means the same commit in every workspace. `exactly(…, 1)`
+   * refuses an `@-` with several parents instead of pinning to one of them.
+   */
+  const resolveCommit = (revset: string) =>
+    Effect.gen(function*() {
+      const operationId = (yield* inRepository("workspaceAdd", ["op", "log", "-n1", "--no-graph", "-T", "id"])).trim()
+      const output = yield* inRepository("workspaceAdd", [
+        "log",
+        `--at-op=${operationId}`,
+        "-r",
+        revset.startsWith("@") ? `exactly(${revset}, 1)` : revset,
+        "--no-graph",
+        "-T",
+        "commit_id"
+      ])
+      const commitId = output.trim()
+      // Template aliases can rewrite what the template prints.
+      if (!/^[0-9a-f]+$/.test(commitId)) {
+        return yield* Effect.fail(
+          new JjError({
+            code: "unknown",
+            module: MODULE,
+            method: "workspaceAdd",
+            command: "jj log",
+            message: `jj workspaceAdd: ${JSON.stringify(output.slice(0, 200))} is not a commit id`
+          })
+        )
+      }
+      return `exactly(commit_id(${commitId}), 1)`
+    })
+
+  /**
    * `--name=` and the `--` terminator are what make the claim "a workspace name
    * is opaque argv" true for a value that starts with `-`. Without them clap
    * reads a lane named `-dash-lane` as a bundle of short flags and a lane path
@@ -1035,6 +1068,11 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
    * the revision's tree into it. A snapshot's commit id is usually a hidden
    * earlier version of the parent's working-copy change; building on it would
    * revive it beside the parent's current `@` as a divergent change.
+   *
+   * The revision is resolved to one commit id in the parent workspace first.
+   * `@` names a different commit in each workspace, and the restore runs in
+   * the new lane: there `restore --from @` would be a no-op and `@-` would
+   * name the parent's `@--`.
    */
   const addWorkspace = (name: string, path: string, revision?: string) =>
     Effect.asVoid(
@@ -1043,49 +1081,50 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
           "workspaceAdd",
           inRepository("workspaceAdd", ["workspace", "add", `--name=${name}`, "--", path])
         )
-        : Effect.flatMap(requireRevision("workspaceAdd", "jj workspace add", revision), (pinned) =>
+        : Effect.flatMap(requireRevision("workspaceAdd", "jj workspace add", revision), (revset) =>
           // The commands remain cancellable; only the handoff from a completed
           // add to the pin's cleanup finalizer is protected from interruption.
           repositoryCritical(
             "workspaceAdd",
-            Effect.uninterruptibleMask((restore) =>
-              restore(inRepository("workspaceAdd", [
-                "workspace",
-                "add",
-                `--name=${name}`,
-                `--revision=parents(${pinned})`,
-                "--",
-                path
-              ])).pipe(
-                Effect.andThen(
-                  restore(run(
-                    "workspaceAdd",
-                    [
-                      "restore",
-                      "--from",
-                      pinned,
-                      "--color=never",
-                      "--config",
-                      "snapshot.max-new-file-size=0",
-                      ...HOST_ONLY_CONFIG
-                    ],
-                    resolve(repositoryRoot ?? process.cwd(), path)
-                  )).pipe(
-                    Effect.onExit((exit) =>
-                      Exit.isSuccess(exit)
-                        ? Effect.void
-                        : Effect.interruptible(forgetWorkspace(name)).pipe(
-                          Effect.timeout(workspaceCleanupTimeoutMs),
-                          // Keep the pin failure as the result if cleanup also fails.
-                          Effect.catch((cleanupFailure) =>
-                            Effect.logWarning("Failed to forget workspace after pinning failed", cleanupFailure)
+            Effect.flatMap(resolveCommit(revset), (pinned) =>
+              Effect.uninterruptibleMask((restore) =>
+                restore(inRepository("workspaceAdd", [
+                  "workspace",
+                  "add",
+                  `--name=${name}`,
+                  `--revision=parents(${pinned})`,
+                  "--",
+                  path
+                ])).pipe(
+                  Effect.andThen(
+                    restore(run(
+                      "workspaceAdd",
+                      [
+                        "restore",
+                        "--from",
+                        pinned,
+                        "--color=never",
+                        "--config",
+                        "snapshot.max-new-file-size=0",
+                        ...HOST_ONLY_CONFIG
+                      ],
+                      resolve(repositoryRoot ?? process.cwd(), path)
+                    )).pipe(
+                      Effect.onExit((exit) =>
+                        Exit.isSuccess(exit)
+                          ? Effect.void
+                          : Effect.interruptible(forgetWorkspace(name)).pipe(
+                            Effect.timeout(workspaceCleanupTimeoutMs),
+                            // Keep the pin failure as the result if cleanup also fails.
+                            Effect.catch((cleanupFailure) =>
+                              Effect.logWarning("Failed to forget workspace after pinning failed", cleanupFailure)
+                            )
                           )
-                        )
+                      )
                     )
                   )
                 )
-              )
-            )
+              ))
           ))
     )
 

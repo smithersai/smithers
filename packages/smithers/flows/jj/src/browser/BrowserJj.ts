@@ -648,42 +648,55 @@ const create = (options: BrowserJjOptions): {
         // delivered between the add, the pin, and the pin's rollback is exactly
         // what would strand one. Interruptibility buys nothing here anyway:
         // each call runs the wasm module to completion before it yields.
+        //
+        // `@` names a different commit in each workspace, and the pin runs in
+        // the new lane, where it would restore the lane's own `@`. It is
+        // resolved to the parent's working-copy commit before the add.
         Effect.uninterruptible(
           Effect.flatMap(
-            invoke("workspaceAdd", "jj workspace add", { op: "workspaceAdd", root, name, path }),
-            () =>
-              revision === undefined
-                ? Effect.void
-                : Effect.asVoid(
-                  invoke("restore", "jj restore", { op: "restore", root: path, changeId: revision })
-                ).pipe(
-                  // The two calls are not one transaction, so a failed pin has
-                  // to undo the add: the lane is already registered. The
-                  // directory stays, as it does after any forget.
-                  //
-                  // A rollback that ITSELF fails is ignored, and that is a
-                  // deliberate limit rather than an oversight: the pin failure
-                  // is the one a caller can act on, and turning one error into
-                  // two hides it. The README records what it costs, which is
-                  // that a lane can stay registered when both calls fail. Only
-                  // a single ABI operation can close that gap for good.
-                  Effect.catch((failure) =>
-                    Effect.andThen(
-                      Effect.ignore(
-                        invoke("workspaceForget", "jj workspace forget", { op: "workspaceForget", root, name })
-                      ),
-                      Effect.fail(
-                        new JjError({
-                          code: failure.code,
-                          module: MODULE,
-                          method: "workspaceAdd",
-                          command: "jj workspace add",
-                          message: `jj workspaceAdd: pinning the new lane failed: ${failure.message}`
-                        })
+            revision === "@"
+              ? Effect.flatMap(
+                invoke("workspaceAdd", "jj workspace add", { op: "snapshot", root }),
+                (ok) => stringField("workspaceAdd", "jj workspace add", ok, "commitId")
+              )
+              : Effect.succeed(revision),
+            (pinned) =>
+              Effect.flatMap(
+                invoke("workspaceAdd", "jj workspace add", { op: "workspaceAdd", root, name, path }),
+                () =>
+                  pinned === undefined
+                    ? Effect.void
+                    : Effect.asVoid(
+                      invoke("restore", "jj restore", { op: "restore", root: path, changeId: pinned })
+                    ).pipe(
+                      // The two calls are not one transaction, so a failed pin has
+                      // to undo the add: the lane is already registered. The
+                      // directory stays, as it does after any forget.
+                      //
+                      // A rollback that ITSELF fails is ignored, and that is a
+                      // deliberate limit rather than an oversight: the pin failure
+                      // is the one a caller can act on, and turning one error into
+                      // two hides it. The README records what it costs, which is
+                      // that a lane can stay registered when both calls fail. Only
+                      // a single ABI operation can close that gap for good.
+                      Effect.catch((failure) =>
+                        Effect.andThen(
+                          Effect.ignore(
+                            invoke("workspaceForget", "jj workspace forget", { op: "workspaceForget", root, name })
+                          ),
+                          Effect.fail(
+                            new JjError({
+                              code: failure.code,
+                              module: MODULE,
+                              method: "workspaceAdd",
+                              command: "jj workspace add",
+                              message: `jj workspaceAdd: pinning the new lane failed: ${failure.message}`
+                            })
+                          )
+                        )
                       )
                     )
-                  )
-                )
+              )
           )
         )
       ),

@@ -233,6 +233,11 @@ describe.skipIf(!jjInstalled)("NodeJj against a repository its occupant controls
       yield* Effect.promise(() => writeFile(join(repository, "signed.txt"), "two\n"))
       const rewritten = yield* Effect.flip(jj.snapshot("rewritten @"))
       expect(isJjError(rewritten) && rewritten.message).toContain("are not a commit id, change id, and operation id")
+      // A pinned lane resolves its revision with the same template first.
+      const aliasedLane = join(directory, "aliased-lane")
+      const aliased = yield* Effect.flip(jj.workspaceAdd("aliased-lane", aliasedLane, "@"))
+      expect(isJjError(aliased) && aliased.message).toContain("is not a commit id")
+      expect(jjIn(["workspace", "list"])).not.toContain("aliased-lane:")
       yield* jj.root!(repository)
       yield* jj.status()
       expect(existsSync(marker())).toBe(false)

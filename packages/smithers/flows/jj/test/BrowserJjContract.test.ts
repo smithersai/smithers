@@ -124,6 +124,19 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj over flows_jj.wasm", () => {
       yield* (jj.workspaceForget("pinned"))
     }), { timeout })
 
+  it.effect("pins a new lane at the parent's @, not the lane's own", () =>
+    Effect.gen(function*() {
+      write("pinned-at.txt", "base\n")
+      yield* (jj.snapshot("pinned-at base"))
+      // The working copy moves on without a snapshot: `@` must still mean it.
+      write("pinned-at.txt", "work\n")
+
+      yield* (jj.workspaceAdd("pinned-at", "/lane-at", "@"))
+
+      expect(fsModule.readFileSync(join(host, "lane-at", "pinned-at.txt"), "utf8")).toBe("work\n")
+      yield* (jj.workspaceForget("pinned-at"))
+    }), { timeout })
+
   it.effect("undoes the lane when the pin fails, and names workspaceAdd", () =>
     Effect.gen(function*() {
       const error = yield* (Effect.flip(jj.workspaceAdd("rollback", "/lane3", "nosuchchangeid")))
