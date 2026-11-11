@@ -113,8 +113,8 @@ A caller chooses it, and the choice is a contract with itself:
 - A [channel](../guides/ingest-a-webhook.md) uses the platform's own delivery
   id, namespaced by the channel, so a webhook redelivery is the same mutation.
 - A [monitor](../guides/monitor-runs.md) uses
-  `monitor:<monitorId>:<remedy>:<runId>:<beat>`, so two monitors watching one
-  run never share a key.
+  `monitor:<monitorId>:<remedy>:<runId>:<invocation>:<beat>`, so neither two
+  monitors watching one run nor two calls of one monitor share a key.
 
 Reusing a key for a different intent is a caller mistake the plane reports
 rather than absorbs.

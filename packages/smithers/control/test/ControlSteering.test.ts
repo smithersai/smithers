@@ -277,10 +277,14 @@ describe("live steering", () => {
       const runId = yield* start("terminal")
       yield* control.cancel({ runId, idempotencyKey: `cancel:${runId}` })
       const receipt = yield* steer(runId, { messageId: "steer-late", body: "too late" })
-      return { receipt, pending: yield* queue.pending(runId) }
+      // A client retry after a dropped response sends the same key again.
+      const retried = yield* steer(runId, { messageId: "steer-late", body: "too late" })
+      return { receipt, retried, pending: yield* queue.pending(runId) }
     }))
 
     expect(observed.receipt).toEqual({ _tag: "Terminal", runId: expect.any(String), status: "cancelled" })
+    // `AlreadyApplied` here would say the steer was delivered once when it was refused.
+    expect(observed.retried).toEqual(observed.receipt)
     // A refused steer is not a stored steer: nothing is waiting to be
     // delivered to a run that will never take another turn.
     expect(observed.pending).toEqual([])

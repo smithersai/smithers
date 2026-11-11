@@ -135,7 +135,10 @@ apart and their remedies distinct:
 - Every record this monitor writes has source `/control/monitor/<monitorId>`
   and carries `monitorId` in its payload.
 - The built-in remedies key on
-  `monitor:<monitorId>:<remedy>:<runId>:<beat>`.
+  `monitor:<monitorId>:<remedy>:<runId>:<invocation>:<beat>`, where
+  `<invocation>` is a nonce drawn once per `Monitor.run` call. The beat counts
+  from zero in every call, so a key without it would let a rerun monitor
+  replay the previous call's `AlreadyApplied` and resume nothing.
 
 A remedy must be idempotent on the control plane. A custom `heal` owes the same
 property:

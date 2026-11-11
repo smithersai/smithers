@@ -18,7 +18,7 @@
  */
 
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Duration, Effect, Stream } from "effect"
+import { Duration, Effect, Random, Stream } from "effect"
 import { Control } from "./Control.ts"
 import type { ControlError } from "./ControlError.ts"
 import { InvalidInput, PersistenceError } from "./ControlError.ts"
@@ -345,8 +345,9 @@ const terminal = (summary: RunSummary | undefined): boolean =>
  * Nothing here leases the run. Two monitors on one run both beat and both
  * remedy, so a remedy has to be idempotent on the control plane — which the
  * two defaults are, through `Control.resume` and `Control.cancel`
- * idempotency keys that name the monitor, the run, and the beat. A custom
- * `heal` owes the same property.
+ * idempotency keys that name the monitor, the run, the invocation, and the
+ * beat. The invocation is a nonce, because the beat restarts at zero when the
+ * monitor is run again. A custom `heal` owes the same property.
  *
  * @param options how to beat and what to heal
  * @category constructors
@@ -380,16 +381,21 @@ export const run = (
     let lastPublished: SubjectHealth.HealthObservation | undefined
     const autoHeal = options.autoHeal ?? []
     const monitorId = options.monitorId ?? "default"
+    // The beat counts from zero in every invocation, so a resume keyed on the
+    // monitor, run and beat alone collided with the previous invocation's: a
+    // rerun monitor reaching the same beat replayed `AlreadyApplied`, resumed
+    // nothing, and journaled a heal. The nonce makes each key this call's own.
+    const invocation = (yield* Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER)).toString(36)
     const heal = options.heal ?? ((input) =>
       input.remedy === "resume"
         ? control.resume({
           runId: input.runId,
-          idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${input.beat}`
+          idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${invocation}:${input.beat}`
         })
         : control.cancel({
           runId: input.runId,
           reason: `monitor:${input.health}`,
-          idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${input.beat}`
+          idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${invocation}:${input.beat}`
         }))
 
     const emit = (

@@ -424,12 +424,21 @@ describe("ControlLive on a settled run", () => {
           signal: { name: "continue", payload: null },
           idempotencyKey: "signal:settled"
         }),
-        submitted: yield* control.run({ _tag: "Resume", runId, idempotencyKey: "run-resume:settled" })
+        submitted: yield* control.run({ _tag: "Resume", runId, idempotencyKey: "run-resume:settled" }),
+        // A client retry after a dropped response sends the same key again.
+        resignalled: yield* control.signal({
+          runId,
+          signal: { name: "continue", payload: null },
+          idempotencyKey: "signal:settled"
+        })
       }
     }))
 
     expect(said(observed.resumed)).toEqual(["Terminal", "cancelled"])
     expect(said(observed.signalled)).toEqual(["Terminal", "cancelled"])
+    // The retry was refused as the first call was; `AlreadyApplied` would say
+    // a signal was admitted once when none ever was.
+    expect(said(observed.resignalled)).toEqual(["Terminal", "cancelled"])
     // `run({_tag:"Resume"})` is the same verb over the wire, so it owes the
     // same answer rather than a receipt recorded before the run settled.
     expect(said(observed.submitted)).toEqual(["Terminal", "cancelled"])
@@ -546,6 +555,46 @@ describe("ControlLive when the row moves under it", () => {
     )
 
     expect(said(receipt)).toEqual(["Terminal", "completed"])
+  })
+
+  it("answers Terminal when the run settles between the two reads a steer takes", async () => {
+    // The outer read refuses a settled run before the idempotency replay; the
+    // inner one, inside the write transaction, must still refuse a run that
+    // settled after it, rather than store a steer nothing will deliver.
+    let settledReads = 0
+    const observed = await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        const queue = yield* NotificationQueue.NotificationQueue
+        const runId = yield* start("steer-mid-flight")
+        settledReads = 1
+        const receipt = yield* control.steer({
+          runId,
+          idempotencyKey: "steer:mid-flight",
+          message: {
+            runId,
+            messageId: "steer:mid-flight",
+            body: "too late",
+            createdAt: 0,
+            principal: { kind: "test", id: "operator", stampedAt: 0 }
+          }
+        })
+        return { receipt, pending: yield* queue.pending(runId) }
+      }),
+      live({
+        runtime: wrapping((runtime) => ({
+          getRun: (runId) =>
+            Effect.map(
+              runtime.getRun(runId),
+              (summary) =>
+                settledReads > 0 && settledReads++ > 1 ? { ...summary, status: "completed" as const } : summary
+            )
+        }))
+      })
+    )
+
+    expect(said(observed.receipt)).toEqual(["Terminal", "completed"])
+    expect(observed.pending).toEqual([])
   })
 
   it("leaves a control row that already agrees with the engine alone, and survives one it cannot write", async () => {

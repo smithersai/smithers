@@ -2001,90 +2001,100 @@ export const layer: Layer.Layer<
         confined(
           submitted,
           Effect.flatMap(snapshotSteer(submitted), (input) =>
-            mutate(
-              "steer",
-              input.idempotencyKey,
-              input.message.principal,
-              fingerprint("steer", input.message.principal, input),
-              Effect.gen(function*() {
-                // Two run ids naming two runs is a caller mistake with a durable
-                // consequence: the notification is admitted to `input.runId` while
-                // the stored `SteerMessage.runId` names another run, so the message
-                // an operator later reads says it belongs somewhere it was never
-                // delivered.
-                if (input.message.runId !== input.runId) {
-                  return yield* Effect.fail(
-                    invalid(
-                      `message.runId: must be ${JSON.stringify(input.runId)}, received ${
-                        JSON.stringify(input.message.runId)
-                      }`
-                    )
-                  )
-                }
-                const run = yield* getRun(input.runId)
-                // A run that will never take another turn cannot be steered, and
-                // storing the steer anyway would leave an operator watching a
-                // message that has no boundary left to deliver it.
-                if (terminal(run.status)) return { _tag: "Terminal", runId: run.runId, status: run.status }
-                const item = steerItem(input.message)
-                const admission = yield* notifications.admit(
-                  input.runId,
-                  Notification.humanSteer({
-                    runId: input.runId,
-                    id: input.message.messageId,
-                    actor: `${input.message.principal.kind}:${input.message.principal.id}`,
-                    attribution: input.message.attribution,
-                    payload: SteerPayload.encode(item)
-                  }),
-                  input.version
-                ).pipe(
-                  Effect.mapError((cause) =>
-                    cause instanceof NotificationQueue.NotificationError ? cause : new PersistenceError({
-                      operation: "control.steer.notification",
-                      message: "Failed to admit steering notification",
-                      cause
-                    })
+            Effect.gen(function*() {
+              // Two run ids naming two runs is a caller mistake with a durable
+              // consequence: the notification is admitted to `input.runId` while
+              // the stored `SteerMessage.runId` names another run, so the message
+              // an operator later reads says it belongs somewhere it was never
+              // delivered.
+              if (input.message.runId !== input.runId) {
+                return yield* Effect.fail(
+                  invalid(
+                    `message.runId: must be ${JSON.stringify(input.runId)}, received ${
+                      JSON.stringify(input.message.runId)
+                    }`
                   )
                 )
-                const inputReceipt = (): Receipt => {
-                  if (input.version === undefined || item.kind !== "Message") {
-                    return accepted(input.idempotencyKey, input.runId)
-                  }
-                  const payload = admission.consumedNotification?.payload as { body?: string } | undefined
-                  return {
-                    _tag: "Accepted",
-                    receiptId: input.idempotencyKey,
-                    runId: input.runId,
-                    inputConsumed: admission.consumed === true,
-                    inputBody: payload?.body ?? item.body
-                  }
-                }
-                if (input.version !== undefined && (admission.consumed || admission.duplicate)) {
-                  return inputReceipt()
-                }
-                if (admission.decision === "rejected-full") {
-                  return yield* Effect.fail(
-                    new NotificationQueue.NotificationError({
-                      code: "notification_full",
-                      notificationId: input.message.messageId,
-                      message: "Steering queue is full; retry after pending notifications are delivered"
-                    })
+              }
+              // Terminality is read BEFORE the idempotency replay, as `resume`
+              // reads it. A retried steer to a settled run replayed the recorded
+              // `Terminal` as `AlreadyApplied`, which says the message was
+              // delivered once when it was refused.
+              const settled = yield* getRun(input.runId)
+              if (terminal(settled.status)) {
+                return { _tag: "Terminal" as const, runId: settled.runId, status: settled.status }
+              }
+              return yield* mutate(
+                "steer",
+                input.idempotencyKey,
+                input.message.principal,
+                fingerprint("steer", input.message.principal, input),
+                Effect.gen(function*() {
+                  const run = yield* getRun(input.runId)
+                  // A run that will never take another turn cannot be steered, and
+                  // storing the steer anyway would leave an operator watching a
+                  // message that has no boundary left to deliver it.
+                  if (terminal(run.status)) return { _tag: "Terminal", runId: run.runId, status: run.status }
+                  const item = steerItem(input.message)
+                  const admission = yield* notifications.admit(
+                    input.runId,
+                    Notification.humanSteer({
+                      runId: input.runId,
+                      id: input.message.messageId,
+                      actor: `${input.message.principal.kind}:${input.message.principal.id}`,
+                      attribution: input.message.attribution,
+                      payload: SteerPayload.encode(item)
+                    }),
+                    input.version
+                  ).pipe(
+                    Effect.mapError((cause) =>
+                      cause instanceof NotificationQueue.NotificationError ? cause : new PersistenceError({
+                        operation: "control.steer.notification",
+                        message: "Failed to admit steering notification",
+                        cause
+                      })
+                    )
                   )
-                }
-                // `createdAt` is the caller's own stated time, and the enqueue
-                // entry is the one place it is kept: `steerItem` strips the control
-                // envelope before the message reaches the queue, so a field the
-                // journal did not carry was a field nothing ever read.
-                yield* emit(input.runId, Steering.enqueuedEventType, {
-                  runId: input.runId,
-                  messageId: input.message.messageId,
-                  kind: item.kind,
-                  createdAt: input.message.createdAt
+                  const inputReceipt = (): Receipt => {
+                    if (input.version === undefined || item.kind !== "Message") {
+                      return accepted(input.idempotencyKey, input.runId)
+                    }
+                    const payload = admission.consumedNotification?.payload as { body?: string } | undefined
+                    return {
+                      _tag: "Accepted",
+                      receiptId: input.idempotencyKey,
+                      runId: input.runId,
+                      inputConsumed: admission.consumed === true,
+                      inputBody: payload?.body ?? item.body
+                    }
+                  }
+                  if (input.version !== undefined && (admission.consumed || admission.duplicate)) {
+                    return inputReceipt()
+                  }
+                  if (admission.decision === "rejected-full") {
+                    return yield* Effect.fail(
+                      new NotificationQueue.NotificationError({
+                        code: "notification_full",
+                        notificationId: input.message.messageId,
+                        message: "Steering queue is full; retry after pending notifications are delivered"
+                      })
+                    )
+                  }
+                  // `createdAt` is the caller's own stated time, and the enqueue
+                  // entry is the one place it is kept: `steerItem` strips the control
+                  // envelope before the message reaches the queue, so a field the
+                  // journal did not carry was a field nothing ever read.
+                  yield* emit(input.runId, Steering.enqueuedEventType, {
+                    runId: input.runId,
+                    messageId: input.message.messageId,
+                    kind: item.kind,
+                    createdAt: input.message.createdAt
+                  })
+                  yield* wake(run, input.message.messageId)
+                  return inputReceipt()
                 })
-                yield* wake(run, input.message.messageId)
-                return inputReceipt()
-              })
-            ))
+              )
+            }))
         )
       ),
       signal: Effect.fn("Control.signal")((submitted: SignalInput) =>
@@ -2133,6 +2143,18 @@ export const layer: Layer.Layer<
               )
               if (receipt._tag !== "Accepted" && receipt._tag !== "AlreadyApplied") return receipt
               const command = yield* runtime.signalCommand(durableKey)
+              // A replay with no admitted command replays a refusal: the first
+              // call found the run settled and recorded `Terminal`, which the
+              // store hands back as `AlreadyApplied`. That would say a signal
+              // was admitted once when none ever was. Terminality outranks the
+              // replay here, as it does for `resume`; a legacy receipt for a live
+              // run still replays.
+              if (command === undefined && receipt._tag === "AlreadyApplied") {
+                const settled = yield* getRun(input.runId)
+                if (terminal(settled.status)) {
+                  return { _tag: "Terminal" as const, runId: settled.runId, status: settled.status }
+                }
+              }
               if (command === undefined || command.state === "delivered" || command.state === "terminal") return receipt
               if (command.state === "rejected") {
                 if (command.rejection === "unauthorized") {

@@ -392,6 +392,25 @@ describe("Monitor.run over the durable control plane", () => {
     ])
   })
 
+  it("resumes a run that stalls again under a second invocation of the same monitor", async () => {
+    const observed = await run(Effect.gen(function*() {
+      const runId = yield* start("stalled-twice")
+      const options = { runId, intervalMs: 0, maxChecks: 4, stallBeats: 3, autoHeal: ["stalled" as const] }
+      yield* park(yield* ControlRuntime, runId)
+      yield* parkOn(runId, "released")
+      const first = yield* Monitor.run(options)
+      // The run stalls again, and the operator reruns the same monitor. Its
+      // beats count from zero again, so it reaches the stall on the same beat.
+      yield* park(yield* ControlRuntime, runId)
+      yield* parkOn(runId, "released")
+      const second = yield* Monitor.run(options)
+      return [first, second].map((report) => report.beats.find((beat) => beat.healed === "resume")?.receipt?._tag)
+    }))
+
+    // A replayed `AlreadyApplied` resumed nothing and still journaled a heal.
+    expect(observed).toEqual(["Accepted", "Accepted"])
+  })
+
   it("journals the heal only after the remedy returned a receipt", async () => {
     const observed = await run(Effect.gen(function*() {
       const runId = yield* start("healed-after")
