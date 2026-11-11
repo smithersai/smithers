@@ -48,6 +48,7 @@ export const resolve = (
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const escalated = (pattern: string, rounds: number): PatternError =>
   new PatternError({ code: "stalled", message: `${pattern} stalled: the same result for ${rounds} rounds in a row` })
@@ -87,6 +88,7 @@ export const labelOf = (policy: Stall.Policy | undefined): string | undefined =>
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const tracker = <A>(
   policy: Stall.Policy | undefined,

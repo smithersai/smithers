@@ -1,0 +1,92 @@
+/**
+ * Runbook pattern: an ordered list of steps where a step's risk decides
+ * whether it is gated by an approval, and a denial either stops the runbook or
+ * skips the step.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import * as Pattern from "./Pattern.ts"
+import { PatternError } from "./PatternError.ts"
+import { elevated, gated, identities, type Request, type Result, type RuntimeOptions } from "./internal/RunbookMake.ts"
+
+export {
+  elevated,
+  gated,
+  make,
+  type MakeOptions,
+  type OnDeny,
+  type Request,
+  type Result,
+  type Risk,
+  type RunbookFlow,
+  type RuntimeOptions,
+  type RuntimeStep,
+  type Step
+} from "./internal/RunbookMake.ts"
+
+const decide = Schema.decodeUnknownEffect(Pattern.Approved)
+
+/**
+ * Runs a runbook.
+ *
+ * A safe step runs without asking. A non-safe step asks `approve` first, and
+ * the answer must decode as the literal `"approved"`. Under `onDeny: "fail"` a
+ * denial fails the runbook on the typed schema-error channel and no later step
+ * runs. Under `onDeny: "skip"` the denied step is listed in `skipped`, the
+ * runbook continues, and the next step sees the last step that actually ran as
+ * its `previous`.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
+  input: I,
+  options: RuntimeOptions<I, Out, E, R, E2, R2>
+): Result<Out>!(E | E2 | PatternError | Schema.SchemaError)!(R | R2) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the array, a step record, or the option object in between must
+  // not reach it.
+  const steps = options.steps.map((step) => ({ id: step.id, risk: step.risk, run: step.run }))
+  const approve = options.approve
+  const onDeny = options.onDeny
+  return effect {
+    if (steps.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "Runbook requires at least one step" })
+    }
+    if (!identities(steps.map((step) => step.id))) {
+      throw new PatternError({ code: "invalid_decorator", message: "Runbook step ids must be unique" })
+    }
+    const outputs = new Map<string, Out>()
+    const ran: Array<string> = []
+    const skipped: Array<string> = []
+    let previous: Out | undefined = undefined
+    for (const step of steps) {
+      const request: Request<I, Out> = {
+        step: step.id,
+        risk: step.risk,
+        elevated: elevated(step.risk),
+        input,
+        previous
+      }
+      if (gated(step.risk)) {
+        const answer = decide(try approve(request))
+        const decision: Pattern.Approved | "denied" = onDeny === "skip"
+          ? answer catch () => "denied"
+          : try answer
+        if (decision === "denied") {
+          skipped.push(step.id)
+          continue
+        }
+      }
+      const output = try step.run(request)
+      outputs.set(step.id, output)
+      ran.push(step.id)
+      previous = output
+    }
+    return { outputs: Object.fromEntries(outputs), ran, skipped }
+  }
+}

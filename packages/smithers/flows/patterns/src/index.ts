@@ -40,7 +40,7 @@ export * as Escalation from "./Escalation.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as ReviewLoop from "./ReviewLoop.ts"
+export * as ReviewLoop from "./ReviewLoop.vibe"
 
 /**
  * @category patterns
@@ -112,7 +112,7 @@ export * as Kanban from "./Kanban.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as MergeQueue from "./MergeQueue.ts"
+export * as MergeQueue from "./MergeQueue.vibe"
 
 /**
  * @category patterns
@@ -130,7 +130,7 @@ export * as Optimizer from "./Optimizer.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "./Runbook.ts"
+export * as Runbook from "./Runbook.vibe"
 
 /**
  * @category patterns

@@ -1,0 +1,109 @@
+/**
+ * Merge-queue pattern: land a set of members in one prioritized order, at a
+ * concurrency the queue owns rather than the members.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import type { PatternError } from "./PatternError.ts"
+import {
+  DefaultPriority,
+  ordered,
+  type Result,
+  type RuntimeMember,
+  type RuntimeOptions,
+  validate
+} from "./internal/MergeQueueMake.ts"
+
+export {
+  DefaultPriority,
+  type FailurePolicy,
+  type Landed,
+  make,
+  type MakeOptions,
+  type Member,
+  type MergeQueueFlow,
+  ordered,
+  type Position,
+  type Quarantined,
+  type Result,
+  type RuntimeMember,
+  type RuntimeOptions
+} from "./internal/MergeQueueMake.ts"
+
+/**
+ * Lands the members in queue order at the queue's concurrency.
+ *
+ * At the default concurrency of 1 the members land strictly one at a time, in
+ * descending priority and then declaration order.
+ * Members receive `{ id, position, input }`, as in {@link make}. Priority
+ * controls queue order and stays out of member payloads.
+ *
+ * Under `failurePolicy: "halt"` a failing member fails the queue and no member
+ * behind it lands, which is why `halt` runs only at concurrency 1: a wider
+ * queue would have started the next member before the failure was known.
+ * `run` fails with a `PatternError` for `halt` above concurrency 1, before
+ * any member starts. Under `"quarantine"` the failure is recorded, the member
+ * does not land, and the members behind it still do. A quarantined entry is
+ * `{ id, error }`, untagged, because `landed` and `quarantined` are separate
+ * arrays.
+ *
+ * Both policies read the typed failure channel. A member that throws raises a
+ * defect, which fails the queue under either policy and cancels the landings
+ * still in flight.
+ *
+ * `run` snapshots `members`, each member's `id`, `priority`, and `run`, and
+ * every option at the call, so a later edit to the caller's array, records,
+ * or option object does not alter that run.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, Out, E = never, R = never>(
+  input: I,
+  options: RuntimeOptions<I, Out, E, R>
+): Result<Out, E>!(E | PatternError)!R => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the array, a member record, or the option object in between must
+  // not reach it.
+  const members: ReadonlyArray<RuntimeMember<I, Out, E, R>> = options.members.map((member) => ({
+    id: member.id,
+    priority: member.priority,
+    run: member.run
+  }))
+  const concurrency = options.concurrency ?? 1
+  const priority = options.priority ?? DefaultPriority
+  const failurePolicy = options.failurePolicy
+  return effect {
+    // The checks read the snapshots above, so running them here decides as
+    // the call would have; `sync` keeps a throw a defect.
+    const invalid = try sync(() => validate(members, concurrency, priority, failurePolicy))
+    if (invalid !== undefined) throw invalid
+    const queue = try sync(() => ordered(members, priority))
+    const outcomes = try forEach(
+      queue,
+      effect (entry) => {
+        const attempt = entry.member.run({
+          id: entry.id,
+          position: entry.position,
+          input
+        })
+        const landed = effect {
+          return { landed: true, id: entry.id, output: try attempt } as const
+        }
+        return failurePolicy === "quarantine"
+          ? landed catch (error) => ({ landed: false, id: entry.id, error }) as const
+          : try landed
+      },
+      { concurrency }
+    )
+    return {
+      landed: outcomes.flatMap((outcome) => outcome.landed ? [{ id: outcome.id, output: outcome.output }] : []),
+      quarantined: outcomes.flatMap((outcome) => outcome.landed ? [] : [{ id: outcome.id, error: outcome.error }]),
+      order: queue.map((entry) => entry.id)
+    }
+  }
+}

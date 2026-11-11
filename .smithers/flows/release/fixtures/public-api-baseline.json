@@ -7917,7 +7917,7 @@
       },
       "declarations": {
         "Bounded.d.ts": "518a09599d0deed3b9d19567c9127c16f025a7df65cfc9e9fe69a45d2a532241",
-        "Burndown.d.ts": "92db9299afc81acb8cd1e59b82c9c2ed541be19298aa7bcec935fdd5f41d0adc",
+        "Burndown.d.ts": "85ea8a1e9ead5e659ebeee1f2b61fa0a525139718ca1053bcbea150e25d75aa5",
         "CheckSuite.d.ts": "d33daff14e5cd0f0e274488395e7f4a7df972038108c1374b44049fadf433d09",
         "Debate.d.ts": "4144f45052374b4dda6081d3c0a2396bdd58f70c65e4a6562c18e425df9e45de",
         "DelegationChain.d.ts": "1e0f2329a42f841e1026f729594191a34fa721c92efdc863958f61f00b961720",
@@ -7926,15 +7926,15 @@
         "Intervene.d.ts": "350cb92d024f78482e615ed5d5a0d94a270fd728a4a54e4468544f372b9a13b0",
         "Kanban.d.ts": "4f7f80d2f624479f787f98f1b8207bc63155d4aa64b5dcbb054b2c13106de2e5",
         "MapReduce.d.ts": "f7c13497b56509f9ce761448935b1054c4d0ad91517eb9098a53773ef87976b6",
-        "MergeQueue.d.ts": "8880b3519db2355a0e1e1401c79ef48d6bdc72aca3b1017598821e28ab14e9f4",
+        "MergeQueue.d.ts": "30356164f1b5bdd71509627b5b3dfbcfe4b1362c27cca144ace289e85b9feef3",
         "Optimizer.d.ts": "8f8434befe89a8c46f8cd0e2dc97f395809465ffd36598424ab2d04b04a9ef14",
         "Panel.d.ts": "daa22aafd061780f44446e2844296fd7fec8b9e50107a2c85b2c1e79912db461",
         "Pattern.d.ts": "378bb4113f3f682545641369417ad1311fecf8b9a9c4e45a0d2c041bd72f08a0",
         "PatternError.d.ts": "9fb79bb1ecb406fe3c13b916652ce6c27ceba45460ea3105c0c45852a3dc321d",
         "Quarantine.d.ts": "c56c7e49370761f83f524c687242fbf446814755767a90917b641b99078c7cb3",
         "Recursion.d.ts": "f59452444b6ea1515caa2d996368f99b9be460e1cf13187c51745705d600448f",
-        "ReviewLoop.d.ts": "b0b35464fff2b82e4e3631f3053967d2095de7e80c8b2839537783f817e74eb4",
-        "Runbook.d.ts": "eebbee46c08f52377b830330f2ac3255517e9cc8f3639db4c42ddbcad41a3194",
+        "ReviewLoop.d.ts": "f980f4f25ed4e4c27ec737dfad5cae0afc8e45a1269ecba5cac2f54ba25177be",
+        "Runbook.d.ts": "ae732fcabda9e963f2312f63c591748ddbc05105c440c22d81d9c8f1c96fc435",
         "Saga.d.ts": "bb18ade4b9b8c5bffb162b09833cfd8afd33fa4e3c953090ffbd0b075c60a1be",
         "ScanFixVerify.d.ts": "da25d3779a85a2a2180a904a0ed73a4d0baad16d0f83cfe53bb0dfe0993b939b",
         "Sidecar.d.ts": "fedc3f38379fc65df7cdffa62f5b93a9bdc7182018157248b8845555ad177450",
@@ -7949,8 +7949,11 @@
         "internal/Failure.d.ts": "58f2a13fa5d115a2b1f1ea90702da7a71a80773c2e141a5f210d1b469dc80048",
         "internal/InterveneMake.d.ts": "c02a0bc5608993e8ffce581e1411d21f493ddba20d5f39eb03f97e1497490377",
         "internal/Member.d.ts": "92b2b1069fbe784b34e06b90a987dd7748851bfb90179eaf72850ce7e7bfbdd8",
+        "internal/MergeQueueMake.d.ts": "87bceb0a2c9e65f667cba915ba8b0215916f91f329fba29429a2cf363541beab",
         "internal/Payload.d.ts": "9dfaa83619e289eeb49e8fbc190727399634abc85df9525357c2d8c1135945f9",
-        "internal/Stalling.d.ts": "dc0c751008882d436eddb8b3acd2ee569024f3901ae270e29a721c793788a97a"
+        "internal/ReviewLoopMake.d.ts": "30bdd5640e5eac48862f1ae40203e8fbf830696dc8fa14c8aed21b429c3c29f8",
+        "internal/RunbookMake.d.ts": "4a65882234534d6e9e863fa9579de5253d779c0043068ec6f7f63cc75b991851",
+        "internal/Stalling.d.ts": "c302379eadf7c252c4115d5ced9bf3bd858e1f3aed5dc7743b2034258a4490e0"
       }
     },
     "@smthrs/plan": {

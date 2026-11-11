@@ -16,7 +16,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import { PatternError } from "../src/PatternError.ts"
-import * as ReviewLoop from "../src/ReviewLoop.ts"
+import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 

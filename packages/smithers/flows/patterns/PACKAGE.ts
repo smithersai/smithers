@@ -52,7 +52,13 @@ const securityReview = Smithers.SecurityReview({
         "Runbook.run with onDeny \"skip\" or \"fail\" treating a thrown or undefined approval result as approval, or a risky/critical step called without an approval call.",
         "Intervene with dryRun true still calling apply, or make and run disagreeing on whether apply is reachable."
       ],
-      paths: ["src/Intervene.vibe", "src/internal/InterveneMake.ts", "src/Runbook.ts", "src/Pattern.ts"]
+      paths: [
+        "src/Intervene.vibe",
+        "src/internal/InterveneMake.ts",
+        "src/Runbook.vibe",
+        "src/internal/RunbookMake.ts",
+        "src/Pattern.ts"
+      ]
     },
     {
       id: "accepted-decision-strict",
@@ -67,7 +73,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Compose.ts",
-        "src/ReviewLoop.ts",
+        "src/ReviewLoop.vibe",
+        "src/internal/ReviewLoopMake.ts",
         "src/DelegationChain.ts",
         "src/Escalation.vibe",
         "src/internal/EscalationMake.ts",
@@ -90,7 +97,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Compose.ts",
         "src/Intervene.vibe",
         "src/internal/InterveneMake.ts",
-        "src/Runbook.ts"
+        "src/Runbook.vibe",
+        "src/internal/RunbookMake.ts"
       ]
     },
     {
@@ -113,10 +121,12 @@ const securityReview = Smithers.SecurityReview({
         "src/Recursion.ts",
         "src/MapReduce.ts",
         "src/Optimizer.ts",
-        "src/ReviewLoop.ts",
+        "src/ReviewLoop.vibe",
+        "src/internal/ReviewLoopMake.ts",
         "src/internal/Stalling.ts",
         "src/Bounded.ts",
-        "src/MergeQueue.ts",
+        "src/MergeQueue.vibe",
+        "src/internal/MergeQueueMake.ts",
         "src/Burndown.ts"
       ]
     },
@@ -148,7 +158,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, MergeQueue snapshots)."
       ],
-      paths: ["src/DriftDetector.vibe", "src/Kanban.ts", "src/MergeQueue.ts"]
+      paths: ["src/DriftDetector.vibe", "src/Kanban.ts", "src/MergeQueue.vibe", "src/internal/MergeQueueMake.ts"]
     }
   ]
 })

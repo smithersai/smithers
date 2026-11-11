@@ -1,8 +1,7 @@
 /**
- * Bounded produce-review-revise pattern.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `ReviewLoop`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `ReviewLoop.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -11,15 +10,15 @@ import * as Flow from "@smthrs/flow/Flow"
 import * as Stall from "@smthrs/flow/Stall"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import * as Stalling from "./internal/Stalling.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
+import * as Stalling from "./Stalling.ts"
 
 /**
  * Configuration for {@link make}.
@@ -223,64 +222,5 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
     // own `PatternError`, and whatever a member it called failed with.
     error: Failure.schemaFor([PatternError], [stages.produce, stages.review, stages.revise]) as typeof Schema.Unknown,
     body: Node.capture(captured, body)
-  })
-}
-
-/**
- * Executes produce-review-revise rounds and short-circuits on approval.
- *
- * Both outcomes are tagged: an accepted review returns {@link Approved} and a
- * spent round bound returns {@link Exhausted} with the review that refused it.
- *
- * This Effect is the operational form of the same decision {@link make}
- * declares as a `Node.branch`: it stops at the first approved round instead of
- * carrying every round the bound allows. Fiber interruption propagates
- * normally.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
-  input: I,
-  options: RuntimeOptions<I, A, Review, E, R, E2, R2, E3, R3>
-): Effect.Effect<Settled<A, Review>, E | E2 | E3 | PatternError, R | R2 | R3> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const stages = { produce: options.produce, review: options.review, revise: options.revise }
-  const maxRounds = options.maxRounds
-  if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "ReviewLoop maxRounds must be a positive safe integer"
-      })
-    )
-  }
-  const stall = Stalling.resolve("ReviewLoop", options.stall)
-  if (stall instanceof PatternError) return Effect.fail(stall)
-  const signals = options.stall?.signals ?? ((output: A) => ({ output }))
-  return Effect.gen(function*() {
-    const observe = Stalling.tracker(stall, signals)
-    let output = yield* stages.produce(input)
-    let round = 1
-    while (true) {
-      const review = yield* stages.review(output, round)
-      if (accepted(review)) {
-        const approved: Approved<A> = { _tag: "Approved", output }
-        return approved
-      }
-      if (round === maxRounds) {
-        const spent: Exhausted<A, Review> = { _tag: "Exhausted", output, review }
-        return spent
-      }
-      const stalled = observe(output)
-      if (stalled !== undefined) {
-        if (stalled.on === "escalate") return yield* Effect.fail(Stalling.escalated("ReviewLoop", stalled.rounds))
-        const parked: Stalled<A, Review> = { _tag: "Stalled", output, review, stalled }
-        return parked
-      }
-      output = yield* stages.revise({ output, review, round })
-      round += 1
-    }
   })
 }

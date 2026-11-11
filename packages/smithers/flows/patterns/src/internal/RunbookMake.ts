@@ -1,10 +1,7 @@
 /**
- * Runbook pattern: an ordered list of steps where a step's risk decides
- * whether it is gated by an approval, and a denial either stops the runbook or
- * skips the step.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Runbook`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Runbook.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -12,15 +9,15 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Approval from "./internal/Approval.ts"
-import * as Compose from "./internal/Compose.ts"
-import * as Decorate from "./internal/Decorate.ts"
-import * as Failure from "./internal/Failure.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import * as Pattern from "./Pattern.ts"
-import { PatternError } from "./PatternError.ts"
+import * as Pattern from "../Pattern.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Approval from "./Approval.ts"
+import * as Compose from "./Compose.ts"
+import * as Decorate from "./Decorate.ts"
+import * as Failure from "./Failure.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 
@@ -139,13 +136,12 @@ export interface Result<Out> {
   readonly skipped: ReadonlyArray<string>
 }
 
-const decide = Schema.decodeUnknownEffect(Pattern.Approved)
-
 /**
  * Reports whether a step's risk requires an approval.
  *
  * @category introspection
  * @since 0.1.0
+ * @throws {never}
  */
 export const gated = (risk: Risk): boolean => risk !== "safe"
 
@@ -154,10 +150,18 @@ export const gated = (risk: Risk): boolean => risk !== "safe"
  *
  * @category introspection
  * @since 0.1.0
+ * @throws {never}
  */
 export const elevated = (risk: Risk): boolean => risk === "critical"
 
-const identities = (ids: ReadonlyArray<string>): boolean => new Set(ids).size === ids.length
+/**
+ * Whether every step id is distinct.
+ *
+ * @since 0.1.0
+ * @private
+ * @throws {never}
+ */
+export const identities = (ids: ReadonlyArray<string>): boolean => new Set(ids).size === ids.length
 
 /**
  * The declared form of a runbook.
@@ -292,66 +296,5 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
       [options.approval, ...steps.map((step) => step.flow)]
     ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
-  })
-}
-
-/**
- * Runs a runbook.
- *
- * A safe step runs without asking. A non-safe step asks `approve` first, and
- * the answer must decode as the literal `"approved"`. Under `onDeny: "fail"` a
- * denial fails the runbook on the typed schema-error channel and no later step
- * runs. Under `onDeny: "skip"` the denied step is listed in `skipped`, the
- * runbook continues, and the next step sees the last step that actually ran as
- * its `previous`.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
-  input: I,
-  options: RuntimeOptions<I, Out, E, R, E2, R2>
-): Effect.Effect<Result<Out>, E | E2 | PatternError | Schema.SchemaError, R | R2> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the array, a step record, or the option object in between must
-  // not reach it.
-  const steps = options.steps.map((step) => ({ id: step.id, risk: step.risk, run: step.run }))
-  const approve = options.approve
-  const onDeny = options.onDeny
-  if (steps.length === 0) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Runbook requires at least one step" }))
-  }
-  if (!identities(steps.map((step) => step.id))) {
-    return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Runbook step ids must be unique" }))
-  }
-  return Effect.gen(function*() {
-    const outputs = new Map<string, Out>()
-    const ran: Array<string> = []
-    const skipped: Array<string> = []
-    let previous: Out | undefined = undefined
-    for (const step of steps) {
-      const request: Request<I, Out> = {
-        step: step.id,
-        risk: step.risk,
-        elevated: elevated(step.risk),
-        input,
-        previous
-      }
-      if (gated(step.risk)) {
-        const answer = decide(yield* approve(request))
-        const decision: Pattern.Approved | "denied" = onDeny === "skip"
-          ? yield* Effect.catch(answer, () => Effect.succeed("denied" as const))
-          : yield* answer
-        if (decision === "denied") {
-          skipped.push(step.id)
-          continue
-        }
-      }
-      const output = yield* step.run(request)
-      outputs.set(step.id, output)
-      ran.push(step.id)
-      previous = output
-    }
-    return { outputs: Object.fromEntries(outputs), ran, skipped }
   })
 }

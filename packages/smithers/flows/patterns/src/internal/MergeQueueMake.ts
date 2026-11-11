@@ -1,9 +1,7 @@
 /**
- * Merge-queue pattern: land a set of members in one prioritized order, at a
- * concurrency the queue owns rather than the members.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `MergeQueue`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `MergeQueue.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -11,14 +9,14 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member as Callable } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member as Callable } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * The priority a member gets when it does not declare one.
@@ -209,7 +207,13 @@ const priorityRefusal = (
   return undefined
 }
 
-const validate = (
+/**
+ * The refusal for a queue that cannot run, or `undefined`.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const validate = (
   members: ReadonlyArray<{ readonly id: string; readonly priority?: number | undefined }>,
   concurrency: number,
   priority: number,
@@ -410,74 +414,4 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
     error: Failure.schemaFor([PatternError], queue.map((entry) => entry.member.flow)) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
-}
-
-/**
- * Lands the members in queue order at the queue's concurrency.
- *
- * At the default concurrency of 1 the members land strictly one at a time, in
- * descending priority and then declaration order.
- * Members receive `{ id, position, input }`, as in {@link make}. Priority
- * controls queue order and stays out of member payloads.
- *
- * Under `failurePolicy: "halt"` a failing member fails the queue and no member
- * behind it lands, which is why `halt` runs only at concurrency 1: a wider
- * queue would have started the next member before the failure was known.
- * `run` fails with a `PatternError` for `halt` above concurrency 1, before
- * any member starts. Under `"quarantine"` the failure is recorded, the member
- * does not land, and the members behind it still do. A quarantined entry is
- * `{ id, error }`, untagged, because `landed` and `quarantined` are separate
- * arrays.
- *
- * Both policies read the typed failure channel. A member that throws raises a
- * defect, which fails the queue under either policy and cancels the landings
- * still in flight.
- *
- * `run` snapshots `members`, each member's `id`, `priority`, and `run`, and
- * every option at the call, so a later edit to the caller's array, records,
- * or option object does not alter that run.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Out, E = never, R = never>(
-  input: I,
-  options: RuntimeOptions<I, Out, E, R>
-): Effect.Effect<Result<Out, E>, E | PatternError, R> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the array, a member record, or the option object in between must
-  // not reach it.
-  const members: ReadonlyArray<RuntimeMember<I, Out, E, R>> = options.members.map((member) => ({
-    id: member.id,
-    priority: member.priority,
-    run: member.run
-  }))
-  const concurrency = options.concurrency ?? 1
-  const priority = options.priority ?? DefaultPriority
-  const failurePolicy = options.failurePolicy
-  const invalid = validate(members, concurrency, priority, failurePolicy)
-  if (invalid !== undefined) return Effect.fail(invalid)
-  const queue = ordered(members, priority)
-  return Effect.map(
-    Effect.forEach(
-      queue,
-      (entry) => {
-        const attempt = entry.member.run({
-          id: entry.id,
-          position: entry.position,
-          input
-        })
-        const landed = Effect.map(attempt, (output) => ({ landed: true, id: entry.id, output }) as const)
-        return failurePolicy === "quarantine"
-          ? Effect.catch(landed, (error: E) => Effect.succeed({ landed: false, id: entry.id, error } as const))
-          : landed
-      },
-      { concurrency }
-    ),
-    (outcomes) => ({
-      landed: outcomes.flatMap((outcome) => outcome.landed ? [{ id: outcome.id, output: outcome.output }] : []),
-      quarantined: outcomes.flatMap((outcome) => outcome.landed ? [] : [{ id: outcome.id, error: outcome.error }]),
-      order: queue.map((entry) => entry.id)
-    })
-  )
 }

@@ -33,7 +33,7 @@ import * as FailureSchema from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { PatternError } from "./PatternError.ts"
-import * as ReviewLoop from "./ReviewLoop.ts"
+import * as ReviewLoop from "./ReviewLoop.vibe"
 import * as Trellis from "./Trellis.ts"
 
 /**

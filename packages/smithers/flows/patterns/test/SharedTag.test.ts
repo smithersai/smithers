@@ -10,7 +10,7 @@ import { describe, it } from "@effect/vitest"
 import { Interpreter } from "@smthrs/flow"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as ReviewLoop from "../src/ReviewLoop.ts"
+import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import { execute, member } from "./Execute.ts"
 
 const review = member("sharedTag/review", () => ({ approved: true }), { output: Schema.Unknown })
