@@ -17,7 +17,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   deps: [],
   sources: Input.glob("{src,examples}/**/*.ts"),
   cwd: "packages/smithers/flows/database",
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
+  tests: Smithers.glob("test/**/*.test.ts"),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
   eslintConfigs: [
     Smithers.file("eslint.config.js"),
@@ -136,18 +136,6 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/database" })
 
 /**
- * The package's fault-injection cases.
- *
- * A package opts into the matrix by declaring this key, so
- * `//packages/...:faults` is the whole matrix and nothing central lists which
- * packages are in it. The tier is separate from `test` because its cases are
- * machine-global — they kill process groups, bind ephemeral ports, and read
- * the process table — so they run serially, without coverage, from
- * `vitest.faults.config.ts`.
- */
-const faults = Smithers.FaultSuite({ cwd: "packages/smithers/flows/database" })
-
-/**
  * The security review: `security` reviews the diff against origin/main and
  * `securityAudit` audits every reviewed file.
  *
@@ -254,7 +242,6 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
-    faults,
     fmt,
     lib,
     lint,

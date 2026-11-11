@@ -3,22 +3,16 @@ import * as ReleasePolicy from "../src/internal/ReleasePolicy.ts"
 import * as UnsupportedBackend from "../src/UnsupportedBackend.ts"
 
 /**
- * Negative gates for unsupported backend environment names: rc.0 stores run
- * state in local SQLite only, so the connection strings a 0.x PostgreSQL or
- * PGlite deployment exports have no effect. Ignoring them silently is the
- * failure the release policy was written to remove — a project would run
- * against SQLite believing it ran against PostgreSQL — so each name is
- * announced once, with the sentence the contract fixes.
- *
- * One case per name the contract lists, because the matcher is the thing that
- * can silently stop covering a name.
+ * CLI notices for legacy environment names. Production selects PostgreSQL
+ * through SMITHERS_POSTGRES_URL; SMITHERS_TEST_PG_URL selects PostgreSQL only
+ * in TestDatabase. These assertions pin the notice, not database selection.
  */
 
-describe("names rc.0 ignores (X-01, the release policy)", () => {
+describe("legacy database configuration notices", () => {
   it.each([
     "SMITHERS_TEST_PG_URL",
     "SMITHERS_POSTGRES_MAX_CONNECTIONS"
-  ])("announces %s and does not act on it", (name) => {
+  ])("announces %s", (name) => {
     expect(UnsupportedBackend.ignoredNames({ [name]: "postgres://localhost/smithers" })).toEqual([name])
     expect(UnsupportedBackend.ignoredNotice(name)).toBe(
       `ignored: ${name} has no effect in ${ReleasePolicy.releaseVersion} (use SMITHERS_POSTGRES_URL to select PostgreSQL)`
@@ -38,7 +32,7 @@ describe("names rc.0 ignores (X-01, the release policy)", () => {
     ])
   })
 
-  it("announces nothing about a name rc.0 does support", () => {
+  it("announces nothing about a supported configuration name", () => {
     expect(
       UnsupportedBackend.ignoredNames({
         SMITHERS_BACKEND: "sqlite",

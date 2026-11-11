@@ -3,6 +3,10 @@ import { execFileSync, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/bun-database.ts", import.meta.url))
+const inspect = () => {
+  const output = execFileSync("bun", [fixture], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" })
+  return JSON.parse(output.trim().split("\n").at(-1)!)
+}
 
 // The adapter imports `bun:sqlite`, which Node cannot load, so only a real Bun
 // process can show what it does: its guard probe, its owner-only pre-create and
@@ -11,11 +15,26 @@ const fixture = fileURLToPath(new URL("./fixtures/bun-database.ts", import.meta.
 const bunInstalled = spawnSync("bun", ["--version"], { stdio: "ignore" }).status === 0
 
 describe("Bun database adapter under real Bun", () => {
+  it.skipIf(!bunInstalled)("opens missing paths containing lock text on native Bun", () => {
+    const selected = { value: [{ value: 1 }] }
+    expect(inspect().lockNamedPaths).toEqual({
+      locked: selected,
+      busy: selected,
+      lockedParent: selected,
+      busyParent: selected
+    })
+  })
+
+  it.skipIf(!bunInstalled)("reports missing parents containing lock text on native Bun", () => {
+    const failed = { refused: "failed", created: false }
+    expect(inspect().lockNamedMissingParents).toEqual({ locked: failed, busy: failed })
+  })
+
   it.skipIf(!bunInstalled)("guards, creates and opens read-only on Bun's own driver", () => {
-    const output = execFileSync("bun", [fixture], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" })
+    const { lockNamedPaths: _, lockNamedMissingParents: __, ...original } = inspect()
     const refused = { refused: "unsupported_database_file" }
     const selected = { value: [{ value: 1 }] }
-    expect(JSON.parse(output.trim().split("\n").at(-1)!)).toEqual({
+    expect(original).toEqual({
       memory: selected,
       created: selected,
       // A directory is not a database: the open fails, and is not a refusal.

@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, type Exit, Layer, Result } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import { existsSync, lstatSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fromSqlError } from "../src/DurableWriter.ts"
 import * as ReleasePolicy from "../src/internal/ReleasePolicy.ts"
+import { isLockedError } from "../src/internal/SqliteOpen.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import { holdWriteLock } from "./harness/holdWriteLock.ts"
 import { tempDirectoryFixture } from "./harness/tempDirectoryFixture.ts"
@@ -87,6 +88,16 @@ const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown => {
   expect(Result.isSuccess(found)).toBe(true)
   return Result.isSuccess(found) ? found.success : undefined
 }
+
+describe("SQLite open contention", () => {
+  it.each(["database is locked", "database is busy"])("recognizes a raw lock throw: %s", (message) => {
+    expect(isLockedError(message)).toBe(true)
+  })
+
+  it("does not treat an absent error as contention", () => {
+    expect(isLockedError(undefined)).toBe(false)
+  })
+})
 
 describe("NodeDatabase file permissions", () => {
   it.effect.each([
@@ -336,6 +347,46 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       writeFileSync(filename, "")
 
       expect((yield* build({ filename }))._tag).toBe("Success")
+    }))
+
+  it.effect.each([
+    "database is locked.db",
+    "database is busy.db",
+    "database is locked/fresh.db",
+    "database is busy/fresh.db"
+  ])("opens a missing path containing lock text: %s", (name) =>
+    Effect.gen(function*() {
+      const directory = tempDirectory()
+      mkdirSync(join(directory, name, ".."), { recursive: true })
+      const filename = join(directory, name)
+      expect((yield* build({ filename }))._tag).toBe("Success")
+      expect(existsSync(filename)).toBe(true)
+    }))
+
+  it.effect.each(["database is locked", "database is busy"])(
+    "does not retry creation errors whose path spells a lock: %s",
+    (name) =>
+      Effect.gen(function*() {
+        const filename = join(tempDirectory(), name, "missing", "fresh.db")
+        const defect = defectOf(yield* build({ filename }))
+        expect(defect).toMatchObject({ code: "ENOENT" })
+        expect(existsSync(filename)).toBe(false)
+      })
+  )
+
+  it.effect("leaves a non-directory path failure to the driver", () =>
+    Effect.gen(function*() {
+      const parent = tempFile("database is locked")
+      writeFileSync(parent, "")
+      const defect = defectOf(yield* build({ filename: join(parent, "fresh.db") }))
+      expect(defect).toMatchObject({ code: "ENOTDIR" })
+    }))
+
+  it.effect("leaves an overlong filename failure to the driver", () =>
+    Effect.gen(function*() {
+      const filename = tempFile("database is busy." + "x".repeat(256))
+      const defect = defectOf(yield* build({ filename }))
+      expect(defect).toMatchObject({ code: "ENAMETOOLONG" })
     }))
 
   it.effect("opens a path that does not exist yet", () =>

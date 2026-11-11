@@ -9,6 +9,7 @@
 import { Effect, type Scope } from "effect"
 import { type AddressInfo, createServer, Socket } from "node:net"
 import { pipeline, Transform } from "node:stream"
+import { endpoint } from "../internal/SlowNetworkTarget.ts"
 
 /**
  * Options for {@link proxy}.
@@ -32,8 +33,7 @@ export interface SlowNetworkOptions {
  */
 export const proxy = (url: string, options: SlowNetworkOptions): Effect.Effect<string, never, Scope.Scope> =>
   Effect.gen(function*() {
-    const target = new URL(url)
-    const targetPort = Number(target.port || 5432)
+    const target = endpoint(url)
     const sockets = new Set<Socket>()
     // Equal delays fire in the order they were set, so chunks keep their order.
     const slow = () =>
@@ -58,7 +58,7 @@ export const proxy = (url: string, options: SlowNetworkOptions): Effect.Effect<s
       }
       pipeline(client, slow(), upstream, close)
       pipeline(upstream, slow(), client, close)
-      upstream.connect({ host: target.hostname, port: targetPort })
+      upstream.connect(target)
     })
     const port = yield* Effect.acquireRelease(
       Effect.callback<number>((resume) => {

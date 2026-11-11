@@ -2,7 +2,7 @@
 import { Database } from "bun:sqlite"
 import { Cause, Effect, Exit } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as BunDatabase from "../../src/bun/BunDatabase.ts"
@@ -83,6 +83,12 @@ const lockedZeroX = async () => {
   }
 }
 
+/** Missing parents report their filesystem failure without replaying path text as a lock. */
+const missingParent = async (name: string) => {
+  const filename = join(root, name, "missing", "fresh.db")
+  return { ...await open({ filename }), created: existsSync(filename) }
+}
+
 /** The adapter creates the file and its WAL sidecars owner-only under a permissive umask. */
 const modes = async () => {
   const filename = fresh()
@@ -135,9 +141,21 @@ const corrupt = () => {
 
 try {
   const migrated = seedFlows(fresh())
+  mkdirSync(join(root, "database is locked"))
+  mkdirSync(join(root, "database is busy"))
   const result = {
     memory: await open({ filename: ":memory:" }),
     created: await open({ filename: fresh() }),
+    lockNamedPaths: {
+      locked: await open({ filename: join(root, "database is locked.db") }),
+      busy: await open({ filename: join(root, "database is busy.db") }),
+      lockedParent: await open({ filename: join(root, "database is locked", "fresh.db") }),
+      busyParent: await open({ filename: join(root, "database is busy", "fresh.db") })
+    },
+    lockNamedMissingParents: {
+      locked: await missingParent("database is locked"),
+      busy: await missingParent("database is busy")
+    },
     directory: await open({ filename: root }),
     zeroX: await zeroX(),
     lockedZeroX: await lockedZeroX(),

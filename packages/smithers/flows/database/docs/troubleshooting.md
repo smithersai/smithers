@@ -42,7 +42,11 @@ looks exactly the same to the guard.
 **Cause:** a peer held the file for the whole open ladder, roughly 40 attempts
 with delays capped at 250 ms, plus whatever `busyTimeout` each contended
 attempt spent inside SQLite. The guard never learned whether the file was a 0.x
-database, and refuses rather than waving it through.
+database, and refuses rather than waving it through. A missing file is created
+normally, including when a file or parent directory name contains
+`database is locked` or `database is busy`; those names are not lock errors.
+Filesystem failures such as a missing parent directory are reported immediately,
+even when the path contains those words.
 
 **Fix:** find the holder and stop it. A stale `smithers.db-shm` or `-wal`
 beside the file is a hint that a process exited without closing. If two of your

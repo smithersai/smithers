@@ -2,7 +2,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
-import { configDefaults, defineConfig } from "vitest/config"
+import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   plugins: [vibelang({ project: "tsconfig.test.json" })],
@@ -12,12 +12,7 @@ export default defineConfig({
       fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
     ],
-    // The fault tier lives under `test/faults` and runs from
-    // `vitest.faults.config.ts` instead, serially and without coverage: its
-    // cases kill process groups and bind ports, which no unit suite sharing
-    // this machine can survive beside them.
     include: ["test/**/*.test.{ts,vibe}"],
-    exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
     // Vitest's 5 s default is a wall-clock budget, but no suite in this repo
     // asserts on elapsed time — each is bounded by an explicit iteration,

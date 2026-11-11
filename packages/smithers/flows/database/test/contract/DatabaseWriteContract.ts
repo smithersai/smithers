@@ -2,22 +2,21 @@
  * Shared behavioural contract for every `DurableWriter` implementation's `write`.
  *
  * Modeled on `packages/smithers/flows/engine-store/test/contract/DurableEngineStateContract.ts`
- * and `packages/smithers/flows/kernel/src/test/HostContract.ts`: one suite, run against
- * every implementation, so a new backend cannot land without demonstrating the
- * property its consumers already depend on (issue #97).
+ * and `packages/smithers/flows/kernel/src/test/HostContract.ts`: shared assertions
+ * run against a shared TestDatabase client, two Node SQLite connections, two
+ * independent PostgreSQL pools when configured, and two native Bun connections.
  *
  * The property under test is the one `DurableWriter.write` states normatively: two
  * concurrent write transactions are mutually serialized — they may not both
  * commit results computed from snapshots that exclude each other's writes.
  * SQLite gets this from its single-writer transaction lock; a PostgreSQL
- * implementation must run write transactions at `SERIALIZABLE`, and plain
- * READ COMMITTED fails the suite below (both writers read the same row and one
- * update is lost). The engine store's cycle detector inserts an edge and walks
+ * implementation takes a transaction-scoped advisory lock before reads, or
+ * uses `SERIALIZABLE` with `40001` retry. Plain `READ COMMITTED` without that
+ * locking loses an update when both writers read the same row. The engine store's cycle detector inserts an edge and walks
  * the ancestor graph inside one `write`, and its safety argument — "of two
  * edges that jointly close a cycle, exactly the later one fails" — is exactly
  * these tests.
  */
-import { describe, expect, it } from "@effect/vitest"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
@@ -27,6 +26,7 @@ import * as Fiber from "effect/Fiber"
 import * as Result from "effect/Result"
 import type * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
+import * as Dialect from "../../src/Dialect.ts"
 import type * as DurableWriter from "../../src/DurableWriter.ts"
 import { affectedRows } from "../../src/DurableWriter.ts"
 import * as WriteRetry from "../../src/internal/WriteRetry.ts"
@@ -119,13 +119,27 @@ const firstDifferingByte = (actual: Uint8Array, expected: Uint8Array): number =>
   return -1
 }
 
-export const describeContract = (harness: Harness): void => {
+/** The same assertions use Vitest on Node and bun:test on native Bun. */
+interface ContractTests {
+  readonly describe: (name: string, body: () => void) => void
+  readonly expect: (actual: unknown) => {
+    readonly toBe: (expected: unknown) => void
+    readonly toEqual: (expected: unknown) => void
+    readonly toHaveLength: (expected: number) => void
+  }
+  readonly it: {
+    readonly effect: (name: string, body: () => Effect.Effect<unknown, unknown>) => void
+    readonly live: (name: string, body: () => Effect.Effect<unknown, unknown>) => void
+  }
+}
+
+export const describeContract = (harness: Harness, { describe, expect, it }: ContractTests): void => {
   describe(`DurableWriter.write contract (${harness.label})`, () => {
     // Both concurrent cases run as real assertions on every harness. A
     // multi-connection SQLite harness used to trip Effect's upstream
     // `BEGIN`-failure rollback defect ("cannot rollback - no transaction is
     // active", Effect-TS/effect#7235), fixed upstream by #7236 and released in
-    // effect@4.0.0-rc.109; the pinned rc.112 surfaces that contention as a
+    // effect@4.0.0-rc.109; the current driver surfaces that contention as a
     // typed `SqlError` instead, which the assertion below pins.
     it.live("does not lose an update when two writers read-modify-write one row concurrently", () =>
       Effect.gen(function*() {
@@ -412,7 +426,9 @@ export const describeContract = (harness: Harness): void => {
           const blob = payloadBytes(size)
           const result = yield* harness.run((context) =>
             Effect.gen(function*() {
-              yield* context.a.sql`CREATE TABLE blob_rows (id INTEGER PRIMARY KEY, payload BLOB NOT NULL)`
+              yield* context.a.sql`CREATE TABLE blob_rows (id INTEGER PRIMARY KEY, payload ${
+                context.a.sql.literal(Dialect.isPostgres(context.a.sql) ? "BYTEA" : "BLOB")
+              } NOT NULL)`
               yield* context.a.write(
                 context.a.sql`INSERT INTO blob_rows (id, payload) VALUES (1, ${blob})`
               )
@@ -439,7 +455,9 @@ export const describeContract = (harness: Harness): void => {
         Effect.gen(function*() {
           const result = yield* harness.run((context) =>
             Effect.gen(function*() {
-              yield* context.a.sql`CREATE TABLE empty_blob_rows (id INTEGER PRIMARY KEY, payload BLOB NOT NULL)`
+              yield* context.a.sql`CREATE TABLE empty_blob_rows (id INTEGER PRIMARY KEY, payload ${
+                context.a.sql.literal(Dialect.isPostgres(context.a.sql) ? "BYTEA" : "BLOB")
+              } NOT NULL)`
               yield* context.a.write(
                 context.a.sql`INSERT INTO empty_blob_rows (id, payload) VALUES (1, ${new Uint8Array(0)})`
               )

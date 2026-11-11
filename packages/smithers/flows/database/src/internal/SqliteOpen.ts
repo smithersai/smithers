@@ -77,16 +77,18 @@ const migrationLedgerTable = "flows_migrations"
  * file a peer holds.
  *
  * Deliberately narrower than `WriteRetry`'s classification, and not shared
- * with it. A failure here is a raw throw from the driver's constructor, so it
- * carries no `SqlError` and no `code` to key off, and the Postgres SQLSTATEs
- * and the rollback text that policy also replays cannot come out of opening a
- * SQLite file. Every native driver's table probe rethrows on this same
- * predicate, so the probe and the ladder give up on a peer together.
+ * with it. Raw SQLite throws do not share one structured lock code across
+ * drivers. Filesystem errors instead identify a `syscall` and quote the
+ * caller's path, so they must not be classified by lock text in that path.
+ * Postgres SQLSTATEs and rollback text cannot come out of opening a SQLite
+ * file. Every native driver's table probe rethrows on this same predicate,
+ * so the probe and the ladder give up on a peer together.
  *
  * @category refinements
  * @since 1.0.0
  */
 export const isLockedError = (error: unknown): boolean => {
+  if (error instanceof Error && "syscall" in error) return false
   const text = String(error)
   return text.includes("database is locked") || text.includes("database is busy")
 }
