@@ -66,6 +66,30 @@ const failure = <A>(effect: Effect.Effect<A, SandboxTools.ToolFailure>) => Effec
 
 const slow = { timeout: 60_000 }
 
+const sameSecond = `tries=0
+while :; do
+  start=$(date +%s); while [ "$(date +%s)" = "$start" ]; do :; done
+  second=$(date +%s)
+  touch version.txt && git add version.txt && printf '1.2.4\\n' > version.txt
+  [ "$(date +%s)" = "$second" ] && break
+  tries=$((tries + 1)); [ "$tries" -lt 5 ] || exit 70
+  printf '1.2.3\\n' > version.txt
+done
+while [ "$(date +%s)" = "$second" ]; do :; done`
+
+/**
+ * Git trusts an index entry's recorded stat unless the entry is at least as new as the index file, in whole seconds.
+ * In one second this rewrites `version.txt`'s index entry and then the file at the same size (`1.2.3` to `1.2.4`),
+ * then lets that second pass, so a copy of the index stamped at copy time is newer than both and `git add` would read
+ * the edit as unchanged (#3431).
+ */
+const sameSecondEdit = (cwd: string) => {
+  writeFileSync(join(cwd, "version.txt"), "1.2.3\n")
+  git(cwd, "add", "version.txt")
+  git(cwd, "commit", "-q", "-m", "version")
+  execFileSync("sh", ["-c", sameSecond], { cwd })
+}
+
 describe("SandboxTools.resolve", () => {
   it("takes a path under the workdir and refuses one that leaves it", () => {
     expect(SandboxTools.resolve("/workspace", "src/a.ts")).toBe("/workspace/src/a.ts")
@@ -578,6 +602,19 @@ describe("SandboxTools checkpoint and restore", () => {
   )
 
   it.effect(
+    "carries a same-size edit made in the second the checkout's index was written",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          sameSecondEdit(session.workdir)
+          const saved = yield* SandboxTools.checkpoint(session)
+          expect(new TextDecoder().decode(saved.patch)).toContain("-1.2.3\n+1.2.4\n")
+        })
+      ),
+    slow
+  )
+
+  it.effect(
     "carries tracked, untracked and deleted changes to a fresh clone at another commit",
     () =>
       Effect.gen(function*() {
@@ -910,6 +947,23 @@ describe("SandboxTools rebase", () => {
             expect(status(wc)).toEqual([" M M", "?? S"])
           }), { git: false })
       }),
+    slow
+  )
+
+  it.effect(
+    "stages a same-size edit made in the second the checkout's index was written",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const wc = session.workdir
+          sameSecondEdit(wc)
+          const head = git(wc, "rev-parse", "HEAD").trim()
+          const current = yield* run(session, { branch: "main", onto: head })
+          expect(current).toMatchObject({ _tag: "Current" })
+          const tree = (current as { readonly tree: string }).tree
+          expect(git(wc, "cat-file", "blob", `${tree}:version.txt`)).toBe("1.2.4\n")
+        })
+      ),
     slow
   )
 
