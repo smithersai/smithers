@@ -1,6 +1,6 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { Effect, Layer } from "effect"
-import { HttpRouter, HttpServer } from "effect/http"
+import { HttpRouter, HttpServer, HttpServerRequest } from "effect/http"
 import { RpcSerialization } from "effect/rpc"
 import { createServer, request as httpsRequest } from "node:https"
 import { describe, expect, it } from "vitest"
@@ -22,7 +22,7 @@ const request = (url: string, origin?: string, forwardedProto?: string) =>
   })
 
 describe("control browser origin", () => {
-  it.each([undefined, "https:"] as const)(
+  it.each([undefined, "http:", "https:"] as const)(
     "guards the absolute TLS transport URL with external scheme %s",
     async (scheme) => {
       const server = HttpRouter.serve(
@@ -71,6 +71,50 @@ describe("control browser origin", () => {
           }
         }).pipe(Effect.provide(server), Effect.scoped)
       )
+    }
+  )
+
+  it.each([undefined, "http:", "https:"] as const)(
+    "requires trusted fallback metadata when the request URL is relative (%s)",
+    async (scheme) => {
+      // A host whose adapter supplies only a relative URL. Keep every other
+      // request field and the real router and RPC handlers intact.
+      const relative = HttpRouter.middleware((httpEffect) =>
+        Effect.gen(function*() {
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const withoutScheme = Object.create(request) as HttpServerRequest.HttpServerRequest
+          Object.defineProperty(withoutScheme, "originalUrl", { value: "/rpc" })
+          return yield* httpEffect.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, withoutScheme))
+        })
+      ).layer
+      await Effect.runPromise(Effect.acquireUseRelease(
+        Effect.sync(() =>
+          HttpRouter.toWebHandler(
+            ControlServer.layerHttp.pipe(
+              Layer.provide([
+                layerNoop,
+                layerNoopAuth(),
+                RpcSerialization.layerNdjson,
+                Layer.succeed(ControlServer.RequestScheme, scheme)
+              ]),
+              Layer.provide(relative)
+            ),
+            { disableLogger: true }
+          )
+        ),
+        ({ handler }) =>
+          Effect.gen(function*() {
+            for (const originScheme of ["http:", "https:"] as const) {
+              // The forwarding header never supplies the missing scheme.
+              const response = yield* Effect.promise(() =>
+                handler(request("https://control.example/rpc", `${originScheme}//control.example`, "https"))
+              )
+              expect([originScheme, response.status]).toEqual([originScheme, originScheme === scheme ? 200 : 403])
+              yield* Effect.promise(() => response.text())
+            }
+          }),
+        ({ dispose }) => Effect.promise(dispose)
+      ))
     }
   )
 

@@ -677,10 +677,11 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 ## ControlServer
 
 An Origin must match the endpoint's scheme and Host. Hosts with relative request
-URLs provide `RequestScheme`, e.g. `Layer.succeed(ControlServer.RequestScheme,
-"https:")` for TLS or a trusted TLS terminator. Without it, browser origins are
-refused; requests without Origin still work. Forwarding headers are not trusted
-automatically. Absolute Web request URLs already supply the scheme.
+URLs or a trusted TLS terminator provide `RequestScheme`, e.g.
+`Layer.succeed(ControlServer.RequestScheme, "https:")`. Without it, a relative
+request URL refuses browser origins; requests without Origin still work.
+Forwarding headers are not trusted automatically. Explicit host metadata takes
+precedence over an absolute adapter URL; otherwise that URL supplies the scheme.
 
 | Export      | Meaning                                                                                                                                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
