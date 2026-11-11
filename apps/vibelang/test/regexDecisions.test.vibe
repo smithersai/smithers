@@ -1,13 +1,38 @@
 // The RegExp tests the history proves (0018 third-lane batch 24) answer as the patterns they replaced, natively.
 import { describe, expect, it } from "@effect/vitest"
-import { ownsLine, sentenceEnded } from "../src/history/seedDecision.vibe"
-import { trailerLine, trailerParagraph } from "../src/history/trailerDecision.vibe"
+import { ownsLine, sentenceEnded, titleScope } from "../src/history/seedDecision.vibe"
+import { mythicalName, trailerLine, trailerName, trailerParagraph } from "../src/history/trailerDecision.vibe"
 import { trailerOf } from "../src/history/Sequencer.vibe"
 
 const ENDED = /[.!?]["'`)\]]*$/
 const OWN_LINE = /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/
 const TRAILER = /^[A-Za-z0-9][A-Za-z0-9-]*:/
 const CONTINUATION = /^[ \t]/
+const MYTHICAL = /^Mythical:\s*(m\d+)$/
+
+const CONVENTIONAL = /^([a-z]+)(?:\(([^)]*)\))?!?:\s/
+const PREFIX = /^([A-Za-z][\w./-]*):\s/
+
+// `scopeOf` as it was before batch 25, verbatim.
+function replacedScopeOf(title: string): string {
+  const conventional = CONVENTIONAL.exec(title)
+  if (conventional !== null) {
+    const scope = (conventional[2] ?? "").split(",")[0]!.trim()
+    return scope !== "" ? scope : conventional[1]!
+  }
+  const prefix = PREFIX.exec(title)
+  return prefix === null ? "" : prefix[1]!.toLowerCase()
+}
+
+// `trailerOf` as it was before batch 25, verbatim: the reference the proved trailerName answers as.
+function replacedTrailerOf(message: string): string {
+  const paragraphs = message.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").replace(/\n+$/, "").split(/\n\n+/)
+  if (paragraphs.length < 2) return ""
+  const paragraph = paragraphs[paragraphs.length - 1]!.split("\n")
+  if (!trailerParagraph(paragraph)) return ""
+  const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match): match is RegExpExecArray => match !== null)
+  return named === undefined ? "" : named[1]!
+}
 const alphabet = ["a", "Z", "7", ".", "!", "?", ")", "]", "'", "\"", "`", ":", " ", "\t", "-", "*", "•", "(", "\n", "_", "M"]
 
 function* strings(seed: number, count: number) {
@@ -49,5 +74,53 @@ describe("the history's proved RegExp tests", () => {
     }
     expect(trailerOf("fix: x\n\nMythical: m7\n")).toBe("m7")
     expect(trailerOf("fix: x\n\nSee Mythical: m7\n")).toBe("")
+  })
+  it("name the mythical commit a trailer line names, as the replaced capture did", () => {
+    expect(mythicalName("Mythical: m7")).toBe("m7")
+    expect(mythicalName("Mythical:\u00a0 m12")).toBe("m12")
+    expect(mythicalName("Mythical: m")).toBe("")
+    expect(mythicalName("Mythical: m7x")).toBe("")
+    expect(mythicalName("See Mythical: m7")).toBe("")
+    const units = ["Mythical:", "Mythical: m", "m", "7", "0", " ", "\t", "\u00a0", "x", ":", "M"]
+    let state = 27
+    const next = () => (state = (state * 1103515245 + 12345) % 2147483648)
+    for (let n = 0; n < 3000; n++) {
+      let line = ""
+      for (let i = next() % 5; i > 0; i--) line += units[next() % units.length]
+      expect(mythicalName(line)).toBe(MYTHICAL.exec(line)?.[1] ?? "")
+    }
+  })
+  it("read a message's trailer as the replaced split, replace and exec did", () => {
+    expect(trailerName(["fix: x", "", "Mythical: m7"])).toBe("m7")
+    expect(trailerName(["Mythical: m7"])).toBe("")
+    expect(trailerName(["", "", "Mythical: m7"])).toBe("m7")
+    expect(trailerName(["", "Mythical: m7"])).toBe("")
+    expect(trailerOf("fix: x\r\n\r\nMythical: m7\r\n\r\n")).toBe("m7")
+    const pool = ["fix: x", "", "  ", "Mythical: m7", "Mythical:m12", "Mythical:  m3 ", "Mythical: m", "See Mythical: m7",
+      "Co-Authored-By: A", "  wrapped", "\tcont", "prose", "Mythical: m7x", "Mythical: m9\r", "Key: v\r", "\r"]
+    let state = 28
+    const next = () => (state = (state * 1103515245 + 12345) % 2147483648)
+    for (let n = 0; n < 5000; n++) {
+      const lines: Array<string> = []
+      for (let i = next() % 7; i > 0; i--) lines.push(pool[next() % pool.length]!)
+      const message = lines.join(next() % 2 === 0 ? "\n" : "\r\n") + ["", "\n", "\n\n", "\r\n"][next() % 4]
+      expect(trailerOf(message)).toBe(replacedTrailerOf(message))
+    }
+  })
+  it("read a title's scope as the replaced captures did", () => {
+    expect(titleScope("fix(compiler, lsp)!: x")).toBe("compiler")
+    expect(titleScope("fix( , lsp): x")).toBe("fix")
+    expect(titleScope("fix: x")).toBe("fix")
+    expect(titleScope("Docs.Site: x")).toBe("docs.site")
+    expect(titleScope("fix(x: y")).toBe("")
+    expect(titleScope("fix x")).toBe("")
+    const units = ["fix", "a", "Z", "(", ")", ",", " ", "\t", "\u00a0", "!", ":", ".", "/", "-", "_", "9", "\u2028"]
+    let state = 29
+    const next = () => (state = (state * 1103515245 + 12345) % 2147483648)
+    for (let n = 0; n < 5000; n++) {
+      let title = ""
+      for (let i = next() % 9; i > 0; i--) title += units[next() % units.length]
+      expect(titleScope(title)).toBe(replacedScopeOf(title))
+    }
   })
 })

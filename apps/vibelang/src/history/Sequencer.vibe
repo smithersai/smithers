@@ -10,7 +10,7 @@ import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
 import { epicByTitle, foldTitle, planStep } from "./stackDecision.vibe"
 import { followCut, fresh } from "../core/followDecision.vibe"
-import { trailerParagraph } from "./trailerDecision.vibe"
+import { trailerName } from "./trailerDecision.vibe"
 
 // Decode failures report only the boundary, never stored titles, tasks or notes.
 const checkedHistory = (value: unknown) => Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(HistorySchema)(value), () => new Error("Invalid history state")))
@@ -61,20 +61,13 @@ export interface MainCommit {
   readonly message: string
 }
 
-const MYTHICAL = /^Mythical:\s*(m\d+)$/
-
 /**
  * The mythical commit a real commit's message names: the first `Mythical: m<n>` line of its trailer paragraph, the
  * message's last paragraph after the title when every line there is a `Key: value` trailer (or continues one). A squash
- * body or prose that quotes a trailer names none.
+ * body or prose that quotes a trailer names none. `\r\n` endings read as `\n`: trimming each line drops the `\r`.
  */
 export function trailerOf(message: string): string {
-  const paragraphs = message.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").replace(/\n+$/, "").split(/\n\n+/)
-  if (paragraphs.length < 2) return ""
-  const paragraph = paragraphs[paragraphs.length - 1]!.split("\n")
-  if (!trailerParagraph(paragraph)) return ""
-  const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match): match is RegExpExecArray => match !== null)
-  return named === undefined ? "" : named[1]!
+  return trailerName(message.split("\n").map((line) => line.trimEnd()))
 }
 
 function answered(id: string, decision: Decision): Answer {

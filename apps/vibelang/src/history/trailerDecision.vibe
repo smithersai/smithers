@@ -1,5 +1,6 @@
-// Which paragraph of a commit message is its trailer (0018, third-lane batch 24). `Sequencer.vibe` trailerOf calls
-// these; its line splitting and the `Mythical:` capture stay outside the regular-expression subset.
+// Which paragraph of a commit message is its trailer and which mythical commit it names (0018, third-lane batches 24
+// and 25). `Sequencer.vibe` trailerOf calls trailerName on the message's lines trimmed at the end; the split into lines
+// and the trim stay outside the proof.
 
 /** A trailer line: a `Key:` line, or after the first one a line continuing the one before (a space or a tab). */
 //@ verify
@@ -22,4 +23,107 @@ export function trailerParagraph(lines: ReadonlyArray<string>): boolean {
     i += 1
   }
   return true
+}
+
+/** A decimal digit's UTF-16 code unit. */
+//@ verify
+//@ ensures \result == (48 <= unit && unit <= 57)
+export function digitUnit(unit: number): boolean {
+  return 48 <= unit && unit <= 57
+}
+
+/** Where the digits that end the first `end` units of `line` start: `end` when the unit before it is no digit. */
+//@ verify
+//@ requires 0 <= end && end <= line.length
+//@ decreases end
+//@ ensures 0 <= \result && \result <= end
+//@ ensures forall(i, \result <= i && i < end ==> digitUnit(line.charCodeAt(i)))
+//@ ensures \result == 0 || !digitUnit(line.charCodeAt(\result - 1))
+export function digitsStart(line: string, end: number): number {
+  if (end === 0 || !digitUnit(line.charCodeAt(end - 1))) return end
+  return digitsStart(line, end - 1)
+}
+
+/**
+ * The mythical commit a trailer line names: the line is `Mythical:`, spaces and `m<digits>`, whole, and the name is
+ * the `m` and the digits that end it (no other suffix of the line has that form); `""` for any other line.
+ */
+//@ verify
+//@ ensures \result != "" ==> \matches("^Mythical:\\s*m\\d+$", line)
+//@ ensures \result != "" ==> \result.length >= 2 && \result.charCodeAt(0) == 109 && line.endsWith(\result)
+//@ ensures \result != "" ==> forall(i, 1 <= i && i < \result.length ==> digitUnit(\result.charCodeAt(i)))
+//@ ensures !\matches("^Mythical:\\s*m\\d+$", line) ==> \result == ""
+export function mythicalName(line: string): string {
+  if (!/^Mythical:\s*m\d+$/.test(line)) return ""
+  const at = digitsStart(line, line.length)
+  if (at < 1 || at === line.length || line.charCodeAt(at - 1) !== 109) return ""
+  return line.slice(at - 1)
+}
+
+/** Where the text of the first `end` lines ends: after the last nonblank one, 0 when all are blank. */
+//@ verify
+//@ requires 0 <= end && end <= lines.length
+//@ decreases end
+//@ ensures 0 <= \result && \result <= end
+//@ ensures \result == 0 || lines[\result - 1] != ""
+//@ ensures forall(i, \result <= i && i < end ==> lines[i] == "")
+export function textEnd(lines: ReadonlyArray<string>, end: number): number {
+  if (end === 0 || lines[end - 1] !== "") return end
+  return textEnd(lines, end - 1)
+}
+
+/**
+ * Where the last paragraph up to line `from` starts, looking down to line 2: the last nonblank line after a blank line
+ * that has a line before it (two line breaks in a row). -1 when there is none: one paragraph.
+ */
+//@ verify
+//@ decreases from + 1
+//@ ensures \result == -1 || (2 <= \result && \result <= from && \result < lines.length && lines[\result - 1] == "" && lines[\result] != "")
+//@ ensures from < lines.length ==> forall(s, 2 <= s && s <= from && s > \result ==> !(lines[s - 1] == "" && lines[s] != ""))
+export function paragraphStart(lines: ReadonlyArray<string>, from: number): number {
+  if (from < 2 || from >= lines.length) return -1
+  if (lines[from - 1] === "" && lines[from] !== "") return from
+  return paragraphStart(lines, from - 1)
+}
+
+/** The first line from `at` before `end` that names a mythical commit, or -1. */
+//@ verify
+//@ decreases end - at
+//@ ensures \result == -1 || (at <= \result && \result < end && 0 <= \result && \result < lines.length && mythicalName(lines[\result]) != "")
+//@ ensures 0 <= at && end <= lines.length ==> forall(i, at <= i && i < end && (\result == -1 || i < \result) ==> mythicalName(lines[i]) == "")
+export function firstNamed(lines: ReadonlyArray<string>, at: number, end: number): number {
+  if (at < 0 || at >= end || at >= lines.length) return -1
+  if (mythicalName(lines[at]!) !== "") return at
+  return firstNamed(lines, at + 1, end)
+}
+
+/** The name line `at` gives, `""` past the lines. */
+//@ verify
+//@ ensures \result == (0 <= at && at < lines.length ? mythicalName(lines[at]) : "")
+export function nameAt(lines: ReadonlyArray<string>, at: number): string {
+  return 0 <= at && at < lines.length ? mythicalName(lines[at]!) : ""
+}
+
+/** Where the last paragraph of a message's lines starts, -1 when it has one paragraph. */
+//@ verify
+//@ ensures \result == paragraphStart(lines, textEnd(lines, lines.length) - 1)
+//@ ensures \result == -1 || (2 <= \result && \result < textEnd(lines, lines.length))
+export function lastParagraph(lines: ReadonlyArray<string>): number {
+  return paragraphStart(lines, textEnd(lines, lines.length) - 1)
+}
+
+/**
+ * The mythical commit a message names, from its lines trimmed at the end: the first `Mythical:` line of its last
+ * paragraph, when a paragraph comes before that one and every line of it is a trailer line; else `""`.
+ */
+//@ verify
+//@ ensures lastParagraph(lines) == -1 ==> \result == ""
+//@ ensures lastParagraph(lines) >= 0 && !forall(i, lastParagraph(lines) <= i && i < textEnd(lines, lines.length) && i < lines.length ==> trailerLine(lines[i], i - lastParagraph(lines))) ==> \result == ""
+//@ ensures lastParagraph(lines) >= 0 && forall(i, lastParagraph(lines) <= i && i < textEnd(lines, lines.length) && i < lines.length ==> trailerLine(lines[i], i - lastParagraph(lines))) ==> \result == nameAt(lines, firstNamed(lines, lastParagraph(lines), textEnd(lines, lines.length)))
+export function trailerName(lines: ReadonlyArray<string>): string {
+  const start = lastParagraph(lines)
+  if (start < 0) return ""
+  const end = textEnd(lines, lines.length)
+  if (!trailerParagraph(lines.slice(start, end))) return ""
+  return nameAt(lines, firstNamed(lines, start, end))
 }

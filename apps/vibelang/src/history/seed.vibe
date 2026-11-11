@@ -8,7 +8,7 @@
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
-import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
+import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded, titleScope } from "./seedDecision.vibe"
 
 // An area is the proved decision module's (seedDecision.vibe); this module names the bootstrap's areas.
 export type { Area }
@@ -191,18 +191,9 @@ export const AREAS: ReadonlyArray<Area> = [
 /** The epic for commits no area names: the project's first steps and anything without a scope. */
 export const FOUNDATIONS = "Foundations"
 
-const CONVENTIONAL = /^([a-z]+)(?:\(([^)]*)\))?!?:\s/
-const PREFIX = /^([A-Za-z][\w./-]*):\s/
-
 /** The scope a commit title names: `type(scope):`'s first scope, else a bare `scope:` prefix, else `""`. */
 export function scopeOf(title: string): string {
-  const conventional = CONVENTIONAL.exec(title)
-  if (conventional !== null) {
-    const scope = (conventional[2] ?? "").split(",")[0]!.trim()
-    return scope !== "" ? scope : conventional[1]!
-  }
-  const prefix = PREFIX.exec(title)
-  return prefix === null ? "" : prefix[1]!.toLowerCase()
+  return titleScope(title)
 }
 
 /** The title of the epic a commit with `title` belongs to. */

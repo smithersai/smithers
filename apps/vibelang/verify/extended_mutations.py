@@ -5765,3 +5765,29 @@ cases.extend([
 ('src/history/trailerDecision.vibe', 're-paragraph-all', 'trailerParagraph', 'return false\n', 'return true\n', 'one other line disqualifies the paragraph'),
 ('src/history/trailerDecision.vibe', 're-paragraph-index', 'trailerParagraph', 'trailerLine(lines[i]!, i)', 'trailerLine(lines[i]!, 0)', 'each line knows its position'),
 ])
+
+# Lane vl-proveall3, batch 25: the trailer's paragraphs and `Mythical:` name (src/history/trailerDecision.vibe).
+cases.extend([
+('src/history/trailerDecision.vibe', 're-name-m', 'mythicalName', 'line.charCodeAt(at - 1) !== 109', 'line.charCodeAt(at - 1) !== 77', 'the name starts with a lower-case m'),
+('src/history/trailerDecision.vibe', 're-name-slice', 'mythicalName', 'return line.slice(at - 1)', 'return line.slice(at)', 'the name keeps its m'),
+('src/history/trailerDecision.vibe', 're-name-pattern', 'mythicalName', '/^Mythical:\\s*m\\d+$/', '/^Mythical:.*m\\d+$/', 'only spaces come between the key and the name'),
+('src/history/trailerDecision.vibe', 're-digits-step', 'digitsStart', 'return digitsStart(line, end - 1)', 'return end - 1', 'every digit of the run is counted'),
+('src/history/trailerDecision.vibe', 're-text-blank', 'textEnd', 'lines[end - 1] !== ""', 'lines[end - 1] === ""', 'text ends after its last nonblank line'),
+('src/history/trailerDecision.vibe', 're-paragraph-blank', 'paragraphStart', 'lines[from - 1] === "" && ', '', 'a paragraph starts after a blank line'),
+('src/history/trailerDecision.vibe', 're-paragraph-two', 'paragraphStart', 'if (from < 2 ', 'if (from < 1 ', 'a paragraph break needs a line before the blank one'),
+('src/history/trailerDecision.vibe', 're-named-next', 'firstNamed', 'return firstNamed(lines, at + 1, end)', 'return -1', 'later lines are read too'),
+('src/history/trailerDecision.vibe', 're-last-end', 'lastParagraph', 'textEnd(lines, lines.length) - 1)', 'textEnd(lines, lines.length))', 'the last paragraph starts before the text end'),
+('src/history/trailerDecision.vibe', 're-trailer-slice', 'trailerName', 'lines.slice(start, end)', 'lines.slice(start + 1, end)', 'the whole last paragraph is a trailer'),
+])
+
+# Lane vl-proveall3, batch 25: a commit title's scope (src/history/seedDecision.vibe titleScope).
+cases.extend([
+('src/history/seedDecision.vibe', 'scope-lower-step', 'lowerEnd', 'return lowerEnd(text, at + 1)', 'return at + 1', 'the type is every lower-case letter'),
+('src/history/seedDecision.vibe', 'scope-unit-next', 'unitFrom', 'return unitFrom(text, at + 1, unit)', 'return -1', 'the search reads on'),
+('src/history/seedDecision.vibe', 'scope-end-comma', 'scopeEnd', 'comma >= 0 && comma < close ? comma : close', 'close', 'the first scope ends at its comma'),
+('src/history/seedDecision.vibe', 'scope-paren-open', 'parenScope', 'title.charCodeAt(open) !== 40', 'title.charCodeAt(open) !== 41', 'a scope opens with a parenthesis'),
+('src/history/seedDecision.vibe', 'scope-paren-trim', 'parenScope', 'return title.slice(open + 1, end).trim()', 'return title.slice(open + 1, end)', 'a scope is trimmed'),
+('src/history/seedDecision.vibe', 'scope-blank-type', 'titleScope', 'scope !== "" ? scope : title.slice(0, lowerEnd(title, 0))', 'scope', 'a blank scope falls back to the type'),
+('src/history/seedDecision.vibe', 'scope-prefix-lower', 'titleScope', 'title.slice(0, colon).toLowerCase()', 'title.slice(0, colon)', 'a bare prefix reads in lower case'),
+('src/history/seedDecision.vibe', 'scope-prefix-pattern', 'titleScope', '/^[A-Za-z][\\w./-]*:\\s/', '/^[A-Za-z][\\w./-]*:/', 'a bare prefix is followed by a space'),
+])
