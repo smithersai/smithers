@@ -1,0 +1,14 @@
+import { expect, it } from "@effect/vitest"
+import { quickstart } from "../examples/quickstart.vibe"
+
+it.effect("runs the whole cache cycle the quickstart prints", effect () => {
+  try TestClock.setTime(1_757_000_000_000)
+  const { put, cycle, bounded, evictions } = try quickstart()
+  expect(put).toBe("Inserted")
+  expect(cycle).toEqual({
+    head: Option.some({ artifact: "dist/server.mjs" }),
+    recorded: Option.some({ artifact: "dist/server.js" })
+  })
+  expect(bounded).toEqual({ fresh: true, stale: false })
+  expect(evictions).toEqual({ stale: false, current: true })
+})

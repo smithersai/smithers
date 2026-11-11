@@ -6,7 +6,12 @@ import { Smithers } from "@smthrs/targets"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }],
   cwd: "packages/smithers/flows/step-cache"
 })
 

@@ -10,6 +10,9 @@ production SQLite implementation over an in-memory database, so nothing here is
 a stub and no file is written. By the end you will have recorded a result, read
 it back two different ways, seen a bound refuse a stale row, and evicted a row
 under a fence.
+Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same cycle as
+`effect` functions.
 
 ## Prerequisites
 
@@ -177,6 +180,79 @@ store, not to the store: deriving the digest, which is the
 [content-addressing contract](/docs/concepts/content-addressing/), and deciding what a declared
 `ttlMs` means, which is
 [`@smthrs/engine-store`](/api/engine-store)'s to journal.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) each stage is an `effect`
+function and `try` runs each store call. The clock comes from Effect's `Clock`
+instead of `Date.now()`, so a test can fix the time the age bound measures
+against, and one `provide` block supplies `TestCacheStore.layer` to all four
+stages.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { CacheStore } from "@smthrs/step-cache"
+import * as TestCacheStore from "@smthrs/step-cache/test/TestCacheStore"
+
+const digest = "compile-server-v1"
+const runA = { runId: "run-a", eventSeq: 7 }
+
+/** Records one result a minute in the past; answers `Inserted`, `ExistingSame`, or `Conflict`. */
+export effect function record() {
+  const cache = try CacheStore.CacheStore
+  const outcome = try cache.put({
+    keyDigest: digest,
+    result: { artifact: "dist/server.js" },
+    meta: { durationMs: 1_820 },
+    createdAtMs: (try Clock.currentTimeMillis) - 60_000,
+    recordedRunId: runA.runId,
+    recordedEventSeq: runA.eventSeq
+  })
+  return outcome._tag
+}
+
+/** Moves the head to a second run's result; the ledger still answers `run-a` its own bytes. */
+export effect function cycle() {
+  const cache = try CacheStore.CacheStore
+  try cache.evict(digest)
+  try cache.put({
+    keyDigest: digest,
+    result: { artifact: "dist/server.mjs" },
+    meta: { durationMs: 900 },
+    createdAtMs: try Clock.currentTimeMillis,
+    recordedRunId: "run-b",
+    recordedEventSeq: 2
+  })
+  const head = try cache.get(digest)
+  const recorded = try cache.get(digest, { recordedBy: runA })
+  return { head: Option.map(head, (entry) => entry.result), recorded: Option.map(recorded, (entry) => entry.result) }
+}
+
+/** An age bound is a read policy: the minute-old row is fresh at two minutes and stale at ten seconds. */
+export effect function bounded() {
+  const cache = try CacheStore.CacheStore
+  const fresh = try cache.get(digest, { recordedBy: runA, maxAgeMs: 120_000 })
+  const stale = try cache.get(digest, { recordedBy: runA, maxAgeMs: 10_000 })
+  return { fresh: Option.isSome(fresh), stale: Option.isSome(stale) }
+}
+
+/** A fenced eviction deletes only the head whose provenance it names. */
+export effect function evictions() {
+  const cache = try CacheStore.CacheStore
+  const stale = try cache.evict(digest, { ifRecordedBy: runA })
+  const current = try cache.evict(digest, { ifRecordedBy: { runId: "run-b", eventSeq: 2 } })
+  return { stale, current }
+}
+
+/** The whole cycle against the production SQLite store over an in-memory database. */
+export effect function quickstart() {
+  provide TestCacheStore.layer {
+    return { put: try record(), cycle: try cycle(), bounded: try bounded(), evictions: try evictions() }
+  }
+}
+```
 
 ## Next steps
 
