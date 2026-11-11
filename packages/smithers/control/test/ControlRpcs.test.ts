@@ -184,7 +184,7 @@ describe("ControlRpcs", () => {
     expect((result?.payload as { readonly principal: { readonly id: string } }).principal.id).toBe("server")
   })
 
-  it("refuses an approval decision from the anonymous loopback principal and leaves the plan undecided", async () => {
+  it("refuses an approval decision or a signal from the anonymous loopback principal and leaves the plan undecided", async () => {
     // A loopback listener with no operator token authenticates every caller as
     // `loopback`/`anonymous`; any local process could otherwise approve (#1783).
     const loopback: Principal = { id: "loopback", kind: "anonymous", stampedAt: 1 }
@@ -212,11 +212,19 @@ describe("ControlRpcs", () => {
           envelope: card.envelope,
           idempotencyKey: "run"
         })
-        return { approve, deny, run }
+        // An answer to a person's question is the same decision as an
+        // approval, and admission cannot tell which signal will answer one,
+        // so the signal is refused before any run is read.
+        const signal = yield* Effect.flip(rpc.Signal({
+          runId: "run-1",
+          signal: { name: "coding-clarification#1", payload: "yes, proceed" },
+          idempotencyKey: "signal"
+        }))
+        return { approve, deny, run, signal }
       }).pipe(Effect.provide(anonymous), Effect.scoped)
     )
 
-    for (const refused of [observed.approve, observed.deny]) {
+    for (const refused of [observed.approve, observed.deny, observed.signal]) {
       expect(refused).toBeInstanceOf(Unauthorized)
       expect((refused as Unauthorized).message).toBe("An operator credential is required")
     }

@@ -21,7 +21,8 @@ A gateway bearer needs explicit delegation to approve or deny.
 That principal is server-owned, never client-supplied. A configured credential
 stamps `{ id: "gateway", kind: "bearer" }`; on a loopback bind without that
 credential, serve's session token stamps `{ id: "local", kind: "operator" }`.
-Without the session token, callers are anonymous readers and cannot approve.
+Without the session token, callers are anonymous readers and cannot approve,
+deny or signal a run: a signal can answer a person's question.
 A decision journaled under the
 composition's default operator when a bearer holder made it would name the
 wrong one, so `Approval.Submit` reads the authenticated principal and passes it

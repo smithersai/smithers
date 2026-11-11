@@ -355,6 +355,84 @@ describe("loopback approval credential", () => {
   }
 })
 
+describe("loopback answer credential", () => {
+  /**
+   * Answering a person's question is a person's decision, as an approval is,
+   * and both doors that answer one sit on the same served surface: `Signal` on
+   * `/rpc` and an answer-carrying `Approval.Submit` on `/projections`. Without
+   * the session token any local process, an agent's own shell included,
+   * arrives as the anonymous loopback principal, and neither door may let it
+   * resume a parked `HumanTask` with a value of its choosing (#4928).
+   */
+  const waitToken = Buffer.from(
+    JSON.stringify(["coding/PreparePlan", "execution-1", "WaitFor/coding-clarification#1"])
+  ).toString("base64")
+  const answer = (mount: "rpc" | "projections", runId: string) =>
+    JSON.stringify({
+      _tag: "Request",
+      id: 1,
+      tag: mount === "rpc" ? "Signal" : "Approval.Submit",
+      payload: mount === "rpc"
+        ? {
+          runId,
+          signal: { name: "coding-clarification#1", payload: "yes, proceed" },
+          idempotencyKey: `answer:${runId}`
+        }
+        : {
+          target: {
+            _tag: "Node",
+            runId,
+            requestId: "coding-clarification#1",
+            digest: waitToken,
+            envelope: { capabilities: [], flows: [], budget: {} }
+          },
+          scope: "once",
+          idempotencyKey: `answer:${runId}`,
+          decision: "approve",
+          answer: "yes, proceed"
+        },
+      headers: []
+    }) + "\n"
+
+  for (const mount of ["rpc", "projections"] as const) {
+    for (const protocol of ["http", "ws"] as const) {
+      test(`${mount}/${protocol} answer requires the session token`, () =>
+        Effect.gen(function*() {
+          const url = yield* baseUrl
+          const runtime = yield* ControlRuntime
+          const runId = yield* launched
+          const request = answer(mount, runId)
+          const exchange = (credential?: string) =>
+            Effect.promise(async () => {
+              const frames = protocol === "ws"
+                ? await socketExchange(`${url}/${mount}/ws`, credential, request)
+                : [
+                  await (await fetch(`${url}/${mount}`, {
+                    method: "POST",
+                    headers: {
+                      ...(credential === undefined ? {} : { authorization: `Bearer ${credential}` }),
+                      "content-type": "application/json"
+                    },
+                    body: request
+                  })).text()
+                ]
+              return frames.join("\n")
+            })
+          for (const credential of [undefined, "wrong"]) {
+            expect(yield* exchange(credential)).toContain("/control/Unauthorized")
+            expect(yield* runtime.deliveredSignals(runId)).toEqual([])
+          }
+          expect(yield* exchange("session-secret")).toContain("\"Success\"")
+          expect(yield* runtime.deliveredSignals(runId)).toEqual([
+            { name: "coding-clarification#1", payload: "yes, proceed" }
+          ])
+        }).pipe(Effect.provide(served(
+          { host: "127.0.0.1", port: 0, operatorToken: "session-secret" }
+        ))))
+    }
+  }
+})
+
 describe("approval authority across every served mutation mount", () => {
   const delegatedOnce = Effect.runSync(ApprovalAuthority.make([
     { principal: { id: "gateway", kind: "bearer" }, scopes: ["once"], targets: ["Plan"] }

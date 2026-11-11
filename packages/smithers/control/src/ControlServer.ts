@@ -10,6 +10,7 @@ import { RpcServer } from "effect/rpc"
 import { Control } from "./Control.ts"
 import { Unauthorized } from "./ControlError.ts"
 import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
+import type { Principal } from "./ControlSchema.ts"
 
 /**
  * Logs a content-free diagnostic for a failed RPC handler, and nothing for
@@ -38,6 +39,15 @@ export const RequestScheme = Context.Reference<"http:" | "https:" | undefined>(
 )
 
 const logged = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.tapCause(effect, logDefect)
+
+// A loopback listener without its session token authenticates every caller as
+// `loopback`/`anonymous`, so any local process, an agent's own shell included,
+// arrives as that principal. It reads and drives runs; it decides nothing a
+// person must decide (#1783, #4928).
+const operatorOnly = (principal: Principal): Effect.Effect<void, Unauthorized> =>
+  principal.id === "loopback" && principal.kind === "anonymous"
+    ? Effect.fail(new Unauthorized({ message: "An operator credential is required" }))
+    : Effect.void
 
 /**
  * Control RPC handlers delegating to the transport-independent service.
@@ -76,17 +86,13 @@ export const layer = ControlRpcs.toLayer(
       Approve: Effect.fn("Control.approve")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal
-          if (principal.id === "loopback" && principal.kind === "anonymous") {
-            return yield* new Unauthorized({ message: "An operator credential is required" })
-          }
+          yield* operatorOnly(principal)
           return yield* control.approve({ ...input, principal })
         }), logged),
       Deny: Effect.fn("Control.deny")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal
-          if (principal.id === "loopback" && principal.kind === "anonymous") {
-            return yield* new Unauthorized({ message: "An operator credential is required" })
-          }
+          yield* operatorOnly(principal)
           return yield* control.deny({ ...input, principal })
         }), logged),
       Steer: Effect.fn("Control.steer")((input) =>
@@ -104,6 +110,13 @@ export const layer = ControlRpcs.toLayer(
       Signal: Effect.fn("Control.signal")((input) =>
         Effect.gen(function*() {
           const principal = yield* ControlPrincipal
+          // A signal may answer a person's question: `HumanTask` parks on a
+          // wait a signal of its name completes, and an answer is a person's
+          // decision exactly as an approval is. Admission cannot tell which
+          // signal will answer one, because an admitted signal is replayed
+          // into whichever wait opens under its name later, so every signal
+          // needs the credential an approval needs.
+          yield* operatorOnly(principal)
           return yield* control.signal({ ...input, principal, ...yield* reader })
         }), logged),
       Cancel: Effect.fn("Control.cancel")((input) =>
