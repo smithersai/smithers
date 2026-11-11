@@ -1,0 +1,25 @@
+import { expect, it } from "@effect/vitest"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { startGreeting } from "../examples/quickstart.vibe"
+import * as MemoryStorage from "./fixtures/MemoryStorage.ts"
+
+it("start stores the greeting's intent under its execution id and arms the alarm now", async () => {
+  const memory = MemoryStorage.make()
+  const before = Date.now()
+  const intent = await runPromise(startGreeting(memory.storage, "Ada"))
+  expect(intent).toMatchObject({ executionId: "greet/Ada", flow: "greet/Greet" })
+  const stored = memory.values.get(ExecutionObject.intentKey)
+  expect(stored).toEqual(expect.stringContaining("\"executionId\":\"greet/Ada\""))
+  expect(stored).toEqual(expect.stringContaining("\"name\":\"Ada\""))
+  expect(memory.alarm()).toBeGreaterThanOrEqual(before)
+  expect(memory.alarm()).toBeLessThan(before + ExecutionObject.startGraceMs)
+})
+
+it("starting the same greeting twice keeps one intent", async () => {
+  const memory = MemoryStorage.make()
+  await runPromise(startGreeting(memory.storage, "Ada"))
+  const stored = memory.values.get(ExecutionObject.intentKey)
+  await runPromise(startGreeting(memory.storage, "Ada"))
+  expect(memory.values.get(ExecutionObject.intentKey)).toBe(stored)
+  expect([...memory.values.keys()]).toContain(ExecutionObject.intentKey)
+})

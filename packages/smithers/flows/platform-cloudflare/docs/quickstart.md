@@ -5,6 +5,9 @@ description: "Declare a flow, host it in a plain Durable Object class, and start
 
 This page hosts one flow in a plain Durable Object class, without a framework,
 so every line the host needs is visible. [Host a flow in a Durable Object](./guides/host-a-flow-in-a-durable-object.md) does the same with Alchemy.
+Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) declares the flow and starts
+an execution as Effect code.
 
 ## 1. Declare the flow
 
@@ -155,3 +158,52 @@ and alarm lines also name the execution and flow. The
 `smithers_cloudflare_execution_starts`, `smithers_cloudflare_execution_wakes`
 and `smithers_cloudflare_execution_alarms` counters count them by outcome. None of
 them carries the payload. See [the execution lifecycle](./concepts/execution-lifecycle.md) for what each outcome means.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the flow declaration is
+the same three values. `startGreeting` is an `effect` function that does in
+one place what the Worker and the object's `fetch` do between them: `try`
+builds the intent and `start` stores it and arms the alarm, so a second start
+of the same greeting is a duplicate rather than a second execution. The
+Durable Object class and the Worker stay TypeScript, because they read
+`Request` and `Response`, which are platform code a `.vibe` file does not
+touch.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it against
+an in-memory storage, and the package's docs check fails if this block and the
+file differ.
+
+```vibe
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+
+export const Compose = Action.make("greet/Compose", {
+  payload: { name: Schema.String },
+  success: Schema.String
+})
+
+export const Greet = Flow.make("greet/Greet", {
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: Node.capture({}, ({ name }) => Compose.call({ name }))
+})
+
+/** Stable callback identity, so an alarm in a new isolate rebuilds the plan the old one recorded. */
+export const GreetLive = Layer.provideMerge(
+  Interpreter.layerWithImplementations(Greet, Compose.toLayer(({ name }) => succeed(`Hello, ${name}`))),
+  Action.layerImplementations
+)
+
+/** Records the execution for `name` in the object's storage and arms its alarm. The same name reaches the same object. */
+export effect function startGreeting(
+  storage: ExecutionObject.Storage,
+  name: string
+): ExecutionObject.Intent!(Schema.SchemaError | ExecutionObject.IntentConflict) {
+  const executionId = `greet/${name}`
+  const intent = try ExecutionObject.intent(Greet, { executionId, payload: { name } })
+  try ExecutionObject.start(storage, intent, Effect.void)
+  return intent
+}
+```

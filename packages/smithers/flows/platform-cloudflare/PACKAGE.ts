@@ -10,12 +10,19 @@ import {
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 import { Package as flows } from "../../../../.smithers/flows/PACKAGE.ts"
 
 const cwd = "packages/smithers/flows/platform-cloudflare"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   cwd
 })
 
@@ -59,7 +66,8 @@ const test = Smithers.Shell.Test({
     Smithers.file("//apps/mvp/infra/sandbox/tmux.conf"),
     Smithers.file("//apps/mvp/infra/sandbox/.dockerignore"),
     Smithers.glob("src/**/*.ts"),
-    Smithers.glob("test/**/*.ts"),
+    Smithers.glob("test/**/*.{ts,vibe}"),
+    Smithers.glob("examples/**/*.vibe"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts")
   ],

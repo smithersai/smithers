@@ -1,0 +1,31 @@
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+
+export const Compose = Action.make("greet/Compose", {
+  payload: { name: Schema.String },
+  success: Schema.String
+})
+
+export const Greet = Flow.make("greet/Greet", {
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: Node.capture({}, ({ name }) => Compose.call({ name }))
+})
+
+/** Stable callback identity, so an alarm in a new isolate rebuilds the plan the old one recorded. */
+export const GreetLive = Layer.provideMerge(
+  Interpreter.layerWithImplementations(Greet, Compose.toLayer(({ name }) => succeed(`Hello, ${name}`))),
+  Action.layerImplementations
+)
+
+/** Records the execution for `name` in the object's storage and arms its alarm. The same name reaches the same object. */
+export effect function startGreeting(
+  storage: ExecutionObject.Storage,
+  name: string
+): ExecutionObject.Intent!(Schema.SchemaError | ExecutionObject.IntentConflict) {
+  const executionId = `greet/${name}`
+  const intent = try ExecutionObject.intent(Greet, { executionId, payload: { name } })
+  try ExecutionObject.start(storage, intent, Effect.void)
+  return intent
+}
