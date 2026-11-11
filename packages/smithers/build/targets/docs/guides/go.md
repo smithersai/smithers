@@ -16,6 +16,10 @@ The executable rules are `S.Go.Test`, `S.Go.Binary`, `S.Go.ModDownload`,
 `S.Go.run("module/cmd@version")` are tool references rather than targets. Every
 constructor rejects an attr it does not declare.
 
+A shell target that runs `go` declares `tools: [S.Go.bin]`. Its `go` is then
+the selected SDK's own executable, so the command never asks a launcher to
+switch toolchains, which a closed network refuses.
+
 ## Package sets
 
 `S.Go.Packages({ pkgs })` resolves a set of packages with `go list`, and

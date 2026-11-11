@@ -1786,6 +1786,7 @@ const visit = async (
   let cargoOutFiles: ReadonlyArray<string> = []
   const absoluteEnv: Array<string> = []
   const spawnedTools: Array<string> = []
+  const pathTools: Array<{ readonly name: string; readonly path: string }> = []
   let env: Record<string, string> = {}
   let bunTemplate: PackageNode["bunTemplate"]
   let emit: PackageNode["emit"]
@@ -1793,6 +1794,36 @@ const visit = async (
   const writeSet: Array<string> = []
   const readSet: Array<string> = []
   const externalReads: Array<string> = []
+  /**
+   * Records one resolved `tools` entry under the name a command calls it by.
+   *
+   * The tool keys by the bytes at `path`, so the spawn must find exactly
+   * that file under its name: a later PATH entry answering instead (a system
+   * Node behind a workspace-local one, the Go launcher behind the SDK it
+   * selected) is an unkeyed executable. A workspace tool is a workspace file
+   * the confinement would otherwise hide, so its own path joins the read set;
+   * a host tool is admitted with the executable identities below.
+   */
+  const notePathTool = (reference: Record<string, unknown>, path: string): void => {
+    const name = typeof reference["name"] === "string" && reference["_tag"] !== "NodeModuleBin"
+      ? reference["name"]
+      : NodePath.basename(path)
+    if (name === "" || name === "." || name === ".." || /[/\\]/.test(name)) {
+      noteRefusal(`tool name ${JSON.stringify(name)} is not a command name`)
+      return
+    }
+    const relative = Path.containedRelative(context.root, path)
+    const planned = relative === undefined ? path : `${workspaceRootToken}/${posix(relative)}`
+    const existing = pathTools.find((entry) => entry.name === name)
+    if (existing !== undefined) {
+      if (existing.path !== planned) {
+        noteRefusal(`two tools are named ${JSON.stringify(name)}: ${existing.path}, ${planned}`)
+      }
+      return
+    }
+    pathTools.push({ name, path: planned })
+    if (relative !== undefined && !readSet.includes(posix(relative))) readSet.push(posix(relative))
+  }
   // A declared install opens its `node_modules` to the confined tool. The
   // manifest and lockfiles expanded above are the key; the tree is the grant.
   // A tree provisioned as a link to a shared install resolves outside the
@@ -1908,13 +1939,25 @@ const visit = async (
       }
     }
     // Tools the process spawns by itself never reach argv, so their bytes are
-    // fingerprinted with the executable below rather than left to the host.
+    // fingerprinted with the executable below rather than left to the host,
+    // and the spawn finds each by name on a PATH that leads with exactly it.
     for (const reference of shellAttrs.tools ?? []) {
       const outcome = await resolveTool(toolContext, reference as Record<string, unknown>)
       toolchain.push({ slot: "tool", identity: outcome.tool.identity })
       if (outcome._tag === "refused") noteRefusal(outcome.tool.refusal)
       else if (outcome.tool.args !== undefined) noteRefusal("Runtime.npx references must be used as bin, not in tools")
-      else spawnedTools.push(outcome.tool.path)
+      else {
+        spawnedTools.push(outcome.tool.path)
+        notePathTool(reference as Record<string, unknown>, outcome.tool.path)
+      }
+    }
+    // The bin form gives a Go tool the toolchain's declared settings; a Go
+    // the command finds on PATH compiles the same module and gets the same.
+    if ((shellAttrs.tools ?? []).some((tool) => tool._tag === "GoBin" || tool._tag === "GoRun")) {
+      env = {
+        ...GoExec.toolchainEnvironment({ root: context.root, packagePath, workspace: context.index.workspace }),
+        ...env
+      }
     }
     // A Diff tool that names no path in its declared args is pointed at its
     // write set: the resolved patterns' static prefixes become trailing
@@ -2081,7 +2124,6 @@ const visit = async (
       // version would never key and an absent one would surface as a
       // directive failure rather than as the missing tool.
       const generatorTools = rule === "Go.Generate" ? attrMember(attrs, "tools") : undefined
-      const generatorPath: Array<string> = []
       if (Array.isArray(generatorTools)) {
         for (const reference of generatorTools) {
           const outcome = await resolveTool(toolContext, reference as Record<string, unknown>)
@@ -2089,7 +2131,7 @@ const visit = async (
           if (outcome._tag === "refused") noteRefusal(outcome.tool.refusal)
           else if (outcome.tool.args !== undefined) {
             noteRefusal("Runtime.npx references must be used as bin, not as PATH tools")
-          } else generatorPath.push(NodePath.dirname(outcome.tool.path))
+          } else notePathTool(reference as Record<string, unknown>, outcome.tool.path)
         }
       }
       try {
@@ -2108,12 +2150,6 @@ const visit = async (
         // workspace-relative so two checkouts key alike, and is rooted at spawn.
         const moduleCache = env["GOMODCACHE"]
         if (moduleCache !== undefined && !NodePath.isAbsolute(moduleCache)) absoluteEnv.push("GOMODCACHE")
-        if (generatorPath.length > 0) {
-          // The directories join PATH for the spawn only. Their identities
-          // already key above; a host path in `env` would key nothing extra
-          // and would split the cache per machine.
-          env["PATH"] = [...generatorPath, process.env["PATH"] ?? ""].filter(Boolean).join(NodePath.delimiter)
-        }
         outDirs.push(...plannedGo.outDirs)
         writeSet.push(...plannedGo.writeSet)
         // `go` resolves its own module and package graph from import paths, so
@@ -3261,6 +3297,7 @@ const visit = async (
     cwd,
     env,
     absoluteEnv,
+    ...(pathTools.length === 0 ? {} : { pathTools }),
     bunTemplate,
     writeSet,
     readSet,

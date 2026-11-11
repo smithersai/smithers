@@ -286,6 +286,17 @@ command-form build. Tools selected dynamically inside shell scripts must
 still be declared as tool dependencies; this does not infer an arbitrary
 program's subprocess or library dependencies.
 
+A declared tool is the one the command runs. `PATH` starts with a directory
+under `.flows/tmp` that holds one link per `tools` entry (and per
+`Go.Generate` tool), named as the command calls it and pointing at the exact
+executable the key identifies. A system `node` later on `PATH` cannot answer
+for a workspace-local one, and `go` is the SDK the toolchain selected, not
+the launcher that selected it. A workspace-local tool is admitted to the
+confinement as that one file. Two tools with one name and different
+executables refuse the target. A `tools` entry that is `S.Go.bin` or
+`S.Go.run` also gives the command the toolchain's `CGO_ENABLED` and
+`GOEXPERIMENT`, as the `bin` form does.
+
 ## Services
 
 A target may depend on services the executor starts, refcounts across

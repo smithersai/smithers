@@ -75,6 +75,7 @@ import {
   takesExclusiveTreePermit,
   workspaceRootToken
 } from "./PackagePlanner.ts"
+import * as PathTools from "./PathTools.ts"
 import * as RulePolicy from "./RulePolicy.ts"
 import * as NativeRules from "./rules/NativeRules.ts"
 import { posix, sha256Hex } from "./Text.ts"
@@ -628,6 +629,26 @@ export const executeEffect = (
         for (const name of node.absoluteEnv) {
           const value = node.env[name]
           if (value !== undefined) spawnEnv[name] = NodePath.join(root, ...value.split("/"))
+        }
+        if (node.pathTools !== undefined && node.pathTools.length > 0) {
+          const tools = node.pathTools.map((tool) => ({
+            name: tool.name,
+            path: tool.path.split(workspaceRootToken).join(root)
+          }))
+          const directory = yield* joined(() =>
+            PathTools.directory(
+              NodePath.join(root, ...cacheDirectory.split("/"), "tmp"),
+              node.keyPreview.slice(0, 16),
+              tools
+            )
+          )
+          // The rest of PATH is the one the tool would have had: a declared
+          // value, else the Nix closure's, else the host's.
+          const rest = node.env["PATH"] ??
+            (node.nixEnvironment === undefined
+              ? (options.environment ?? process.env)["PATH"]
+              : node.nixEnvironment.path.join(NodePath.delimiter))
+          spawnEnv["PATH"] = [directory, ...(rest === undefined || rest === "" ? [] : [rest])].join(NodePath.delimiter)
         }
         if (node.bunTemplate !== undefined) {
           const directory = NodePath.join(root, ...cacheDirectory.split("/"), "tmp")

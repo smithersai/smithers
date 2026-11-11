@@ -203,6 +203,13 @@ export interface SharedFields extends Planner.PlannedTarget {
    * still receives a path it can use.
    */
   readonly absoluteEnv: ReadonlyArray<string>
+  /**
+   * The declared `tools` a command finds by name: each name and the exact
+   * executable its key identifies, workspace-relative behind the root token
+   * when it lives in the workspace. The spawn leads `PATH` with a directory
+   * that holds exactly these, so no other executable can answer the name.
+   */
+  readonly pathTools?: ReadonlyArray<{ readonly name: string; readonly path: string }> | undefined
   readonly bunTemplate:
     | { readonly template: string; readonly consts: Readonly<Record<string, string>>; readonly bunPath: string }
     | undefined

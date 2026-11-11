@@ -556,7 +556,10 @@ describe("Go generator tool authority", () => {
     const plan = await PackageExec.plan(options), node = plan.nodes.get("//:command")!
     if (kind === "host") {
       expect(node.refusal).toBeUndefined()
-      expect(node.env.PATH).toBeDefined()
+      // The generator reaches PATH at spawn as its exact executable; no host
+      // directory enters the keyed environment.
+      expect(node.env.PATH).toBeUndefined()
+      expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh")! }])
     } else expect(node.refusal).toContain(kind === "missing" ? "missing-generator" : "not as PATH tools")
   })
   it("refuses a missing Go executable by name", async () => {
@@ -1303,7 +1306,8 @@ export const Package=S.Package({targets:{selected,other,command}})`,
     try {
       const node = (await PackageExec.plan({ ...options, environment })).nodes.get("//:command")!
       expect(node.refusal).toBeUndefined()
-      expect(node.env.PATH).toBe(Path.dirname(PackageTree.findOnPath("sh", environment)!))
+      expect(node.env.PATH).toBeUndefined()
+      expect(node.pathTools).toEqual([{ name: "sh", path: PackageTree.findOnPath("sh", environment)! }])
     } finally {
       if (previous !== undefined) process.env.PATH = previous
     }
