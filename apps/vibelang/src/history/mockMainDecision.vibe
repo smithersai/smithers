@@ -1,5 +1,7 @@
 // The mock merge queue's formatting (0018, third-lane batch 23): the id a landed commit gets and the message naming its
-// mythical commit. `MockMythical.vibe` calls these; the sequencer read and the engine stay host boundaries.
+// mythical commit; and the mock repository's commit reads (batch 27): where a read is answered from and what a commit
+// made for a real one holds. `MockMythical.vibe` calls these; the sequencer read, the engine and the memory
+// repository stay host boundaries.
 //@ safe-slice
 
 /** `n` zeros; none for `n <= 0`. */
@@ -73,4 +75,35 @@ export function approvedIndices(commits: ReadonlyArray<QueuedCommit>): ReadonlyA
 //@ ensures operation == undefined ==> \result == prefix + "/" + count
 export function executionKey(prefix: string, operation: string | undefined, digest: string, count: string): string {
   return operation !== undefined ? prefix + "/operation/" + digest : prefix + "/" + count
+}
+
+/** Where the mock repository answers a commit read from. */
+export type CommitSource = "memory" | "kept" | "made"
+
+/**
+ * A revision no real commit of the history has is read from the memory repository; a real one is answered with the
+ * header made for it before, else with a new one (0018 third-lane batch 27).
+ */
+//@ verify
+//@ ensures !real ==> \result == "memory"
+//@ ensures real && kept ==> \result == "kept"
+//@ ensures real && !kept ==> \result == "made"
+export function commitSource(real: boolean, kept: boolean): CommitSource {
+  if (!real) return "memory"
+  return kept ? "kept" : "made"
+}
+
+/** The one file, `MAIN`, of a commit made for a real one: its id and title on one line. */
+//@ verify
+//@ ensures \result == sha + " " + title + "\n"
+//@ ensures \result.startsWith(sha) && \result.endsWith("\n")
+export function mainFile(sha: string, title: string): string {
+  return sha + " " + title + "\n"
+}
+
+/** The message of a commit made for a real one: its title, as one line. */
+//@ verify
+//@ ensures \result == title + "\n"
+export function madeMessage(title: string): string {
+  return title + "\n"
 }

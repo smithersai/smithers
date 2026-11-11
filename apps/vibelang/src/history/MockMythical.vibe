@@ -18,7 +18,7 @@ import { Mythical, settled } from "./MythicalHistory.vibe"
 import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "./pages.vibe"
 import { Caller, type Principal } from "./roles.vibe"
 import { make, memoryStore, type MainCommit, type Sequencer, stackOf } from "./Sequencer.vibe"
-import { approvedIndices, executionKey, landedCommit } from "./mockMainDecision.vibe"
+import { approvedIndices, commitSource, executionKey, landedCommit, madeMessage, mainFile } from "./mockMainDecision.vibe"
 
 /** The bootstrapped history the live History object loads, decoded. */
 export effect function seeded() {
@@ -50,12 +50,13 @@ export function mockRepository(sequencer: Sequencer): Repository.Repository {
     const known = indexed.get(history) ?? new Map(history.real.map((real) => [real.sha, real]))
     indexed.set(history, known)
     const real = known.get(revision)
-    if (real === undefined) return try memory.readCommit(revision)
-    const kept = made.get(real.sha)
-    if (kept !== undefined) return kept
-    const blob = try memory.writeBlob(`${real.sha} ${real.title}\n`)
+    const kept = real === undefined ? undefined : made.get(real.sha)
+    const source = commitSource(real !== undefined, kept !== undefined)
+    if (source === "memory" || real === undefined) return try memory.readCommit(revision)
+    if (source === "kept" && kept !== undefined) return kept
+    const blob = try memory.writeBlob(mainFile(real.sha, real.title))
     const tree = try memory.writeTree([{ name: "MAIN", mode: "100644", oid: blob }])
-    const header: Repository.CommitHeader = { oid: real.sha, tree, parents: [], message: `${real.title}\n` }
+    const header: Repository.CommitHeader = { oid: real.sha, tree, parents: [], message: madeMessage(real.title) }
     made.set(real.sha, header)
     return header
   }

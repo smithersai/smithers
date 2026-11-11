@@ -5804,3 +5804,11 @@ cases.extend([
 ('src/history/seedTextDecision.vibe', 'text-evidence-separator', 'evidenceStart', '+ ": " +', '+ ":" +', 'a key and its text are separated by one space'),
 ('src/history/seedTextDecision.vibe', 'text-evidence-spaces', 'evidenceStart', 'line.slice(spacesEnd(line, colon + 1))', 'line.slice(colon + 1)', 'spaces after the colon are dropped'),
 ])
+
+# Lane vl-proveall3, batch 27: the mock repository's commit reads (src/history/mockMainDecision.vibe).
+cases.extend([
+('src/history/mockMainDecision.vibe', 'mock-source-memory', 'commitSource', 'if (!real) return "memory"', 'if (real) return "memory"', 'only an unknown revision is read from memory'),
+('src/history/mockMainDecision.vibe', 'mock-source-kept', 'commitSource', 'kept ? "kept" : "made"', 'kept ? "made" : "kept"', 'a header made before is kept'),
+('src/history/mockMainDecision.vibe', 'mock-main-file', 'mainFile', 'sha + " " + title + "\\n"', 'sha + title + "\\n"', 'the id and title are separated by a space'),
+('src/history/mockMainDecision.vibe', 'mock-made-message', 'madeMessage', 'title + "\\n"', 'title', 'the message ends its line'),
+])
