@@ -162,6 +162,19 @@ describe("Anvil and Docker targets", () => {
     expect(new Set([plain, arm, amd, release, debug]).size).toBe(5)
   })
 
+  it("keys every file under a build context and caches a bake only with declared data", () => {
+    const globOf = (context: string) =>
+      Target.metadata(Docker.Build({ dockerfile: Input.file("Dockerfile"), context })).inputs
+        .filter((input) => input._tag === "Glob")
+    const exclude = ["docker-image/**", "docker-image-*/**"]
+    expect(globOf("//")).toEqual([{ _tag: "Glob", pattern: "//**", exclude }])
+    expect(globOf("app")).toEqual([{ _tag: "Glob", pattern: "app/**", exclude }])
+    const config = Input.file("docker-bake.hcl")
+    expect(Target.metadata(Docker.Bake({ config, target: "api" })).cacheable).toBe(false)
+    expect(Target.metadata(Docker.Bake({ config, target: "api", data: [Input.file("app/main.go")] })).cacheable)
+      .toBe(true)
+  })
+
   it("names one output for a build-arg table written in two key orders", () => {
     const base = { dockerfile: Input.file("//Dockerfile"), context: "//" } as const
     const pathOf = (attrs: Parameters<typeof Docker.Build>[0]): string =>

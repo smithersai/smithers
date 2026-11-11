@@ -5,8 +5,9 @@
  * readiness-gated service through the supervisor (`docker run --rm`, the
  * declared `init` commands as post-readiness `docker exec`), exactly the
  * way `Shell.Serve` supervises a host process. `Docker.Build` and
- * `Docker.Bake` are cached builds that capture an OCI archive directory
- * through the CAS. `Docker.Push` is an outward effect: uncached,
+ * `Docker.Bake` are builds that capture an OCI archive directory through the
+ * CAS. A build keys every file under its context; a bake is cached only when
+ * it declares `data` covering what its bake file reads. `Docker.Push` is an outward effect: uncached,
  * approval-gated, and run only with its declared secrets.
  *
  * @since 0.1.0
@@ -133,6 +134,24 @@ export const imageOutputPath = (name: string, label: ReadonlyArray<unknown>): st
 }
 
 /**
+ * The declared input that keys every file under a build context.
+ *
+ * `docker buildx build` sends the whole context directory to the daemon, so a
+ * file the Dockerfile copies is as much key material as the Dockerfile. A
+ * plain-string `context` attr names no input, and a build keyed on the
+ * Dockerfile alone replays a stale image after any copied file changes.
+ *
+ * The image archives these rules write live under the package as
+ * `docker-image*` directories, which a context of `.` contains. They are
+ * excluded, or each build would key on the archive the previous one wrote.
+ */
+const contextInput = (context: string): Input.Glob =>
+  Input.Glob.make({
+    pattern: context.endsWith("/") ? `${context}**` : `${context}/**`,
+    exclude: ["docker-image/**", "docker-image-*/**"]
+  })
+
+/**
  * Renders a build-arg table as ordered pairs.
  *
  * `JSON.stringify` preserves insertion order, so the same table written with
@@ -152,6 +171,7 @@ const buildDefinition = Target.make("Docker.Build", {
   attrs: BuildAttrs,
   kinds: ["build"],
   cache: true,
+  inputs: (attrs) => [contextInput(attrs.context)],
   // Everything a Dockerfile build reads that is plain declaration data is in
   // the label. Two builds over one dockerfile and one context that differ
   // only in their platforms or their build args are two images and must not
@@ -176,7 +196,11 @@ const buildDefinition = Target.make("Docker.Build", {
 const bakeDefinition = Target.make("Docker.Bake", {
   attrs: BakeAttrs,
   kinds: ["build"],
-  cache: true,
+  // The contexts and Dockerfiles a bake file names are not attrs, so only the
+  // bake file itself is key material. A bake replays its archive only when
+  // `data` declares what those contexts read; without it a cache hit would
+  // return the image built from older files.
+  cache: (attrs) => (attrs.data?.length ?? 0) > 0,
   outputs: (attrs) => ({
     cwd: ".",
     paths: [imageOutputPath(attrs.target, ["Docker.Bake", attrs.config.path, attrs.target])]

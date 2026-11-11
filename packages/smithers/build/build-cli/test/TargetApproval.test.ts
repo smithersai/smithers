@@ -81,8 +81,10 @@ export const Workspace = S.Workspace("approval-fixture", {
   await Fs.writeFile(Path.join(root, "Dockerfile"), "FROM scratch\nCOPY hello.txt /hello.txt\n")
   await Fs.writeFile(Path.join(root, "hello.txt"), "hello\n")
   await Fs.writeFile(Path.join(root, "PACKAGE.ts"), packageSource(tags, options.secrets))
-  const bin = Path.join(root, ".fake-bin")
-  await Fs.mkdir(bin)
+  // The fake engine logs every call outside the workspace: the image builds
+  // from the context `.`, so a log inside the root would change its key.
+  const bin = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-target-approval-bin-")))
+  directories.push(bin)
   const log = Path.join(bin, "calls.txt")
   const archive = Path.join(bin, "image.tar")
   const [built] = await writeImageArchive(archive)

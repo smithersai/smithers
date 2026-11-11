@@ -52,8 +52,9 @@ const policies: Readonly<Record<NativeRule, Policy>> & Readonly<Record<string, P
   "Clean": { outward: true, keyOnly: true, writes: true },
   "Copy": { writes: true, cache: "always" },
   "Cron": { keyOnly: true },
-  "Docker.Bake": { sandbox: "unconfined-default", writes: true, cache: "always" },
-  "Docker.Build": { sandbox: "unconfined-default", writes: true, cache: "always" },
+  // The declarations decide: a build keys its context, a bake needs `data`.
+  "Docker.Bake": { sandbox: "unconfined-default", writes: true },
+  "Docker.Build": { sandbox: "unconfined-default", writes: true },
   "Docker.Push": { sandbox: "unconfined-default", outward: true },
   "Docker.Serve": { sandbox: "none", outward: true, service: true },
   "Docker.Service": { sandbox: "none", outward: true, service: true },

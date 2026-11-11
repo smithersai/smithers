@@ -317,7 +317,7 @@ in its caching concept doc.
 - **Type:** the `Docker` module
 - **Since:** `0.1.0`
 
-Docker services, OCI builds, bake targets, and pushes: `Docker.Serve`, `Docker.Service`, `Docker.Build`, `Docker.Bake`, and `Docker.Push`. Every one of the five runs under the package executor, so a bare Flow runtime fails them with `NotImplemented` rather than doing nothing. `Docker.Build` and `Docker.Bake` are cacheable and declare an output tree; the other three are not.
+Docker services, OCI builds, bake targets, and pushes: `Docker.Serve`, `Docker.Service`, `Docker.Build`, `Docker.Bake`, and `Docker.Push`. Every one of the five runs under the package executor, so a bare Flow runtime fails them with `NotImplemented` rather than doing nothing. `Docker.Build` and `Docker.Bake` declare an output tree; the other three do not. `Docker.Build` is cacheable and keys every file under its `context` directory except the `docker-image*` archive directories these rules write. `Docker.Bake` is cacheable only when it declares `data` covering what its bake file reads, because the contexts a bake file names are not attrs.
 
 ### `Smithers.Agent`
 
