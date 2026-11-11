@@ -9,6 +9,9 @@ import { signIn, signOutSurface, SignInFailed } from "../src/surfaces/signin.vib
 import { configured, live, PERSON, world } from "../test/support/deviceSignIn.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
+/** Nothing listens on the discard port: a factory there refuses every connection. */
+const CLOSED = "http://127.0.0.1:9"
+
 const pendingFor = (origin: string): PendingDevice => ({ origin, clientId: "fixture-client-id", deviceCode: "private-device-code", userCode: "OLDC-ODE1", verificationUri: origin + "/device", intervalSeconds: 1, expiresAt: Date.now() + 600_000, nextPollAt: 0 })
 const refusal = <A, E, R>(program: A!E!R) => Effect.flip(program).pipe(Effect.map(error => (error as unknown as SignInFailed).message))
 
@@ -72,4 +75,46 @@ it("GitHub's refusals end or slow the device flow", async ({ bench }) => {
     }
   }))).run(slow)
   await runPromise(artifact("signin-device-refusals", "Vitest built-in bench; actual signIn over real loopback HTTP to the Accounts object and the identity-provider device fixture. Declined, expired, slow-down back-off, a forged stored session, and a waited sign-in the person declines. Exact sentences and the 30 s back-off checked.", ["The identity provider is a local fixture.", "The slowed flow is not waited out."], result))
+})
+
+it("a waited sign-in succeeds, and an unreachable factory or unwritable settings end it with one sentence", async ({ bench }) => {
+  const result = await workload(bench, "signin-device-faults", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest, live {
+      const { origin, grant, interval } = try world()
+      try Ref.set(interval, 0)
+      const fs = try FileSystem.FileSystem
+      const directory = try fs.makeTempDirectoryScoped()
+      // `login` waits through the poll the person authorizes.
+      const waited = try (effect {
+        try Ref.set(grant, "authorized")
+        return try signIn({ wait: true })
+      }).pipe(Effect.provide(configured(origin, directory)))
+      const out = try signOutSurface().pipe(Effect.provide(configured(origin, directory)))
+      // GitHub grants the device, but the factory that should turn it into a session is gone.
+      const grantLost = try (effect {
+        try writePending(pendingFor(CLOSED))
+        return try refusal(signIn({ wait: false }))
+      }).pipe(Effect.provide(configured(CLOSED, directory, origin)))
+      const keptPending = try readPending().pipe(Effect.provide(configured(CLOSED, directory, origin)))
+      // A remembered session whose factory is gone: sign-out reports it, and the session is still forgotten.
+      const signOutLost = try (effect {
+        try removePending()
+        try writeSession({ origin: CLOSED, cookie: "vibelang-session=forged", login: "old" })
+        return try refusal(signOutSurface())
+      }).pipe(Effect.provide(configured(CLOSED, directory)))
+      const forgotten = try readSession().pipe(Effect.provide(configured(CLOSED, directory)))
+      // The settings directory works, but the pending flow can't be written: a directory holds its file's place.
+      const blocked = try fs.makeTempDirectoryScoped()
+      try fs.makeDirectory(`${blocked}/vibelang-factory/device.json/held`, { recursive: true })
+      const unwritable = try refusal(signIn({ wait: false })).pipe(Effect.provide(configured(origin, blocked)))
+      try Effect.try(() => {
+        expect([waited.status, waited.login, out.signedOut]).toEqual(["signed-in", PERSON.login, true])
+        expect(grantLost).toBe(`Sign-in at ${CLOSED} can't be reached.`)
+        expect(keptPending?.origin).toBe(CLOSED)
+        expect([signOutLost, forgotten]).toEqual(["Sign-out couldn't reach the factory.", undefined])
+        expect(unwritable).toBe("The sign-in settings couldn't be written.")
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("signin-device-faults", "Vitest built-in bench; actual signIn/signOutSurface over real loopback HTTP to the Accounts object and the identity-provider device fixture, fresh world per sample. A waited sign-in the person authorizes, then sign-out; a device grant whose factory refuses connections (discard port 9); a sign-out whose factory refuses connections; a pending-flow file that can't be written. Exact sentences, the kept pending flow and the forgotten session checked.", ["The identity provider is a local fixture.", "Unreachable means a refused loopback connection, not a DNS failure or timeout."], result))
 })
