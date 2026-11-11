@@ -1,0 +1,13 @@
+import { expect, it } from "@effect/vitest"
+import { runCells } from "../examples/quickstart.vibe"
+
+it.effect("prints through ctx.call and continues after the first cell", effect () => {
+  const { first } = try runCells()
+  expect(first.prints).toBe("hello!")
+  expect(first.outcome).toMatchObject({ _tag: "settled", transition: { _tag: "continue" } })
+})
+
+it.effect("completes with the binding the first cell left in the realm", effect () => {
+  const { second } = try runCells()
+  expect(second.outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "hello!" } })
+})

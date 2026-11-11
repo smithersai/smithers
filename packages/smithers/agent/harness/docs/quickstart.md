@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs two cells against one persistent realm: the first cell
 calls a flow and prints, the second reads what the first bound and completes
 the run. It uses the QuickJS-WASM binding directly, which is what one frame of
-the agent loop does; driving the whole loop comes after.
+the agent loop does; driving the whole loop comes after. Each step below is
+TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same
+two cells as Effect code.
 
 ## Before you start
 
@@ -109,6 +111,61 @@ second outcome: {"_tag":"settled","transition":{"_tag":"complete","output":"hell
 - **Teardown is scope closure.** `Effect.scoped` closed the realm when the
   program ended. Cancellation is fiber interruption; nothing installs an abort
   signal.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the host handler is an
+`effect` arrow that returns the `CallResult` directly, and the program is an
+`effect` function that runs the realm inside `scoped`, so the realm closes when
+that scope does. `Cell.source` runs once at module load, outside effect code,
+because it is TypeScript that declares no `@throws`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Cell, type Sandbox } from "@smthrs/harness"
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
+
+/** The catalog the realm discloses to cells, as `ctx.flows`. */
+const flows = {
+  echo: new Cell.FlowProjection({
+    name: "echo",
+    description: "The echo flow.",
+    capabilities: [],
+    tier: "sealed",
+    placement: Option.none(),
+    input: Option.none()
+  })
+}
+
+/** The host side of `ctx.call`: one invocation in, one settled result out. */
+const call: Sandbox.Handler = effect (invocation) =>
+  new Cell.CallResult({ outcome: "success", value: { seen: invocation.input } })
+
+/** Calls a flow, binds `greeting`, and prints it. */
+const firstCell = Cell.source(`
+const found = await ctx.call("echo", { text: "hello" })
+const greeting = found.seen.text + "!"
+console.log(greeting)
+`)
+
+/** Reads the binding the first cell left and completes the run. */
+const secondCell = Cell.source(`
+ctx.done(greeting)
+`)
+
+/** Runs two cells in one realm; the realm closes when the scope does. */
+export effect function runCells() {
+  return try scoped(effect {
+    const sandbox = try QuickJSSandbox.make
+    const realm = try sandbox.openRealm!({ flows })
+    const first = try realm.evaluate({ cell: firstCell, frame: 0, call })
+    const second = try realm.evaluate({ cell: secondCell, frame: 1, call })
+    return { first, second }
+  })
+}
+```
 
 ## Next steps
 

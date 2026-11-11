@@ -1,0 +1,41 @@
+import { Cell, type Sandbox } from "@smthrs/harness"
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
+
+/** The catalog the realm discloses to cells, as `ctx.flows`. */
+const flows = {
+  echo: new Cell.FlowProjection({
+    name: "echo",
+    description: "The echo flow.",
+    capabilities: [],
+    tier: "sealed",
+    placement: Option.none(),
+    input: Option.none()
+  })
+}
+
+/** The host side of `ctx.call`: one invocation in, one settled result out. */
+const call: Sandbox.Handler = effect (invocation) =>
+  new Cell.CallResult({ outcome: "success", value: { seen: invocation.input } })
+
+/** Calls a flow, binds `greeting`, and prints it. */
+const firstCell = Cell.source(`
+const found = await ctx.call("echo", { text: "hello" })
+const greeting = found.seen.text + "!"
+console.log(greeting)
+`)
+
+/** Reads the binding the first cell left and completes the run. */
+const secondCell = Cell.source(`
+ctx.done(greeting)
+`)
+
+/** Runs two cells in one realm; the realm closes when the scope does. */
+export effect function runCells() {
+  return try scoped(effect {
+    const sandbox = try QuickJSSandbox.make
+    const realm = try sandbox.openRealm!({ flows })
+    const first = try realm.evaluate({ cell: firstCell, frame: 0, call })
+    const second = try realm.evaluate({ cell: secondCell, frame: 1, call })
+    return { first, second }
+  })
+}
