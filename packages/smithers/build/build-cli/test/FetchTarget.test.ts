@@ -466,11 +466,21 @@ describe("the declared remote cache reaches the build system", () => {
    * passed no endpoint and no credentials, so a workspace declaring a shared
    * cache ran local-only with no warning, no refusal, and nothing in the plan.
    */
-  it("attempts and reports the declared endpoint instead of running local-only", async () => {
+  it("attempts and reports the declared endpoint when a read credential is available", async () => {
     const root = await fixtureWorkspace()
-    const result = await serve(root, ["//data:schemaPinned", "--ui", "plain"])
+    const result = await serve(root, ["//data:schemaPinned", "--ui", "plain"], {
+      environment: {
+        ...process.env,
+        PATH: (process.env["PATH"] ?? "").split(NodePath.delimiter).filter(NodePath.isAbsolute).join(
+          NodePath.delimiter
+        ),
+        FIXTURE_CACHE_READ_TOKEN: "fixture-reader",
+        FIXTURE_CACHE_WRITE_TOKEN: undefined
+      }
+    })
     expect(result.exitCode, result.logs).toBe(0)
     expect(result.logs).toContain("smthrs: remote cache disabled after a failure")
+    expect(result.logs.includes("fixture-reader")).toBe(false)
   }, 120_000)
 
   /**

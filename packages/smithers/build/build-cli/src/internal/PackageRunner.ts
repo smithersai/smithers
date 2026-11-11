@@ -529,7 +529,7 @@ export const executeEffect = (
       services.cache({
         workspaceRoot: root,
         cacheDirectory,
-        endpoint: options.remoteCache?.endpoint,
+        endpoint: options.remoteCache?.enabled === false ? undefined : options.remoteCache?.endpoint,
         readToken: options.remoteCache?.readToken,
         writeToken: options.remoteCache?.writeToken,
         publishNamespace: options.remoteCache?.publishNamespace,
@@ -894,7 +894,7 @@ export const executeEffect = (
           ExecSandbox.host()
         )
       ) return true
-      if (options.remoteCache !== undefined && !unconfinedWarned) {
+      if (options.remoteCache !== undefined && options.remoteCache.enabled !== false && !unconfinedWarned) {
         unconfinedWarned = true
         reporter.warn(
           `smthrs: remote cache publication skipped: ${node.label} ran unconfined, ` +

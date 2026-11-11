@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A remote cache with no available credential (unset, empty or whitespace-only)
+  now stays local from the start, sends no requests, and prints one
+  `smthrs: remote cache off: no credentials` notice per run, instead of a 401
+  and two warnings. A cache server that accepts unauthenticated requests now
+  needs a non-blank token.
+
 - `affected` no longer selects audited confined native process targets or their
   Filegroup dependencies for unrelated package siblings. Unconfined and
   incomplete contracts remain conservative, including readable output mounts,

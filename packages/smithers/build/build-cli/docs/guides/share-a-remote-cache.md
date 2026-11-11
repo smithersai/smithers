@@ -64,6 +64,13 @@ The literal can only read that one repository's cache, which is the same
 posture as a read-only access token in other build caches. It is exclusive
 with `token` and `read`.
 
+If no configured credential is available (unset, empty or whitespace-only), the
+remote stays off for the whole run. No action-cache or output CAS request is
+sent. The CLI prints `smthrs: remote cache off: no credentials` once per run
+(each `watch` cycle is a run) and keeps results local, without a remote-failure
+or publication-skipped warning. A committed public read token counts as a
+credential, and a read credential alone keeps remote reads on.
+
 ## Point one machine somewhere else
 
 `SMITHERS_CACHE_URL` overrides the declared endpoint for one process:
@@ -103,8 +110,8 @@ publication stops publication only; it never fails the run.
 
 Publishing pays only when results are shareable. A result is shared only when a
 confined run produced it, so a workspace whose default sandbox is
-`S.Sandbox.None()` publishes nothing, and the runner warns once that
-publication was skipped. `Bundler.Rspack` targets and `S.Repo.Target` targets
+`S.Sandbox.None()` publishes nothing. When the remote is on, the runner warns
+once that publication was skipped. `Bundler.Rspack` targets and `S.Repo.Target` targets
 always run their process unconfined (the bundler host and the child repository's
 CLI), so their results stay local whatever their `sandbox` attr says. Most targets (formatters, typecheck, test suites) are
 not cacheable at all, so a remote saves little on them.
@@ -128,6 +135,7 @@ under 1 MiB. Complete legacy local results remain usable above remote limits.
 
 | Symptom                                        | What it means                                                                |
 | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| `remote cache off: no credentials`             | No configured credential is available; the run sends no remote requests.     |
 | One warning, then no further remote activity   | A remote failure disabled the remote for the rest of the process.            |
 | A `409` warning                                | Two jobs published the same key. The first result stands.                    |
 | Everything runs on a machine you expect to hit | The key moved. Compare `--plan` key previews between the two machines.       |

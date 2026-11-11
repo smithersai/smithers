@@ -362,7 +362,7 @@ const planStore = async (context: PlanContext): Promise<CacheStore | undefined> 
     context.store = await openCache({
       workspaceRoot: context.root,
       cacheDirectory: context.cacheDirectory,
-      endpoint: context.remoteCache?.endpoint,
+      endpoint: context.remoteCache?.enabled === false ? undefined : context.remoteCache?.endpoint,
       readToken: context.remoteCache?.readToken,
       writeToken: context.remoteCache?.writeToken,
       publishNamespace: context.remoteCache?.publishNamespace,

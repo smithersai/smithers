@@ -35,6 +35,7 @@ import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
+import { CacheCredentials } from "./internal/CacheCredentials.ts"
 import * as GoCache from "./internal/GoCache.ts"
 import * as RemoteCi from "./internal/RemoteCi.ts"
 import * as Shards from "./internal/Shards.ts"
@@ -393,7 +394,12 @@ const present = <A>(
 /**
  * Binds a resolved remote cache to the readers that fetch its credentials.
  *
- * The declared token is not read here. The cache transport receives a reader
+ * Availability is checked once, before planning opens either remote tier.
+ * With no non-blank credential, the access is disabled: neither tier sends a
+ * request, and the CLI prints one off notice. A disabled access keeps its
+ * declared names, which the child-process boundary still withholds.
+ *
+ * Credential values are not held here. The cache transport receives a reader
  * and invokes it only while constructing an outbound request. Removing the
  * name from `process.env` here would mutate state the caller owns: `makeCli`
  * is a library entry point, and two concurrent commands with different
@@ -404,18 +410,29 @@ const present = <A>(
  * captures and clears the default names for its own short-lived process,
  * which is a choice only a process owner may make.
  */
-const remoteCacheAccess = (
+const remoteCacheAccess = async (
   remoteCache: ResolvedRemoteCache | undefined,
   runtime: RuntimeConfig
-): RemoteCacheAccess | undefined => {
+): Promise<RemoteCacheAccess | undefined> => {
   if (remoteCache === undefined) return undefined
   // The process entry point captures and clears the default name, so its
   // value arrives as `cacheToken`; every other declared name is read from
   // the environment at the instant a request is built.
+  const service = await Effect.runPromise(CacheCredentials.pipe(
+    Effect.provide(runtime.services ?? Layer.empty)
+  ))
   const tokenAt = (name: string) => (): string | undefined =>
-    name === "SMITHERS_CACHE_TOKEN"
-      ? runtime.cacheToken ?? environmentOf(runtime)[name]
-      : environmentOf(runtime)[name]
+    service.read(
+      name === "SMITHERS_CACHE_TOKEN" && runtime.cacheToken !== undefined
+        ? { ...environmentOf(runtime), [name]: runtime.cacheToken }
+        : environmentOf(runtime),
+      name
+    )
+  const available = (readToken: () => string | undefined, writeToken: () => string | undefined): boolean => {
+    const enabled = [readToken(), writeToken()].some((token) => token !== undefined && token.trim() !== "")
+    if (!enabled) terminalsOf(runtime).stderr.write("smthrs: remote cache off: no credentials\n")
+    return enabled
+  }
   const credentials = remoteCache.credentials
   const publishNamespace = publishNamespaceOf(runtime)
   switch (credentials._tag) {
@@ -423,15 +440,19 @@ const remoteCacheAccess = (
       // One declared credential authenticates both directions, which is the
       // posture every deployment had before the split existed.
       const readToken = tokenAt(credentials.tokenEnv)
-      return { ...remoteCache, readToken, writeToken: readToken, publishNamespace }
-    }
-    case "split":
       return {
         ...remoteCache,
-        readToken: tokenAt(credentials.readTokenEnv),
-        writeToken: tokenAt(credentials.writeTokenEnv),
-        publishNamespace
+        readToken,
+        writeToken: readToken,
+        publishNamespace,
+        enabled: available(readToken, readToken)
       }
+    }
+    case "split": {
+      const readToken = tokenAt(credentials.readTokenEnv)
+      const writeToken = tokenAt(credentials.writeTokenEnv)
+      return { ...remoteCache, readToken, writeToken, publishNamespace, enabled: available(readToken, writeToken) }
+    }
     case "public":
       // The committed literal reads; the environment publishes. The literal
       // never reaches a child process: it is not an environment variable.
@@ -733,7 +754,7 @@ export const runPackageVerb = async (
     : Config.normalizeCacheDirectory(flags.cacheDir)
   // The WORKSPACE.ts declaration and SMITHERS_CACHE_URL both reach execution
   // here, under the workspace declaration's precedence.
-  const remoteCache = remoteCacheAccess(
+  const remoteCache = await remoteCacheAccess(
     remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
     config
   )
@@ -886,7 +907,7 @@ const runCi = async (
     const cacheDirectory = flags.cacheDir === undefined
       ? index.workspace.cache.directory
       : Config.normalizeCacheDirectory(flags.cacheDir)
-    const remoteCache = remoteCacheAccess(
+    const remoteCache = await remoteCacheAccess(
       remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
       config
     )
@@ -1345,7 +1366,7 @@ const runSelected = async (
   const options = {
     index,
     cacheDirectory: cacheDirectoryOf(index, flags),
-    remoteCache: remoteCacheAccess(remoteCacheOf(index.workspace.cache.remote, config.cacheUrl), config),
+    remoteCache: await remoteCacheAccess(remoteCacheOf(index.workspace.cache.remote, config.cacheUrl), config),
     jobs: flags.jobs,
     readCache: flags.cache,
     signal: config.signal,
@@ -1871,7 +1892,7 @@ const makeCommands = (config: RuntimeConfig) =>
           const cacheDirectory = context.options.cacheDir === undefined
             ? index.workspace.cache.directory
             : Config.normalizeCacheDirectory(context.options.cacheDir)
-          const remoteCache = remoteCacheAccess(
+          const remoteCache = await remoteCacheAccess(
             remoteCacheOf(index.workspace.cache.remote, config.cacheUrl),
             config
           )

@@ -16,6 +16,14 @@ before choosing one.
 | Wired by        | The CLI's cache module, when one is configured                          | Not composed by the smithers-build CLI today                                   |
 | Configured with | Root `RemoteCache`; `SMITHERS_CACHE_URL` overrides                      | `RemoteCacheStore` and `RemoteArtifacts` layer options                         |
 
+If no configured credential is available (unset, empty or whitespace-only),
+the CLI keeps both the action cache and output CAS local. It sends no remote
+requests and prints `smthrs: remote cache off: no credentials` once per run
+(each `watch` cycle is a run), with no remote-failure or unconfined-publication
+warning. A committed public read token counts as a credential, and a read
+credential alone keeps remote reads on. A server that accepts unauthenticated
+requests still needs a non-blank token.
+
 ## The CLI result cache remote tier
 
 The root `PACKAGE.ts` declares the HTTPS endpoint without carrying a credential:

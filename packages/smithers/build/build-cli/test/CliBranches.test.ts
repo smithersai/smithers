@@ -8,6 +8,7 @@ import { Deferred, Effect, Layer } from "effect"
 import { Cli, Mcp, z } from "incur"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
+import { createServer } from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it } from "vitest"
@@ -16,6 +17,7 @@ import { openCache } from "../src/Cache.ts"
 import * as CacheAdmin from "../src/CacheAdmin.ts"
 import { approvalRevision, makeCli, normalizeArgv, openPackageIndex, type RuntimeConfig } from "../src/Cli.ts"
 import { CliServices, cliServicesLive } from "../src/index.ts"
+import { CacheCredentials } from "../src/internal/CacheCredentials.ts"
 import type * as Reporter from "../src/Reporter.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -261,6 +263,183 @@ export const Package = S.Package({ targets: { sources, check: S.Shell.Test({ she
     expect(shared.exitCode, shared.envelope).toBe(0)
     expect(shared.stderr).toContain("remote cache disabled after a failure")
     expect(`${shared.envelope}${shared.stderr}`).not.toContain("fixture-default-read-token")
+  })
+
+  // The process-level loopback acceptance pattern also guards captured entry-point credentials.
+  it("missing optional cache credentials keep a fresh process local and print one off notice", async () => {
+    const root = await packageFixture()
+    const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      workspace.replace(
+        "directory: \".flows\"",
+        "directory: \".flows\", remote: S.RemoteCache.make({ endpoint: \"https://cache.example.invalid\", " +
+          "read: S.Secret(\"SMITHERS_CACHE_READ_TOKEN\"), write: S.Secret(\"SMITHERS_CACHE_WRITE_TOKEN\") })"
+      )
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const closure = S.ImportClosure({ entries: [S.file("//entry.ts")] })
+export const Package = S.Package({ targets: { closure, probe: S.Shell.Test({ shell: "true", data: [closure], sandbox: "none" }) } })
+`
+    )
+    await write(root, "entry.ts", "export const value = 1\n")
+    let requests = 0
+    const server = createServer((_request, response) => {
+      requests++
+      response.writeHead(401).end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === "string") throw new Error("missing loopback address")
+      const environment: Record<string, string | undefined> = {
+        ...process.env,
+        SMITHERS_CACHE_URL: `http://127.0.0.1:${address.port}`
+      }
+      for (const name of ["SMITHERS_CACHE_TOKEN", "SMITHERS_CACHE_READ_TOKEN", "SMITHERS_CACHE_WRITE_TOKEN"]) {
+        delete environment[name]
+      }
+      const child = NodeChildProcess.spawn(process.execPath, [
+        NodePath.resolve(import.meta.dirname, "../src/main.js"),
+        "ci",
+        "//:probe",
+        "--workspace",
+        root,
+        "--jobs",
+        "1",
+        "--ui",
+        "plain"
+      ], { cwd: root, env: environment })
+      let output = ""
+      child.stdout.on("data", (chunk) => {
+        output += chunk
+      })
+      child.stderr.on("data", (chunk) => {
+        output += chunk
+      })
+      const timer = setTimeout(() => child.kill("SIGKILL"), 30_000)
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.on("error", reject)
+        child.on("close", resolve)
+      }).finally(() => clearTimeout(timer))
+      expect(code, output).toBe(0)
+      expect(requests, "no credential means no remote requests").toBe(0)
+      expect(output.split("\n").filter((line) => /remote cache/i.test(line))).toEqual([
+        "smthrs: remote cache off: no credentials"
+      ])
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
+  })
+
+  it.each(["shared", "split"].flatMap((mode) => [undefined, "", " \t"].map((token) => ({ mode, token }))))(
+    "keeps $mode credentials local when the credential service has none ($token)",
+    async ({ mode, token }) => {
+      const root = await packageFixture()
+      const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
+      await write(
+        root,
+        "WORKSPACE.ts",
+        workspace.replace(
+          "directory: \".flows\"",
+          "directory: \".flows\", remote: S.RemoteCache.make({ endpoint: \"https://cache.example.invalid\"" +
+            (mode === "split" ? ", read: S.Secret(\"CACHE_READ\"), write: S.Secret(\"CACHE_WRITE\")" : "") + " })"
+        )
+      )
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+const closure = S.ImportClosure({ entries: [S.file("//entry.ts")] })
+export const Package = S.Package({ targets: { closure, probe: S.Shell.Test({ shell: ${
+          JSON.stringify("test -z \"$SMITHERS_CACHE_TOKEN$CACHE_READ$CACHE_WRITE\"")
+        }, data: [closure], sandbox: "none" }) } })
+`
+      )
+      // The closure makes planning open its own cache store, the second tier that must stay off.
+      await write(root, "entry.ts", "export const value = 1\n")
+      let requests = 0
+      const server = createServer((_request, response) => {
+        requests++
+        response.writeHead(401).end()
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      try {
+        const address = server.address()
+        if (address === null || typeof address === "string") throw new Error("missing loopback address")
+        const result = await jsonCommand(root, ["ci", "//:probe"], (config) => ({
+          ...config,
+          cacheUrl: `http://127.0.0.1:${address.port}`,
+          environment: {
+            ...config.environment,
+            SMITHERS_CACHE_TOKEN: "fixture-unused",
+            ...(mode === "split" ? { CACHE_READ: "fixture-unused", CACHE_WRITE: "fixture-unused" } : {})
+          },
+          services: Layer.succeed(CacheCredentials, { read: () => token })
+        }))
+        expect(result.exitCode, result.envelope).toBe(0)
+        expect(requests).toBe(0)
+        expect(result.stderr.split("\n").filter((line) => /remote cache/i.test(line))).toEqual([
+          "smthrs: remote cache off: no credentials"
+        ])
+        expect(result.stderr).not.toContain("unconfined")
+        const cached = await Fs.readdir(NodePath.join(root, ".flows/cache"))
+        expect(cached.length).toBeGreaterThan(0)
+      } finally {
+        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+      }
+    }
+  )
+
+  it("keeps a split read credential active without a write credential", async () => {
+    const root = await packageFixture()
+    const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
+    await write(
+      root,
+      "WORKSPACE.ts",
+      workspace.replace(
+        "directory: \".flows\"",
+        "directory: \".flows\", remote: S.RemoteCache.make({ endpoint: \"https://cache.example.invalid\", " +
+          "read: S.Secret(\"CACHE_READ\"), write: S.Secret(\"CACHE_WRITE\") })"
+      )
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { probe: S.Shell.Test({ shell: "true", sandbox: "none" }) } })
+`
+    )
+    const requests: Array<{ readonly method: string | undefined; readonly authenticated: boolean }> = []
+    const server = createServer((request, response) => {
+      requests.push({
+        method: request.method,
+        authenticated: request.headers.authorization === "Bearer fixture-reader"
+      })
+      response.writeHead(404).end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    try {
+      const address = server.address()
+      if (address === null || typeof address === "string") throw new Error("missing loopback address")
+      const result = await jsonCommand(root, ["ci", "//:probe"], (config) => ({
+        ...config,
+        cacheUrl: `http://127.0.0.1:${address.port}`,
+        environment: { ...config.environment, CACHE_READ: "fixture-reader", CACHE_WRITE: undefined }
+      }))
+      expect(result.exitCode, result.envelope).toBe(0)
+      expect(requests.length).toBeGreaterThan(0)
+      expect(requests.every((request) => request.method === "GET" && request.authenticated)).toBe(true)
+      expect(result.stderr).not.toContain("remote cache off")
+      expect(result.stderr).toContain("ran unconfined")
+      expect(`${result.envelope}${result.stdout}${result.stderr}`.includes("fixture-reader")).toBe(false)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    }
   })
 
   it("selects absolute labels when the workspace root has no PACKAGE.ts", async () => {

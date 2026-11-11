@@ -150,15 +150,18 @@ export const withheldEnvironment = (
 /**
  * A resolved remote cache with the readers that fetch its credentials.
  *
- * The readers are invoked only while an outbound request is being built, so a
- * credential is never held in a field anything can serialize. A shared
- * declaration returns the same value from both.
+ * The CLI calls the readers once before planning to decide `enabled`, then
+ * again each time an outbound request is built, so a credential is never held
+ * in a field anything can serialize. A shared declaration returns the same
+ * value from both.
  *
  * @category models
  * @since 0.1.0
  * @slop
  */
 export interface RemoteCacheAccess extends ResolvedRemoteCache {
+  /** False when no credential was available: no tier sends a request, and the declared names stay withheld. */
+  readonly enabled?: boolean | undefined
   readonly readToken: () => string | undefined
   readonly writeToken: () => string | undefined
   /**
