@@ -62,7 +62,9 @@ const test = Smithers.NodeTest({
     "score.test.ts",
     "deterministicReviewer.test.ts",
     "fixtureRepo.test.ts",
-    "review-seeded-bugs.eval.test.ts"
+    "review-seeded-bugs.eval.test.ts",
+    "security-completion-score.test.ts",
+    "security-completion-cli.test.ts"
   ]),
   srcs: sources,
   deps: [],

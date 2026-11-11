@@ -2,7 +2,7 @@
 import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Input from "../../../../packages/smithers/build/targets/src/Input.ts"
 import * as LlmLint from "../../../../packages/smithers/build/targets/src/LlmLint.ts"
 import { materializeFixture } from "./fixtureRepo.ts"
-import { scoreSecurity, type SecurityObservation } from "./security-completion-score.ts"
+import { reportPath, scoreSecurity, type SecurityObservation } from "./security-completion-score.ts"
 
 const directory = dirname(fileURLToPath(import.meta.url))
 const repeats = Number(process.argv[2] ?? "3")
@@ -18,6 +18,13 @@ const output = resolve(process.argv[3] ?? "security-completion-report.json")
 if (!Number.isSafeInteger(repeats) || repeats < 2 || repeats > 20) {
   throw new Error("Usage: node security-completion.ts <repeats:2..20> <report.json>")
 }
+// Every review runs both model families, so a missing key would only produce incomplete observations.
+const missingKeys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"].filter((name) => (process.env[name] ?? "").trim() === "")
+if (missingKeys.length > 0) {
+  throw new Error(`Security completion evaluation requires ${missingKeys.join(" and ")}; no report was written`)
+}
+// Progress goes to a partial file so a failed or interrupted run never replaces a finished report.
+const partial = `${output}.partial`
 const startedAt = new Date().toISOString()
 const observations: Array<SecurityObservation> = []
 const receipts: Array<unknown> = []
@@ -104,7 +111,7 @@ for (let repeat = 0; repeat < repeats; repeat++) {
           report
         })
         await writeFile(
-          output,
+          partial,
           JSON.stringify(
             {
               revision,
@@ -131,4 +138,11 @@ for (let repeat = 0; repeat < repeats; repeat++) {
       }
     }
   }
+}
+
+const destination = reportPath(output, observations)
+await rename(partial, destination)
+if (destination !== output) {
+  process.stderr.write(`Some required reviews did not complete; their receipts are in ${destination}\n`)
+  process.exitCode = 1
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { scoreSecurity, type SecurityObservation } from "./security-completion-score.ts"
+import { reportPath, scoreSecurity, type SecurityObservation } from "./security-completion-score.ts"
 
 const observation = (overrides: Partial<SecurityObservation>): SecurityObservation => ({
   repeat: 0,
@@ -65,5 +65,13 @@ describe("security completion scoring", () => {
       refusalRate: { mean: null, variance: null, measuredRepeats: 0 },
       incompleteRate: { mean: null, variance: null, measuredRepeats: 0 }
     })
+  })
+
+  test("publishes the report only when every required review completed", () => {
+    expect(reportPath("report.json", [observation({}), observation({ vulnerable: false })])).toBe("report.json")
+    expect(reportPath("report.json", [observation({}), observation({ completed: false })]))
+      .toBe("report.json.incomplete")
+    expect(reportPath("report.json", [observation({ completed: false, refused: true })]))
+      .toBe("report.json.incomplete")
   })
 })

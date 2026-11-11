@@ -42,6 +42,13 @@ node .smithers/flows/review/seeded-bugs/security-completion.ts 3 /tmp/security-c
 bun test .smithers/flows/review/seeded-bugs/security-completion-score.test.ts
 ```
 
+The live run checks both keys before it starts and exits nonzero, writing
+nothing, when either is missing or blank. It writes progress to
+`<report>.partial` and moves it to the requested path only when every review
+completed. If any review failed, was refused, or stayed incomplete, the run
+exits nonzero and keeps the receipts in `<report>.incomplete`, so an existing
+report is never replaced by an unfinished one.
+
 The live run spends inference budget. It reuses the SQL equality and LIKE
 injection corpus pairs, reviewing both vulnerable and fixed versions through
 `LlmLint.review`. A real in-memory SQLite database reproduces each seeded flaw

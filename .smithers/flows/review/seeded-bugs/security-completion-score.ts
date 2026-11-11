@@ -46,3 +46,7 @@ export function scoreSecurity(observations: ReadonlyArray<SecurityObservation>) 
     incompleteRate: stats(runs.map((run) => run.incompleteRate))
   }
 }
+
+/** Where a finished run's report goes: the requested path only when every required review completed. */
+export const reportPath = (output: string, observations: ReadonlyArray<SecurityObservation>): string =>
+  observations.every((entry) => entry.completed) ? output : `${output}.incomplete`
