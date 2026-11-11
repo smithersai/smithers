@@ -222,6 +222,12 @@ const currentDatabaseFiles = new Set([
 ])
 
 /**
+ * Policy files 1.0 commands read from `.smithers` on their own, with no build
+ * definitions beside them: `smthrs alerts` reads `alerts.json`.
+ */
+const currentPolicyFiles = new Set(["alerts.json"])
+
+/**
  * The `.smithers` subdirectories 1.0 owns: the project's flows (M-49) and the
  * wiki, whose decisions pages agent memory writes under `wiki/decisions/`, and
  * the project's declared check scripts.
@@ -231,7 +237,7 @@ const currentDirectories = new Set([basename(Descriptor.projectFlowsDirectory), 
 /**
  * Whether a `.smithers` directory holds only what 1.0 writes there: the
  * project's `flows/` and `wiki/`, the current build definitions, the opencode server's own
- * files, or any of them together. An empty directory, an unknown file, any
+ * files, the alert policy, or any of them together. An empty directory, an unknown file, any
  * other subdirectory (0.x's `workflows/` among them) and unreadable metadata
  * all still read as 0.x state.
  */
@@ -243,7 +249,9 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
     return false
   }
   const current = (entry: (typeof entries)[number]) =>
-    entry.isFile() ? currentDatabaseFiles.has(entry.name) : entry.isDirectory() && currentDirectories.has(entry.name)
+    entry.isFile()
+      ? currentDatabaseFiles.has(entry.name) || currentPolicyFiles.has(entry.name)
+      : entry.isDirectory() && currentDirectories.has(entry.name)
   if (!entries.every((entry) => entry.isFile() || current(entry))) return false
   const rest = entries.filter((entry) => !current(entry))
   if (rest.length === 0) return entries.length > 0

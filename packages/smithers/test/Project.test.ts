@@ -63,6 +63,17 @@ it("distinguishes current build definitions from legacy run state without hiding
   expect(Project.legacyState(root, exists)).toEqual([join(root, ".smithers")])
 })
 
+it("reads the alert policy as 1.0 state, alone or beside current files", () => {
+  // `smthrs alerts` reads `.smithers/alerts.json`; a project that only
+  // configures alerts must not print the 0.x notice on every command.
+  const alerting = project(".smithers/", ".smithers/alerts.json")
+  expect(Project.legacyState(alerting)).toEqual([])
+  const served = project(".smithers/flows/", ".smithers/opencode.sqlite", ".smithers/alerts.json")
+  expect(Project.legacyState(served)).toEqual([])
+  writeFileSync(join(alerting, ".smithers", "smithers.db"), "")
+  expect(Project.legacyState(alerting)).toEqual([join(alerting, ".smithers")])
+})
+
 it("reads a .smithers/flows/ directory as 1.0 state, alone or beside current files", () => {
   const flowsOnly = project(".smithers/flows/review/")
   writeFileSync(join(flowsOnly, ".smithers", "flows", "review", "flow.ts"), "")
