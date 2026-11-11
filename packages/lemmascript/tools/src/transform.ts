@@ -920,6 +920,12 @@ function lowerExpr(e: TExpr, binds: Stmt[] | null): Expr {
         }
         return result;
       }
+      // An applied one-parameter lambda whose body is one return (resolve's record built from a spread read once):
+      // a let expression binding the argument.
+      if (e.fn.kind === "lambda" && e.fn.params.length === 1 && e.args.length === 1
+          && e.fn.body.length === 1 && e.fn.body[0].kind === "return") {
+        return { kind: "let", name: e.fn.params[0].name, value: lowerExpr(e.args[0], binds), body: lowerExpr(e.fn.body[0].value, binds) };
+      }
       if (e.fn.kind !== "var")
         throw new Error(`Unsupported call expression: ${e.fn.kind}`);
       const prefix = e.callKind === "spec-pure" && _opts.backend === "lean" ? "Pure." : "";

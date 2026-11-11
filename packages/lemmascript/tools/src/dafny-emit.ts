@@ -5,6 +5,7 @@
 import type { Expr, Stmt, Decl, Module, MatchPattern } from "./ir.js";
 import { exactIntegerLiteral, usesName, usesNameInDecl, usesNameInStmts } from "./ir.js";
 import type { Ty } from "./typedir.js";
+import { parseTsType } from "./types.js";
 import { freshName, freshNameWhere, userNames } from "./names.js";
 import { renameFreeVar } from "./transform.js";
 import { DEFAULT_OPTIONS, resolveOptions, type LscOptions } from "./config.js";
@@ -42,6 +43,24 @@ function comprehensionBinder(lam: Extract<Expr, { kind: "lambda" }>, value: Expr
 
 // ── Ty → Dafny type string ─────────────────────────────────
 
+/** A generic user type's arguments are TypeScript type text (`Returned<Model, number>`): each is emitted as a type,
+ *  so `number` is `int`. A name that is not one application (a union text, `A<X> | B`) is emitted as before. */
+function userTypeToDafny(name: string): string {
+  const open = name.indexOf("<");
+  if (open <= 0 || !name.endsWith(">")) return escapeName(name);
+  const args: string[] = [];
+  let depth = 0, start = open + 1;
+  for (let i = open + 1; i < name.length - 1; i++) {
+    const c = name[i];
+    if (c === "<" || c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ">" || c === ")" || c === "]" || c === "}") { depth--; if (depth < 0) return escapeName(name); }
+    else if (c === "," && depth === 0) { args.push(name.slice(start, i).trim()); start = i + 1; }
+  }
+  if (depth !== 0) return escapeName(name);
+  args.push(name.slice(start, -1).trim());
+  return `${escapeName(name.slice(0, open))}<${args.map(a => tyToDafny(parseTsType(a))).join(", ")}>`;
+}
+
 function tyToDafny(ty: Ty): string {
   switch (ty.kind) {
     case "nat": return "nat";
@@ -55,7 +74,7 @@ function tyToDafny(ty: Ty): string {
     case "map": return `map<${tyToDafny(ty.key)}, ${tyToDafny(ty.value)}>`;
     case "set": return `set<${tyToDafny(ty.elem)}>`;
     case "optional": { needPreamble("OptionType"); return `Option<${tyToDafny(ty.inner)}>`; }
-    case "user": return escapeName(ty.name);
+    case "user": return userTypeToDafny(ty.name);
     case "fn": return `(${ty.params.map(tyToDafny).join(", ")}) -> ${tyToDafny(ty.result)}`;
     // Out-of-subset (`any`/`unknown`); opaque so real ops on it fail loudly
     // rather than silently verify as `int`. Mirrors the Lean backend's `_`.

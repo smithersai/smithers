@@ -1124,6 +1124,8 @@ function extractTypeDecl(decl: TypeAliasDeclaration, extraDecls?: TypeDeclInfo[]
   // (`5 | 15 | 30` → `nat`) and other types LS can't model precisely.
   const override = parseAnnotations(decl).find(a => a.kind === "type");
   if (override) return { name, typeParams: tpField, kind: "alias", aliasOf: override.expr };
+  // A computed record alias has no generic backend record; each reference is instantiated (`localTypeText`).
+  if (computedRecordAliasDeclaration(decl)) return null;
 
   if (type.isUnion()) {
     const members = type.getUnionTypes();
@@ -1261,7 +1263,10 @@ function fieldsOf(owner: string, type: Type, locationNode: Node, extraDecls?: Ty
     // Optional property: `foo?: T` reports as `T` (ts-morph strips the `| undefined` from a question-token type, and
     // `exactOptionalPropertyTypes` never adds it). Add it back so the field resolves to `Optional<T>`. A mapped type's
     // optional key (an Effect Schema `optionalKey`) is optional through its symbol: its declaration is the schema's.
-    if (prop.hasFlags(ts.SymbolFlags.Optional) || (propDecl as any)?.hasQuestionToken?.()) {
+    // An intersection may merge an optional declaration with a required one; its resolved symbol then decides.
+    const optional = prop.getDeclarations().length > 1 ? prop.hasFlags(ts.SymbolFlags.Optional)
+      : prop.hasFlags(ts.SymbolFlags.Optional) || (propDecl as any)?.hasQuestionToken?.();
+    if (optional) {
       // Normalize checker output that puts `undefined` first, then ensure
       // exactly one trailing `| undefined`.
       if (tsType.startsWith("undefined | ")) tsType = `${tsType.slice("undefined | ".length)} | undefined`;
@@ -1366,12 +1371,17 @@ function localTypeText(type: Type, hint: string, loc: Node): string {
   if (/\b__(?:type|object)\b/.test(printed)) return namedTypeString(type, name, loc, _synthArrayUnions);
   // A rest binding's type (`const { a, ...rest } = x`) carries the binding's own name as its symbol, which is not a
   // type: anonymous unless an interface, alias or class declares it.
-  if (!type.isObject() || type.isArray() || type.isTuple() || type.getCallSignatures().length > 0 || type.getProperties().length === 0) return printed;
+  // An instance of a computed record alias (`WithCommands<R>`, an intersection over an indexed access) is a record
+  // of its instantiated fields, named after the alias.
+  const alias = type.getAliasSymbol();
+  const computed = alias !== undefined && alias.getDeclarations().some(computedRecordAliasDeclaration);
+  const objectLike = type.isObject() || (computed && type.isIntersection() && type.getIntersectionTypes().every(t => t.isObject()));
+  if (!objectLike || type.isArray() || type.isTuple() || type.getCallSignatures().length > 0 || type.getProperties().length === 0) return printed;
   const declared = (type.getSymbol()?.getDeclarations() ?? []).some(d => Node.isInterfaceDeclaration(d) || Node.isTypeAliasDeclaration(d) || Node.isClassDeclaration(d));
-  if (declared || type.getAliasSymbol() !== undefined) return printed;
+  if (!computed && (declared || alias !== undefined)) return printed;
   const known = _anonNames.get(type.compilerType);
   if (known) return known;
-  const fresh = freshTypeName(name);
+  const fresh = freshTypeName(computed ? alias!.getName() : name);
   return adoptAnonymous({ name: fresh, kind: "record", fields: fieldsOf(fresh, type, loc, _synthArrayUnions) }, type, _synthArrayUnions);
 }
 
@@ -1379,7 +1389,16 @@ function localTypeText(type: Type, hint: string, loc: Node): string {
  *  standard library's `NonNullable<T>`. Its text is no backend type; the checker's resolved type is. */
 function computedTypeNode(tn: Node): boolean {
   return [tn, ...tn.getDescendants()].some(n => Node.isIndexedAccessTypeNode(n) || Node.isTypeQuery(n)
-    || (Node.isTypeReference(n) && n.getTypeName().getText() === "NonNullable"));
+    || (Node.isTypeReference(n) && (n.getTypeName().getText() === "NonNullable"
+      || (n.getTypeName().getSymbol()?.getDeclarations() ?? []).some(computedRecordAliasDeclaration))));
+}
+
+/** A generic alias whose fields need an indexed type evaluated at an actual instantiation (`type WithCommands<R> =
+ *  R & { readonly commands: NonNullable<R["commands"]> }`). It has no generic backend record: each instance is one. */
+function computedRecordAliasDeclaration(declaration: Node): boolean {
+  if (!Node.isTypeAliasDeclaration(declaration) || declaration.getTypeParameters().length === 0) return false;
+  const node = declaration.getTypeNode();
+  return node !== undefined && Node.isIntersectionTypeNode(node) && node.getDescendantsOfKind(SyntaxKind.IndexedAccessType).length > 0;
 }
 
 /** A tagged union of anonymous object types (an Effect Schema `Union` of `TaggedStruct`s) as a discriminated-union
@@ -3164,6 +3183,11 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
     const retType = f.node.getReturnType();
     // Prefer alias symbol (named type aliases) over underlying object symbol (__type)
     const aliasSym = retType.getAliasSymbol();
+    // An instance of a computed record alias is its own record (`localTypeText`), never the generic alias.
+    if (aliasSym && aliasSym.getDeclarations().some(computedRecordAliasDeclaration)) {
+      fn.returnType = localTypeText(retType, aliasSym.getName(), f.node);
+      continue;
+    }
     if (aliasSym && !aliasSym.getName().startsWith("__")) {
       const aliasName = aliasSym.getName();
       // If the alias name is already locally declared (e.g. via `//@ declare-type

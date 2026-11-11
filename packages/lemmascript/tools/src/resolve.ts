@@ -1171,6 +1171,33 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       // an outer Optional when looking at returnTy — `return {...} : null`
       // has ctx.returnTy = Option<T>, but the record literal's natural type is T.
       const returnTyUnwrapped = ctx.returnTy.kind === "optional" ? ctx.returnTy.inner : ctx.returnTy;
+      // A spread whose overrides change the record's type (`{ ...state, commands: state.commands ?? [] }` returned as
+      // `WithCommands<…>`, where commands becomes required) builds the target record: each field from an override or
+      // the spread, which is read once.
+      if (spread && ty.kind === "user" && returnTyUnwrapped.kind === "user" && !tyEqual(ty, returnTyUnwrapped)) {
+        const source = declOfKind(ctx.typeDecls, tyBaseName(ty.name), "record");
+        const target = declOfKind(ctx.typeDecls, tyBaseName(returnTyUnwrapped.name), "record");
+        const available = new Set([...(source?.fields ?? []).map(f => f.name), ...e.fields.map(f => f.name)]);
+        if (source?.fields && target?.fields && target !== source && target.fields.every(f => available.has(f.name) || f.type?.kind === "optional")) {
+          const input: TExpr = spread.kind === "var" ? spread : { kind: "var", name: freshName("_recordSource"), ty };
+          const fields = target.fields.map(f => {
+            const declTy = f.type!;
+            const override = e.fields.find(o => o.name === f.name);
+            const innerTy = declTy.kind === "optional" ? declTy.inner : declTy;
+            const value: TExpr = override
+              ? resolveExpr(override.value, { ...ctx, returnTy: innerTy.kind === "user" || innerTy.kind === "array" ? innerTy : { kind: "unknown" } })
+              : source.fields!.some(d => d.name === f.name)
+                ? { kind: "field", obj: input, field: f.name, ty: source.fields!.find(d => d.name === f.name)!.type! }
+                : { kind: "var", name: "undefined", ty: { kind: "void" } };
+            return { name: f.name, value: coerceToTargetTy(value, declTy, ctx.typeDecls) };
+          });
+          const record: TExpr = { kind: "record", spread: null, fields, ty: returnTyUnwrapped };
+          if (input === spread) return record;
+          const lambda: TExpr = { kind: "lambda", params: [{ name: (input as { name: string }).name, ty }],
+            body: [{ kind: "return", value: record }], ty: { kind: "fn", params: [ty], result: returnTyUnwrapped } };
+          return { kind: "call", fn: lambda, args: [spread], ty: returnTyUnwrapped, callKind: "pure" };
+        }
+      }
       const recordTy = ty.kind === "user" ? ty : returnTyUnwrapped.kind === "user" ? returnTyUnwrapped : null;
       const decl = recordTy ? declOfKind(ctx.typeDecls, tyBaseName(recordTy.name), "record") : undefined;
       // Union-variant literal in union-typed context (a constructed IR node,
