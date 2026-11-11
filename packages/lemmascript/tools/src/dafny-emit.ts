@@ -489,6 +489,12 @@ function emitExpr(e: Expr): string {
           }
           return `StringIndexOf(${obj}, ${args[0]})`;
         }
+        if (e.method === "lastIndexOf") {
+          // JavaScript's `fromIndex` argument would need its own clamping model; refuse it rather than drop it.
+          if (args.length !== 1) throw new Error("Unsupported Dafny method call: .lastIndexOf() with a position on string");
+          needPreamble("StringLastIndexOf");
+          return `StringLastIndexOf(${obj}, ${args[0]})`;
+        }
         if (e.method === "split")   { needPreamble("StringSplit"); return `StringSplit(${obj}, ${args[0]})`; }
         if (e.method === "slice") {
           // `//@ safe-slice` gives strings the same JavaScript clamping as arrays, negative bounds included.
@@ -1298,6 +1304,10 @@ const SAFE_SLICE = `function NormalizeSliceIndex(n: nat, i: int): int
 
 function SafeSlice<T>(s: seq<T>, lo: int, hi: int): seq<T>
   ensures |SafeSlice(s, lo, hi)| <= |s|
+  ensures 0 <= lo <= hi <= |s| ==> SafeSlice(s, lo, hi) == s[lo..hi]
+  ensures 0 <= lo <= hi <= |s| ==> |SafeSlice(s, lo, hi)| == hi - lo
+  ensures 0 <= lo <= hi <= |s| ==> forall i {:trigger s[i]} :: lo <= i < hi ==> SafeSlice(s, lo, hi)[i - lo] == s[i]
+  ensures lo >= |s| ==> SafeSlice(s, lo, hi) == []
 {
   var lo' := NormalizeSliceIndex(|s|, lo);
   var hi' := NormalizeSliceIndex(|s|, hi);
@@ -1347,6 +1357,33 @@ function StringIndexOfFromN(s: string, sub: string, from: nat): int
   if from + |sub| > |s| then -1
   else if s[from..from + |sub|] == sub then from as int
   else StringIndexOfFromN(s, sub, from + 1)
+}`;
+
+// `s.lastIndexOf(sub)`: the last position where `sub` starts, or -1; an empty `sub` is found at |s|, as in JavaScript.
+// The "no later match" clause quantifies over both slice bounds so that its trigger, `s[i..j]`, has no arithmetic
+// and matches a caller's `s[i..i + |sub|]`; for a one-unit `sub` it is also stated per unit, which a caller's
+// `s.charCodeAt(i)` reaches.
+const STRING_LAST_INDEX_OF = `function StringLastIndexOf(s: string, sub: string): int
+  ensures StringLastIndexOf(s, sub) == -1
+       || (0 <= StringLastIndexOf(s, sub) <= |s| - |sub| && s[StringLastIndexOf(s, sub)..StringLastIndexOf(s, sub) + |sub|] == sub)
+  ensures forall i, j {:trigger s[i..j]} :: StringLastIndexOf(s, sub) < i && j == i + |sub| && j <= |s| ==> s[i..j] != sub
+  ensures |sub| == 1 ==> forall i {:trigger s[i]} :: StringLastIndexOf(s, sub) < i < |s| ==> s[i] != sub[0]
+{
+  StringLastIndexOfFrom(s, sub, |s| - |sub|)
+}
+
+function StringLastIndexOfFrom(s: string, sub: string, from: int): int
+  requires from <= |s| - |sub|
+  decreases if from < 0 then 0 else from + 1
+  ensures StringLastIndexOfFrom(s, sub, from) == -1
+       || (0 <= StringLastIndexOfFrom(s, sub, from) <= from
+           && s[StringLastIndexOfFrom(s, sub, from)..StringLastIndexOfFrom(s, sub, from) + |sub|] == sub)
+  ensures forall i, j {:trigger s[i..j]} :: StringLastIndexOfFrom(s, sub, from) < i <= from && j == i + |sub| ==> s[i..j] != sub
+  ensures |sub| == 1 ==> forall i {:trigger s[i]} :: StringLastIndexOfFrom(s, sub, from) < i <= from ==> s[i] != sub[0]
+{
+  if from < 0 then -1
+  else if s[from..from + |sub|] == sub then from
+  else (assert |sub| == 1 ==> s[from..from + 1] == [s[from]]; StringLastIndexOfFrom(s, sub, from - 1))
 }`;
 
 // `s.split(d)` in TS returns a non-empty sequence of segments. Modeled here as
@@ -1618,6 +1655,7 @@ const PREAMBLE_CODE: [string, string | (() => string)][] = [
   ["SeqJoin", SEQ_JOIN],
   ["SafeSlice", SAFE_SLICE],
   ["StringIndexOf", STRING_INDEX_OF],
+  ["StringLastIndexOf", STRING_LAST_INDEX_OF],
   ["StringSearchPosition", STRING_SEARCH_POSITION],
   ["StringStartsWithAt", STRING_STARTS_WITH_AT],
   ["StringEndsWithAt", STRING_ENDS_WITH_AT],

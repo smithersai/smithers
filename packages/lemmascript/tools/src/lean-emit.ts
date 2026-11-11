@@ -272,6 +272,7 @@ function emitMethodCall(tyKind: string, method: string, monadic: boolean, obj: s
       if (args.length !== 1) throw new Error("Lean string.indexOf does not support a position argument");
       return `JSString.indexOf ${obj} ${args[0]}`;
     }
+    if (method === "lastIndexOf") throw new Error("Lean string.lastIndexOf is unsupported; use the Dafny backend");
     if (method === "slice")   return `JSString.slice ${obj} ${args[0]} ${args[1]}`;
   }
   // Map methods

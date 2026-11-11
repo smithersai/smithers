@@ -52,12 +52,17 @@ tests read are unchanged except for the patches listed below.
 | A presence check on the left of a boolean `&&` binds the value on the right (`r != undefined && r.length == 0`), and a top-level contract conjunction is split into clauses only before its first presence check or `k in m`, which keep the conjuncts after them; a premise, a condition, a longer chain and a right side that already matches on the value (`x != undefined && (x ?? d) == d`) keep their existing rules (`tests/map-set.test.ts`) | Offered upstream later |
 | A record or array literal as the default of `??` builds the left operand's type; it took the enclosing function's return type (`map-set.ts` `walked`) | Offered upstream later |
 | A rest binding of a parameter or variable written with a named type (`const { sandbox, ...kept } = model`, `model: Model`) keeps that type; the checker's anonymous type of a schema alias was named from the binding (`Destr0`) and took the alias's place, so an imported contract that narrows an optional field of `Model` failed to resolve (`schema-model/rest.ts`, with a wrong twin) | Offered upstream later |
+| String `lastIndexOf(sub)`: the last match or -1 (an empty `sub` at the end), with no later match stated over slice bounds and, for one code unit, per `charCodeAt`; a position argument and the Lean back end are refused by name (`string-last-index.ts`, with a wrong twin) | Offered upstream later |
 
 A guarded optional record, or an already non-nullable record/primitive, may use a redundant nullish fallback in a
 contract (`spec-nullish-narrowed.ts`). Narrowing keeps the present value, including zero, false and the empty string.
 Array indexes retain their bounds-dependent fallback. The wrong guarded-result and falsy-value twins must fail a
 Dafny postcondition. Unknown, opaque and nullable types do not acquire a presence assumption.
 | `pattern.test(s)` on a literal pattern, or a module `const` holding one, is decided by a Dafny matcher (Brzozowski derivatives) proved equal to the pattern's language, and `test` to "some substring with the anchored ends is in it" (`JsTestCorrect`). A contract names a test with `\\matches("pattern", s)`. The subset: code units, `.`, classes and `\\d \\w \\s` with their negations, groups, alternation, `* + ? {m} {m,} {m,n}` (lazy too), `^` first and `$` last, no flags. Everything else (flags, `\\b`, lookaround, backreferences, `exec`, `match`, `replace`) is refused by name. Dafny backend only (`tools/src/regex.ts`, `regex.ts`, `regex-wrong.ts`, `tests/regex.test.ts`, which also compares the subset's semantics with the native RegExp) | Offered upstream later |
+
+Safe-slice contracts expose both native past-end emptiness and equality to a bounded raw slice, so a checked
+callee consuming a suffix can retain its character relation (`safe-slice-suffix.ts`, `ownPost`). The native
+prefix/serial table in `safe-slice-suffix.test.ts` covers shorter, foreign and valid session ids.
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 

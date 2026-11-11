@@ -89,7 +89,7 @@ fi
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union safe-slice-suffix map-index real-field generic-record quantifier-names real-minmax string-last-index; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -210,6 +210,18 @@ expect_failure \
   "two copied contracts conflated constants that have different values" \
   "$tsx" tools/src/lsc.ts gen --backend=dafny "$fixture_dir/imported-contract-const-cross-collision/use.ts"
 
+# A checked callee consuming a safe-slice suffix keeps its character relation; the wrong twin must reach a postcondition.
+cp tools/fixtures/safe-slice-suffix.ts "$fixture_dir/safe-slice-session.ts"
+cp tools/fixtures/safe-slice-session-wrong.ts "$fixture_dir/safe-slice-session-wrong.ts"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=30 "$fixture_dir/safe-slice-session.ts"
+expect_proof_failure \
+  "a wrong compositional helper twin verified (safe-slice-session)" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=30 "$fixture_dir/safe-slice-session-wrong.ts"
+if grep -qE 'timed out|time out|out of range' "$fixture_dir/proof-failure.log"; then
+  cat "$fixture_dir/proof-failure.log"
+  exit 1
+fi
+
 cp tools/fixtures/safe-slice-suffix-wrong.ts "$fixture_dir/safe-slice-suffix-wrong.ts"
 expect_failure \
   "a clamped suffix past the end verified as nonempty" \
@@ -230,6 +242,10 @@ cp tools/fixtures/real-minmax-wrong.ts "$fixture_dir/real-minmax-wrong.ts"
 expect_proof_failure \
   "a real clamp verified above its floor" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/real-minmax-wrong.ts"
+cp tools/fixtures/string-last-index-wrong.ts "$fixture_dir/string-last-index-wrong.ts"
+expect_proof_failure \
+  "the last match verified as the first" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/string-last-index-wrong.ts"
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \

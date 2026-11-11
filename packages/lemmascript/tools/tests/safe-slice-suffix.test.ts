@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Project, ScriptTarget } from "ts-morph";
-import { suffix, replyId, pastEnd, emptyTail } from "../fixtures/safe-slice-suffix.ts";
+import { suffix, replyId, pastEnd, emptyTail, ownPost } from "../fixtures/safe-slice-suffix.ts";
 import { extractModule } from "../src/extract.ts";
 import { resolveModule } from "../src/resolve.ts";
 import { narrowModule } from "../src/narrow.ts";
@@ -49,4 +49,14 @@ test("without safe-slice the direct Dafny slices are unchanged", () => {
   assert.match(output, /s\[n\.\.\]/);
   assert.match(output, /s\[a\.\.b\]/);
   assert.doesNotMatch(output, /SafeSlice/);
+});
+
+
+test("a checked suffix classifier keeps the session prefix and native clamping", () => {
+  for (const session of ["", "s", "long-session"]) {
+    for (const id of ["", "s-1", "s-0", "s-12", "other-1", "long-session-2", "long-session-x"]) {
+      const suffix = id.slice(session.length + 1);
+      assert.equal(ownPost(id, session), id.startsWith(session + "-") && /^[1-9][0-9]*$/.test(suffix));
+    }
+  }
 });
