@@ -25,6 +25,10 @@
 
 ### Fixed
 
+- `ChildProcessSpawner.layer` resolves each stage's working directory again
+  after the grant decision. A directory replaced by a symlink while an attended
+  request waits is refused with `PermissionDenied` instead of followed, and an
+  approved child starts in the real directory that was judged.
 - `FileSystem.layer` no longer lets `glob`, or a batch `glob` member, list
   paths a rule restricts. The grant check named the pattern text alone, so
   `deny fs:read /workspace/secrets/**` did not stop `glob("sec*/**")` or

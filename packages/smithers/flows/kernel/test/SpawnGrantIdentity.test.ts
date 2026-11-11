@@ -9,7 +9,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
-import { Cause, Effect, FileSystem, Layer, Option, Path, type PlatformError, Sink, Stream } from "effect"
+import { Cause, Effect, Fiber, FileSystem, Layer, Option, Path, type PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import {
   ChildProcessSpawner as HostChildProcessSpawner,
@@ -66,6 +66,14 @@ const run = (rules: ReadonlyArray<Permission.Rule>, command: ChildProcess.Comman
     const exit = yield* Effect.exit(spawner.exitCode(command))
     return { exit, spawned: spawned.length }
   }).pipe(Effect.provide(guarded(rules)))
+
+const awaitPending = (store: GrantStore.Service): Effect.Effect<GrantStore.PendingRequest> =>
+  Effect.suspend(() =>
+    Effect.flatMap(store.list, (pending) =>
+      pending[0] === undefined
+        ? Effect.yieldNow.pipe(Effect.andThen(awaitPending(store)))
+        : Effect.succeed(pending[0]))
+  )
 
 const refused = (result: { readonly exit: import("effect").Exit.Exit<unknown, PlatformError.PlatformError> }) =>
   result.exit._tag === "Failure" &&
@@ -257,6 +265,7 @@ describe("proc:spawn grant identity", () => {
           expect(named.exit._tag, named.exit._tag === "Failure" ? Cause.pretty(named.exit.cause) : undefined).toBe(
             "Success"
           )
+          expect((spawned[0] as ChildProcess.StandardCommand).options.cwd).toBe(realOther)
           // The same directory reached through its real path (/private/... on
           // macOS) is still inside the workspace.
           const real = yield* onDisk(
@@ -275,4 +284,55 @@ describe("proc:spawn grant identity", () => {
         }
       })
   )
+
+  it.effect("a cwd swapped for a symlink while the attended request waits is refused, never followed", () =>
+    Effect.gen(function*() {
+      const base = NodeFs.mkdtempSync(NodePathModule.join(NodeOs.tmpdir(), "spawn-cwd-swap-"))
+      const workspace = NodePathModule.join(base, "workspace")
+      const directory = NodePathModule.join(workspace, "d")
+      const other = NodePathModule.join(base, "other-repo")
+      NodeFs.mkdirSync(directory, { recursive: true })
+      NodeFs.mkdirSync(other)
+      const attended = (swap: boolean) =>
+        Effect.gen(function*() {
+          spawned.length = 0
+          const store = yield* GrantStore.make({ runId: "spawn-cwd-swap" })
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner.pipe(
+            Effect.provide(
+              ChildProcessSpawner.layer.pipe(
+                Layer.provide(ProcessConfinement.layerNoop),
+                Layer.provide([
+                  Layer.succeed(GrantStore.GrantStore)(store),
+                  NodePath.layer,
+                  NodeFileSystem.layer,
+                  Layer.succeed(HostChildProcessSpawner)(host)
+                ])
+              )
+            )
+          )
+          const execution = yield* Effect.exit(
+            spawner.exitCode(ChildProcess.make("git", ["status"], { cwd: directory }))
+          ).pipe(Effect.forkChild({ startImmediately: true }))
+          const pending = yield* awaitPending(store)
+          expect(pending.capability).toMatchObject({ action: "proc:spawn", resource: "git status" })
+          if (swap) {
+            NodeFs.rmdirSync(directory)
+            NodeFs.symlinkSync(other, directory)
+          }
+          yield* store.reply(pending.requestId, "once")
+          return { exit: yield* Fiber.join(execution), spawned: [...spawned] }
+        }).pipe(Effect.scoped, Effect.provide(Workspace.layer(workspace)))
+      try {
+        const kept = yield* attended(false)
+        expect(kept.exit._tag).toBe("Success")
+        expect(kept.spawned.map((command) => (command as ChildProcess.StandardCommand).options.cwd)).toEqual([
+          NodeFs.realpathSync(directory)
+        ])
+        const swapped = yield* attended(true)
+        expect(refused(swapped)).toBe(true)
+        expect(swapped.spawned).toEqual([])
+      } finally {
+        NodeFs.rmSync(base, { recursive: true, force: true })
+      }
+    }))
 })

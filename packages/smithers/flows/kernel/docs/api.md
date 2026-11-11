@@ -905,9 +905,11 @@ layer draws once, a `shell: true` line that holds shell control syntax marked as
 named in a `cwd <path> --` prefix. When the host filesystem is in the layer's
 context, both are compared by real path: a symlink inside the workspace that
 leads out of it is named as its target, and a root reached through
-`/private` on macOS still counts as inside. The spawner passes this process's
-environment as `context.ambient`. Pipeline `from`/`to` routing is not part of
-what a grant authorizes. `cwd` and the **names** of overridden environment
+`/private` on macOS still counts as inside. The working directory is resolved
+again when the grant decision arrives: a stage whose directory now resolves
+elsewhere is refused, and an approved stage starts in the directory that was
+judged. The spawner passes this process's environment as `context.ambient`.
+Pipeline `from`/`to` routing is not part of what a grant authorizes. `cwd` and the **names** of overridden environment
 variables also reach an attended surface as display metadata; the values do
 not. A
 command that cannot be snapshotted fails with an `InvalidData` `PlatformError`,

