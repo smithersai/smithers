@@ -9,6 +9,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import * as GoCache from "../src/internal/GoCache.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -314,5 +315,22 @@ export const Package = S.Package({ targets: {
     // inside the module rather than "no modules specified" from the root.
     const download = await ran(root, ["build", "//:download"])
     expect(download.text).toContain("go: no module dependencies to download")
+  }, 240_000)
+})
+
+describe.runIf(launcher !== undefined && canConfine)("confined Go actions", () => {
+  it("share the workspace's compile cache between actions", async () => {
+    const root = await module(
+      `const test = (name: string) => S.Go.Test({ pkgs: ["./"], offline: true, env: { PROBE: name }, sandbox: {} })
+export const Package = S.Package({ targets: { a: test("a"), b: test("b") } })`
+    )
+    expect((await ran(root, ["test", "//:a"])).exitCode).toBe(0)
+    const compiled = await GoCache.entries(root, ".flows")
+    expect(compiled.length).toBeGreaterThan(0)
+    const before = new Set(compiled.map((entry) => entry.path))
+    expect((await ran(root, ["test", "//:b"])).exitCode).toBe(0)
+    // b compiles nothing a already compiled: it adds only its own test result.
+    const added = (await GoCache.entries(root, ".flows")).filter((entry) => !before.has(entry.path))
+    expect(added.length).toBeLessThan(compiled.length / 4)
   }, 240_000)
 })
