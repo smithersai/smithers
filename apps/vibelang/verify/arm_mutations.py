@@ -1,7 +1,21 @@
 """Executable mutations of the last inline arms of `update` (lane vl-proveall4, 0018); contracts are never edited."""
 A = 'src/web/armDecision.vibe'
 W = 'src/web/wikiEditorDecision.vibe'
+M = 'src/web/modelWrite.vibe'
 cases = [
+(M, 'write-account-docs', 'writeAccount', 'docs: state.docs, account }', 'docs: model.docs, account }', 'an account step writes docs'),
+(M, 'write-account-surface', 'writeAccount', 'surface: state.surface, docs', 'surface: model.surface, docs', 'an account step writes the surface'),
+(M, 'write-account-dropped', 'writeAccount', 'return { ...model, surface: state.surface, docs: state.docs, account }', 'return { ...model, surface: state.surface, docs: state.docs }', 'an account step writes the account'),
+(M, 'write-account-menu', 'writeAccount', '{ ...base, menu: state.menu,', '{ ...base, menu: base.menu,', 'the menu follows the step'),
+(M, 'write-account-target-role', 'writeAccount', 'targetRole: state.targetRole, epoch', 'targetRole: base.targetRole, epoch', 'the grant target role follows the step'),
+(M, 'write-account-from', 'writeAccount', 'epoch: state.epoch, from: state.from }', 'epoch: state.epoch, from: state.epoch }', 'the stream start follows the step'),
+(M, 'write-account-frame', 'writeAccount', 'return { ...model, surface', 'return { ...model, palette: false, surface', 'every other Model field is unchanged'),
+(M, 'write-account-base', 'writeAccount', 'const account: AccountState = { ...base,', 'const account: AccountState = { ...base, notice: "",', 'every other account field is unchanged'),
+(M, 'write-actions-open', 'writeActions', '{ ...base, open: state.open,', '{ ...base, open: base.open,', 'the panel opens and closes with the step'),
+(M, 'write-actions-highlight', 'writeActions', 'highlight: state.highlight }', 'highlight: 0 }', 'the slash highlight follows the step'),
+(M, 'write-actions-dropped', 'writeActions', 'return { ...model, actions }', 'return model', 'an actions step writes the panel'),
+(M, 'write-actions-base', 'writeActions', 'const actions: ActionView = { ...base,', 'const actions: ActionView = { ...base, entries: [],', 'the listed flows are unchanged'),
+(M, 'write-actions-frame', 'writeActions', 'return { ...model, actions }', 'return { ...model, docs: "pane", actions }', 'every other Model field is unchanged'),
 (A, 'arm-people-retry', 'pendingAfterPeople', 'retry === "people" ? false : pending', 'false', 'a grant or sign-in keeps its wait'),
 (A, 'arm-people-ends', 'pendingAfterPeople', 'retry === "people" ? false : pending', 'pending', 'the list ends a People retry'),
 (A, 'arm-people-which', 'pendingAfterPeople', 'retry === "people"', 'retry === "grant"', 'only a People retry waits for the list'),

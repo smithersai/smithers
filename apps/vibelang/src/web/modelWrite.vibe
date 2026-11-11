@@ -1,0 +1,23 @@
+// Writing a proved step's state back over the page's Model (decision 0018). `update`'s account and actions arms
+// decide a step in `modelDecision.vibe`; these state that the next Model is the old one with exactly that state written.
+import type { AccountState, Model } from "./main.vibe"
+import type { ActionView } from "./actionModel.vibe"
+import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
+
+/** The Model after an account step: `surface` and `docs` from the step, the account's screen fields over `base` (the
+ *  current account, or the signed-out one), and every other field of the Model and of `base` unchanged. */
+//@ verify
+//@ ensures \result == { ...model, surface: state.surface, docs: state.docs, account: { ...base, menu: state.menu, people: state.people, pending: state.pending, error: state.error, retry: state.retry, target: state.target, targetRole: state.targetRole, epoch: state.epoch, from: state.from } }
+export function writeAccount(model: Model, base: AccountState, state: AccountScreen): Model {
+  const account: AccountState = { ...base, menu: state.menu, people: state.people, pending: state.pending, error: state.error, retry: state.retry, target: state.target, targetRole: state.targetRole, epoch: state.epoch, from: state.from }
+  return { ...model, surface: state.surface, docs: state.docs, account }
+}
+
+/** The Model after an actions step: the panel's screen fields over `base` (the current panel, or the initial one), and
+ *  every other field of the Model and of `base` unchanged. */
+//@ verify
+//@ ensures \result == { ...model, actions: { ...base, open: state.open, maximized: state.maximized, selected: state.selected, run: state.run, loading: state.loading, starting: state.starting, error: state.error, input: state.input, highlight: state.highlight } }
+export function writeActions(model: Model, base: ActionView, state: ActionScreen): Model {
+  const actions: ActionView = { ...base, open: state.open, maximized: state.maximized, selected: state.selected, run: state.run, loading: state.loading, starting: state.starting, error: state.error, input: state.input, highlight: state.highlight }
+  return { ...model, actions }
+}

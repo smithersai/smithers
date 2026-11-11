@@ -1,4 +1,5 @@
 import * as ModelDecision from "./modelDecision.vibe"
+import * as ModelWrite from "./modelWrite.vibe"
 import * as IssueDecision from "./issueDecision.vibe"
 import * as TourDecision from "./tourDecision.vibe"
 import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
@@ -640,8 +641,7 @@ function accountCommand(command: ModelDecision.AccountCommand) {
 
 /** Applies a proved account step: its state over the model, its commands as Foldkit Commands. */
 function runAccount(model: Model, step: ModelDecision.AccountStep): Update.Return<Model, Message, Factory | Actions> {
-  const { surface, docs, ...account } = step.state
-  const next: Model = { ...model, surface, docs, account: { ...accountOf(model), ...account } }
+  const next = ModelWrite.writeAccount(model, accountOf(model), step.state)
   return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(accountCommand) }
 }
 
@@ -664,7 +664,7 @@ function actionCommand(command: ModelDecision.ActionCommand) {
 
 /** Applies a proved actions step: its state over the panel, its commands as Foldkit Commands. */
 function runActions(model: Model, step: ModelDecision.ActionStep): Update.Return<Model, Message, Factory | Actions> {
-  const next: Model = { ...model, actions: { ...actionsOf(model), ...step.state } }
+  const next = ModelWrite.writeActions(model, actionsOf(model), step.state)
   return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(actionCommand) }
 }
 
