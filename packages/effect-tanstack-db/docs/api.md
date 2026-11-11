@@ -464,6 +464,12 @@ Settlement remains available after disposal so a completed send can persist its
 terminal receipt and leave storage without being replayed on reopening.
 The recovery barrier is installed before leadership status is published, so
 subscribers admitting a retained write wait for the correct sequence snapshot.
+A leader whose recovery can't read the storage refuses every write with
+`NotAdmitted` (`reason: "storage"`) and sends none of its stored writes. The
+next `transact` or `retryNow` repeats the recovery, then loads the stored
+writes, so they are sent before any write admitted after. Each failure is logged
+as `outbox couldn't recover admission order` at Warn level with `error`, the
+storage error's name.
 
 Held status treats persisted transaction rows as authoritative on every
 invalidation, including previously cached keys. `retryNow` remains a synchronous

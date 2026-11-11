@@ -1,8 +1,8 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
 import { Context, Effect, Exit, Fiber, Layer, Option, Scope, Stream } from "effect"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { Collection, Outbox } from "../src/index.ts"
-import { id, memoryStorage, Note, note } from "./fixtures.ts"
+import { id, memoryStorage, Note, note, withLogs } from "./fixtures.ts"
 
 type Config = Parameters<typeof startOfflineExecutor>[0]
 const leader: Outbox.Leader = {
@@ -491,4 +491,80 @@ test("an invalidation during a held-row read schedules another refresh and obser
   } finally {
     release()
   }
+})
+
+for (const trigger of ["transact", "retryNow"] as const) {
+  test(`${trigger} repeats a failed ordering recovery and the stored writes are sent first`, async () => {
+    const storage = memoryStorage()
+    await seed(storage, ["queued"])
+    // The layer recovers order as it opens and again when the library announces this program's leadership.
+    let reads = 0
+    const faulty = {
+      ...storage,
+      keys: async () => {
+        if (++reads === 2) throw new Error("storage unavailable")
+        return storage.keys()
+      }
+    }
+    const sent: Array<string> = []
+    const { logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
+      const { outbox, save } = yield* start(faulty, {
+        online: Outbox.Online.always(),
+        mutations: { save: ({ idempotencyKey }) => Effect.sync(() => void sent.push(idempotencyKey)) }
+      })
+      expect(sent).toEqual([])
+      if (trigger === "retryNow") {
+        yield* outbox.retryNow
+        yield* Effect.promise(() => vi.waitFor(() => expect(sent).toEqual(["queued"])))
+      }
+      yield* (yield* save("next")).admitted
+      yield* Effect.promise(() => vi.waitFor(() => expect(sent).toEqual(["queued", "next"])))
+    })))
+    expect(logs.map(({ message, annotations }) => [(message as Array<unknown>)[0], annotations])).toContainEqual([
+      "outbox couldn't recover admission order",
+      { error: "Error" }
+    ])
+    expect(logs.map(({ message }) => (message as Array<unknown>)[0])).not.toContain("outbox couldn't read held status")
+  })
+}
+
+test("a write whose recovered order can't load the stored writes is refused, and the next write repeats both", async () => {
+  const storage = memoryStorage()
+  await seed(storage, ["queued"])
+  // Opening reads keys four times: recovery, recovery as leader (2), the library's load and the parked scan. The first
+  // write recovers order again (5), then loads the stored writes (6).
+  let reads = 0
+  const faulty = {
+    ...storage,
+    keys: async () => {
+      if ([2, 6].includes(++reads)) throw new Error("storage unavailable")
+      return storage.keys()
+    }
+  }
+  const sent: Array<string> = []
+  await scoped(Effect.gen(function*() {
+    const { save } = yield* start(faulty, {
+      online: Outbox.Online.always(),
+      mutations: { save: ({ idempotencyKey }) => Effect.sync(() => void sent.push(idempotencyKey)) }
+    })
+    expect(yield* Effect.flip(save("refused"))).toEqual(new Outbox.NotAdmitted({ reason: "storage" }))
+    expect(reads).toBe(6)
+    yield* (yield* save("next")).admitted
+    yield* Effect.promise(() => vi.waitFor(() => expect(sent).toEqual(["queued", "next"])))
+  }))
+})
+
+test("a follower that can't read the stored writes logs their held status as unknown", async () => {
+  const storage = memoryStorage()
+  const faulty = {
+    ...storage,
+    keys: (): Promise<Array<string>> => Promise.reject(new Error("storage unavailable"))
+  }
+  const { logs } = await withLogs(Effect.scoped(Effect.gen(function*() {
+    yield* start(faulty, { leader: { ...leader, requestLeadership: async () => false, isLeader: () => false } })
+  })))
+  expect(logs.map(({ message }) => (message as Array<unknown>)[0])).toContain("outbox couldn't read held status")
+  expect(logs.map(({ message }) => (message as Array<unknown>)[0])).not.toContain(
+    "outbox couldn't recover admission order"
+  )
 })

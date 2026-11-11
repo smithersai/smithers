@@ -622,6 +622,13 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             )
         )
       }
+      const orderError = (error: unknown) => {
+        run(
+          Effect.logWarning("outbox couldn't recover admission order").pipe(
+            Effect.annotateLogs({ error: errorName(error) })
+          )
+        )
+      }
       const persistIndex = async () => {
         // A failed publication stays dirty until an existing storage or retry step can repair it.
         indexDirty = true
@@ -886,6 +893,19 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         (unsubscribe) => Effect.sync(() => unsubscribe?.())
       )
       let sequenceReady = Promise.resolve()
+      // The leader's recovery. Until it succeeds, admission refuses and replay sees none of the stored writes.
+      const lead = () =>
+        serialize(() =>
+          withAdmission(async () => {
+            await reconcile()
+            try {
+              await persistIndex()
+              changed()
+            } catch (error) {
+              statusError(error, "write")
+            }
+          })
+        ).catch(orderError)
 
       // Which send of each write this is, for its span; forgotten once the write settles.
       const sends = new Map<string, number>()
@@ -1019,7 +1039,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         options.leader?.isLeader()
           ? withAdmission(() =>
             reconcile()
-          )
+          ).catch(orderError)
           : reconcile(true)
       ).catch(statusError)
       yield* Effect.promise(() => sequenceReady)
@@ -1055,17 +1075,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               if (leader && !closing) {
                 sequenceKnown = false
                 // A follower may have waited while newer writes were admitted. Reconcile before its first admission.
-                sequenceReady = serialize(() =>
-                  withAdmission(async () => {
-                    await reconcile()
-                    try {
-                      await persistIndex()
-                      changed()
-                    } catch (error) {
-                      statusError(error, "write")
-                    }
-                  })
-                ).catch(statusError)
+                sequenceReady = lead()
               }
               // Subscribers can admit immediately. Publish only after their recovery barrier names this leadership.
               setStatus({ leader })
@@ -1091,6 +1101,26 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         )
       )
 
+      // A failed recovery is repeated by the next write or `retryNow` while this program leads. Its stored writes then
+      // load before any later admission, which takes a later sequence.
+      let recovering: Promise<void> | undefined
+      const recover = (): Promise<void> => {
+        if (recovering === undefined && !sequenceKnown && !closing && executor.isOfflineEnabled) {
+          recovering = (sequenceReady = lead()).then(async () => {
+            if (!sequenceKnown) return
+            try {
+              await executor.reloadPendingTransactions()
+            } catch (error) {
+              sequenceKnown = false
+              orderError(error)
+            }
+          }).finally(() => {
+            recovering = undefined
+          })
+        }
+        return recovering ?? Promise.resolve()
+      }
+
       // Who a write is queued by, stamped into its metadata when the outbox has a principal.
       const principalStamp = (): { readonly principal?: string } => {
         const now = options.principal?.now()
@@ -1107,6 +1137,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const services = yield* Effect.context<never>()
           const span = yield* Effect.option(Effect.currentSpan)
           yield* Effect.promise(() => sequenceReady)
+          yield* Effect.promise(recover)
           if (!sequenceKnown) return yield* new NotAdmitted({ reason: "storage" })
           if (closing || !executor.isOfflineEnabled) return yield* new NotAdmitted({ reason: "follower" })
           const queuedAt = yield* Clock.currentTimeMillis
@@ -1268,6 +1299,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               statusError(error, "write")
             }
           }).then(refreshHeld).catch(statusError)
+          void recover()
           executor.getOnlineDetector().notifyOnline()
         }),
         withdraw,
