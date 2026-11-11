@@ -1122,3 +1122,31 @@ walkthrough has driven its first step (a control before it is refused `not-reply
 behind a running tour, a tour asked for right after a post (the reply's start is contended and hands over), and a
 closed Factory (Unavailable). Alone it reaches `MockFactory.vibe` 97-102, 297, 357-358, 402-411 and 481-485; about one
 second per execution.
+
+### Session 13: the mock sandboxes and the tour's steps (vl-fuzz2, 2026-11-11)
+
+The fourth full measurement (`bc085386`, `playwright` box, seed 20261107, 5 s) passed every target, 86 files. In this
+lane's scope the two largest gaps were `src/core/sandboxMock.vibe` (4 lines, 15 arms) and `src/core/flows.vibe` (2
+lines, 12 arms).
+
+| Target | Exercises |
+| --- | --- |
+| `sandbox/mock-device` | `memoryMachines` against a model of leases, files and answered operations, written from VL-13 and 0024: only the leased generation's commands run (else `stale-generation`); an operation answers once and replays that answer; a redirected echo writes, `cat` reads, `ls` lists in first-write order, `pwd`, a plain `echo`, a blank line, anything else unavailable in mock mode |
+| `sandbox/mock-service` | `makeMockSandboxes` in virtual time. Each execution walks a contributor's sandbox (no meter while idle; a write, its read and the read's replay; a conflicting reuse of an operation; the alarm's meter within its minute while running; a stopped generation's command refused; a restart keeps the files), then fails every operation on an engine with a drawn fault (a typed refusal or unavailability reaches the caller as it is; a flow cycle is an unavailable sandbox), then runs drawn steps with a drawn role (only a contributor or maintainer starts one; fresh commands answer as the device rules say; a reused operation replays) |
+| `tours/pane-steps` | `openDocs`, `say`, `openWiki`, `readingMillis` and the `OpenDocs` and `OpenWiki` flows over the live sequencer: a docs path opens only under the docs rule (0014), a wiki page only when the wiki has it, words only when there are some, nothing once the reply finished; the person's own Open opens any known page; a stop is read 1 s plus 300 ms a word, at least 4 s |
+| `tours/walk-restore` | The Tour flow on the engine over a walkthrough the conversation already holds (none, no target, running, paused, past the script): a restored stop is shown again with no second drive or narration; otherwise its step is driven and narrated; past the end the tour finishes; a narration the tour no longer takes ends the run; a seek signalled on the gate the run waits on drives the requested stop next |
+
+Mutants, each caught and restored: the device's answer replay removed; a refused command mapped to an unavailable
+sandbox; the alarm metering two minutes late, and metering while idle; any path opened as a docs page; empty words
+said; the restored stop driven again; a seek ignored; the restored step forgotten. From these targets alone
+`sandboxMock.vibe` is at 100%, and every `flows.vibe` arm the measurement missed is reached.
+
+`OpenDocs`'s body (`flows.vibe` 477) runs in no product host: `worker/WikiTools.vibe` binds the reply's docs tool to
+`openDocs` directly and uses the flow only for its name, schema and description. `tours/pane-steps` runs the flow on
+the engine with `openDocs` as its step, as `bench/src-edges.bench.vibe` does.
+
+`flows` 213 above (vl-fuzz3) is `src/history/flows.vibe`, now line 245. Re-checked 2026-11-11: the plain-JavaScript
+reproduction (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm`, `node variants.mjs`) still reports a never-taken
+suspending else arm's zero to the end of the function on Node 26.5.0 (V8 14.6.202.34-node.24), so the record stands.
+`src/core/flows.vibe` has the same shape at 257, 266, 338, 347 and 494, but each of those else arms is taken, so no
+count there is misreported.

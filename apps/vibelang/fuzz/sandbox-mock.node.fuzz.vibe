@@ -1,0 +1,203 @@
+// The product mock's sandboxes (src/core/sandboxMock.vibe): its device and its service, against the rules VL-13 and 0024
+// set. The device: a start leases one generation; only that generation's commands run; an operation answers once and
+// its answer replays; a redirected echo writes a file, `cat` reads one, `pwd` is `/workspace`, `ls` lists the files in
+// the order they were first written, a plain `echo` prints its words, a blank line prints nothing and anything else is
+// unavailable in mock mode; a sandbox's files outlive its generations. The service: an engine's typed refusal or
+// unavailability reaches every operation as it is, any other engine failure is an unavailable sandbox; the alarm
+// meters only while a sandbox runs.
+import { it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Refused, Unavailable } from "../src/core/Factory.vibe"
+import { makeMockSandboxes, memoryMachines } from "../src/core/sandboxMock.vibe"
+import { run, Int } from "./run.vibe"
+
+const UNAVAILABLE = "Command unavailable in mock mode"
+/** Each command line with what the rules say it does: write `[path, contents]`, read `path`, list, or print `out`. */
+const COMMANDS: ReadonlyArray<{ readonly text: string; readonly write?: readonly [string, string]; readonly read?: string; readonly ls?: true; readonly out?: string }> = [
+  { text: "echo hi > a.txt", write: ["a.txt", "hi\n"] },
+  { text: "echo 'quoted words' > dir/b.md", write: ["dir/b.md", "quoted words\n"] },
+  { text: "echo \"x\"   >   a.txt", write: ["a.txt", "x\n"] },
+  { text: "cat a.txt", read: "a.txt" },
+  { text: "cat dir/b.md", read: "dir/b.md" },
+  { text: "cat nothing", read: "nothing" },
+  { text: "pwd", out: "/workspace" },
+  { text: "ls", ls: true },
+  { text: "echo hello world", out: "hello world" },
+  { text: "echo x >", out: "x >" },
+  { text: "echo a > b c", out: "a > b c" },
+  { text: "", out: "" },
+  { text: " \t", out: "" },
+  { text: "cat a.txt b.txt", out: UNAVAILABLE },
+  { text: "npm test", out: UNAVAILABLE },
+  { text: "ls -la", out: UNAVAILABLE },
+]
+const IDS = ["owner/a", "owner/b"]
+const GENERATIONS = [0, 1, 2]
+const OPERATIONS = ["op-1", "op-2", "op-3"]
+
+const DeviceInput = Schema.Struct({
+  steps: Schema.Array(Schema.Struct({ op: Int, id: Int, generation: Int, operation: Int, command: Int })).check(Schema.isMaxLength(24)),
+})
+
+/** Every device step answers as the rules say, from a model of leases, files and answered operations. */
+it.live("sandbox/mock-device", () => run("sandbox/mock-device", DeviceInput, (input) => effect {
+  const machines = memoryMachines()
+  const active = new Map<string, number>()
+  const disk = new Map<string, Map<string, string>>()
+  const answered = new Map<string, string>()
+  for (const step of input.steps) {
+    const id = IDS[step.id % IDS.length]!
+    const generation = GENERATIONS[step.generation % GENERATIONS.length]!
+    const leased = active.get(id) === generation
+    const kind = step.op % 4
+    if (kind === 0) {
+      try machines.start(id, generation)
+      active.set(id, generation)
+      if (!disk.has(id)) disk.set(id, new Map())
+    } else if (kind === 1) {
+      try machines.stop(id, generation)
+      if (leased) active.delete(id)
+    } else if (kind === 2) {
+      if ((try machines.lease(id, generation, 60_000)) !== leased) return false
+    } else {
+      const operation = OPERATIONS[step.operation % OPERATIONS.length]!
+      const line = COMMANDS[step.command % COMMANDS.length]!
+      const outcome = try Effect.result(machines.command(id, generation, operation, line.text))
+      if (!leased) {
+        if (outcome._tag !== "Failure" || !(outcome.failure instanceof Unavailable) || outcome.failure.reason !== "stale-generation") return false
+        continue
+      }
+      if (outcome._tag !== "Success") return false
+      const key = `${id}/${generation}/${operation}`
+      const files = disk.get(id)!
+      const fresh = line.write !== undefined ? "" : line.read !== undefined ? files.get(line.read) ?? "cat: No such file" : line.ls ? [...files.keys()].join("  ") : line.out!
+      const expected = answered.get(key) ?? fresh
+      if (!answered.has(key)) {
+        if (line.write !== undefined) files.set(line.write[0], line.write[1])
+        answered.set(key, fresh)
+      }
+      if (outcome.success !== expected) return false
+    }
+  }
+  return true
+}))
+
+/** The memory engine, recording each execution id, and failing every execution with `fault` when there is one. */
+function recordingEngine(executed: Array<string>, fault?: Refused | Unavailable | FlowRuntime.FlowCycleDetected) {
+  return Layer.effect(FlowRuntime.FlowRuntime)(effect {
+    const real = try FlowRuntime.FlowRuntime
+    const execute = ((flow: never, options: { readonly executionId: string }) => {
+      executed.push(options.executionId)
+      return fault === undefined ? real.execute(flow, options as never) : Effect.fail(fault)
+    }) as unknown as typeof real.execute
+    return { ...real, execute }
+  }).pipe(Layer.provide(FlowEngine.layerMemory))
+}
+
+/** Advances the virtual clock `seconds` seconds, one at a time, letting the engine's real promises settle between. */
+effect function advance(seconds: number, until: () => boolean = () => false) {
+  for (let second = 0; second < seconds && !until(); second++) {
+    try TestClock.adjust("1 second")
+    try TestClock.withLive(sleep("2 millis"))
+  }
+}
+
+const metered = (executed: ReadonlyArray<string>) => executed.filter((id) => id.startsWith("meter/")).length
+const refusal = (outcome: Result.Result<unknown, Refused | Unavailable>) => outcome._tag === "Failure" ? `${outcome.failure._tag}:${outcome.failure._tag === "Refused" ? outcome.failure.refusal : outcome.failure.reason}` : "ok"
+
+/**
+ * A contributor's walk on the real memory engine: no meter while idle; a write, its read and that read's replay; a
+ * conflicting reuse of an operation; the alarm's meter within its minute while running; a stopped generation's
+ * command refused; the files after a restart.
+ */
+effect function walk() {
+  const executed: Array<string> = []
+  const box = try makeMockSandboxes("contributor", undefined, recordingEngine(executed))
+  try advance(5)
+  if (metered(executed) !== 0) return false
+  const first = try box.startSandbox("w", "w-start")
+  const g = first.generation
+  if ((try box.sandboxCommand("w", "w-1", "echo 'hi' > notes.txt", g)) !== "") return false
+  if ((try box.sandboxCommand("w", "w-2", "cat notes.txt", g)) !== "hi\n") return false
+  if ((try box.sandboxCommand("w", "w-2", "cat notes.txt", g)) !== "hi\n") return false
+  if (refusal(try Effect.result(box.sandboxCommand("w", "w-2", "pwd", g))) !== "Refused:operation-conflict") return false
+  try advance(70, () => metered(executed) > 0)
+  if (metered(executed) === 0) return false
+  try box.stopSandbox("w", "w-stop", g)
+  if (refusal(try Effect.result(box.sandboxCommand("w", "w-3", "pwd", g))) !== "Refused:stopped") return false
+  const second = try box.startSandbox("w", "w-start-2")
+  if (second.generation !== g + 1) return false
+  if (refusal(try Effect.result(box.sandboxCommand("w", "w-4", "pwd", g))) !== "Refused:stale-generation") return false
+  if ((try box.sandboxCommand("w", "w-5", "cat notes.txt", second.generation)) !== "hi\n") return false
+  return (try box.sandboxCommand("w", "w-6", "ls", second.generation)) === "notes.txt"
+}
+
+const ServiceInput = Schema.Struct({
+  fault: Schema.Literals(["cycle", "refused", "unavailable"]),
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  steps: Schema.Array(Schema.Struct({ kind: Int, conversation: Schema.Boolean, operation: Int, command: Int, current: Schema.Boolean, seconds: Int })).check(Schema.isMaxLength(10)),
+})
+
+/**
+ * Each execution walks, then fails every operation on an engine with the drawn fault, then runs drawn steps with the
+ * drawn role: only a contributor or maintainer starts one; every failure is a typed refusal or unavailability; a
+ * fresh operation's command answers as the device rules say over the files that conversation's commands wrote; a
+ * reused operation with the same command replays its answer.
+ */
+it.live("sandbox/mock-service", () => run("sandbox/mock-service", ServiceInput, (input) => Effect.provide(scoped(effect {
+  if (!(try walk())) return false
+
+  const fault = input.fault === "cycle" ? new FlowRuntime.FlowCycleDetected({ path: ["sandbox/a", "sandbox/a"] })
+    : input.fault === "refused" ? new Refused({ refusal: "quota" }) : new Unavailable({ reason: "journal-unavailable" })
+  const faulty = try makeMockSandboxes("contributor", undefined, recordingEngine([], fault))
+  const failures = [
+    try Effect.flip(faulty.sandbox("home")),
+    try Effect.flip(faulty.startSandbox("home", "s")),
+    try Effect.flip(faulty.stopSandbox("home", "t", 1)),
+    try Effect.flip(faulty.sandboxCommand("home", "c", "pwd", 1)),
+  ]
+  for (const failure of failures) {
+    if (input.fault === "cycle" ? !(failure instanceof Unavailable && failure.reason === "sandbox-flow") : failure !== fault) return false
+  }
+
+  const executed: Array<string> = []
+  const box = try makeMockSandboxes(input.role, undefined, recordingEngine(executed))
+  const mayStart = input.role === "contributor" || input.role === "maintainer"
+  const files = new Map<string, Map<string, string>>()
+  const answers = new Map<string, readonly [string, string]>()
+  let fresh = 0
+  for (const step of input.steps) {
+    const conversation = step.conversation ? "c-2" : "c-1"
+    const reuse = step.operation % 3 === 0 && answers.size > 0
+    const operation = reuse ? [...answers.keys()][step.operation % answers.size]! : `f-${++fresh}`
+    const kind = step.kind % 5
+    if (kind === 3) { try advance(step.seconds); continue }
+    const read = try Effect.result(box.sandbox(conversation))
+    const current = read._tag === "Success" ? read.success.generation : 0
+    const generation = step.current ? current : current + 1
+    if (kind === 4) continue
+    if (kind === 0) {
+      const outcome = try Effect.result(box.startSandbox(conversation, operation))
+      if (!mayStart && refusal(outcome) !== "Refused:forbidden") return false
+      continue
+    }
+    if (kind === 1) { try Effect.result(box.stopSandbox(conversation, operation, generation)); continue }
+    const line = COMMANDS[step.command % COMMANDS.length]!
+    const outcome = try Effect.result(box.sandboxCommand(conversation, operation, line.text, generation))
+    if (outcome._tag === "Failure") continue
+    const earlier = answers.get(operation)
+    if (earlier !== undefined) {
+      if (earlier[0] === `${conversation}\n${line.text}` && earlier[1] !== outcome.success) return false
+      continue
+    }
+    const written = files.get(conversation) ?? new Map<string, string>()
+    files.set(conversation, written)
+    const expected = line.write !== undefined ? "" : line.read !== undefined ? written.get(line.read) ?? "cat: No such file" : line.ls ? [...written.keys()].join("  ") : line.out!
+    if (line.write !== undefined) written.set(line.write[0], line.write[1])
+    answers.set(operation, [`${conversation}\n${line.text}`, outcome.success])
+    if (outcome.success !== expected) return false
+  }
+  return mayStart || metered(executed) === 0
+}), TestClock.layer())))

@@ -1,0 +1,84 @@
+// The walkthrough's run (src/core/flows.vibe `walk`, through the Tour flow on the engine) when it starts over a
+// walkthrough the conversation already holds, as a re-driven run after a lost writer does: the restored stop is shown
+// again without a second drive or narration; a restored walkthrough with no target, or none, drives its step and
+// narrates it; past the script's end the tour finishes; a narration the tour no longer takes ends the run. A seek
+// signalled on the gate the run waits on then drives the requested stop next (0014).
+import { it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { DurableDeferred, FlowRuntime } from "@smthrs/flow"
+import type { Walkthrough } from "../src/core/schemas.vibe"
+import { Tour, Tours, walkthroughGate, walkRegistration } from "../src/core/flows.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { run, Int } from "./run.vibe"
+
+const Input = Schema.Struct({
+  saved: Schema.Literals(["none", "blank-target", "running", "paused", "past-end"]),
+  step: Int,
+  seek: Int,
+  elapsed: Int,
+  narrates: Schema.Boolean,
+})
+/** Long enough that no hold ends while an execution runs: only a signalled gate moves the run. */
+const HOLD = 3_600_000
+
+/** Waits up to 10 live seconds for `ready`; false when it never holds. */
+effect function eventually(ready: () => boolean) {
+  for (let tick = 0; tick < 1000 && !ready(); tick++) try sleep("10 millis")
+  return ready()
+}
+
+it.live("tours/walk-restore", () => run("tours/walk-restore", Input, (input) => scoped(effect {
+  const calls: Array<string> = []
+  let revision = 100
+  const now = try Clock.currentTimeMillis
+  const step = 1 + input.step % WALKTHROUGH.length
+  const saved: Walkthrough | null = input.saved === "none" ? null : {
+    step: input.saved === "past-end" ? WALKTHROUGH.length + 1 : step,
+    target: input.saved === "blank-target" ? "" : "#restored",
+    paused: input.saved === "paused",
+    revision: 7,
+    remaining: HOLD,
+    at: now - input.elapsed * 1000,
+  }
+  const tours: Tours["Service"] = {
+    current: () => succeed(saved),
+    drive: (_tour, driven, target, _duration) => sync(() => {
+      calls.push(`drive ${driven}`)
+      revision++
+      return { step: driven, target, paused: false, revision, remaining: HOLD, at: now }
+    }),
+    control: () => succeed({ tour: "t1", previous: 0, state: null, refusal: "not-replying" as const }),
+    start: () => succeed(null),
+    dispatch: () => Effect.void,
+    end: () => succeed(null),
+    wake: () => Effect.void,
+    running: () => succeed(true),
+    open: () => succeed(true),
+    say: () => sync(() => { calls.push("say"); return input.narrates }),
+    finish: () => sync(() => { calls.push("finish") }),
+    ended: () => Effect.never,
+  }
+  const context = try Layer.build(walkRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, tours))))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  try engine.execute(Tour, { executionId: "tour/t1", payload: { tour: "t1" }, discard: true })
+
+  if (input.saved === "past-end") return (try eventually(() => calls.length > 0)) && calls.join(",") === "finish"
+  const restored = input.saved === "running" || input.saved === "paused"
+  if (!restored) {
+    const first = saved?.step ?? 1
+    if (!(try eventually(() => calls.length >= 2))) return false
+    if (calls.join(",") !== `drive ${first},say`) return false
+    if (!input.narrates) return true
+  }
+  // The run now waits on the gate of the walkthrough it shows; a seek there drives the requested stop next.
+  const shown = restored ? saved!.revision : revision
+  const before = calls.length
+  const target = 1 + input.seek % WALKTHROUGH.length
+  const gate = walkthroughGate(shown)
+  const token = try Effect.try(() => DurableDeferred.tokenFromExecutionId(gate, { flow: Tour, executionId: "tour/t1" }))
+  try Effect.provideService(DurableDeferred.succeed(gate, { token, value: { step: target, target: "", paused: false, revision: shown + 1000, remaining: 0, at: now } }), FlowRuntime.FlowRuntime, engine)
+  try engine.resume(Tour, "tour/t1")
+  if (!(try eventually(() => calls.length > before))) return false
+  return calls[before] === `drive ${target}` && !calls.slice(0, before).some((call) => call.startsWith("drive") && restored)
+})))

@@ -1,0 +1,72 @@
+// The pane and narration steps a reply or tour takes (src/core/flows.vibe: openDocs, say, openWiki, readingMillis, and
+// the OpenDocs and OpenWiki flows on the engine) over the live sequencer, against the rules of 0014 and 0021. A docs
+// path opens only when it starts with `/`, holds only lowercase letters, digits, `-` and `/`, and never two `/` in a
+// row; a wiki page opens only when the wiki has it; words are said only when there are some, with runs of whitespace
+// collapsed; and nothing opens or is said once the reply has finished. The person's own Open (actor "") opens any
+// known page. A stop is read for 1 s plus 300 ms a word, and never less than 4 s.
+import { it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime, Interpreter } from "@smthrs/flow"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { DOCS_ORIGIN, OpenDocs, OpenDocsStep, OpenWiki, openDocs, openWiki, readingMillis, say, Tours, wikiRegistration } from "../src/core/flows.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { toursOf } from "../worker/Objects.vibe"
+import { run, Int, TextOrBoundary } from "./run.vibe"
+
+const PATHS = ["/setup", "/", "/guide/layers-2", "//evil.example/x", "setup", "/x?u=https://evil.example", "/Setup", "/a//b", "", "/../etc", "/a b"]
+const Input = Schema.Struct({
+  steps: Schema.Array(Schema.Struct({ op: Int, path: Int, text: TextOrBoundary, flag: Schema.Boolean })).check(Schema.isMaxLength(16)),
+})
+
+/** The docs rule, written from 0014: a leading `/`, then lowercase letters, digits, `-` and `/`, never `//`. */
+const docsRule = (path: string) => /^\/[a-z0-9\/-]*$/.test(path) && !path.includes("//")
+const holdRule = (text: string) => Math.max(4000, 1000 + 300 * (text.match(/\S+/g) ?? []).length)
+
+/** Every step answers as the rules say, and the pane and the reply's words change exactly when a step says so. */
+it.live("tours/pane-steps", () => run("tours/pane-steps", Input, (input) => scoped(effect {
+  const log = try Ref.make<ReadonlyArray<Event>>([])
+  const sequencer = try Sequencer.make({ read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+  try sequencer.post("person", "Guest", "Show me the docs")
+  try sequencer.start("m1")
+  const tours = toursOf(sequencer, () => Effect.void)
+  const flows = Layer.mergeAll(
+    Interpreter.layerWithImplementations(OpenDocs, OpenDocsStep.toLayer(({ path }) => openDocs("r1", path))),
+    wikiRegistration,
+  )
+  const context = try Layer.build(flows.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer), Layer.provide(Layer.succeed(Tours, tours))))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  let replying = true
+  let index = 0
+  for (const step of input.steps) {
+    index++
+    const before = try Ref.get(log)
+    const op = step.op % 7
+    if (op === 6) { try sequencer.finish("r1", ""); replying = false; continue }
+    if (op === 5) { if (readingMillis(step.text) !== holdRule(step.text)) return false; continue }
+    if (op === 1) {
+      const words = step.text.trim().replace(/\s+/g, " ")
+      const said = try Effect.provideService(say("r1", step.text), Tours, tours)
+      if (said !== (replying && words !== "")) return false
+      const after = (try Ref.get(log)).reduce(apply, empty)
+      if (said ? !after.entries.some((entry) => entry.id === "r1" && entry.text.includes(words)) : (try Ref.get(log)).length !== before.length) return false
+      continue
+    }
+    const docs = op === 0 || op === 3
+    const path = step.flag ? step.text : PATHS[step.path % PATHS.length]!
+    const known = step.flag ? pages[step.path % pages.length]!.id : `missing-${step.path}`
+    const person = op === 4
+    const opened = op === 0 ? try Effect.provideService(openDocs("r1", path), Tours, tours)
+      : op === 2 ? try Effect.provideService(openWiki("r1", known), Tours, tours)
+      : op === 3 ? try engine.execute(OpenDocs, { executionId: `docs/${index}`, payload: { path } })
+      : try engine.execute(OpenWiki, { executionId: `wiki/${index}`, payload: { page: known } })
+    const allowed = docs ? docsRule(path) : step.flag
+    if (opened !== (allowed && (person || replying))) return false
+    const after = try Ref.get(log)
+    if (!opened) { if (after.length !== before.length) return false; continue }
+    const pane = after.reduce(apply, empty).pane
+    if (docs ? pane !== DOCS_ORIGIN + path : !pane.startsWith("/wiki/")) return false
+  }
+  return true
+})))
