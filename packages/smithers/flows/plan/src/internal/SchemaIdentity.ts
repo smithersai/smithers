@@ -1335,10 +1335,15 @@ const withBrand = (
  * when its base had none. Checks added after the brand keep their own
  * annotations.
  *
+ * A brand over a codec, such as `Schema.Trim` or `Schema.NumberFromString`,
+ * comes back as it was: rc.115 put that brand on the decoded side, and the
+ * representation prints the encoded side, which never showed it.
+ *
  * @private
  */
 const withNodeBrand = (node: Representation, brand: Branded): Representation => {
   const base = brand.schema.ast
+  if (base.encoding !== undefined) return node
   const fields = node as unknown as Fields
   if (base.checks === undefined) {
     return {

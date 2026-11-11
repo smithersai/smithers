@@ -983,6 +983,12 @@ export const corpus = (S: SchemaModule, E: EffectModule): Readonly<Record<string
     () =>
       S.StructWithRest(S.Struct({ a: S.String.pipe(S.brand("A")) }), [S.Record(S.String, S.String.pipe(S.brand("B")))])
   )
+  // A brand over a codec: rc.115 branded the decoded side, which the representation of the
+  // encoded side never printed.
+  add("brand/trim", () => S.Trim.pipe(S.brand("Slug")))
+  add("brand/number-from-string", () => S.NumberFromString.pipe(S.brand("Port")))
+  add("brand/number-from-string-checked", () => S.NumberFromString.check(S.isInt()).pipe(S.brand("Port")))
+  add("brand/codec-field", () => S.Struct({ slug: S.Trim.pipe(S.brand("Slug")), count: S.Int }))
 
   // Codecs and declarations.
   add("transform/decodeTo", () => S.String.pipe(S.decodeTo(S.Number)))

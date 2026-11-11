@@ -1,7 +1,7 @@
 {
   "producer": {
     "source": {
-      "sha": "116ba5fa05"
+      "sha": "0e051052ef"
     },
     "effect": "4.0.0-rc.115",
     "package": {
@@ -9,7 +9,7 @@
       "version": "4.0.0-rc.115",
       "integrity": "sha512-ogYulZ5ffeOzrJqQrG0XOkDO5lKn2s9KNHhoxJy/6wKUkF0i12dlVXWA9TgsgQ+zV/JzizyG0+XMPepZEQX6vw=="
     },
-    "node": "v26.10.0",
+    "node": "v26.5.0",
     "emitter": "SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))",
     "generator": "packages/smithers/flows/plan/test/fixtures/effect-rc115-schema-identity.generate.mjs",
     "note": "Each document is JSON.stringify of what the emitter above returned for the corpus entry of that name, key order included. Each failure is the message it threw. Nothing was regenerated under a newer effect."
@@ -426,6 +426,10 @@
     "brand/twice-annotated": "{\"representation\":{\"_tag\":\"String\",\"annotations\":{\"title\":\"t\",\"brands\":[\"A\",\"B\"]},\"checks\":[]},\"references\":{}}",
     "brand/tuple-with-rest": "{\"representation\":{\"_tag\":\"Arrays\",\"checks\":[],\"elements\":[{\"isOptional\":false,\"type\":{\"_tag\":\"String\",\"annotations\":{\"brands\":[\"A\"]},\"checks\":[]}}],\"rest\":[{\"_tag\":\"Number\",\"annotations\":{\"brands\":[\"B\"]},\"checks\":[]}]},\"references\":{}}",
     "brand/struct-with-rest": "{\"representation\":{\"_tag\":\"Objects\",\"checks\":[],\"propertySignatures\":[{\"name\":{\"type\":\"string\",\"value\":\"a\"},\"type\":{\"_tag\":\"String\",\"annotations\":{\"brands\":[\"A\"]},\"checks\":[]},\"isOptional\":false,\"isMutable\":false}],\"indexSignatures\":[{\"parameter\":{\"_tag\":\"String\",\"checks\":[]},\"type\":{\"_tag\":\"String\",\"annotations\":{\"brands\":[\"B\"]},\"checks\":[]}}]},\"references\":{}}",
+    "brand/trim": "{\"representation\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as a trimmed string\"},\"checks\":[]},\"references\":{}}",
+    "brand/number-from-string": "{\"representation\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as a number\"},\"checks\":[]},\"references\":{}}",
+    "brand/number-from-string-checked": "{\"representation\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as a number\"},\"checks\":[]},\"references\":{}}",
+    "brand/codec-field": "{\"representation\":{\"_tag\":\"Objects\",\"checks\":[],\"propertySignatures\":[{\"name\":{\"type\":\"string\",\"value\":\"slug\"},\"type\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as a trimmed string\"},\"checks\":[]},\"isOptional\":false,\"isMutable\":false},{\"name\":{\"type\":\"string\",\"value\":\"count\"},\"type\":{\"_tag\":\"Number\",\"checks\":[{\"_tag\":\"Filter\",\"representation\":{\"id\":\"effect/schema/isInt\",\"payload\":null},\"annotations\":{\"expected\":\"an integer\",\"arbitraryConstraint\":{\"number\":\"integer\"}},\"aborted\":false}]},\"isOptional\":false,\"isMutable\":false}],\"indexSignatures\":[]},\"references\":{}}",
     "transform/decodeTo": "{\"representation\":{\"_tag\":\"String\",\"checks\":[]},\"references\":{}}",
     "transform/struct-fields": "{\"representation\":{\"_tag\":\"Objects\",\"checks\":[],\"propertySignatures\":[{\"name\":{\"type\":\"string\",\"value\":\"n\"},\"type\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as a number\"},\"checks\":[]},\"isOptional\":false,\"isMutable\":false},{\"name\":{\"type\":\"string\",\"value\":\"d\"},\"type\":{\"_tag\":\"Declaration\",\"representation\":{\"id\":\"effect/schema/Date\",\"payload\":null},\"annotations\":{\"expected\":\"a valid Date\"},\"typeParameters\":[],\"checks\":[]},\"isOptional\":false,\"isMutable\":false}],\"indexSignatures\":[]},\"references\":{}}",
     "transform/fromJsonString": "{\"representation\":{\"_tag\":\"String\",\"annotations\":{\"expected\":\"a string that will be decoded as JSON\",\"contentMediaType\":\"application/json\"},\"checks\":[]},\"references\":{}}",
