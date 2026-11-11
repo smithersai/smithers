@@ -15,11 +15,12 @@ diff --git a/dist/NodeWS.js b/dist/NodeWS.js
 index e29eb7dae33882898922845f57a3ac21cbc41181..7e686f2ccc6dff421aa5285c6db4595bf3807deb 100644
 --- a/dist/NodeWS.js
 +++ b/dist/NodeWS.js
-@@ -11,4 +11,5 @@
+@@ -11,4 +11,6 @@
   * @since 4.1.0
   */
  export * from "ws";
-+export { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } from "ws";
++import * as WS from "ws";
++export const { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } = WS;
  //# sourceMappingURL=NodeWS.js.map
 \ No newline at end of file
 diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
@@ -39,8 +40,9 @@ diff --git a/src/NodeWS.ts b/src/NodeWS.ts
 index 29ce62ea7842511c6873f4f599a5162e34231306..0165970714f69f83eec4bd082feb268c225ad7f1 100644
 --- a/src/NodeWS.ts
 +++ b/src/NodeWS.ts
-@@ -12,3 +12,4 @@
+@@ -12,3 +12,5 @@
   * @since 4.1.0
   */
  export * from "ws"
-+export { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } from "ws"
++import * as WS from "ws"
++export const { createWebSocketStream, extension, PerMessageDeflate, Receiver, Sender, subprotocol, WebSocket, WebSocketServer } = WS

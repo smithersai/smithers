@@ -32,7 +32,7 @@ pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 
 patchedDependencies:
   '@alchemy.run/cloudflare@2.0.0-beta.85': 324e0dfcb3b289b272ea642aec3af06e066af55cccea4dd5f343d6c3dd3db31c
-  '@effect/platform-node-shared@4.1.1': 8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28
+  '@effect/platform-node-shared@4.1.1': fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33
   '@effect/platform-node@4.1.1': 4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026
   '@opentelemetry/otlp-transformer@0.222.0': 13c093166ff9bceab92628849ec4481ec4fa406a081df82cfe8534828ff06777
   '@tanstack/browser-db-sqlite-persistence@0.2.36': 1d7ca6796dd79e259c8f8efc2752c1416adf268a7ef1099709d22e922d1bbed4
@@ -726,7 +726,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../../packages/smithers/agent
@@ -1821,7 +1821,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(vitest@5.0.0)
@@ -3472,7 +3472,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
@@ -3863,7 +3863,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/sql-pg':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
@@ -5524,7 +5524,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/sql-pg':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
@@ -5787,7 +5787,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(vitest@5.0.0)
@@ -6369,7 +6369,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(vitest@5.0.0)
@@ -6572,7 +6572,7 @@ importers:
         version: 4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/platform-node-shared':
         specifier: 4.1.1
-        version: 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+        version: 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       '@effect/vitest':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(vitest@5.0.0)
@@ -18405,13 +18405,13 @@ snapshots:
 
   '@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))':
     dependencies:
-      '@effect/platform-node-shared': 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+      '@effect/platform-node-shared': 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       effect: 4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node-shared@4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))':
+  '@effect/platform-node-shared@4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))':
     dependencies:
       '@types/ws': 8.18.2
       effect: 4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133)
@@ -18422,7 +18422,7 @@ snapshots:
 
   '@effect/platform-node@4.1.1(patch_hash=4c847974aaaa856cdd95d47a4967846c538a41d29e2bdcf809741616c536e026)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))(redis@6.2.1(@opentelemetry/api@1.9.1))':
     dependencies:
-      '@effect/platform-node-shared': 4.1.1(patch_hash=8d373b8e8d46314c39e55c7755ccb48715b095339eb6d8029d35c618e089ee28)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
+      '@effect/platform-node-shared': 4.1.1(patch_hash=fa3b7ba4f1727f9cae3ca62aafa711f3ee28caf677490ea7ee9b6360b2400e33)(effect@4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133))
       effect: 4.1.1(patch_hash=386e60705496670cb8c72e7db25b26559fa295dc063daf81bc5f9aaaa1788133)
       redis: 6.2.1(@opentelemetry/api@1.9.1)
       undici: 8.12.4

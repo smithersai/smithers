@@ -65,6 +65,14 @@ const owner = async (directory, name) => {
   return path
 }
 
+test("the source platform namespace loads under Bun's WebSocket implementation", () => {
+  const output = execFileSync("bun", [
+    "-e",
+    'import { NodeWS } from "@effect/platform-node"; console.log(typeof NodeWS.WebSocket, typeof NodeWS.WebSocketServer)'
+  ], { cwd: root, encoding: "utf8" })
+  assert.equal(output.trim(), "function function")
+})
+
 test("private adapter declarations reject incomplete, mutable, and consumer resolver contracts", () => {
   assert.deepEqual(privateEffectAdapters({}), [])
   assert.deepEqual(privateEffectAdapters(manifest()), adapters)
