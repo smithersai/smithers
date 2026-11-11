@@ -10441,6 +10441,23 @@ If writing fails, it returns the diagnostic with `Diagnostics: unavailable`.
 Neither function serializes error payloads, stacks, arguments or environment.
 The side-effect-free `Diagnostic.present` remains available for rendering alone.
 
+### Confined Go downloads
+
+The package executor passes a `Go.ModDownload` declaration's `destinations`
+to the exec sandbox. The exact host list is declaration key material, and the
+host broker enforces it for HTTP requests and HTTPS tunnels. DNS resolution
+happens in that broker; the Go process retains a private network namespace.
+A declared list, even an empty one, is enforced or refused: unsupported
+mechanisms and explicit unrestricted network policies fail closed. An omitted
+list leaves the declared `sandbox` policy as it is. Declare proxy, checksum-service and redirected
+storage hostnames in the list, then put the download target on each offline
+consumer's `data` edge.
+
+The exec boundary creates its broker outside the workspace and shared cache,
+then mounts only that run's socket. A concurrent confined target cannot borrow
+another run's network grant. The planner fingerprints the platform host sources
+as well as the Node executable, so broker or relay changes invalidate results.
+
 ---
 
 # @smthrs/canonical

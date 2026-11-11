@@ -11,6 +11,7 @@
 
 import { Action, type FlowRuntime } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
+import { DestinationProxy } from "@smthrs/platform-node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
@@ -1380,7 +1381,7 @@ export const run = (
             },
             ExecSandbox.host()
           )
-        return { resolved, sensitiveEnv, cwd, confinement }
+        return { resolved, sensitiveEnv, cwd, confinement, destinations: options.sandbox?.destinations }
       },
       catch: (cause) =>
         execError({
@@ -1392,7 +1393,7 @@ export const run = (
           stderr: tail(failureMessage(cause))
         })
     }),
-    ({ confinement, cwd, resolved, sensitiveEnv }) => {
+    ({ confinement, cwd, resolved, sensitiveEnv, destinations }) => {
       if (ExecSandbox.isUnenforceable(confinement)) {
         return Effect.fail(
           execError({
@@ -1435,9 +1436,24 @@ export const run = (
           })
         )
       }
+      if (
+        destinations !== undefined && (
+          confinement === undefined || confinement.mechanism._tag !== "bubblewrap" ||
+          confinement.network !== "none" || resolved.secrets.length > 0
+        )
+      ) {
+        return Effect.fail(execError({
+          argv: resolved.argv,
+          cwd: resolved.cwd,
+          exitCode: -1,
+          code: "sandbox_unenforceable",
+          stdout: "",
+          stderr: "sandbox: destination allowlists require bubblewrap with a closed network and no secret proxy"
+        }))
+      }
       return withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
         Effect.flatMap(
-          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options),
+          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options, destinations),
           (output) =>
             resolved.expectedExitCodes.includes(output.exitCode)
               ? Effect.succeed({
@@ -1488,7 +1504,8 @@ const confined = (
     readonly environment?: ToolEnvironment | undefined
     readonly onStdout?: ((chunk: Uint8Array) => void) | undefined
     readonly onStderr?: ((chunk: Uint8Array) => void) | undefined
-  }
+  },
+  destinations?: ReadonlyArray<string>
 ): Effect.Effect<Spawned, ExecError> => {
   if (confinement === undefined) {
     return spawnTool(cwd, resolved, sensitiveEnv, secretEnv, options.onStdout, options.onStderr, options.environment)
@@ -1502,6 +1519,9 @@ const confined = (
       stdout: "",
       stderr: tail(`sandbox: could not prepare the confinement: ${failureMessage(cause)}`)
     })
+  let brokerEnvironment: Readonly<Record<string, string>> = {}
+  let command = resolved.argv
+  let effectiveConfinement = confinement
   const prepare = Effect.try({
     try: () => {
       ExecSandbox.validateWrites(confinement)
@@ -1511,7 +1531,7 @@ const confined = (
       const base = toolEnvironment(resolved.env, sensitiveEnv, secretEnv, options.environment)
       const visible = Object.create(null) as Record<string, string>
       for (const [name, value] of Object.entries(base)) if (typeof value === "string") visible[name] = value
-      const wrapped = ExecSandbox.wrap(confinement, resolved.argv, visible)
+      const wrapped = ExecSandbox.wrap(effectiveConfinement, command, visible)
       return {
         containerName: wrapped.containerName,
         payload: {
@@ -1538,6 +1558,13 @@ const confined = (
           }
         })
     )
+    if (destinations !== undefined) {
+      const { socket, token } = yield* DestinationProxy.isolated(destinations, confinement.workspaceRoot)
+        .pipe(Effect.mapError(preparationError))
+      command = DestinationProxy.wrap(resolved.argv, socket)
+      brokerEnvironment = { SMTHRS_DESTINATION_TOKEN: token }
+      effectiveConfinement = { ...confinement, destinationSocket: socket }
+    }
     const { containerName, payload } = yield* prepare
     if (containerName !== undefined && confinement.mechanism._tag === "docker") {
       const executable = confinement.mechanism.executable
@@ -1583,7 +1610,7 @@ const confined = (
       cwd,
       payload,
       sensitiveEnv,
-      secretEnv,
+      { ...secretEnv, ...brokerEnvironment },
       options.onStdout,
       options.onStderr,
       options.environment

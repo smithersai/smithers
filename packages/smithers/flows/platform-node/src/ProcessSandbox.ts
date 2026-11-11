@@ -38,6 +38,7 @@ import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
+import { destinationBrokerRoot } from "./internal/DestinationBrokerRoot.ts"
 
 /**
  * The network posture a run is confined to. `"none"` closes IP networking.
@@ -210,6 +211,8 @@ export const unenforceable = (
  * @since 1.0.0-rc.1
  */
 export interface Plan {
+  /** Host-owned broker socket restored only after all broader mounts are masked. */
+  readonly destinationSocket?: string | undefined
   readonly mechanism: Exclude<Mechanism, { readonly _tag: "none" }>
   readonly network: Network
   /** Whether host Unix sockets are permitted; defaults to true for build tools. */
@@ -888,6 +891,21 @@ export const launcher = (
   return covered(real) ? withinGrant : { program: real, reads: [real] }
 }
 
+/** A bind at a different lexical path must not reveal a protected broker tree. */
+const refuseBrokerAliases = (paths: ReadonlyArray<string>, hostFacts: Host, mechanism: string): void => {
+  for (const path of paths) {
+    const real = hostFacts.realpath?.(path) ?? path
+    if (real !== path && (insideRoot(real, destinationBrokerRoot) || insideRoot(destinationBrokerRoot, real))) {
+      throw unenforceable(
+        hostFacts.platform,
+        mechanism,
+        "broker alias isolation",
+        "a sandbox grant aliases the private destination broker tree"
+      )
+    }
+  }
+}
+
 /**
  * The bubblewrap argv for a plan.
  *
@@ -980,6 +998,37 @@ export const bubblewrap = (
       if (insideRoot(path, read)) out.push("--ro-bind", read, read)
     }
     if (directory) out.push("--remount-ro", path)
+  }
+  refuseBrokerAliases(
+    [
+      ...runtime,
+      ...(launch?.reads ?? []),
+      ...confinement.reads,
+      ...confinement.writes,
+      ...confinement.externalReads,
+      ...confinement.readOnly
+    ],
+    hostFacts,
+    "bubblewrap"
+  )
+  // Unix sockets cross network namespaces. Mask the reserved broker tree
+  // after every broad grant, including read-only external mounts; only this
+  // run's host-owned socket is then restored.
+  out.push("--tmpfs", destinationBrokerRoot)
+  if (confinement.destinationSocket !== undefined) {
+    const socket = confinement.destinationSocket
+    if (
+      NodePath.dirname(NodePath.dirname(socket)) !== destinationBrokerRoot ||
+      !NodePath.basename(NodePath.dirname(socket)).startsWith("run-") || NodePath.basename(socket) !== "p.sock"
+    ) {
+      throw unenforceable(
+        hostFacts.platform,
+        "bubblewrap",
+        "private destination broker",
+        "invalid destination broker socket"
+      )
+    }
+    out.push("--ro-bind", socket, socket)
   }
   // `--remount-ro` acts on the mount at that exact path. When the root itself
   // is a declared write (a declared output file at the top level opens its
@@ -1203,6 +1252,18 @@ export const docker = (
       out.push("--mount", bindMount(closed, true))
     }
   }
+  refuseBrokerAliases(
+    [
+      ...confinement.reads,
+      ...confinement.writes,
+      ...confinement.externalReads,
+      ...confinement.readOnly
+    ],
+    hostFacts,
+    "docker"
+  )
+  // A broad workspace/external mount must not reveal native host brokers.
+  out.push("--tmpfs", destinationBrokerRoot + ":rw,noexec,nosuid,nodev")
   for (const [name, value] of Object.entries(env).sort(([left], [right]) => (left < right ? -1 : 1))) {
     if (name === "PATH" || name === "HOME") continue
     out.push("--env", `${name}=${value}`)

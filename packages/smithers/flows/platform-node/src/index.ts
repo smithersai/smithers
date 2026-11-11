@@ -81,3 +81,6 @@ export * as SandboxedFlow from "./SandboxedFlow.ts"
 
 /** Test support: a durable Node engine over one SQLite file with a `Jj` that records nothing. */
 export * as TestNodeRuntime from "./TestNodeRuntime.ts"
+
+/** Scoped host allowlists for HTTP clients in a private network namespace. */
+export * as DestinationProxy from "./DestinationProxy.ts"

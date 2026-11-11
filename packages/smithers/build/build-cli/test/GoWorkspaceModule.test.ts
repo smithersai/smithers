@@ -399,3 +399,53 @@ export const Package = S.Package({ targets: { a: test("a"), b: test("b") } })`
     expect(added.length).toBeLessThan(compiled.length / 4)
   }, 240_000)
 })
+
+describe.runIf(launcher !== undefined && canConfine && process.platform === "linux")(
+  "Go.ModDownload destinations",
+  () => {
+    it("downloads through declared hosts and refuses an undeclared proxy", async () => {
+      const root = await module(`export const Package = S.Package({ targets: {
+      download: S.Go.ModDownload({
+        mod: S.file("go.mod"), sum: S.file("go.sum"), outDirs: [".gomodcache"], sandbox: {},
+        destinations: ["proxy.golang.org", "sum.golang.org", "storage.googleapis.com"]
+      }),
+      denied: S.Go.ModDownload({
+        mod: S.file("go.mod"), sum: S.file("go.sum"), outDirs: [".deniedcache"], sandbox: {},
+        destinations: ["sum.golang.org"]
+      }),
+      open: S.Go.ModDownload({
+        mod: S.file("go.mod"), sum: S.file("go.sum"), outDirs: [".opencache"], sandbox: { network: true }
+      }),
+      asserted: S.Go.ModDownload({
+        mod: S.file("go.mod"), sum: S.file("go.sum"), outDirs: [".assertedcache"], sandbox: { network: true },
+        destinations: ["proxy.golang.org"]
+      })
+    } })`)
+      await Fs.appendFile(NodePath.join(root, "go.mod"), "\nrequire github.com/Microsoft/go-winio v0.6.2\n")
+      await write(
+        root,
+        "go.sum",
+        "github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=\n" +
+          "github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=\n"
+      )
+      const admitted = await ran(root, ["build", "//:download"])
+      expect(admitted.exitCode, admitted.text).toBe(0)
+      expect(await Fs.stat(NodePath.join(root, ".gomodcache/github.com/!microsoft/go-winio@v0.6.2/go.mod")))
+        .toBeDefined()
+      const denied = await ran(root, ["build", "//:denied"])
+      expect(denied.exitCode, denied.text).toBe(1)
+      expect(denied.text).toContain("Forbidden")
+      expect(
+        await Fs.stat(NodePath.join(root, ".deniedcache/github.com/!microsoft/go-winio@v0.6.2/go.mod"))
+          .catch(() => undefined)
+      ).toBeUndefined()
+      // Without a declared list the sandbox policy alone decides, as before.
+      const open = await ran(root, ["build", "//:open"])
+      expect(open.exitCode, open.text).toBe(0)
+      // A declared list beside an open network cannot be enforced, so it refuses.
+      const asserted = await ran(root, ["build", "//:asserted"])
+      expect(asserted.exitCode, asserted.text).toBe(1)
+      expect(asserted.text).toContain("destination allowlists require bubblewrap with a closed network")
+    }, 240_000)
+  }
+)

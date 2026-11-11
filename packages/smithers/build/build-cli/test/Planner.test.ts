@@ -332,25 +332,29 @@ describe("implementationFingerprint", () => {
    * implementation produced. Nothing about attrs, the lockfile, or the
    * function text changes below — only a helper's bytes.
    */
-  it("changes when a helper source changes, with no salt to remember", async () => {
-    const roots = productionSourceRoots()
-    const copies = await scratch()
-    for (const root of roots) {
-      await copyTree(root.directory, NodePath.join(copies, root.name)).catch(() => undefined)
+  it.each(["targets/Input.ts", "platform-node/DestinationProxy.ts"])(
+    "changes when helper %s changes, with no salt to remember",
+    async (relative) => {
+      const roots = productionSourceRoots()
+      expect(roots.some((root) => root.name === relative.split("/")[0])).toBe(true)
+      const copies = await scratch()
+      for (const root of roots) {
+        await copyTree(root.directory, NodePath.join(copies, root.name)).catch(() => undefined)
+      }
+      const copied = roots.map((root) => ({ name: root.name, directory: NodePath.join(copies, root.name) }))
+
+      // A faithful copy at a different absolute path fingerprints identically:
+      // only logical names and bytes are digested, so two checkouts share a cache.
+      const before = await fingerprintSources(copied)
+      expect(before).toBe(await implementationFingerprint())
+
+      const helper = NodePath.join(copies, relative)
+      const source = await Fs.readFile(helper, "utf8")
+      await Fs.writeFile(helper, `${source}\n// one changed byte of a helper\n`, "utf8")
+
+      expect(await fingerprintSources(copied)).not.toBe(before)
     }
-    const copied = roots.map((root) => ({ name: root.name, directory: NodePath.join(copies, root.name) }))
-
-    // A faithful copy at a different absolute path fingerprints identically:
-    // only logical names and bytes are digested, so two checkouts share a cache.
-    const before = await fingerprintSources(copied)
-    expect(before).toBe(await implementationFingerprint())
-
-    const helper = NodePath.join(copies, "targets/Input.ts")
-    const source = await Fs.readFile(helper, "utf8")
-    await Fs.writeFile(helper, `${source}\n// one changed byte of a helper\n`, "utf8")
-
-    expect(await fingerprintSources(copied)).not.toBe(before)
-  })
+  )
 
   it("distinguishes an absent tree from an empty one", async () => {
     const present = await scratch()

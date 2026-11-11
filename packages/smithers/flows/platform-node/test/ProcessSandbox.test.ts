@@ -1185,6 +1185,8 @@ describe("every mechanism renders the same text on any host", () => {
       "--bind",
       "/work/ws/dist",
       "/work/ws/dist",
+      "--tmpfs",
+      "/tmp/.smthrs-egress",
       "--remount-ro",
       "/work/ws",
       "--remount-ro",
@@ -1229,6 +1231,8 @@ describe("every mechanism renders the same text on any host", () => {
       "type=bind,src=/work/ws/out,dst=/work/ws/out",
       "--mount",
       "type=bind,src=/work/ws/dist,dst=/work/ws/dist",
+      "--tmpfs",
+      "/tmp/.smthrs-egress:rw,noexec,nosuid,nodev",
       "--env",
       "CI=1",
       "--env",
@@ -2173,4 +2177,72 @@ it("resolves declared reads through the native filesystem when no realpath adapt
   } finally {
     NodeFs.rmSync(base, { recursive: true, force: true })
   }
+})
+
+describe("destination broker mounts", () => {
+  const brokerRoot = "/tmp/.smthrs-egress"
+  const socket = brokerRoot + "/run-owner/p.sock"
+  it("masks broad grants before restoring only the owning broker socket", () => {
+    const base = planned(linux)
+    const argv = ProcessSandbox.bubblewrap(
+      {
+        ...base,
+        externalReads: [brokerRoot],
+        destinationSocket: socket
+      },
+      ["true"],
+      linux
+    )
+    const broad = argv.findIndex((value, index) => value === brokerRoot && argv[index - 1] === "--ro-bind")
+    const mask = argv.findIndex((value, index) => value === brokerRoot && argv[index - 1] === "--tmpfs")
+    const own = argv.indexOf(socket)
+    expect(argv.slice(own - 1, own + 2)).toEqual(["--ro-bind", socket, socket])
+    expect(argv.lastIndexOf(brokerRoot)).toBeLessThan(own)
+    expect(argv[argv.lastIndexOf(brokerRoot) - 1]).toBe("--tmpfs")
+    expect(broad).toBeGreaterThan(-1)
+    expect(broad).toBeLessThan(mask)
+    expect(mask).toBeGreaterThan(-1)
+  })
+  it("masks the broker root in ordinary native and Docker sandboxes too", () => {
+    const native = ProcessSandbox.bubblewrap(planned(linux), ["true"], linux)
+    expect(native[native.lastIndexOf(brokerRoot) - 1]).toBe("--tmpfs")
+    const docker = ProcessSandbox.docker(
+      planned(windows, { mechanism: { _tag: "docker", image: "fixture" } }),
+      ["true"],
+      {},
+      windows,
+      "fixture"
+    )
+    expect(docker).toContain(brokerRoot + ":rw,noexec,nosuid,nodev")
+  })
+  it("refuses a socket outside the reserved per-run directory", () => {
+    for (const destinationSocket of ["/outside/p.sock", brokerRoot + "/run-x/../p.sock", brokerRoot + "/p.sock"]) {
+      expect(() => ProcessSandbox.bubblewrap({ ...planned(linux), destinationSocket }, ["true"], linux))
+        .toThrow(/invalid destination broker socket/)
+    }
+  })
+})
+
+describe("destination broker aliases", () => {
+  it("refuses directory aliases to the broker tree, its ancestors and its sockets", () => {
+    for (const target of ["/tmp", "/tmp/.smthrs-egress", "/tmp/.smthrs-egress/run-other/p.sock"]) {
+      const alias = root + "/broker-alias"
+      const facts = { ...linux, realpath: (path: string) => path === alias ? target : path }
+      expect(() => ProcessSandbox.bubblewrap({ ...planned(linux), reads: [alias] }, ["true"], facts))
+        .toThrow(/aliases the private destination broker tree/)
+      expect(() =>
+        ProcessSandbox.docker(
+          {
+            ...planned(windows, { mechanism: { _tag: "docker", image: "fixture" } }),
+            reads: [alias]
+          },
+          ["true"],
+          {},
+          { ...windows, realpath: facts.realpath },
+          "fixture"
+        )
+      )
+        .toThrow(/aliases the private destination broker tree/)
+    }
+  })
 })

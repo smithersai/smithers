@@ -236,6 +236,16 @@ const laneDataFiles = (
     .filter((path) => path !== promptPath)
 
 /**
+ * The exact hosts a `Go.ModDownload` declares. A declared list, even an empty
+ * one, is enforced through the destination broker or refused; an omitted list
+ * leaves the declared sandbox policy alone.
+ */
+const destinationsOf = (node: PackageNode): ReadonlyArray<string> | undefined =>
+  node.rule === "Go.ModDownload"
+    ? (Target.metadata(node.declaration).attrs as { readonly destinations?: ReadonlyArray<string> }).destinations
+    : undefined
+
+/**
  * The confinement one package node runs under.
  *
  * The read set is what the content key covers: the node's expanded declared
@@ -344,6 +354,7 @@ export const sandboxRequest = (
   }
   return {
     policy: node.sandbox,
+    ...(destinationsOf(node) === undefined ? {} : { destinations: destinationsOf(node) }),
     mechanism: workspace.sandboxes?.sandboxes["default"],
     reads: [...reads],
     writes: [...writes],

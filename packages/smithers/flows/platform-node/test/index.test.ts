@@ -1,5 +1,6 @@
 /** Barrel parity with the platform-browser and platform-bun packages. */
 import { describe, expect, it } from "@effect/vitest"
+import * as DestinationProxy from "../src/DestinationProxy.ts"
 import * as EgressHttpClient from "../src/EgressHttpClient.ts"
 import * as FetchTransport from "../src/FetchTransport.ts"
 import * as Index from "../src/index.ts"
@@ -17,6 +18,7 @@ import * as TestNodeRuntime from "../src/TestNodeRuntime.ts"
 describe("@smthrs/platform-node barrel", () => {
   it("re-exports every module as a namespace", () => {
     expect(Object.keys(Index).sort()).toEqual([
+      "DestinationProxy",
       "EgressHttpClient",
       "FetchTransport",
       "HostLiveness",
@@ -37,6 +39,7 @@ describe("@smthrs/platform-node barrel", () => {
     expect(Index.NodeHost.layerAt).toBe(NodeHost.layerAt)
     expect(Index.NodeHost.layerContained).toBe(NodeHost.layerContained)
     expect(Index.NodeHost.layerContainedAt).toBe(NodeHost.layerContainedAt)
+    expect(Index.DestinationProxy.isolated).toBe(DestinationProxy.isolated)
     expect(Index.EgressHttpClient.layer).toBe(EgressHttpClient.layer)
     expect(Index.FetchTransport.observe).toBe(FetchTransport.observe)
     expect(Index.NodeLanguageServer.layer).toBe(NodeLanguageServer.layer)

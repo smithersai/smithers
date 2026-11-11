@@ -157,6 +157,8 @@ export type Policy = Attr.Sandbox
  * @since 0.1.0
  */
 export interface Request {
+  /** Exact HTTP egress hosts; enforced through a broker in a closed namespace. */
+  readonly destinations?: ReadonlyArray<string> | undefined
   readonly policy: Policy | undefined
   readonly mechanism?: WorkspaceDeclaration.SandboxDeclaration | undefined
   readonly reads: ReadonlyArray<string>
@@ -245,6 +247,19 @@ export const select = (
   request: Request,
   hostFacts: ProcessSandbox.Host
 ): ProcessSandbox.Mechanism | ProcessSandbox.Unenforceable => {
+  if (
+    request.destinations !== undefined && (
+      network(request.policy) !== "none" || hostFacts.platform !== "linux" ||
+      (request.mechanism !== undefined && request.mechanism._tag !== "SandboxBubblewrap")
+    )
+  ) {
+    return ProcessSandbox.unenforceable(
+      hostFacts.platform,
+      "bubblewrap",
+      "closed network",
+      "destination allowlists require bubblewrap with a closed network"
+    )
+  }
   if (request.policy === "none") return { _tag: "none" }
   const declared = request.mechanism
   const platform = hostFacts.platform

@@ -751,6 +751,7 @@ const loadedModuleRoot = (name: string, specifier: string): SourceRoot => ({
 export const productionSourceRoots = (): ReadonlyArray<SourceRoot> => [
   { name: "cli", directory: cliSourceDirectory },
   loadedModuleRoot("targets", "@smthrs/targets"),
+  loadedModuleRoot("platform-node", "@smthrs/platform-node"),
   loadedModuleRoot("build", "@smthrs/build"),
   loadedModuleRoot("canonical", "@smthrs/canonical"),
   loadedModuleRoot("crypto", "@smthrs/crypto"),

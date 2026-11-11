@@ -2118,6 +2118,11 @@ const visit = async (
         }
       }
       try {
+        // The confined downloader's namespace relay executes this runtime,
+        // so its bytes earn the same identity as every declared executable.
+        if (rule === "Go.ModDownload") {
+          toolchain.push({ tag: "DestinationRelay", runtime: await binaryIdentity(toolContext, process.execPath) })
+        }
         const plannedGo = await GoExec.planRule(rule, attrs as Record<string, unknown>, {
           signal: context.signal,
           root: context.root,

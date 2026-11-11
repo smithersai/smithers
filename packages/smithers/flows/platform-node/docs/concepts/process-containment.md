@@ -188,3 +188,32 @@ unsupported platform, not an oversight.
 [Contain child processes](../guides/contain-child-processes.md) is the
 task-shaped version of this page: the layers to compose, the ledger to choose,
 and how to read what the sweep decided.
+
+## Destination brokers
+
+`DestinationProxy.open(socket, destinations, token)` scopes an HTTP broker to an
+exact list of hostnames. `DestinationProxy.wrap(argv, socket)` runs the command
+behind a loopback relay inside a closed bubblewrap network namespace. Only the
+Unix socket is mounted from the host. The broker resolves DNS and connects
+upstream after checking the requested authority; HTTP redirects require another
+checked request. An undeclared hostname receives `403`. Direct TCP and DNS
+remain unavailable inside the namespace.
+
+`DestinationProxy.isolated(destinations, workspaceRoot)` creates the private
+broker directory and refuses a workspace covering that directory. The caller
+must enforce the private namespace and mount only the returned broker socket.
+This API does not make an otherwise unconfined command safe. Scope exit closes
+listeners and active connections.
+
+The exec boundary creates its broker outside the workspace and shared cache,
+then mounts only that run's socket. A concurrent confined target cannot borrow
+another run's network grant. The planner fingerprints the platform host sources
+as well as the Node executable, so broker or relay changes invalidate results.
+
+The private broker root belongs to the OS user that creates it. Another user
+fails closed if it cannot establish that ownership. The broker authenticates
+every HTTP request and CONNECT tunnel with a fresh per-run token before DNS or
+upstream access. The host injects that token only into the transient relay
+environment; it is absent from action payloads, command arguments and cache
+keys. The relay removes its private environment variable before spawning the
+tool and supplies standard proxy authentication through the loopback proxy URL.

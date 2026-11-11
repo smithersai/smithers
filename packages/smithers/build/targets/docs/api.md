@@ -352,3 +352,35 @@ Shell execution accepts `timeout` as an integer followed by `ms`, `s`, `m`, or
 `h`. `Target.plan(Shell.Test({ shell: "true", timeout: "30s" }))` records
 `timeoutMs: 30000` in the exec payload. Omitting `timeout` uses
 `Shell.packageExecTimeoutMs` (30 minutes), matching the package executor.
+
+### Go module download destinations
+
+`Go.ModDownload` uses its `destinations` as an exact HTTP egress allowlist:
+
+```ts
+S.Go.ModDownload({
+  mod: S.file("go.mod"),
+  sum: S.file("go.sum"),
+  outDirs: [".gomodcache"],
+  sandbox: {},
+  destinations: ["proxy.golang.org", "sum.golang.org", "storage.googleapis.com"]
+})
+```
+
+The downloader stays in a closed bubblewrap network namespace and reaches a
+host broker through a Unix socket. The broker resolves DNS and connects only
+to a declared hostname. Redirects need their destination declared too. An
+empty list opens no hosts. Without `destinations`, the download runs under its
+`sandbox` policy alone: `sandbox: {}` closes the network, and
+`sandbox: { network: true }` opens it without a host check. Module checksums and the declared Go SDK
+remain part of the existing cache contract.
+
+This confinement currently requires Linux with bubblewrap. An allowlist
+combined with `sandbox: "none"`, `network: true`, Docker, or another mechanism
+is refused; the runner never substitutes unrestricted network access. Offline
+consumers declare the download target in `data` and use `offline: true`.
+
+The exec boundary creates its broker outside the workspace and shared cache,
+then mounts only that run's socket. A concurrent confined target cannot borrow
+another run's network grant. The planner fingerprints the platform host sources
+as well as the Node executable, so broker or relay changes invalidate results.

@@ -194,3 +194,21 @@ describe("build corepack launcher regression", () => {
     expect(text).not.toContain("--ro-bind /opt/node /opt/node")
   })
 })
+
+describe("destination allowlist selection", () => {
+  it("requires a closed bubblewrap namespace, including explicit opt-outs", () => {
+    const restricted = { ...request, destinations: ["proxy.golang.org"] }
+    expect(ExecSandbox.select(restricted, linux)).toEqual({ _tag: "bubblewrap", executable: "/usr/bin/bwrap" })
+    for (
+      const incompatible of [
+        { ...restricted, policy: "none" as const },
+        { ...restricted, policy: { network: true } },
+        { ...restricted, policy: { network: "loopback" as const } },
+        { ...restricted, mechanism: Sandbox.None() },
+        { ...restricted, mechanism: Sandbox.Docker({ image: "node:26" }) }
+      ]
+    ) expect(ExecSandbox.isUnenforceable(ExecSandbox.select(incompatible, linux))).toBe(true)
+    expect(ExecSandbox.isUnenforceable(ExecSandbox.select(restricted, darwin))).toBe(true)
+    expect(ExecSandbox.isUnenforceable(ExecSandbox.select(restricted, windows))).toBe(true)
+  })
+})
