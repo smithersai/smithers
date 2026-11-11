@@ -54,7 +54,8 @@ export interface FileSystemOptions {
   readonly directoryMode?: number | undefined
   /**
    * `required` reports success only after syncing the blob, its fanout,
-   * the objects directory, and every ancestor. `best-effort` is the explicit weaker
+   * the objects directory, and every ancestor up to the first one the host
+   * refuses to open for reading. `best-effort` is the explicit weaker
    * capability for hosts that cannot sync file or directory handles.
    * Both modes require exclusive writable handles and symlink inspection.
    */
@@ -111,6 +112,8 @@ const isScratch = (entry: string): boolean =>
 
 const isNotFound = (cause: unknown): boolean =>
   cause instanceof PlatformError.PlatformError && cause.reason._tag === "NotFound"
+
+const isPermissionDenied = (cause: PlatformError.PlatformError): boolean => cause.reason._tag === "PermissionDenied"
 
 /**
  * Bazel's `DiskCacheClient.toPath` layout: a two-hex-prefix subdirectory
@@ -232,13 +235,30 @@ export const makeFileSystem = (
   // Repeat the whole ancestry even on dedupe: an existing directory may have
   // been created by an interrupted publication in another store or process.
   // Syncing objects also persists the lock directory created by withDigest.
+  // The walk ends at the first ancestor the host refuses to open for reading,
+  // such as a traverse-only `/home` at 0711. A store creates directories with
+  // an owner-readable `directoryMode` (default 0700), and another user's 0700
+  // directory would also refuse traversal, so no store made that ancestor and
+  // neither it nor its own ancestors hold an entry a publication made.
+  const syncAncestor = (target: string): Effect.Effect<boolean, ArtifactStoreError> => {
+    const sync = Effect.scoped(Effect.gen(function*() {
+      const opened = yield* fs.open(target, { flag: "r" }).pipe(
+        Effect.map(Option.some),
+        Effect.catchIf(isPermissionDenied, () => Effect.succeedNone)
+      )
+      if (Option.isNone(opened)) return false
+      yield* opened.value.sync
+      return true
+    })).pipe(Effect.mapError(hostFailure))
+    return durability === "best-effort" ? Effect.orElseSucceed(sync, () => true) : sync
+  }
   const syncDirectoryAncestry = Effect.gen(function*() {
+    yield* syncPath(directory, "r")
     let current = directory
-    while (true) {
-      yield* syncPath(current, "r")
-      const parent = platformPath.dirname(current)
-      if (parent === current) return
+    let parent = platformPath.dirname(current)
+    while (parent !== current && (yield* syncAncestor(parent))) {
       current = parent
+      parent = platformPath.dirname(current)
     }
   })
 

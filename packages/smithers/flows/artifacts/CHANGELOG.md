@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The filesystem store's required directory sync ends at the first ancestor
+  the host refuses to open for reading, so a traverse-only ancestor such as
+  `/home` at `0711` no longer fails every `put` as `unavailable` (#4522).
 - The filesystem store syncs the real ancestors of a Windows drive directory.
   Breaking: `makeFileSystem(fs, path, options)` takes the host `Path`, and
   `layerFileSystem` requires `Path.Path` (`NodePath.layer` on Node) (#2302).

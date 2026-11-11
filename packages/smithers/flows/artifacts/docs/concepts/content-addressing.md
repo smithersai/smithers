@@ -83,8 +83,11 @@ token enters no persisted identity, so its randomness is invisible to replay.
 
 `FileSystemOptions.durability` controls the fsync. `required`, the default,
 reports success only after syncing the blob, its fanout directory, the objects
-directory, and each ancestor through the relative or filesystem root. This
-persists new fanout and lock directory entries and nested configured directories.
+directory, and each ancestor through the relative or filesystem root. The walk
+ends at the first ancestor the host refuses to open for reading, such as a
+traverse-only `/home` at `0711`: a store creates only directories their owner
+can read, so neither that ancestor nor its parents hold an entry a store made.
+This persists new fanout and lock directory entries and nested configured directories.
 Every put repeats these barriers, including a deduplicated retry after an
 interrupted publication. A sync refusal fails with `ArtifactStoreError` code
 `unavailable`. `best-effort` is the explicit weaker capability for a

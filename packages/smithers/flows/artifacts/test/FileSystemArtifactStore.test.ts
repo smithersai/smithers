@@ -50,6 +50,7 @@ const memoryFs = (options: {
   readonly failDirectoryRead?: boolean
   readonly supportsOpen?: boolean
   readonly failSyncOf?: (path: string) => boolean
+  readonly denyOpenOf?: string
 } = {}) => {
   const files = new Map<string, Uint8Array>(
     Object.entries(options.seed ?? {}).map(([path, content]) => [path, bytes(content)])
@@ -139,7 +140,7 @@ const memoryFs = (options: {
       })) as never,
     open: ((path: string, openOptions?: { flag?: string }) =>
       Effect.suspend(() => {
-        if (options.supportsOpen === false) {
+        if (options.supportsOpen === false || path === options.denyOpenOf) {
           return Effect.fail(PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "open" }))
         }
         if (openOptions?.flag === "wx") {
@@ -409,6 +410,24 @@ describe("atomic publication (issues #117, #131, #138)", () => {
       const exit = yield* Effect.scoped(Effect.flatMap(host.fs.open(blobPath), (file) => file.sync)).pipe(Effect.exit)
       expect(errorOf(exit)).toBeInstanceOf(PlatformError.PlatformError)
       expect(errorOf(exit)).toMatchObject({ reason: { _tag: "Unknown", method: "sync" } })
+    }))
+
+  it.effect("ends the ancestor sync at the first ancestor the host refuses to open", () =>
+    Effect.gen(function*() {
+      // A traverse-only ancestor such as `/home` at 0711 refuses a read-only open.
+      const host = memoryFs({ denyOpenOf: ".flows" })
+      expect(yield* withCrypto(store(host, { durability: "required" }).put(bytes(artifact)))).toBe(digest)
+      expect(host.events.filter((event) => event.op === "directory-sync").map((event) => event.path)).toEqual([
+        posix.dirname(blobPath),
+        ".flows/objects"
+      ])
+    }))
+
+  it.effect("still fails when the host refuses to open the objects directory", () =>
+    Effect.gen(function*() {
+      const host = memoryFs({ denyOpenOf: ".flows/objects" })
+      const exit = yield* withCrypto(store(host, { durability: "required" }).put(bytes(artifact))).pipe(Effect.exit)
+      expect(errorOf(exit)).toMatchObject({ _tag: "@smthrs/artifacts/ArtifactStoreError", code: "unavailable" })
     }))
 
   for (const barrier of ["temp", "fanout", "objects", "ancestor", "root"] as const) {
@@ -859,6 +878,25 @@ describe("Node filesystem publication security", () => {
         expect((yield* fs.stat(`${fan}/${digest}`)).mode & 0o777).toBe(sharing ? 0o640 : 0o600)
       }
     })).pipe(Effect.provide(NodeFileSystem.layer), withCrypto))
+
+  it.live.skipIf(process.getuid?.() === 0)(
+    "publishes below a traverse-only ancestor",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "artifacts-traverse-only-" })
+        const directory = `${root}/home/workspace/.flows/objects`
+        yield* fs.makeDirectory(`${root}/home/workspace`, { recursive: true })
+        yield* Effect.acquireRelease(
+          fs.chmod(`${root}/home`, 0o311),
+          () => Effect.orDie(fs.chmod(`${root}/home`, 0o700))
+        )
+        const artifacts = ArtifactStore.makeFileSystem(fs, hostPath, { directory })
+        expect(yield* artifacts.put(bytes(artifact))).toBe(digest)
+        expect(yield* artifacts.put(bytes(artifact))).toBe(digest)
+        expect(text(yield* artifacts.get(digest))).toBe(artifact)
+      })).pipe(Effect.provide(NodeFileSystem.layer), withCrypto)
+  )
 
   it.live("retries a preplanted scratch symlink without touching its target or removing the collision", () =>
     Effect.scoped(Effect.gen(function*() {
