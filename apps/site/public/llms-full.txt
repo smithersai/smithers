@@ -24050,7 +24050,11 @@ prefer `SqlConsensus` wherever a database is present.
 claim, activation, supervised execution and release. SQL strategies share the
 permit across processes; local strategies share it within their instance.
 Waiters retry admission and then execute their effect. Heartbeats renew once
-per second; lost ownership interrupts work with `ConsensusError` (`fence_lost`).
+per second, each renewal bounded by one second. A `Lost` renewal interrupts work
+with `ConsensusError` (`fence_lost`). A slow or failed renewal is retried: work
+is interrupted with `persistence_failed` only once the lease has gone
+unconfirmed for `heartbeatWriteTolerance`, measured from the last confirmed
+renewal.
 Failure and interruption release the permit. Stale claims and owners require a
 negative `isAlive` observation before recovery. Resource keys share the lease
 namespace with run IDs; callers must reserve their prefix.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
@@ -213,7 +213,7 @@ it.effect("retries when the SQL resource owner releases between a rejected claim
     expect(released).toBe(true)
   }).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer))))
 
-it.effect("preserves the renewal timeout when real SQL work blocks a resource pulse", () =>
+it.effect("budgets renewals that real SQL work blocks by the write tolerance", () =>
   Effect.gen(function*() {
     const service = yield* Consensus.Consensus
     const writer = yield* DurableWriter.DurableWriter
@@ -225,14 +225,115 @@ it.effect("preserves the renewal timeout when real SQL work blocks a resource pu
       writer.write(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
     ).pipe(Effect.flip, Effect.forkChild)
     yield* Deferred.await(entered)
-    yield* TestClock.adjust("2 seconds")
+    const start = yield* Clock.currentTimeMillis
+    const toleranceMs = Duration.toMillis(Consensus.heartbeatWriteTolerance)
+    // SQL renewals schedule their timeouts after real I/O, so advance the
+    // clock in small steps and let each step's work settle.
+    const advanceUntil = (doneAtMs: number) =>
+      Effect.gen(function*() {
+        while (work.pollUnsafe() === undefined && (yield* Clock.currentTimeMillis) < doneAtMs) {
+          yield* TestClock.adjust("100 millis")
+          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)))
+        }
+      })
+    yield* advanceUntil(start + toleranceMs - 100)
+    // Every renewal timed out behind the blocked writer, but the lease is
+    // still inside its budget, so the work keeps running.
+    expect(work.pollUnsafe()).toBeUndefined()
+    yield* advanceUntil(start + toleranceMs + 2 * Duration.toMillis(Consensus.heartbeatInterval))
+    expect(work.pollUnsafe()).toBeDefined()
     const failure = yield* Fiber.join(work)
-    expect(failure.code).toBe("fence_lost")
+    expect(failure.code).toBe("persistence_failed")
     expect(failure.cause).toMatchObject({ _tag: "TimeoutError" })
     expect(yield* service.withPermit("blocked-pulse", other, alive, Effect.succeed("released"))).toBe("released")
   }).pipe(Effect.provide(SqlConsensus.layer.pipe(
     Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))
   ))))
+
+const storageFailure = new Consensus.ConsensusError({ code: "persistence_failed", message: "writer busy" })
+
+/** A local strategy whose renewals follow `script` by call number, then renew normally. */
+const scripted = (script: (call: number) => "slow" | "fail" | "fenced" | "lost" | "renew") =>
+  Effect.gen(function*() {
+    const local = yield* Consensus.makeLocal
+    let calls = 0
+    const strategy: Omit<Consensus.Service, "withPermit"> = {
+      ...local,
+      reconfirm: (key, holder, nowMs) => {
+        const step = script(++calls)
+        if (step === "fail") return Effect.fail(storageFailure)
+        if (step === "fenced") return Effect.fail(Consensus.fenceLost(key, holder))
+        if (step === "lost") return Effect.succeed({ _tag: "Lost" } as const)
+        const renew = local.reconfirm(key, holder, nowMs)
+        return step === "slow" ? Effect.sleep("1200 millis").pipe(Effect.andThen(renew)) : renew
+      }
+    }
+    return strategy
+  })
+
+const hold = (strategy: Omit<Consensus.Service, "withPermit">) =>
+  Effect.gen(function*() {
+    const entered = yield* Deferred.make<void>()
+    let interrupted = false
+    const work = yield* Consensus.resourcePermit(
+      strategy,
+      () => Effect.succeed(undefined),
+      "resource",
+      owner,
+      alive,
+      Deferred.succeed(entered, undefined).pipe(
+        Effect.andThen(Effect.never),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            interrupted = true
+          })
+        )
+      )
+    ).pipe(Effect.flip, Effect.forkChild)
+    yield* Deferred.await(entered)
+    return { work, interrupted: () => interrupted }
+  })
+
+it.effect("keeps resource work running through a slow renewal and transient storage errors", () =>
+  Effect.gen(function*() {
+    // Renewal 2 outlasts one interval; renewals 3 to 10 fail; later ones renew.
+    const strategy = yield* scripted((call) => call === 2 ? "slow" : call >= 3 && call <= 10 ? "fail" : "renew")
+    const { interrupted, work } = yield* hold(strategy)
+    yield* TestClock.adjust("40 seconds")
+    expect(work.pollUnsafe()).toBeUndefined()
+    expect(interrupted()).toBe(false)
+    yield* Fiber.interrupt(work)
+  }))
+
+it.effect("interrupts resource work with persistence_failed once renewals miss for the write tolerance", () =>
+  Effect.gen(function*() {
+    const strategy = yield* scripted((call) => call === 1 ? "renew" : "fail")
+    const { interrupted, work } = yield* hold(strategy)
+    const intervalMs = Duration.toMillis(Consensus.heartbeatInterval)
+    const toleranceMs = Duration.toMillis(Consensus.heartbeatWriteTolerance)
+    // The budget runs from the last confirmed renewal, one interval in.
+    yield* TestClock.adjust(intervalMs + toleranceMs - 1)
+    expect(work.pollUnsafe()).toBeUndefined()
+    yield* TestClock.adjust(1)
+    const failure = yield* Fiber.join(work)
+    expect(failure).toMatchObject({ code: "persistence_failed", cause: storageFailure })
+    expect(interrupted()).toBe(true)
+  }))
+
+for (const step of ["lost", "fenced"] as const) {
+  it.effect(`interrupts resource work with fence_lost at the first renewal ${step} after a miss`, () =>
+    Effect.gen(function*() {
+      const strategy = yield* scripted((call) => call === 1 ? "fail" : step)
+      const { interrupted, work } = yield* hold(strategy)
+      yield* TestClock.adjust(Consensus.heartbeatInterval)
+      expect(work.pollUnsafe()).toBeUndefined()
+      // The second renewal reports the loss; nothing is retried after it.
+      yield* TestClock.adjust(Consensus.heartbeatInterval)
+      expect(work.pollUnsafe()).toBeDefined()
+      expect(yield* Fiber.join(work)).toMatchObject({ code: "fence_lost" })
+      expect(interrupted()).toBe(true)
+    }))
+}
 
 it.effect("waits for a held SQLite resource without requesting write access", () =>
   Effect.gen(function*() {

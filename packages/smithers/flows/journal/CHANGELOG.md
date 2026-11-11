@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `Service.withPermit` no longer interrupts work when one lease renewal takes
+  longer than a second or the strategy returns a transient storage error. Misses
+  are retried until the lease has gone unconfirmed for `heartbeatWriteTolerance`,
+  and the work then fails with `persistence_failed` instead of `fence_lost`,
+  which is kept for a renewal that reports the lease lost.
 - A lossy batch the writer fails to commit is logged and counted on the new
   `flows_journal_lost` counter (`JournalMetrics.lostEntries`, `lost(code)`),
   so telemetry lost with no `flush` caller is no longer silent. A final flush

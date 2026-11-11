@@ -734,6 +734,16 @@ export const layerLocal: Layer.Layer<Consensus> = Layer.effect(Consensus, makeLo
 /**
  * Shares the existing consensus lease lifecycle with named engine resources.
  * The reader is private to the strategy; resource leases never create runs.
+ *
+ * Heartbeats reconfirm the lease every {@link heartbeatInterval}, each bounded
+ * by one interval. A `Lost` outcome is ownership news and interrupts the work
+ * with `fence_lost`, as does a renewal failing with `fence_lost`. A slow
+ * renewal or a storage failure is not: the persisted lease
+ * stays held until {@link heartbeatStaleAfter}, so misses are retried until
+ * the lease has gone unconfirmed for {@link heartbeatWriteTolerance}, measured
+ * from the timestamp of the last renewal the strategy confirmed. Past that
+ * budget the work is interrupted with `persistence_failed`, carrying the last
+ * failure as its cause.
  * @since 1.0.0
  * @category constructors
  */
@@ -746,6 +756,10 @@ export const resourcePermit = <A, E, R>(
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<A, E | ConsensusError, R> =>
   Effect.uninterruptibleMask((restore) => {
+    // The stamp of the last lease write the strategy confirmed: activation,
+    // then each renewal. Misses are budgeted against it, never against a
+    // completion time, so a slow write cannot extend the budget.
+    let confirmedAtMs = 0
     const acquire = Effect.gen(function*() {
       while (true) {
         const admitted = yield* Effect.uninterruptible(Effect.gen(function*() {
@@ -784,7 +798,10 @@ export const resourcePermit = <A, E, R>(
           const activated = yield* strategy.activate(key, owner, grant.grantedAtMs, nowMs).pipe(
             Effect.onError(() => strategy.release(key, owner).pipe(Effect.orDie))
           )
-          if (activated._tag === "Activated") return true
+          if (activated._tag === "Activated") {
+            confirmedAtMs = nowMs
+            return true
+          }
           yield* strategy.release(key, owner)
           return false
         }))
@@ -792,18 +809,41 @@ export const resourcePermit = <A, E, R>(
         yield* restore(Effect.sleep("50 millis"))
       }
     })
-    const pulse = Effect.forever(
-      Effect.sleep(heartbeatInterval).pipe(
-        Effect.andThen(Effect.gen(function*() {
-          const nowMs = yield* Clock.currentTimeMillis
-          const renewed = yield* strategy.reconfirm(key, owner, nowMs).pipe(Effect.timeout(heartbeatInterval))
-          if (renewed._tag !== "Renewed") return yield* Effect.fail(fenceLost(key, owner))
-        })),
-        Effect.mapError((cause) =>
-          new ConsensusError({ code: "fence_lost", message: fenceLost(key, owner).message, cause })
+    const pulse = Effect.gen(function*() {
+      const intervalMs = Duration.toMillis(heartbeatInterval)
+      const toleranceMs = Duration.toMillis(heartbeatWriteTolerance)
+      let waitMs = intervalMs
+      while (true) {
+        yield* Effect.sleep(waitMs)
+        const nowMs = yield* Clock.currentTimeMillis
+        const renewed = yield* Effect.result(
+          strategy.reconfirm(key, owner, nowMs).pipe(Effect.timeout(heartbeatInterval))
         )
-      )
-    )
+        if (renewed._tag === "Success") {
+          if (renewed.success._tag !== "Renewed") return yield* Effect.fail(fenceLost(key, owner))
+          confirmedAtMs = Math.max(confirmedAtMs, nowMs)
+          waitMs = intervalMs
+          continue
+        }
+        if (renewed.failure instanceof ConsensusError && renewed.failure.code === "fence_lost") {
+          return yield* Effect.fail(renewed.failure)
+        }
+        // A timeout or storage error is a miss, not lost ownership. The
+        // budget reserves one interval, so the last retry starts before it
+        // ends and finishes before a peer may judge the lease stale.
+        const unconfirmedMs = (yield* Clock.currentTimeMillis) - confirmedAtMs
+        if (unconfirmedMs >= toleranceMs) {
+          return yield* Effect.fail(
+            new ConsensusError({
+              code: "persistence_failed",
+              message: `resource ${key} lease went unconfirmed for ${unconfirmedMs} ms`,
+              cause: renewed.failure
+            })
+          )
+        }
+        waitMs = Math.min(intervalMs, toleranceMs - unconfirmedMs)
+      }
+    })
     return acquire.pipe(
       Effect.andThen(() =>
         restore(Effect.raceFirst(effect, pulse)).pipe(
