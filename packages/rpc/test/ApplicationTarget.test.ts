@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import { ZodError } from "zod"
 import { ApplicationTargetRefused, resolveApplicationTarget } from "../src/ApplicationTarget.ts"
 import type { ApplicationTargetRefusalCode } from "../src/ApplicationTarget.ts"
 
@@ -234,7 +235,7 @@ describe("application target matrix", () => {
     { apiVersion: 1, mode: "web-selfhost", auth: { kind: "session" }, token: "secret" },
     { apiVersion: 1, mode: "web-selfhost", auth: { kind: "session" }, developerExternal: "true" }
   ])("rejects malformed or secret-bearing deployment documents", (document) => {
-    expect(() => resolveApplicationTarget(document, PAGE)).toThrow()
+    expect(() => resolveApplicationTarget(document, PAGE)).toThrow(ZodError)
   })
 })
 

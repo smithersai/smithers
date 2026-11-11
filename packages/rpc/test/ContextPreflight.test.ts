@@ -1,4 +1,5 @@
 import { expect, test } from "vitest"
+import { ZodError } from "zod"
 import { composeAgentInstructions } from "../src/AgentContext.ts"
 import type { AgentRuntimeContext } from "../src/AgentContext.ts"
 import {
@@ -74,8 +75,9 @@ test("paged preflight survives serialization and publishes only complete phases"
   expect(complete.preflightPage).toBeUndefined()
   expect(complete.preflight?.context).toEqual([...first.result.context, ...second.result.context])
   expect(complete.preflight?.candidates).toEqual(first.result.candidates)
-  for (const invalid of [second, { ...first, page: { index: 2, total: 2 } }, { ...first, phase: undefined }]) {
-    expect(() => projectContextPreflight({}, invalid)).toThrow()
+  expect(() => projectContextPreflight({}, second)).toThrow(ContextPreflightRejected)
+  for (const invalid of [{ ...first, page: { index: 2, total: 2 } }, { ...first, phase: undefined }]) {
+    expect(() => projectContextPreflight({}, invalid)).toThrow(ZodError)
   }
   for (
     const invalid of [{ ...second, page: { index: 1, total: 3 } }, { ...second, phase: "started" as const }, {

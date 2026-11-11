@@ -1,8 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import { AgentTurnFrameSchema, decodeAgentTurnFrame } from "../src/NativeAgent.ts"
 import type { AgentTurnFrame } from "../src/NativeAgent.ts"
+import { moduleSpecifiers, sources } from "./SourceGuards.ts"
 
 const parses = (value: unknown): boolean => AgentTurnFrameSchema.safeParse(value).success
 
@@ -213,15 +215,78 @@ describe("AgentTurnFrame — chain family (DESIGN.md §14)", () => {
  * imports only runtime-free canonical entry points. This keeps the Worker
  * and both bridges free of Effect runtime imports.
  */
+const smithersRuntimeImport = (specifier: string): boolean =>
+  specifier.startsWith("@smthrs/") &&
+  specifier !== "@smthrs/canonical/Record" && specifier !== "@smthrs/canonical/Serializer"
+const effectRuntimeImport = (specifier: string): boolean => specifier === "effect" || specifier.startsWith("effect/")
+
 describe("RPC sources stay runtime-free", () => {
   test("only runtime-free canonical record and serializer entry points cross the Smithers boundary", () => {
-    const dir = join(import.meta.dirname, "../src")
-    for (const file of readdirSync(dir)) {
-      if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue
-      const source = readFileSync(join(dir, file), "utf8")
-      // Covers bare, subpath, single-quoted, and dynamic import specifiers.
-      expect(source).not.toMatch(/(from\s+|import\()\s*["']@smthrs\/(?!canonical\/(?:Record|Serializer)["'])/)
-      expect(source).not.toMatch(/(from\s+|import\()\s*["']effect(["']|\/)/)
+    for (const file of sources(join(import.meta.dirname, "../src"))) {
+      const source = readFileSync(file, "utf8")
+      const imports = moduleSpecifiers(source, file)
+      expect(imports.filter(smithersRuntimeImport), file).toEqual([])
+      expect(imports.filter(effectRuntimeImport), file).toEqual([])
+    }
+  })
+
+  test.each([
+    "import { Effect } from \"MODULE\"",
+    "export * from 'MODULE'",
+    "import \"MODULE\"",
+    "import 'MODULE'",
+    "await import(\"MODULE\")",
+    "await import ( 'MODULE' )",
+    "const runtime = require(\"MODULE\")",
+    "const runtime = require ( 'MODULE' )",
+    "await import(/* @vite-ignore */ \"MODULE\")",
+    "const runtime = require(/* runtime */ \"MODULE\")",
+    "import runtime = require('MODULE')",
+    "type Runtime = import(\"MODULE\").Runtime",
+    "await import(`MODULE`)"
+  ])("checks every import form: %s", (source) => {
+    for (const module of ["effect", "effect/Effect"]) {
+      expect(moduleSpecifiers(source.replace("MODULE", module)).filter(effectRuntimeImport)).toEqual([module])
+    }
+    for (const module of ["@smthrs/canonical", "@smthrs/canonical/Record/extra", "@smthrs/flow"]) {
+      expect(moduleSpecifiers(source.replace("MODULE", module)).filter(smithersRuntimeImport)).toEqual([module])
+    }
+    for (const module of ["@smthrs/canonical/Record", "@smthrs/canonical/Serializer", "zod", "effective"]) {
+      expect(moduleSpecifiers(source.replace("MODULE", module)).filter(smithersRuntimeImport)).toEqual([])
+      expect(moduleSpecifiers(source.replace("MODULE", module)).filter(effectRuntimeImport)).toEqual([])
+    }
+  })
+
+  test("ignores prose and comments that only mention imports", () => {
+    expect(moduleSpecifiers("// import \"effect\"\nconst example = 'require(\"effect\")'")).toEqual([])
+  })
+
+  test("scans nested source files and excludes tests and non-source files", () => {
+    const root = mkdtempSync(join(tmpdir(), "rpc-source-guard-"))
+    try {
+      mkdirSync(join(root, "testing", "nested"), { recursive: true })
+      const files = {
+        "Root.ts": "import \"effect\"",
+        "testing/Relay.tsx": "require(\"@smthrs/flow\")",
+        "testing/nested/Relay.vibe": "import \"effect/Effect\"",
+        "testing/nested/Relay.test.ts": "import \"effect\"",
+        "testing/nested/Relay.test.tsx": "import \"effect\"",
+        "testing/nested/Relay.test.vibe": "import \"effect\"",
+        "testing/nested/data.json": "{}"
+      }
+      for (const [path, source] of Object.entries(files)) writeFileSync(join(root, path), source)
+      const found = sources(root)
+      expect([...found].sort()).toEqual([
+        join(root, "Root.ts"),
+        join(root, "testing", "Relay.tsx"),
+        join(root, "testing", "nested", "Relay.vibe")
+      ].sort())
+      expect(found.filter((file) => moduleSpecifiers(readFileSync(file, "utf8"), file).some(effectRuntimeImport)))
+        .toHaveLength(2)
+      expect(found.filter((file) => moduleSpecifiers(readFileSync(file, "utf8"), file).some(smithersRuntimeImport)))
+        .toHaveLength(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

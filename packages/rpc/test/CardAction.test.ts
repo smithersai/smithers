@@ -1,4 +1,5 @@
 import { expect, it } from "vitest"
+import { ZodError } from "zod"
 import { ActionSchema, BranchForkInputSchema, registeredAction } from "../src/CardAction.ts"
 
 it("retains primary action metadata and rejects unknown commands", () => {
@@ -202,5 +203,5 @@ it("registeredAction binds a current or saved action to its current door and ref
     label: "Flows",
     args: { operation: "workspace" }
   })
-  expect(() => registeredAction({ tag: "unknown", label: "Nope" } as never)).toThrow()
+  expect(() => registeredAction({ tag: "unknown", label: "Nope" } as never)).toThrow(ZodError)
 })
