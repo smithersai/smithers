@@ -3,6 +3,9 @@
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
+import type { EscapeRoute, EscapeStep } from "./updateDecision.vibe"
+import { pressedEscape } from "./updateDecision.vibe"
+import { escapeScreen } from "./screenRead.vibe"
 
 /** The Model after an account step: `surface` and `docs` from the step, the account's screen fields over `base` (the
  *  current account, or the signed-out one), and every other field of the Model and of `base` unchanged. */
@@ -20,4 +23,47 @@ export function writeAccount(model: Model, base: AccountState, state: AccountScr
 export function writeActions(model: Model, base: ActionView, state: ActionScreen): Model {
   const actions: ActionView = { ...base, open: state.open, maximized: state.maximized, selected: state.selected, run: state.run, loading: state.loading, starting: state.starting, error: state.error, input: state.input, highlight: state.highlight }
   return { ...model, actions }
+}
+
+/** The Model after Escape closes one thing: exactly the field the step's kind closes, from the step's state, over the
+ *  current account (`account`), panel (`actions`) and issues screen (`issues`). Escape's tour, palette and splash
+ *  kinds end the tour, close the palette and shrink the splash through their own steps; for them, as for `none`, the
+ *  Model is unchanged here. */
+//@ verify
+//@ ensures step.kind == "role" ==> \result == { ...model, account: { ...account, target: step.state.target, error: step.state.error } }
+//@ ensures step.kind == "issue-dialog" ==> \result == { ...model, issues: { ...issues, dialog: step.state.dialog } }
+//@ ensures step.kind == "slash" ==> \result == { ...model, actions: { ...actions, slash: step.state.slash } }
+//@ ensures step.kind == "menu" ==> \result == { ...model, account: { ...account, menu: step.state.menu } }
+//@ ensures step.kind == "issues" ==> \result == { ...model, issues: { ...issues, open: step.state.issuesOpen } }
+//@ ensures step.kind == "actions" ==> \result == { ...model, actions: { ...actions, maximized: step.state.actionsMax } }
+//@ ensures step.kind == "wiki" ==> \result == { ...model, wikiEdit: undefined }
+//@ ensures step.kind == "sandbox" ==> \result == { ...model, sandboxPane: "pane" }
+//@ ensures step.kind == "docs" ==> \result == { ...model, docs: step.state.docs }
+//@ ensures step.kind == "tour" || step.kind == "palette" || step.kind == "splash" || step.kind == "none" ==> \result == model
+export function escapeWrite(model: Model, account: AccountState, actions: ActionView, issues: NonNullable<Model["issues"]>, step: EscapeStep): Model {
+  const { state } = step
+  switch (step.kind) {
+    case "role": return { ...model, account: { ...account, target: state.target, error: state.error } }
+    case "issue-dialog": return { ...model, issues: { ...issues, dialog: state.dialog } }
+    case "slash": return { ...model, actions: { ...actions, slash: state.slash } }
+    case "menu": return { ...model, account: { ...account, menu: state.menu } }
+    case "issues": return { ...model, issues: { ...issues, open: state.issuesOpen } }
+    case "actions": return { ...model, actions: { ...actions, maximized: state.actionsMax } }
+    case "wiki": return { ...model, wikiEdit: undefined }
+    case "sandbox": return { ...model, sandboxPane: "pane" }
+    case "docs": return { ...model, docs: state.docs }
+    case "tour": return model
+    case "palette": return model
+    case "splash": return model
+    case "none": return model
+  }
+}
+
+/** Escape writes the issues screen only when the Model has one: it closes the issues dialog or list only when the
+ *  screen it read shows them open, and an absent issues screen reads as closed. */
+//@ verify
+//@ ensures \result ==> model.issues !== undefined
+export function escapeWritesIssues(model: Model, account: AccountState, actions: ActionView, route: EscapeRoute, wikiPane: boolean): boolean {
+  const kind = pressedEscape(escapeScreen(model, account, actions), route, wikiPane).kind
+  return kind === "issue-dialog" || kind === "issues"
 }

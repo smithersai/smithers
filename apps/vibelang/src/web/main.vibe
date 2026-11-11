@@ -602,24 +602,21 @@ function accountScreen(model: Model): ModelDecision.AccountScreen { return Scree
 
 function escapeScreen(model: Model): UpdateDecision.EscapeScreen { return ScreenRead.escapeScreen(model, accountOf(model), actionsOf(model)) }
 
-/** Applies Escape's one proved change. */
+/** Applies Escape's one proved change: its Model is the proved escapeWrite (modelWrite.vibe); Escape writes the issues
+ *  screen only when the Model has one (escapeWritesIssues), so the default never stands in for it. */
 function runEscape(model: Model, step: UpdateDecision.EscapeStep): Update.Return<Model, Message, Factory | Actions> {
-  const { state } = step
-  const account = accountOf(model)
   switch (step.kind) {
     case "tour": return endTour(model)
     case "palette": return openPalette(model, false)
     case "splash": return minimizeSplash(model)
-    case "none": return { model }
-    case "role": return { model: { ...model, account: { ...account, target: state.target, error: state.error } }, commands: [CloseRoleDialog({})] }
-    case "issue-dialog": return { model: { ...model, issues: { ...model.issues!, dialog: state.dialog } }, commands: [CloseIssueDialog({})] }
-    case "slash": return { model: { ...model, actions: { ...actionsOf(model), slash: state.slash } } }
-    case "menu": return { model: { ...model, account: { ...account, menu: state.menu } }, commands: [FocusAccountMenu({ open: false })] }
-    case "issues": return { model: { ...model, issues: { ...model.issues!, open: state.issuesOpen } } }
-    case "actions": return { model: { ...model, actions: { ...actionsOf(model), maximized: state.actionsMax } } }
-    case "wiki": return { model: { ...model, wikiEdit: undefined } }
-    case "sandbox": return { model: { ...model, sandboxPane: "pane" } }
-    case "docs": return { model: { ...model, docs: state.docs }, ...(step.reveal ? { commands: [RevealWiki({})] } : {}) }
+  }
+  const next = ModelWrite.escapeWrite(model, accountOf(model), actionsOf(model), model.issues ?? initialIssues, step)
+  switch (step.kind) {
+    case "role": return { model: next, commands: [CloseRoleDialog({})] }
+    case "issue-dialog": return { model: next, commands: [CloseIssueDialog({})] }
+    case "menu": return { model: next, commands: [FocusAccountMenu({ open: false })] }
+    case "docs": return { model: next, ...(step.reveal ? { commands: [RevealWiki({})] } : {}) }
+    default: return { model: next }
   }
 }
 
