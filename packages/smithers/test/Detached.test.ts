@@ -394,6 +394,104 @@ describe("launching", () => {
     }
   })
 
+  it.skipIf(process.platform === "win32")(
+    "cancellation ends a store read that never answers and reaps the child",
+    async () => {
+      const root = project()
+      const entry = announcing(["run-7"], "setInterval(() => {}, 1000)")
+      const controller = new AbortController()
+      let asked = false
+      let read: AbortSignal | undefined
+      const pending = Detached.launch({
+        root,
+        payload: "{}",
+        entry,
+        signal: controller.signal,
+        timeoutMs: 10_000,
+        intervalMs: 10,
+        terminationGraceMs: 100,
+        admission: (_runId, signal) => {
+          asked = true
+          read = signal
+          return new Promise<boolean>(() => {})
+        }
+      })
+      expect(await until(() => asked, 10_000)).toBe(true)
+      controller.abort()
+      const settled = await Promise.race([
+        pending,
+        new Promise<"stalled">((resolve) => setTimeout(() => resolve("stalled"), 2_000))
+      ])
+      expect(settled).not.toBe("stalled")
+      const result = settled as Detached.Launched | Detached.Rejected
+      expect(Detached.isLaunched(result)).toBe(false)
+      expect((result as Detached.Rejected).reason).toContain("interrupted")
+      expect(read!.aborted).toBe(true)
+      expect(existsSync(Project.logFile(root, "run-7"))).toBe(false)
+      expect(getEventListeners(controller.signal, "abort")).toHaveLength(0)
+    },
+    30_000
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "does not hand off a child whose admission is confirmed after cancellation",
+    async () => {
+      const root = project()
+      const entry = child(
+        `process.stderr.write("pid=" + process.pid + "\\n")
+       process.stderr.write("SMITHERS_DETACHED_ADMISSION=run:" + process.env.SMITHERS_INTERNAL_DETACHED_ADMISSION + " runId=run-7\\n")
+       setInterval(() => {}, 1000)`
+      )
+      const controller = new AbortController()
+      const result = await Detached.launch({
+        root,
+        payload: "{}",
+        entry,
+        signal: controller.signal,
+        timeoutMs: 10_000,
+        intervalMs: 10,
+        terminationGraceMs: 100,
+        admission: async () => {
+          controller.abort()
+          return true
+        }
+      })
+      expect(Detached.isLaunched(result)).toBe(false)
+      expect((result as Detached.Rejected).reason).toContain("interrupted")
+      expect(existsSync(Project.logFile(root, "run-7"))).toBe(false)
+      const pid = Number(/pid=(\d+)/.exec(Detached.logTail(result.logFile))?.[1])
+      expect(pid).toBeGreaterThan(0)
+      expect(processGone(-pid)).toBe(true)
+    },
+    30_000
+  )
+
+  it("the admission deadline ends a store read that never answers", async () => {
+    const root = project()
+    const entry = announcing(["run-7"], "setInterval(() => {}, 1000)")
+    let read: AbortSignal | undefined
+    const startedAt = Date.now()
+    const result = await Detached.launch({
+      root,
+      payload: "{}",
+      entry,
+      timeoutMs: 500,
+      intervalMs: 10,
+      terminationGraceMs: 100,
+      onSlowBoot: () => {},
+      admission: (_runId, signal) => {
+        read = signal
+        return new Promise<boolean>(() => {})
+      }
+    })
+    expect(Date.now() - startedAt).toBeLessThan(10_000)
+    expect(Detached.isLaunched(result)).toBe(false)
+    const rejected = result as Detached.Rejected
+    expect(rejected.reason).toContain("did not reach admission within 2000ms")
+    expect(rejected.reason).toContain("was terminated")
+    expect(read!.aborted).toBe(true)
+  }, 30_000)
+
   it("does not spawn when the signal is already aborted", async () => {
     const root = project()
     const controller = new AbortController()

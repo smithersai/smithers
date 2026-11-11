@@ -26,6 +26,7 @@ import type { ControlSchema } from "@smthrs/control"
 import { Effect, Metric, Option, Schedule } from "effect"
 import { spawn } from "node:child_process"
 import type { ChildProcess } from "node:child_process"
+import { addAbortListener } from "node:events"
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync } from "node:fs"
 import { join } from "node:path"
 import * as CliError from "./CliError.ts"
@@ -348,8 +349,13 @@ export interface Options {
    * announces only after the row commits, so an honest id is visible on its
    * first check. A rejected promise means the store could not answer, and the
    * candidate is asked again on the next poll.
+   *
+   * `signal` aborts when the launch is cancelled or reaches its admission
+   * deadline, and can already be aborted when the read starts. The launch stops
+   * waiting on the answer at that moment, so pass the signal into the read to
+   * stop it too.
    */
-  readonly admission: (runId: string) => Promise<boolean>
+  readonly admission: (runId: string, signal: AbortSignal) => Promise<boolean>
   /** Grace given to each cleanup signal before admission ownership transfers. */
   readonly terminationGraceMs?: number | undefined
   /** Where a slow-boot notice goes; stderr in production. */
@@ -399,7 +405,13 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
   let termination: Promise<boolean> | undefined
   const cleanup = () => termination ??= Effect.runPromise(terminate(child, options.terminationGraceMs))
   let wake = () => {}
-  const onAbort = () => wake()
+  // Verification ends at cancellation or at the deadline, whichever is first.
+  // A store read that never answers cannot hold the launch past either.
+  const verification = new AbortController()
+  const onAbort = () => {
+    verification.abort(options.signal?.reason)
+    wake()
+  }
   let spawnError: Error | undefined
   const onError = (error: Error) => {
     spawnError = error
@@ -409,6 +421,7 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
   options.signal?.addEventListener("abort", onAbort, { once: true })
 
   const startedAt = Date.now()
+  const deadline = setTimeout(() => verification.abort(new Error("Detached admission deadline reached")), maxWaitMs)
   let notified = false
   // The log is scanned forward from the last offset, not re-read as a tail:
   // a chatty run can push the honest line out of any bounded tail between
@@ -458,6 +471,23 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
     }
     return read.more
   }
+  /** The store's answer, or `undefined` once cancellation or the deadline ends verification. */
+  const verify = async (runId: string): Promise<boolean | undefined> => {
+    const signal = verification.signal
+    let stop = () => {}
+    const stopped = new Promise<undefined>((resolve) => {
+      stop = () => resolve(undefined)
+    })
+    // Also fires for a signal that is already aborted, such as a deadline that
+    // passed during the poll sleep.
+    const listener = addAbortListener(signal, stop)
+    try {
+      const answer = await Promise.race([stopped, options.admission(runId, signal)])
+      return signal.aborted ? undefined : answer
+    } finally {
+      listener[Symbol.dispose]()
+    }
+  }
   const confirmed = async (final: boolean): Promise<string | undefined> => {
     let more: boolean
     do {
@@ -466,7 +496,9 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
       for (const runId of candidates) {
         if (refused.has(runId)) continue
         try {
-          if (await options.admission(runId)) return runId
+          const answer = await verify(runId)
+          if (answer === undefined) return undefined
+          if (answer) return runId
           refused.add(runId)
         } catch (error) {
           lastVerifyError = error
@@ -485,6 +517,11 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
       if (spawnError !== undefined) throw spawnError
       const exited = child.exitCode !== null || child.signalCode !== null
       const runId = await confirmed(exited)
+      // Cancellation during verification wins over its answer: the child is
+      // terminated and reaped below, never handed off.
+      if (options.signal?.aborted) {
+        return { reason: "Detached launch interrupted before admission.", tail: logTail(pending), logFile: pending }
+      }
       // The readiness proof wins over a later child exit: once the run row is
       // durable, a child that dies afterwards is the stale-run sweep's
       // problem, not the launcher's.
@@ -561,6 +598,7 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
       logFile: pending
     }
   } finally {
+    clearTimeout(deadline)
     options.signal?.removeEventListener("abort", onAbort)
     wake()
     if (!handedOff) await cleanup()
