@@ -65,6 +65,26 @@ const beatOf = (path: string): { readonly token: string; readonly pid: number; r
 }
 
 describe.skipIf(process.platform === "win32")("prepared POSIX process contract", () => {
+  it.live("preserves opaque arguments and environment across the prepared owner protocol", () =>
+    Effect.gen(function*() {
+      const raw = yield* ChildProcessSpawner
+      const prepared = yield* ProcessReaper.processLifecycle(
+        ChildProcess.make(process.execPath, [
+          "-e",
+          "process.stdout.write(process.argv[1]+':'+process.env.VALUE)",
+          Redacted.make("opaque-argument")
+        ], { env: { VALUE: Redacted.make("opaque-environment"), UNUSED: undefined }, extendEnv: false }),
+        raw.spawn
+      )
+      yield* prepared.activate
+      const [stdout, code] = yield* Effect.all([
+        output(prepared.handle.stdout),
+        prepared.handle.exitCode
+      ], { concurrency: "unbounded" })
+      expect(stdout).toBe("opaque-argument:opaque-environment")
+      expect(code).toBe(0)
+    }).pipe(Effect.provide(layers), Effect.scoped))
+
   it.live("restores control instrumentation after its owning effect is interrupted", () =>
     Effect.gen(function*() {
       const original = Control.prototype.write

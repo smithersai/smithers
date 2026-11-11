@@ -294,6 +294,23 @@ describe("BrowserChildProcessSpawner", () => {
       expect(observed).toBe("OUT")
     }))
 
+  it.effect("reveals a protected environment value only in the interpreter's environment", () =>
+    Effect.gen(function*() {
+      const { bash, calls } = stub(ok())
+
+      yield* run(
+        bash,
+        Effect.flatMap(ChildProcessSpawner, (spawner) =>
+          spawner.exitCode(ChildProcess.make("thing", [], {
+            env: { PRIVATE: Redacted.make("opaque environment"), PLAIN: "visible" },
+            extendEnv: false
+          })))
+      )
+
+      expect(calls[0]?.env).toEqual({ PRIVATE: "opaque environment", PLAIN: "visible" })
+      expect(calls[0]?.command).toBe("thing")
+    }))
+
   it.effect("forwards cwd and env, dropping the undefined values just-bash cannot represent", () =>
     Effect.gen(function*() {
       const { bash, calls } = stub(ok())

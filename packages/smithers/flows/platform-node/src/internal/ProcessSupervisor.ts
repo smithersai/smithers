@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ExitCode, makeHandle } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import { randomBytes } from "node:crypto"
@@ -733,14 +734,20 @@ export const prepare = (
     const options = command.options
     // Match Effect/Node's undefined-vs-empty environment semantics in the host,
     // before replacing the helper's environment with its isolated bootstrap.
-    const env = options.extendEnv ? { ...process.env, ...options.env } : options.env ?? { ...process.env }
+    // Protected words are revealed here, for the helper's immediate spawn only.
+    const declared = options.env === undefined ? undefined : Object.fromEntries(
+      Object.entries(options.env).map((
+        [name, value]
+      ) => [name, Redacted.isRedacted(value) ? Redacted.value(value) : value])
+    )
+    const env = options.extendEnv ? { ...process.env, ...declared } : declared ?? { ...process.env }
     yield* bounded(
       wait(
         control.write({
           type: "configure",
           acknowledgeCleanup,
           command: command.command,
-          args: command.args,
+          args: command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg),
           cwd: resolve(options.cwd ?? process.cwd()),
           env,
           shell: options.shell,

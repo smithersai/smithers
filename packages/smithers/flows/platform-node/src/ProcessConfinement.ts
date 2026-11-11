@@ -259,7 +259,8 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
       if (typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) targetEnvironment[name] = value
     }
     for (const [name, value] of Object.entries(command.options.env ?? {})) {
-      if (typeof value === "string") targetEnvironment[name] = value
+      if (Redacted.isRedacted(value)) targetEnvironment[name] = Redacted.value(value)
+      else if (typeof value === "string") targetEnvironment[name] = value
       else delete targetEnvironment[name]
     }
     const privateEnvironment = ProcessSandbox.environment(confinement)

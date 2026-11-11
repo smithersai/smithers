@@ -15,6 +15,7 @@ import * as PlatformError from "effect/PlatformError"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { ExitCode, make as makeSpawner, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Sink from "effect/Sink"
@@ -78,7 +79,8 @@ const suppliesStdin = (options: ChildProcess.CommandOptions): boolean => {
 const noStdin = "this adapter runs the interpreter once with captured output and cannot stream stdin into it"
 
 /**
- * `env` without the `undefined` values just-bash has no way to represent.
+ * `env` without the `undefined` values just-bash has no way to represent, with
+ * each protected (`Redacted`) value revealed for the interpreter call alone.
  *
  * Built with `Object.fromEntries` rather than by assignment onto `{}`: an
  * assignment to a `__proto__` key runs the prototype setter, which drops the
@@ -91,7 +93,9 @@ const resolveEnvironment = (
 ): Record<string, string> | undefined => {
   if (options.env === undefined) return undefined
   return Object.fromEntries(
-    Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    Object.entries(options.env).flatMap(([name, value]) =>
+      value === undefined ? [] : [[name, Redacted.isRedacted(value) ? Redacted.value(value) : value] as const]
+    )
   )
 }
 

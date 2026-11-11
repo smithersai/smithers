@@ -175,6 +175,26 @@ describe("native ProcessConfinement", () => {
     expect(plainEnvironment(wrapped.options.env)?.["HOME"]).not.toBe(process.env.HOME)
   })
 
+  it("reveals opaque words only for the confined executable and private environment file", async () => {
+    const f = fixture()
+    await run(Effect.gen(function*() {
+      const wrapped = yield* ProcessConfinement.make(f).confine(
+        ChildProcess.make("fixture", [Redacted.make("synthetic-argument")], {
+          cwd: f.workspaceRoot,
+          env: { PRIVATE: Redacted.make("synthetic-environment") },
+          extendEnv: false
+        }),
+        f.profile
+      )
+      expect(wrapped.args.map(plainWord).at(-1)).toBe("synthetic-argument")
+      expect(wrapped.options.env?.["PRIVATE"]).toBeUndefined()
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
+      assertPrivateFile(script)
+      expect(NodeFs.readFileSync(script, "utf8")).toContain("export PRIVATE='synthetic-environment'")
+    }))
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
   it("inherits the host environment only inside the sandbox", async () => {
     const f = fixture()
     vi.stubEnv("SMITHERS_ENV_TEST", "inherited fixture")
