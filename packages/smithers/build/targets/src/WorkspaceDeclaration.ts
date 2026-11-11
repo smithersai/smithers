@@ -587,7 +587,7 @@ export const Remotes = (remotes: Readonly<Record<string, RemoteDeclaration>>): R
   }
   const validated: Record<string, RemoteDeclaration> = {}
   for (const name of Object.getOwnPropertyNames(remotes)) {
-    if (!flagName.test(name)) throw new Error(`Remotes name is not a legal reference name: ${JSON.stringify(name)}`)
+    if (!flagName.test(name)) throw new TypeError(`Remotes name is not a legal reference name: ${JSON.stringify(name)}`)
     const declaration = remotes[name]
     if (!isRemoteDeclaration(declaration)) {
       throw new TypeError(`Remotes entry ${JSON.stringify(name)} is not a remote declaration`)

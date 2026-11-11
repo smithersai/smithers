@@ -333,7 +333,7 @@ describe("Remotes declarations", () => {
 
   it.each([
     [null, TypeError, "Remotes requires a name-to-remote record"],
-    [{ "bad name": remote }, Error, "Remotes name is not a legal reference name: \"bad name\""],
+    [{ "bad name": remote }, TypeError, "Remotes name is not a legal reference name: \"bad name\""],
     [{ broken: { _tag: "RemoteUnknown" } }, TypeError, "Remotes entry \"broken\" is not a remote declaration"]
   ])("rejects an invalid remote table", (value, Constructor, message) => {
     const error = thrown(() => WorkspaceDeclaration.Remotes(value as never))
