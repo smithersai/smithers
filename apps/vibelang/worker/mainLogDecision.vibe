@@ -1,0 +1,191 @@
+// Which of GitHub's listed commits a fold of main takes, and in what order (0018, third-lane batch 22).
+// `MainLog.vibe` newCommits calls `newCommitOrder` and formats the commits; decoding and HTTP stay host boundaries.
+//@ safe-slice
+
+/** A listed commit as the decision reads it: its id and its parents' ids, first parent first. */
+export interface LogCommit {
+  readonly sha: string
+  readonly parents: ReadonlyArray<string>
+}
+
+/** Each id's last index in `fetched`, as `new Map(entries)` keeps the last. */
+//@ verify
+//@ ensures forall(k: string, k in \result ==> 0 <= \result[k] && \result[k] < fetched.length && fetched[\result[k]].sha == k)
+//@ ensures forall(i, 0 <= i && i < fetched.length ==> fetched[i].sha in \result)
+export function lastIndexBySha(fetched: ReadonlyArray<LogCommit>): Map<string, number> {
+  const bySha = new Map<string, number>()
+  let i = 0
+  while (i < fetched.length) {
+    //@ invariant 0 <= i && i <= fetched.length
+    //@ invariant forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < i && fetched[bySha[k]].sha == k)
+    //@ invariant forall(j, 0 <= j && j < i ==> fetched[j].sha in bySha)
+    //@ decreases fetched.length - i
+    bySha.set(fetched[i]!.sha, i)
+    i += 1
+  }
+  return bySha
+}
+
+/** Whether `sha` is the fold's last commit, named by its shortened id; an empty cursor names none. */
+//@ verify
+//@ ensures \result == (cursor != "" && sha.startsWith(cursor))
+export function isCursor(sha: string, cursor: string): boolean {
+  return cursor !== "" && sha.startsWith(cursor)
+}
+
+/** The index of `fetched[at]`'s first parent, else -1 (a commit with no parent looks up ""). */
+//@ verify
+//@ requires 0 <= at && at < fetched.length
+//@ requires forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < fetched.length && fetched[bySha[k]].sha == k)
+//@ ensures -1 <= \result && \result < fetched.length
+//@ ensures \result >= 0 ==> fetched[\result].sha == (fetched[at].parents.length > 0 ? fetched[at].parents[0] : "")
+//@ ensures \result < 0 ==> !((fetched[at].parents.length > 0 ? fetched[at].parents[0] : "") in bySha)
+export function firstParent(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, number>, at: number): number {
+  const parents = fetched[at]!.parents
+  const key = parents.length > 0 ? parents[0]! : ""
+  const found = bySha.get(key)
+  return found === undefined ? -1 : found
+}
+
+/**
+ * The ids a merge step brings in: every listed commit reachable from `starts` through listed parents, stopping at one
+ * already taken (`seen`), on the first-parent line (`onSpine`) or the cursor. Reachability, so the walk's order is free.
+ */
+//@ verify
+//@ requires forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < fetched.length && fetched[bySha[k]].sha == k)
+//@ ensures forall(x: string, x in \result ==> x in bySha && !(x in seen) && !(x in onSpine) && !isCursor(x, cursor))
+export function sideShas(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, number>, starts: ReadonlyArray<string>, seen: Set<string>, onSpine: Set<string>, cursor: string): Set<string> {
+  const group = new Set<string>()
+  let stack: ReadonlyArray<string> = starts
+  while (stack.length > 0) {
+    //@ invariant forall(x: string, x in group ==> x in bySha && !(x in seen) && !(x in onSpine) && !isCursor(x, cursor))
+    //@ decreases bySha.keys() - group
+    while (stack.length > 0 && (!bySha.has(stack[stack.length - 1]!) || group.has(stack[stack.length - 1]!) || seen.has(stack[stack.length - 1]!) || onSpine.has(stack[stack.length - 1]!) || isCursor(stack[stack.length - 1]!, cursor))) {
+      //@ invariant forall(x: string, x in group ==> x in bySha && !(x in seen) && !(x in onSpine) && !isCursor(x, cursor))
+      //@ decreases stack.length
+      stack = stack.slice(0, stack.length - 1)
+    }
+    if (stack.length === 0) break
+    const top = stack[stack.length - 1]!
+    stack = stack.slice(0, stack.length - 1)
+    group.add(top)
+    const at = bySha.get(top)
+    stack = at === undefined ? stack : [...stack, ...fetched[at]!.parents]
+  }
+  return group
+}
+
+/** The indices of `group`'s commits, newest listed first: GitHub lists newest first, so this is oldest last. */
+//@ verify
+//@ requires forall(k: string, k in bySha ==> 0 <= bySha[k] && bySha[k] < fetched.length && fetched[bySha[k]].sha == k)
+//@ requires forall(x: string, x in group ==> x in bySha)
+//@ ensures forall(i, 0 <= i && i < \result.length ==> 0 <= \result[i] && \result[i] < fetched.length && fetched[\result[i]].sha in group)
+//@ ensures forall(i, 0 <= i && i + 1 < \result.length ==> \result[i] > \result[i + 1])
+//@ ensures forall(x: string, x in group && x in bySha ==> \result.includes(bySha[x]))
+//@ ensures forall(i, forall(j, 0 <= i && i < j && j < \result.length ==> fetched[\result[i]].sha != fetched[\result[j]].sha))
+export function groupOrder(fetched: ReadonlyArray<LogCommit>, bySha: Map<string, number>, group: Set<string>): ReadonlyArray<number> {
+  let out: ReadonlyArray<number> = []
+  let k = fetched.length - 1
+  while (k >= 0) {
+    //@ invariant -1 <= k && k < fetched.length
+    //@ invariant forall(i, 0 <= i && i < out.length ==> k < out[i] && out[i] < fetched.length && fetched[out[i]].sha in group && bySha[fetched[out[i]].sha] == out[i])
+    //@ invariant forall(i, forall(j, 0 <= i && i < j && j < out.length ==> out[i] > out[j]))
+    //@ invariant forall(x: string, x in group && x in bySha && k < bySha[x] ==> out.includes(bySha[x]))
+    //@ decreases k + 1
+    const sha = fetched[k]!.sha
+    if (group.has(sha) && bySha.get(sha) === k) out = [...out, k]
+    k -= 1
+  }
+  return out
+}
+
+/**
+ * The commits of `fetched` (newest first, as GitHub lists them) after `cursor`, as indices into `fetched`: main's
+ * first-parent line from the newest commit, oldest first, each step after the side commits its merge brought in.
+ * `undefined` when the line doesn't reach `cursor` within `fetched`, or meets a commit twice (a listing no history has).
+ */
+//@ verify
+//@ ensures fetched.length == 0 && cursor == "" ==> \result != undefined
+//@ ensures \result != undefined ==> (fetched.length == 0 ==> \result.length == 0)
+//@ ensures fetched.length == 0 && cursor != "" ==> \result == undefined
+//@ ensures fetched.length > 0 && isCursor(fetched[0].sha, cursor) ==> \result != undefined
+//@ ensures \result != undefined ==> (fetched.length > 0 && isCursor(fetched[0].sha, cursor) ==> \result.length == 0)
+//@ ensures \result != undefined ==> forall(i, 0 <= i && i < \result.length ==> 0 <= \result[i] && \result[i] < fetched.length && !isCursor(fetched[\result[i]].sha, cursor))
+//@ ensures \result != undefined ==> forall(i, forall(j, 0 <= i && i < j && j < \result.length ==> fetched[\result[i]].sha != fetched[\result[j]].sha))
+//@ ensures \result != undefined && fetched.length > 0 && !isCursor(fetched[0].sha, cursor) ==> \result.length > 0 && \result[\result.length - 1] == 0
+//@ ensures \result != undefined && cursor != "" ==> exists(j, 0 <= j && j < fetched.length && isCursor(fetched[j].sha, cursor))
+//@ ensures \result != undefined && cursor == "" && fetched.length > 0 ==> exists(i, 0 <= i && i < \result.length && forall(j, 0 <= j && j < fetched.length ==> fetched[j].sha != (fetched[\result[i]].parents.length > 0 ? fetched[\result[i]].parents[0] : "")))
+export function newCommitOrder(fetched: ReadonlyArray<LogCommit>, cursor: string): ReadonlyArray<number> | undefined {
+  if (fetched.length === 0) return cursor === "" ? [] : undefined
+  const bySha = lastIndexBySha(fetched)
+  let spine: ReadonlyArray<number> = []
+  const onSpine = new Set<string>()
+  let at = 0
+  while (at >= 0 && !isCursor(fetched[at]!.sha, cursor)) {
+    //@ invariant -1 <= at && at < fetched.length
+    //@ invariant forall(x: string, x in onSpine ==> x in bySha)
+    //@ invariant forall(i, 0 <= i && i < spine.length ==> 0 <= spine[i] && spine[i] < fetched.length && fetched[spine[i]].sha in onSpine && !isCursor(fetched[spine[i]].sha, cursor))
+    //@ invariant forall(i, forall(j, 0 <= i && i < j && j < spine.length ==> fetched[spine[i]].sha != fetched[spine[j]].sha))
+    //@ invariant spine.length == 0 ==> at == 0
+    //@ invariant spine.length > 0 ==> spine[0] == 0
+    //@ invariant spine.length > 0 && at < 0 ==> forall(j, 0 <= j && j < fetched.length ==> fetched[j].sha != (fetched[spine[spine.length - 1]].parents.length > 0 ? fetched[spine[spine.length - 1]].parents[0] : ""))
+    //@ decreases bySha.keys() - onSpine
+    const sha = fetched[at]!.sha
+    if (onSpine.has(sha)) return undefined
+    onSpine.add(sha)
+    spine = [...spine, at]
+    at = firstParent(fetched, bySha, at)
+  }
+  if (cursor !== "" && at < 0) return undefined
+  const seen = new Set<string>()
+  let commits: ReadonlyArray<number> = []
+  let s = spine.length - 1
+  while (s >= 0) {
+    //@ invariant -1 <= s && s < spine.length
+    //@ invariant forall(x: string, x in seen ==> !(x in onSpine))
+    //@ invariant forall(i, 0 <= i && i < commits.length ==> 0 <= commits[i] && commits[i] < fetched.length && !isCursor(fetched[commits[i]].sha, cursor))
+    //@ invariant forall(i, 0 <= i && i < commits.length ==> fetched[commits[i]].sha in seen || exists(t, s < t && t < spine.length && fetched[spine[t]].sha == fetched[commits[i]].sha))
+    //@ invariant forall(i, forall(j, 0 <= i && i < j && j < commits.length ==> fetched[commits[i]].sha != fetched[commits[j]].sha))
+    //@ invariant s == spine.length - 1 ==> commits.length == 0
+    //@ invariant s < spine.length - 1 ==> commits.includes(spine[spine.length - 1])
+    //@ invariant s < spine.length - 1 ==> commits.length > 0 && commits[commits.length - 1] == spine[s + 1]
+    //@ decreases s + 1
+    const step = spine[s]!
+    const group = sideShas(fetched, bySha, fetched[step]!.parents.slice(1), seen, onSpine, cursor)
+    const side = groupOrder(fetched, bySha, group)
+    let g = 0
+    while (g < side.length) {
+      //@ invariant 0 <= g && g <= side.length
+      //@ invariant forall(x: string, x in seen ==> !(x in onSpine))
+      //@ invariant forall(g2, g <= g2 && g2 < side.length ==> !(fetched[side[g2]].sha in seen))
+      //@ invariant forall(i, 0 <= i && i < commits.length ==> 0 <= commits[i] && commits[i] < fetched.length && !isCursor(fetched[commits[i]].sha, cursor))
+      //@ invariant forall(i, 0 <= i && i < commits.length ==> fetched[commits[i]].sha in seen || exists(t, s < t && t < spine.length && fetched[spine[t]].sha == fetched[commits[i]].sha))
+      //@ invariant forall(i, forall(j, 0 <= i && i < j && j < commits.length ==> fetched[commits[i]].sha != fetched[commits[j]].sha))
+      //@ invariant g > 0 ==> commits.length > 0 && commits[commits.length - 1] == side[g - 1]
+      //@ invariant g == 0 && s < spine.length - 1 ==> commits.length > 0 && commits[commits.length - 1] == spine[s + 1]
+      //@ invariant s < spine.length - 1 ==> commits.includes(spine[spine.length - 1])
+      //@ decreases side.length - g
+      seen.add(fetched[side[g]!]!.sha)
+      commits = [...commits, side[g]!]
+      g += 1
+    }
+    commits = [...commits, step]
+    s -= 1
+  }
+  return commits
+}
+
+/** GitHub's answer is a commit page only with status 200. */
+//@ verify
+//@ ensures \result == (status == 200)
+export function pageAccepted(status: number): boolean {
+  return status === 200
+}
+
+/** After page `page` (from 1) held `count` commits without reaching the cursor: read on only while it was full and
+ * fewer than `maxPages` pages were read. */
+//@ verify
+//@ ensures \result == (count >= perPage && page < maxPages)
+export function readsAnotherPage(count: number, page: number, perPage: number, maxPages: number): boolean {
+  return count >= perPage && page < maxPages
+}

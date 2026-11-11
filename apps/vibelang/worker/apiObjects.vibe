@@ -28,6 +28,7 @@ import type { Principal } from "../src/history/roles.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
 import { type Exporter, off } from "./HistoryExport.vibe"
 import { chargeKeyOf } from "./budgetDecision.vibe"
+import { actionRoot, alarmAgent, bootstrapsHistory, alarmName, alarmOwner, crossOriginRefused, draftForbidden, pendingPost, readsPostOwner, recordsParticipation, sandboxRole, signedOutRoute, writeActor } from "./apiObjectDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
 import { publicReads, readSetup, type ReadSetup } from "./PublicReads.vibe"
@@ -143,7 +144,7 @@ function historyBody(state: ObjectState, reads: ReadSetup | undefined, client: H
     const sequencer = try ObjectStartup.step("sequencer", HistoryObject.history(state.raw.storage))
     const main = githubMain("smithersai/vibelang", try publicReads(state.raw.storage, reads).pipe(Effect.provideService(HttpClient.HttpClient, client)))
     try ObjectStartup.step("bootstrap", effect {
-      if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+      if (bootstrapsHistory((try sequencer.read()).seq)) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
     })
     return {
       // Each page is computed here, beside the history, so a reader gets only what it shows.
@@ -171,8 +172,9 @@ function accountsBody(state: ObjectState, budgets: Namespace<BudgetShape>, model
       current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage, reads)
-        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage, reads)
+        const route = signedOutRoute(new URL(request.url, "https://api.invalid").pathname)
+        if (route === "issues") return try publicIssues(hostId, state.raw.storage, reads)
+        if (route === "wiki") return try publicWiki(hostId, state.raw.storage, reads)
         return try Accounts.disabled()
       },
     }
@@ -225,10 +227,12 @@ function conversationBody(state: ObjectState, budgets: Namespace<BudgetShape>, h
         const spend = spendOf(runtime, budgets, hostId)
         const request = try promise(() => state.raw.storage.get<RunRequest>("action/request"))
         const snapshot = try sequencer.read(0)
-        const post = snapshot.entries.find(entry => entry.author === "person" && !snapshot.entries.some(reply => reply.inReplyTo === entry.id && reply.done))
-        const owner = request?.owner ?? (post === undefined ? "" : (try promise(() => state.raw.storage.get<string>(`post-owner/${post.id}`))) ?? "")
-        const name = request?.name ?? post?.name ?? "Guest"
-        const principal: Principal = { role: try Effect.orDie(identity.role(owner)), name, agent: request === undefined || request.actor === "agent" }
+        const pending = pendingPost(snapshot.entries)
+        const post = pending >= 0 ? snapshot.entries[pending] : undefined
+        const postOwner = readsPostOwner(request?.owner, pending) && post !== undefined ? try promise(() => state.raw.storage.get<string>(`post-owner/${post.id}`)) : undefined
+        const owner = alarmOwner(request?.owner, postOwner)
+        const name = alarmName(request?.name, post?.name)
+        const principal: Principal = { role: try Effect.orDie(identity.role(owner)), name, agent: alarmAgent(request !== undefined, request?.actor ?? "agent") }
         const entrypoint = state.exports.default
         if (entrypoint === undefined) return try Effect.die(new Error("The action host has no default entrypoint"))
         const self = try Effect.orDie(entrypoint({ props: { actionOwner: owner, actionName: name } }))
@@ -252,7 +256,7 @@ function conversationBody(state: ObjectState, budgets: Namespace<BudgetShape>, h
           principal,
         )
         const wikiDrafting: WikiDrafting.Shape = { draft: effect (page, ask, key) => {
-          if (owner === "") throw new WikiFailure({ reason: "forbidden" })
+          if (draftForbidden(owner)) throw new WikiFailure({ reason: "forbidden" })
           const account = try objectOf(accounts, "project", "accounts").pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
           const refusal = try reached(runtime, "accounts", account.draftWiki(owner, page, ask, key)).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
           if (refusal !== null) throw new WikiFailure({ reason: refusal })
@@ -268,10 +272,9 @@ function actionIndexBody(state: ObjectState, accounts: Namespace<AccountsShape>,
   return effect {
     const runtime = try RuntimeContext
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
     const runs: ActionDirectory.Runs = {
       request: effect (id) => {
-        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
         return try reached(runtime, "action", object.actionRequest())
       },
       start: effect (request, role) => {
@@ -279,11 +282,11 @@ function actionIndexBody(state: ObjectState, accounts: Namespace<AccountsShape>,
         return try Effect.orDie(reached(runtime, "action", object.startAction(request, role)))
       },
       read: effect (id) => {
-        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
         return try Effect.orDie(reached(runtime, "action", object.actionRuns()))
       },
       cancel: effect (id, role, owner) => {
-        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
         return try Effect.orDie(reached(runtime, "action", object.cancelAction(id, role, owner)))
       },
     }
@@ -306,8 +309,8 @@ export function sandboxIdentityOf(namespace: Namespace<AccountsShape>, execution
       if (trusted !== undefined) {
         const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
         const admitted = try Effect.orDie(reached(runtime, "accounts", account.allowed(trusted.owner, "sandbox")))
-        const role = admitted ? try Effect.orDie(reached(runtime, "accounts", account.role(trusted.owner))) : "viewer" as const
-        return { owner: trusted.owner, role }
+        // The role is read only for an admitted owner.
+        return { owner: trusted.owner, role: sandboxRole(admitted, admitted ? try Effect.orDie(reached(runtime, "accounts", account.role(trusted.owner))) : undefined) }
       }
       const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
       return try Accounts.sandboxPrincipal(
@@ -319,7 +322,7 @@ export function sandboxIdentityOf(namespace: Namespace<AccountsShape>, execution
       const runtime = try RuntimeContext
       const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
       const allowed = try Effect.orDie(reached(runtime, "accounts", account.allowed(owner, "sandbox")))
-      return allowed ? try Effect.orDie(reached(runtime, "accounts", account.role(owner))) : "viewer" as const
+      return sandboxRole(allowed, allowed ? try Effect.orDie(reached(runtime, "accounts", account.role(owner))) : undefined)
     },
   }
 }
@@ -374,9 +377,9 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         const object = try objectOf(conversations, conversation, "conversation")
         const account = try objectOf(accounts, "project", "accounts")
         const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
-        if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
+        if (crossOriginRefused(identity.id, Accounts.sameOrigin(request))) return "forbidden"
         const refusal = try reached(runtime, "conversation", object.post(body.clientId, postName(identity), body.text, identity.id))
-        if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(Accounts.cookieOf(request)))
+        if (recordsParticipation(refusal !== null, identity.id)) try reached(runtime, "accounts", account.participation(Accounts.cookieOf(request)))
         return refusal
       },
       read: (conversation, after) => effect {
@@ -414,11 +417,9 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         const object = try objectOf(histories, REPOSITORY, "history")
         const account = try objectOf(accounts, "project", "accounts")
         const identity = try reached(runtime, "accounts", account.current(Accounts.cookieOf(request)))
-        if (identity.id !== "" && !Accounts.sameOrigin(request)) return { id: "", folded: 0, refusal: "forbidden" }
+        if (crossOriginRefused(identity.id, Accounts.sameOrigin(request))) return { id: "", folded: 0, refusal: "forbidden" }
         // The person acts, or their agent for them with their role; the history machine refuses agents approve and fold.
-        const principal: Principal = identity.id === ""
-          ? { role: "viewer", name: "Guest", agent: false }
-          : { role: identity.role, name: identity.login, agent: identity.agent === true }
+        const principal: Principal = writeActor(identity.id, identity.role, identity.login, identity.agent)
         return try reached(runtime, "history", object.write(name, body, principal))
       },
       events: effect () => {
@@ -427,7 +428,6 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         return try reached(runtime, "history", object.fetch(request))
       },
     }
-    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
     const actionApi: ActionsApi = {
       rerun: effect (id, next, role, owner, caller) => {
         const object = try objectOf(actions, "vibelang", "actions")
@@ -446,12 +446,12 @@ export function apiFetch(namespaces: { readonly conversations: Namespace<Convers
         return try reached(runtime, "actions", object.cancel(id, role, owner))
       },
       read: effect (id) => {
-        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
         return try reached(runtime, "action", object.actionRuns())
       },
       events: effect (id) => {
         const request = try HttpServerRequest.HttpServerRequest
-        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        const object = try objectOf(conversations, `action-${actionRoot(id)}`, "action")
         return try reached(runtime, "action", object.fetch(request))
       },
     }

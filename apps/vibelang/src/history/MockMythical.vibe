@@ -18,6 +18,7 @@ import { Mythical, settled } from "./MythicalHistory.vibe"
 import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "./pages.vibe"
 import { Caller, type Principal } from "./roles.vibe"
 import { make, memoryStore, type MainCommit, type Sequencer, stackOf } from "./Sequencer.vibe"
+import { approvedIndices, executionKey, landedCommit } from "./mockMainDecision.vibe"
 
 /** The bootstrapped history the live History object loads, decoded. */
 export effect function seeded() {
@@ -25,24 +26,14 @@ export effect function seeded() {
   return try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))(HISTORY_JSON))
 }
 
-/** The id the mock's merge queue gives the real commit that lands mythical commit `id`. */
-export function landedSha(id: string): string {
-  return `f01d${id.slice(1).padStart(8, "0")}`
-}
+/** The id the mock's merge queue gives the real commit that lands mythical commit `id` (proved in mockMainDecision). */
+export { landedSha } from "./mockMainDecision.vibe"
 
 /** The mock's main: each approved commit not yet on main lands, oldest first, its message naming it. */
 export function mockMain(sequencer: Sequencer): MainLog.Shape {
   return {
-    since: () => Effect.map(sequencer.read(), (history) =>
-      history.commits
-        .filter((commit) => commit.state === "approved")
-        .map((commit): MainCommit => ({
-          sha: landedSha(commit.id),
-          change: "",
-          title: commit.title,
-          message: `${commit.title}\n\nMythical: ${commit.id}\n`,
-        }))
-    ),
+    since: () => Effect.map(sequencer.read(), (history): ReadonlyArray<MainCommit> =>
+      approvedIndices(history.commits).map((index) => landedCommit(history.commits[index]!.id, history.commits[index]!.title))),
   }
 }
 
@@ -97,8 +88,10 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
     const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
 
     effect function executionId(prefix: string, operation?: string) {
-      if (operation !== undefined) return `${prefix}/operation/${try digest.digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify([prefix, operation])))}`
-      return `${prefix}/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      // Only an operation's id reads the digest, and only a counted one advances the count.
+      const hex = operation === undefined ? "" : try digest.digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify([prefix, operation])))
+      const count = operation === undefined ? `${try Ref.updateAndGet(executions, (value) => value + 1)}` : ""
+      return executionKey(prefix, operation, hex, count)
     }
 
     // The first start loads the bootstrapped history, as the live object's does.

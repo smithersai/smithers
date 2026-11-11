@@ -5676,3 +5676,73 @@ cases.extend([('src/history/flowMachine.vibe', *case) for case in [
 ('flow-refusal-export-off', 'historyRefusal', 'if (refusal === "unsupported") return "Export is off."', 'if (refusal === "unsupported") return refusal', 'an off export says so'),
 ('flow-refusal-export-check', 'historyRefusal', 'refusal === "tree" || refusal === "linear" || ', 'refusal === "tree" || ', 'every check refusal reads the same'),
 ]])
+
+# Lane vl-proveall3, batch 21: the API Worker's object-body decisions (worker/apiObjects.vibe).
+cases.extend([('worker/apiObjectDecision.vibe', *case) for case in [
+('root-keep-reply', 'actionRoot', 'id.slice(0, id.length - 6) : id', 'id : id', 'a reply run lives in its root conversation'),
+('root-cut-short', 'actionRoot', 'id.length - 6', 'id.length - 5', 'the whole "-reply" suffix is cut'),
+('root-cut-any', 'actionRoot', 'return id.endsWith("-reply") ?', 'return id.length >= 6 ?', 'only a "-reply" id is cut'),
+('answered-any', 'answered', 'reply.inReplyTo === id && reply.done', 'reply.inReplyTo === id', 'an unfinished reply does not answer'),
+('pending-agent', 'pendingPost', 'entries[i]!.author === "person" && ', '', 'an agent entry is never pending'),
+('pending-answered', 'pendingPost', ' && !answered(entries, entries[i]!.id)', '', 'an answered post is not pending'),
+('pending-none', 'pendingPost', '  return -1\n', '  return entries.length - 1\n', 'no pending post is -1'),
+('reads-owner-requested', 'readsPostOwner', 'requestOwner === undefined && ', '', 'a request owner skips the stored read'),
+('reads-owner-none', 'readsPostOwner', ' && pending >= 0', '', 'no pending post, no stored read'),
+('owner-post-first', 'alarmOwner', 'if (requestOwner !== undefined) return requestOwner', 'if (postOwner !== undefined) return postOwner', 'the request owner outranks the post owner'),
+('owner-default', 'alarmOwner', '? postOwner : ""', '? postOwner : "Guest"', 'nobody is the empty owner'),
+('name-post-first', 'alarmName', 'if (requestName !== undefined) return requestName', 'if (postName !== undefined) return postName', 'the request name outranks the post name'),
+('name-default', 'alarmName', '? postName : "Guest"', '? postName : ""', 'nobody acts as Guest'),
+('agent-person-request', 'alarmAgent', 'return !requested || actor === "agent"', 'return !requested', 'an agent request runs as an agent'),
+('agent-no-request', 'alarmAgent', 'return !requested || actor === "agent"', 'return actor === "agent"', 'a post-started alarm runs as an agent'),
+('cross-origin-visitor', 'crossOriginRefused', 'id !== "" && ', '', 'a visitor from another origin is not refused'),
+('cross-origin-same', 'crossOriginRefused', ' && !sameOrigin', '', 'a same-origin write is not refused'),
+('participation-refused', 'recordsParticipation', '!refused && ', '', 'a refused post records nothing'),
+('participation-visitor', 'recordsParticipation', ' && id !== ""', '', 'a visitor records nothing'),
+('writer-visitor-role', 'writeActor', '{ role: "viewer", name: "Guest", agent: false }', '{ role, name: "Guest", agent: false }', 'a visitor writes as a viewer'),
+('writer-visitor-agent', 'writeActor', '{ role: "viewer", name: "Guest", agent: false }', '{ role: "viewer", name: "Guest", agent: agent === true }', 'a visitor is never an agent'),
+('writer-login', 'writeActor', 'name: login,', 'name: "Guest",', 'a person writes under their login'),
+('writer-agent', 'writeActor', 'agent: agent === true }', 'agent: agent !== false }', 'an unset agent flag is a person'),
+('sandbox-refused', 'sandboxRole', 'if (!allowed || role === undefined)', 'if (role === undefined)', 'a refused caller is a viewer'),
+('sandbox-allowed', 'sandboxRole', '  return role\n', '  return "viewer"\n', 'an allowed caller keeps its role'),
+('draft-owner', 'draftForbidden', 'return owner === ""', 'return owner !== ""', 'only an owner-less draft is refused'),
+('route-issues', 'signedOutRoute', 'if (path === "/api/issues") return "issues"', 'if (path === "/api/issues") return "disabled"', 'signed-out issues read'),
+('bootstrap-any', 'bootstrapsHistory', 'return seq === 0', 'return seq >= 0', 'a history with events is never reseeded'),
+('route-wiki', 'signedOutRoute', 'if (path === "/api/wiki") return "wiki"', 'if (path.startsWith("/api/wiki")) return "wiki"', 'only the wiki route reads the wiki'),
+]])
+
+# Lane vl-proveall3, batch 22: main's commit order over Map and Set (worker/mainLogDecision.vibe).
+cases.extend([('worker/mainLogDecision.vibe', *case) for case in [
+('main-index-first', 'lastIndexBySha', 'bySha.set(fetched[i]!.sha, i)', 'bySha.set(fetched[i]!.sha, 0)', 'each id maps to its own index'),
+('main-cursor-empty', 'isCursor', 'return cursor !== "" && sha.startsWith(cursor)', 'return sha.startsWith(cursor)', 'an empty cursor names no commit'),
+('main-cursor-exact', 'isCursor', 'sha.startsWith(cursor)', 'sha === cursor', 'the cursor is a shortened id'),
+('main-parent-last', 'firstParent', 'parents.length > 0 ? parents[0]! : ""', 'parents.length > 0 ? parents[parents.length - 1]! : ""', 'the walk follows the first parent'),
+('main-parent-missing', 'firstParent', 'found === undefined ? -1 : found', 'found === undefined ? 0 : found', 'an unlisted parent ends the walk'),
+('main-side-seen', 'sideShas', ' || seen.has(stack[stack.length - 1]!)', '', 'a taken commit is not taken again'),
+('main-side-spine', 'sideShas', ' || onSpine.has(stack[stack.length - 1]!)', '', 'a first-parent step is not a side commit'),
+('main-side-cursor', 'sideShas', ' || isCursor(stack[stack.length - 1]!, cursor)', '', 'the cursor ends a side walk'),
+('main-group-direction', 'groupOrder', 'k -= 1', 'k -= 2', 'every listed index is scanned'),
+('main-group-last', 'groupOrder', 'bySha.get(sha) === k', 'bySha.get(sha) !== undefined', 'each id is taken once, at its own index'),
+('main-order-empty', 'newCommitOrder', 'return cursor === "" ? [] : undefined', 'return []', 'an empty listing never reaches a cursor'),
+('main-order-cycle', 'newCommitOrder', 'if (onSpine.has(sha)) return undefined', 'if (onSpine.has(sha)) break', 'a repeated commit is not a history'),
+('main-order-unreached', 'newCommitOrder', 'if (cursor !== "" && at < 0) return undefined', 'if (at < -1) return undefined', 'an unreached cursor is undefined'),
+('main-order-seen', 'newCommitOrder', 'seen.add(fetched[side[g]!]!.sha)', 'seen.add(fetched[step]!.sha)', 'a side commit is taken once'),
+('main-page-status', 'pageAccepted', 'return status === 200', 'return status < 300', 'only 200 is a page'),
+('main-page-full', 'readsAnotherPage', 'count >= perPage && ', '', 'a short page is the last'),
+('main-page-limit', 'readsAnotherPage', ' && page < maxPages', ' && page <= maxPages', 'at most maxPages pages are read'),
+('main-order-step', 'newCommitOrder', 'commits = [...commits, step]', 'commits = [step, ...commits]', 'each step follows its side commits, the head last'),
+]])
+
+# Lane vl-proveall3, batch 23: the mock merge queue's formatting (src/history/mockMainDecision.vibe).
+cases.extend([('src/history/mockMainDecision.vibe', *case) for case in [
+('mock-zeros-width', 'zeros', 'return "0" + zeros(n - 1)', 'return "00" + zeros(n - 1)', 'one zero per position'),
+('mock-sha-prefix', 'landedSha', 'return "f01d" + ', 'return "f01e" + ', 'a landed id starts f01d'),
+('mock-sha-digits', 'landedSha', 'const digits = id.slice(1)', 'const digits = id.slice(0)', 'the id letter is dropped'),
+('mock-sha-pad', 'landedSha', 'zeros(8 - digits.length)', 'zeros(7 - digits.length)', 'digits pad to 8'),
+('mock-commit-trailer', 'landedCommit', 'title + "\\n\\nMythical: " + id', 'title + "\\nMythical: " + id', 'the trailer is its own paragraph'),
+('mock-commit-change', 'landedCommit', 'change: "",', 'change: id,', 'a landed commit has no change id'),
+('mock-approved-state', 'approvedIndices', 'if (commits[k]!.state === "approved")', 'if (commits[k]!.state !== "open")', 'only approved commits land'),
+('mock-approved-skip', 'approvedIndices', 'k += 1', 'k += 2', 'every approved commit lands'),
+('mock-approved-order', 'approvedIndices', 'out = [...out, k]', 'out = [k, ...out]', 'commits land in the history order'),
+('mock-key-operation', 'executionKey', 'prefix + "/operation/" + digest', 'prefix + "/" + digest', 'an operation id is marked'),
+('mock-key-choice', 'executionKey', 'operation !== undefined ?', 'digest !== "" ?', 'the operation decides the addressing'),
+]])

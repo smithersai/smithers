@@ -1,0 +1,107 @@
+// The proved commit order (worker/mainLogDecision.vibe) against the implementation it replaced, over generated
+// listings: DAGs listed newest first, cut to a page prefix, with overlapping pages and every kind of cursor.
+import { describe, expect, it } from "@effect/vitest"
+import { type GitHubCommit, newCommits } from "../worker/MainLog.vibe"
+import { firstParent, groupOrder, isCursor, lastIndexBySha, newCommitOrder, sideShas } from "../worker/mainLogDecision.vibe"
+import { SHA_LENGTH, titleOf } from "../src/history/seed.vibe"
+
+/** The replaced `newCommits` (main before 0018 third-lane batch 22), verbatim but for its name. */
+function replaced(fetched: ReadonlyArray<GitHubCommit>, cursor: string) {
+  const head = fetched[0]
+  if (head === undefined) return cursor === "" ? [] : undefined
+  const bySha = new Map(fetched.map((commit) => [commit.sha, commit]))
+  const spine: Array<GitHubCommit> = []
+  let at: GitHubCommit | undefined = head
+  while (at !== undefined && !(cursor !== "" && at.sha.startsWith(cursor))) {
+    spine.push(at)
+    at = bySha.get(at.parents[0]?.sha ?? "")
+  }
+  if (cursor !== "" && at === undefined) return undefined
+  const onSpine = new Set(spine.map((commit) => commit.sha))
+  const seen = new Set<string>()
+  const commits: Array<{ sha: string; change: string; title: string; message: string }> = []
+  const toCommit = (commit: GitHubCommit) => ({ sha: commit.sha.slice(0, SHA_LENGTH), change: "", title: titleOf(commit.commit.message), message: commit.commit.message })
+  for (const step of spine.reverse()) {
+    const side: Array<GitHubCommit> = []
+    const stack = step.parents.slice(1).map((parent) => parent.sha)
+    while (stack.length > 0) {
+      const commit = bySha.get(stack.pop()!)
+      if (commit === undefined || seen.has(commit.sha) || onSpine.has(commit.sha) || (cursor !== "" && commit.sha.startsWith(cursor))) continue
+      seen.add(commit.sha)
+      side.push(commit)
+      stack.push(...commit.parents.map((parent) => parent.sha))
+    }
+    side.sort((a, b) => fetched.indexOf(b) - fetched.indexOf(a))
+    commits.push(...side.map(toCommit), toCommit(step))
+  }
+  return commits
+}
+
+/** A seeded linear congruential generator: the same listings on every run. */
+function generator(seed: number) {
+  let state = seed
+  return (below: number) => {
+    state = (state * 1103515245 + 12345) % 2147483648
+    return state % below
+  }
+}
+
+// Fixed-width ids: `c1` and `c10` padded alike would be one id, a collision no history has.
+const sha = (n: number) => `c${String(n).padStart(6, "0")}`.padEnd(40, "f")
+const commit = (n: number, parents: ReadonlyArray<number>): GitHubCommit =>
+  ({ sha: sha(n), commit: { message: `fix: ${n}\n\nbody ${n}` }, parents: parents.map((p) => ({ sha: sha(p) })) })
+
+/** A history of `size` commits, newest first; each commit's parents are older, up to three of them. */
+function listing(next: (below: number) => number, size: number): ReadonlyArray<GitHubCommit> {
+  const commits: Array<GitHubCommit> = []
+  for (let n = 0; n < size; n++) {
+    const older = size - 1 - n
+    const count = older === 0 ? 0 : 1 + next(Math.min(3, older))
+    const parents = Array.from({ length: count }, () => n + 1 + next(older))
+    commits.push(commit(n, parents))
+  }
+  return commits
+}
+
+describe("main's commit order", () => {
+  it("is the replaced order on every generated listing", () => {
+    const next = generator(20261110)
+    let compared = 0
+    for (let round = 0; round < 600; round++) {
+      const full = listing(next, 1 + next(18))
+      const page = full.slice(0, 1 + next(full.length))
+      const fetched = next(4) === 0 ? [...page, ...page.slice(next(page.length))] : page
+      const cursors = ["", sha(next(full.length)).slice(0, 12), sha(next(full.length)), "zzz", "c"]
+      for (const cursor of cursors) {
+        expect(newCommits(fetched, cursor)).toEqual(replaced(fetched, cursor))
+        compared++
+      }
+    }
+    expect(compared).toBe(3000)
+  })
+
+  it("ends on a listing whose first parents meet a commit twice, where the replaced walk never did", () => {
+    const loop = [commit(0, [1]), commit(1, [0])]
+    expect(newCommitOrder(loop.map((each) => ({ sha: each.sha, parents: each.parents.map((p) => p.sha) })), "")).toBeUndefined()
+    expect(newCommits(loop, "")).toBeUndefined()
+  })
+
+  it("keeps each id's last index and finds first parents", () => {
+    const fetched = [{ sha: "a", parents: ["b"] }, { sha: "b", parents: [] }, { sha: "a", parents: ["b"] }]
+    const bySha = lastIndexBySha(fetched)
+    expect([...bySha]).toEqual([["a", 2], ["b", 1]])
+    expect(firstParent(fetched, bySha, 0)).toBe(1)
+    expect(firstParent(fetched, bySha, 1)).toBe(-1)
+    expect(isCursor("abc", "ab")).toBe(true)
+    expect(isCursor("abc", "")).toBe(false)
+  })
+
+  it("reaches a merge's side commits, stopping at taken, first-parent and cursor commits, newest listed first", () => {
+    const fetched = [{ sha: "m", parents: ["a", "s2"] }, { sha: "s2", parents: ["s1"] }, { sha: "a", parents: [] }, { sha: "s1", parents: ["a", "x"] }, { sha: "x", parents: [] }]
+    const bySha = lastIndexBySha(fetched)
+    const group = sideShas(fetched, bySha, ["s2"], new Set(["x"]), new Set(["m", "a"]), "")
+    expect([...group].sort()).toEqual(["s1", "s2"])
+    expect(groupOrder(fetched, bySha, group)).toEqual([3, 1])
+    expect([...sideShas(fetched, bySha, ["s2"], new Set(), new Set(["m", "a"]), "s1")]).toEqual(["s2"])
+  })
+})

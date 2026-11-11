@@ -1,0 +1,76 @@
+// The mock merge queue's formatting (0018, third-lane batch 23): the id a landed commit gets and the message naming its
+// mythical commit. `MockMythical.vibe` calls these; the sequencer read and the engine stay host boundaries.
+//@ safe-slice
+
+/** `n` zeros; none for `n <= 0`. */
+//@ verify
+//@ ensures n <= 0 ==> \result == ""
+//@ ensures n > 0 ==> \result.length == n && forall(i, 0 <= i && i < n ==> \result.charCodeAt(i) == 48)
+//@ decreases n
+export function zeros(n: number): string {
+  if (n <= 0) return ""
+  return "0" + zeros(n - 1)
+}
+
+/**
+ * The id the mock's merge queue gives the real commit that lands mythical commit `id` (`m<n>`): `f01d`, then the
+ * digits after its first character, zero-padded to 8, as `padStart(8, "0")`.
+ */
+//@ verify
+//@ ensures \result == "f01d" + zeros(8 - id.slice(1).length) + id.slice(1)
+//@ ensures \result.slice(0, 4) == "f01d" && \result.slice(\result.length - id.slice(1).length) == id.slice(1)
+export function landedSha(id: string): string {
+  const digits = id.slice(1)
+  return "f01d" + zeros(8 - digits.length) + digits
+}
+
+/** A mythical commit as the mock's main reads it. */
+export interface QueuedCommit {
+  readonly id: string
+  readonly title: string
+  readonly state: string
+}
+
+/** A real commit on the mock's main. */
+export interface LandedCommit {
+  readonly sha: string
+  readonly change: string
+  readonly title: string
+  readonly message: string
+}
+
+/** The real commit that lands mythical commit `id`: its landed id, its title, and a message whose trailer names it. */
+//@ verify
+//@ ensures \result.sha == landedSha(id) && \result.change == "" && \result.title == title
+//@ ensures \result.message == title + "\n\nMythical: " + id + "\n"
+export function landedCommit(id: string, title: string): LandedCommit {
+  return { sha: landedSha(id), change: "", title, message: title + "\n\nMythical: " + id + "\n" }
+}
+
+/** The indices of the history's approved commits, in order: the commits the mock's main lands. */
+//@ verify
+//@ ensures forall(i, 0 <= i && i < \result.length ==> 0 <= \result[i] && \result[i] < commits.length && commits[\result[i]].state == "approved")
+//@ ensures forall(i, forall(j, 0 <= i && i < j && j < \result.length ==> \result[i] < \result[j]))
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].state == "approved" ==> \result.includes(j))
+export function approvedIndices(commits: ReadonlyArray<QueuedCommit>): ReadonlyArray<number> {
+  let out: ReadonlyArray<number> = []
+  let k = 0
+  while (k < commits.length) {
+    //@ invariant 0 <= k && k <= commits.length
+    //@ invariant forall(i, 0 <= i && i < out.length ==> 0 <= out[i] && out[i] < k && commits[out[i]].state == "approved")
+    //@ invariant forall(i, forall(j, 0 <= i && i < j && j < out.length ==> out[i] < out[j]))
+    //@ invariant forall(j, 0 <= j && j < k && commits[j].state == "approved" ==> out.includes(j))
+    //@ decreases commits.length - k
+    if (commits[k]!.state === "approved") out = [...out, k]
+    k += 1
+  }
+  return out
+}
+
+/** A flow execution's id: content-addressed by `prefix` and the operation key when one is given, else the next count. */
+//@ verify
+//@ ensures operation != undefined ==> \result == prefix + "/operation/" + digest
+//@ ensures operation == undefined ==> \result == prefix + "/" + count
+export function executionKey(prefix: string, operation: string | undefined, digest: string, count: string): string {
+  return operation !== undefined ? prefix + "/operation/" + digest : prefix + "/" + count
+}

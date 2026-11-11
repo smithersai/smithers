@@ -1,0 +1,30 @@
+import { describe, expect, it } from "@effect/vitest"
+import { approvedIndices, executionKey, landedCommit, landedSha, zeros } from "../src/history/mockMainDecision.vibe"
+
+describe("the mock merge queue's formatting", () => {
+  it("lands mythical commit m<n> at f01d and its digits zero-padded to 8, as padStart did", () => {
+    expect(landedSha("m7")).toBe("f01d00000007")
+    expect(landedSha("m12345678")).toBe("f01d12345678")
+    expect(landedSha("m123456789")).toBe("f01d123456789")
+    expect(landedSha("")).toBe("f01d00000000")
+    for (const id of ["m1", "m10", "m999", "m00042", "x"]) expect(landedSha(id)).toBe(`f01d${id.slice(1).padStart(8, "0")}`)
+    expect(zeros(3)).toBe("000")
+    expect(zeros(-2)).toBe("")
+  })
+  it("names the mythical commit in the landed message's trailer", () => {
+    expect(landedCommit("m7", "docs: four")).toEqual({ sha: "f01d00000007", change: "", title: "docs: four", message: "docs: four\n\nMythical: m7\n" })
+  })
+  it("lands only approved commits, in order", () => {
+    const commits = [
+      { id: "m1", title: "a", state: "approved" },
+      { id: "m2", title: "b", state: "open" },
+      { id: "m3", title: "c", state: "approved" },
+    ]
+    expect(approvedIndices(commits)).toEqual([0, 2])
+    expect(approvedIndices([])).toEqual([])
+  })
+  it("addresses an operation's execution by its digest, else by the next count", () => {
+    expect(executionKey("plan", "op-1", "abc", "")).toBe("plan/operation/abc")
+    expect(executionKey("plan", undefined, "", "4")).toBe("plan/4")
+  })
+})

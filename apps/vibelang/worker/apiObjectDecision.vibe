@@ -1,0 +1,141 @@
+// The API Worker's object-body decisions (0018, third-lane batch 21). `apiObjects.vibe` calls these; object stubs, RPCs,
+// storage reads and Effect execution stay host boundaries there.
+
+/** The conversation an action run lives in: a reply run `<id>-reply` lives in `<id>`'s object. */
+//@ verify
+//@ ensures id.endsWith("-reply") ==> \result + "-reply" == id
+//@ ensures !id.endsWith("-reply") ==> \result == id
+export function actionRoot(id: string): string {
+  return id.endsWith("-reply") ? id.slice(0, id.length - 6) : id
+}
+
+/** The fields of a conversation entry the alarm reads. */
+export interface PostEntry {
+  readonly id: string
+  readonly inReplyTo: string
+  readonly author: "person" | "agent"
+  readonly done: boolean
+}
+
+/** Whether `entries` hold a finished reply to `id`. */
+//@ verify
+//@ ensures \result == exists(j, 0 <= j && j < entries.length && entries[j].inReplyTo == id && entries[j].done)
+export function answered(entries: ReadonlyArray<PostEntry>, id: string): boolean {
+  return entries.some((reply) => reply.inReplyTo === id && reply.done)
+}
+
+/** The first person's post with no finished reply, else -1: the post an alarm answers. */
+//@ verify
+//@ ensures -1 <= \result && \result < entries.length
+//@ ensures \result >= 0 ==> entries[\result].author == "person" && !answered(entries, entries[\result].id)
+//@ ensures \result >= 0 ==> forall(i, 0 <= i && i < \result ==> entries[i].author != "person" || answered(entries, entries[i].id))
+//@ ensures \result < 0 ==> forall(i, 0 <= i && i < entries.length ==> entries[i].author != "person" || answered(entries, entries[i].id))
+export function pendingPost(entries: ReadonlyArray<PostEntry>): number {
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(k, 0 <= k && k < i ==> entries[k].author != "person" || answered(entries, entries[k].id))
+    //@ decreases entries.length - i
+    if (entries[i]!.author === "person" && !answered(entries, entries[i]!.id)) return i
+    i += 1
+  }
+  return -1
+}
+
+/** Whether the alarm reads the post's stored owner: only when no action request names one and a post is pending. */
+//@ verify
+//@ ensures \result == (requestOwner == undefined && pending >= 0)
+export function readsPostOwner(requestOwner: string | undefined, pending: number): boolean {
+  return requestOwner === undefined && pending >= 0
+}
+
+/** Who the alarm acts for: the request's owner, else the pending post's stored owner, else nobody (""). */
+//@ verify
+//@ ensures requestOwner != undefined ==> \result == requestOwner
+//@ ensures requestOwner == undefined && postOwner != undefined ==> \result == postOwner
+//@ ensures requestOwner == undefined && postOwner == undefined ==> \result == ""
+export function alarmOwner(requestOwner: string | undefined, postOwner: string | undefined): string {
+  if (requestOwner !== undefined) return requestOwner
+  return postOwner !== undefined ? postOwner : ""
+}
+
+/** The name the alarm acts under: the request's, else the pending post's, else "Guest". */
+//@ verify
+//@ ensures requestName != undefined ==> \result == requestName
+//@ ensures requestName == undefined && postName != undefined ==> \result == postName
+//@ ensures requestName == undefined && postName == undefined ==> \result == "Guest"
+export function alarmName(requestName: string | undefined, postName: string | undefined): string {
+  if (requestName !== undefined) return requestName
+  return postName !== undefined ? postName : "Guest"
+}
+
+/** The alarm acts as an agent unless a person's action request started it. */
+//@ verify
+//@ ensures \result == (!requested || actor == "agent")
+export function alarmAgent(requested: boolean, actor: "person" | "agent"): boolean {
+  return !requested || actor === "agent"
+}
+
+/** A signed-in write or post from another origin is refused; a visitor's never is (it acts as a viewer). */
+//@ verify
+//@ ensures \result == (id != "" && !sameOrigin)
+export function crossOriginRefused(id: string, sameOrigin: boolean): boolean {
+  return id !== "" && !sameOrigin
+}
+
+/** An accepted post by a signed-in person records their participation. */
+//@ verify
+//@ ensures \result == (refused == false && id != "")
+export function recordsParticipation(refused: boolean, id: string): boolean {
+  return !refused && id !== ""
+}
+
+/** The role a history write runs as: a visitor is a viewer named Guest, never an agent; a person keeps their role. */
+export interface WriteActor {
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly name: string
+  readonly agent: boolean
+}
+
+//@ verify
+//@ ensures id == "" ==> \result.role == "viewer" && \result.name == "Guest" && !\result.agent
+//@ ensures id != "" ==> \result.role == role && \result.name == login && \result.agent == (agent == true)
+export function writeActor(id: string, role: "viewer" | "new" | "community" | "contributor" | "maintainer", login: string, agent: boolean | undefined): WriteActor {
+  if (id === "") return { role: "viewer", name: "Guest", agent: false }
+  return { role, name: login, agent: agent === true }
+}
+
+/** A sandbox caller's role: the account's role only when it may use sandboxes, else viewer. */
+//@ verify
+//@ ensures !allowed ==> \result == "viewer"
+//@ ensures allowed && role != undefined ==> \result == role
+//@ ensures allowed && role == undefined ==> \result == "viewer"
+export function sandboxRole(allowed: boolean, role: "viewer" | "new" | "community" | "contributor" | "maintainer" | undefined): "viewer" | "new" | "community" | "contributor" | "maintainer" {
+  if (!allowed || role === undefined) return "viewer"
+  return role
+}
+
+/** An agent's wiki draft for nobody is refused before it reaches the accounts object. */
+//@ verify
+//@ ensures \result == (owner == "")
+export function draftForbidden(owner: string): boolean {
+  return owner === ""
+}
+
+/** With sign-in unconfigured, the accounts object still serves the public issues and wiki; everything else is disabled. */
+//@ verify
+//@ ensures path == "/api/issues" ==> \result == "issues"
+//@ ensures path == "/api/wiki" ==> \result == "wiki"
+//@ ensures path != "/api/issues" && path != "/api/wiki" ==> \result == "disabled"
+export function signedOutRoute(path: string): "issues" | "wiki" | "disabled" {
+  if (path === "/api/issues") return "issues"
+  if (path === "/api/wiki") return "wiki"
+  return "disabled"
+}
+
+/** The History object seeds itself from main only while it holds no event. */
+//@ verify
+//@ ensures \result == (seq == 0)
+export function bootstrapsHistory(seq: number): boolean {
+  return seq === 0
+}

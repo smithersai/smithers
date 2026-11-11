@@ -1,0 +1,68 @@
+import { describe, expect, it } from "@effect/vitest"
+import {
+  actionRoot, alarmAgent, bootstrapsHistory, alarmName, alarmOwner, answered, crossOriginRefused, draftForbidden, pendingPost,
+  readsPostOwner, recordsParticipation, sandboxRole, signedOutRoute, writeActor,
+} from "../worker/apiObjectDecision.vibe"
+
+const post = (id: string) => ({ id, inReplyTo: "", author: "person" as const, done: false })
+const reply = (id: string, to: string, done: boolean) => ({ id, inReplyTo: to, author: "agent" as const, done })
+
+describe("the API Worker's object decisions", () => {
+  it("finds a reply run's conversation", () => {
+    expect(actionRoot("run-7-reply")).toBe("run-7")
+    expect(actionRoot("run-7")).toBe("run-7")
+    expect(actionRoot("-reply")).toBe("")
+    expect(actionRoot("run-reply-x")).toBe("run-reply-x")
+  })
+  it("answers the first person's post without a finished reply", () => {
+    expect(pendingPost([])).toBe(-1)
+    expect(pendingPost([reply("a", "", true)])).toBe(-1)
+    expect(pendingPost([post("p1"), reply("r1", "p1", true), post("p2"), reply("r2", "p2", false), post("p3")])).toBe(2)
+    expect(pendingPost([post("p1"), reply("r1", "p1", true)])).toBe(-1)
+    expect(answered([reply("r", "p", false)], "p")).toBe(false)
+    expect(answered([reply("r", "p", true)], "p")).toBe(true)
+  })
+  it("acts for the request's owner and name, else the post's, else nobody as Guest", () => {
+    expect(readsPostOwner(undefined, 0)).toBe(true)
+    expect(readsPostOwner("will", 0)).toBe(false)
+    expect(readsPostOwner(undefined, -1)).toBe(false)
+    expect(alarmOwner("will", "ada")).toBe("will")
+    expect(alarmOwner(undefined, "ada")).toBe("ada")
+    expect(alarmOwner(undefined, undefined)).toBe("")
+    expect(alarmName("Will", "Ada")).toBe("Will")
+    expect(alarmName(undefined, "Ada")).toBe("Ada")
+    expect(alarmName(undefined, undefined)).toBe("Guest")
+    expect(alarmAgent(false, "person")).toBe(true)
+    expect(alarmAgent(true, "person")).toBe(false)
+    expect(alarmAgent(true, "agent")).toBe(true)
+  })
+  it("refuses a signed-in write from another origin and records an accepted post", () => {
+    expect(crossOriginRefused("u1", false)).toBe(true)
+    expect(crossOriginRefused("u1", true)).toBe(false)
+    expect(crossOriginRefused("", false)).toBe(false)
+    expect(recordsParticipation(false, "u1")).toBe(true)
+    expect(recordsParticipation(true, "u1")).toBe(false)
+    expect(recordsParticipation(false, "")).toBe(false)
+  })
+  it("writes as a viewer named Guest when signed out, else as the person", () => {
+    expect(writeActor("", "maintainer", "will", true)).toEqual({ role: "viewer", name: "Guest", agent: false })
+    expect(writeActor("u1", "maintainer", "will", true)).toEqual({ role: "maintainer", name: "will", agent: true })
+    expect(writeActor("u1", "community", "ada", undefined)).toEqual({ role: "community", name: "ada", agent: false })
+  })
+  it("gives a sandbox caller its role only when allowed", () => {
+    expect(sandboxRole(false, "maintainer")).toBe("viewer")
+    expect(sandboxRole(true, "maintainer")).toBe("maintainer")
+    expect(sandboxRole(true, undefined)).toBe("viewer")
+  })
+  it("bootstraps only an empty history", () => {
+    expect(bootstrapsHistory(0)).toBe(true)
+    expect(bootstrapsHistory(1)).toBe(false)
+  })
+  it("refuses an owner-less draft and routes signed-out reads", () => {
+    expect(draftForbidden("")).toBe(true)
+    expect(draftForbidden("will")).toBe(false)
+    expect(signedOutRoute("/api/issues")).toBe("issues")
+    expect(signedOutRoute("/api/wiki")).toBe("wiki")
+    expect(signedOutRoute("/api/auth/me")).toBe("disabled")
+  })
+})

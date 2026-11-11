@@ -98,6 +98,28 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  // Lane vl-proveall3, batch 23: the mock merge queue.
+  "src/history/MockMythical.vibe:seeded": 'Imports the bundled seed and decodes it with its Schema; no decision. JSON and Schema decoding are host boundaries.',
+  "src/history/MockMythical.vibe:mockMain": 'Calls the proved approvedIndices (each approved commit, once, in order) and landedCommit (its proved landed id, with a message whose trailer names it); mockMainDecision, 0018 third-lane batch 23.',
+  "src/history/MockMythical.vibe:digestOf": 'Provides the WebCrypto digest service; no decision.',
+  "src/history/MockMythical.vibe:MockMythical": 'Calls the proved executionKey (an operation\u2019s id by its digest, else the next count; 0018 third-lane batch 23). Pages forward to the proved page decisions; the engine, flows, digest and Ref are host boundaries.',
+  // Lane vl-proveall3, batch 22: main as a fold reads it.
+  "worker/MainLog.vibe:newCommits": 'Calls the proved newCommitOrder (mainLogDecision, 0018 third-lane batch 22) over each commit\u2019s id and parent ids, then formats the chosen commits.',
+  "worker/MainLog.vibe:toCommit": 'Formats a commit: the 12-character id prefix and the title through seed titleOf (its regexp work is recorded at titleOf). No decision.',
+  "worker/MainLog.vibe:githubMain": 'Calls the proved pageAccepted (status 200) and readsAnotherPage (only after a full page, below MAX_PAGES), and newCommits (0018 third-lane batch 22). HTTP, headers, JSON and Schema decoding remain host boundaries.',
+  // Lane vl-proveall3, batch 21: the API Worker's object bodies.
+  "worker/apiObjects.vibe:objectOf": 'Native Durable Object stub lookup (`getByName`); a throw becomes `Unreachable`. No decision.',
+  "worker/apiObjects.vibe:reached": 'Provides the request runtime to an RPC and maps its failure to `Unreachable`. No decision.',
+  "worker/apiObjects.vibe:spendOf": "Forwards admit and spend to the day's budget object under the proved charge key (budgetDecision chargeKeyOf); the ledger's admission is the proved reserve/settle.",
+  "worker/apiObjects.vibe:actionIdentity": 'Forwards session, role and permission RPCs to the accounts object; the trusted-caller choice is ActionIdentity fromAccounts. RPC transport remains a host boundary.',
+  "worker/apiObjects.vibe:budgetBody": 'Starts the budget object over the proved reservation ledger (Objects.budget, budgetDecision reserve/settle).',
+  "worker/apiObjects.vibe:historyBody": 'Calls the proved bootstrapsHistory (seed from main only at seq 0; 0018 third-lane batch 21). Pages, writes and the event stream forward to the proved history machine and page decisions; storage, GitHub reads and SSE remain host boundaries.',
+  "worker/apiObjects.vibe:accountsBody": 'Calls the proved signedOutRoute: with sign-in unconfigured only /api/issues and /api/wiki are served, everything else is disabled (0018 third-lane batch 21). Account handling, layers and GitHub reads forward to Accounts, Issues and Wiki.',
+  "worker/apiObjects.vibe:conversationBody": "Calls the proved pendingPost (first person's post without a finished reply), readsPostOwner, alarmOwner, alarmName, alarmAgent and draftForbidden (0018 third-lane batch 21). Storage reads, the entrypoint, layers, the action host and the event stream remain host boundaries.",
+  "worker/apiObjects.vibe:actionIndexBody": "Calls the proved actionRoot: a reply run `<id>-reply` lives in `<id>`'s conversation (0018 third-lane batch 21). Directory admission is ActionDirectory's proved indexedRun; RPCs remain host boundaries.",
+  "worker/apiObjects.vibe:sandboxIdentityOf": 'Calls the proved sandboxRole: the account role only for an owner the sandbox permission admits, else viewer; the role is read only once admitted (0018 third-lane batch 21). Cookie principal resolution is Accounts.sandboxPrincipal.',
+  "worker/apiObjects.vibe:accountFetch": 'Forwards an account route to the ProjectAccounts object; a failure to reach it is `Unreachable`. No decision.',
+  "worker/apiObjects.vibe:apiFetch": 'Calls the proved crossOriginRefused, recordsParticipation, writeActor and actionRoot (0018 third-lane batch 21), and the proved accountRoute. Health reads map an Effect exit tag to observed/unreachable and name the day by its UTC ISO date; routing beyond these is the proved Http.vibe protocol. RPCs, metrics, logs and timeouts remain host boundaries.',
   "src/actions/MockActions.vibe:MockActions": "Calls actionHostDecision for settlement, owner refusal, actor identity, flow filters and exact run-id selection; cancellation calls actionRunDecision cancellable. Not yet proved: the private numeric id increment (unsafe-integer.ts), command tokenization/JSON codecs, native authorization and the engine, publication and follower ordering. No whole-host proof is claimed.",
   "worker/ActionDirectory.vibe:directory": "Calls actionHostDecision indexedRun (only its own index or an unindexed child), matchingFlow and sameRun; reply cancellation calls the proved actionRunDecision isReplyChild relation. Not yet proved: newest-first native subtraction/sort, JSON request comparison, storage ordering, role lookup and SDK execution. No whole-directory ordering or exactly-once execution proof is claimed.",
 
