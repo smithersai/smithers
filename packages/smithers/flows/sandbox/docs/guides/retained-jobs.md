@@ -35,8 +35,18 @@ location. An overlap with the captured checkout is refused.
 ## Recovery and cleanup
 
 An atomic directory creation fences the launch by the durable job key.
-A duplicate start returns the same handle. The worker records its process-group
-identity before running the command and atomically publishes its exit status.
+A duplicate start returns the same handle. A start that fails before its worker
+runs, because the checkout has no such base, a file write fails, or no worker
+appears within two seconds, removes the job directory and fails, so a retry with
+the same key launches again. A start that finds a directory whose launcher died
+before launching takes the launch over.
+
+The worker leads a session of its own where the guest has `setsid`. Without it,
+as on macOS, the worker leads a process group of its own where `/bin/sh` has job
+control, as bash does. Where neither holds, as with Debian's dash and no
+`setsid`, start fails naming the missing process group. The worker records its
+process-group identity before running the command and atomically publishes its
+exit status.
 The detached worker also claims a `worker` directory before opening output files,
 so redelivery cannot overwrite output or race on the PID publication. Its
 `launches` file contains one PID per launch attempt, with no command or payload.

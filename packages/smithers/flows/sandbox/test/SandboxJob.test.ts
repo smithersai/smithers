@@ -22,11 +22,24 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 import { Fiber, FileSystem, Layer, Stream } from "effect"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs"
+import { execFileSync, spawnSync } from "node:child_process"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  watch,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
+import { sessionSlug } from "../src/internal/sessionSlug.ts"
 import { platform } from "./helpers/containedPlatform.ts"
 import { makeWorkSeed } from "./helpers/workSeed.ts"
 
@@ -34,7 +47,13 @@ const roots: string[] = []
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true })
 })
-const fixture = (replayLaunch = false) =>
+// Faults reach the shipped launcher through the transport's environment: the
+// launcher script itself always runs unchanged.
+// - replayLaunch puts a setsid first on PATH that performs the real syscall but
+//   delivers the detached launch twice, as a faulty transport can.
+// - withoutSetsid gives the launcher a PATH holding every host command but
+//   setsid, as on macOS.
+const fixture = (mode: { readonly replayLaunch?: boolean; readonly withoutSetsid?: boolean } = {}) =>
   Effect.gen(function*() {
     const root = mkdtempSync(join(tmpdir(), "sandbox-job-test-"))
     roots.push(root)
@@ -52,16 +71,15 @@ const fixture = (replayLaunch = false) =>
     }))
     const session = yield* Effect.scoped(provider.acquire(key))
     const checkout = join(session.workdir, "checkout")
-    // macOS has no util-linux setsid. This executable performs the actual POSIX
-    // syscall and execs the exact argv, rather than simulating process liveness.
-    const launcher = join(root, "setsid")
+    const bin = join(root, "bin")
+    mkdirSync(bin)
     const replayed = join(root, "replayed")
-    // A faulty transport can redeliver a detached launch after admission.
-    // Both children are real sessions; wait for both before reading output.
-    writeFileSync(
-      launcher,
-      replayLaunch
-        ? `#!/usr/bin/env python3
+    let path: string | undefined
+    if (mode.replayLaunch === true) {
+      // Both children are real sessions; wait for both before reading output.
+      writeFileSync(
+        join(bin, "setsid"),
+        `#!/usr/bin/env python3
 import os,sys
 os.setsid()
 children=[]
@@ -75,9 +93,21 @@ for child in children:
     os.waitpid(child, 0)
 open(${JSON.stringify(replayed)}, "w").write("done")
 `
-        : "#!/usr/bin/env python3\nimport os,sys\nos.setsid()\nos.execvp(sys.argv[1],sys.argv[1:])\n"
-    )
-    chmodSync(launcher, 0o755)
+      )
+      chmodSync(join(bin, "setsid"), 0o755)
+      path = `${bin}:${process.env.PATH}`
+    }
+    if (mode.withoutSetsid === true) {
+      const linked = new Set(["setsid"])
+      for (const directory of (process.env.PATH ?? "").split(":")) {
+        if (!directory || !existsSync(directory)) continue
+        for (const name of readdirSync(directory)) {
+          if (!linked.has(name)) symlinkSync(join(directory, name), join(bin, name))
+          linked.add(name)
+        }
+      }
+      path = bin
+    }
     const command =
       `printf worker >>starts; printf changed > new.txt; printf stdout; printf stderr >&2; sleep 0.2; exit 7`
     const options = {
@@ -86,18 +116,62 @@ open(${JSON.stringify(replayed)}, "w").write("done")
       capture: { checkout },
       jobDirectory: join(root, "jobs")
     }
-    const wrapped = {
+    const wrapped = path === undefined ? provider : {
       ...provider,
       acquire: (id: string) =>
         provider.acquire(id).pipe(
           Effect.map((s) => ({
             ...s,
             spawn: (command: string, options: Parameters<typeof s.spawn>[1]) =>
-              s.spawn(command.replace("setsid /bin/sh", `${CommandLine.quote(launcher)} /bin/sh`), options)
+              s.spawn(command, { ...options, env: { ...options.env, PATH: path } })
           }))
         )
     }
-    return { root, provider: wrapped, key, options, checkout, replayed }
+    return {
+      root,
+      provider: wrapped,
+      key,
+      options,
+      checkout,
+      replayed,
+      directory: join(root, "jobs", sessionSlug(key))
+    }
+  })
+// Pauses the first launcher right after it wins the job directory, before it
+// records the key, by inserting a wait into that one script.
+const gate = (provider: Sandbox.Provider, root: string) => {
+  const ready = join(root, "ready"), release = join(root, "release")
+  let first = true
+  return {
+    ready,
+    release,
+    provider: {
+      ...provider,
+      acquire: (id: string) =>
+        provider.acquire(id).pipe(
+          Effect.map((session) => ({
+            ...session,
+            spawn: (command: string, options: Parameters<typeof session.spawn>[1]) => {
+              if (first && command.includes("prepare()")) {
+                first = false
+                command = command.replace(
+                  "\nprintf %s ",
+                  `\ntouch ${CommandLine.quote(ready)}; while ! test -f ${
+                    CommandLine.quote(release)
+                  }; do sleep 0.02; done\nprintf %s `
+                )
+              }
+              return session.spawn(command, options)
+            }
+          }))
+        )
+    } satisfies Sandbox.Provider
+  }
+}
+const waitFor = (path: string) =>
+  Effect.gen(function*() {
+    for (let i = 0; i < 200 && !existsSync(path); i++) yield* Effect.sleep("10 millis")
+    expect(existsSync(path)).toBe(true)
   })
 const withPlatform = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(platform), Effect.provide(KeyValueStore.layerMemory))
@@ -118,7 +192,7 @@ const exited = (job: ReturnType<typeof Sandbox.job>, handle: Sandbox.JobHandle, 
 describe("retained directory process conformance", () => {
   it.live("a redelivered detached launch runs once and preserves its output", () =>
     withPlatform(Effect.gen(function*() {
-      const f = yield* fixture(true)
+      const f = yield* fixture({ replayLaunch: true })
       const job = Sandbox.job(f.provider, f.options)
       const handle = yield* job.start(undefined, f.key)
       yield* Effect.callback<void>((resume) => {
@@ -195,33 +269,11 @@ describe("retained directory process conformance", () => {
   it.live("a cancelled mkdir winner cannot launch work after a concurrent start observes it", () =>
     withPlatform(Effect.gen(function*() {
       const f = yield* fixture()
-      const ready = join(f.root, "ready"), release = join(f.root, "release"), worked = join(f.root, "worked")
-      let first = true
-      const gated = {
-        ...f.provider,
-        acquire: (id: string) =>
-          f.provider.acquire(id).pipe(
-            Effect.map((session) => ({
-              ...session,
-              spawn: (command: string, options: Parameters<typeof session.spawn>[1]) => {
-                if (first && command.includes("if mkdir")) {
-                  first = false
-                  command = command.replace(
-                    "; then\nprintf %s",
-                    `; then\ntouch ${CommandLine.quote(ready)}; while ! test -f ${
-                      CommandLine.quote(release)
-                    }; do sleep 0.02; done\nprintf %s`
-                  )
-                }
-                return session.spawn(command, options)
-              }
-            }))
-          )
-      }
+      const worked = join(f.root, "worked")
+      const { ready, release, provider: gated } = gate(f.provider, f.root)
       const job = Sandbox.job(gated, { ...f.options, command: `touch ${CommandLine.quote(worked)}` })
       const starting = yield* Effect.forkChild(Effect.exit(job.start(undefined, f.key)))
-      for (let i = 0; i < 200 && !existsSync(ready); i++) yield* Effect.sleep("10 millis")
-      expect(existsSync(ready)).toBe(true)
+      yield* waitFor(ready)
       const handle = yield* job.start(undefined, f.key)
       expect(yield* job.status(handle, f.key)).toEqual({ _tag: "Lost" })
       yield* job.cancel(handle, f.key)
@@ -229,6 +281,53 @@ describe("retained directory process conformance", () => {
       const delayed = yield* Fiber.join(starting)
       expect(Exit.isFailure(delayed)).toBe(true)
       expect(existsSync(worked)).toBe(false)
+    })))
+  it.live("a start that fails before launching leaves nothing behind, so a retry with the key launches", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture()
+      const job = Sandbox.job(f.provider, { ...f.options, capture: { ...f.options.capture, base: "retry-base" } })
+      const failed = yield* typedFailure(job.start(undefined, f.key))
+      expect(failed).toMatchObject({ code: "spawn_error" })
+      expect(existsSync(f.directory)).toBe(false)
+      execFileSync("git", ["tag", "retry-base"], { cwd: f.checkout })
+      const handle = yield* job.start(undefined, f.key)
+      expect(yield* exited(job, handle, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+    })))
+  it.live("a start takes over a directory whose launcher died before launching", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture()
+      const { ready, provider: gated } = gate(f.provider, f.root)
+      const job = Sandbox.job(gated, f.options)
+      const starting = yield* Effect.forkChild(Effect.exit(job.start(undefined, f.key)))
+      yield* waitFor(ready)
+      process.kill(Number(readFileSync(join(f.directory, "owner"), "utf8")), "SIGKILL")
+      expect(Exit.isFailure(yield* Fiber.join(starting))).toBe(true)
+      const handle = yield* job.start(undefined, f.key)
+      expect(yield* exited(job, handle, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
+      expect(readFileSync(join(f.checkout, "starts"), "utf8")).toBe("worker")
+      expect(readFileSync(join(f.directory, "launches"), "utf8").trim().split("\n")).toHaveLength(1)
+    })))
+  it.live("without setsid the shipped launcher uses job control, or refuses and leaves nothing behind", () =>
+    withPlatform(Effect.gen(function*() {
+      const f = yield* fixture({ withoutSetsid: true })
+      const job = Sandbox.job(f.provider, f.options)
+      // Whether this host's /bin/sh gives a background job a process group of
+      // its own without a terminal: bash, macOS's /bin/sh, does; dash does not.
+      const jobControl =
+        spawnSync("/bin/sh", ["-c", "(set -m 2>/dev/null; /bin/sh -c 'kill -0 -$$ && echo yes' & wait)"], {
+          encoding: "utf8"
+        }).stdout.trim() === "yes"
+      if (jobControl) {
+        const handle = yield* job.start(undefined, f.key)
+        expect(yield* exited(job, handle, f.key)).toEqual({ _tag: "Exited", exitCode: 7 })
+        expect(yield* job.collect(handle, f.key, { _tag: "Exited", exitCode: 7 })).toMatchObject({ stdout: "stdout" })
+      } else {
+        const failed = yield* typedFailure(job.start(undefined, f.key))
+        expect(String(failed)).toContain("the worker leads no process group")
+        expect(existsSync(f.directory)).toBe(false)
+        expect(existsSync(join(f.checkout, "starts"))).toBe(false)
+      }
     })))
   it.live("does not mistake a transport failure for Lost", () =>
     withPlatform(Effect.gen(function*() {
