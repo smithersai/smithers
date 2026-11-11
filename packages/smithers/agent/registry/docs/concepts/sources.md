@@ -73,14 +73,16 @@ it is refused with `root_level_entry`.
 foreign Agent Skills directory is scanned. The name must be 1 to 64 lowercase
 ASCII letters, numbers, or single hyphens with no edge hyphens. An absent name
 falls back to the directory name and reports `missing_name`. A blank or
-non-string value falls back to the directory name and reports `invalid_name`.
-A nonempty string is trimmed and retained, even if it violates the grammar or
-64-character limit; those violations report `invalid_name`. Any retained name
-that differs from its directory also reports `directory_name_mismatch`.
+non-string value, or a trimmed string that violates the grammar or 64-character
+limit, also falls back to the directory name and reports `invalid_name`. A name
+outside the grammar never becomes the registry key, the action tag, or catalog
+text. A valid name that differs from its directory is retained and reports
+`directory_name_mismatch`.
 
 Look up the descriptor by its retained name. For example, `name: Review--PR` in
-`review/SKILL.md` registers `Review--PR`, not `review`, and reports both
-`invalid_name` and `directory_name_mismatch`.
+`review/SKILL.md` registers `review` and reports `invalid_name`, while
+`name: review-pr` in the same file registers `review-pr` and reports
+`directory_name_mismatch`.
 
 ## Ordered sources and the first-found rule
 

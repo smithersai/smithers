@@ -20,7 +20,9 @@ export const deriveFromPath = (segments: ReadonlyArray<string>): Option.Option<s
 
 /**
  * Derives a foreign skill name from frontmatter, with the directory name as a
- * compatibility fallback.
+ * fallback for a name that is absent, blank, not a string, or outside the
+ * Agent Skills grammar. A name outside the grammar never becomes a registry
+ * key, an action tag, or catalog text.
  *
  * @since 0.1.0
  * @category naming
@@ -43,25 +45,30 @@ export const deriveFromFrontmatter = (
   const value = options.fields.name
   if (typeof value === "string" && value.trim().length > 0) {
     const name = value.trim()
-    const warnings: Array<DiscoveryWarning> = []
     if (!Markdown.isSkillName(name)) {
-      warnings.push({
-        code: "invalid_name",
-        path: options.path,
-        name,
-        message:
-          "Frontmatter name must be 1-64 lowercase ASCII letters, numbers, or single hyphens with no edge hyphens"
-      })
+      return {
+        name: options.dirBasename,
+        warnings: [{
+          code: "invalid_name",
+          path: options.path,
+          name: options.dirBasename,
+          message: "Frontmatter name must be 1-64 lowercase ASCII letters, numbers, or single hyphens with no " +
+            "edge hyphens; using the directory name instead"
+        }]
+      }
     }
     if (name !== options.dirBasename) {
-      warnings.push({
-        code: "directory_name_mismatch",
-        path: options.path,
+      return {
         name,
-        message: `Frontmatter name "${name}" does not match skill directory "${options.dirBasename}"`
-      })
+        warnings: [{
+          code: "directory_name_mismatch",
+          path: options.path,
+          name,
+          message: `Frontmatter name "${name}" does not match skill directory "${options.dirBasename}"`
+        }]
+      }
     }
-    return { name, warnings }
+    return { name, warnings: [] }
   }
 
   return {

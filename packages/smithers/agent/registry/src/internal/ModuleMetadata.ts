@@ -40,9 +40,16 @@ export interface Metadata {
   /**
    * The declared `budget` literal's members, each a literal value or, when it
    * is not one, its source text, so the budget reader refuses it by name
-   * rather than reading it as undeclared.
+   * rather than reading it as undeclared. Absent when the module declares no
+   * budget or one this reader cannot project; {@link declaresBudget} tells the
+   * two apart.
    */
   readonly budget?: Record<string, unknown>
+  /**
+   * Whether the declaration has a `budget` member, readable or not. A declared
+   * budget the reader cannot project is refused, never read as unbounded.
+   */
+  readonly declaresBudget: boolean
   readonly prompt?: true
   readonly declaresName: boolean
   /**
@@ -1106,6 +1113,7 @@ export const parse = (source: string): Metadata => {
       effects: conservativeEffects,
       placement: placementFromSource(source),
       modelInvocable: true,
+      declaresBudget: false,
       declaresName: false,
       declaredName: Option.none(),
       tag: Option.none(),
@@ -1188,9 +1196,6 @@ export const parse = (source: string): Metadata => {
 
   const budgetSource = properties.get("budget")
   const budgetProperties = objectProperties(budgetSource)
-  if (budgetSource !== undefined && (budgetProperties === undefined || budgetProperties.hasUnprojectableMembers)) {
-    warnings.push({ message: "Budget must be a statically projectable object literal; ignoring it" })
-  }
   const budget = budgetProperties === undefined || budgetProperties.hasUnprojectableMembers
     ? undefined
     : Object.fromEntries(
@@ -1217,6 +1222,7 @@ export const parse = (source: string): Metadata => {
     placement: placementFromSource(source),
     modelInvocable,
     ...budget === undefined ? {} : { budget },
+    declaresBudget: budgetSource !== undefined,
     declaresName: properties.has("name"),
     declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
     tag: Option.fromUndefinedOr(flowObject.tag),

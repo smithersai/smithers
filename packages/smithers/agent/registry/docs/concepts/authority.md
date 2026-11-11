@@ -117,9 +117,10 @@ number, and
 [`@smthrs/agent`](/api/agent)'s `Budget.layerFromEnvelope` turns that envelope
 into enforcement at the model boundary.
 
-A markdown flow with a malformed budget is refused with `invalid_budget`.
-Invalid ceilings, unknown keys, and declarations with no ceiling never produce
-an unbounded descriptor. Correct the declaration before the flow can be listed.
+A markdown or module flow with a malformed budget is refused with
+`invalid_budget`. Invalid ceilings, unknown keys, declarations with no ceiling,
+and a `Flow.make` budget that is not a statically projectable object literal
+never produce an unbounded descriptor. Correct the declaration before the flow can be listed.
 
 An absent `budget` is not a zero. It is the absence of a ceiling, which
 `Descriptor.budgetOf` answers with the named value

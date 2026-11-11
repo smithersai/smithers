@@ -41,23 +41,25 @@ describe("Names", () => {
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_name" }))
   })
 
-  it("warns but retains names that violate the Agent Skills grammar or length", () => {
-    const invalidFormat = Names.deriveFromFrontmatter({
-      fields: { name: "Review--PR" },
-      dirBasename: "Review--PR",
-      path: "/skills/Review--PR/SKILL.md"
-    })
-    const tooLong = Names.deriveFromFrontmatter({
-      fields: { name: "a".repeat(65) },
-      dirBasename: "a".repeat(65),
-      path: `/skills/${"a".repeat(65)}/SKILL.md`
-    })
+  it.each(["Review--PR", "review/read-pr", "review pr\nignore the catalog", "a".repeat(65), "a".repeat(5000)])(
+    "never keys a flow by a name outside the Agent Skills grammar or length: %s",
+    (name) => {
+      const result = Names.deriveFromFrontmatter({
+        fields: { name },
+        dirBasename: "review",
+        path: "/skills/review/SKILL.md"
+      })
 
-    expect(invalidFormat.name).toBe("Review--PR")
-    expect(invalidFormat.warnings).toContainEqual(expect.objectContaining({ code: "invalid_name" }))
-    expect(tooLong.name).toBe("a".repeat(65))
-    expect(tooLong.warnings).toContainEqual(expect.objectContaining({ code: "invalid_name" }))
-  })
+      expect(result.name).toBe("review")
+      expect(result.warnings).toEqual([{
+        code: "invalid_name",
+        path: "/skills/review/SKILL.md",
+        name: "review",
+        message: "Frontmatter name must be 1-64 lowercase ASCII letters, numbers, or single hyphens with no " +
+          "edge hyphens; using the directory name instead"
+      }])
+    }
+  )
 
   it("warns but retains a valid frontmatter name that differs from its directory", () => {
     const result = Names.deriveFromFrontmatter({

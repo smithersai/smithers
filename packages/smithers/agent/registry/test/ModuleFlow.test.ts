@@ -128,4 +128,32 @@ describe("ModuleFlow.fromModule", () => {
       "Flow authority cannot be projected statically; using the conservative wildcard at release-notes/flow.ts:7"
     ]])
   })
+
+  // The inputs MarkdownLimitsSafety.test.ts refuses in frontmatter, declared as a Flow.make literal.
+  it.each([
+    ["budget: soon", "Flow.make budget must be a statically projectable object literal; flow refused"],
+    ["budget: []", "Flow.make budget must be a statically projectable object literal; flow refused"],
+    ["budget: {}", "Flow.make budget must declare at least one ceiling; flow refused"],
+    ["budget: { tokens: \"soon\" }", "Flow.make budget.tokens must be a positive safe integer; flow refused"],
+    ["budget: { tokens: 0 }", "Flow.make budget.tokens must be a positive safe integer; flow refused"],
+    ["budget: { milliseconds: -1 }", "Flow.make budget.milliseconds must be a positive safe integer; flow refused"],
+    ["budget: { usd: \"free\" }", "Flow.make budget.usd must be a positive dollar amount; flow refused"],
+    ["budget: { token: 500 }", "Flow.make budget has an unknown key: token"],
+    ["budget: { onExceeded: \"park\" }", "Flow.make budget must declare at least one ceiling; flow refused"],
+    [
+      "budget: { tokens: 500, milliseconds: \"soon\" }",
+      "Flow.make budget.milliseconds must be a positive safe integer; flow refused"
+    ],
+    ["budget: { tokens: 500, token: 1 }", "Flow.make budget has an unknown key: token"],
+    ["budget: limits", "Flow.make budget must be a statically projectable object literal; flow refused"],
+    [
+      "budget: { ...limits, tokens: 100 }",
+      "Flow.make budget must be a statically projectable object literal; flow refused"
+    ]
+  ])("refuses an invalid declared budget, never running it unbounded: %s", (declaration, message) => {
+    const result = fromModule(module.replace("  capabilities: [],", `  capabilities: [],\n  ${declaration},`))
+    expect(Option.isNone(result.descriptor)).toBe(true)
+    expect(result.tag).toEqual(Option.some("release-notes"))
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_budget", message }))
+  })
 })

@@ -55,20 +55,19 @@ Two more stop the walk rather than one entry:
 
 ## The flow appeared under the wrong name
 
-| Code                      | What happened                                                                                                                                                    |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                              |
-| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                                       |
-| `invalid_name`            | A blank or non-string `name` uses the directory name. A nonempty string is trimmed and retained, even when it violates the naming grammar or 64-character limit. |
-| `directory_name_mismatch` | The retained `name` differs from the directory's name, whether valid or invalid. The retained name was used.                                                     |
-| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant.         |
-| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](./load-packs.md).                        |
-| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.vibe`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                         |
+| Code                      | What happened                                                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                      |
+| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                               |
+| `invalid_name`            | A blank or non-string `name`, or one that violates the naming grammar or 64-character limit, uses the directory name.                                    |
+| `directory_name_mismatch` | A valid `name` differs from the directory's name. The frontmatter name was used.                                                                         |
+| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant. |
+| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](./load-packs.md).                |
+| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.vibe`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                 |
 
 See [Sources and naming](../concepts/sources.md#two-ways-a-flow-gets-its-name)
 for the grammar. Use the descriptor's `name` for lookup. For example, `name: Review--PR` in
-`review/SKILL.md` is retained as `Review--PR` with `invalid_name` and
-`directory_name_mismatch`; it does not register a fallback alias `review`.
+`review/SKILL.md` registers `review` with `invalid_name`.
 
 ## The flow has unexpected authority or is refused
 
@@ -93,7 +92,7 @@ These codes explain unexpected authority and refused capability declarations.
 | `invalid_placement`        | `placement` is not `client`, `local`, `sandbox`, or `remote`. It was ignored, so the flow is discovered unplaced and the host chooses where it runs.                                                                                                                 |
 | `invalid_sandbox`          | `sandbox` names an unknown provider or key, has a malformed `network` or limit, or sits beside a `placement` other than `sandbox`. The flow is refused.                                                                                                              |
 | `invalid_model`            | `model` is an empty list (for example, `model: []`) or contains an empty or non-string seat. The markdown flow is not discovered; provide one seat or a non-empty ordered list. A blank string or a mapping is ignored instead, and the flow keeps the default seat. |
-| `invalid_budget`           | A markdown `budget` is malformed, has an unknown key, or declares no ceiling. The flow is refused until corrected.                                                                                                                                                   |
+| `invalid_budget`           | A `budget` in markdown or a `Flow.make` literal is malformed, has an unknown key, declares no ceiling, or is not a statically projectable object literal. The flow is refused until corrected.                                                                       |
 | `invalid_deadline`         | `deadline` is not a positive whole-millisecond duration such as `30 minutes`. The markdown flow is refused until corrected.                                                                                                                                          |
 | `invalid_license`          | `license` is not a string.                                                                                                                                                                                                                                           |
 | `invalid_compatibility`    | `compatibility` is not a string of at most 500 characters.                                                                                                                                                                                                           |

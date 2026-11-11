@@ -493,6 +493,7 @@ describe("ModuleMetadata", () => {
         tier: "irreversible"
       },
       modelInvocable: false,
+      declaresBudget: false,
       declaresName: false,
       warnings: []
     })
@@ -721,6 +722,7 @@ describe("ModuleMetadata", () => {
       },
       placement: Option.none(),
       modelInvocable: true,
+      declaresBudget: false,
       declaresName: false,
       declaredName: Option.none(),
       tag: Option.none(),
@@ -786,6 +788,7 @@ describe("ModuleMetadata", () => {
       effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
       placement: Option.some("sandbox"),
       modelInvocable: true,
+      declaresBudget: false,
       declaresName: false,
       declaredName: Option.none(),
       tag: Option.none(),
@@ -1025,15 +1028,17 @@ describe("ModuleMetadata", () => {
   })
 
   it.each(["limits", "{ ...limits, tokens: 100 }", "{ [key]: 100 }"])(
-    "refuses an unprojectable budget (%s) without evaluating it",
+    "reports an unprojectable budget (%s) as declared but unread, without evaluating it",
     (budget) => {
       const metadata = ModuleMetadata.parse(`export default Flow.make("review", {
         description: "Reviews a change.", budget: ${budget}
       })`)
       expect(metadata.budget).toBeUndefined()
-      expect(metadata.warnings).toContainEqual({
-        message: "Budget must be a statically projectable object literal; ignoring it"
-      })
+      expect(metadata.declaresBudget).toBe(true)
+      expect(
+        ModuleMetadata.parse(`export default Flow.make("review", { description: "Reviews a change." })`)
+          .declaresBudget
+      ).toBe(false)
     }
   )
 

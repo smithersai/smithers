@@ -608,13 +608,11 @@ const deriveSandbox = (
  *   onExceeded: park
  * ```
  *
- * A malformed budget is dropped rather than tightened, which is the opposite of
- * how every other field here reads a malformed value. The other fields have a
- * conservative reading to fall back on; a budget has none. Its conservative
- * number is zero, and a zero ceiling refuses the run's first call, so a typo
- * would be reported as a spending decision. An unreadable declaration therefore
- * leaves the flow exactly where an undeclared one leaves it, unbounded, and
- * says so in a warning an operator reads back through `registry.warnings()`.
+ * A malformed member is not read, and is reported as an `invalid_budget`
+ * warning instead. It has no conservative reading to fall back on: zero
+ * refuses the run's first call, and dropping it leaves the run unbounded. So
+ * every caller refuses a flow whose budget pushed `invalid_budget`, and the
+ * operator reads why through `registry.warnings()`.
  *
  * @category parsing
  * @since 1.0.0-rc.1
@@ -631,7 +629,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`
+      message: `${label} must be an object of tokens, milliseconds and usd; flow refused`
     })
     return undefined
   }
@@ -652,7 +650,7 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.${key} must be a positive safe integer; ignoring it`
+      message: `${label}.${key} must be a positive safe integer; flow refused`
     })
     return undefined
   }
@@ -671,19 +669,17 @@ export const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.usd must be a positive dollar amount; ignoring it`
+      message: `${label}.usd must be a positive dollar amount; flow refused`
     })
     return undefined
   })()
-  // An unreadable choice falls back to the budget's default, `fail`, which is
-  // what an undeclared one means: the ceilings still bind.
   const choice = (): BudgetOnExceeded | undefined => {
     const candidate = declared.onExceeded
     if (candidate === undefined || Schema.is(BudgetOnExceeded)(candidate)) return candidate
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`
+      message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; flow refused`
     })
     return undefined
   }

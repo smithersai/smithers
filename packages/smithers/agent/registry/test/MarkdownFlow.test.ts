@@ -838,7 +838,7 @@ body`)
     expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
-      message: "Frontmatter budget.usd must be a positive dollar amount; ignoring it"
+      message: "Frontmatter budget.usd must be a positive dollar amount; flow refused"
     }))
   })
 
@@ -922,7 +922,7 @@ body`)
     expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
-      message: "Frontmatter budget.tokens must be a positive safe integer; ignoring it"
+      message: "Frontmatter budget.tokens must be a positive safe integer; flow refused"
     }))
   })
 
@@ -939,7 +939,7 @@ body`)
     expect(Option.isNone(unknown.descriptor)).toBe(true)
     expect(unknown.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
-      message: "Frontmatter budget.onExceeded must be one of fail, warn, skip-remaining, park; ignoring it"
+      message: "Frontmatter budget.onExceeded must be one of fail, warn, skip-remaining, park; flow refused"
     }))
   })
 

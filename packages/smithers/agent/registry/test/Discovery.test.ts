@@ -157,7 +157,7 @@ export default Flow.make("review", {
     })
   })
 
-  it("reads a module budget literal as the markdown frontmatter budget, and warns on an unreadable one", async () => {
+  it("reads a module budget literal as the markdown frontmatter budget, and refuses an unreadable one", async () => {
     await withTemporaryRoot(async (root) => {
       const markdown = join(root, "markdown")
       const module = join(root, "module")
@@ -182,12 +182,11 @@ export default Flow.make("review", {
 
       writeFileSync(file, source)
       const unreadable = await scan({ source: "project", root, naming: "path" })
-      expect(unreadable.entries.find((entry) => entry.name === "module")!.budget)
-        .toEqual({ tokens: 200000, usd: 2.5, onExceeded: "park" })
+      expect(unreadable.entries.map((entry) => entry.name)).toEqual(["markdown"])
       expect(unreadable.warnings).toContainEqual(expect.objectContaining({
         code: "invalid_budget",
         path: file,
-        message: "Flow.make budget.milliseconds must be a positive safe integer; ignoring it"
+        message: "Flow.make budget.milliseconds must be a positive safe integer; flow refused"
       }))
     })
   })

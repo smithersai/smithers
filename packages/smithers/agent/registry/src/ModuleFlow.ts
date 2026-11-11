@@ -111,9 +111,26 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
       )
     )
   }
+  // A budget the author declared but discovery cannot read is refused, as in
+  // a markdown flow: dropping it would run the flow unbounded.
   const budget = metadata.budget === undefined
     ? undefined
     : deriveBudget({ budget: metadata.budget }, options.path, warnings, "Flow.make budget")
+  if (metadata.declaresBudget && budget === undefined && !warnings.some((item) => item.code === "invalid_budget")) {
+    warnings.push(
+      warning(
+        "invalid_budget",
+        options.path,
+        metadata.budget === undefined
+          ? "Flow.make budget must be a statically projectable object literal; flow refused"
+          : "Flow.make budget must declare at least one ceiling; flow refused",
+        name
+      )
+    )
+  }
+  if (warnings.some((item) => item.code === "invalid_budget")) {
+    return { descriptor: Option.none(), tag: metadata.tag, warnings }
+  }
   if (metadata.description === undefined) {
     warnings.push(
       warning(
