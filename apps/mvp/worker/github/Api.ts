@@ -1332,7 +1332,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (!mayAsk(resolved.success.role)) return refused(403, "forbidden")
             source = actor.value.value.login ?? actor.value.value.subject.id
           } else {
-            const machine = yield* MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database), Effect.result)
+            const machine = yield* WriteAuthority.wait("runner_lookup", MachineWrite.machineOf(request, target.id).pipe(Effect.provide(database))).pipe(Effect.result)
             if (machine._tag === "Failure") return refused(503, "unavailable")
             if (Option.isSome(machine.success)) {
               fields.by = "machine"
