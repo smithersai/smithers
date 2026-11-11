@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import type { Page } from "@playwright/test"
 import { DEV_ASK_TOKEN } from "../worker/AsksDev"
 import { expect, test } from "./devices"
-import { baseURL, onThisMachine, requires, scriptedAgent, target } from "./target"
+import { baseURL, requires, scriptedAgent, target } from "./target"
 
 // The queue, end to end (decision 0022 slice 1, decision 0017 slice 1): a built-in plugin whose only wiring is its
 // manifest (plugins/queue/plugin.json) and the public `PluginHost`. The agent asks three times; `g q` opens the queue;
@@ -144,7 +144,7 @@ test("queue: an addressed question survives reload and offline use; a keyboard a
   expect(typeof identity.login).toBe("string")
 
   // No session cookies: the agent speaks through its scoped token alone.
-  const agent = await playwright.request.newContext({ baseURL, ignoreHTTPSErrors: onThisMachine(baseURL), storageState: { cookies: [], origins: [] } })
+  const agent = await playwright.request.newContext({ baseURL, ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors, storageState: { cookies: [], origins: [] } })
   const headers = { authorization: `Bearer ${token}` }
   const route = `/api/repos/${repository}/asks`
   const asks = [
