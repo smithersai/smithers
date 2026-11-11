@@ -132,6 +132,49 @@ mutations pass.
 browser reaches its false arm: typed text reaches it only as `/mock` or `/live`, and the slash menu registers only
 `mode/mock` and `mode/live`.
 
+### Measurement, action failures and the wiki's repository copy (session 19, 2026-11-11)
+
+Both full gates on main `0e4de0ea`, each on a box. `pnpm test:coverage` (`--image node26`): 285 files and 2,340 tests
+passed (1 expected fail, 5 skipped); the workerd suite passed 19 files, 82 tests; the gate exits 1 on thresholds only.
+`pnpm e2e:coverage` (`--image playwright`, all three projects): 369 passed, 12 opt-in skips, 0 unexpected, every check
+with evidence; exit 1 on thresholds only.
+
+| Gate | Files below 100% | Lines | Branches | Functions | Statements |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unit (Node + workerd) | 13 of 188 | 8241/8258 (99.79%) | 8645/8684 (99.55%) | 3125/3142 (99.45%) | 10507/10529 (99.79%) |
+| Browser (session 18 → 19) | 89/109 → 90/112 | 4019/5075 → 4036/5088 (79.32%) | 3889/5937 → 3918/5945 (65.90%) | 1704/2115 → 1717/2121 (80.95%) | 4775/6481 → 4801/6499 (73.87%) |
+
+Unit gaps by owner: specification-only functions in `src/core/issueGraphDecision.vibe` and `replayDecision.vibe`
+(vl-ghost-functions); `src/history/tools.vibe:93` (VL-37); `src/core/flows.vibe:343`, the V8 suspend-else range
+(`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm/`, was line 213); single arms in `MockFactory`, the sandbox hosts,
+`issueHostDecision`, `historyView`, `main.vibe:939`, `view.vibe:149` and `worker/Wiki.vibe:68`.
+
+Bugs found and fixed, each with a browser check that failed first (`e2e/actions-paths.spec.ts` over new
+`FaultyActions` points `start`, `read`, `follow` and `cancel`):
+
+| Bug | Fix |
+| --- | --- |
+| Every Actions failure read "Couldn't load runs" and replaced the pane body: input that isn't JSON hid the input box, and a failed start or cancel named a load. | The proved `actionFailureText` (`modelDecision.vibe`) names the input, a refusal, a failed start or cancel, else the load. Only a load failure replaces the body, with Retry. Typing and a new Cancel clear the last failure. |
+| A run whose follow subscription failed stayed "Running" forever: the subscription swallowed the failure and its dependencies never changed. | A lost follow logs `action run follow lost; following again` and follows again 2 seconds later, as the tour does (session 17). A run's follow starts with its current state, so nothing is missed. |
+
+The wiki's `toHtml` runs in Chromium. A mock-mode save never changes a page's source, so the build's rendering was
+the only one a mock browser saw. `mockFactoryFor` now takes the fixture repository its wiki starts from, and the fault
+host's `wiki-repository` seeds it with the Benchmarks page GitHub answered in `test/recordings/wiki.json` (VL-36,
+`test/support/recordedWiki.vibe`). `e2e/fault-paths.spec.ts` saves an edit to that page and sees the repository's copy.
+`toHtml`'s default resolver had no production caller (`wikiView` and `scripts/wiki.vibe` pass one), so it is deleted
+rather than tested; that also removes `markdown.vibe:174`, one of the two lines vl-bench saw dropped.
+
+`wikiLinks.vibe:14` (vl-bench's merge finding) is not a merge defect. The unit gate counts the line alone (1), with
+`wikiProcess` (3) and together (4); under `bench/coverage.config.ts`, `src-edges` alone and with the five other
+benchmark files that reach wiki links both count it (2). vl-bench's map at `2d7bb99a` reads the `if` at line 13
+evaluated 3 times with arms [1, 0] and line 14 at 0. A full `bench:coverage` of main `0e4de0ea` in which
+`src-edges` failed all 5 tests (a box with the wrong Node) reproduces exactly those counts: they are a run where
+`src-edges` did not execute, and the other 3 evaluations come from the wiki script. `coverageUnion.ts` is unchanged.
+
+Not reached yet: `ReadAction`'s failure arm (`main.vibe`, an agent-requested run whose read fails). A journey that
+posts "Run /tour" on the actions fault host never ran it, so that host's agent doesn't request runs; it needs the
+main fault host's scripted agent.
+
 ## Landed behavior
 
 The new tests exercise sequencer replay, ordering and reply attempts; real loopback HTTP and product mock flows;
