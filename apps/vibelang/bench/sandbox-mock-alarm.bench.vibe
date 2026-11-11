@@ -1,0 +1,41 @@
+// The product mock's own alarm (src/core/sandboxMock.vibe): a scoped fiber that meters a running sandbox once the
+// host's alarm is due, as the live object's storage alarm does. TestClock time; the meter is observed in its log.
+import { TestClock } from "effect/testing"
+import { it, expect } from "@effect/vitest"
+import { makeMockSandboxes } from "../src/core/sandboxMock.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+effect function alarmMeters() {
+  const meters = try Ref.make(0)
+  let metered: Deferred.Deferred<void> | undefined
+  const counting = Logger.layer([Logger.make((options) => {
+    const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
+    if (JSON.stringify(options.message).includes("vibelang.sandbox") && annotations["step"] === "meter") {
+      Effect.runSync(Ref.update(meters, (count) => count + 1))
+      if (metered !== undefined) Effect.runSync(Deferred.succeed(metered, undefined))
+    }
+  })])
+  provide counting {
+    try scoped(effect {
+      const sandboxes = try makeMockSandboxes("contributor")
+      const box = try sandboxes.startSandbox("home", "start-alarm")
+      // Admission meters too; count only the alarm's meter, after start returns.
+      const next = try Deferred.make<void>()
+      metered = next
+      const started = try Ref.get(meters)
+      for (let second = 0; second < 60; second++) try TestClock.adjust("1 second")
+      try TestClock.withLive(Effect.timeout(Deferred.await(next), "5 seconds"))
+      const alarmed = try Ref.get(meters)
+      try sandboxes.stopSandbox("home", "stop-alarm", box.generation)
+      try Effect.try(() => {
+        expect(box.status).toBe("running")
+        expect(alarmed - started).toBeGreaterThan(0)
+      })
+    })
+  }
+}
+
+it("the mock's alarm meters a running sandbox after a minute", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-mock-alarm", "async", () => runPromise(alarmMeters().pipe(Effect.provide(TestClock.layer())))).run(quick)
+  await runPromise(artifact("sandbox-mock-alarm", "Vitest built-in bench; makeMockSandboxes (the product mock's flows, host and in-memory machines) with TestClock time. One sample: start a sandbox, advance 60 one-second ticks, wait (live, at most 5 s) for the mock alarm's meter, stop. A meter logged after start returned is checked.", ["TestClock time: the minute is simulated, not waited; the live wait for the forked alarm fiber is included.", "In-memory store and machines; no Durable Object alarm."], result))
+})

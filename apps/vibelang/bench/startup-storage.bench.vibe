@@ -1,0 +1,47 @@
+// Browser startup when the browser refuses storage (a blocked-storage setting, a sandboxed frame): reading either
+// storage throws. The page still chooses mock or live from its address, starts a fresh tour session, and renders.
+// The refusing window is an injected faulty Window over happy-dom's real one (test/support/browser.ts).
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery } from "vibelang-runtime/experimental/platform-browser"
+import { SecureRandom } from "effect/crypto"
+import { main } from "../src/web/startup.vibe"
+import { heldHealth } from "../test/support/heldHealth.vibe"
+import { container, fullLocation, refusingStorage, remove, setLocation } from "../test/support/browser.ts"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+/** Runs `main` at `address` with storage that throws, restoring the address after. */
+effect function refusedAt(address: string) {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const before = try sync(fullLocation)
+  try addFinalizer(() => sync(() => setLocation(before)))
+  try Effect.try(() => { const root = node.ownerDocument.createElement("div"); root.id = "root"; node.append(root); setLocation(address) })
+  const refusing = try Effect.try(refusingStorage)
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const host = Layer.mergeAll(
+    Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => refusing, computedStyle: style })),
+    ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+  )
+  const health = try heldHealth()
+  const started = try Effect.provide(main(), Layer.mergeAll(host, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
+  return { ...started, node }
+}
+
+effect function refusedStartup() {
+  const plain = try scoped(effect { const { flags } = try refusedAt("/"); return flags })
+  const chosen = try scoped(effect {
+    const { application, flags, node } = try refusedAt("/?agent=mock")
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try promise(() => vi.waitFor(() => expect(node.querySelector(".vl-ask")).not.toBeNull(), { timeout: 15_000, interval: 20 }))
+    return flags
+  })
+  try Effect.try(() => {
+    for (const flags of [plain, chosen]) expect(flags).toMatchObject({ tutorialSession: flags.session, tourSound: false, resumeTour: false, autoTour: true })
+  })
+}
+
+it("startup with storage the browser refuses still loads the page", async ({ bench }) => {
+  const result = await workload(bench, "startup-storage-refused", "async", () => runPromise(refusedStartup())).run(quick)
+  await runPromise(artifact("startup-storage-refused", "Vitest built-in bench, happy-dom with the actual startup program behind a Window whose localStorage and sessionStorage throw SecurityError. One sample: start at / (flags only) and at /?agent=mock (embed the application and wait for the ask). Both start a fresh tour session with sound off, no resumed tour and the first-visit tour.", ["DOM runtime, no layout or paint.", "The refusal is an injected Window proxy, not a browser storage setting.", "/api/health is held by a deterministic service; no network."], result))
+})
