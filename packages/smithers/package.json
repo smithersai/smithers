@@ -38,7 +38,8 @@
   },
   "sideEffects": [
     "./src/bin.ts",
-    "./src/cli/LegacyBin.ts",
+    "./src/cli/LegacyBin.vibe",
+    "./.vibelang/js/src/cli/LegacyBin.js",
     "./src/Version.ts",
     "./dist/esm/bin.js",
     "./dist/esm/cli/LegacyBin.js",
