@@ -299,12 +299,16 @@ export effect function make(options: {
     const refresh = tokens.refreshToken === null ? null : try seal("github_refresh", tokens.refreshToken)
     try options.store.put("credential", { login, keyId: options.keyring.active, access, refresh, expires: tokens.expiresAt, generation })
   }
+  /** A row that no longer decodes or opens (a retired key, an older shape) cannot be revoked, but it still goes, or Connect could never replace it. */
   const endCredential = effect (revoke: boolean) => {
-    const row = try credential()
-    if (row === undefined) return
+    const raw = try options.store.get("credential")
+    if (raw === undefined) return
     if (revoke) {
-      const token = try open(row.keyId, "github_access", row.access)
-      options.github.revoke(token) catch effect () => try record("revoke", "failed")
+      const revoked = effect {
+        const row = try Effect.mapError(Schema.decodeUnknownEffect(Credential)(raw), () => refused("connect"))
+        try options.github.revoke(try open(row.keyId, "github_access", row.access))
+      }
+      revoked catch effect () => try record("revoke", "failed")
     }
     try options.store.remove("credential")
   }
