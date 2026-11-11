@@ -27,7 +27,7 @@ import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, ReplyStep, replyIdOf, StartTour, Tour, touring, tourRegistration,
   Tours, unanswered, walkRegistration,
 } from "./flows.vibe"
-import { pages, requestedWiki } from "./wiki.vibe"
+import { pages, requestedWiki } from "./wikiIndex.vibe"
 import { ActionFailure } from "../actions/Actions.vibe"
 import { AgentActions } from "../actions/agent.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"

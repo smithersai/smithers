@@ -17,7 +17,6 @@ import {
   Outline as OutlineSchema,
 } from "../src/history/schemas.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
-import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
 import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
@@ -29,9 +28,17 @@ const CHUNK = 64 * 1024
 const EVENT = "event/"
 
 
-/** The bootstrapped history this deployment carries. */
+/**
+ * The bootstrapped history this deployment carries. Its module is megabytes of JSON, loaded on first use: imported
+ * statically, the API Worker parsed it at every startup (wiki/decisions/0033-worker-startup.md).
+ */
 export effect function seeded() {
-  return try decodeStoredHistory(HISTORY_JSON)
+  return try withSpan(effect {
+    const { HISTORY_JSON } = try promise(() => import("../src/history/seed/vibelang.vibe"))
+    try Metric.update(Metric.counter("vibelang_history_seed_loads", { incremental: true }), 1)
+    try Effect.logInfo("vibelang.history.seed").pipe(Effect.annotateLogs({ bytes: HISTORY_JSON.length, outcome: "loaded" }))
+    return try decodeStoredHistory(HISTORY_JSON)
+  }, "vibelang.history.seed")
 }
 
 /** The history's store over the object's own storage. */

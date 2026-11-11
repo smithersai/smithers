@@ -1,39 +1,12 @@
 // Wiki identity is independent of the deployment. The build embeds current Markdown; the flow admits only its pages.
+// The pages with their bodies, for the browser. Worker code imports src/core/wikiIndex.vibe instead (0033).
 import { pages } from "../assets/wiki.generated.vibe"
-import { editable, firstWithPrefix, longestIncluded, pageIdOf, pageIndex, wikiHref, wikiRequest } from "./wikiPageDecision.vibe"
+import { pageIndex } from "./wikiPageDecision.vibe"
 export { pages }
-export function wikiPath(page: string): string | undefined {
-  const normalized = page.replace(/^\/wiki\/?/, "").replace(/\.md(?=#|$)/, "") || "index"
-  const [raw, hash] = normalized.split("#")
-  const id = pageIdOf(raw ?? "")
-  if (pageIndex(pages, id) < 0) return undefined
-  if (hash !== undefined && !/^[a-z0-9-]+$/.test(hash)) return undefined
-  return wikiHref(id, hash ?? "")
-}
+export { requestedWiki, wikiEditable, wikiPath } from "./wikiIndex.vibe"
 export function wikiPage(url: string) {
   const base = url.split("#")[0] ?? ""
   const index = base.startsWith("/wiki/") ? pageIndex(pages, base.slice("/wiki/".length)) : -1
   return index < 0 ? undefined : pages[index]
 }
 export { wikiLink } from "./wikiLinks.vibe"
-/** The repository holds this page's Markdown (the decisions index is generated at build time and read-only). */
-export function wikiEditable(id: string): boolean {
-  return editable(pages, id)
-}
-/** Scripted product agent's wiki request. Live replies discover the same pages through their tool catalog. */
-export function requestedWiki(text: string): string | undefined {
-  const lowered = text.toLowerCase()
-  const direct = longestIncluded(pages.map((page) => page.id.toLowerCase()), lowered)
-  const number = /\b([0-9]{4})\b/.exec(text)?.[1]
-  switch (wikiRequest(/wiki/i.test(text), direct >= 0, /designs/i.test(text), number !== undefined)) {
-    case "none": return undefined
-    case "direct": return pages[direct]!.id
-    case "designs": return "designs/index"
-    case "decision": {
-      const decision = firstWithPrefix(pages.map((page) => page.id), `decisions/${number}-`)
-      return decision < 0 ? undefined : pages[decision]!.id
-    }
-    // A request naming "rulings" or "roadmap" matched those pages above.
-    case "index": return "index"
-  }
-}

@@ -24,12 +24,14 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     const root = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
     const wiki = path.join(root, "wiki")
     const target = path.join(root, "src/assets/wiki.generated.vibe")
+    const indexTarget = path.join(root, "src/assets/wikiIndex.generated.vibe")
     try fs.remove(wiki, { recursive: true, force: true })
     try fs.makeDirectory(path.join(wiki, "decisions"), { recursive: true })
     try fs.makeDirectory(path.join(wiki, "designs"), { recursive: true })
     try fs.makeDirectory(path.dirname(target), { recursive: true })
     try Effect.addFinalizer(() => fs.remove(wiki, { recursive: true, force: true }).pipe(Effect.orDie))
     try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    try Effect.addFinalizer(() => fs.remove(indexTarget, { force: true }).pipe(Effect.orDie))
     const input: Readonly<Record<string, string>> = {
       "index.md": '# Factory\n\n[Roadmap](roadmap.md#next) [Designs](designs/) [Decisions](decisions/) [Outside](../AGENTS.md#rules) [Web](https://example.test/docs) [Anchor](#factory) [Absolute](/wiki/rulings)\n',
       "rulings.md": "# Rulings\n",
@@ -53,6 +55,9 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     const source = try fs.readFileString(target)
     const pages = try Effect.try(() => JSON.parse(/^export const pages = (.+)$/m.exec(source)![1]!) as Array<Page>)
     const suites = try Effect.try(() => JSON.parse(/^export const verificationSuites = (.+)$/m.exec(source)![1]!) as Array<Suite>)
+    // The Workers' index: every page, in order, without its Markdown and HTML (0033).
+    const indexSource = try fs.readFileString(indexTarget)
+    const index = try Effect.try(() => JSON.parse(/^export const pages = (.+)$/m.exec(indexSource)![1]!) as Array<Record<string, unknown>>)
     const again = try run(executable, [script])
     const repeated = try fs.readFileString(target)
     try fs.remove(path.join(wiki, "decisions/0018-proofs.md"))
@@ -66,6 +71,8 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
       expect(again.status, again.stderr).toBe(0)
       expect(built.stdout).toContain("wiki: 12 pages")
       expect(repeated).toBe(source)
+      expect(index).toEqual(pages.map((page) => Object.fromEntries(Object.entries(page).filter(([key]) => key !== "source" && key !== "html"))))
+      expect(index.every((entry) => !("source" in entry) && !("html" in entry))).toBe(true)
       expect(pages.map(page => page.id)).toEqual(Object.keys(input).filter(file => file.endsWith(".md")).concat("decisions.md").sort().map(file => file.slice(0, -3)))
       const home = pages.find(page => page.id === "index")!
       expect(home).toMatchObject({ title: "Factory", label: "Home", decision: false, date: "", rulings: [] })

@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3318 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3325 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1447,12 +1447,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/tourDecision.vibe:40` | `runningTour` | proved | Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2). |
 | `src/core/tourDecision.vibe:52` | `replyIdOf` | proved | Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2). |
 | `src/core/walkthroughSteps.vibe:17` | `walkthroughStop` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/wiki.vibe:5` | `wikiPath` | pure logic | Calls the proved designs alias, page lookup and link (wikiPageDecision pageIdOf, pageIndex, wikiHref). The path normalization and section-name regexps stay boundaries (regexp.ts). |
-| `src/core/wiki.vibe:13` | `wikiPage` | pure logic | Calls the proved page lookup (pageIndex) on the path before any section; the split is native. |
-| `src/core/wiki.vibe:20` | `wikiEditable` | wiring | Calls the proved editable rule (wikiPageDecision editable: a known page, never the generated decisions index). |
-| `src/core/wiki.vibe:24` | `requestedWiki` | pure logic | Calls the proved request precedence (wikiRequest), the longest named page id, earliest among ties (longestIncluded), and the first decision with the number (firstWithPrefix). The word and number regexps and case folding stay boundaries (regexp.ts, unicode-case.ts). |
-| `src/core/wiki.vibe:26` | `requestedWiki/callback@26` | pure logic | Calls the proved request precedence (wikiRequest), the longest named page id, earliest among ties (longestIncluded), and the first decision with the number (firstWithPrefix). The word and number regexps and case folding stay boundaries (regexp.ts, unicode-case.ts). |
-| `src/core/wiki.vibe:33` | `requestedWiki/callback@33` | wiring | Calls the proved request precedence (wikiRequest), the longest named page id, earliest among ties (longestIncluded), and the first decision with the number (firstWithPrefix). The word and number regexps and case folding stay boundaries (regexp.ts, unicode-case.ts). |
+| `src/core/wiki.vibe:7` | `wikiPage` | pure logic | Calls the proved page lookup (pageIndex) on the path before any section; the split is native. |
 | `src/core/wikiDecision.vibe:4` | `wikiSubmissionAllowed` | proved | Proved exact person-only submission guard; reads and drafts remain agent-invocable. Principal authentication and actual external writes are host boundaries. |
 | `src/core/WikiFactory.vibe:12` | `personOf` | effectful shell | Wiring: a fixture role names its fixture person, else the given identity is read. Nothing to decide. |
 | `src/core/WikiFactory.vibe:20` | `makeWikiStore` | effectful shell | Wiring: empty Refs and a lock. Nothing to decide. |
@@ -1488,6 +1483,11 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/wikiFlows.vibe:52` | `authorizeWiki/callback@52` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/wikiFlows.vibe:61` | `wikiExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/wikiFlows.vibe:67` | `wikiRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiIndex.vibe:7` | `wikiPath` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiIndex.vibe:16` | `wikiEditable` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/wikiIndex.vibe:20` | `requestedWiki` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiIndex.vibe:22` | `requestedWiki/callback@22` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/wikiIndex.vibe:29` | `requestedWiki/callback@29` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/wikiLinks.vibe:3` | `wikiLink` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/wikiPageDecision.vibe:19` | `pageIndex` | proved | Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9). |
 | `src/core/wikiPageDecision.vibe:31` | `editable` | proved | Proved first page by id, the editable rule, the designs alias, page links, the longest named id (earliest among ties), the first id with a prefix, the agent's request precedence, the wiki unwritten mark, the fixture repository's verdict and review numbers, and each refusal's HTTP status (0018 third-lane batch 9). |
@@ -3290,14 +3290,17 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/AgentModel.vibe:44` | `chatModel` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/AgentModel.vibe:47` | `chatModel/onFailure` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/AgentModel.vibe:48` | `chatModel/onSuccess` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Api.vibe:26` | `callback@26` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Api.vibe:28` | `callback@28` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Api.vibe:38` | `callback@38` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Api.vibe:44` | `callback@44` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:16` | `callback@16` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:17` | `callback@16/callback@17` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Api.vibe:32` | `callback@32` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Api.vibe:34` | `callback@34` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:45` | `callback@45` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Api.vibe:52` | `callback@52` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Api.vibe:62` | `callback@62` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Api.vibe:82` | `callback@82` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Api.vibe:88` | `callback@88` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:61` | `callback@61` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:72` | `callback@72` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:93` | `callback@93` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:95` | `callback@93/callback@95` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Api.vibe:102` | `callback@102` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/apiObjects.vibe:93` | `objectOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/apiObjects.vibe:94` | `objectOf/try` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/apiObjects.vibe:94` | `objectOf/catch` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -3443,40 +3446,42 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/HistoryActions.vibe:52` | `make/start/callback@52` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryActions.vibe:55` | `make/alarm` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/HistoryActions.vibe:57` | `make/receipt` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/HistoryObject.vibe:33` | `seeded` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:38` | `storeOver` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:40` | `storeOver/load` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:41` | `storeOver/load/callback@41` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:44` | `storeOver/load/callback@44` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:47` | `storeOver/load/callback@47` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:50` | `storeOver/since` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:51` | `storeOver/since/callback@51` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:54` | `storeOver/append` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:55` | `storeOver/append/callback@55` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:57` | `storeOver/seed` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:58` | `storeOver/seed/callback@58` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:67` | `storeOver/seed/callback@67` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:67` | `storeOver/seed/callback@67/callback@67` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:69` | `storeOver/seed/callback@69` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:87` | `readerOver` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:92` | `readerOver/read` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:93` | `readerOver/read/callback@93` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:94` | `readerOver/read/callback@94` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:96` | `readerOver/written` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:97` | `readerOver/written/callback@97` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:102` | `readerOver/outline` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:103` | `readerOver/epic` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:104` | `readerOver/commit` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:105` | `readerOver/search` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:106` | `readerOver/plan` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:107` | `readerOver/start` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:108` | `readerOver/note` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:116` | `history` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:121` | `runtime` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:133` | `bootstrap` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:135` | `bootstrap/callback@135` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:155` | `write` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryObject.vibe:167` | `write/callback@167` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:35` | `seeded` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:36` | `seeded/callback@36` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:37` | `seeded/callback@36/callback@37` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:45` | `storeOver` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:47` | `storeOver/load` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:48` | `storeOver/load/callback@48` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:51` | `storeOver/load/callback@51` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:54` | `storeOver/load/callback@54` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:57` | `storeOver/since` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:58` | `storeOver/since/callback@58` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:61` | `storeOver/append` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:62` | `storeOver/append/callback@62` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:64` | `storeOver/seed` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:65` | `storeOver/seed/callback@65` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:74` | `storeOver/seed/callback@74` | pure logic | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:74` | `storeOver/seed/callback@74/callback@74` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:76` | `storeOver/seed/callback@76` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:94` | `readerOver` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:99` | `readerOver/read` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:100` | `readerOver/read/callback@100` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:101` | `readerOver/read/callback@101` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:103` | `readerOver/written` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:104` | `readerOver/written/callback@104` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:109` | `readerOver/outline` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:110` | `readerOver/epic` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:111` | `readerOver/commit` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:112` | `readerOver/search` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:113` | `readerOver/plan` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:114` | `readerOver/start` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:115` | `readerOver/note` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:123` | `history` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:128` | `runtime` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:140` | `bootstrap` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:142` | `bootstrap/callback@142` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:162` | `write` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
+| `worker/HistoryObject.vibe:174` | `write/callback@174` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
 | `worker/HistoryTools.vibe:23` | `declared` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryTools.vibe:36` | `historyTools` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryTools.vibe:38` | `historyTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -4013,6 +4018,8 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `scripts/wiki.vibe:27` | `generate/resolve` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `scripts/wiki.vibe:43` | `generate/callback@43` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/wiki.vibe:43` | `generate/callback@43` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `scripts/wiki.vibe:46` | `generate/callback@46` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `scripts/wiki.vibe:47` | `generate/callback@47` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 <!-- inventory:end -->
 
 ### Twentieth batch: walkthrough counters and scalar controls

@@ -9,7 +9,7 @@ import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } fr
 import { applyWikiEdits, emptyWikiEdits, wikiPermission, type WikiEdits, type WikiOperation, type WikiPageState } from "../src/core/conversation.vibe"
 import { WikiHost, wikiEditFlows, wikiEditRegistration, authorizeWiki, wikiExecutionId, wikiRecoveryId } from "../src/core/wikiFlows.vibe"
 import { WikiFailure, WikiRequest, WikiState } from "../src/core/wikiSchemas.vibe"
-import { pages } from "../src/core/wiki.vibe"
+import { pages } from "../src/core/wikiIndex.vibe"
 import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import type { Principal, Repository } from "./Issues.vibe"
 /** The embedded wiki is versioned with this app, separately from VibeLang's issue tracker. */

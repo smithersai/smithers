@@ -1,17 +1,23 @@
-import { specificationModels } from "./SpecificationReviewers.vibe"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Telemetry } from "alchemy"
 import { GitHub } from "@smthrs/integrations"
-import * as Accounts from "./Accounts.vibe"
-import { readSetup } from "./PublicReads.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
-import { chatModel, dailyTokens } from "./AgentModel.vibe"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { SandboxGateway, SandboxIdentity, gatewayWithIdentity } from "./SandboxAccounts.vibe"
-import { accountsObject, actionIndexObject, apiFetch, budgetObject, conversationObject, historyObject, sandboxIdentityOf, type AccountsShape, type ActionDirectoryShape, type BudgetShape, type ConversationShape, type HistoryShape, type Namespace } from "./apiObjects.vibe"
+import type { AccountsShape, ActionDirectoryShape, BudgetShape, ConversationShape, HistoryShape, Namespace } from "./apiObjects.vibe"
 
-export { REPOSITORY } from "./apiObjects.vibe"
 export type { AccountsShape, ActionDirectoryShape, BudgetShape, ConversationShape, HistoryShape } from "./apiObjects.vibe"
+
+/**
+ * The Worker's request code: its objects, the agent, the model and the flows. Cloudflare refuses a Worker whose global
+ * scope takes more than 1 second of CPU (https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time),
+ * and parsing this graph took most of it, so it loads when the first event builds the Worker or an object, never at
+ * startup (wiki/decisions/0033-worker-startup.md). Imported statically, it is evaluated at startup again.
+ */
+const runtime = withSpan(effect {
+  const loaded = try promise(() => import("./apiRuntime.vibe"))
+  try Metric.update(Metric.counter("vibelang_api_runtime_loads", { incremental: true }), 1)
+  return loaded
+}, "vibelang.api.runtime")
 
 /** One conversation's sequencer and current reply, named by the conversation's id. */
 export class Conversation extends Cloudflare.DurableObject<Conversation, ConversationShape>()("Conversation") {}
@@ -29,6 +35,7 @@ const AccountsLive = ProjectAccounts.make(effect {
   try Layer.build(authTelemetry)
   const state = try Cloudflare.DurableObjectState
   const budgets = (try Budget) as Namespace<BudgetShape>
+  const { Accounts, accountsObject, chatModel, specificationModels } = try runtime
   const model = try Effect.orDie(chatModel())
   try Effect.orDie(specificationModels())
   const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
@@ -37,6 +44,7 @@ const AccountsLive = ProjectAccounts.make(effect {
 
 const BudgetLive = Budget.make(effect {
   const state = try Cloudflare.DurableObjectState
+  const { budgetObject, dailyTokens } = try runtime
   const limit = try Effect.orDie(dailyTokens)
   return budgetObject(state, limit)
 })
@@ -45,6 +53,7 @@ const HistoryLive = History.make(effect {
   const state = try Cloudflare.DurableObjectState
   // Read when the Worker deploys and when an object starts. The site holds no GitHub token: main is read through
   // smithers.sh's App with the site's broker key (0031).
+  const { historyObject, readSetup } = try runtime
   const reads = try Effect.orDie(readSetup())
   return historyObject(state, reads, try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
 })
@@ -54,6 +63,7 @@ const ConversationLive = Conversation.make(effect {
   const budgets = (try Budget) as Namespace<BudgetShape>
   const histories = (try History) as Namespace<HistoryShape>
   const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
+  const { chatModel, conversationObject } = try runtime
   // Read when the Worker deploys and when an object starts, so the deployment's model and key are bound.
   const model = try Effect.orDie(chatModel())
   return conversationObject(state, budgets, histories, accounts, model, Cloudflare.toHttpClient)
@@ -63,6 +73,7 @@ const ActionIndexLive = ActionIndex.make(effect {
   const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
   const state = try Cloudflare.DurableObjectState
   const conversations = (try Conversation) as Namespace<ConversationShape>
+  const { actionIndexObject } = try runtime
   return actionIndexObject(state, accounts, conversations)
 })
 
@@ -79,14 +90,18 @@ export const props = {
   build: workerBuild,
 }
 
-const SandboxIdentityLive = Layer.effect(SandboxIdentity, effect {
-  const namespace = (try ProjectAccounts) as Namespace<AccountsShape>
-  return sandboxIdentityOf(namespace, executionProps)
+const AuthenticatedSandboxes = Layer.unwrap(effect {
+  const { gatewayWithIdentity, sandboxIdentityOf, SandboxIdentity } = try runtime
+  const identity = Layer.effect(SandboxIdentity, effect {
+    const namespace = (try ProjectAccounts) as Namespace<AccountsShape>
+    return sandboxIdentityOf(namespace, executionProps)
+  })
+  return gatewayWithIdentity.pipe(Layer.provide(identity))
 })
-const AuthenticatedSandboxes = gatewayWithIdentity.pipe(Layer.provide(SandboxIdentityLive))
 
 const program = effect {
   const conversations = (try Conversation) as Namespace<ConversationShape>
+  const { apiFetch, chatModel, dailyTokens, SandboxGateway, specificationModels } = try runtime
   const { gateway } = try SandboxGateway
   const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
   const actions = (try ActionIndex) as Namespace<ActionDirectoryShape>

@@ -5,7 +5,7 @@ import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { FlowBinding } from "@smthrs/harness"
 import { toolRefusal } from "../src/core/toolRefusal.vibe"
 import { OpenWiki, openWiki, OpenDocs, openDocs, Tours } from "../src/core/flows.vibe"
-import { pages } from "../src/core/wiki.vibe"
+import { pages } from "../src/core/wikiIndex.vibe"
 export const WIKI_INSTRUCTION = "Open VibeLang docs with vibelang/docs/open when asked. Open project wiki pages with vibelang/wiki/open when asked. The tool acts on the conversation's pane. Draft edits with vibelang/wiki/draft; then link [Review it](#wiki-draft-PAGE) so the person can review and submit. Never submit, approve or merge an edit. Available page ids: " + pages.map(page => page.id).join(", ")
 export function wikiTools(actor: string, tours: Tours.Shape, drafting?: WikiDrafting.Shape): FlowBinding.Source {
   return FlowBinding.source("vibelang-wiki", [FlowBinding.make({ publicError: toolRefusal,

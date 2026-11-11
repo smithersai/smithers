@@ -20,7 +20,7 @@ import { type Refusal } from "./decide.vibe"
 import { endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { WALKTHROUGH } from "./walkthroughSteps.vibe"
 import { Walkthrough } from "./schemas.vibe"
-import { wikiPath } from "./wiki.vibe"
+import { wikiPath } from "./wikiIndex.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A contended reply or remote object waits through the engine's journaled retry policy. */

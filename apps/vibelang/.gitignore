@@ -25,3 +25,4 @@ bench/results/*
 fuzz-results/
 
 src/assets/wiki.generated.vibe
+src/assets/wikiIndex.generated.vibe
