@@ -4090,3 +4090,44 @@ corpora, not per-token/individual-call latency. Initialization/shared-host/cold-
 The separately named draft fault artifact contains **counts only**: 12 settlement attempts, one admission, one
 model request, one warning, zero charged tokens and the retained 327,680-token ceiling in the instrumented sample.
 Its approximately two-minute policy is a configured deadline; no observed fault duration is published.
+
+## Fault and owner workloads for the defensive lines (lane vl-bench2, 2026-11-11, nyc-01)
+
+Vitest built-in bench, local, three unwarmed callbacks each. Host load average 17 to 139 during these runs (nyc-01
+shared by many lanes), so the spread is wide; no tail-percentile claim. Decision 0017, "Defensive lines decided".
+
+| Workload | Min ms | Mean ms | Max ms | Samples | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| draft-journal-fault | 240.8 | 301.3 | 414.5 | 3 | `2026-11-11T02-20-00.025Z-draft-journal-fault.json` |
+| reply-lost-post | 3.4 | 13.2 | 32.0 | 3 | `2026-11-11T02-27-12.702Z-reply-lost-post.json` |
+| api-objects-maintainer-action-run | 3,455.1 | 5,074.3 | 7,925.4 | 3 | `bench/owned-action-run.bench.vibe` run at 02:52 UTC, load 139 |
+| sandbox-live-replay | 3.2 | 12.2 | 29.1 | 3 | `2026-11-11T07-42-41.625Z-sandbox-live-replay.json` (4-vCPU box) |
+
+**draft-journal-fault** (`bench/draft-journal-fault.bench.vibe`). The production wiki writer, VIP writer and Sol
+specification reviewer, each in a fresh durable execution on the Cloudflare runtime over node:sqlite object storage,
+with the real Budget object and a scripted HTTP model. A faulty storage service fails the journal's entry read from
+admission until the writer answers. Checks the failure answer, zero model calls, one `vibelang.budget.usage` warning
+(`unavailable`), the whole ceiling charged once and the reservation freed. A fallback that charges zero fails it.
+
+**reply-lost-post** (`bench/reply-lost-post.bench.vibe`). The production reply registration on the memory engine with
+the real sequencer over a conversation store whose reads hold no events, as one restored from an older copy. The
+reply's start is refused: the flow answers null, logs `refused` once, writes nothing and asks no budget, history or
+model. A reply that composes anyway fails it.
+
+**api-objects-maintainer-action-run** (`bench/owned-action-run.bench.vibe`). The production bodies of worker/Api.vibe
+in workerd with sign-in configured and `VIBELANG_INITIAL_MAINTAINER_ID=1`. A `vibelang/Post` run whose trusted props
+name owner 1, followed to `ReplyFinished`: History Start answers `unknown` (a viewer gets `forbidden`), the owner's
+wiki draft runs the writer, which refuses the deterministic answer as `draft`. Finding, not fixed: under coverage
+instrumentation the reply took 3.5 s, of which the owner's wiki draft (a second agent) took 1.05 s, History show
+0.45 s and Start 0.27 s; each harness boundary step took 20 to 50 ms. The viewer's tool reply
+(`api-objects-owned-agent-tools`) is about 650 ms because its draft is refused before the writer runs.
+
+**sandbox-live-replay** (`bench/sandbox-live-replay.bench.vibe`). The first real Container run
+(`test/recordings/sandboxes-live.json`, d7d3245c) replayed by `HttpRecording.replay`, a fresh replay client per sample.
+The product's `LiveFactory` runs Start, a write, Stop (checkpoint), Start (restore), a read, Stop and the probe sweep.
+Checks every recorded exchange is claimed, both commands answer `saved`, generations 1 and 2, the contributor role and
+metered minutes that never decrease. It measures the client's overhead only: the recorded run took 26.7 s live.
+
+Limitations: scripted or deterministic models, so no inference latency; node:sqlite or memory stores, not Durable
+Object storage, except the workerd host; injected store faults, not real outages; objects reach each other by fetch,
+not Alchemy RPC; the maintainer comes from configuration and trusted props, not a GitHub sign-in.

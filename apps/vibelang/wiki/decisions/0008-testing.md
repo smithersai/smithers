@@ -397,6 +397,12 @@ Worker source receipt on c5bbf81b: 82 benchmark files passed / 174 cases, one op
 
 Final compatibility on 479f05a3 passes typecheck, 242 unit files / 2,105 cases (one expected failure, four skips), and nine benchmark files / 22 cases (one opt-in skip). Expanded issue/wiki stale-copy checks pass separately timed and instrumented after the anonymous quota reset. No new dependency or tool. The overall strict coverage receipt remains explicitly based on c5bbf81b.
 
+**Defensive-line workloads (0017, lane vl-bench2, 2026-11-11).** `draft-journal-fault` (the three draft writers
+charge their ceiling when a faulty store fails the journal read), `reply-lost-post` (a reply to a post the store lost
+is refused and composes nothing) and `api-objects-maintainer-action-run` (an initial maintainer's Post run reaches the
+owner's role and wiki draft in workerd). Each fails when its guarded behavior is removed. The superseded
+`budgetDecision.charge`, HistoryActions' default arms and default admission, and `toursOf`'s no-op waker are deleted.
+
 **Outside-web proof kernels (0018, third-lane batches 6–12).** Behavioral suites pin Issues failure/key/status
 classification, history page totals and search, mock reply precedence and actor isolation, wiki request/edit
 precedence, action-run recovery and mock-device commands/leases. Executable mutations alter each production guard

@@ -360,12 +360,12 @@ The remaining `worker/` lines, by reason:
 | Lines | Reason |
 |---|---|
 | `Issues.vibe` 131, `Wiki.vibe` 59 | A signed-in person's delegated GitHub reads and writes: owner-only (GitHub sign-in). |
-| `apiObjects.vibe` 252-254 | An agent action run's wiki draft for its owner. `vibelang/Post`'s least role is above viewer (proved `catalogDecision`), and a workerd owner gains a role only by GitHub sign-in: owner-only. Its viewer refusal through a conversation reply is `api-objects-owned-agent-tools`. |
+| `apiObjects.vibe` 252-254 | An agent action run's wiki draft for its owner. Recorded here as owner-only; wrong, now `api-objects-maintainer-action-run` (below). |
 | `SandboxAccounts.vibe` 7, `SandboxMachine.vibe` 3 | Container bindings, present only with a sandbox image: real Cloudflare Containers (VL-35). |
-| `WikiDraft.vibe`, `VipDraft.vibe`, `SpecificationReviewers.vibe` 2 each | Usage fallbacks unreachable in production, above. |
-| `Reply.vibe` 369-370 | A non-busy `StartReply` refusal: a reply id is derived from its post, so only an empty id or a full sequence (2^53-1 events) reaches it. Defensive. |
-| `HistoryActions.vibe` 26, 39, 44; `Objects.vibe` 114, 250-251; `apiObjects.vibe` 122 | Default arms, default parameters and routing defects no production caller reaches. |
-| `budgetDecision.vibe` 60-61 | The superseded `charge` helper, above. |
+| `WikiDraft.vibe`, `VipDraft.vibe`, `SpecificationReviewers.vibe` 2 each | Usage fallbacks; reachable through a failing journal read, now `draft-journal-fault` (below). |
+| `Reply.vibe` 369-370 | A non-busy `StartReply` refusal: a reply to a post the store no longer holds, an empty id or a full sequence. Now `reply-lost-post` (below). |
+| `HistoryActions.vibe` 26, 39, 44; `Objects.vibe` 114, 250-251; `apiObjects.vibe` 122 | Default arms, default parameters and routing defects no production caller reaches. Decided below: deleted, except `Objects.vibe` 250-251; `apiObjects.vibe` 122 is owner-only. |
+| `budgetDecision.vibe` 60-61 | The superseded `charge` helper: deleted (below). |
 
 `worker/Tour.vibe`'s `spoken` (line 6 above) had no production caller and is deleted on main by `5467d0b8`, as
 production code the product never runs.
@@ -537,14 +537,10 @@ the generated wiki matches its preserved browser source map, SHA-256
 This is a full collection plus an explicitly recorded correction, not one green full-roster invocation.
 
 The draft usage-report fallbacks (`worker/WikiDraft.vibe:62`, `worker/VipDraft.vibe:60`,
-`worker/SpecificationReviewers.vibe:53`) are unreachable in the production composition, so no benchmark runs them
-(lane vl-bench2, 2026-11-10). Each meter is `Budget.make({})`, without a spend ledger. `usageOf` fails only when
-journal recovery fails, and recovery with no `Journal` service returns an empty ledger
-(`packages/smithers/agent/src/Budget.ts`, `recoverUsage`). No production layer provides `@smthrs/journal`'s
-`Journal`: `CloudflareRuntime` supplies `JournalDecode.Identity` only, and the memory engine supplies none. A
-workload that injected a failing `Journal` would measure a composition production never builds, so it would be a
-coverage-only call. The lines remain counted; deleting the defensive catch is a product change outside this lane. The legacy
-budgetDecision.charge helper is superseded by reservations. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
+`worker/SpecificationReviewers.vibe:53`) were recorded here as unreachable in production (lane vl-bench2, 2026-11-10).
+That was wrong; see "Defensive lines decided" below: on `CloudflareRuntime`, a failing durable journal read makes
+`usageOf` fail, and `bench/draft-journal-fault.bench.vibe` now runs all three. The legacy budgetDecision.charge
+helper is superseded by reservations and is deleted. These lines remain counted; no artificial successful service, direct coverage-only call or deletion was introduced. Person-owned
 GitHub paths, a matching native VIP fixture, actual Container execution and the previously named unreachable
 routing guards remain as recorded above. A fresh full coverage receipt is still needed for later main changes.
 
@@ -736,3 +732,40 @@ specification: `issueAncestorAt` (25-30) and the functions after `issuesAfter` r
 spec-only function (`~/vl/vibelang-bugs/spec-only-function/`); they stay counted. `src/web/markdown.vibe` fell from 104/106 to 97/106 with no
 change to the file, because its tables and continued list items were credited only by whichever wiki pages the view
 workloads rendered; `markdown-compile` now renders one fixed document with every block the compiler knows.
+
+## Defensive lines decided (lane vl-bench2, 2026-11-10)
+
+The lead ruled as owner (AGENTS.md, no dead code): code that cannot run in production is deleted, with its tests
+adjusted; a guard for a real invariant that a faulty injected service can break gets a workload that breaks it. No
+threshold changed and no line is excluded.
+
+| Lines | Decision | Why |
+|---|---|---|
+| `worker/budgetDecision.vibe` `charge`, `Charge` | Deleted | No caller since reservations replaced it (`reserve`, `settle`). 0018's inventory refreshed; no mutation targeted it. |
+| `worker/HistoryActions.vibe` default arms of `intentOf` and `poll` | Deleted | `ActionRuns` sends only history and sandbox runs to this host. `start` and `receipt` now take a prepared `HistoryInvocation` (`src/actions/execution.vibe`, `isHistory`), so a post or tour cannot reach them. `ActionRuns.start` routes by the prepared invocation. Its alarm prepares the stored request only once the run settled, to read the receipt: a request stored by an older deployment or before a crash may no longer prepare (fuzz `actions/run-hosts`, regression `b924c254907df2e4`). |
+| `worker/HistoryActions.vibe` default `admit` | Deleted | Optional, passed to the SDK's own optional `canStart`, as `Objects.executionHost` already does. |
+| `worker/Objects.vibe` `toursOf`'s no-op `wake` default | Deleted | Required now. Every composition that provides Tours passes the object's one real waker (`tourWaker`) instead of a silent no-op; tests whose tours never wake pass `() => Effect.void`. |
+| `worker/WikiDraft.vibe`, `worker/VipDraft.vibe`, `worker/SpecificationReviewers.vibe` usage fallbacks | Kept; `draft-journal-fault` | The earlier "unreachable" finding was wrong. On `CloudflareRuntime` over object storage, a failing journal entry read fails the agent and then `usageOf` (`BudgetAccountingUnavailable`), as `test/writerAccounting.coverage.test.vibe` already showed. The benchmark injects a faulty storage service (`fuzz/faulty-store.ts`) and requires the failure answer, zero model calls, one `vibelang.budget.usage` warning with outcome `unavailable`, the whole ceiling charged once and the reservation freed. Red check: a fallback that charges zero fails it (spent 0, expected 327,680). |
+| `worker/Reply.vibe` 369-370 | Kept; `reply-lost-post` | `StartReply` refuses a reply to a post the conversation does not hold. A conversation store restored from an older copy answers exactly that to a reply execution that outlived it. The benchmark runs the production reply registration over the real sequencer and such a store: answer null, one `refused` log, no event written, no budget, history or model call. Red check: composing anyway fails it. |
+| `worker/apiObjects.vibe` 122, 252-254 | Covered; `api-objects-maintainer-action-run` | Not defensive and not owner-only: `ActionIdentity.fromAccounts` asks `role` for an owner the accounts allow to act, and the run's wiki draft calls the owner's draft RPC. The earlier claim that a workerd owner gains a role only by GitHub sign-in was wrong: with sign-in configured, `VIBELANG_INITIAL_MAINTAINER_ID` grants the initial maintainer at the accounts object's start. The benchmark starts a `vibelang/Post` run with trusted props naming owner 1 on `test/workerd/bench-api.vibe` and requires History Start's `unknown` (a viewer gets `forbidden`) and the writer's `draft` refusal from the owner's draft. Red check: an owner's draft refused as forbidden fails it. |
+| `worker/SandboxAccounts.vibe` 7, `worker/SandboxMachine.vibe` 3 | Counted; live only | They bind the account and machine Durable Objects to a Container image, so they run only in a deployed stage with Containers. The Container recording (d7d3245c) holds the probe's HTTP exchanges, so `sandbox-live-replay` replays the client side and cannot run them; the lines ran when `pnpm test:sandboxes-live` recorded it on the vl-test stage. Benchmark coverage of a deployed Worker is not collected, so they stay uncovered and counted. |
+| `worker/Objects.vibe` 250-251 (`unrouted`) | Kept, uncovered | `ExecutionObject.make` requires a router; reply and tour executions start no child. Only an engine store holding a child route for one reaches it. A workload would have to forge the engine store's routing rows, coupling a benchmark to SDK internals. The fix belongs in `@smthrs/platform-cloudflare`: an optional router for objects whose flows start no child, with its defect covered by the SDK's own tests. Proposed, not done in this lane. |
+
+**Receipt (lane vl-bench2, 2026-11-11 03:00 to 03:58 UTC).** `pnpm bench:coverage` on a 4-vCPU `playwright` box
+through `run-heavy` (`BENCH_REVISION` set, Chromium installed in the job), merge run regardless of workload exit, at
+`5ec6dd4d` (main `d99515a1` plus this lane's change before the shared `tourWaker`). 98 files passed, 3 failed, 2
+skipped; 203 tests passed, 3 failed, 7 skipped; 180 files merged (113 workerd, 106 Chromium). The failures:
+`bench/scripts.bench.vibe` (box git 2.39, "Off-host runs"), and `sandbox-objects` and `sandbox-faults`, whose
+expectations predated `e50b2cc2` (sandbox refusals name their cause); both now expect the named reasons and pass. The
+box returns only stdout, so totals are not stated; `worker/` has 71 uncovered lines in 8 files:
+
+| File | Uncovered | Reason |
+|---|---|---|
+| `sandboxProbeFetch.vibe`, `SandboxProbe.vibe` | 37, 7 | New probe Worker for the live Container stage (lane vl-containers-live); waits on its recording. |
+| `SandboxAccounts.vibe`, `SandboxMachine.vibe` | 7, 3 | Container bindings (VL-35); wait on `test/recordings/sandboxes-live.json`. |
+| `Issues.vibe` 151, 254, 263-266 | 6 | A stale signed-in read, an unsupported op, the retry after a refused connection: fault paths of the delegated benches (lanes vl-bench, vl-record-replay). |
+| `Wiki.vibe` 105-106, 177-178, 196 | 5 | A connection lost mid-edit, the same retry, a request body that times out: the same lanes' fault paths. |
+| `Objects.vibe` 250-251 | 2 | `unrouted`, above. (285 and 331 were the waker lambdas this change first inlined; one `tourWaker` replaced them.) |
+| `PublicReads.vibe` 38-39 | 2 | Opt-in `BENCH_PUBLIC_GITHUB`, as before. |
+
+New workloads: `draft-journal-fault`, `reply-lost-post`, `api-objects-maintainer-action-run` (wiki/benchmarks.md).

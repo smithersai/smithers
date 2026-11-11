@@ -66,6 +66,10 @@ still wait only 3 seconds for revalidation before answering their copies stale (
 410 records on the first read through both public and accounts boundaries, and require a stalled GitHub to answer
 503 within the bounded wait. Writes keep their existing policy.
 
+Note (lane vl-bench2, 2026-11-10; no policy change): a signed-in issue read waits the whole 12-second deadline when
+GitHub is unreachable. `bench/accounts-offline.bench.vibe` measured 12,091 ms (about 5 s before this amendment); wiki
+still answers within 6 s. Failing fast on a transport error is this decision's owner's call.
+
 ## Amendment: health waits for the start-up it wakes (2026-11-10, lane vl-public-reads)
 
 After the 05:42 deploy, a first `/api/health/objects` read reported Budget, History and ActionIndex `unreachable` and
