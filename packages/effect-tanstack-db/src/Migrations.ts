@@ -33,6 +33,7 @@ import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import type { Key } from "./internal/model.ts"
+import { decodeOutboxValue, encodeOutboxValue } from "./internal/outboxStored.ts"
 import { toJsonSchemaDocument } from "./internal/schemaFingerprintDocument.ts"
 import { decodeStored, encodeKey, encodeStored, quote } from "./internal/stored.ts"
 
@@ -899,6 +900,7 @@ interface StoredMutation {
 }
 
 interface StoredWrite {
+  readonly valueEncoding?: 2 | 3
   readonly mutationFnName: string
   readonly mutations: ReadonlyArray<StoredMutation>
   readonly metadata?: { readonly versions?: Readonly<Record<string, number>>; readonly [field: string]: unknown }
@@ -960,10 +962,28 @@ export const outbox = (registry: Registry): OutboxUpgrade => {
     if (typeof parsed !== "object" || parsed === null || !Array.isArray(parsed.mutations)) return parked("unreadable")
     const name = declaration.renamed?.[parsed.mutationFnName] ?? parsed.mutationFnName
     if (!declaration.mutations.includes(name)) return parked("mutation")
-    const versions = parsed.metadata?.versions ?? declaration.unstamped ?? {}
-    let changed = name !== parsed.mutationFnName || parsed.metadata?.versions === undefined
+    if (parsed.valueEncoding !== undefined && parsed.valueEncoding !== 2 && parsed.valueEncoding !== 3) {
+      return parked("unreadable")
+    }
+    let metadata: StoredWrite["metadata"]
+    let rows: ReadonlyArray<StoredMutation>
+    try {
+      metadata = parsed.valueEncoding === 3
+        ? decodeOutboxValue(parsed.metadata, parsed.valueEncoding) as StoredWrite["metadata"]
+        : parsed.metadata
+      rows = parsed.mutations.map((mutation) => ({
+        ...mutation,
+        modified: decodeOutboxValue(mutation.modified, parsed.valueEncoding),
+        original: decodeOutboxValue(mutation.original, parsed.valueEncoding),
+        changes: decodeOutboxValue(mutation.changes, parsed.valueEncoding)
+      }))
+    } catch {
+      return parked("decode")
+    }
+    const versions = metadata?.versions ?? declaration.unstamped ?? {}
+    let changed = name !== parsed.mutationFnName || metadata?.versions === undefined
     const mutations: Array<StoredMutation> = []
-    for (const mutation of parsed.mutations) {
+    for (const mutation of rows) {
       const declared = payloads.get(mutation.collectionId)
       if (declared === undefined) return parked("collection")
       const from = versions[mutation.collectionId]
@@ -993,14 +1013,24 @@ export const outbox = (registry: Registry): OutboxUpgrade => {
     const stamped = Object.fromEntries(
       parsed.mutations.map((mutation) => [mutation.collectionId, stamp[mutation.collectionId]])
     )
-    return {
-      _tag: "Upgraded",
-      value: JSON.stringify({
-        ...parsed,
-        mutationFnName: name,
-        mutations,
-        metadata: { ...parsed.metadata, versions: stamped }
-      })
+    try {
+      return {
+        _tag: "Upgraded",
+        value: JSON.stringify({
+          ...parsed,
+          valueEncoding: 3,
+          mutationFnName: name,
+          mutations: mutations.map((mutation) => ({
+            ...mutation,
+            modified: encodeOutboxValue(mutation.modified),
+            original: encodeOutboxValue(mutation.original),
+            changes: encodeOutboxValue(mutation.changes)
+          })),
+          metadata: encodeOutboxValue({ ...metadata, versions: stamped })
+        })
+      }
+    } catch {
+      return parked("invalid")
     }
   }
   return { stamp, write }

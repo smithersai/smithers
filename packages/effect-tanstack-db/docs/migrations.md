@@ -97,6 +97,10 @@ Outbox.layer({
   A write from before stamping takes the declared `unstamped` versions.
 - **Upgrade.** Before the library loads the stored writes, each one an older
   build made is brought to this build's payload versions and stored again.
+  Rows are decoded from the outbox serializer's value encoding before schema
+  checks; upgraded writes retain dates, Temporal values and objects with their
+  own `__type` field. Older value encodings are read using their original
+  meaning and upgraded writes use encoding `3`.
   Upgrading twice writes the same bytes. A write the storage fails to upgrade
   or park stays stored and unsent; a later start carries it.
 - **Park.** A write naming a mutation or collection this build doesn't have, at

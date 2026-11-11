@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Outbox payload migrations preserve dates, Temporal values and marker-shaped
+  user objects instead of parking valid rows or losing their value types.
+
 - A storage failure while `Outbox.layer` upgrades older builds' writes no longer
   lets the library send the writes it didn't reach with their old rows: each
   stays stored, unsent, until a later start upgrades or parks it.
