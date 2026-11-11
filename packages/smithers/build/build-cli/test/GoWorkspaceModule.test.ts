@@ -318,6 +318,31 @@ export const Package = S.Package({ targets: {
   }, 240_000)
 })
 
+describe.runIf(launcher !== undefined && canConfine)("offline Go rules", () => {
+  it("keep the declared GOFLAGS and add -mod=readonly", async () => {
+    const root = await module(
+      `export const Package = S.Package({ targets: {
+  filtered: S.Go.Test({ pkgs: ["./"], offline: true, env: { GOFLAGS: "-run=^TestProbe$ -p=2 -trimpath" }, sandbox: {} }),
+  vendor: S.Go.Test({ pkgs: ["./"], offline: true, env: { GOFLAGS: "-mod=mod -run=^TestProbe$" }, sandbox: {} })
+} })`,
+      {
+        files: {
+          "filter_test.go":
+            "package main\nimport \"testing\"\nfunc TestMustBeFiltered(t *testing.T) { t.Fatal(\"SELECTOR_IGNORED\") }\n"
+        }
+      }
+    )
+    const filtered = await ran(root, ["test", "//:filtered"])
+    expect(filtered.exitCode, filtered.text).toBe(0)
+    expect(filtered.text).not.toContain("SELECTOR_IGNORED")
+    // offline means the module graph cannot change; a declared -mod=mod says it may.
+    const vendor = await ran(root, ["test", "//:vendor"])
+    expect(vendor.exitCode).toBe(1)
+    expect(vendor.text).toContain("offline")
+    expect(vendor.text).toContain("-mod=mod")
+  }, 240_000)
+})
+
 describe.runIf(launcher !== undefined && canConfine)("confined Go actions", () => {
   it("share the workspace's compile cache between actions", async () => {
     const root = await module(

@@ -183,10 +183,10 @@ describe("Go planning contracts", () => {
     const online = await GoExec.planRule("Go.Lint", attrs, context, "/selected/bin/go")
     const offline = await GoExec.planRule("Go.Lint", { ...attrs, offline: true }, context, "/selected/bin/go")
     expect(online.env).toEqual({ CUSTOM: "kept", GOFLAGS: "-tags=custom" })
-    // targets/docs/guides/go.md specifies the offline GOFLAGS=-mod=readonly override.
+    // targets/docs/guides/go.md: offline appends -mod=readonly to the declared GOFLAGS.
     expect(offline.env).toEqual({
       CUSTOM: "kept",
-      GOFLAGS: "-mod=readonly",
+      GOFLAGS: "-tags=custom -mod=readonly",
       GOPROXY: "off",
       GOMODCACHE: "cache/modules"
     })

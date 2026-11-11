@@ -520,6 +520,47 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     )
   })
 
+  it.each(
+    [
+      ["no declared flags", undefined, "-mod=readonly"],
+      ["a test selector", "-run=^TestX$ -p=8 -trimpath", "-run=^TestX$ -p=8 -trimpath -mod=readonly"],
+      ["a vendored build", "-mod=vendor -trimpath", "-mod=vendor -trimpath"],
+      ["a declared readonly", "--mod=readonly", "--mod=readonly"]
+    ] as const
+  )("keeps %s in an offline GOFLAGS", async (_name, declared, flags) => {
+    const planned = await GoExec.planRule(
+      "Go.Unknown",
+      { offline: true, ...(declared === undefined ? {} : { env: { GOFLAGS: declared } }) },
+      host.context,
+      goPath()
+    )
+    expect(planned.refusal).toBeUndefined()
+    expect(planned.env).toEqual({ GOPROXY: "off", GOFLAGS: flags })
+  })
+
+  it("refuses an offline rule whose GOFLAGS let go change the module graph", async () => {
+    // The last -mod wins in go, so a later -mod=mod overrides an earlier readonly.
+    for (const declared of ["-mod=mod", "-mod=readonly -run=X -mod=mod"]) {
+      const planned = await GoExec.planRule(
+        "Go.Test",
+        { offline: true, pkgs: ["./lib"], env: { GOFLAGS: declared } },
+        host.context,
+        goPath()
+      )
+      expect(planned.refusal).toBe(
+        "offline: true keeps the module graph fixed, but env.GOFLAGS declares -mod=mod, which may change it"
+      )
+      expect(planned.argv).toBeUndefined()
+    }
+    // Online, the same flags are the declaration's business.
+    expect((await GoExec.planRule("Go.Unknown", { env: { GOFLAGS: "-mod=mod" } }, host.context, goPath())).env).toEqual(
+      {
+        GOFLAGS: "-mod=mod"
+      }
+    )
+    expect(await host.calls()).toEqual([])
+  })
+
   it("plans module download, lint and offline runs without go list", async () => {
     const download = await GoExec.planRule("Go.ModDownload", { outDirs: ["cache"] }, host.context, goPath())
     expect(download).toEqual({

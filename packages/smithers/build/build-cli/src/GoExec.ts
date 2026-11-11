@@ -610,6 +610,9 @@ const fetchedModuleCache = (context: Context, attrs: Record<string, unknown>): s
   return undefined
 }
 
+/** The last `-mod` mode one `GOFLAGS` value declares, which is the one `go` applies. */
+const moduleMode = (flags: string): string | undefined => [...flags.matchAll(/(?:^|\s)--?mod=(\S*)/g)].at(-1)?.[1]
+
 /**
  * The graph environment plus the fetch-shaping knobs `offline` declares.
  *
@@ -621,7 +624,13 @@ const environment = (context: Context, attrs: Record<string, unknown>): Record<s
   const env = graphEnvironment(context, attrs)
   if (attrs["offline"] === true) {
     env["GOPROXY"] = "off"
-    env["GOFLAGS"] = "-mod=readonly"
+    // The declared flags stay: replacing them dropped `-run` selectors,
+    // `-trimpath` and `-p` without a word. A declared `-mod=vendor` is already
+    // offline; `-mod=mod` is refused by `planRule`.
+    const declared = (env["GOFLAGS"] ?? "").trim()
+    env["GOFLAGS"] = moduleMode(declared) === undefined
+      ? [declared, "-mod=readonly"].filter((part) => part !== "").join(" ")
+      : declared
     const cache = fetchedModuleCache(context, attrs)
     if (cache !== undefined) env["GOMODCACHE"] = cache
   }
@@ -654,6 +663,16 @@ export const planRule = async (
   const listEnv = { ...hostEnvironment(context), ...graphEnvironment(context, attrs) }
   const authority = moduleFiles(context)
   const cwd = moduleRelative(context) === "" ? "." : moduleRelative(context)
+  if (attrs["offline"] === true && moduleMode(env["GOFLAGS"] ?? "") === "mod") {
+    return {
+      refusal: "offline: true keeps the module graph fixed, but env.GOFLAGS declares -mod=mod, which may change it",
+      cwd,
+      env,
+      outDirs: [],
+      writeSet: [],
+      readSet: []
+    }
+  }
   if (rule === "Go.Packages") {
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
     const graph = await closure(packages, context, goPath, listEnv)

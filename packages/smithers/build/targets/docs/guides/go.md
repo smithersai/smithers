@@ -62,7 +62,12 @@ reading. Go's fuzz corpus cache in the same directory is not touched.
 
 ## Offline builds and key material
 
-`offline: true` adds `GOPROXY=off` and `GOFLAGS=-mod=readonly` to the run.
+`offline: true` sets `GOPROXY=off` and appends `-mod=readonly` to the
+declared `GOFLAGS`, so selectors and build flags stay:
+`env: { GOFLAGS: "-run=^TestParse$ -trimpath" }` runs with
+`-run=^TestParse$ -trimpath -mod=readonly`. A declared `-mod=vendor` is kept as
+is. A declared `-mod=mod`, which lets `go` change the module graph, refuses an
+offline target.
 
 For a binary, the `goos`, `goarch`, CGO setting, experiments, ordinary
 ldflags, and the resolved toolchain are all key material. Stamp values are
