@@ -11,7 +11,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, test } from "vitest"
 import { digestOf, validationErrors } from "../scripts/refresh-failure-codes.mjs"
 
@@ -147,6 +147,38 @@ describe("failure-code refresh CLI", () => {
       writeFileSync(external, JSON.stringify(schemaVersion))
       expect(files.run("--from", external).status).toBe(1)
       expect(readFileSync(files.generated, "utf8")).toBe(clean)
+    } finally {
+      rmSync(files.root, { recursive: true, force: true })
+    }
+  })
+
+  test.each([" ", "\n"])("escapes every documentation comment terminator with separator %j", (separator) => {
+    const files = fixture()
+    try {
+      const doc = [
+        "Account cap */ \"injected\": { fault: \"wait\", status: 500, retryAfter: 0 }, /*",
+        "*/ \"injected_again\": { fault: \"wait\", status: 500, retryAfter: 0 }, /*"
+      ].join(separator)
+      const codes = files.document.codes.map((row) => ({ ...row, doc }))
+      const document = { ...files.document, digest: digestOf(codes), codes }
+      writeFileSync(files.source, JSON.stringify(document))
+
+      const refresh = files.run("--from", files.plue)
+      expect(refresh.status, refresh.stderr).toBe(0)
+      expect(JSON.parse(readFileSync(files.vendored, "utf8"))).toEqual(document)
+
+      const imported = spawnSync(process.execPath, [
+        "--input-type=module",
+        "--eval",
+        "import * as registry from " + JSON.stringify(pathToFileURL(files.generated).href)
+        + "\nconsole.log(JSON.stringify({ codes: registry.PLUE_FAILURE_CODES, failures: registry.PLUE_FAILURES }))"
+      ], { encoding: "utf8", timeout: 5_000 })
+      expect(imported.status, imported.stderr).toBe(0)
+      expect(JSON.parse(imported.stdout)).toEqual({
+        codes: ["quota_exceeded"],
+        failures: { quota_exceeded: { fault: "wait", status: 429, retryAfter: 60 } }
+      })
+      expect(readFileSync(files.generated, "utf8")).toContain("*\\/")
     } finally {
       rmSync(files.root, { recursive: true, force: true })
     }
