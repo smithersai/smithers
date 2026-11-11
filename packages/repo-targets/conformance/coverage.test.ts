@@ -57,15 +57,22 @@ describe("coverage conformance", () => {
         // prove uniqueness, privacy, location or cleanup. Bun itself uses its
         // native coverage lane and does not create a V8 report directory.
         const directories = Array.from({ length: 2 }, () => {
-          const output = execFileSync(process.execPath, ["--input-type=module", "--eval", `
+          const output = execFileSync(process.execPath, [
+            "--input-type=module",
+            "--eval",
+            `
             import config from ${JSON.stringify(pathToFileURL(entry.path).href)};
             import { realpathSync, statSync } from "node:fs";
             const directory = config.test.coverage.reportsDirectory;
             console.log(JSON.stringify({ directory: realpathSync(directory), mode: statSync(directory).mode }));
-          `], { cwd: dirname(entry.path), encoding: "utf8" })
+          `
+          ], { cwd: dirname(entry.path), encoding: "utf8" })
           const { directory, mode } = JSON.parse(output) as { directory: string; mode: number }
           const path = relative(realpathSync(dirname(packagesDir)), directory)
-          assert.ok(path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path), "reports must stay outside discovery")
+          assert.ok(
+            path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path),
+            "reports must stay outside discovery"
+          )
           if (process.platform !== "win32") assert.equal(mode & 0o777, 0o700)
           assert.equal(existsSync(directory), false, "runner exit must reclaim its private reports")
           return directory
@@ -267,7 +274,9 @@ describe("coverage conformance", () => {
       else if (inTest) settings.push(line)
     }
     const test = settings.join("\n")
-    const ignored = [...(/^coveragePathIgnorePatterns\s*=\s*\[([^\]]*)\]/m.exec(test)?.[1] ?? "").matchAll(/"([^"]+)"/g)]
+    const ignored = [
+      ...(/^coveragePathIgnorePatterns\s*=\s*\[([^\]]*)\]/m.exec(test)?.[1] ?? "").matchAll(/"([^"]+)"/g)
+    ]
       .map((match) => match[1]!)
     return /^coverage\s*=\s*true\s*$/m.test(test) && /^coverageThreshold\s*=\s*1(?:\.0+)?\s*$/m.test(test) &&
       !measured.some((file) => ignored.some((glob) => matchesGlob(file, glob))) &&
@@ -462,8 +471,7 @@ describe("coverage conformance", () => {
    * ones, which is the opposite of the #147 hazard: under a 100% gate a
    * per-file key REMOVES its file from the global check, but under a measured
    * floor it adds a second, tighter gate over the modules an aggregate
-   * dominated by well-covered code would otherwise hide. `@smthrs/build-cli`
-   * pins nine such files over the process-spawning and publishing backends.
+   * dominated by well-covered code would otherwise hide.
    * A `[^{}]*` capture cannot see past the first nested object, so it matched
    * nothing at all there and the cell read as "no thresholds declared". Brace
    * matching the block and then dropping the nested objects leaves exactly
@@ -525,6 +533,56 @@ describe("coverage conformance", () => {
     assert.throws(() =>
       assertMigrationCoverageFloor(
         "thresholds: { branches: 84, functions: 94, lines: 95.5, statements: 93 }"
+      )
+    )
+  })
+
+  /** The build CLI's measured floor is a ratchet, without weaker file overrides. */
+  const buildCliBaseline = { branches: 91.16, functions: 96.61, lines: 96.84, statements: 95.57 }
+  const assertBuildCliCoverageFloor = (source: string) => {
+    const coverage = block(source, "coverage")
+    const pinned = block(coverage ?? "", "thresholds")
+    assert.notEqual(pinned, null)
+    assert.doesNotMatch(pinned!, /[{}]/, "build-cli coverage must not carry file overrides")
+    const values = [...pinned!.matchAll(/\b(branches|functions|lines|statements):\s*(\d+(?:\.\d+)?)/g)]
+    assert.equal(values.length, 4)
+    for (const [category, minimum] of Object.entries(buildCliBaseline)) {
+      const matches = values.filter((value) => value[1] === category)
+      assert.equal(matches.length, 1, `build-cli must declare one ${category} threshold`)
+      const value = Number(matches[0]![2])
+      assert.ok(value >= minimum && value <= 100, `build-cli ${category} coverage must be at least ${minimum}%`)
+    }
+    assert.equal(pinned!.replace(/\b(?:branches|functions|lines|statements):\s*\d+(?:\.\d+)?\s*,?/g, "").trim(), "")
+    assertCoverageDenominator("smithers/build/build-cli", source)
+  }
+
+  it("build-cli pins every category to at least its measured coverage baseline", () => {
+    assertBuildCliCoverageFloor(configs.find((config) => config.name === "smithers/build/build-cli")!.source)
+  })
+
+  it("rejects build-cli floor regressions, missing categories and file overrides", () => {
+    const source = `coverage: { enabled: true, provider: "v8", include: ["src/**"], thresholds: {
+      branches: 91.16, functions: 96.61, lines: 96.84, statements: 95.57
+    } }`
+    assertBuildCliCoverageFloor(source)
+    assertBuildCliCoverageFloor(source.replace(/91.16|96.61|96.84|95.57/g, "100"))
+    for (const [category, minimum] of Object.entries(buildCliBaseline)) {
+      const pattern = new RegExp(`\\b${category}:\\s*\\d+(?:\\.\\d+)?`)
+      for (const value of [minimum - 0.01, minimum - 1, 0, 100.01]) {
+        assert.throws(() => assertBuildCliCoverageFloor(source.replace(pattern, `${category}: ${value}`)))
+      }
+      assert.throws(() => assertBuildCliCoverageFloor(source.replace(pattern, "")))
+      assert.throws(() => assertBuildCliCoverageFloor(source.replace(pattern, `${category}: 100, ${category}: 100`)))
+    }
+    for (const extra of [`"src/Backend.ts": { branches: 70 },`, "autoUpdate: true,", "perFile: false,"]) {
+      assert.throws(() => assertBuildCliCoverageFloor(source.replace("thresholds: {", `thresholds: { ${extra}`)))
+    }
+    assert.throws(() =>
+      assertBuildCliCoverageFloor(source.replace("include: [\"src/**\"]", "include: [\"src/One.ts\"]"))
+    )
+    assert.throws(() =>
+      assertBuildCliCoverageFloor(
+        source.replace("include: [\"src/**\"]", "include: [\"src/**\"], exclude: [\"src/Hidden.ts\"]")
       )
     )
   })
@@ -749,7 +807,6 @@ describe("coverage conformance", () => {
       // re-decoding a surviving entry cannot fail; the branch exists because
       // `Result` has no way to carry that proof. Its twin left with the
       // transcript-replacement branch a `continue` used to take.
-      "smithers/agent/harness/src/Transcript.ts": 1,
       // Published journal values come from acyclic decoded JSON; synchronous
       // queue size/take cannot disagree while admission is open; and bytes
       // just emitted by the JSON encoder decode immediately. The three guards

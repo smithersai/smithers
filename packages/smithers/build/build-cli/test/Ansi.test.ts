@@ -67,3 +67,8 @@ describe("Ansi.truncate with a broken escape", () => {
     expect(Ansi.truncate(`abc${esc}[9`, 2)).toBe("a…")
   })
 })
+
+it("ends truncation safely when an unfinished escape is reached before the visible limit", () => {
+  expect(Ansi.truncate("a\u001b[123", 3)).toBe("a…")
+  expect(Ansi.truncate("\u001b[123", 3)).toBe("…")
+})

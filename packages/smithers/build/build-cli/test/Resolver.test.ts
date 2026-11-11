@@ -325,6 +325,23 @@ describe("package resolution", () => {
     expect(outcome.result.unresolved).toEqual([])
   })
 
+  it.each(
+    [
+      ["conditional array", { ".": { import: ["./index.js"], require: "./index.cjs" } }, true],
+      ["nested alternative", { ".": [null, { node: "./index.js" }] }, true],
+      ["blocked conditions", { ".": { import: null, require: null } }, false]
+    ] as const
+  )("classifies a package with %s exports", async (_name, exports, admitted) => {
+    await write("entry.ts", "import \"choices\"\n")
+    await write("node_modules/choices/package.json", JSON.stringify({ name: "choices", exports }))
+    await write("node_modules/choices/index.js", "export const value = 1\n")
+    await write("node_modules/choices/index.cjs", "module.exports = 1\n")
+    const outcome = await closureOf(["entry.ts"])
+    expect(paths(outcome)).toEqual(["entry.ts"])
+    expect(outcome.result.packages).toEqual(admitted ? ["choices"] : [])
+    expect(outcome.result.unresolved).toEqual(admitted ? [] : [{ file: "entry.ts", specifier: "choices" }])
+  })
+
   it("marks a subpath the exports map blocks as unresolved", async () => {
     await write("entry.ts", `import "walled/secret"\n`)
     await write(

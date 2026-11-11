@@ -12,6 +12,12 @@ import * as RepositoryProcess from "../src/internal/RepositoryProcess.ts"
 import * as RepoResolution from "../src/RepoResolution.ts"
 import { fixture } from "./helpers/RepositoryProcess.ts"
 
+/** Coverage adds this worker's directory; every other environment key remains exact. */
+const coverageEnvironment = (): Readonly<Record<string, string>> => {
+  const directory = process.env["NODE_V8_COVERAGE"]
+  return directory === undefined ? {} : { NODE_V8_COVERAGE: directory }
+}
+
 let host = fixture()
 afterEach(async () => {
   await host.cleanup()
@@ -67,7 +73,7 @@ describe("child repository queries", () => {
         "--format",
         "json"
       ],
-      options: { cwd: resolution.absolutePath, env: { KEEP: "1" } }
+      options: { cwd: resolution.absolutePath, env: { KEEP: "1", ...coverageEnvironment() } }
     })
   })
 
@@ -229,7 +235,9 @@ describe("child repository git state", () => {
       ["-C", local.absolutePath, "rev-parse", "HEAD"],
       ["-C", local.absolutePath, "status", "--porcelain"]
     ])
-    for (const row of host.requests) expect(row.options.env).toEqual({ KEEP: "1", GIT_CEILING_DIRECTORIES: checkout })
+    for (const row of host.requests) {
+      expect(row.options.env).toEqual({ KEEP: "1", GIT_CEILING_DIRECTORIES: checkout, ...coverageEnvironment() })
+    }
   })
 
   it.each(["HEAD", "status"] as const)("reports a failed %s read", async (phase) => {
@@ -280,7 +288,7 @@ describe("child repository execution", () => {
       options: {
         cwd: resolution.absolutePath,
         detached: true,
-        env: { KEEP: "1", BRIDGE: "1", SMTHRS_REPO_CHILD: "1" },
+        env: { KEEP: "1", BRIDGE: "1", SMTHRS_REPO_CHILD: "1", ...coverageEnvironment() },
         stdio: ["ignore", "pipe", "pipe"]
       }
     })

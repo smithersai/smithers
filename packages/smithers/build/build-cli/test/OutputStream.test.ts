@@ -145,3 +145,20 @@ describe("bounded live subprocess output", () => {
     }).not.toThrow()
   })
 })
+
+it("ignores chunks after the shared output bound and after close", () => {
+  const lines: Array<string> = []
+  const observer = OutputStream.make({
+    maximumLines: 1,
+    write: (_stream, text) => lines.push(text)
+  })
+  observer.onStdout(Buffer.from("first\nsecond\n"))
+  observer.onStderr(Buffer.from("after limit\n"))
+  observer.close()
+  observer.onStdout(Buffer.from("after close\n"))
+  observer.onStderr(Buffer.from("after close\n"))
+  expect(lines).toEqual([
+    "first\n",
+    "… live output limit reached; captured task output is unchanged\n"
+  ])
+})

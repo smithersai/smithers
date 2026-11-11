@@ -188,6 +188,28 @@ describe("plans remember file digests between invocations", () => {
     expect((await DigestIndexFile.load(root, ".flows")).rows.has(Path.join(root, "src/a/two.txt"))).toBe(false)
   })
 
+  it("persists clearing remembered rows and leaves an already empty index untouched", async () => {
+    const root = await workspace()
+    const file = Path.join(root, "src/a/one.txt")
+    const index = SafeFs.makeDigestIndex([[file, { status: "settled", digest: "a".repeat(64), settled: true }]])
+    index.used.add(file)
+    await DigestIndexFile.save(root, ".flows", index)
+    const loaded = await DigestIndexFile.load(root, ".flows")
+    expect([...loaded.rows.keys()]).toEqual([file])
+
+    loaded.rows.clear()
+    await DigestIndexFile.save(root, ".flows", loaded)
+    const empty = await DigestIndexFile.load(root, ".flows")
+    expect(empty.rows.size).toBe(0)
+
+    const saved = DigestIndexFile.path(root, ".flows")
+    const before = await Fs.stat(saved, { bigint: true })
+    empty.rows.clear()
+    await DigestIndexFile.save(root, ".flows", empty)
+    const after = await Fs.stat(saved, { bigint: true })
+    expect([after.ino, after.mtimeNs, after.size]).toEqual([before.ino, before.mtimeNs, before.size])
+  })
+
   it("saves only settled rows, the ones a plan used first", async () => {
     const root = await workspace()
     const digest = "a".repeat(64)

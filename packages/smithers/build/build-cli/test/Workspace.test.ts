@@ -360,3 +360,18 @@ describe("withheldEnvironment", () => {
     expect(withheldEnvironment(lower, undefined)).toEqual(expected)
   })
 })
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "ignores a remote config that exists but cannot be read",
+  async () => {
+    const root = await temporaryRoot()
+    await config(root, ".git/config", "[remote \"origin\"]\nurl = git@jjhub.tech:owner/repo.git\n")
+    const path = NodePath.join(root, ".git/config")
+    await Fs.chmod(path, 0o000)
+    try {
+      expect(await discoverSmithersCloudRepository(root, {})).toBeUndefined()
+    } finally {
+      await Fs.chmod(path, 0o600)
+    }
+  }
+)

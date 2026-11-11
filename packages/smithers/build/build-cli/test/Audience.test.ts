@@ -149,3 +149,80 @@ it("honors the executable's authoritative MCP selection instead of reinterpretin
   expect(Audience.fromArguments([], { env: {}, mcp: true }).source).toBe("mcp")
   expect(Audience.fromArguments(["--mcp"], { env: {}, stdout: false, stderr: false }).source).toBe("mcp")
 })
+
+describe("presentation argument boundaries", () => {
+  it("shows human progress with redirected stdin without enabling prompts", () => {
+    expect(Audience.resolve({ stdin: false, stdout: true, stderr: true, env: {} })).toMatchObject({
+      audience: "human",
+      source: "terminal",
+      structured: false,
+      progress: "live",
+      interactive: false
+    })
+  })
+
+  it("keeps MCP authoritative with the real ambient process environment", () => {
+    expect(Audience.resolve({ mcp: true, stdin: false, stdout: false, stderr: false })).toMatchObject({
+      audience: "agent",
+      source: "mcp",
+      structured: true,
+      progress: "silent",
+      interactive: false
+    })
+  })
+
+  it.each(["auto", "", " "])("lets the terminal select the audience for environment mode %j", (mode) => {
+    expect(Audience.resolve({ ...terminal, env: { SMITHERS_AUDIENCE: mode } })).toMatchObject({
+      audience: "human",
+      source: "terminal",
+      progress: "live"
+    })
+  })
+
+  it.each([["--audience", "invalid"], ["--audience=invalid"], ["--audience"]])(
+    "preserves the host audience for invalid or missing flag values %j",
+    (...args) => {
+      expect(Audience.fromArguments(args, { ...terminal, env: {}, audience: "agent" })).toMatchObject({
+        audience: "agent",
+        source: "override",
+        progress: "silent"
+      })
+    }
+  )
+
+  it.each(["--no-silent", "--silent=false"])("lets %s restore explicitly verbose agent progress", (flag) => {
+    expect(Audience.fromArguments(["--quiet", "--verbose=true", flag], {
+      ...terminal,
+      env: { CLAUDECODE: "1" }
+    })).toMatchObject({
+      audience: "agent",
+      progress: "plain",
+      interactive: false
+    })
+  })
+
+  it.each(["--json", "--format", "--format=jsonl"])(
+    "keeps human progress while %s selects structured results",
+    (flag) => {
+      expect(Audience.fromArguments([flag], { ...terminal, env: {} })).toMatchObject({
+        audience: "human",
+        structured: true,
+        progress: "live",
+        interactive: true
+      })
+    }
+  )
+
+  it("does not interpret application format flags beyond the argument fence", () => {
+    const policy = Audience.resolve({ ...terminal, env: {}, audience: "agent" })
+    expect(Audience.incurArguments(["flow", "list", "--", "--format=jsonl"], policy)).toEqual([
+      "--format",
+      "toon",
+      "flow",
+      "list",
+      "--",
+      "--format=jsonl"
+    ])
+    expect(Audience.fromArguments(["--", "--format=jsonl"], { ...terminal, env: {} }).structured).toBe(false)
+  })
+})

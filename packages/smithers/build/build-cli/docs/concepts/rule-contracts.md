@@ -93,9 +93,12 @@ cancellation, and byte limits at N-1, N, and N+1. `PlannedRule.types.ts`
 contains negative compilation tests for invalid rule/lane, command,
 output, service, and execution-policy combinations.
 
-The original PackageExec coverage floor also gates the combined extracted
-planner, runner, policy, and native rule modules. Moving code does not remove
-it from the gate. Existing per-backend floors remain in place.
+The aggregate coverage gate includes every implementation file, including the
+extracted planner, runner, policy, and native rule modules. Its measured floors
+are statements `95.57%`, branches `91.16%`, functions `96.61%`, and lines
+`96.84%`, with no weaker file overrides. Conformance checks prevent the floors
+from falling. Add behavioral cases and raise the floors toward `100%`; moving
+code does not remove it from the gate.
 
 ## Current scheduler and dispatch owners
 
