@@ -63,6 +63,6 @@ it.live("restores the execution coordinate omitted by a legacy primary failure",
       Effect.provideService(Jj.Jj, jj),
       Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layerAt(":memory:"))
+      Effect.provide(TestStores.matrixLayer())
     )
   )))

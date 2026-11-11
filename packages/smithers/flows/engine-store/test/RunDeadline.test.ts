@@ -1,4 +1,3 @@
-import { TestSchemas } from "@smthrs/database"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A flow's `deadline` survives a restart on the durable engine: the start it
@@ -18,7 +17,6 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -233,7 +231,7 @@ describe("Flow deadline across trampoline rounds", () => {
       Effect.gen(function*() {
         const directory = mkdtempSync(join(tmpdir(), "run-deadline-lineage-"))
         yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(directory, { recursive: true, force: true })))
-        const filename = join(directory, "engine.db")
+        const filename = yield* TestStores.matrixAt(join(directory, "engine.db"))
         const parked = yield* lineageIncarnation(
           filename,
           "run-deadline-first",
@@ -255,9 +253,13 @@ describe("Flow deadline across trampoline rounds", () => {
           filename,
           "run-deadline-second",
           Effect.gen(function*() {
-            for (let minute = 0; minute < 25 && (yield* gatedRow).status === "suspended"; minute++) {
+            // Poll in real time between virtual minutes: on PostgreSQL the
+            // resumed round passes through `running` while its writes are in
+            // flight, so only a terminal status ends the wait.
+            const open = Effect.map(gatedRow, (row) => !RunStore.isTerminalRunStatus(row.status))
+            for (let minute = 0; minute < 25 && (yield* open); minute++) {
               yield* TestClock.adjust("1 minute")
-              for (let poll = 0; poll < 100 && (yield* gatedRow).status === "suspended"; poll++) {
+              for (let poll = 0; poll < 100 && (yield* open); poll++) {
                 yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
               }
             }
@@ -310,21 +312,7 @@ it.effect("deadline expiry cancels the persisted attached tree after reopening i
     Effect.gen(function*() {
       const directory = mkdtempSync(join(tmpdir(), "run-deadline-tree-"))
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(directory, { recursive: true, force: true })))
-      const pgUrl = process.env.SMITHERS_TEST_PG_URL
-      const schema = TestSchemas.schemaName("deadline_tree")
-      const uri = pgUrl === undefined ? undefined : new URL(pgUrl)
-      uri?.searchParams.set("schema", schema)
-      const filename = uri?.toString() ?? join(directory, "engine.db")
-      if (uri !== undefined) {
-        yield* Effect.addFinalizer(() =>
-          Effect.scoped(
-            Effect.flatMap(SqlClient.SqlClient, (sql) => TestDatabase.dropSchema(sql, schema)).pipe(
-              Effect.provide(TestStores.databaseAt(filename)),
-              Effect.orDie
-            )
-          )
-        )
-      }
+      const filename = yield* TestStores.matrixAt(join(directory, "engine.db"))
       yield* treeIncarnation(filename, "tree-before", (engine) =>
         Effect.gen(function*() {
           yield* engine.execute(TreeParent, { executionId: "tree-parent", payload: {}, discard: true })

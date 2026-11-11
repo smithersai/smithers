@@ -12,7 +12,7 @@
  * @since 0.1.0
  */
 
-import { DurableWriter, PostgresDatabase } from "@smthrs/database"
+import { DurableWriter, PostgresDatabase, TestSchemas } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import type * as Consensus from "@smthrs/journal/Consensus"
@@ -24,6 +24,8 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import type * as Scope from "effect/Scope"
+import * as SqlClient from "effect/sql/SqlClient"
 import * as DurableEngineState from "../DurableEngineState.ts"
 import * as Migrations from "../Migrations.ts"
 import * as OwnerIdentity from "../OwnerIdentity.ts"
@@ -88,24 +90,15 @@ export const layer = (options?: TestStoresOptions) =>
     Layer.effect(DurableWriter.DurableWriter, DurableWriter.DurableWriter)
   ).pipe(Layer.provide(database), Layer.merge(OwnerIdentity.layer))
 
-/**
- * The same schema over a named SQLite database or PostgreSQL URL, with the connection exposed.
- *
- * {@link database} hides `SqlClient` behind the stores it provisions, which is
- * right for a case that only needs an engine. Two other shapes need the
- * connection itself: a composition that adds another SQL-backed service over
- * the same database (a control runtime, for one), and a case that has to prove
- * cross-process durability, which needs a persistent identity rather than the private
- * in-memory database each `:memory:` connection gets to itself.
- *
- * @category layers
- * @since 0.1.0
- */
-export const databaseAt = (filename: string) => {
-  const url = /^postgres(?:ql)?:/.test(filename) ? new URL(filename) : undefined
+const postgresUrl = (filename: string): URL | undefined =>
+  /^postgres(?:ql)?:/.test(filename) ? new URL(filename) : undefined
+
+/** The bare connection a filename names: a SQLite file or `:memory:`, or a PostgreSQL URL with `?schema=`. */
+const connectionAt = (filename: string) => {
+  const url = postgresUrl(filename)
   const schema = url?.searchParams.get("schema") ?? undefined
   url?.searchParams.delete("schema")
-  const database = url === undefined ?
+  return url === undefined ?
     NodeDatabase.layer({ filename }) :
     // The driver loads only for a PostgreSQL store, so a SQLite case needs none.
     Layer.unwrap(
@@ -120,8 +113,36 @@ export const databaseAt = (filename: string) => {
         )
       )
     )
-  return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), database))
 }
+
+const migratedOver = <E, R>(connection: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+  Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), connection))
+
+/**
+ * The same schema over a named SQLite database or PostgreSQL URL, with the connection exposed.
+ *
+ * {@link database} hides `SqlClient` behind the stores it provisions, which is
+ * right for a case that only needs an engine. Two other shapes need the
+ * connection itself: a composition that adds another SQL-backed service over
+ * the same database (a control runtime, for one), and a case that has to prove
+ * cross-process durability, which needs a persistent identity rather than the private
+ * in-memory database each `:memory:` connection gets to itself.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const databaseAt = (filename: string) => migratedOver(connectionAt(filename))
+
+const storesOver = <E, R>(database: ReturnType<typeof migratedOver<E, R>>, options?: TestStoresOptions) =>
+  Layer.mergeAll(
+    ownedStores(options),
+    AttemptStore.layer,
+    CacheStore.layer,
+    PlanStore.layer,
+    PlanInputStore.layer,
+    PlanMergeStore.layer,
+    DurableEngineState.layer
+  ).pipe(Layer.provideMerge(database), Layer.merge(OwnerIdentity.layer))
 
 /**
  * Every durable engine service over one named database, connection included.
@@ -134,18 +155,90 @@ export const databaseAt = (filename: string) => {
  * for the same reason: its in-memory variant is a map that a second bundle
  * would not see.
  *
- * Pass `:memory:` for the cheap variant when the connection is still needed.
+ * Pass `:memory:` for the cheap variant when the connection is still needed,
+ * and only when the case's subject is SQLite itself: a fixed filename runs on
+ * SQLite in both legs of the storage matrix. {@link matrixLayer} and
+ * {@link matrixFilename} follow the leg.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerAt = (filename: string, options?: TestStoresOptions) =>
-  Layer.mergeAll(
-    ownedStores(options),
-    AttemptStore.layer,
-    CacheStore.layer,
-    PlanStore.layer,
-    PlanInputStore.layer,
-    PlanMergeStore.layer,
-    DurableEngineState.layer
-  ).pipe(Layer.provideMerge(databaseAt(filename)), Layer.merge(OwnerIdentity.layer))
+export const layerAt = (filename: string, options?: TestStoresOptions) => storesOver(databaseAt(filename), options)
+
+/**
+ * The persistent database identity the storage matrix selects for one case.
+ *
+ * The matrix runner selects PostgreSQL for its second leg only by setting
+ * `SMITHERS_TEST_PG_URL`. On the SQLite leg this returns `sqlitePath`
+ * unchanged; on the PostgreSQL leg it returns that server with a fresh
+ * timestamped schema, so a case that reopens its database (a restart, a
+ * second process) reaches the same rows on whichever backend the leg runs.
+ * Release a PostgreSQL identity with {@link dropMatrixFilename}, or acquire it
+ * with {@link matrixAt} to have its scope do that.
+ *
+ * @category testing
+ * @since 1.0.0
+ */
+export const matrixFilename = (sqlitePath: string): string => {
+  const server = process.env.SMITHERS_TEST_PG_URL
+  if (!server) return sqlitePath
+  const url = new URL(server)
+  url.searchParams.set("schema", TestSchemas.schemaName("matrix"))
+  return url.toString()
+}
+
+/** Drops `schema` when the connection's scope closes, behind the writer lock (see `TestDatabase.dropSchema`). */
+const dropSchemaFinalizer = (schema: string) =>
+  Layer.effectDiscard(Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    yield* Effect.addFinalizer(() => TestDatabase.dropSchema(sql, schema).pipe(Effect.orDie))
+  }))
+
+/**
+ * Drops the PostgreSQL schema a {@link matrixFilename} identity names.
+ *
+ * A SQLite path is left alone: the case owns its directory. Dropping an
+ * already dropped schema is a no-op.
+ *
+ * @category testing
+ * @since 1.0.0
+ */
+export const dropMatrixFilename = (filename: string): Effect.Effect<void> => {
+  const schema = postgresUrl(filename)?.searchParams.get("schema") ?? undefined
+  if (schema === undefined) return Effect.void
+  return Layer.build(Layer.provide(dropSchemaFinalizer(schema), connectionAt(filename))).pipe(
+    Effect.scoped,
+    Effect.orDie,
+    Effect.asVoid
+  )
+}
+
+/**
+ * A {@link matrixFilename} identity whose PostgreSQL schema the scope drops.
+ *
+ * @category testing
+ * @since 1.0.0
+ */
+export const matrixAt = (sqlitePath: string): Effect.Effect<string, never, Scope.Scope> =>
+  Effect.acquireRelease(Effect.sync(() => matrixFilename(sqlitePath)), dropMatrixFilename)
+
+/**
+ * {@link layerAt} over a fresh database on the storage matrix's current leg.
+ *
+ * The SQLite leg gets the private `:memory:` database; the PostgreSQL leg gets
+ * a fresh schema on `SMITHERS_TEST_PG_URL`, dropped when the layer is released
+ * after every store over it has closed. Each build is a new database, so one
+ * value serves many cases.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const matrixLayer = (options?: TestStoresOptions) =>
+  Layer.unwrap(Effect.sync(() => {
+    const filename = matrixFilename(":memory:")
+    const schema = postgresUrl(filename)?.searchParams.get("schema") ?? undefined
+    const connection = schema === undefined ?
+      connectionAt(filename) :
+      Layer.provideMerge(dropSchemaFinalizer(schema), connectionAt(filename))
+    return storesOver(migratedOver(connection), options)
+  }))

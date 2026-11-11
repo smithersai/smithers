@@ -35,12 +35,15 @@ type TestServices =
   | Scope.Scope
   | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
-/** A real file-backed SQLite store, removed after the body. */
+/** A real persistent store on the storage matrix's current leg, removed after the body. */
 const onDisk = <A, E>(body: Effect.Effect<A, E, TestServices>) =>
   Effect.acquireUseRelease(
     Effect.promise(() => mkdtemp(join(tmpdir(), "smithers-shared-child-"))),
     (directory) =>
-      withCrypto(body.pipe(Effect.scoped, Effect.provide(TestStores.layerAt(join(directory, "engine.db"))))),
+      Effect.flatMap(
+        TestStores.matrixAt(join(directory, "engine.db")),
+        (filename) => withCrypto(body.pipe(Effect.scoped, Effect.provide(TestStores.layerAt(filename))))
+      ).pipe(Effect.scoped),
     (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
   )
 

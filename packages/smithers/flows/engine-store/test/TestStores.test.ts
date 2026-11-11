@@ -154,3 +154,53 @@ it("reopens a named database with the same migrated state", async () => {
     await PersistentDatabase.remove(filename)
   }
 })
+
+describe("storage matrix selection", () => {
+  const postgresLeg = process.env.SMITHERS_TEST_PG_URL !== undefined
+  /** Asks the server from a separate probe schema, which its own scope drops. */
+  const schemaExists = (schema: string) =>
+    Effect.gen(function*() {
+      const sql = yield* SqlClient
+      const rows = yield* sql<{ readonly name: string }>`
+        SELECT schema_name AS name FROM information_schema.schemata WHERE schema_name = ${schema}`
+      return rows.length > 0
+    }).pipe(
+      Effect.provide(Layer.unwrap(Effect.map(TestStores.matrixAt("unused.db"), TestStores.databaseAt))),
+      Effect.scoped
+    )
+
+  it.effect("matrixLayer runs on the leg's backend", () =>
+    Effect.gen(function*() {
+      const sql = yield* SqlClient
+      expect(sql.onDialectOrElse({ pg: () => "postgres", orElse: () => "sqlite" })).toBe(
+        postgresLeg ? "postgres" : "sqlite"
+      )
+      yield* (yield* RunStore).create("matrix-layer", "{}")
+    }).pipe(Effect.provide(TestStores.matrixLayer()), Effect.provide(NodeCrypto.layer), Effect.scoped))
+
+  it.effect("matrixAt names one persistent store per case and drops it with the scope", () =>
+    Effect.gen(function*() {
+      const sqlitePath = "/nonexistent/matrix-at.db"
+      const opened = yield* Effect.scoped(Effect.gen(function*() {
+        const filename = yield* TestStores.matrixAt(sqlitePath)
+        if (!postgresLeg) return { filename, status: undefined }
+        yield* Effect.scoped(
+          Effect.flatMap(RunStore, (runs) => runs.create("matrix-at", "{}")).pipe(
+            Effect.provide(TestStores.layerAt(filename))
+          )
+        )
+        // A second, independent opening reaches the same rows.
+        const row = yield* Effect.scoped(
+          Effect.flatMap(RunStore, (runs) => runs.get("matrix-at")).pipe(
+            Effect.provide(TestStores.layerAt(filename))
+          )
+        )
+        return { filename, status: row.status }
+      }))
+      if (!postgresLeg) return expect(opened).toEqual({ filename: sqlitePath, status: undefined })
+      expect(opened.status).toBe("pending")
+      const schema = new URL(opened.filename).searchParams.get("schema")!
+      expect(schema).toMatch(/^matrix_/)
+      expect(yield* schemaExists(schema)).toBe(false)
+    }).pipe(Effect.provide(NodeCrypto.layer)))
+})

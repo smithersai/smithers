@@ -327,8 +327,8 @@ const terminalList = terminalStatuses.map((status) => `'${status}'`).join(", ")
  * The walks carry run ids and nothing else, so `UNION` makes them terminate on
  * their own: a corrupt edge that closed a cycle adds a row the set already
  * holds, and the walk stops. That matters because these reads run inside the
- * pass's write transaction. They are SQLite-specific, like the `sqlite_master`
- * probe below, and rc.0 is SQLite-only.
+ * pass's write transaction. `WITH RECURSIVE ... UNION` reads the same on
+ * SQLite and PostgreSQL.
  *
  * `parentEdges: false` drops the `flows_run_parents` half of `link`. A
  * database that carries the run rows but not the engine's edge table — the
@@ -530,7 +530,7 @@ export interface DeletionReport {
   readonly deleted: Readonly<Record<string, number>>
 }
 
-/** Reads the installed SQLite table names once for inventory decisions. */
+/** Reads the installed table names once for inventory decisions. */
 const installedTableNames = (sql: SqlClient.SqlClient): Effect.Effect<ReadonlySet<string>, RetentionError> =>
   Dialect.tables(sql).pipe(
     Effect.map((rows) => new Set(rows.map((row) => row.name))),
@@ -550,8 +550,8 @@ const installedTableNames = (sql: SqlClient.SqlClient): Effect.Effect<ReadonlySe
  * composed fewer stores, and the pass still owes it a complete sweep of what
  * it has.
  *
- * The catalog read is SQLite-specific, like the lineage prelude above and the
- * `flows_run_parents_gc` trigger this package ships. rc.0 is SQLite-only.
+ * The catalog read goes through `Dialect.tables`, so it lists the current
+ * schema's tables on SQLite and PostgreSQL alike.
  *
  * @category getters
  * @since 0.1.0

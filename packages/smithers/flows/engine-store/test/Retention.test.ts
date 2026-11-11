@@ -7,7 +7,7 @@ import { executeUntilParked } from "./ExecuteUntilParked.ts"
  * Nothing in the composition deleted a `flows_runs` row or any row that hangs
  * off one: a workspace database grew with every run it ever finished, and the
  * journal grew with it because compaction is off by default. These cases drive
- * the retention operation against the production SQLite stores — the same rows
+ * the retention operation against the production SQL stores — the same rows
  * the engine writes — and pin the two halves that make it safe to run: every
  * dependent of a deleted run goes with it in the same transaction, and nothing
  * a live run still needs is touched.
@@ -39,6 +39,11 @@ import { withCrypto } from "./Sha256.ts"
 // exercises the same before/after cutoff comparison a day would.
 const agingMs = 2_000
 const thresholdMs = 1_000
+/**
+ * The longest chain is a thousand runs of PostgreSQL round trips: half a
+ * minute alone on a loaded host, over three minutes beside the full suite.
+ */
+const chainTimeoutMs = 600_000
 /** Far enough out that no seeded clock deadline comes due mid-case. */
 const distantDeadlineMs = 30 * 24 * 60 * 60 * 1000
 
@@ -60,21 +65,33 @@ const jj = Jj.make({
 /** The time-travel archive table, which the engine ladder does not install. */
 const createArchiveTable = Effect.gen(function*() {
   const sql = yield* Effect.service(SqlClient.SqlClient)
+  const integer = Dialect.integer(sql)
+  const whole = (column: string) => Dialect.isInteger(sql, sql.literal(column))
   yield* sql`CREATE TABLE IF NOT EXISTS flows_time_travel_archive (
     run_id TEXT NOT NULL CHECK (length(run_id) > 0),
-    generation INTEGER NOT NULL CHECK (typeof(generation) = 'integer' AND generation >= 0),
-    seq INTEGER NOT NULL CHECK (typeof(seq) = 'integer' AND seq >= 0),
+    generation ${integer} NOT NULL CHECK (${whole("generation")} AND generation >= 0),
+    seq ${integer} NOT NULL CHECK (${whole("seq")} AND seq >= 0),
     event_id TEXT NOT NULL CHECK (length(event_id) > 0),
     source_id TEXT NOT NULL CHECK (length(source_id) > 0),
-    source_seq INTEGER NOT NULL CHECK (typeof(source_seq) = 'integer' AND source_seq >= 0),
-    emitted_at_ms INTEGER NOT NULL CHECK (typeof(emitted_at_ms) = 'integer' AND emitted_at_ms >= 0),
+    source_seq ${integer} NOT NULL CHECK (${whole("source_seq")} AND source_seq >= 0),
+    emitted_at_ms ${integer} NOT NULL CHECK (${whole("emitted_at_ms")} AND emitted_at_ms >= 0),
     event_type TEXT NOT NULL CHECK (length(event_type) > 0),
-    payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-    meta_json TEXT NOT NULL CHECK (json_valid(meta_json)),
-    archived_at_ms INTEGER NOT NULL CHECK (typeof(archived_at_ms) = 'integer' AND archived_at_ms >= 0),
+    payload_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql.literal("payload_json"))}),
+    meta_json TEXT NOT NULL CHECK (${Dialect.jsonValid(sql, sql.literal("meta_json"))}),
+    archived_at_ms ${integer} NOT NULL CHECK (${whole("archived_at_ms")} AND archived_at_ms >= 0),
     PRIMARY KEY (run_id, generation, seq)
   )`.pipe(Effect.orDie)
 })
+
+/**
+ * Rows whose foreign key names a deleted row.
+ *
+ * SQLite reports them through `PRAGMA foreign_key_check`. PostgreSQL has no
+ * such report and needs none: it checks every key by the end of the deleting
+ * transaction, so a pass that orphaned a row fails instead of committing.
+ */
+const danglingReferences = (sql: SqlClient.SqlClient) =>
+  Dialect.isPostgres(sql) ? Effect.succeed([]) : sql`PRAGMA foreign_key_check`
 
 const archive = (runId: string, seq: number) =>
   Effect.gen(function*() {
@@ -239,7 +256,7 @@ const parentInstance = (executionId: string) => ({ executionId } as FlowRuntime.
 const statusOf = (runId: string) =>
   Effect.map(Effect.flatMap(RunStore.RunStore, (runs) => runs.get(runId)), (row) => row.status)
 
-const stores = TestStores.layerAt(":memory:")
+const stores = TestStores.matrixLayer()
 
 const retention = Effect.gen(function*() {
   yield* createArchiveTable
@@ -772,45 +789,51 @@ describe("retention", () => {
       { length: 3, limit: 1, unrelated: true }
     ]
   ) {
-    it.effect(`converges over a terminal chain of ${length} with limit ${limit ?? "default"}${unrelated ? " and a younger unrelated run" : ""}`, () =>
-      withCrypto(
-        Effect.gen(function*() {
-          const retain = yield* retention
-          const sql = yield* SqlClient.SqlClient
-          const ids = Array.from({ length }, (_, index) => `round-${String(index).padStart(4, "0")}`)
-          for (const [index, runId] of ids.entries()) {
-            yield* activate(runId, ids[index - 1])
-            yield* finish(runId, "completed")
-          }
-          if (unrelated) {
-            yield* TestClock.adjust(agingMs)
-            yield* activate("unrelated")
-            yield* finish("unrelated", "completed")
-          }
-          yield* TestClock.adjust(agingMs)
-
-          const remaining = new Set(unrelated ? [...ids, "unrelated"] : ids)
-          const options = { olderThanMs: thresholdMs, limit }
-          while (remaining.size > 0) {
-            const planned = yield* retain.retain({ ...options, dryRun: true })
-            const report = yield* retain.retain(options)
-            expect({ ...planned, dryRun: false }).toEqual(report)
-            expect(report.runs).toBeGreaterThan(0)
-            expect(report.runs).toBeLessThanOrEqual(limit ?? RetentionOps.defaultLimit)
-            for (const runId of report.runIds) {
-              expect(remaining.delete(runId)).toBe(true)
+    it.effect(
+      `converges over a terminal chain of ${length} with limit ${limit ?? "default"}${
+        unrelated ? " and a younger unrelated run" : ""
+      }`,
+      () =>
+        withCrypto(
+          Effect.gen(function*() {
+            const retain = yield* retention
+            const sql = yield* SqlClient.SqlClient
+            const ids = Array.from({ length }, (_, index) => `round-${String(index).padStart(4, "0")}`)
+            for (const [index, runId] of ids.entries()) {
+              yield* activate(runId, ids[index - 1])
+              yield* finish(runId, "completed")
             }
-            const rows = yield* sql<{ readonly run_id: string }>`SELECT run_id FROM flows_runs ORDER BY run_id`
-            expect(rows.map((row) => row.run_id)).toEqual([...remaining].sort())
-            expect(yield* sql`PRAGMA foreign_key_check`).toEqual([])
-          }
-          expect((yield* retain.retain(options)).runs).toBe(0)
-        }).pipe(
-          Effect.provideService(Jj.Jj, jj),
-          Effect.provide(StepBoundary.layerTest()),
-          Effect.provide(stores)
-        )
-      ))
+            if (unrelated) {
+              yield* TestClock.adjust(agingMs)
+              yield* activate("unrelated")
+              yield* finish("unrelated", "completed")
+            }
+            yield* TestClock.adjust(agingMs)
+
+            const remaining = new Set(unrelated ? [...ids, "unrelated"] : ids)
+            const options = { olderThanMs: thresholdMs, limit }
+            while (remaining.size > 0) {
+              const planned = yield* retain.retain({ ...options, dryRun: true })
+              const report = yield* retain.retain(options)
+              expect({ ...planned, dryRun: false }).toEqual(report)
+              expect(report.runs).toBeGreaterThan(0)
+              expect(report.runs).toBeLessThanOrEqual(limit ?? RetentionOps.defaultLimit)
+              for (const runId of report.runIds) {
+                expect(remaining.delete(runId)).toBe(true)
+              }
+              const rows = yield* sql<{ readonly run_id: string }>`SELECT run_id FROM flows_runs ORDER BY run_id`
+              expect(rows.map((row) => row.run_id)).toEqual([...remaining].sort())
+              expect(yield* danglingReferences(sql)).toEqual([])
+            }
+            expect((yield* retain.retain(options)).runs).toBe(0)
+          }).pipe(
+            Effect.provideService(Jj.Jj, jj),
+            Effect.provide(StepBoundary.layerTest()),
+            Effect.provide(stores)
+          )
+        ),
+      chainTimeoutMs
+    )
   }
 
   it.effect("fills the bound past parents pinned by a younger terminal descendant", () =>
@@ -863,7 +886,7 @@ describe("retention", () => {
         }
         yield* TestClock.adjust(agingMs)
         expect((yield* retain.retain({ olderThanMs: thresholdMs, limit: 2 })).runIds).toEqual(["leaf", "left"])
-        expect(yield* sql`PRAGMA foreign_key_check`).toEqual([])
+        expect(yield* danglingReferences(sql)).toEqual([])
         expect((yield* retain.retain({ olderThanMs: thresholdMs, limit: 2 })).runIds).toEqual(["right", "root"])
         expect(yield* sql`SELECT run_id FROM flows_runs`).toEqual([])
       }).pipe(

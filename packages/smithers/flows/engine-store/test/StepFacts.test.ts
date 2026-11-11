@@ -1,14 +1,33 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import type * as DurableWriter from "@smthrs/database/DurableWriter"
 import { Journal, JournalEvent, SqlJournal, StepFact } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import type * as SqlClient from "effect/sql/SqlClient"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
-import { fixture, onFile } from "./ExecutionSnapshotFixture.ts"
+import * as TestStores from "../src/test/TestStores.ts"
 import { sha256 } from "./Sha256.ts"
+
+/** A persistent, migrated store on the storage matrix's current leg, removed after the body. */
+const fixture = <A, E>(body: (filename: string) => Effect.Effect<A, E>) =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => mkdtemp(join(tmpdir(), "step-facts-"))),
+    (directory) => Effect.scoped(Effect.flatMap(TestStores.matrixAt(join(directory, "engine.db")), body)),
+    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+  )
+
+/** One opening of the case's store; each call is a separate connection. */
+const onFile = <A, E>(
+  filename: string,
+  body: Effect.Effect<A, E, SqlClient.SqlClient | DurableWriter.DurableWriter>
+) => Effect.scoped(body.pipe(Effect.provide(TestStores.databaseAt(filename))))
 
 const owner = { hostId: "call-facts", pid: 1, nonce: "owner" }
 const services = Layer.mergeAll(
@@ -77,7 +96,7 @@ const entries = Effect.gen(function*() {
   return (yield* journal.entries({ runId: JournalEvent.RunId.make("calls"), limit: 1000 })).entries
 })
 
-describe("native step facts over file SQLite", () => {
+describe("native step facts over a persistent store", () => {
   it.effect("a missing post-finish checkpoint outcome fails with a typed storage error and rolls back", () =>
     fixture((file) =>
       onFile(

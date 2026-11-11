@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
@@ -66,7 +67,7 @@ const takeOver = (store: RunStore.Service, state: DurableEngineState.Service, wa
     })))
   })
 
-for (const adapter of ["sqlite", "memory"] as const) {
+for (const adapter of ["sql", "memory"] as const) {
   describe(`RunDriver atomic park (${adapter})`, () => {
     const scenario = (
       replacement?: DurableEngineState.Waiting,
@@ -82,7 +83,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
           // The memory layer shares the real SQL run store. Its permissive run
           // view deliberately lets an old park reach the final SQL owner fence:
           // a failed transition must restore the memory snapshot, not commit it.
-          const state = adapter === "sqlite" ? sqlState : DurableEngineState.makeMemory()
+          const state = adapter === "sql" ? sqlState : DurableEngineState.makeMemory()
           const releasing = yield* Deferred.make<void>()
           const continueRelease = yield* Deferred.make<void>()
           const running = yield* Deferred.make<void>()
@@ -149,7 +150,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
           const journal = yield* Journal.Journal
           // The real journal runs whenCommitted immediately without an open
           // SQL transaction. A pass-through boundary models that documented
-          // journal contract; every store operation still uses real SQLite.
+          // journal contract; every store operation still uses the real SQL store.
           const observedJournal: Journal.Service = journalOwnsTransaction
             ? journal
             : { ...journal, transact: (effect) => effect }
@@ -252,7 +253,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
             expect(result._tag).toBe("Complete")
             if (result._tag === "Complete") expect(result.exit).toEqual(Exit.succeed("recovered"))
           }
-        })).pipe(Effect.provide(TestStores.layerAt(":memory:")), Effect.provide(TestClock.layer()))
+        })).pipe(Effect.provide(TestStores.matrixLayer()), Effect.provide(TestClock.layer()))
       )
 
     it.effect("leaves a same-reason replacement byte-identical after the old settlement", () =>
@@ -278,7 +279,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
   })
 }
 
-for (const adapter of ["sqlite", "memory"] as const) {
+for (const adapter of ["sql", "memory"] as const) {
   describe(`RunDriver transaction publication (${adapter})`, () => {
     for (const settlement of ["suspend", "shutdown"] as const) {
       it.effect(`reads committed waiting state during ${settlement} compaction without advancing the clock`, () =>
@@ -287,7 +288,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
             const store = yield* RunStore.RunStore
             const sql = yield* SqlClient.SqlClient
             const sqlState = yield* DurableEngineState.DurableEngineState
-            const state = adapter === "sqlite" ? sqlState : DurableEngineState.makeMemory()
+            const state = adapter === "sql" ? sqlState : DurableEngineState.makeMemory()
             const capturing = yield* Deferred.make<void>()
             const running = yield* Deferred.make<void>()
             let captures = 0
@@ -343,9 +344,10 @@ for (const adapter of ["sqlite", "memory"] as const) {
               ? execution
               : yield* Scope.close(driverScope, Exit.void).pipe(Effect.forkChild({ startImmediately: true }))
             yield* Deferred.await(capturing)
-            // Flush runnable fibers at the same virtual instant. A blocked
-            // capture remains asleep, so the assertion fails without a timeout.
-            yield* TestClock.adjust(0)
+            // Wait in real time at the same virtual instant: the read is I/O on
+            // PostgreSQL. A capture blocked behind the writer sleeps on the
+            // virtual clock, so the wait gives up and the assertion fails.
+            yield* Effect.exit(TestDatabase.until(Effect.sync(() => readCount > 0)))
             const observed = { captures, readCount, elapsed: (yield* Clock.currentTimeMillis) - before }
             // On a regression, let the existing capture timeout release the
             // uninterruptible shutdown finalizer so the failing test can exit.
@@ -367,7 +369,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
                 }
               }
             })
-          })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+          })).pipe(Effect.provide(TestStores.matrixLayer()))
         ))
     }
 
@@ -378,7 +380,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
             const store = yield* RunStore.RunStore
             const sql = yield* SqlClient.SqlClient
             const sqlState = yield* DurableEngineState.DurableEngineState
-            const state = adapter === "sqlite" ? sqlState : DurableEngineState.makeMemory()
+            const state = adapter === "sql" ? sqlState : DurableEngineState.makeMemory()
             const capturing = yield* Deferred.make<void>()
             const finishedCapture = yield* Deferred.make<void>()
             const journal = Context.get(
@@ -395,8 +397,10 @@ for (const adapter of ["sqlite", "memory"] as const) {
                       // through the actual connection before permitting shutdown.
                       expect(Option.isNone(yield* Effect.serviceOption(sql.transactionService))).toBe(true)
                       expect(row.owner).toBeNull()
-                      yield* Deferred.succeed(capturing, undefined)
-                      return yield* (interruption === "shutdown" ? Effect.never : Effect.interrupt).pipe(
+                      // Signal inside the guarded region: shutdown may interrupt
+                      // the capture the moment `capturing` wakes the case.
+                      return yield* Deferred.succeed(capturing, undefined).pipe(
+                        Effect.andThen(interruption === "shutdown" ? Effect.never : Effect.interrupt),
                         Effect.ensuring(Deferred.succeed(finishedCapture, undefined))
                       )
                     })
@@ -434,7 +438,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
               wakeAt: null
             }))
             expect((yield* state.waitingRuns({ reason: "released" })).map((row) => row.runId)).toEqual([executionId])
-          })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+          })).pipe(Effect.provide(TestStores.matrixLayer()))
         ))
     }
 
@@ -446,7 +450,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
           const writer = yield* DurableWriter
           const journal = yield* Journal.Journal
           const sqlState = yield* DurableEngineState.DurableEngineState
-          const state = adapter === "sqlite" ? sqlState : DurableEngineState.makeMemory()
+          const state = adapter === "sql" ? sqlState : DurableEngineState.makeMemory()
           const stateJson = JSON.stringify({ capabilityCeilings: [[]], version: 1, flowName: flow._tag, payload: {} })
           yield* sql`INSERT INTO flows_runs (
             run_id, status, created_at_ms, owner_host_id, owner_pid, owner_nonce, heartbeat_at_ms, state_json
@@ -486,7 +490,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
           // Rollback releases the gate for a different fiber too.
           const read = yield* state.waiting(executionId).pipe(Effect.forkChild({ startImmediately: true }))
           expect(yield* Fiber.join(read)).toEqual(marker)
-        })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+        })).pipe(Effect.provide(TestStores.matrixLayer()))
       ))
 
     for (const holderBoundary of ["state", "journal"] as const) {
@@ -495,7 +499,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
           withCrypto(
             Effect.scoped(Effect.gen(function*() {
               const store = yield* RunStore.RunStore
-              const state = adapter === "sqlite"
+              const state = adapter === "sql"
                 ? yield* DurableEngineState.DurableEngineState
                 : DurableEngineState.makeMemory()
               const journal = yield* Journal.Journal
@@ -546,7 +550,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
               // an abandoned request that starts writing once the holder finishes.
               yield* driver.interrupt(flow, executionId)
               expect((yield* store.get(executionId)).cancelRequestedAtMs).not.toBeNull()
-            })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+            })).pipe(Effect.provide(TestStores.matrixLayer()))
           ))
       }
     }
@@ -597,7 +601,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
               Effect.provide(SqlConsensus.layer),
               Effect.provideService(DurableWriter, failingWriter)
             )
-            const state = adapter === "sqlite"
+            const state = adapter === "sql"
               ? yield* DurableEngineState.make.pipe(Effect.provideService(DurableWriter, failingWriter))
               : DurableEngineState.makeMemory()
             const journal = Context.get(
@@ -660,7 +664,7 @@ for (const adapter of ["sqlite", "memory"] as const) {
             yield* driver.interrupt(flow, executionId)
             expect((yield* store.get(executionId)).cancelRequestedAtMs).not.toBeNull()
             expect((yield* store.get("publication-child")).cancelRequestedAtMs).not.toBeNull()
-          })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+          })).pipe(Effect.provide(TestStores.matrixLayer()))
         ))
     }
   })

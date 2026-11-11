@@ -136,7 +136,7 @@ const dropAndRebuild = Effect.gen(function*() {
   return { live, rebuilt, restored: yield* heads }
 })
 
-const services = Layer.merge(TestStores.layerAt(":memory:"), jj)
+const services = Layer.merge(TestStores.matrixLayer(), jj)
 
 const setup = Layer.merge(services, exact)
 

@@ -30,7 +30,7 @@ const runtime = Layer.effect(FlowRuntime.FlowRuntime)(EngineStore.make({
   isAlive: () => Effect.succeed(false)
 })).pipe(
   Layer.provideMerge(Layer.mergeAll(
-    TestStores.layerAt(":memory:"),
+    TestStores.matrixLayer(),
     StepBoundary.layerTest(),
     repository
   )),

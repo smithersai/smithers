@@ -49,6 +49,19 @@ private database, so it cannot prove anything durable across compositions. Pass
 `:memory:` to `layerAt` only when you want the cheap variant and still need the
 connection.
 
+A fixed filename, `:memory:` included, runs on SQLite in both legs of the
+storage matrix: the runner selects PostgreSQL only by setting
+`SMITHERS_TEST_PG_URL`. Follow the leg instead:
+
+- `TestStores.matrixLayer(options?)` is `layerAt` over a fresh database: `:memory:`
+  on SQLite, a fresh schema on PostgreSQL that the layer drops on release.
+- `TestStores.matrixAt(sqlitePath)` names one persistent database for a case that
+  reopens it, and drops its PostgreSQL schema when the scope closes. Pass the
+  name to `layerAt` or `databaseAt` for each opening. `matrixFilename` and
+  `dropMatrixFilename` split the same steps for code outside a scope.
+
+Keep a fixed filename only when the case's subject is SQLite itself.
+
 `TestStores.database` is the in-memory migrated database exposed as `SqlClient`
 and `DurableWriter`.
 

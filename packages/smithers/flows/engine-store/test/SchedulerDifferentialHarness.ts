@@ -216,6 +216,10 @@ export const drive = (
       Effect.provide(reconciliation),
       Effect.provide(boundary(scenario.deviation !== undefined)),
       Effect.provide(runtime(executor)),
+      // SQLite on both matrix legs, on purpose: this oracle compares the exact
+      // event order of two schedulers, which only a store whose statements
+      // complete synchronously makes reproducible. PostgreSQL's real I/O lets
+      // concurrent completions interleave differently in each run (#4770).
       Effect.provide(TestStores.layerAt(":memory:", { consensus })),
       Effect.scoped
     )

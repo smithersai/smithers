@@ -62,7 +62,7 @@ const provideSqlStores = <A, E, R>(
 ) =>
   effect.pipe(
     Effect.scoped,
-    Effect.provide(Layer.provideMerge(DurableEngineState.layer, TestStores.layerAt(":memory:")))
+    Effect.provide(Layer.provideMerge(DurableEngineState.layer, TestStores.matrixLayer()))
   )
 
 /** The total of every series of a counter or histogram `id`. */
@@ -151,17 +151,25 @@ describe("RunDriver guards", () => {
           })).pipe(Scope.provide(first))
         // Old enough for the pending sweep, then one sweep tick at a time.
         yield* TestClock.adjust(Ownership.heartbeatStaleAfter)
-        const tick = Effect.gen(function*() {
-          yield* TestClock.adjust(Ownership.heartbeatInterval)
-          for (let turn = 0; turn < 1_000; turn++) yield* Effect.yieldNow
-        })
-        yield* tick
+        // A tick's sweep is real I/O on PostgreSQL, so it settles in real
+        // time, not within the tick's yields: advance one heartbeat at a time
+        // and poll between ticks until the sweep has done what is awaited.
+        const tickUntil = <E>(done: Effect.Effect<boolean, E>) =>
+          Effect.gen(function*() {
+            for (let turn = 0; turn < 20 && !(yield* done); turn++) {
+              yield* TestClock.adjust(Ownership.heartbeatInterval)
+              for (let poll = 0; poll < 250 && !(yield* done); poll++) {
+                yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
+              }
+            }
+          })
+        yield* tickUntil(Effect.sync(() => !replace))
         const afterSwap = (yield* store.get("replaced")).status
         const callsAfterSwap = { ...calls }
-        yield* tick
+        yield* tickUntil(Effect.map(store.get("replaced"), (row) => RunStore.isTerminalRunStatus(row.status)))
         return { afterSwap, callsAfterSwap, settled: (yield* store.get("replaced")).status }
       })))
-      // The tick that changed the registration drives nothing; the next one
+      // The tick that changed the registration drives nothing; a later one
       // asks again under the registration now serving the flow.
       expect(statuses.afterSwap).toBe("pending")
       expect(statuses.callsAfterSwap).toEqual({ first: 0, second: 0 })

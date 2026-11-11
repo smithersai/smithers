@@ -176,7 +176,7 @@ describe("engine state and journal lock order (memory)", () => {
               )
             ).toBe(true)
           }
-        })).pipe(Effect.provide(TestStores.layerAt(":memory:")))
+        })).pipe(Effect.provide(TestStores.matrixLayer()))
       ))
   }
 })

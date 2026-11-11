@@ -12,11 +12,12 @@ import * as Reference from "./PlanSchedulerReference.ts"
 import { activate, compile, draft, owner, runtime } from "./SchedulerDifferentialHarness.ts"
 import { runPromise } from "./Sha256.ts"
 
-describe("differential scheduler recovery through independent SQLite openings", () => {
+describe("differential scheduler recovery through independent store openings", () => {
   for (const strategy of ["delay-rebase", "stop-merge"] as const) {
     for (const resume of ["base", "grown"] as const) {
       it(`${strategy}, resume from ${resume}, preserves keys, stopped meaning and generation identity`, async () => {
         const directory = await mkdtemp(join(tmpdir(), "scheduler-differential-"))
+        const filenames: Array<string> = []
         try {
           const effects = { reads: [], writes: ["shared.out"], boundaryMode: "hard" as const }
           const plan = await compile([
@@ -27,7 +28,10 @@ describe("differential scheduler recovery through independent SQLite openings", 
             draft("unrelated")
           ])
           const drive = async (reference: boolean) => {
-            const filename = join(directory, reference ? "reference.sqlite" : "indexed.sqlite")
+            const filename = TestStores.matrixFilename(
+              join(directory, reference ? "reference.sqlite" : "indexed.sqlite")
+            )
+            filenames.push(filename)
             const implementation = reference ? Reference : PlanScheduler
             const calls: Array<string> = []
             const executor: PlanScheduler.Executor = {
@@ -86,6 +90,7 @@ describe("differential scheduler recovery through independent SQLite openings", 
           const expected = await drive(true)
           expect(await drive(false)).toEqual(expected)
         } finally {
+          for (const filename of filenames) await runPromise(TestStores.dropMatrixFilename(filename))
           await rm(directory, { recursive: true, force: true })
         }
       })
@@ -154,7 +159,7 @@ describe("differential admission under explicitly gated completions", () => {
               event.payload
             )
           }
-        }).pipe(Effect.provide(TestStores.layerAt(":memory:")), Effect.scoped)
+        }).pipe(Effect.provide(TestStores.matrixLayer()), Effect.scoped)
       )
     const expected = await drive(true)
     expect(await drive(false)).toEqual(expected)

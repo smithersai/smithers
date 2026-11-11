@@ -484,7 +484,7 @@ class Harness {
 
   static async open(): Promise<Harness> {
     const directory = mkdtempSync(join(tmpdir(), "run-lifecycle-model-"))
-    const harness = new Harness(directory, join(directory, "runs.db"))
+    const harness = new Harness(directory, TestStores.matrixFilename(join(directory, "runs.db")))
     await harness.connect()
     return harness
   }
@@ -511,6 +511,7 @@ class Harness {
 
   async close() {
     await this.disconnect()
+    await Effect.runPromise(TestStores.dropMatrixFilename(this.filename))
     rmSync(this.directory, { recursive: true, force: true })
   }
 

@@ -1568,7 +1568,7 @@ describe("RunDriver parked-cancel sweep", () => {
 /**
  * The old three cleanup cases now pin transaction rollback, preservation of
  * a replacement's committed marker, and refusal of an obsolete owner's park.
- * Every store outcome below comes from the production SQLite adapters. Memory
+ * Every store outcome below comes from the production SQL adapters. Memory
  * state reads its owner view from those same rows before attempting a park.
  */
 describe("RunDriver atomic waiting markers", () => {
@@ -1850,7 +1850,7 @@ describe("RunDriver atomic waiting markers", () => {
             wakeDepths,
             recovered
           }
-        }).pipe(Effect.scoped, Effect.provide(TestStores.layerAt(":memory:")))
+        }).pipe(Effect.scoped, Effect.provide(TestStores.matrixLayer()))
       )
 
     it.effect(`${implementation}: rolls back its own released marker when the release transition loses the fence`, () =>

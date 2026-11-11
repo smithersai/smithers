@@ -115,7 +115,7 @@ describe("declared file reachability against the captured scheduler", () => {
             Effect.provide(Layer.succeed(StepBoundary.StepBoundary, boundary)),
             Effect.provide(Layer.succeed(FileSystem.FileSystem, fs)),
             Effect.provide(runtime(executor)),
-            Effect.provide(TestStores.layerAt(":memory:")),
+            Effect.provide(TestStores.matrixLayer()),
             Effect.scoped
           )
         )

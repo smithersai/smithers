@@ -1772,18 +1772,26 @@ Each failure, with its cause and its fix, is in
 
 Every durable engine service over one database, migrated.
 
-| Export              | Signature                                                       | Meaning                                                                                                                                            |
-| ------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layer`             | `(options?: TestStoresOptions) => Layer<...>`                   | The private in-memory bundle: journal, run, attempt, cache, plan, and plan-input stores plus `OwnerIdentity.layer`, keeping `SqlClient` to itself. |
-| `layerAt`           | `(filename: string, options?: TestStoresOptions) => Layer<...>` | The same over a named database, with the connection and `DurableEngineState` re-exported.                                                          |
-| `database`          | `Layer`                                                         | The migrated in-memory database alone, as `SqlClient` and `DurableWriter`.                                                                         |
-| `databaseAt`        | `(filename: string) => Layer`                                   | The same over a named file.                                                                                                                        |
-| `TestStoresOptions` | `{ capacity?, overflow?, batchSize? }`                          | Forwarded to the journal.                                                                                                                          |
+| Export               | Signature                                                       | Meaning                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layer`              | `(options?: TestStoresOptions) => Layer<...>`                   | The private in-memory bundle: journal, run, attempt, cache, plan, and plan-input stores plus `OwnerIdentity.layer`, keeping `SqlClient` to itself. |
+| `layerAt`            | `(filename: string, options?: TestStoresOptions) => Layer<...>` | The same over a named database, with the connection and `DurableEngineState` re-exported.                                                          |
+| `database`           | `Layer`                                                         | The migrated in-memory database alone, as `SqlClient` and `DurableWriter`.                                                                         |
+| `databaseAt`         | `(filename: string) => Layer`                                   | The same over a named file.                                                                                                                        |
+| `matrixLayer`        | `(options?: TestStoresOptions) => Layer<...>`                   | `layerAt` over a fresh database on the storage matrix leg: `:memory:` on SQLite, a fresh schema on `SMITHERS_TEST_PG_URL` that release drops.      |
+| `matrixFilename`     | `(sqlitePath: string) => string`                                | The persistent identity for the leg: `sqlitePath` on SQLite, `SMITHERS_TEST_PG_URL` with a fresh `?schema=` on PostgreSQL.                         |
+| `matrixAt`           | `(sqlitePath: string) => Effect<string, never, Scope>`          | `matrixFilename` whose PostgreSQL schema the scope drops.                                                                                          |
+| `dropMatrixFilename` | `(filename: string) => Effect<void>`                            | Drops the PostgreSQL schema a `matrixFilename` names; leaves a SQLite path alone.                                                                  |
+| `TestStoresOptions`  | `{ capacity?, overflow?, batchSize? }`                          | Forwarded to the journal.                                                                                                                          |
 
 Use `layerAt` with a real file to point two independently constructed bundles at
 one database: two connections, two engines, no shared object graph, which is
 what a second process actually has. `:memory:` gives each connection its own
 private database, so it cannot prove anything durable across compositions.
+
+A fixed filename runs on SQLite in both legs of the storage matrix. Use
+`matrixLayer` or `matrixAt` so the PostgreSQL leg reaches PostgreSQL; keep a
+fixed filename only when the case tests SQLite itself.
 
 Full guide: [Test against a durable store](./guides/testing.md).
 
