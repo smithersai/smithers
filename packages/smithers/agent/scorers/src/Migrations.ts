@@ -12,12 +12,14 @@ import { migration as scores } from "./migrations/0001_scores.ts"
 import { migration as jobs } from "./migrations/0002_score_jobs.ts"
 import { migration as failureCodes } from "./migrations/0003_score_failure_codes.ts"
 import { migration as requiredFailureCodes } from "./migrations/0004_require_failure_codes.ts"
+import { migration as restartedScoreIds } from "./migrations/0005_restart_score_ids.ts"
 
 const migrations = {
   "0001_scores": scores,
   "0002_score_jobs": jobs,
   "0003_score_failure_codes": failureCodes,
-  "0004_require_failure_codes": requiredFailureCodes
+  "0004_require_failure_codes": requiredFailureCodes,
+  "0005_restart_score_ids": restartedScoreIds
 }
 
 /**

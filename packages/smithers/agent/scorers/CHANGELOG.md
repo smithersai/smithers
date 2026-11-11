@@ -8,6 +8,14 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+### Fixed
+
+- A PostgreSQL score store that held observations when migration
+  `0003_score_failure_codes` or `0004_require_failure_codes` ran rejected its
+  next inserts with duplicate ids: both rebuilds copy explicit ids into a new
+  identity column, which PostgreSQL does not advance. Migration
+  `0005_restart_score_ids` moves the identity past the largest stored id.
+
 ## [1.0.0-rc.17] - 2026-11-10
 
 ### Changed

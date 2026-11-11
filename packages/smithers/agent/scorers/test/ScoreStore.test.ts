@@ -4,6 +4,7 @@ import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -11,6 +12,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Migrations from "../src/Migrations.ts"
 import { migration as initialScores } from "../src/migrations/0001_scores.ts"
+import { migration as jobs } from "../src/migrations/0002_score_jobs.ts"
 import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.ts"
 import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.ts"
 import { ScorerError, ScorerErrorCode } from "../src/ScorerError.ts"
@@ -795,6 +797,42 @@ describe("ScoreStore", () => {
         reason: "Stored inconclusive observation predates the recorded-reason requirement",
         failure_code: "inconclusive"
       }])
+    })
+    // Migrations 0003 and 0004 copy each row with its id into a new identity
+    // column. PostgreSQL does not advance an identity for explicit values, so
+    // before 0005 the next insert for every copied id failed as `constraint`.
+    // The ledger is real here: a store that stopped at 0004 with three rows
+    // reopens through `SqlScoreStore.make` and keeps recording.
+    it("keeps recording after the rebuilds copy existing ids", async () => {
+      const output = await Effect.runPromise(
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const upTo = (migrations: Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>) =>
+            Migrator.make({})({ loader: Migrator.fromRecord(migrations), table: "flows_scorers_migrations" })
+          yield* upTo({ "0001_scores": initialScores, "0002_score_jobs": jobs })
+          yield* Effect.forEach(
+            [1, 2, 3],
+            (at) =>
+              sql`INSERT INTO flows_scores (kind, target_step_key, scorer_key, value, at_ms)
+              VALUES ('score', 'a', 's', 1, ${at})`
+          )
+          yield* upTo({
+            "0001_scores": initialScores,
+            "0002_score_jobs": jobs,
+            "0003_score_failure_codes": failureCodes,
+            "0004_require_failure_codes": requiredFailureCodes
+          })
+          const store = yield* SqlScoreStore.make
+          yield* Effect.forEach([4, 5, 6, 7], (at) => store.record(score({ at })))
+          return {
+            at: (yield* store.observations("a", "s")).map((observation) => observation.at),
+            ids: (yield* sql<{ readonly id: number | string }>`SELECT id FROM flows_scores ORDER BY id`)
+              .map((row) => Number(row.id))
+          }
+        }).pipe(Effect.provide(TestDatabase.layer))
+      )
+      expect(output.at).toEqual([1, 2, 3, 4, 5, 6, 7])
+      expect(output.ids).toEqual([1, 2, 3, 4, 5, 6, 7])
     })
   })
 
