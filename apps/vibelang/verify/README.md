@@ -28,8 +28,13 @@ The selftest requires exit 4, an actual failed precondition/postcondition/invari
 function; a backend error or timeout fails the selftest. It uses two workers by default; set `CHECK_JOBS=1` to limit
 it further. Negative solvers use one core and the whole pipeline runs under `nice`.
 
-Artifacts, source hashes, command/exit transcripts, CSV proof timings and summaries stay in `.checks/run-*`. The
-runner uses no saved proof artifacts. `python3 verify/mutations.py OUT [NAME ...]` writes the
+Artifacts, source hashes, command/exit transcripts, CSV proof timings and summaries stay in `.checks/run-*`. A module's
+passing proof is reused only under a key over everything it read: its staged copy, every file TypeScript loads for it
+(imported copies and declarations, packages and libraries, by path and content), the TypeScript and ts-morph versions,
+LemmaScript's build, Dafny's version, the run's LemmaScript settings and the harness's own files (`proof_cache.py`,
+`proof_inputs.cjs`). Any change re-proves the module; a mutant and a failed proof are never stored, and a pass is stored
+only when every non-mutant module of the run passed. Stored proofs live in `.checks/proofs/`; `VERIFY_FRESH=1` ignores
+them, and a box run reuses them only when given `--add apps/vibelang/verify/.checks/proofs`. `python3 verify/mutations.py OUT [NAME ...]` writes the
 mutants and their `manifest.json`; its case list is the manifest, and a case whose production text no longer matches
 exactly once fails the run until it is updated. Keep executable mutations meaningful and
 never change annotations to make a copy fail. macOS installers support Apple Silicon and Intel but were not run on

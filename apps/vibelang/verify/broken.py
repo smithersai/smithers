@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate executable-only mutants; reject them only by a direct own-contract failure.
-Every value dependency's original body is freshly proved in the same check invocation.
+Every value dependency's original body is proved in the same check invocation, or reused from an earlier proof of
+exactly the same inputs and tools (proof_cache.py).
 """
 import hashlib,json,os,pathlib,re,subprocess,sys,tempfile
 root=pathlib.Path(__file__).resolve().parent
@@ -33,6 +34,7 @@ for result in results:
     except ValueError as error:raise SystemExit(f"FAIL: {result['file']}: {error}")
 if production_sources(root.parent)!=production or any(hashlib.sha256(p.read_bytes()).hexdigest()!=digest for p,digest in before.items()):
     raise SystemExit('FAIL: production source changed during the run')
-print(f"BROKEN PASS: {len(results)}/{len(results)} executable mutations rejected by Dafny; {len(dependencies)} dependency modules freshly proved; {summary['seconds']}s")
+reused=sum(bool(r.get('cached')) for r in dependencies)
+print(f"BROKEN PASS: {len(results)}/{len(results)} executable mutations rejected by Dafny; {len(dependencies)} dependency modules proved ({reused} reused); {summary['seconds']}s")
 if not sys.argv[1:]:
     subprocess.run([sys.executable, str(root/'runtime_broken.py')], check=True)

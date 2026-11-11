@@ -598,6 +598,76 @@ export function count(xs: ReadonlyArray<boolean>): number {
         for kept in ['const spec = 1\n', 'spec\nfunction f() {}\n', '// spec function f\n', 'specs function f() {}\n']:
             self.assertEqual(lower(kept), kept)
 
+
+class ProofReuse(unittest.TestCase):
+    """A passing proof is reused while nothing it reads changes; any change re-proves it (proof_cache.py, 0018)."""
+
+    CALLEE = '//@ verify\n//@ ensures \\result >= n\nexport function atLeast(n: number): number { return n + 1 }\n'
+    CALLER = 'import { atLeast } from "./callee.vibe"\n//@ verify\n//@ ensures \\result > n\nexport function above(n: number): number { return atLeast(n) + 1 }\n'
+
+    def app(self):
+        import shutil
+        app = pathlib.Path(tempfile.mkdtemp(dir=ROOT / '.checks'))
+        self.addCleanup(shutil.rmtree, app, True)
+        (app / 'src').mkdir()
+        (app / 'tsconfig.json').write_text(json.dumps({'extends': str(ROOT.parent / 'tsconfig.json'), 'files': [], 'include': []}))
+        (app / 'src/callee.vibe').write_text(self.CALLEE)
+        (app / 'src/caller.vibe').write_text(self.CALLER)
+        return app
+
+    def check(self, app, **extra):
+        env = {k: v for k, v in os.environ.items() if k not in ('VERIFY_MUTATION_MANIFEST', 'VERIFY_FRESH')}
+        env.update(VIBELANG_VERIFY_ROOT=str(app), **extra)
+        result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(app / 'src/caller.vibe')], capture_output=True, text=True, env=env, timeout=600)
+        summary = json.loads(pathlib.Path(result.stdout.rsplit('results: ', 1)[1].strip()).read_text())
+        proved = sorted(pathlib.Path(c['argv'][-1]).stem for c in summary['commands'] if pathlib.Path(c['argv'][0]).name == 'dafny')
+        return result, summary, proved
+
+    def test_an_unchanged_import_is_reused_and_any_change_reproves(self):
+        app = self.app()
+        first, _, proved = self.check(app)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertEqual(proved, ['callee', 'caller'])
+        again, summary, proved = self.check(app)
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertEqual(proved, [], 'nothing changed, so nothing is proved again')
+        self.assertEqual(sorted(pathlib.Path(r['file']).name for r in summary['results'] if r.get('cached')), ['callee.vibe', 'caller.vibe'])
+        _, _, proved = self.check(app, VERIFY_FRESH='1')
+        self.assertEqual(proved, ['callee', 'caller'], 'VERIFY_FRESH proves every module')
+        (app / 'src/callee.vibe').write_text(self.CALLEE.replace('n + 1', 'n + 2'))
+        changed, _, proved = self.check(app)
+        self.assertEqual(changed.returncode, 0, changed.stdout + changed.stderr)
+        self.assertEqual(proved, ['callee', 'caller'], 'a changed value import re-proves it and its importer')
+        (app / 'src/caller.vibe').write_text(self.CALLER.replace('+ 1 }', '+ 2 }'))
+        _, _, proved = self.check(app)
+        self.assertEqual(proved, ['caller'], 'a changed importer reuses its unchanged import')
+
+    def test_a_failed_proof_is_never_reused(self):
+        app = self.app()
+        (app / 'src/callee.vibe').write_text(self.CALLEE.replace('n + 1', 'n - 1'))
+        for attempt in range(2):
+            failed, _, proved = self.check(app)
+            self.assertNotEqual(failed.returncode, 0, failed.stdout)
+            self.assertIn('callee', proved, attempt)
+
+    def test_a_changed_tool_build_changes_the_key(self):
+        from proof_cache import tools_digest
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            root = pathlib.Path(folder)
+            (root / 'package/tools/dist').mkdir(parents=True)
+            (root / 'tools/bin').mkdir(parents=True)
+            (root / 'package/tools/dist/lsc.js').write_text('one\n')
+            (root / 'tools/bin/lsc').symlink_to(root / 'package/tools/dist/lsc.js')
+            before = tools_digest(root / 'tools', root / 'package')
+            (root / 'package/tools/dist/extract.js').write_text('two\n')
+            self.assertNotEqual(tools_digest(root / 'tools', root / 'package'), before)
+
+    def test_a_run_folder_and_checkout_path_do_not_decide_a_key(self):
+        from proof_cache import normalize
+        run = pathlib.Path('/x/apps/vibelang/verify/.checks/run-abc')
+        self.assertEqual(normalize(f'import "{run}/declarations/tree/src/a.vibe"', run, pathlib.Path('/x')),
+                         'import "<run>/declarations/tree/src/a.vibe"')
+
 if __name__ == '__main__':
     (ROOT / '.checks').mkdir(exist_ok=True)
     unittest.main()

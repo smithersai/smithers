@@ -6,6 +6,7 @@ from proof_additions import add_proof_steps, insertion_names
 from declarations import stage as stage_declarations, copied_imports, declared_imports
 from spec_functions import lower as lower_spec_functions
 from proof_diagnostics import read_diagnostics
+import proof_cache
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, INVARIANTS, postcondition_line, case_assertion_line, invariant_line, time_limit, wall_limit
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
@@ -22,7 +23,8 @@ else:
  source=APP
  selected=production_sources(APP)
 started=time.monotonic()
-# A run owns its artifacts and cannot use a previously successful proof.
+# A run owns its artifacts. It reuses an earlier passing proof of a module only under a key over everything that proof
+# read and the tools that checked it (proof_cache.py); anything else is proved in this run.
 checks=APP/'verify'/'.checks'; checks.mkdir(parents=True,exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=checks))
 # The proof sources strictly typecheck separately. Keep identical compiler options while
 # excluding unrelated application files from each ts-morph generation project.
@@ -74,6 +76,9 @@ stage_declarations(APP, declarations, run/'declarations')
 config=APP/('.verify-'+run.name+'.config.json')
 config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
 atexit.register(lambda: config.unlink(missing_ok=True))
+# A mutant is always proved: its rejection is the point. Every other staged module may reuse an identical earlier proof.
+reusable={staged:origin for staged,origin in shown.items() if staged not in mutant_files}
+cache_keys=proof_cache.keys(APP,run,reusable,json.loads(config.read_text()),APP==ROOT.parent,proof_cache.tools_digest(ROOT/'.tools',ROOT.parents[2]/'packages/lemmascript'),proof_cache.harness_digest()) if reusable else {}
 
 commands=[]
 def command(args, cwd, wall_seconds=180):
@@ -88,7 +93,10 @@ def command(args, cwd, wall_seconds=180):
  except OSError as e: return 127,str(e)+'\n'
 
 def verify(item):
- idx,ts=item; is_mutation=ts in mutant_files; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
+ idx,ts=item; is_mutation=ts in mutant_files; key=None if is_mutation else cache_keys.get(ts)
+ stored=proof_cache.load(APP,key) if key else None
+ if stored: return {**stored['result'],'seconds':0.0,'cached':stored['run'],'key':key}
+ t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
  # Report function declarations and contract lines even for extraction failures.
  # The hash is the original's, which the run rechecks at completion; a staged copy differs only by spec_functions.lower.
  origin_bytes=origin.read_bytes()
@@ -166,7 +174,7 @@ def verify(item):
  mapped=[f"{origin}:{d['source_line']}: function {d['function']} [{d['symbol']}; generated line {d['line']}]"
          for d in diagnostics if d['function'] is not None]
  log=work/(ts.stem+'.output.log');log.write_text(out)
- return {'sha256':hashlib.sha256(origin_bytes).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy),'diagnostics':diagnostics,'mutation':is_mutation}
+ return {'sha256':hashlib.sha256(origin_bytes).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy),'diagnostics':diagnostics,'mutation':is_mutation,'key':key}
 
 KEYWORDS=dafny_keywords()
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
@@ -182,7 +190,7 @@ if not 1<=jobs<=8: raise SystemExit('CHECK_JOBS must be 1..8')
 results=[]
 def report(r):
  results.append(r)
- print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} ({r['seconds']:.3f}s)")
+ print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} "+(f"(reused: proved in {r['cached']})" if r.get('cached') else f"({r['seconds']:.3f}s)"))
  if r['exit']:
   for m in r['mapped']: print(m)
   print(r['output'],end='')
@@ -211,7 +219,11 @@ for r in results:
  if not original.exists() or hashlib.sha256(original.read_bytes()).hexdigest() != r['sha256']:
   r['exit']=2; r['output']+='ERROR: source changed before verification completed\n'
   print('FAIL: source changed before verification completed: '+r['file'])
-summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'dependencies':[str(p) for p in dependencies],'inputs':{str(p):h for p,h in dependency_hashes.items()},'results':results,'commands':commands}
+# Store a module's pass only when every non-mutant module of the run passed, so no stored proof leans on a failed one.
+if all(r['exit']==0 for r in results if not r['mutation']):
+ for r in results:
+  if r.get('key'): proof_cache.save(APP,r['key'],r,run)
+summary={'directory':str(source),'reused':sum(bool(r.get('cached')) for r in results),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'dependencies':[str(p) for p in dependencies],'inputs':{str(p):h for p,h in dependency_hashes.items()},'results':results,'commands':commands}
 (run/'summary.json').write_text(json.dumps(summary,indent=2))
-print(f"{summary['passed']}/{len(results)} files verified in {summary['seconds']:.3f}s; results: {run/'summary.json'}")
+print(f"{summary['passed']}/{len(results)} files verified ({summary['reused']} reused) in {summary['seconds']:.3f}s; results: {run/'summary.json'}")
 raise SystemExit(0 if summary['passed']==len(results) else 1)
