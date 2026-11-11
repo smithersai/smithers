@@ -673,17 +673,20 @@ export const executeEffect = (
         const resolved = yield* resolveSpawn(node, override, archive)
         if ("error" in resolved) return { ok: false as const, error: resolved.error }
         const sandbox = yield* sandboxFor(node, workspaceRoot, candidateReads)
+        const ambient = options.environment ?? process.env
+        // The owned compile cache follows the tree the tool runs in, so a
+        // confined run in a scratch copy still writes inside its own binds.
+        // A confined tool can write nowhere else, so the directory the host
+        // shares between workspaces is for unconfined tools only.
+        const cacheEnvironment = ExecSandbox.enforceable(sandbox, ExecSandbox.host()) ? {} : ambient
         const payload: Exec.Payload = {
           cwd: node.cwd,
           argv: resolved.argv,
-          // The owned compile cache follows the tree the tool runs in, so a
-          // confined run in a scratch copy still writes inside its own binds.
-          env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory),
+          env: GoCache.spawnEnvironment(resolved.env, workspaceRoot, cacheDirectory, cacheEnvironment),
           secrets: resolved.secrets,
           expectedExitCodes: [0],
           timeoutMs: node.timeoutMs
         }
-        const ambient = options.environment ?? process.env
         // A repository child streams to the parent CLI, which forwards both pipes
         // through its own reporter, so the child's live view is written straight
         // to its process pipes instead of through a second reporter. It stays an observer view either way:
@@ -698,9 +701,9 @@ export const executeEffect = (
         })
         // A tool that may start `go` holds a lease for as long as it runs, so
         // a concurrent `cache prune --max-size` leaves what it reads alone.
-        const lease = (yield* joined(() => GoCache.leased(node.rule, workspaceRoot, cacheDirectory)))
+        const lease = (yield* joined(() => GoCache.leased(node.rule, workspaceRoot, cacheDirectory, cacheEnvironment)))
           ? Effect.acquireRelease(
-            joined(() => GoCache.acquireLease(workspaceRoot, cacheDirectory)),
+            joined(() => GoCache.acquireLease(workspaceRoot, cacheDirectory, undefined, cacheEnvironment)),
             (path) => joined(() => GoCache.releaseLease(path)).pipe(Effect.orDie)
           )
           : Effect.void

@@ -145,6 +145,8 @@ export const remove = async (options: {
   readonly now?: number | undefined
   /** What Go compile cache leases are judged against; the running process's own clock and host when omitted. */
   readonly leaseHost?: GoCache.LeaseHost | undefined
+  /** The host environment, whose `SMITHERS_GO_CACHE` names a compile cache shared between workspaces. */
+  readonly environment?: GoCache.Environment | undefined
 }) => {
   if (!options.dryRun && !options.yes) {
     throw new Error("cache deletion requires --yes; use --dry-run to inspect candidates")
@@ -153,13 +155,20 @@ export const remove = async (options: {
   const cutoff = options.olderThanDays === undefined ? Infinity : now - options.olderThanDays * 86_400_000
   const results = await entries(options.root, options.cacheDirectory)
   const candidates = results.filter((entry) => Date.parse(entry.modifiedAt) < cutoff)
-  const compiled = options.maxSizeBytes === undefined ? [] : await GoCache.entries(options.root, options.cacheDirectory)
+  const compiled = options.maxSizeBytes === undefined
+    ? []
+    : await GoCache.entries(options.root, options.cacheDirectory, options.environment)
   const goBuild = { candidates: 0, candidateBytes: 0, removed: 0, bytes: 0, inUse: 0, inUseBytes: 0 }
   const evicted: Array<GoCache.Entry> = []
   const before = [...results, ...compiled].reduce((sum, entry) => sum + entry.bytes, 0)
   let projected = before - candidates.reduce((sum, entry) => sum + entry.bytes, 0)
   if (options.maxSizeBytes !== undefined) {
-    const usage = await GoCache.usage(options.root, options.cacheDirectory, options.leaseHost ?? GoCache.leaseHost(now))
+    const usage = await GoCache.usage(
+      options.root,
+      options.cacheDirectory,
+      options.leaseHost ?? GoCache.leaseHost(now),
+      options.environment
+    )
     if (!options.dryRun) { for (const lease of usage.stale) await GoCache.releaseLease(lease) }
     const aged = new Set(candidates)
     const pool = [
@@ -204,7 +213,9 @@ export const remove = async (options: {
     removed += 1
     bytes += entry.bytes
   }
-  if (!options.dryRun) Object.assign(goBuild, await GoCache.evict(options.root, options.cacheDirectory, evicted))
+  if (!options.dryRun) {
+    Object.assign(goBuild, await GoCache.evict(options.root, options.cacheDirectory, evicted, options.environment))
+  }
   return {
     scope: "local-action-results",
     dryRun: options.dryRun,

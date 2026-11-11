@@ -6,7 +6,9 @@
  * build system can see, and is shared with every other `go` on the machine.
  * Every tool a target spawns, and every `go` the planner probes with,
  * therefore runs with `GOCACHE` pointing inside the workspace's cache
- * directory, where `cache status` measures it.
+ * directory, where `cache status` measures it. A host that builds many
+ * checkouts of one repository names one directory for all of them in
+ * `SMITHERS_GO_CACHE`, and the build system owns that directory instead.
  *
  * @since 0.1.0
  */
@@ -27,12 +29,13 @@ import * as NodePath from "node:path"
 export class GoCacheError extends Data.TaggedError("smithers-build/GoCacheError")<{
   /**
    * `not-a-directory` when the cache path is a file or a link, `changed` when
-   * the directory was replaced while entries were being removed.
+   * the directory was replaced while entries were being removed, `location`
+   * when `SMITHERS_GO_CACHE` does not name an absolute directory.
    */
-  readonly reason: "not-a-directory" | "changed"
+  readonly reason: "not-a-directory" | "changed" | "location"
   readonly message: string
 }> {
-  constructor(reason: "not-a-directory" | "changed", message: string) {
+  constructor(reason: "not-a-directory" | "changed" | "location", message: string) {
     super({ reason, message })
   }
 }
@@ -46,13 +49,42 @@ export class GoCacheError extends Data.TaggedError("smithers-build/GoCacheError"
 export const directoryName = "go-build"
 
 /**
- * The absolute compile cache directory of the workspace at `root`.
+ * The host environment variable that names one compile cache directory for
+ * every workspace on the machine.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const environmentName = "SMITHERS_GO_CACHE"
+
+/**
+ * The host environment a compile cache is located from.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Environment = Readonly<Record<string, string | undefined>>
+
+const shared = (environment: Environment): string | undefined => {
+  const value = environment[environmentName]
+  if (value === undefined || value === "") return undefined
+  if (!NodePath.isAbsolute(value)) {
+    throw new GoCacheError("location", `${environmentName} must be an absolute directory: ${value}`)
+  }
+  return NodePath.resolve(value)
+}
+
+/**
+ * The absolute compile cache directory of the workspace at `root`: the one
+ * `SMITHERS_GO_CACHE` names in `environment`, else `go-build` inside the
+ * workspace cache directory.
  *
  * @category querying
  * @since 0.1.0
  */
-export const directory = (root: string, cacheDirectory: string): string =>
-  NodePath.join(root, ...Config.normalizeCacheDirectory(cacheDirectory).split("/"), directoryName)
+export const directory = (root: string, cacheDirectory: string, environment: Environment = {}): string =>
+  shared(environment) ??
+    NodePath.join(root, ...Config.normalizeCacheDirectory(cacheDirectory).split("/"), directoryName)
 
 /**
  * The environment one tool spawns with: the owned `GOCACHE`, unless the
@@ -72,8 +104,9 @@ export const directory = (root: string, cacheDirectory: string): string =>
 export const spawnEnvironment = (
   env: Readonly<Record<string, string>>,
   root: string,
-  cacheDirectory: string
-): Record<string, string> => ({ GOCACHE: directory(root, cacheDirectory), ...env })
+  cacheDirectory: string,
+  environment: Environment = {}
+): Record<string, string> => ({ GOCACHE: directory(root, cacheDirectory, environment), ...env })
 
 /**
  * One file `go` wrote into the compile cache.
@@ -94,11 +127,19 @@ const entryName = /^[0-9a-f]{64}-[ad]$/
 
 /**
  * Resolves the existing compile cache directory without creating it or
- * following a link, so nothing outside the workspace is ever measured.
+ * following a link, so nothing but the owned directory is ever measured.
  */
-const existing = async (root: string, cacheDirectory: string): Promise<string | undefined> => {
-  let current = await Fs.realpath(root)
-  for (const part of [...Config.normalizeCacheDirectory(cacheDirectory).split("/"), directoryName]) {
+const existing = async (
+  root: string,
+  cacheDirectory: string,
+  environment: Environment
+): Promise<string | undefined> => {
+  const named = shared(environment)
+  let current = named === undefined ? await Fs.realpath(root) : NodePath.dirname(named)
+  const parts = named === undefined
+    ? [...Config.normalizeCacheDirectory(cacheDirectory).split("/"), directoryName]
+    : [NodePath.basename(named)]
+  for (const part of parts) {
     current = NodePath.join(current, part)
     const stat = await Fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined
@@ -122,8 +163,12 @@ const existing = async (root: string, cacheDirectory: string): Promise<string | 
  * @category querying
  * @since 0.1.0
  */
-export const entries = async (root: string, cacheDirectory: string): Promise<ReadonlyArray<Entry>> => {
-  const base = await existing(root, cacheDirectory)
+export const entries = async (
+  root: string,
+  cacheDirectory: string,
+  environment: Environment = {}
+): Promise<ReadonlyArray<Entry>> => {
+  const base = await existing(root, cacheDirectory, environment)
   if (base === undefined) return []
   const result: Array<Entry> = []
   for (const shard of await Fs.readdir(base, { withFileTypes: true })) {
@@ -146,16 +191,16 @@ export const entries = async (root: string, cacheDirectory: string): Promise<Rea
  * @category querying
  * @since 0.1.0
  */
-export const status = async (root: string, cacheDirectory: string): Promise<{
+export const status = async (root: string, cacheDirectory: string, environment: Environment = {}): Promise<{
   readonly directory: string
   readonly exists: boolean
   readonly entries: number
   readonly bytes: number
 }> => {
-  const listed = await entries(root, cacheDirectory)
+  const listed = await entries(root, cacheDirectory, environment)
   return {
-    directory: directory(root, cacheDirectory),
-    exists: await existing(root, cacheDirectory) !== undefined,
+    directory: directory(root, cacheDirectory, environment),
+    exists: await existing(root, cacheDirectory, environment) !== undefined,
     entries: listed.length,
     bytes: listed.reduce((sum, entry) => sum + entry.bytes, 0)
   }
@@ -238,9 +283,10 @@ interface LeaseRecord {
 export const acquireLease = async (
   root: string,
   cacheDirectory: string,
-  host: LeaseHost = leaseHost()
+  host: LeaseHost = leaseHost(),
+  environment: Environment = {}
 ): Promise<string> => {
-  const leases = NodePath.join(directory(root, cacheDirectory), leaseDirectoryName)
+  const leases = NodePath.join(directory(root, cacheDirectory, environment), leaseDirectoryName)
   await Fs.mkdir(leases, { recursive: true })
   const record: LeaseRecord = { pid: process.pid, host: host.host, startedAt: host.now }
   const path = NodePath.join(leases, `${randomUUID()}.json`)
@@ -267,9 +313,14 @@ export const releaseLease = async (lease: string): Promise<void> => {
  * @category execution
  * @since 0.1.0
  */
-export const leased = async (rule: string, root: string, cacheDirectory: string): Promise<boolean> =>
+export const leased = async (
+  rule: string,
+  root: string,
+  cacheDirectory: string,
+  environment: Environment = {}
+): Promise<boolean> =>
   rule.startsWith("Go.") ||
-  await Fs.lstat(directory(root, cacheDirectory)).then((stat) => stat.isDirectory(), () => false)
+  await Fs.lstat(directory(root, cacheDirectory, environment)).then((stat) => stat.isDirectory(), () => false)
 
 /**
  * What the leases say about the compile cache at one moment.
@@ -301,9 +352,10 @@ export interface Usage {
 export const usage = async (
   root: string,
   cacheDirectory: string,
-  host: LeaseHost = leaseHost()
+  host: LeaseHost = leaseHost(),
+  environment: Environment = {}
 ): Promise<Usage> => {
-  const leases = NodePath.join(directory(root, cacheDirectory), leaseDirectoryName)
+  const leases = NodePath.join(directory(root, cacheDirectory, environment), leaseDirectoryName)
   let earliest = host.now
   const stale: Array<string> = []
   for (const name of (await Fs.readdir(leases).catch(() => [])).sort()) {
@@ -348,12 +400,13 @@ const parseLease = (text: string): LeaseRecord | undefined => {
 export const evict = async (
   root: string,
   cacheDirectory: string,
-  candidates: ReadonlyArray<Entry>
+  candidates: ReadonlyArray<Entry>,
+  environment: Environment = {}
 ): Promise<{ readonly removed: number; readonly bytes: number }> => {
   let removed = 0
   let bytes = 0
   for (const entry of candidates) {
-    const base = await existing(root, cacheDirectory)
+    const base = await existing(root, cacheDirectory, environment)
     if (base === undefined || NodePath.dirname(NodePath.dirname(entry.path)) !== base) {
       throw new GoCacheError("changed", "Go compile cache path changed during eviction")
     }

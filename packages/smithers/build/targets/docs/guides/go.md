@@ -32,6 +32,11 @@ directory, `.flows/go-build` by default. `smthrs cache status` reports its
 size in `goBuild`. A shell target that runs `go` gets the same directory. To
 point one target somewhere else, declare `GOCACHE` in its `env`.
 
+On a host with many checkouts, set `SMITHERS_GO_CACHE` to an absolute
+directory to share one compile cache between them. Unconfined targets
+(`sandbox: "none"`) and planning use it; a confined target keeps the
+workspace's own directory.
+
 `smthrs cache prune --max-size 40GiB --yes` caps the directory, least recently
 used entries first, and never removes an entry a running target may be
 reading. Go's fuzz corpus cache in the same directory is not touched.

@@ -680,20 +680,21 @@ A structured failure carries a code alongside its message.
 
 ## Environment
 
-| Variable                                | Read by                                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------------------- |
-| `SMITHERS_CACHE_URL`                    | Overrides the declared remote-cache endpoint for this process.                      |
-| `SMITHERS_CACHE_TOKEN`                  | The default remote-cache credential.                                                |
-| `SMITHERS_CACHE_NAMESPACE`              | The trust domain results publish into. Unset means the trusted domain.              |
-| `SMITHERS_CLOUD_API_URL`                | Overrides the Smithers Cloud API base that zero-config cache discovery reads.       |
-| `SMITHERS_CLOUD_HOSTS`                  | Extra comma-separated hosts whose git remotes identify a Smithers Cloud repository. |
-| `SMITHERS_NPM_CREDENTIAL_HOSTS`         | Registry hosts a project `.npmrc` may bind credentials to, comma-separated.         |
-| `SMTHRS_UI`                             | The renderer, when `--ui` is `auto`.                                                |
-| `SMTHRS_SHARD`                          | `<index>/<total>` selecting one shard of a sharded target.                          |
-| `SMTHRS_AGENT_FAKE`                     | A script file that replaces the real agent CLI, for deterministic tests.            |
-| `SMTHRS_AGENT_TIMEOUT_MS`               | The agent session timeout.                                                          |
-| `SMTHRS_DEBUG_KEYS`                     | A file every node's key material is appended to, for cache-key forensics.           |
-| `NO_COLOR`, `TERM`, `CI`, `FORCE_COLOR` | Renderer selection under `--ui auto`.                                               |
+| Variable                                | Read by                                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `SMITHERS_CACHE_URL`                    | Overrides the declared remote-cache endpoint for this process.                                               |
+| `SMITHERS_GO_CACHE`                     | An absolute directory that replaces the workspace's `go-build` as the Go compile cache for unconfined tools. |
+| `SMITHERS_CACHE_TOKEN`                  | The default remote-cache credential.                                                                         |
+| `SMITHERS_CACHE_NAMESPACE`              | The trust domain results publish into. Unset means the trusted domain.                                       |
+| `SMITHERS_CLOUD_API_URL`                | Overrides the Smithers Cloud API base that zero-config cache discovery reads.                                |
+| `SMITHERS_CLOUD_HOSTS`                  | Extra comma-separated hosts whose git remotes identify a Smithers Cloud repository.                          |
+| `SMITHERS_NPM_CREDENTIAL_HOSTS`         | Registry hosts a project `.npmrc` may bind credentials to, comma-separated.                                  |
+| `SMTHRS_UI`                             | The renderer, when `--ui` is `auto`.                                                                         |
+| `SMTHRS_SHARD`                          | `<index>/<total>` selecting one shard of a sharded target.                                                   |
+| `SMTHRS_AGENT_FAKE`                     | A script file that replaces the real agent CLI, for deterministic tests.                                     |
+| `SMTHRS_AGENT_TIMEOUT_MS`               | The agent session timeout.                                                                                   |
+| `SMTHRS_DEBUG_KEYS`                     | A file every node's key material is appended to, for cache-key forensics.                                    |
+| `NO_COLOR`, `TERM`, `CI`, `FORCE_COLOR` | Renderer selection under `--ui auto`.                                                                        |
 
 `SMITHERS_CACHE_URL` and `SMITHERS_CACHE_TOKEN` are read once by the process
 entry point and deleted from the environment before any declaration module

@@ -1391,7 +1391,7 @@ const cacheCli = (config: RuntimeConfig) => {
             exists: await CacheAdmin.directory(index.root, cacheDirectory) !== undefined,
             entries: entries.length,
             bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
-            goBuild: await GoCache.status(index.root, cacheDirectory),
+            goBuild: await GoCache.status(index.root, cacheDirectory, environmentOf(config)),
             remote: remote === undefined ? null : { endpoint: remote.endpoint, health: "not-probed" }
           }
         } catch (cause) {
@@ -1420,6 +1420,7 @@ const cacheCli = (config: RuntimeConfig) => {
             maxSizeBytes: context.options.maxSize === undefined
               ? undefined
               : CacheAdmin.parseSize(context.options.maxSize),
+            environment: environmentOf(config),
             dryRun: context.options.dryRun,
             yes: context.options.yes
           })

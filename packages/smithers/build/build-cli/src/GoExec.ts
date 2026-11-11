@@ -120,7 +120,9 @@ const hostEnvironment = (context: Context): Record<string, string> => {
  * a directory the build system does not measure.
  */
 const ownedCache = (context: Context): Record<string, string> =>
-  context.cacheDirectory === undefined ? {} : { GOCACHE: GoCache.directory(context.root, context.cacheDirectory) }
+  context.cacheDirectory === undefined
+    ? {}
+    : { GOCACHE: GoCache.directory(context.root, context.cacheDirectory, context.environment ?? process.env) }
 
 const execFile = (
   file: string,

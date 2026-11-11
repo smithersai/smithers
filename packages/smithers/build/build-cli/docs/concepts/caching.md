@@ -30,6 +30,14 @@ target that declares its own `GOCACHE` in `env` keeps it. The value is set
 when the tool starts and is not part of any key: a compile cache changes how
 long a build takes, not what it produces.
 
+A host that builds many checkouts of one repository can give them one
+compile cache: set `SMITHERS_GO_CACHE` to an absolute directory. Planning and
+every unconfined tool (`sandbox: "none"`) then use that directory, and
+`cache status` and `cache prune` measure and cap it from any of the
+checkouts. A confined tool keeps the workspace's own `go-build`: it can write
+only inside its workspace, and a directory one checkout's sandboxed target
+could write is a cache every other checkout would trust.
+
 `cache prune --max-size 40GiB` keeps the action results plus the compile
 cache under a size, evicting the least recently used entries first. It is
 safe to run while targets run. Every tool that can reach the compile cache
