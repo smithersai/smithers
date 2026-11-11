@@ -1,0 +1,44 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+
+/** The action declares schemas and a stable name, and carries no code. */
+const Compile = Action.make("build/Compile", {
+  payload: { target: Schema.String },
+  success: Schema.String
+})
+
+/** The flow names the action in its body; planning executes nothing. */
+const Build = Flow.make("build/Build", {
+  payload: { target: Schema.String },
+  success: Schema.String,
+  body: (payload) => Compile.call(payload)
+})
+
+/** Submits one execution id twice, then once more with a different payload. */
+export effect function runQuickstart() {
+  let compiles = 0
+  const BuildLayer = Layer.mergeAll(
+    Compile.toLayer(effect ({ target }) => {
+      compiles = compiles + 1
+      return `${target}.js`
+    }),
+    Interpreter.layer(Build)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provideMerge(NodeCrypto.layer)
+  )
+
+  provide BuildLayer {
+    const first = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    const second = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    // The same id with a different payload is refused, not joined.
+    const conflict = Build.execute({ target: "lib" }, { executionId: "build-app-1" }) catch (error) =>
+      match (error) {
+        when FlowEngine.ExecutionIdentityConflict: error.field;
+        default: `refused with ${error._tag}`;
+      }
+    return { first, second, compiles, conflict }
+  }
+}

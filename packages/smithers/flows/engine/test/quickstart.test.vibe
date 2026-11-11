@@ -1,0 +1,11 @@
+import { expect, it } from "@effect/vitest"
+import { runQuickstart } from "../examples/vibe/quickstart.vibe"
+
+it.effect("joins a resubmitted execution id and refuses it for a different payload", effect () => {
+  expect(try runQuickstart()).toEqual({ first: "app.js", second: "app.js", compiles: 1, conflict: "payload" })
+})
+
+it.effect("starts every run from a fresh in-memory engine", effect () => {
+  try runQuickstart()
+  expect((try runQuickstart()).compiles).toBe(1)
+})

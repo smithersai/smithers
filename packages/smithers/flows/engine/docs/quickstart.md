@@ -8,7 +8,9 @@ sidebar:
 This builds one runnable file. It declares a flow, runs it on
 `FlowEngine.layerMemory`, and then submits the same execution id a second time
 to show what the engine records. Nothing is written to disk and no store is
-configured.
+configured. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Before you start
 
@@ -117,6 +119,65 @@ Two identities did that work, and they are worth separating:
 `Effect.orDie` is there because `execute` fails typed when a payload does not
 satisfy the flow's schema. This payload is statically valid, so a refusal would
 be a defect in the program rather than an error a caller handles.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the declarations are
+unchanged, the action's implementation is an `effect` arrow rather than
+`Effect.sync`, and `provide` supplies the composition around the two runs
+instead of `Effect.provide`. The walkthrough also submits `build-app-1` a third
+time with a different payload: `catch` recovers the refusal, and `match` reads
+the `ExecutionIdentityConflict` field that differed.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+
+/** The action declares schemas and a stable name, and carries no code. */
+const Compile = Action.make("build/Compile", {
+  payload: { target: Schema.String },
+  success: Schema.String
+})
+
+/** The flow names the action in its body; planning executes nothing. */
+const Build = Flow.make("build/Build", {
+  payload: { target: Schema.String },
+  success: Schema.String,
+  body: (payload) => Compile.call(payload)
+})
+
+/** Submits one execution id twice, then once more with a different payload. */
+export effect function runQuickstart() {
+  let compiles = 0
+  const BuildLayer = Layer.mergeAll(
+    Compile.toLayer(effect ({ target }) => {
+      compiles = compiles + 1
+      return `${target}.js`
+    }),
+    Interpreter.layer(Build)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provideMerge(NodeCrypto.layer)
+  )
+
+  provide BuildLayer {
+    const first = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    const second = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    // The same id with a different payload is refused, not joined.
+    const conflict = Build.execute({ target: "lib" }, { executionId: "build-app-1" }) catch (error) =>
+      match (error) {
+        when FlowEngine.ExecutionIdentityConflict: error.field;
+        default: `refused with ${error._tag}`;
+      }
+    return { first, second, compiles, conflict }
+  }
+}
+```
 
 ## Where to go next
 
