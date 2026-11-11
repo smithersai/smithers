@@ -25,7 +25,7 @@ const writable = Effect.gen(function*() {
     writer.write(sql`INSERT INTO parent VALUES (1)`.raw.pipe(Effect.flatMap(DurableWriter.affectedRows)))
   )
   const journal = yield* sql`PRAGMA journal_mode`
-  return { rejected: rejected.code, afterRejected, nested, journal }
+  return { driver: sql.driver, rejected: rejected.code, afterRejected, nested, journal }
 }).pipe(
   Effect.provide(Layer.provideMerge(DurableWriter.layer(), BunDatabase.layer({ filename }))),
   Effect.scoped

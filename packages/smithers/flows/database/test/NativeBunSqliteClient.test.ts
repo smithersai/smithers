@@ -16,6 +16,7 @@ describe("Bun SQLite client under real Bun", () => {
       const output = execFileSync("bun", [fixture], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" })
       expect(JSON.parse(output.trim().split("\n").at(-1)!)).toEqual({
         writable: {
+          driver: "sqlite-bun",
           // A deferred foreign key rejects the COMMIT: typed, and rolled back.
           rejected: "constraint",
           afterRejected: [],

@@ -1,6 +1,6 @@
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as Dialect from "../src/Dialect.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"
@@ -11,7 +11,7 @@ import * as TestDatabase from "../src/test/TestDatabase.ts"
 import * as TestSchemas from "../src/TestSchemas.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL
-const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Effect<A, E>) =>
+const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Effect<A, E, Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const schema = TestSchemas.schemaName("adapter")
     // Build the layers in the enclosing scope so two independent pools stay open.
@@ -24,6 +24,26 @@ const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Eff
   })))
 
 describe.skipIf(!url)("PostgreSQL adapter (independent pools)", () => {
+  it("releases an interrupted transaction and reports its PostgreSQL driver", async () => {
+    await fixture((sql, peer) =>
+      Effect.gen(function*() {
+        expect(sql.driver).toBe("pg")
+        yield* sql`CREATE TABLE interrupted_receipts (id INTEGER PRIMARY KEY)`
+        const entered = yield* Deferred.make<void>()
+        const pending = yield* sql.withTransaction(Effect.gen(function*() {
+          yield* sql`INSERT INTO interrupted_receipts VALUES (1)`
+          yield* Deferred.succeed(entered, undefined)
+          return yield* Effect.never
+        })).pipe(Effect.forkScoped)
+        yield* Deferred.await(entered)
+        yield* Fiber.interrupt(pending)
+        expect(yield* peer`SELECT id FROM interrupted_receipts`).toEqual([])
+        yield* sql.withTransaction(sql`INSERT INTO interrupted_receipts VALUES (2)`)
+        expect(yield* peer`SELECT id FROM interrupted_receipts`).toEqual([{ id: 2 }])
+      })
+    )
+  })
+
   it("keeps value and streaming queries inside nested write rollback boundaries", async () => {
     await fixture((sql, peer) =>
       Effect.gen(function*() {
