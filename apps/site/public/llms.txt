@@ -53,6 +53,7 @@
 - [@smthrs/evals](https://smithers.sh/docs/reference/api/evals/): Fixed-suite evaluation, baselines, regression reports, and score gates for flows
 - [@smthrs/flows](https://smithers.sh/docs/reference/api/flows/): Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime
 - [@smthrs/fs](https://smithers.sh/docs/reference/api/fs/): Private metadata routing and schema-checked command projections for Smithers flows
+- [@smthrs/fuzz](https://smithers.sh/docs/reference/api/fuzz/): Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary
 - [@smthrs/gateway](https://smithers.sh/docs/reference/api/gateway/): Effect workspace gateway contracts, projections, and supervision ports for flows
 - [@smthrs/harness](https://smithers.sh/docs/reference/api/harness/): The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls
 - [@smthrs/integrations](https://smithers.sh/docs/reference/api/integrations/): GitHub and Telegram adapters over the Smithers control plane
