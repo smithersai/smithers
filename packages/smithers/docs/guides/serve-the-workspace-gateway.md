@@ -142,7 +142,9 @@ smthrs token mint --scope read:runs --scope write:runs --run run-42 --ttl 15m
 ```
 
 `--scope` repeats over `read:runs`, `write:runs`, and `approve:runs`; `--run`
-or `--flow` confines every call to that run or flow; `--ttl` takes `30s`,
+or `--flow` confines every call to that run or flow. The gateway does not look
+up which flow a run or plan belongs to, so a `--flow` token admits only `Plan`
+and a `List` filtered by that flow; use `--run` to act on a run. `--ttl` takes `30s`,
 `15m`, `1h`, or `2d`. The command prints the token; `--json` adds when it
 expires and the exact procedures it names. The gateway verifies it with
 `SMITHERS_TOKEN` and stores nothing, so rotating the credential revokes every

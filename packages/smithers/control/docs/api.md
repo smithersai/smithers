@@ -670,6 +670,7 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 | `verify`          | function | `(key, token, now) => Effect<Claims, Unauthorized>`. Signature and expiry; every malformation is the same refusal.                           |
 | `authorizes`      | function | `(claims, call) => boolean`. The procedure must be named; a confined token authorizes only calls naming its run or flow.                     |
 | `authenticator`   | function | `(options: AuthenticatorOptions) => Authenticator`. Signature and expiry always; procedure and confinement when the boundary knows the call. |
+| `FlowLookup`      | model    | `{ ofRun; ofPlan }`, each `(id) => Effect<string \| undefined>`. Passed as `flows`, it confines a flow token to runs and plans of its flow.  |
 | `isScopedToken`   | function | `(credential) => boolean`.                                                                                                                   |
 | `procedures`      | function | `(scopes) => ReadonlyArray<string>`, each once.                                                                                              |
 | `prefix`          | constant | `"smt1"`.                                                                                                                                    |

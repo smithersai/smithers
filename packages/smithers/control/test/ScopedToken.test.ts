@@ -248,6 +248,44 @@ describe("the authenticator", () => {
     expect(refused.message).toBe("The scoped token does not authorize Cancel")
   })
 
+  it("admits a flow token to the runs and plans the host resolves to its flow", async () => {
+    const { token } = await minted({ scopes: ["write:runs", "read:runs", "approve:runs"], flowId: "demo" })
+    const headers = { authorization: `Bearer ${token}` }
+    const flowOf: Record<string, string> = { "run-demo": "demo", "run-other": "other", "plan-demo": "demo" }
+    const flows: ScopedToken.FlowLookup = {
+      ofRun: (runId) => Effect.succeed(flowOf[runId]),
+      ofPlan: (planId) => Effect.succeed(flowOf[planId])
+    }
+    const resolving = ScopedToken.authenticator({ key, principal: scoped, now: () => 5_000, flows })
+    const outcome = (authenticator: typeof resolving, call: { rpc: string; payload: unknown }) =>
+      Effect.runPromise(
+        authenticator.authenticate(headers, call).pipe(
+          Effect.match({ onFailure: (error) => error.message, onSuccess: () => "admitted" })
+        )
+      )
+    const launch = { rpc: "Run", payload: { _tag: "Plan", planId: "plan-demo", digest: "d", envelope: {} } }
+
+    expect(await outcome(resolving, launch)).toBe("admitted")
+    expect(await outcome(resolving, { rpc: "Cancel", payload: { runId: "run-demo" } })).toBe("admitted")
+    expect(await outcome(resolving, { rpc: "Run", payload: { _tag: "Resume", runId: "run-demo" } })).toBe("admitted")
+    expect(await outcome(resolving, { rpc: "Approve", payload: { target: { _tag: "Plan", planId: "plan-demo" } } }))
+      .toBe("admitted")
+    expect(await outcome(resolving, { rpc: "Plan", payload: { flowId: "demo", input: {} } })).toBe("admitted")
+    expect(await outcome(resolving, { rpc: "Cancel", payload: { runId: "run-other" } }))
+      .toBe("The scoped token does not authorize Cancel")
+    expect(await outcome(resolving, { rpc: "Watch", payload: { runId: "run-unknown" } }))
+      .toBe("The scoped token does not authorize Watch")
+    expect(await outcome(resolving, { rpc: "Plan", payload: { flowId: "other", input: {} } }))
+      .toBe("The scoped token does not authorize Plan")
+    expect(await outcome(resolving, { rpc: "List", payload: { _tag: "runs" } }))
+      .toBe("The scoped token does not authorize List")
+    expect(await outcome(resolving, { rpc: "Shutdown", payload: { runId: "run-demo" } }))
+      .toBe("The scoped token does not authorize Shutdown")
+    // A host that supplies no lookup keeps refusing what the payload alone cannot place.
+    const unresolving = ScopedToken.authenticator({ key, principal: scoped, now: () => 5_000 })
+    expect(await outcome(unresolving, launch)).toBe("The scoped token does not authorize Run")
+  })
+
   it("refuses a missing credential, the root bearer itself, and an expired token", async () => {
     const { token } = await minted()
     const authenticator = ScopedToken.authenticator({ key, principal: scoped, now: () => 61_000 })

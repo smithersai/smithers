@@ -147,7 +147,10 @@ An authenticator also receives the call it is guarding, `{ rpc, payload }`,
 on every in-band frame and nothing at a transport edge; `anyAuthenticator`
 asks several in turn. `ScopedToken.authenticator` uses the call to confine a
 minted token to the procedures, run, or flow it names, and composes with the
-bearer:
+bearer. A flow-confined token admits only calls that name its flow, `Plan` and
+a `List` filtered by flow, unless the host passes `flows`, a `FlowLookup` that
+answers which flow a run or plan belongs to; then it also admits calls that
+name a run or plan of that flow:
 
 ```ts
 import * as ControlRpcs from "@smthrs/control/ControlRpcs"

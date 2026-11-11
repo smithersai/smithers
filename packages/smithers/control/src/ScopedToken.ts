@@ -255,6 +255,14 @@ const namedRun = (payload: unknown): unknown =>
 /** The flow a payload names. */
 const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? field(honoredFilters(payload), "flowId")
 
+/** The plan a payload names: a `Run` of a plan card, or a plan approval target. */
+const namedPlan = (payload: unknown): unknown => field(payload, "planId") ?? field(field(payload, "target"), "planId")
+
+/** The procedure and run confinement, which never needs the host. */
+const permits = (claims: Claims, call: Call): boolean =>
+  claims.procedures.includes(call.rpc) &&
+  (claims.runId === undefined || namedRun(call.payload) === claims.runId)
+
 /**
  * Whether verified claims authorize one call.
  *
@@ -268,9 +276,44 @@ const namedFlow = (payload: unknown): unknown => field(payload, "flowId") ?? fie
  * @since 1.0.0
  */
 export const authorizes = (claims: Claims, call: Call): boolean =>
-  claims.procedures.includes(call.rpc) &&
-  (claims.runId === undefined || namedRun(call.payload) === claims.runId) &&
-  (claims.flowId === undefined || namedFlow(call.payload) === claims.flowId)
+  permits(claims, call) && (claims.flowId === undefined || namedFlow(call.payload) === claims.flowId)
+
+/**
+ * The host's answer to which flow a run or a plan belongs to.
+ *
+ * Each lookup answers `undefined` for a run or plan the host does not know;
+ * a call naming one is then refused.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface FlowLookup {
+  readonly ofRun: (runId: string) => Effect.Effect<string | undefined>
+  readonly ofPlan: (planId: string) => Effect.Effect<string | undefined>
+}
+
+/**
+ * The flow a call acts on: the one it names, else the one the host resolves
+ * its run, or failing that its plan, to.
+ */
+const actedFlow = (call: Call, flows: FlowLookup): Effect.Effect<unknown> => {
+  const named = namedFlow(call.payload)
+  if (named !== undefined) return Effect.succeed(named)
+  const run = namedRun(call.payload)
+  if (typeof run === "string") return flows.ofRun(run)
+  const plan = namedPlan(call.payload)
+  return typeof plan === "string" ? flows.ofPlan(plan) : Effect.succeed(undefined)
+}
+
+/**
+ * Whether verified claims authorize one call, resolving through the host
+ * what {@link authorizes} reads off the payload alone: a flow-confined token
+ * also admits a call that names a run or plan of that flow.
+ */
+const admits = (claims: Claims, call: Call, flows: FlowLookup | undefined): Effect.Effect<boolean> =>
+  flows === undefined || claims.flowId === undefined || !permits(claims, call)
+    ? Effect.succeed(authorizes(claims, call))
+    : Effect.map(actedFlow(call, flows), (flow) => flow === claims.flowId)
 
 /**
  * What the scoped-token authenticator needs.
@@ -284,6 +327,13 @@ export interface AuthenticatorOptions {
   /** The principal every valid scoped token is stamped as. */
   readonly principal: Omit<Principal, "stampedAt">
   readonly now?: (() => number) | undefined
+  /**
+   * Resolves the flow of the run or plan a call names, so a flow-confined
+   * token can launch, steer, watch, and decide on runs and plans of its flow.
+   * Without it, a flow-confined token admits only calls that name the flow
+   * itself: `Plan` and a `List` filtered by flow.
+   */
+  readonly flows?: FlowLookup | undefined
 }
 
 /**
@@ -307,10 +357,13 @@ export const authenticator = (options: AuthenticatorOptions): Authenticator => (
     const now = options.now?.() ?? Date.now()
     return verify(options.key, credential, now).pipe(
       Effect.flatMap((claims) =>
-        call !== undefined && !authorizes(claims, call)
-          ? refused(`The scoped token does not authorize ${call.rpc}`)
-          : Effect.succeed({ ...options.principal, stampedAt: now })
-      )
+        call === undefined ? Effect.void : admits(claims, call, options.flows).pipe(
+          Effect.flatMap((admitted) =>
+            admitted ? Effect.void : refused(`The scoped token does not authorize ${call.rpc}`)
+          )
+        )
+      ),
+      Effect.as({ ...options.principal, stampedAt: now })
     )
   }
 })
