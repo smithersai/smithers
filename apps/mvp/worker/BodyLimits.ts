@@ -1,4 +1,4 @@
-import { Config, Effect, Schema } from "effect"
+import { Config, Context, Effect, Schema } from "effect"
 import { MAX_QUESTION_BODY_BYTES } from "../src/features/chat/contract.ts"
 import { MAX_ANSWER_BODY_BYTES } from "../src/features/agent/contract.ts"
 import { MAX_ATTENTION_BODY_BYTES } from "../src/features/attention/contract.ts"
@@ -32,13 +32,18 @@ export const DEFAULT_MODEL_BYTES = 192 * 1024
 /** The same configurable byte limit used by model admission. */
 export const modelBytes = Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), "MODEL_MAX_REQUEST_BYTES").pipe(Config.withDefault(DEFAULT_MODEL_BYTES))
 
+/** `modelBytes` as the host captured it while building: a request never rereads ambient configuration. */
+export const ModelBytes = Context.Reference<number>("@smthrs/mvp/BodyLimits/ModelBytes", {
+  defaultValue: () => DEFAULT_MODEL_BYTES,
+})
+
 /** Match the existing write-route contracts before consuming their streams. Unknown routes retain the aggregate cap. */
 export const forRequest = (url: string) => Effect.gen(function* () {
   const path = url.split("?")[0]!
   if (path.startsWith("/api/telemetry/")) return TELEMETRY_LIMITS.maxRequestBytes
   if (parseAdminRoute(path) !== undefined) return MAX_ADMIN_BODY_BYTES
   if (path.startsWith("/api/runners/")) return MAX_RUNNER_BODY_BYTES
-  if (path.startsWith("/api/model/")) return Math.min(MAX_BODY_BYTES, yield* modelBytes)
+  if (path.startsWith("/api/model/")) return Math.min(MAX_BODY_BYTES, yield* ModelBytes)
   if (path === "/api/auth/arrive") return 1024
   if (path === "/api/auth/sign-out" || path === "/api/auth/handoff") return 4096
   if (path === "/api/github/webhook") return MAX_WEBHOOK_BYTES

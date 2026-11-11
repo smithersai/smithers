@@ -1,4 +1,5 @@
 import { afterBody } from "../WriteAdmission.ts"
+import * as BodyLimits from "../BodyLimits.ts"
 // ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
 // db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. ChatApi starts remote
 // flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
@@ -184,6 +185,8 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     ...options.config,
   })
   const homeRepository = await runtime.runPromise(Conversations.configuredHomeRepositoryNames.pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
+  // Captured while building, as SignIn's admission does.
+  const modelBytes = await runtime.runPromise(Effect.gen(function* () { return yield* BodyLimits.modelBytes }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   const model = Model.make({
     stream: (request) => {
       requests.push(request)
@@ -255,6 +258,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   const handler = HttpEffect.toWebHandler(
     observed(
       afterBody(routed).pipe(
+        Effect.provideService(BodyLimits.ModelBytes, modelBytes),
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(Flows.TaskAnswers, options.answers ?? Flows.TaskAnswers.of({ answer: () => Effect.succeed(false) })),
         Effect.provide(docsSource),

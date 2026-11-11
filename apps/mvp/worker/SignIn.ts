@@ -23,6 +23,7 @@ import {
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "./Actor.ts"
+import * as BodyLimits from "./BodyLimits.ts"
 import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
@@ -395,6 +396,7 @@ export const make = <E, R>(
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
     const roleFreshMs = yield* SessionStore.roleFreshMs
+    const modelBytes = yield* BodyLimits.modelBytes
     const signingKeyIds = Option.isSome(setup) ? setup.value.keys.keyIds : []
     const withSigningKeys = <A, E2, R2>(effect: Effect.Effect<A, E2, R2>) =>
       effect.pipe(Effect.provideService(SessionStore.SigningKeyIds, signingKeyIds),
@@ -589,7 +591,7 @@ export const make = <E, R>(
         yield* ReplacedTokens.ensure.pipe(Effect.catchCause(() => Effect.void))
       }
       return yield* guard(next)
-    }), preflight)
+    }), preflight).pipe(Effect.provideService(BodyLimits.ModelBytes, modelBytes))
 
     /** The signed-in person behind a request, if any. Starts a role check when their role is stale. */
     const current = Effect.gen(function* () {

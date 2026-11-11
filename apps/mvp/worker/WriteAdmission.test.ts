@@ -1,11 +1,12 @@
 import { SharedText } from "@smthrs/sync"
 import { Base64 } from "effect/encoding"
-import { Clock, ConfigProvider, Effect, Option } from "effect"
+import { Clock, Effect, Option } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
+import * as BodyLimits from "./BodyLimits.ts"
 import * as Throttle from "./Throttle.ts"
 import { afterBody } from "./WriteAdmission.ts"
 import { testFile } from "./test/harness.ts"
@@ -138,10 +139,10 @@ test.each([
 
 
 
-test("model buffering uses the configured byte cap and rejects content-length before pulling", async () => {
+test("model buffering uses the byte cap its host captured and rejects content-length before pulling", async () => {
   let pulls = 0
   const handler = HttpEffect.toWebHandler(afterBody(Effect.succeed(HttpServerResponse.empty({ status: 204 }))).pipe(
-    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ MODEL_MAX_REQUEST_BYTES: "32" })),
+    Effect.provideService(BodyLimits.ModelBytes, 32),
   ))
   const accepted = await handler(new Request("http://smithers.test/api/model/chat", { method: "POST", body: new Uint8Array(32) }))
   expect(accepted.status).toBe(204)
