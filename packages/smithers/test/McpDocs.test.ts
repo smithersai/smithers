@@ -61,6 +61,8 @@ describe("the unified MCP docs", () => {
     const served = report.tools.map((tool: { name: string }) => tool.name)
     expect(report.toolCount).toBe(served.length)
     expect(served).toContain("flow_show")
+    expect(served.filter((name: string) => name.startsWith("memory_")).sort())
+      .toEqual(["memory_get", "memory_list", "memory_recall", "memory_set"])
     expect(served.filter((name: string) => excluded.includes(name))).toEqual([])
   })
 

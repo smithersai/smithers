@@ -4,6 +4,9 @@
 
 ### Added
 
+- `smthrs --mcp` serves `memory_list`, `memory_get`, `memory_set`, and
+  `memory_recall`, so agent CLIs registered with `smthrs mcp add` save and
+  recall shared facts. A memory tool call that names `root` is refused (#4582).
 - `@smthrs/agent/Budget` exports `reportsTokens`, and `Usage.unreported`
   counts the calls whose provider reported no usable token count, live and after
   recovery, so a caller can tell a free call from an unreported one.

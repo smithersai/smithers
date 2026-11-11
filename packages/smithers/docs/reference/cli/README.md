@@ -341,6 +341,11 @@ integer TTL in milliseconds. `compact` requires `--summary` and an exclusive
 `--before` cutoff in Unix epoch milliseconds, and accepts a retained-message
 count (`--keep`); `--dry-run` previews it.
 
+`memory list`, `memory get`, `memory set`, and `memory recall` are also MCP
+tools of `smthrs --mcp`, so agent CLIs registered with `smthrs mcp add` share
+facts; see [shared agent memory](../../guides/wire-the-mcp-server.md#shared-agent-memory).
+Over MCP, `--root` is refused.
+
 `memory messages add --message-id <id>` is idempotent for the same thread,
 role and text. When `--at` is omitted, a retry keeps the saved timestamp;
 an explicitly different `--at` is a conflict.

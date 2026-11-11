@@ -92,6 +92,24 @@ This is an approval boundary, not an operating-system sandbox. Do not grant
 arbitrary host shell, code execution, or database write access to an actor that
 must not bypass a human gate.
 
+## Shared agent memory
+
+The MCP server also serves four memory tools that root help and the agent
+manifest do not list: `memory_list`, `memory_get`, `memory_set`, and
+`memory_recall`. `smthrs mcp doctor` lists them. An agent saves a fact with `memory_set`
+through `call_write_tool`. Any agent whose server opens the same store finds it
+with `memory_recall` through `call_read_tool`, in another session, another
+agent CLI, or another profile of the same CLI.
+
+The store is the SQLite file `SMITHERS_MEMORY_DB` names in the server's
+environment. Without it, the store is the `.flows/control.db` of the project
+the server started in, so only agents started in that project share it.
+Facts default to the `user:cli` namespace; pass `namespace` to use another.
+
+Deleting facts, notes, threads, messages, and compaction are not MCP tools;
+run them as `smthrs memory` commands. A tool call that names `root` is refused,
+because the host chose the store when it registered the server.
+
 Malformed JSON on stdio receives JSON-RPC error `-32700` with a null request
 ID; the server continues accepting later requests. A missing local host
 installation reports `host_not_installed` without a filesystem path.

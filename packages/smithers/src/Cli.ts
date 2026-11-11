@@ -454,16 +454,20 @@ export const makeCli = (
   // the mounted subtree directly so registration uses Agents.addMcp as documented.
   // Incur has no hidden-group flag. A separate discovery tree removes deferred
   // groups from root help, schemas, skills and MCP without mutating the invocation tree.
-  const discovery = makeBuildCli({
-    ...config,
-    cliName: "smthrs",
-    cliVersion: packageVersion,
-    cliDescription: "Build workspace targets and operate durable agent flows",
-    sync: { cwd: dirname(createRequire(import.meta.url).resolve("@smthrs/cli/package.json")), include: ["skills/*"] },
-    cacheSteps: createStepCacheCli(),
-    approvals: config.approvals ?? TargetApprovals.store
-  })
-  discovery.use((context, next) => Presentation.scope(context, config, next))
+  const makeDiscovery = () => {
+    const made = makeBuildCli({
+      ...config,
+      cliName: "smthrs",
+      cliVersion: packageVersion,
+      cliDescription: "Build workspace targets and operate durable agent flows",
+      sync: { cwd: dirname(createRequire(import.meta.url).resolve("@smthrs/cli/package.json")), include: ["skills/*"] },
+      cacheSteps: createStepCacheCli(),
+      approvals: config.approvals ?? TargetApprovals.store
+    })
+    made.use((context, next) => Presentation.scope(context, config, next))
+    return made
+  }
+  const discovery = makeDiscovery()
   const discoveryTree = Cli.toCommands.get(discovery as never)!
   discoveryTree.clear()
   // Appendix B.6 is an explicit discovery allowlist. Other public library
@@ -512,6 +516,17 @@ export const makeCli = (
   }
   project(Cli.toCommands.get(cli as never)!, discoveryTree)
   retainInstallDiscovery(cli, discoveryTree)
+  // The MCP server alone also serves shared agent memory: an agent CLI registered with `mcp add` saves a fact and
+  // another recalls it. Root help, skills and manifests keep the reviewed list; deleting facts, notes, threads and
+  // compaction stay operator commands.
+  const mcpTree: typeof discoveryTree = new Map()
+  project(Cli.toCommands.get(cli as never)!, mcpTree, [], [
+    ...doors,
+    "memory list",
+    "memory get",
+    "memory set",
+    "memory recall"
+  ])
   // Appendix A person-only commands belong in human help, never skills or MCP.
   // The API playground (M-36) is the exception: it is an in-app surface, and
   // its CLI door only authorizes (#3559), so it stays invocable and out of
@@ -610,7 +625,7 @@ export const makeCli = (
           const stdio = yield* McpStdio.Stdio
           const input = McpStdio.input(stdio.output)
           yield* Effect.promise(() =>
-            Mcp.serve("smthrs", packageVersion, discoveryTree, {
+            Mcp.serve("smthrs", packageVersion, mcpTree, {
               input,
               output: stdio.output,
               version: packageVersion,
@@ -691,8 +706,14 @@ export const makeCli = (
     if (literal >= 0 && argv[literal] === "--") argv = argv.slice(0, literal + 1)
     if (parsed.rest[offset] === "mcp" && index !== undefined && !parsed.mcp) {
       // Incur owns the integration overview help and `mcp doctor`, which must keep
-      // its `mcp` token. Doctor checks the discovery tree that `--mcp` serves.
-      if (parsed.rest[offset + 1] === "doctor") return discovery.serve(argv, serveOptions)
+      // its `mcp` token. Doctor checks the tree that `--mcp` serves.
+      if (parsed.rest[offset + 1] === "doctor") {
+        const served = makeDiscovery()
+        const servedTree = Cli.toCommands.get(served as never)!
+        servedTree.clear()
+        for (const [name, entry] of mcpTree) servedTree.set(name, entry)
+        return served.serve(argv, serveOptions)
+      }
       if (
         (parsed.rest[offset + 1] === undefined || parsed.rest[offset + 1]?.startsWith("-")) &&
         (argv.includes("--help") || argv.includes("-h"))
