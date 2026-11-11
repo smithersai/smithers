@@ -9,10 +9,21 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3277 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3372 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
+- **vibelang:** prove a spec function as VibeLang lowers it ([495bc84bce](https://github.com/smithersai/smithers/commit/495bc84bce2771ac77cf69db9d0c5e6aa15be55b))
+- **vibelang:** prove the history's RegExp tests (sentence end, own line, trailer) ([6283173cb2](https://github.com/smithersai/smithers/commit/6283173cb2ecbf44430a7a222cfc9fc27ea3cfd0))
+- **lemmascript:** prove RegExp test on a literal pattern subset ([e069fd89a9](https://github.com/smithersai/smithers/commit/e069fd89a92a277ff759571ecb25f191aa316085))
+- **merge-queue:** probe ready changes alone on the tip, so failing changes stop throttling the queue ([61a3183707](https://github.com/smithersai/smithers/commit/61a3183707a29e77af097ed610b6a7c672e18e91))
+- **sandbox:** module flows reach the machines WORKSPACE.ts declares ([c72e767d31](https://github.com/smithersai/smithers/commit/c72e767d317901e6060ddf2b4b0688f0d5dcfd82))
+- **mvp:** the review check runs the review flow's rounds ([32e5a2484d](https://github.com/smithersai/smithers/commit/32e5a2484d874ca200f0c7030e240fc6bdd5be07))
+- **merge-queue:** a fixed change re-queues at the back, so a fix never stalls the runs in flight ([30128ab52f](https://github.com/smithersai/smithers/commit/30128ab52f265bfed40d3fa0836e573679d503ce))
+- **merge-queue:** the queue as a durable flow; bisection on every free slot; throughput benchmark ([efb295a125](https://github.com/smithersai/smithers/commit/efb295a1256131f0d69fbc6dd7c5baa0c9e31988))
+- **triggers:** FACTORY.ts binds repository flows to events, and smithersai/smithers runs its gate on every commit ([afdfa891f5](https://github.com/smithersai/smithers/commit/afdfa891f567e6f703afce0590005bb8b8ad29bf))
+- **control:** resolve a flow token's runs and plans through a host lookup ([ae5aea5277](https://github.com/smithersai/smithers/commit/ae5aea527790c520295a02e80eb8603a7e89db15))
+- **harness:** markdown child flows, batched remote file flows and a compact flow catalog ([727a426488](https://github.com/smithersai/smithers/commit/727a4264889d9993f919f72cff2d49788bac577b))
 - **vibelang:** prove API object bodies, main's commit order and the mock merge queue ([e1f1d8c038](https://github.com/smithersai/smithers/commit/e1f1d8c0381205044c31c46fae4e9c777f1934ba))
 - **lemmascript:** Map keys, in-narrowing and presence narrowing in contracts ([915b25f77e](https://github.com/smithersai/smithers/commit/915b25f77ec958fdae5e8cb51027ebe75ecc8e60))
 - **vibelang:** Export in /history, designed first; decision 0020 records the export ([718b8c3174](https://github.com/smithersai/smithers/commit/718b8c3174206abaf395f1ba8020e724dd3e1523))
@@ -418,6 +429,67 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **targets:** key Docker.Build on its context and cache Docker.Bake only with data ([c52c876436](https://github.com/smithersai/smithers/commit/c52c876436bc3814d20eabf16d03f897f36c77eb))
+- **fs:** typed calls accept void input and output ([8e34ac826a](https://github.com/smithersai/smithers/commit/8e34ac826ac4dd0a608dd28dd2aa12fb1b486f2f))
+- **flows:** qualify lane-gate baseline failures by check and Go package ([b0f02bf8a3](https://github.com/smithersai/smithers/commit/b0f02bf8a30e1d30409b48d618e6b4842475fac6))
+- **build-cli:** Clean confines outDirs through symlinks and checks every path before removing any ([d58f82520d](https://github.com/smithersai/smithers/commit/d58f82520d46045eb72905a8acb2104f31ecc50f))
+- **platform-node:** a command's own deadline bounds its supervisor's startup ([5875309499](https://github.com/smithersai/smithers/commit/5875309499f72da3650ef7c3176e7d98a8283002))
+- **deps:** pin dprint 0.57.1 in rpc and build-infra so their fmt targets find the binary ([a51a4ad887](https://github.com/smithersai/smithers/commit/a51a4ad88742f297989952318c608f823f63aa7b))
+- **flows:** cancelling an automation action waits for its child to stop ([1aafed6bf1](https://github.com/smithersai/smithers/commit/1aafed6bf11a1e97beed9cc0c55e1b3e06b3a4e0))
+- **smithers:** memory tests never write the operator's SMITHERS_MEMORY_DB store ([63be39f6c7](https://github.com/smithersai/smithers/commit/63be39f6c7f54f9544d402645e5bf2a26d3c812f))
+- **cli:** register Claude MCP through Claude Code's own writer ([7adfc14942](https://github.com/smithersai/smithers/commit/7adfc14942e92d51277fcd40b4f6a7c29f838819))
+- **cli:** cut a torn spool line off before the runner writes again ([0ede6af0ef](https://github.com/smithersai/smithers/commit/0ede6af0ef00100cc45261182db80e632e899ed1))
+- **vibelang:** a draft whose model call the budget cannot record or refuses fails as budget ([2cbd26ac66](https://github.com/smithersai/smithers/commit/2cbd26ac66f046f012c206c9889d2e91f2eb0954))
+- **vibelang:** a created issue answer with no issues selects none; fuzz main.vibe open arms ([7c076b9209](https://github.com/smithersai/smithers/commit/7c076b920938b54f63000ff79cd2e8b1e8dadb0d))
+- **vibelang:** give receive-field-author's one check headroom ([7dbab39035](https://github.com/smithersai/smithers/commit/7dbab3903503c70d79b5e164082707bf647d2594))
+- **devx:** mini cancellation stops an in-progress dependency install ([958a04678d](https://github.com/smithersai/smithers/commit/958a04678d1cbe48826e08c733a400757a6a9ab4))
+- **build-cli:** a test-only edit no longer changes a Go.Binary key ([0c40f5971d](https://github.com/smithersai/smithers/commit/0c40f5971d189f6eea8b3f8b65480395c8aae589))
+- **cli:** list real conflicts in `change conflicts`, not copied files ([ae1a0f64c9](https://github.com/smithersai/smithers/commit/ae1a0f64c9c23c80c289d78de5f98af9714edf74))
+- **agent:** price a model step once so a replay under a changed rate or weight resumes ([2a0a89e6f6](https://github.com/smithersai/smithers/commit/2a0a89e6f6da5209de9877f2c7bdfdce2235130f))
+- **build-cli:** never cache Npm.Published or a verdict keyed on it ([56a7be0f0b](https://github.com/smithersai/smithers/commit/56a7be0f0b103851e7f8f5f52a622037b798fbe4))
+- **cli:** runs logs pages resume inside an expanded journal entry ([69e55744d6](https://github.com/smithersai/smithers/commit/69e55744d66a470b5f568d1f06403fbeeee2ac38))
+- **cli:** a Stop during change collection settles the stop, not Done ([788956ce37](https://github.com/smithersai/smithers/commit/788956ce373e7445d6271cfee1785a632ebb49ea))
+- **build-cli:** declare a Go.Binary's executable, not its directory, as its output ([bc085386d9](https://github.com/smithersai/smithers/commit/bc085386d93d95cfc1afe2553e628dc4043cd37a))
+- **build-cli:** key bundler builds on the resolve target's key and its graph digest ([6953a3f1a7](https://github.com/smithersai/smithers/commit/6953a3f1a7f18cfc612ff75b1c6f8a96ec828340))
+- **cli:** keep webhook events when an update omits --events ([cc5b1a6d62](https://github.com/smithersai/smithers/commit/cc5b1a6d6273615d78608fd745ab9fae23889f1a))
+- **cli:** remove legacy config tokens on logout for noncanonical origins ([2f0a2a4956](https://github.com/smithersai/smithers/commit/2f0a2a495663e996361aae41a92a56dce57e3094))
+- **build-cli:** offline Go rules keep the declared GOFLAGS ([25ad1537fe](https://github.com/smithersai/smithers/commit/25ad1537fe854eca8d549215c46f7400876bf5a5))
+- **issue-sweep:** index a change's targets inside the landing sandbox ([11186eade6](https://github.com/smithersai/smithers/commit/11186eade6f8728ffa2056bf35f4d5f8e3b0b3d8))
+- **ui:** rebuild timeline sizes when entries arrive during a drag ([89b4f7f2f4](https://github.com/smithersai/smithers/commit/89b4f7f2f4d6e4646ceb33b527c65ceca24b5ee0))
+- **build-cli:** portal reverts spare other writers and quarantine what they remove ([a5a4648347](https://github.com/smithersai/smithers/commit/a5a46483473fcf0309acac85f273626a47297df2))
+- **cli:** gc marks snapshot roots from PostgreSQL stores ([cd92b455ea](https://github.com/smithersai/smithers/commit/cd92b455eab86dd724eaaab88ed7c706989c14a7))
+- **cli:** Change collection reads added files without following symbolic links ([8135f839e6](https://github.com/smithersai/smithers/commit/8135f839e69247fd968dc4d4b126af41ad10ff04))
+- **repo-targets:** packageContract, egressHttpClient and publicExportMaps pass on main ([b2691910be](https://github.com/smithersai/smithers/commit/b2691910be79ed6bca3be1d99ef066c65a7dfcbc))
+- **build-cli:** keep checkout commits and never lay a mount overlay through a link ([e559ad39ec](https://github.com/smithersai/smithers/commit/e559ad39ec0d3aa3cb910141f794eb967e4b1d5d))
+- **smithers:** join node output calls only within their own step scope ([85700f16ea](https://github.com/smithersai/smithers/commit/85700f16ea0c0be2be651b1345e5a18599891b27))
+- **platform-node:** reclaim runs from an earlier incarnation under the same pid ([8f443bd107](https://github.com/smithersai/smithers/commit/8f443bd107e3c7ab679b2c1efb3e20da6c734909))
+- **repo-view:** a previewed HTML page that navigates requests nothing and stops ([872ea865bc](https://github.com/smithersai/smithers/commit/872ea865bc7606370f341df76b4d75b8b6809028))
+- **vibelang:** migrate history/arbitrary-update's saved value to the exported key ([8e020c87d0](https://github.com/smithersai/smithers/commit/8e020c87d08f26fab90e18424d26f9496961b327))
+- **platform-node:** keep hosts usable with invalid proxy settings ([9c6d6cd71f](https://github.com/smithersai/smithers/commit/9c6d6cd71f129ac7996e23548d111e3b04be9bd4))
+- **harness:** end the turn when a realm refuses every later frame ([14bcaea8a7](https://github.com/smithersai/smithers/commit/14bcaea8a72c5e020667444b577628e5ab8d3451))
+- **integrations:** delegated issue.link takes a child number in the granted repository ([ee9255b4ca](https://github.com/smithersai/smithers/commit/ee9255b4ca51dba057eb72d9f9427fc587c9bb92))
+- **build-cli:** Go rules run in the declared module's directory ([d6f0e77a7a](https://github.com/smithersai/smithers/commit/d6f0e77a7ab96b65f0f22359878e2ff4f13b2b72))
+- **targets:** redact every resolved secret from every proxy response ([394279d2df](https://github.com/smithersai/smithers/commit/394279d2dfd816acb34c4ab394ea5564e95993c3))
+- **build-cli:** refuse agent edits into a version-control database at any depth or case ([70b488459b](https://github.com/smithersai/smithers/commit/70b488459b2bdb45ee85544b30b0211e8805da65))
+- **control:** answer Terminal to a retried steer or signal on a settled run, and key monitor remedies per invocation ([3ca29d0071](https://github.com/smithersai/smithers/commit/3ca29d007107a3ed5b5612d475288427dee6c434))
+- **platform-node:** run confined system programs by name and refuse a workspace sandbox launcher ([e0f7ced085](https://github.com/smithersai/smithers/commit/e0f7ced0854e2d80ac1a4785051fd4399a99ebcd))
+- **harness:** a binding's durable identity no longer follows its handler's source text ([6147050ab1](https://github.com/smithersai/smithers/commit/6147050ab1ff01ed8ccfeeb9e6371245ae3cbd8d))
+- **rpc:** avoid inventing balances from null totals ([b04801f812](https://github.com/smithersai/smithers/commit/b04801f8125e08f46714b5240610a4c0728ef198))
+- **build-cli:** a Go.Packages data edge admits its closure to the consumer ([beb2f67b02](https://github.com/smithersai/smithers/commit/beb2f67b02ad20f4a8eff8ffee537550a97ef1f4))
+- **vibelang-desktop:** require a per-launch secret on the loopback API ([4a319188a5](https://github.com/smithersai/smithers/commit/4a319188a5ced3836deb2525f50643e9bd17cb4c))
+- **platform-node:** refuse to re-stage an atomic helper whose bytes changed ([0f59a9e6ae](https://github.com/smithersai/smithers/commit/0f59a9e6aef7137cb797022309ab8fd3df586e32))
+- **engine-store:** replace stale sandbox outputs before capture ([c58aacbbc7](https://github.com/smithersai/smithers/commit/c58aacbbc7789375373b4696c7ce5111754933e9))
+- **build:** open package-manager reads through an injected RegularFileOpen ([bc94e40c7b](https://github.com/smithersai/smithers/commit/bc94e40c7b3aceafeef985554cfcf05fb4417e52))
+- **journal:** preserve nested errors and serialize JSON replacements once ([33ec5a6a18](https://github.com/smithersai/smithers/commit/33ec5a6a189fb6f06fa621d2f02431043bbb3d59))
+- **plugin:** bound manifest refusal paths and refuse skills no host loads ([c855ba98c4](https://github.com/smithersai/smithers/commit/c855ba98c4ade2d2079d7dfd101575decc5fe5c2))
+- **build-cli:** a shell target's tools are the executables its command runs ([afd43bac30](https://github.com/smithersai/smithers/commit/afd43bac3034c54ce85cd3733425cb2da32dab20))
+- **platform-browser:** name the reopened transaction's opener to the tab ([df739bfc08](https://github.com/smithersai/smithers/commit/df739bfc08e0d0ecfea3a329c75d153a638e8505))
+- **journal:** discard deferred entries that cannot commit ([732e2bc34f](https://github.com/smithersai/smithers/commit/732e2bc34ffcfa20d955c1745ee01a808db66e9e))
+- **model:** classify a provider's cybersecurity refusal as content_policy ([091beb6381](https://github.com/smithersai/smithers/commit/091beb63814a8b3e9b41eb58e9c768df2691d8d7))
+- **patterns:** compensate an uninterruptible Saga step interrupted in flight ([e1882e74d6](https://github.com/smithersai/smithers/commit/e1882e74d67dd509d28c53649f66f456bb8c759d))
+- **vibelang:** an action failure says what failed, and a lost run follow follows again ([fe28539543](https://github.com/smithersai/smithers/commit/fe2853954392a63c9d7ed7b940c52122f580d1a5))
+- **mvp:** the keyboard queue spec takes the project's TLS choice ([df1f2a53d3](https://github.com/smithersai/smithers/commit/df1f2a53d3286db24166bce785a01709a0d43152))
+- **capability:** refuse exact grants that cannot match their request ([348388ce07](https://github.com/smithersai/smithers/commit/348388ce07e6cecaab44fcaf0d3f8c011f416271))
 - **flows:** drop the deleted run-record test from the fixtures target ([64e3691157](https://github.com/smithersai/smithers/commit/64e36911577177864e87d2560b0716c3761587ad))
 - **vibelang:** a replayed settlement keeps a charged reply's receipt ([1cdb6da0ed](https://github.com/smithersai/smithers/commit/1cdb6da0edb217f8ac76f1e338b5f8410f39190d))
 - **harness-detect:** honor credential profiles and host path rules ([1e604d2498](https://github.com/smithersai/smithers/commit/1e604d2498d2d971df0a10c93137703abfe667a0))
@@ -2092,6 +2164,8 @@ the release notes at
 
 ### ♻️ Refactors
 
+- **jj, vibelang:** import Repository from @smthrs/jj's root ([4197e4da85](https://github.com/smithersai/smithers/commit/4197e4da85c176cc01156847e174e286e3e0cb80))
+- **review:** the rounds take their seats from the input and export from @smthrs/review ([a5af12ec53](https://github.com/smithersai/smithers/commit/a5af12ec532708a09cb37d0fd87c2f1b3b4c29d2))
 - **patterns:** Supervisor is written in VibeLang ([32d2c67ff2](https://github.com/smithersai/smithers/commit/32d2c67ff2c2636b11cfaa97b6cb1906ea54a8f0))
 - **patterns:** CheckSuite, Kanban and Trellis are written in VibeLang ([c2ca1e7da2](https://github.com/smithersai/smithers/commit/c2ca1e7da2eff2333d489a27f4e3377092f2b388))
 - **patterns:** Bounded, Panel and MapReduce are written in VibeLang ([9e912bc498](https://github.com/smithersai/smithers/commit/9e912bc498b2ed5b2affc14f074783be1186cb7d))
@@ -2208,6 +2282,8 @@ the release notes at
 
 ### 📝 Documentation
 
+- **vibelang:** record session 19 coverage, action failure fixes and the wiki repository journey ([7d54448c00](https://github.com/smithersai/smithers/commit/7d54448c00c0bf39456bc0cf014e83743ab0cc00))
+- **cli:** the runner status example names the doc's own profile, not an agent vendor ([7da970061e](https://github.com/smithersai/smithers/commit/7da970061e64768ce807e1358d64f86aa68ef3cb))
 - **vibelang:** record the per-mutant wall budget ruling and its measurements (0018) ([d87535bb4e](https://github.com/smithersai/smithers/commit/d87535bb4e42533162ef4feabe8889e0e9df4f18))
 - **vibelang:** record the coverage merge fix and the sandbox and storage workloads ([845f7950ad](https://github.com/smithersai/smithers/commit/845f7950ad286018baa4c6576eca2a50ba1b399f))
 - **fuzz:** API reference and API index row for @smthrs/fuzz ([728b86d301](https://github.com/smithersai/smithers/commit/728b86d301705a4dd7e63a075143e4830ecde06d))
@@ -2538,6 +2614,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- **harness:** run the Harbor adapter on Runta, ship a worker flow and read child runs in the trace ([1e4ab24fb8](https://github.com/smithersai/smithers/commit/1e4ab24fb8ca51aed295e1fff9c32d8552abad53))
 - **release:** delete the hand-built release host; smthrs runs the release flows ([d8eaf55d23](https://github.com/smithersai/smithers/commit/d8eaf55d2378817a2d757954d71248a5048c385b))
 - **mvp:** test and testStack inherit DOCKER_HOST and DOCKER_CONFIG ([e41c4f14e2](https://github.com/smithersai/smithers/commit/e41c4f14e284b3a26650dd663e3a080582dc8721))
 - **integrations:** lint ignores emitted *.d.vibe.ts sidecars ([4827dd9d63](https://github.com/smithersai/smithers/commit/4827dd9d63abb9a39640766cb1771ad599b4e49a))
@@ -2620,6 +2697,24 @@ the release notes at
 
 ### 📦 Other changes
 
+- **style:** format four files main left unformatted ([ff146c9bd9](https://github.com/smithersai/smithers/commit/ff146c9bd9903bbdbd976990775b0b01da7b3005))
+- **bench(vibelang):** the draft-budget and action-command workloads follow the call meter and failure ops ([1851cc1583](https://github.com/smithersai/smithers/commit/1851cc1583338711c8c67473e38462f08b9279f9))
+- **test(engine-store):** run the lifecycle, wake-up, replay and step-cache suites on the matrix's PostgreSQL leg ([df4d5706c6](https://github.com/smithersai/smithers/commit/df4d5706c64ec5b50baee35b19534122a0e72a1c))
+- **test(build-cli):** pin a nested module's Go.Binary output as its executable ([f9cf58601a](https://github.com/smithersai/smithers/commit/f9cf58601a2900968e6ddc1c85d6a604eb3b16a7))
+- **test(vibelang):** fuzz the mock Factory's room edges in every execution ([42b0e540ec](https://github.com/smithersai/smithers/commit/42b0e540ecc7009898ac9050f34d9c6997882fe7))
+- **test(mvp):** sandbox suites mark their person cases broken where the engine can't run a person's uid (TEST-5) ([242cc2704c](https://github.com/smithersai/smithers/commit/242cc2704c2d7cc423848687b9a1d2265e2b7e8e))
+- **test(mvp):** TodoRunner's hosts end their requests before the next test empties the tables ([3aa6363ac4](https://github.com/smithersai/smithers/commit/3aa6363ac47a8dbf834309a0eb00eef3676a14c2))
+- **test(build-cli):** confined Go actions share the workspace compile cache ([73f4b1a69b](https://github.com/smithersai/smithers/commit/73f4b1a69b6defc42233edb99a370d78049b037c))
+- **test(build-cli):** an over-limit remote result keeps the remote cache enabled ([f9e142015c](https://github.com/smithersai/smithers/commit/f9e142015ce353593c7dd31b02e050897ed7363c))
+- **test(vibelang):** close Accounts arms the draw reached by chance; fuzz the physical-call meter ([fe8c9ea115](https://github.com/smithersai/smithers/commit/fe8c9ea1151803ceaac4017ecf13b4afd879e082))
+- **test(vibelang):** screens/issues-keys drives the issues pane keyboard one key per execution ([3459de8538](https://github.com/smithersai/smithers/commit/3459de85386dec15dfec22f7ba5d27a28e34a103))
+- **bench(vibelang):** the browser fault workloads follow the tour's recovery and mark stale copies ([e678785d90](https://github.com/smithersai/smithers/commit/e678785d9082ba54e334f7cf49aeb4752cbab2c5))
+- **test(rpc):** close source guard blind spots ([fa3ae548c5](https://github.com/smithersai/smithers/commit/fa3ae548c5ec1d9e8c160a9d9d098803685cae3a))
+- **test(vibelang):** the browser renders a wiki page's repository copy from the GitHub recording ([75c9b0ba23](https://github.com/smithersai/smithers/commit/75c9b0ba2359e4c1108285319e76832ba8d420b6))
+- **test(mvp):** run records refuse an event Smithers doesn't record, now that schedule is one ([9bd99f5e0e](https://github.com/smithersai/smithers/commit/9bd99f5e0ede876887656fe0a034652b67c0c42c))
+- **test(mvp):** a caller the judge's endpoint refuses fails JudgeFailed unconfigured ([408de629de](https://github.com/smithersai/smithers/commit/408de629de049ed4d85226525206a436f56fc15d))
+- **test(mvp):** the session upgrade test lets main's later migrations run after the session steps ([fda4e42ef5](https://github.com/smithersai/smithers/commit/fda4e42ef5bdcf2dce8b8a52d0c05fe6d9d7bfbb))
+- **style:** format the files main left unformatted ([e64056dcaf](https://github.com/smithersai/smithers/commit/e64056dcaf7dff190c6744f29303cc4fb11141dc))
 - **test(engine-store):** refused admissions refuse, and restart suites run on the durable store ([562f5ab100](https://github.com/smithersai/smithers/commit/562f5ab1006dc17f0297a906c84625c969ec4b30))
 - **test(rpc):** cover failure-code documentation escapes ([13a6becdde](https://github.com/smithersai/smithers/commit/13a6becdde2a1e97014fed2ece36366d497b62c2))
 - **bench(vibelang):** sandbox meter fault, mock alarm and refused storage ([0055d6c5b5](https://github.com/smithersai/smithers/commit/0055d6c5b52f6015073cf6f5ae032f0e9341d0d5))

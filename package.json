@@ -25,6 +25,7 @@
     "packages/smithers/ui/*",
     ".smithers/flows",
     ".smithers/flows/coding",
+    ".smithers/flows/review",
     ".smithers/flows/review/seeded-bugs",
     "apps/*",
     "evals/*"
