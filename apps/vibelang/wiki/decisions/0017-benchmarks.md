@@ -854,3 +854,22 @@ step and the factory refusal are injected services (a deterministic step, an Eff
 the Worker; `cli-sandbox-run-text` runs the command in process because one mock CLI process can't hold a running
 sandbox across two invocations; `web-tour-pause`'s early press must land before the mock drives step 1, and a sample
 where it lands later fails rather than passing.
+
+**Re-measured at `2d7bb99a`** (this range on `166e444b`), one `bench:coverage` on a 4-vCPU box, 07:55 to 08:29 UTC.
+The same three Vitest files failed as at `040c5684` (`sandbox-faults` and `sandbox-objects`, held by lane vl-bench2;
+`scripts.bench.vibe`, the box's git 2.39) and the maps were merged anyway. Lines of `src/` and `worker/`:
+**7,910/8,074 (97.97%)**, src 5,551/5,631 (98.58%), worker 2,359/2,443. This lane's scope:
+
+| Directory | Lines | Uncovered |
+| --- | ---: | --- |
+| `src/surfaces` | 507/507 | none |
+| `src/web` | 1,969/1,973 | `startup.vibe` 38, 88 (storage that throws); `issueDecision.vibe` 208 (specification only); `markdown.vibe` 174 (below) |
+| `src/core` | 1,990/2,032 | specification only, waiting on lane vl-ghost-functions (34): `issueGraphDecision.vibe` 20, `flowDecision.vibe` 9, `replayDecision.vibe` 3, `sequencerDecision.vibe` 2; sandbox paths behind vl-bench2's failing files (6): `machineDecision.vibe` 29, 36, 102, `sandboxHost.vibe` 198, 199, `sandboxMock.vibe` 38; `LiveAccounts.vibe` 32 (since covered); `wikiLinks.vibe` 14 (below) |
+
+`LiveAccounts.vibe` 32 is `signInAgent`, not `choose` (31) as the table above first read; `client-local-answers` now
+calls both. **Finding, coverage merge:** `wikiLinks.vibe` 14 and `markdown.vibe` 174 run in `src-edge-decisions` and
+count in a Vitest run of that file alone (2 hits and 1), but read 0 in the full merged map, where the rest of the same
+workload counts (`wire.vibe` 52, `protocolDecision.vibe` 117). Both modules also run in the emitted wiki script
+(`scripts/wiki.vibe`, through `pnpm wiki:build` and `scripts.bench.vibe`), so the full run's subprocess coverage of
+the same source is the likely cause; not diagnosed. Per-file counts and merged maps:
+`~/vl/vl-bench-evidence/2026-11-11-claude-resume5/` on nyc-01.
