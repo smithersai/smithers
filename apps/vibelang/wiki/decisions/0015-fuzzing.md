@@ -976,6 +976,30 @@ fallbacks for an editor update never built (472, 477, 479, 481 on `83c6afb4`).
 | `Flags.session` and `Model.session` were any string, but every request, retry and recovery key starts with the session and must be `DurableText`; a generated session with an unpaired surrogate made a wiki submission's recovery key invalid | `web/pane-messages`, 20261133 | schema | both are `DurableText`; startup always passes a fresh UUID, so no product input changes | the target passes at 20261133 to 20261135 |
 | `restore-editor` first set the role on the account alone; update re-syncs the issues pane's role on the next message, so a stale projection "changed" the Model | `web/pane-messages`, 20261133 | target | the step sets both, as a sign-in does | same |
 
+## Status, 2026-11-11 (fifteenth session)
+
+### `src/web/issuesView.vibe`: one key per execution
+
+The pane's keyboard handlers (kind arrows, j and k on a row, Enter with ⌘ or Ctrl in the comment box, Enter in a
+VIP's title, Enter on the commit dialog's assignees) run only when a key reaches them in a scene, and a scene fails
+unless every Command the key causes is answered. `screens/issues-keys` (`fuzz/issues-view.fuzz.vibe`) puts the
+generated pane on the screen that shows the keyed control, presses one key (the control's own keys weighted, then
+keys it must ignore) and runs each Command the key and its answers dispatch once against a fresh backend of a
+generated kind (`fuzz/web-backends.vibe`: mock, live, bare, faulty, closing, roleless), feeding each answer back
+through `update` until nothing is pending. Three times in four the control is enabled (not busy, nothing to retry).
+
+| Oracle | Holds when |
+| --- | --- |
+| wiring | the scene's `expectHandled` or `expectIgnored` agrees with the control's key list |
+| focus | arrows and j or k dispatch exactly one `FocusIssueControl`, naming the neighbouring kind or row, and leave the pane unchanged; no other key moves focus |
+| same as click | after everything settles, the pane a handled key leaves equals the one its click leaves: the next kind's radio, Comment, Continue, the dialog's Commit |
+| disabled | while that button is disabled, Enter on the assignees sends no request |
+| ignored | any other key leaves the pane unchanged |
+
+The pane alone is compared: any Message also lets `update` re-measure the splash. 10 to 20 s: 125 to 216
+executions; every keyboard handler arm in `issuesView.vibe` runs. Mutations: ArrowLeft stepping forward is
+falsified in 7 executions; Enter on the assignees sending `cancel` in 8.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

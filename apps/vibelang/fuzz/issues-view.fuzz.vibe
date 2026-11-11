@@ -2,7 +2,9 @@
 // screen, role, filter, failure and connection state. screens/issues-view-names-controls generates whole records, which
 // rarely link to each other, so the detail screen, its tree, notes and actions stayed unrendered.
 import { it } from "@effect/vitest"
-import { getAllByRole, findAll, given, scene, textContent, type SceneSimulation } from "foldkit/scene"
+import { all, attr, click, Command as SceneCommand, expectHandled, expectIgnored, find, getAllByRole, findAll, given, keydown, nth, scene, tap, textContent, type Locator, type SceneSimulation } from "foldkit/scene"
+import { Actions } from "../src/actions/Actions.vibe"
+import { backend, Backend } from "./web-backends.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { issuePermission, specificationAccepted } from "../src/core/conversation.vibe"
@@ -11,7 +13,7 @@ import { Specification, SpecificationEvent } from "../src/core/issueSchemas.vibe
 import { emptySpecification } from "../src/core/specification.vibe"
 import { accountOf, Flags, init, Message, Model, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
-import { run, Int, Text } from "./run.vibe"
+import { run, Finding, Int, Text } from "./run.vibe"
 
 const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
 const ROLE = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
@@ -158,5 +160,189 @@ it.live("screens/issues-records", () => scoped(effect {
       return simulation
     })
     return holds
+  })
+}))
+
+const KEY_TARGETS = ["kind", "row", "comment", "title", "assignee"] as const
+const Keyed = Schema.Struct({
+  /** The control the key goes to; the pane is put on the screen that shows it. */
+  target: Schema.Literals(KEY_TARGETS),
+  /** Which key, from the control's own keys and one it ignores (KEYS). */
+  press: Int,
+  meta: Schema.Boolean,
+  control: Schema.Boolean,
+  /** Which kind radio or list row takes the key. */
+  index: Int,
+  comment: Schema.Union([Text, Schema.Literals(["", " ", "Looks right."])]),
+  vip: Schema.Boolean,
+  backend: Backend,
+})
+/** Each control's handled keys, weighted, then keys it must ignore. */
+const KEYS: Record<typeof KEY_TARGETS[number], ReadonlyArray<string>> = {
+  kind: ["ArrowRight", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowDown", "Enter"],
+  row: ["j", "k", "j", "k", "ArrowDown", "J"],
+  comment: ["Enter", "Enter", "Enter", "a", "Escape"],
+  title: ["Enter", "Enter", "a", "Tab"],
+  assignee: ["Enter", "Enter", " ", "ArrowDown"],
+}
+function keyOf(k: { readonly target: typeof KEY_TARGETS[number]; readonly press: number }): string {
+  const keys = KEYS[k.target]
+  return keys[k.press % keys.length]!
+}
+const KeysInput = Schema.Struct({ ...Input.fields, keyed: Keyed })
+type KeysInput = typeof KeysInput.Type
+
+type Html = SceneSimulation<Model, Message>["html"]
+type Step = (simulation: SceneSimulation<Model, Message>) => SceneSimulation<Model, Message>
+interface Pending { readonly name: string; readonly args?: Record<string, unknown>; readonly effect: Effect<Message, unknown, Factory | Actions> }
+
+const MAX_ROUNDS = 12
+
+// Scene's step builders are plain functions; effect code calls them through these.
+function resolveStep(answers: ReadonlyArray<readonly [Pending, Message]>): Step {
+  return (SceneCommand.resolveAll as unknown as (...resolvers: ReadonlyArray<readonly [Pending, Message]>) => Step)(...answers)
+}
+function pressSteps(plan: { readonly target: string | Locator; readonly handled: boolean; readonly mods?: { readonly metaKey: boolean; readonly ctrlKey: boolean } }, key: string): ReadonlyArray<Step> {
+  return [keydown(plan.target, key, plan.mods ?? {}) as unknown as Step, (plan.handled ? expectHandled() : expectIgnored()) as unknown as Step]
+}
+function clickStep(target: string): Step { return click(target) as unknown as Step }
+function findOne(html: Html, target: string): Option.Option<Html> { return find(html, target) }
+
+/**
+ * The issues pane as data: every tag, attribute and text, without the handlers, so two paths can be compared. Only the
+ * pane: any Message also lets `update` re-measure the splash, which is not the key's doing.
+ */
+function shape(html: Html): string {
+  const pane = find(html, "section.ix-surface")
+  return Option.isNone(pane) ? "no pane" : JSON.stringify(pane.value, (_key, value) => typeof value === "function" ? undefined : value)
+}
+
+function disabled(node: Html): boolean {
+  const data = (node as { data?: { attrs?: Record<string, unknown>; props?: Record<string, unknown> } }).data
+  return data?.attrs?.["disabled"] === true || data?.attrs?.["disabled"] === "" || data?.props?.["disabled"] === true
+}
+
+/**
+ * Runs `steps` from `model` the way the runtime would: every Command a step or an answer dispatches runs once against
+ * the provided backend and its Message goes back through `update`, until none is pending. Returns the settled view,
+ * the Commands that ran, and the Commands the first step dispatched.
+ */
+effect function settle(model: Model, steps: ReadonlyArray<Step>) {
+  const answers: Array<readonly [Pending, Message]> = []
+  const ran: Array<Pending> = []
+  let first: ReadonlyArray<Pending> | undefined
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    let pending: ReadonlyArray<Pending> = []
+    let html: Html | undefined
+    const resolve = resolveStep(answers)
+    const outcome = try Effect.result(Effect.try(() => scene({ update, view }, given(model), ...steps, resolve, tap((simulation: SceneSimulation<Model, Message>) => {
+      pending = simulation.commands as unknown as ReadonlyArray<Pending>
+      html = simulation.html
+    }))))
+    first ??= pending
+    if (pending.length === 0) {
+      if (outcome._tag === "Failure") throw new Finding({ report: `scene: ${String(outcome.failure.cause)}` })
+      return { html: html!, ran, first }
+    }
+    for (const command of pending) {
+      const result = try exit(timeout(command.effect, "5 seconds"))
+      if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+      if (!Schema.is(Message)(result.value)) throw new Finding({ report: `${command.name}: answered with an undeclared Message` })
+      answers.push([command, result.value])
+      ran.push(command)
+    }
+  }
+  throw new Finding({ report: `Commands still pending after ${MAX_ROUNDS} rounds` })
+}
+
+/** `settle` against a fresh backend of the generated kind, so each path starts from the same records. */
+effect function settledOn(input: KeysInput, model: Model, steps: ReadonlyArray<Step>) {
+  provide backend(input.keyed.backend, input.role) {
+    return try settle(model, steps)
+  }
+}
+
+/** The pane put on the screen that shows the keyed control, over the generated state. */
+function keyedUi(input: KeysInput, records: ReadonlyArray<Item>): IssuesUi {
+  const ui = uiOf(input, records)
+  const k = input.keyed
+  const selected = records[input.pick % records.length]!.number
+  // Three times in four the control is enabled: not busy and no request waiting to be retried.
+  const calm = (pane: IssuesUi): IssuesUi => { if (k.index % 4 === 0) return pane; const { retry: _, ...rest } = pane; return { ...rest, busy: false } }
+  switch (k.target) {
+    case "kind": return { ...ui, screen: "list", status: "ready", dialog: "" }
+    case "row": return { ...ui, screen: "list", status: "ready", dialog: "", query: "" }
+    case "comment": return calm({ ...uiOf({ ...input, pick: input.pick % records.length }, records), screen: "detail", selected, dialog: "", comment: k.comment })
+    case "title": return calm({ ...ui, screen: k.vip ? "vip" : "new", step: 1, dialog: "" })
+    case "assignee": return calm({ ...uiOf({ ...input, pick: input.pick % records.length }, records), screen: "detail", selected, dialog: "commit" })
+  }
+}
+
+/** The control the key goes to, and the click that must do what a handled key does. */
+function keyPlan(ui: IssuesUi, k: KeysInput["keyed"], html: Html) {
+  const key = keyOf(k)
+  const kinds = ["All", "Issues", "Tasks", "VIPs"] as const
+  const mods = { metaKey: k.meta, ctrlKey: k.control }
+  switch (k.target) {
+    case "kind": {
+      const index = k.index % 4
+      const next = kinds[(index + (key === "ArrowRight" ? 1 : 3)) % 4]!
+      const handled = key === "ArrowRight" || key === "ArrowLeft"
+      return { target: `#ix-kind-${kinds[index]}`, handled, click: handled ? `#ix-kind-${next}` : undefined, focus: handled ? `ix-kind-${next}` : undefined }
+    }
+    case "row": {
+      const rows = findAll(html, "li.sui-issues-row").map(row => findAll(row, "a").map(link => Option.getOrElse(attr(link, "id"), () => "")).find(id => id.startsWith("ix-issue-")) ?? "")
+      if (rows.length === 0) return undefined
+      const index = k.index % rows.length
+      const handled = key === "j" || key === "k"
+      return { target: nth(all.selector("li.sui-issues-row"), index), handled, click: undefined, focus: handled ? rows[Math.max(0, Math.min(rows.length - 1, index + (key === "j" ? 1 : -1)))] : undefined }
+    }
+    case "comment": {
+      const box = find(html, "textarea[aria-label=\"Comment\"]")
+      if (Option.isNone(box) || disabled(box.value)) return undefined
+      const handled = key === "Enter" && (k.meta || k.control)
+      return { target: "textarea[aria-label=\"Comment\"]", handled, click: handled ? ".sui-item-conv-composer-actions button" : undefined, focus: undefined, mods }
+    }
+    case "title": {
+      const input = find(html, "#ix-title")
+      if (Option.isNone(input) || disabled(input.value)) return undefined
+      const handled = key === "Enter" && ui.screen === "vip"
+      return { target: "#ix-title", handled, click: handled ? ".sui-issue-form-actions button.sui-button-solid" : undefined, focus: undefined }
+    }
+    case "assignee": {
+      if (Option.isNone(find(html, "[aria-label=\"Assignee\"]"))) return undefined
+      const handled = key === "Enter"
+      return { target: "[aria-label=\"Assignee\"]", handled, click: handled ? ".sui-dialog-footer button.sui-button-solid" : undefined, focus: undefined }
+    }
+  }
+}
+
+/**
+ * One key on one of the pane's keyboard handlers, every Command it causes answered by the generated backend. A handled
+ * key does exactly what its control's click does: the settled views are equal (kind arrows and the clicked kind; Enter
+ * with ⌘ or Ctrl in the comment box and Comment; Enter in a VIP's title and Continue; Enter on the assignees and the
+ * dialog's Commit). While that button is disabled, Enter sends no request. Arrows and j or k move focus to the
+ * neighbouring kind or row and change nothing else. Any other key falls through and changes nothing.
+ */
+it.live("screens/issues-keys", () => scoped(effect {
+  const records = try mockItems()
+  try run("screens/issues-keys", KeysInput, (input) => effect {
+    const ui = keyedUi(input, records)
+    const base = init(input.flags).model
+    const model: Model = { ...base, surface: "chat", issues: ui, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } } }
+    const before = try settledOn(input, model, [])
+    const plan = keyPlan(ui, input.keyed, before.html)
+    if (plan === undefined) return true
+    const after = try settledOn(input, model, pressSteps(plan, keyOf(input.keyed)))
+    const focused = after.first.filter(command => command.name === "FocusIssueControl").map(command => command.args?.["id"])
+    if (plan.focus !== undefined && (focused.length !== 1 || focused[0] !== plan.focus)) return false
+    if (plan.focus === undefined && focused.length !== 0) return false
+    if (!plan.handled || plan.focus?.startsWith("ix-issue-") === true) return shape(after.html) === shape(before.html)
+    if (plan.click === undefined) return true
+    const button = findOne(before.html, plan.click)
+    if (Option.isNone(button)) return false
+    if (disabled(button.value)) return !after.ran.some(command => command.name === "ActOnIssue")
+    const clicked = try settledOn(input, model, [clickStep(plan.click)])
+    return shape(after.html) === shape(clicked.html)
   })
 }))
