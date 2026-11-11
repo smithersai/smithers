@@ -158,13 +158,14 @@ export const makeCli = (
       args: z.object({ name: z.string().optional() }),
       options: z.object({
         root: z.string().optional().describe("Directory to initialize; defaults to cwd"),
+        vibe: z.boolean().default(false).describe("Create flow.vibe instead of flow.ts"),
         global: z.boolean().default(false).describe("Removed; initialize a workspace instead")
       }),
       run: (c) =>
         Presentation.guard(c, () => {
           if (c.options.global) throw Unsupported.flagError(Unsupported.findFlag("init", "global"))
           const root = resolve(c.options.root ?? process.cwd())
-          return initialize(root, c.args.name ?? Init.defaultName(root), environment)
+          return initialize(root, c.args.name ?? Init.defaultName(root), environment, { vibe: c.options.vibe })
         }, { next: Generate.scaffolded })
     })
     .command("doctor", {

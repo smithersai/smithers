@@ -615,7 +615,7 @@ smthrs generate <command>
 
 ### `generate flow`
 
-Create a tagged TypeScript flow without replacing an existing flow
+Create a tagged TypeScript or VibeLang flow without replacing an existing flow
 
 ```text
 smthrs generate flow <name> [options]
@@ -628,6 +628,7 @@ smthrs generate flow <name> [options]
 | Option | Type | Default | Required | Description |
 | --- | --- | --- | --- | --- |
 | `--root` | string |  | no | Project directory |
+| `--vibe` | boolean | `false` | no | Create flow.vibe instead of flow.ts |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
 ### `generate package`

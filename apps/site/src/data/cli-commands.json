@@ -1156,7 +1156,7 @@
     },
     {
       "name": "generate flow",
-      "description": "Create a tagged TypeScript flow without replacing an existing flow",
+      "description": "Create a tagged TypeScript or VibeLang flow without replacing an existing flow",
       "schema": {
         "args": {
           "type": "object",
@@ -1178,6 +1178,11 @@
               "description": "Project directory",
               "type": "string"
             },
+            "vibe": {
+              "default": false,
+              "description": "Create flow.vibe instead of flow.ts",
+              "type": "boolean"
+            },
             "verbose": {
               "default": false,
               "description": "Show redacted diagnostic details",
@@ -1185,6 +1190,7 @@
             }
           },
           "required": [
+            "vibe",
             "verbose"
           ],
           "additionalProperties": false

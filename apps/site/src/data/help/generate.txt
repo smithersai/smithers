@@ -4,7 +4,7 @@ Usage: smthrs generate <command>
 
 Commands:
   ci       Generate CI files using the workspace's declared Github.CiGen target
-  flow     Create a tagged TypeScript flow without replacing an existing flow
+  flow     Create a tagged TypeScript or VibeLang flow without replacing an existing flow
   package  Run the workspace's declared package scaffold with its configured defaults
 
 Custom Global Options:

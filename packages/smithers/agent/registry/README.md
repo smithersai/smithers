@@ -14,7 +14,7 @@ every prompt body behind a reference, and hands a host the lookups it needs to
 list a catalog, show it to a model, and execute one entry by name.
 
 A flow lives on disk as a directory holding one entry file: a markdown
-`flow.mdx`, its Agent Skills spelling `SKILL.md`, or a TypeScript `flow.ts`.
+`flow.mdx`, its Agent Skills spelling `SKILL.md`, a TypeScript `flow.ts`, or a VibeLang `flow.vibe`.
 Scanning one produces a `FlowDescriptor`, a plain value you can journal, send
 over a wire, or compare against another. The scan reads and hashes each entry
 file whole and parses at most its first 64 KiB to find the declaration, so it

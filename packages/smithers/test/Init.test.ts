@@ -118,22 +118,28 @@ describe("the scaffold", () => {
     expect(Verb.find("init")!.help).toContain(basename(Init.scaffold(root, "review", {}).flowFile))
   })
 
-  it.each(["flow.ts", "flow.mdx", "SKILL.md"])("retains an authored %s without creating another entry", (entry) => {
-    const root = directory(".git")
-    const folder = join(root, ".smithers", "flows", "review")
-    mkdirSync(folder, { recursive: true })
-    const file = join(folder, entry)
-    writeFileSync(file, "mine\n")
-    const second = Init.scaffold(root, "review", {})
-    expect(second.created).toBe(false)
-    expect(second.flowFile).toBe(file)
-    expect(readFileSync(file, "utf8")).toBe("mine\n")
-    for (const other of ["flow.ts", "flow.mdx", "SKILL.md"].filter((value) => value !== entry)) {
-      expect(existsSync(join(folder, other))).toBe(false)
+  it.each(["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"])(
+    "retains an authored %s without creating another entry",
+    (entry) => {
+      const root = directory(".git")
+      const folder = join(root, ".smithers", "flows", "review")
+      mkdirSync(folder, { recursive: true })
+      const file = join(folder, entry)
+      writeFileSync(file, "mine\n")
+      const second = Init.scaffold(root, "review", {}, { vibe: true })
+      expect(second.created).toBe(false)
+      expect(second.flowFile).toBe(file)
+      expect(readFileSync(file, "utf8")).toBe("mine\n")
+      for (const other of ["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"].filter((value) => value !== entry)) {
+        expect(existsSync(join(folder, other))).toBe(false)
+      }
     }
-  })
+  )
 
-  it.each([["flow.ts", "flow.mdx"], ["flow.ts", "SKILL.md"], ["flow.mdx", "SKILL.md"]])(
+  it.each([["flow.ts", "flow.vibe"], ["flow.vibe", "flow.mdx"], ["flow.vibe", "SKILL.md"], ["flow.ts", "flow.mdx"], [
+    "flow.ts",
+    "SKILL.md"
+  ], ["flow.mdx", "SKILL.md"]])(
     "refuses duplicate entries %s and %s before writing state",
     (first, second) => {
       const root = directory(".git")
@@ -284,18 +290,18 @@ describe("the seat the scaffold writes", () => {
 
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
 
-describe("generated TypeScript through the public registry and runtime", () => {
+describe.each([false, true])("generated flows through the public registry and runtime (vibe: %s)", (vibe) => {
   it.each([
     { name: "review_2-final", selectedSeat: "openai:gpt-6-sol" },
     { name: "HELLO", selectedSeat: "openai:gpt-6-sol" },
     { name: "_escaped", selectedSeat: "fixture:\"\\\nseat" }
   ])("discovers, plans and completes $name with the selected seat", async ({ name, selectedSeat }) => {
     const root = directory()
-    const scaffolded = Init.scaffold(root, name, { OPENAI_API_KEY: "never-written" })
+    const scaffolded = Init.scaffold(root, name, { OPENAI_API_KEY: "never-written" }, { vibe })
     if (selectedSeat !== "openai:gpt-6-sol") {
       writeFileSync(
         scaffolded.flowFile,
-        Init.template(name, { seat: selectedSeat, variable: "unused", resolved: true })
+        Init.template(name, { seat: selectedSeat, variable: "unused", resolved: true }, vibe)
       )
     }
     symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
@@ -359,7 +365,7 @@ describe("generated TypeScript through the public registry and runtime", () => {
         expect(descriptors.map((entry) => entry.name)).toEqual([name])
         expect(descriptors[0]!.capabilities).toEqual(["fs:read:**", "fs:write:**", "proc:spawn:*", "model:call:*"])
         expect(yield* registry.warnings()).toEqual([])
-        expect(scaffolded.flowFile).toBe(join(root, ".smithers", "flows", name, "flow.ts"))
+        expect(scaffolded.flowFile).toBe(join(root, ".smithers", "flows", name, vibe ? "flow.vibe" : "flow.ts"))
         const executable = yield* Executable.fromDescriptor(yield* registry.get(name), { delegates: [] })
         const input = { args: "Inspect the generated starter." }
         const graph = Graph.build(executable.flow, { input }, { callbackIdentity: "stable" })

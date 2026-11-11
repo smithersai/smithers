@@ -1,5 +1,5 @@
 /**
- * `smthrs init`: a tagged TypeScript flow and repository-scoped run state.
+ * `smthrs init`: a tagged TypeScript or VibeLang flow and repository-scoped run state.
  * Existing flow entries and user-authored files are retained.
  * @since 1.0.0
  */
@@ -149,21 +149,22 @@ export const defaultSeat = (
  * @category constructors
  * @since 1.0.0
  */
-export const template = (name: string, seat: Seat): string => {
+export const template = (name: string, seat: Seat, vibe = false): string => {
   const problem = nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
   return `import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import Instructions from "./prompt.mdx"
-
+${vibe ? "" : "import Instructions from \"./prompt.mdx\"\n"}
 const Work = AgentAction.make(${JSON.stringify(`${name}/work`)}, {
   payload: { args: Schema.optional(Schema.String) },
   output: Schema.Struct({ summary: Schema.String }),
   // Change the seat to use another model. Credentials stay in the environment.
   seat: ${JSON.stringify(seat.seat)},
-  prompt: Instructions
+  prompt: ${
+    vibe ? "({ args }) => args ?? \"Summarize this project and suggest one small improvement.\"" : "Instructions"
+  }
 })
 
 export const layer = Work.layer
@@ -198,7 +199,7 @@ export interface Scaffolded {
 }
 
 /**
- * Scaffolds `.smithers/flows/<name>/flow.ts` and ignores `.flows/`.
+ * Scaffolds a TypeScript flow, or VibeLang with `options.vibe`, and ignores `.flows/`.
  *
  * An existing flow file is left exactly as it is: `init` is a starting point,
  * not an overwrite, and a second `init` in a project that already has flows
@@ -210,7 +211,8 @@ export interface Scaffolded {
 export const scaffold = (
   root: string,
   name: string,
-  environment: Environment.Source
+  environment: Environment.Source,
+  options: { readonly vibe?: boolean } = {}
 ): Scaffolded => {
   const problem = nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
@@ -228,16 +230,17 @@ export const scaffold = (
     }
   }
   // lstat also sees dangling symlinks: no entry spelling may be overwritten.
-  const entries = ["flow.ts", "flow.mdx", "SKILL.md"].map((entry) => join(directory, entry))
+  const entries = ["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"].map((entry) => join(directory, entry))
     .filter((path) => statIfPresent(path) !== undefined)
   if (entries.length > 1) {
     throw new CliError.Refused({
       fault: "user",
       code: "flow_conflict",
-      message: `Flow ${name} has multiple entry files; retain one of flow.ts, flow.mdx or SKILL.md`
+      message: `Flow ${name} has multiple entry files; retain one of flow.ts, flow.vibe, flow.mdx or SKILL.md`
     })
   }
-  const flowFile = entries[0] ?? join(directory, "flow.ts")
+  const entry = options.vibe === true ? "flow.vibe" : "flow.ts"
+  const flowFile = entries[0] ?? join(directory, entry)
   const seat = defaultSeat(environment)
   const exists = entries.length > 0
   if (isRepository(root)) {
@@ -261,7 +264,7 @@ export const scaffold = (
             allowImportingTsExtensions: true,
             allowArbitraryExtensions: true
           },
-          include: ["flow.ts", "prompt.d.mdx.ts"]
+          include: options.vibe === true ? ["*.vibe"] : [entry, "prompt.d.mdx.ts"]
         },
         null,
         2
@@ -271,6 +274,7 @@ export const scaffold = (
         "import type { Component } from \"@smthrs/registry/Prompt\"\n\ndeclare const Instructions: Component<{ readonly args?: string }>\nexport default Instructions\n"
     }
     for (const [entry, text] of Object.entries(content)) {
+      if (options.vibe === true && entry !== "tsconfig.json") continue
       const path = join(directory, entry)
       const stat = statIfPresent(path)
       if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink())) {
@@ -282,7 +286,7 @@ export const scaffold = (
       }
       if (stat === undefined) writeFileSync(path, text, { encoding: "utf8", flag: "wx" })
     }
-    writeFileSync(flowFile, template(name, seat), { encoding: "utf8", flag: "wx" })
+    writeFileSync(flowFile, template(name, seat, options.vibe), { encoding: "utf8", flag: "wx" })
   }
   // The empty state directory is the project's anchor. `Project.root` treats
   // `.flows/` as proof on its own and `.smithers/flows/` only beside a project
