@@ -2,13 +2,14 @@
 // file's schema of the compose Postgres, against the scripted GitHub. The branch's machine is a test `Machines` over an
 // in-memory checkout of the head, and the judge behind the review is a scripted model admitted and metered by the
 // model endpoint's own `ModelEndpoint.local`: the only stand-ins. Each check is a `runs` row on the head's SHA.
-import { Model, ModelError, type ModelEvent } from "@smthrs/model"
+import { Model, ModelError } from "@smthrs/model"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/flows"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Context, Effect, Exit, Fiber, Layer, Logger, Redacted, Scope, Stream } from "effect"
+import { ReviewComment } from "@smthrs/review"
+import { Context, Effect, Exit, Fiber, Layer, Logger, Redacted, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -20,7 +21,7 @@ import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { instantCommands, noCommands } from "../test/commands.ts"
 import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.ts"
-import { judgeSeat, REPOSITORY, reset, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
+import { finding, judgeSeat, REPOSITORY, reset, reviewing, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Box from "../test/box.ts"
 import { build, runFlow } from "../test/flowHost.ts"
@@ -101,18 +102,16 @@ const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record
   return { commands, timeouts, branches, sleeps, layer: Layer.succeed(Machines, service) }
 }
 
-/** A judge that answers `text` once per call. */
-const judge = (text: string) => () =>
-  Stream.fromIterable<ModelEvent.ModelEvent>([
-    { type: "text-delta", id: "t", text },
-    { type: "usage", inputTokens: 30, outputTokens: 5 },
-    { type: "settle", stopReason: "stop" },
-  ])
+/** The review flow's model, finding `text` on src/widgets.ts's line 2, the line `opened` adds. */
+const judge = (text: string) => reviewing(text, { path: "src/widgets.ts", line: 2 })
 
-/** A pull request from `feature` that adds a line to README.md, opened by the App; answers the request for its checks. */
+/**
+ * A pull request from `feature` that adds a source file the review reads, opened by the App; answers the request for its
+ * checks.
+ */
 const opened = async (github: ReturnType<typeof scriptedGitHub>, owner: { readonly personId: string }) => {
   const base = github.refs.get("main")!
-  const head = github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line\n" })
+  const head = github.push("smithers/t1-readme", { "src/widgets.ts": "export const widgets = 1\n\nexport const line = \"A line\"\n" })
   const pull = github.openPull("smithers/t1-readme", "T1: README", BOT_LOGIN)
   return {
     repoId: REPOSITORY.id,
@@ -153,7 +152,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
   test("runs each .smithers/checks script on the head, then the review, each a run on the head's SHA", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
-    const { seat, requests } = await judgeSeat(runtime, judge("- README.md: the line has no period."))
+    const { seat, requests } = await judgeSeat(runtime, judge("The line has no period."))
     const { services } = await githubServices(runtime, github, { judge: seat })
     const request = await opened(github, maya)
     const box = machine({ ".smithers/checks/readme.sh": "", ".smithers/checks/lint.sh": "", ".smithers/checks/x.txt": "" }, {
@@ -168,7 +167,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const ran = await runFlow(Checks.ChecksRun, request, withJobs(Checks.registration({ ...services, reviewerFor })).pipe(
       Layer.provide(box.layer),
     ), { executionId: checkExecutionId(request.repoId, request.sha, "all") })
-    expect(owners).toEqual([request.ownerId])
+    expect(new Set(owners)).toEqual(new Set([request.ownerId]))
 
     expect(ran.exit).toEqual(Exit.succeed({
       statuses: [
@@ -222,10 +221,11 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     // One comment review as the App, on the head, never an approval; its body names whom it acted for.
     const reviews = github.pulls.get(request.prNumber)!.reviews
     expect(reviews.map((review) => [review.event, review.login, review.commitId])).toEqual([["COMMENT", BOT_LOGIN, request.sha]])
-    expect(reviews[0]!.body).toContain("- README.md: the line has no period.")
+    expect(reviews[0]!.body).toContain("- **minor** `src/widgets.ts:2`: The line has no period.")
     expect(reviews[0]!.body).toContain("Reviewed by Smithers for @maya (review).")
-    // The judge read the diff.
-    expect(JSON.stringify(requests[0])).toContain("+A line")
+    // The review flow read the diff: one file's review, then one verification of its finding.
+    expect(requests).toHaveLength(2)
+    expect(JSON.stringify(requests[0])).toContain("+export const line")
     // The pull request's page shows the review from the projection.
     expect(await sql(runtime, `SELECT state, author_login AS "author", commit_sha AS "commitSha" FROM reviews`)).toEqual([
       { state: "COMMENTED", author: BOT_LOGIN, commitSha: request.sha },
@@ -289,7 +289,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
   })
 
-  test.each(["quota_exceeded", "content_policy", "empty_answer"] as const)("a review records %s without provider messages or diff content", async (code) => {
+  test.each(["quota_exceeded", "content_policy", "empty_answer"] as const)("a review whose model fails with %s records it failed, without provider messages or diff content", async (code) => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
     const privateText = "private-provider-message-and-credential-must-not-be-logged"
@@ -305,17 +305,28 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
     const logger = Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))
     const implementation = Checks.steps({ ...services, reviewerFor: () => reviewer })
-    const registration = Interpreter.layerWithImplementations(Checks.ReviewRun, Layer.mergeAll(
-      Checks.Review.toLayer((payload) => implementation.review(payload).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))),
-      Checks.Report.toLayer(implementation.report),
-    )).pipe(Layer.provideMerge(Action.layerImplementations))
+    const registration = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Checks.ReviewRun, Layer.mergeAll(
+        Checks.ReviewPrepare.toLayer(implementation.prepare),
+        Checks.Review.toLayer((payload) => implementation.review(payload).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))),
+        Checks.Report.toLayer(implementation.report),
+      )),
+      Checks.reviewRounds({ ...services, reviewerFor: () => reviewer }),
+    ).pipe(Layer.provideMerge(Action.layerImplementations))
     const ran = await runFlow(Checks.ReviewRun, request, registration)
     expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
     const failure = logs.find((log) => log.message === "checks.review" && log.annotations.outcome === "failed")
-    expect(failure?.annotations).toMatchObject({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, stage: "model", errorCode: code })
-    if (code === "quota_exceeded") expect(failure?.annotations.providerStatus).toBe(429)
-    else expect(failure?.annotations).not.toHaveProperty("providerStatus")
+    // Each file's review failing fails the review: the rounds keep the provider's words to themselves.
+    expect(failure?.annotations).toMatchObject({
+      repoId: request.repoId,
+      sha: request.sha,
+      prNumber: request.prNumber,
+      stage: "model",
+      errorCode: "review_failed",
+      findings: 0,
+      notReviewed: 0,
+    })
     expect(JSON.stringify(logs)).not.toContain(privateText)
     expect(await runs()).toEqual([{ flow: "checks/review", status: "failed", sha: request.sha, launchedBy: maya.personId }])
   })
@@ -652,26 +663,48 @@ describe("checks/Run's commit statuses (GH-10)", { timeout: 60_000 }, () => {
 
 describe("the review's text", () => {
   test("drops mentions and links from the findings, and says whom it acted for", () => {
-    expect(Checks.reviewBodyOf(" - ping @everyone, see https://x.test/a ", "maya")).toBe(
-      "- ping @​everyone, see (link removed)\n\nReviewed by Smithers for @maya (review).",
+    expect(Checks.reviewBodyOf([Schema.decodeUnknownSync(ReviewComment)(finding("a.md", 1, "ping @everyone, see https://x.test/a"))], [], "maya")).toBe(
+      "1 finding, the most severe first:\n- **minor** `a.md:1`: ping @\u200beveryone, see (link removed)\n\n" +
+        "Reviewed by Smithers for @maya (review).",
     )
+    expect(Checks.reviewBodyOf([], [], "maya")).toBe("No findings.\n\nReviewed by Smithers for @maya (review).")
+    // A finding the flow couldn't pin to a line names its file alone.
+    expect(Checks.reviewBodyOf([Schema.decodeUnknownSync(ReviewComment)(finding("a.md", 0, "x"))], [], "maya")).toContain("- **minor** `a.md`: x")
   })
 
-  test("the judge reads each file's patch, within the budget; a binary file says so", () => {
-    const request = Checks.reviewRequest([
-      { filename: "a.md", status: "modified", additions: 1, deletions: 0, patch: "+a" },
-      { filename: "b.png", status: "added", additions: 0, deletions: 0 },
-    ])
-    const text = JSON.stringify(request.messages)
-    expect(text).toContain("--- a.md (modified, +1 -0)\\n+a")
-    expect(text).toContain("--- b.png (added, +0 -0)\\n(no textual diff)")
-    const huge = Checks.reviewRequest([
-      { filename: "big.md", status: "modified", additions: 1, deletions: 0, patch: "x".repeat(Checks.MAX_REVIEW_DIFF_CHARS + 10) },
-      { filename: "late.md", status: "modified", additions: 1, deletions: 0, patch: "+late" },
-    ])
-    const hugeText = JSON.stringify(huge.messages)
-    expect(hugeText).not.toContain("+late")
-    expect(hugeText).toContain("--- late.md")
+  test("shows the ten most severe findings, then the files it didn't read", () => {
+    const severities = ["info", "minor", "major", "critical"]
+    const comments = Array.from({ length: 12 }, (_, index) =>
+      Schema.decodeUnknownSync(ReviewComment)(finding(`f${index}.ts`, index + 1, `finding ${index}`, severities[index % 4])))
+    const notReviewed = Array.from({ length: 23 }, (_, index) => `late${index}.ts`)
+    const body = Checks.reviewBodyOf(comments, notReviewed, "maya")
+    const lines = body.split("\n")
+    expect(lines[0]).toBe("The 10 most severe of 12 findings:")
+    const shown = lines.slice(1, 11).map((line) => /\*\*(\w+)\*\*/.exec(line)?.[1])
+    expect(shown).toEqual(["critical", "critical", "critical", "major", "major", "major", "minor", "minor", "minor", "info"])
+    expect(body).toContain("Not reviewed (a review reads source files, at most 20 of them): `late0.ts`")
+    expect(body).toContain("`late19.ts` and 3 more.")
+    expect(body).not.toContain("late20.ts")
+  })
+})
+
+describe("the review's change set", { timeout: 60_000 }, () => {
+  test("is the first 20 files GitHub lists; the rest are listed as not reviewed, and no model reads them", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat, requests } = await judgeSeat(runtime, judge("No findings."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const base = github.refs.get("main")!
+    const files = Object.fromEntries(Array.from({ length: 23 }, (_, index) => [`src/f${String(index).padStart(2, "0")}.ts`, `export const v = ${index}\n`]))
+    const head = github.push("smithers/t1-many", files)
+    const pull = github.openPull("smithers/t1-many", "T1: many", BOT_LOGIN)
+    const request = { ...(await opened(github, maya)), sha: head, baseSha: base, prNumber: pull.number, branch: "smithers/t1-many" }
+    const prepared = await Effect.runPromise(Checks.steps({ ...services, reviewerFor: () => seat }).prepare({ request }))
+    expect(prepared.refusal).toBeNull()
+    expect(prepared.rounds.prepared.prompt.files).toHaveLength(Checks.MAX_REVIEW_FILES)
+    expect(prepared.notReviewed).toHaveLength(23 - Checks.MAX_REVIEW_FILES)
+    expect(prepared.rounds.input).toMatchObject({ narrate: false, reviewSeat: `checks/review:${maya.personId}` })
+    expect(requests).toHaveLength(0)
   })
 })
 
@@ -689,11 +722,11 @@ test.each(["token", "github", "database"] as const)("a review %s outage remains 
       ? Effect.fail(new TokenUnavailable({ reason: "unavailable" })) : services.tokens.forInstallation(repo, purpose) },
   })
   // A no-retry test action exposes the durable step's error without spending the production retry deadline.
-  const review = Action.make("test/ReviewFault/step", { payload: { request: Checks.ChecksRequest }, success: Checks.Checked, error: Checks.ChecksUnavailable })
-  const flow = Flow.make("test/ReviewFault", { payload: { request: Checks.ChecksRequest }, success: Checks.Checked, error: Checks.ChecksUnavailable,
+  const review = Action.make("test/ReviewFault/step", { payload: { request: Checks.ChecksRequest }, success: Checks.PreparedReview, error: Checks.ChecksUnavailable })
+  const flow = Flow.make("test/ReviewFault", { payload: { request: Checks.ChecksRequest }, success: Checks.PreparedReview, error: Checks.ChecksUnavailable,
     body: Node.capture({ review: review.name }, (payload) => review.call(payload)),
   })
-  const result = await runFlow(flow, { request }, Interpreter.layerWithImplementations(flow, review.toLayer(steps.review)).pipe(Layer.provideMerge(Action.layerImplementations)))
+  const result = await runFlow(flow, { request }, Interpreter.layerWithImplementations(flow, review.toLayer(steps.prepare)).pipe(Layer.provideMerge(Action.layerImplementations)))
   expect(Exit.isFailure(result.exit)).toBe(true)
   expect(JSON.stringify(result.exit)).toContain("ChecksUnavailable")
   expect(github.pulls.get(request.prNumber)!.reviews).toEqual([])

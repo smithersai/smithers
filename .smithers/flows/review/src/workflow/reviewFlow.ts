@@ -54,7 +54,8 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
   payload: NarrateReviewPayload,
   success: ReviewResult,
   error: ReviewFailure,
-  body: ({ changes, input, review, target }) => {
+  // Captured, so a caller that runs the rounds as a child execution keys the call by this body's identity.
+  body: Node.capture({ narrate: NarrateChanges.name, render: RenderWalkthrough.name }, ({ changes, input, review, target }) => {
     const narrating = input.narrate && changes.files.length > 0
     const story = narrating
       ? NarrateChanges.call({
@@ -95,7 +96,7 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
         ui: rendered.ui
       }))
     )
-  }
+  })
 })
 
 /**
@@ -111,7 +112,12 @@ export const VerifyReview = Flow.make("smithers-review/VerifyReview", {
   payload: VerifyReviewPayload,
   success: ReviewResult,
   error: ReviewFailure,
-  body: ({ changes, input, review, target }) => {
+  body: Node.capture({
+    verify: VerifyFindings.name,
+    apply: ApplyVerdicts.name,
+    narrate: NarrateReview.name,
+    maxFindings: MAX_VERIFIABLE_FINDINGS
+  }, ({ changes, input, review, target }) => {
     const verifying = input.verify &&
       review.comments.length >= 1 &&
       review.comments.length <= MAX_VERIFIABLE_FINDINGS
@@ -134,7 +140,7 @@ export const VerifyReview = Flow.make("smithers-review/VerifyReview", {
       Node.bindPlanned(({ verdicts, failure }) => ApplyVerdicts.call({ review, verdicts, failure })),
       Node.bindPlanned((verified) => NarrateReview.to({ input, target, changes, review: verified }))
     )
-  }
+  })
 })
 
 /**
@@ -167,7 +173,14 @@ export const ReviewFiles: Flow.Flow<
   payload: ReviewFilesPayload,
   success: ReviewResult,
   error: ReviewFailure,
-  body: ({ input, prepared, offset, outcomes }) => {
+  body: Node.capture({
+    review: ReviewFile.name,
+    merge: MergeFileBatch.name,
+    finalize: FinalizeReview.name,
+    verify: VerifyReview.name,
+    rounds: "smithers-review/ReviewFiles",
+    width: DEFAULT_CONCURRENCY
+  }, ({ input, prepared, offset, outcomes }) => {
     const files = prepared.prompt.shouldReview ? prepared.prompt.files : []
     const width = Number.isSafeInteger(input.concurrency) && input.concurrency > 0
       ? input.concurrency
@@ -211,7 +224,7 @@ export const ReviewFiles: Flow.Flow<
         })
       )
     )
-  }
+  })
 })
 
 /**

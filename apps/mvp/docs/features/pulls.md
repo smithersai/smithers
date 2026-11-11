@@ -26,7 +26,7 @@ Merge (a Maintainer's own press) ─▶ POST /api/repos/<o>/<n>/writes { op: "pr
                                      queue: Action.once: our request comment? ─▶ else recheck head, draft ─▶ POST a comment
                                        as them, <!-- smithers:merge-queue head=<sha> --> ─▶ the repository's queue lands it
 Review (a Maintainer's own press, or /review) ─▶ POST /api/repos/<o>/<n>/pulls/<n>/review ─▶ pull/Review on the head
-                                     checks/Review (one comment review, as the App) ─▶ checks/Report (smithers/review)
+                                     checks/ReviewPrepare ─▶ the review flow's rounds ─▶ checks/Review (one comment review, as the App) ─▶ checks/Report (smithers/review)
 the todo run publishes ─▶ checks/Run on the head ─▶ runs rows with the head's SHA (the Checks tab)
                                      each .smithers/checks/<name>.sh on the branch's machine · the review: one comment
                                      each check's result ─▶ POST /statuses/<head> smithers/<name>, as the App (GH-10)
@@ -36,8 +36,8 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 - **One row per pull request, beside its issue row.** A pull request is an `items` row of kind `pull` (title, body, state, author, conversation) and a `pulls` row with its head, base, draft, merge and size. `github/Apply` reads it with its commits and reviews (`worker/github/Pulls.ts`), under the same newer-than guard as an issue.
 - **Merging into the default branch is a deploy** (ruling GH-9). Beside Merge on a pull request into the repository's default branch, the page says `Merging into <branch> deploys it.`, with the branch's real name. Production work, checks and runs, happens on Smithers.
 - **A person merges, bound to what they saw.** The writes route takes `pr/merge` only from a person's own session, Maintainer or Admin, never from a run credential (the agent, a flow, a frame or a sandbox; `PROTECTED_ACTS`, worker/Actor.ts). `pr/Merge` re-reads the pull request and refuses a moved head, a draft, or one already merged or closed, reads the base branch's own head and refuses one other than the base the page showed, then merges with the person's own GitHub token at the head they saw, squash by default. A repository may choose its merge queue instead ([below](#merging-through-a-repositorys-merge-queue)). GitHub's refusal, a required check included, is `not_mergeable`. The merge commit's message ends with `Smithers-Write: <key>`, so a lost answer is found by that key, never by the pull request merely being merged.
-- **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the head's own throwaway job machine, synced to the head ([where checks run](#where-checks-run)); the scripts found there run one at a time as a `CheckSuite` of discovered checks (`CheckSuite.runDiscovered`, [`@smthrs/patterns`](../../../../packages/smithers/flows/patterns/docs/teams.md#discovered-checks)), and the `review` check reads the diff with the `review` role (the `hard` tier, [decision 0107](../decisions/0107-model-tiers.md)) and posts one comment review as the App, never an approval. Each is a `runs` row with the head's SHA, reported on GitHub as the commit status `smithers/<name>` ([commit statuses](#commit-statuses)). Smithers never gates the merge on them itself: a repository's branch protection may require `smithers/<name>`.
-- **Libraries** (`docs/libraries.md`): "Touch GitHub" (`@smthrs/integrations`: `GitHub.Pulls`, `GitHub.Refs`, `GitHub.Commits`, `GitHub.AppAuth`), `@smthrs/flow`, `@smthrs/agent` (`ModelStep` for the review), `@smthrs/sandbox` (`SandboxTools` on the branch machine), `@smthrs/effect-electric` (`ShapeProxy`).
+- **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the head's own throwaway job machine, synced to the head ([where checks run](#where-checks-run)); the scripts found there run one at a time as a `CheckSuite` of discovered checks (`CheckSuite.runDiscovered`, [`@smthrs/patterns`](../../../../packages/smithers/flows/patterns/docs/teams.md#discovered-checks)), and the `review` check runs the review flow's rounds (`@smthrs/review`, [.smithers/flows/review](../../../../.smithers/flows/review/README.md#without-a-checkout)) with the `review` role (the `hard` tier, [decision 0107](../decisions/0107-model-tiers.md)) and posts one comment review as the App, never an approval ([the review](#the-review)). Each is a `runs` row with the head's SHA, reported on GitHub as the commit status `smithers/<name>` ([commit statuses](#commit-statuses)). Smithers never gates the merge on them itself: a repository's branch protection may require `smithers/<name>`.
+- **Libraries** (`docs/libraries.md`): "Touch GitHub" (`@smthrs/integrations`: `GitHub.Pulls`, `GitHub.Refs`, `GitHub.Commits`, `GitHub.AppAuth`), `@smthrs/flow`, `@smthrs/agent` (`AgentAction` for the review's rounds), `@smthrs/review` (the review flow's rounds), `@smthrs/sandbox` (`SandboxTools` on the branch machine), `@smthrs/effect-electric` (`ShapeProxy`).
 
 ## Who reads, who writes
 
@@ -151,6 +151,21 @@ pull/Review (server): checks/Review (judge with the requester's reviewer, one CO
 - **The device step** (`pull/review/request`) tries again for ten minutes on a `429`, a `5xx` other than `not_configured`, or no answer; any other refusal is final.
 - **Never an approval.** The review is a `COMMENT` review, "Reviewed by Smithers for @<login>"; agents never approve or merge.
 
+## The review
+
+```
+checks/ReviewPrepare   the run row, smithers/review pending ─▶ GitHub's comparison of base and head ─▶ the first 20 files
+the review's rounds    ReviewFiles: one model call per source file, 4 at once ─▶ VerifyReview: one call over the findings
+                       ─▶ NarrateReview: no narration, no walkthrough file; one child execution of checks/Run or pull/Review
+checks/Review          one COMMENT review as the App: the 10 most severe findings, the files not reviewed ─▶ the run's end
+```
+
+- **The review flow is the reviewer.** The check runs the rounds of [.smithers/flows/review](../../../../.smithers/flows/review/README.md), the reviewer with seeded-bug evals the land gate also uses, from its package root `@smthrs/review`. The change set comes from GitHub's comparison, not a checkout (`comparisonSnapshot`), so the rounds run on the Worker with no machine.
+- **Cost is bounded per head.** At most 20 changed files are read (`MAX_REVIEW_FILES`), in the order GitHub lists them: one model call per source file among them, and one call verifying the findings when there are 1 to 40 of them. Files that aren't source the review flow reads (Markdown, images, lock files) cost nothing. A 12-file pull request of source costs 13 calls.
+- **The comment.** Findings are sorted by severity (critical, major, minor, info) and the 10 most severe are shown (`MAX_REVIEW_FINDINGS`), each with its file and line, then the files not reviewed. Mentions and links are removed; the text ends "Reviewed by Smithers for @<login> (review).". "No findings." when there are none.
+- **Whose model.** Every call is on the owner's `review` role: the seat `checks/review:<owner id>` resolves to `reviewerFor(ownerId)`, admitted and metered by the model endpoint as any of their calls ([decision 0107](../decisions/0107-model-tiers.md)).
+- **When it fails.** A comparison GitHub refuses, rounds that fail, or every file's review failing leaves `smithers/review` Failed and posts nothing. One file's review failing is a warning: the others still post.
+
 ## Where checks run
 
 Each head's scripts run on a check job: a throwaway machine of its own, never the TODO's machine the agent wrote on (`Checks.jobMachineOf`, `kind: "job"` on its `SandboxBranch`).
@@ -169,7 +184,7 @@ Ruling GH-10: Smithers writes GitHub commit statuses, write-only, so branch prot
 ```
 checks/Scripts   each script: its run row ─▶ smithers/<name> pending "Running", best effort ─▶ the script
 checks/Report    after the scripts: each check of the head that ended, read from runs ─▶ success "Passed" or failure "Failed"
-checks/Review    smithers/review pending ─▶ the judge, the comment review
+checks/Review    smithers/review pending ─▶ the review flow's rounds, the comment review
 checks/Report    after the review: every ended check again, the review's included
 ```
 
@@ -199,7 +214,7 @@ Migrations `0031_pulls`, `0033_pull_writes`, `0037_pull_default_branch` and `007
 | `github.merge` | log, span | `writeId`, `outcome` (`done` or the refusal), `settled`, `flow` (`github`, `queue`; once the repository's file was read), `base` (`seen`, `moved`, `unchecked`), `projection` (`failed`), `errorCode` |
 | `smithers_pr_merges{outcome,flow,base}` | counter | `flow` once the file was read; `base` on a GitHub merge only |
 | `github.compare`, `smithers_github_compares{outcome}` | log, span, counter | `outcome`, `files` |
-| `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome`; a model failure adds `stage: model`, typed `errorCode` (or `empty_answer`), and `providerStatus` when retained; no provider message or diff |
+| `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome`; the review adds `findings` and `notReviewed` counts; a failed review adds `stage` (`github`, `rounds` or `model`) and `errorCode` (`review_failed` when every file's review failed); no provider message or diff |
 | `sandbox.registry.egress`, `secrets.egress`; `smithers_registry_egress_requests{outcome}` | span, log, counter | a box's outbound request through the registry egress, a check job's included: `host`, `method`, `status`, `outcome` (`forwarded` or the refusal), never a path or a header |
 | `checks.status`, `checks.report`; `smithers_check_statuses{state,outcome}` | log, span, counter | `repoId`, `sha`, `check`, `state` (`pending`, `success`, `failure`), `outcome` (`sent`, `refused`, `dropped`), `errorCode` |
 | `github.apply` | log, span | as issues' (`event` `pull_request` or `pull_request_review`) |
@@ -220,7 +235,7 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `worker/github/Review.test.ts` | review on request through the GitHub routes' real handler on compose Postgres and the scripted GitHub: a Maintainer of a second repository reviews an outsider's pull request, run once as theirs, the comment review and `smithers/review` posted; a failed review asked again by another Maintainer; two presses at once start one; every refusal; a start that failed rolled back; sign-in and Postgres down |
 | `worker/PersonOnly.test.ts` | `pull/review` refused `403 person_only` for every run credential, and counted |
 | `src/features/pulls/steps.test.ts` | `pull/review/request` through the real `PullsClient` against a local server: the body, what is final and what is tried again |
-| `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App; each check's status pending then its result on the head, as the App with only `statuses: write`; no permission or an unknown commit refused once and the results kept; a 502 and a lost answer sent again; each head's statuses its own; the scripts on the head's own job machine, put to sleep after, and one that never answers runs no script |
+| `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App from the review flow's rounds (one call per file, one to verify), a lost review adopted, a failing model, no App, the 20-file cap and the comment's ten most severe findings; each check's status pending then its result on the head, as the App with only `statuses: write`; no permission or an unknown commit refused once and the results kept; a 502 and a lost answer sent again; each head's statuses its own; the scripts on the head's own job machine, put to sleep after, and one that never answers runs no script |
 | `worker/branch/RegistryEgress.test.ts` | a box reaches each registry host, counted; every other host refused before anything is sent; no secret in its policy or vault; a job's box never gets the secrets egress |
 | `packages/smithers/agent/integrations/test/Statuses.test.ts` | `GitHub.Statuses.create` against a fake GitHub on a real socket: per-commit statuses, a lost answer retryable, refusals unretried, every invalid input refused before a request, 100% |
 | `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's; a Maintainer's Review starting `pull/Review`, a Member's refused, a moved head |

@@ -4,8 +4,7 @@
 // the route claims the head's review run and starts `pull/Review`, which then runs on the Node host's engine and posts
 // one comment review as the App. Faults come from injected services: a starter that fails, Sessions that fail, a
 // Postgres nobody answers on, GitHub's own faults.
-import { type ModelEvent } from "@smthrs/model"
-import { Effect, Exit, Layer, Redacted, Stream } from "effect"
+import { Effect, Exit, Layer, Redacted } from "effect"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { GITHUB_WEBHOOK_ROUTE } from "../../src/features/issues/contract.ts"
@@ -18,7 +17,7 @@ import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import { parseReviewPath, requests } from "./Review.ts"
-import { judgeSeat, REPOSITORY, reset, services as githubServices, signedIn, sql } from "./test/fixtures.ts"
+import { judgeSeat, REPOSITORY, reset, reviewing, services as githubServices, signedIn, sql } from "./test/fixtures.ts"
 import { delivery, githubHarness, member } from "./test/harness.ts"
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
@@ -49,7 +48,7 @@ const person = async (login: string): Promise<Actor.Actor> => {
 /** A pull request an outsider opened on acme/widgets, projected as the webhook projects it; its number and head. */
 const opened = async (github: ScriptedGitHub) => {
   const base = github.refs.get("main")!
-  const head = github.push("feature", { "A.md": "a\n" })
+  const head = github.push("feature", { "src/a.ts": "export const a = 1\n" })
   const pull = github.openPull("feature", "Add A", "outsider")
   const seed = await githubHarness(runtime, { own: OWN, github, run: true, actor: null })
   const event = { action: "opened", repository: { full_name: "acme/widgets" }, pull_request: { number: pull.number } }
@@ -58,13 +57,8 @@ const opened = async (github: ScriptedGitHub) => {
   return { number: pull.number, head, base }
 }
 
-/** A judge that answers `text`. */
-const judge = (text: string) => () =>
-  Stream.fromIterable<ModelEvent.ModelEvent>([
-    { type: "text-delta", id: "t", text },
-    { type: "usage", inputTokens: 30, outputTokens: 5 },
-    { type: "settle", stopReason: "stop" },
-  ])
+/** The review flow's model, finding `text` on the line `opened` adds. */
+const judge = (text: string) => reviewing(text, { path: "src/a.ts", line: 1 })
 
 /** Machines that are never reached: the review alone needs no machine. */
 const noMachines = Layer.succeed(Machines, Machines.of({
@@ -125,12 +119,12 @@ describe("POST /api/repos/<owner>/<name>/pulls/<n>/review", { timeout: 60_000 },
     expect([h.count(requests, { outcome: "started" }), h.count(requests, { outcome: "existing" })]).toEqual([1, 1])
 
     // The review runs on the Node host: her reviewer, one comment review as the App on the head, its status.
-    const { ran, owners } = await review(github, h.starts[0]!, "- A.md: no test covers it.")
+    const { ran, owners } = await review(github, h.starts[0]!, "No test covers it.")
     expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "success", outcome: "sent" }] }))
-    expect(owners).toEqual([maya.subject.id])
+    expect(new Set(owners)).toEqual(new Set([maya.subject.id]))
     const reviews = github.pulls.get(pull.number)!.reviews
     expect(reviews.map((posted) => [posted.event, posted.login, posted.commitId])).toEqual([["COMMENT", BOT_LOGIN, pull.head]])
-    expect(reviews[0]!.body).toContain("- A.md: no test covers it.")
+    expect(reviews[0]!.body).toContain("- **minor** `src/a.ts:1`: No test covers it.")
     expect(reviews[0]!.body).toContain("Reviewed by Smithers for @maya (review).")
     expect(github.shownStatuses(pull.head)).toEqual({ "smithers/review": "success" })
     expect(await reviewRun()).toEqual([{ flow: "checks/review", status: "done", sha: pull.head, launchedBy: maya.subject.id }])
@@ -171,7 +165,7 @@ describe("POST /api/repos/<owner>/<name>/pulls/<n>/review", { timeout: 60_000 },
     expect(second.starts[0]!.payload).toMatchObject({ ownerId: ben.subject.id })
     expect(await reviewRun()).toEqual([{ flow: "checks/review", status: "working", sha: pull.head, launchedBy: ben.subject.id }])
     const passed = await review(github, second.starts[0]!, "No findings.")
-    expect(passed.owners).toEqual([ben.subject.id])
+    expect(new Set(passed.owners)).toEqual(new Set([ben.subject.id]))
     expect(await reviewRun()).toEqual([{ flow: "checks/review", status: "done", sha: pull.head, launchedBy: ben.subject.id }])
     expect(github.pulls.get(pull.number)!.reviews.map((posted) => posted.body)).toEqual([
       expect.stringContaining("Reviewed by Smithers for @ben (review)."),

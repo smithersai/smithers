@@ -87,13 +87,15 @@ the release path ([0099](0099-hosted-inference-flag.md)), so a person's own keys
 | `src/features/timeline/steps.ts` | `summary` | a 1 to 8 word label | `fast`, low | no: short free text |
 | `src/features/flows-ui/flows.ts` `flow/new/draft` | `plan` (was `agent`) | a flow's draft: a plan that becomes code | `hard` | no: a plan |
 | `src/features/flows-ui/flows.ts` `flow/run/agent` | `agent` | a person's flow's agent step | `fast` | no: free text |
-| `worker/flows/Checks.ts` `checks/Review` | `review` (was `judge`) | Markdown findings on a pull request | `hard` | no: free text |
+| `worker/flows/Checks.ts` `checks/Review` | `review` (was `judge`) | the review flow's findings on a pull request: one call per changed source file, at most 20, and one to verify ([pulls](../features/pulls.md#the-review)) | `hard` | no: findings |
 | `worker/flows/TodoAgent.ts` `todo/Implement` | `coding` | code edits through sandbox tools | `implement` | no: code |
 | `worker/personal/Api.ts` Test | none (ledger role `test`) | one word | each key the tiers use, once | no: it tests the key |
 
 Every call whose answer is a closed set (a label, a yes or no, a state the UI shows or routes on) already runs through
-Jev. No call asks for free text and parses a closed answer from it, so no call moved to Jev. The `checks/Review` prompt's
-"No findings." sentinel is read by nobody; the review is posted either way.
+Jev. No call asks for free text and parses a closed answer from it, so no call moved to Jev. A head's review was one call
+over the whole diff; since 2026-11-11 (#4590, the lead's decision on option 1) it runs the review flow's rounds: one
+`hard` call per changed source file, at most 20 per head, plus one verification call, so a 12-file pull request costs 13
+calls. The comment shows the 10 most severe findings.
 
 ## Not done now
 

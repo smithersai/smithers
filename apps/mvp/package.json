@@ -65,6 +65,7 @@
     "@smthrs/plugin": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/repo-view": "workspace:*",
+    "@smthrs/review": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "@smthrs/sandbox": "workspace:*",
     "@smthrs/secrets": "workspace:*",

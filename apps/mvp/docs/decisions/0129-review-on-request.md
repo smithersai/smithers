@@ -20,8 +20,9 @@ ask for one.
    deployment acts on (`mayAct`: `GITHUB_REPOSITORY`, or one with the App installed and allowed). The review spends a
    model, so it takes `repo:merge`'s tier, not a Member's. A Member, a reader or no role is `403 forbidden`.
 3. **What runs.** `pull/Review` on the server: the existing `checks/Review` then `checks/Report`, no scripts and no
-   machine. The judge reads the head's diff from GitHub with the requester's reviewer seat (`reviewerFor(ownerId)`), the
-   App posts its findings as one `COMMENT` review "Reviewed by Smithers for @<login>", and `smithers/review` reports the
+   machine. The review flow's rounds read the head's diff from GitHub with the requester's reviewer seat
+   (`reviewerFor(ownerId)`; [pulls](../features/pulls.md#the-review) since 2026-11-11), the App posts their findings as one
+   `COMMENT` review "Reviewed by Smithers for @<login>", and `smithers/review` reports the
    result on the head. Agents never approve or merge.
 4. **One review per head.** The route claims the head's `checks/review` run row (the id `checks/Run` uses) and starts
    the flow in one transaction. A review Running or Passed answers `202 { started: false }`; a Failed one is claimed again,

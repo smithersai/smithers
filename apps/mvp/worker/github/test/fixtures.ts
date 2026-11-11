@@ -286,3 +286,34 @@ export const rolesThatRead = (repository: Repository, role: Role): RepoRoles.Rep
   resolve: (actor, target) =>
     Effect.succeed({ role, held: Option.some({ repoId: target.id, personId: actor.subject.id, role }) }),
 })
+
+/** A finding as the review flow's rounds answer one: `content` on `path`'s line `line`. */
+export const finding = (path: string, line: number, content: string, severity = "minor") => ({
+  path,
+  content,
+  severity,
+  category: "correctness",
+  confidence: "confirmed",
+  startLine: line,
+  endLine: line,
+  existingCode: "",
+  suggestionCode: "",
+  thinking: "",
+})
+
+/**
+ * The review flow's model (worker/flows/Checks.ts `checks/Review`): each file's review finds `text` at `at` (none for
+ * "No findings."), and each finding it verifies is kept. A blank `text` is an answer with no cell, which settles no
+ * file's review.
+ */
+export const reviewing = (text: string, at: { readonly path: string; readonly line: number }): JudgeAnswer => (request) => {
+  const asked = JSON.stringify([request.system, request.messages])
+  const value = asked.includes("adjudicate code-review findings")
+    ? { verdicts: [{ index: 0, verdict: "keep", reason: "the diff shows it" }] }
+    : { status: "success", message: "", summary: null, warnings: [], comments: text === "No findings." ? [] : [finding(at.path, at.line, text)] }
+  return Stream.fromIterable<import("@smthrs/model").ModelEvent.ModelEvent>([
+    { type: "text-delta", id: "t", text: text.trim() === "" ? text : "```cell\nctx.done(" + JSON.stringify(value) + ")\n```" },
+    { type: "usage", inputTokens: 30, outputTokens: 5 },
+    { type: "settle", stopReason: "stop" },
+  ])
+}

@@ -533,6 +533,9 @@ importers:
       '@smthrs/repo-view':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/repo-view
+      '@smthrs/review':
+        specifier: workspace:*
+        version: link:../../.smithers/flows/review
       '@smthrs/rpc':
         specifier: workspace:*
         version: link:../../packages/rpc

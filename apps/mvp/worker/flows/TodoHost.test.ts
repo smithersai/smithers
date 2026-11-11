@@ -56,16 +56,40 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     TodoBaseClosed.Invalidate,
     Checks.ChecksRun,
     Checks.ReviewRun,
+    // The review flows rounds, which a heads review runs as its child execution.
+    ...Checks.reviewFlows,
   ]
   expect(flows.flows.slice(-todoFlows.length)).toEqual(todoFlows)
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)
-  const values = new Map<string, unknown>()
-  const storage: ExecutionHost.Storage = {
-    get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
-    put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
-    delete: (key) => Effect.sync(() => values.delete(key)),
-    setAlarm: () => Effect.void,
-    deleteAlarm: () => Effect.void,
+  /** One execution's object: its own storage, routing the executions it starts to their own objects. */
+  interface Host {
+    readonly start: (intent: Effect.Success<ReturnType<typeof ExecutionHost.intent>>) => Effect.Effect<unknown, unknown>
+    readonly wake: () => Effect.Effect<unknown, unknown>
+    readonly alarm: () => Effect.Effect<{ readonly _tag: string }, unknown>
+  }
+  const objects = new Map<string, Host>()
+  const objectOf = (executionId: string, url: string, schema: string): Host => {
+    const found = objects.get(executionId)
+    if (found !== undefined) return found
+    const values = new Map<string, unknown>()
+    const storage: ExecutionHost.Storage = {
+      get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+      put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+      delete: (key) => Effect.sync(() => values.delete(key)),
+      setAlarm: () => Effect.void,
+      deleteAlarm: () => Effect.void,
+    }
+    const host = ExecutionHost.make(storage, {
+      hostId: `object-${executionId}`,
+      database: ExecutionHost.database(url, schema),
+      flows,
+      router: {
+        start: (intent) => Effect.suspend(() => objectOf(intent.executionId, url, schema).start(intent)),
+        wake: (id) => Effect.suspend(() => objectOf(id, url, schema).wake()),
+      },
+    }) as unknown as Host
+    objects.set(executionId, host)
+    return host
   }
   const request: Checks.ChecksRequest = {
     repoId: REPOSITORY.id,
@@ -84,16 +108,17 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
       const name = TestSchemas.schemaName("flows")
       yield* Effect.addFinalizer(() => Effect.orDie(client`DROP SCHEMA IF EXISTS ${client(name)} CASCADE`))
       const executionId = checkExecutionId(request.repoId, request.sha, "all")
-      const host = ExecutionHost.make(storage, {
-        hostId: `object-${executionId}`,
-        database: ExecutionHost.database(url, name),
-        flows,
-        router: { start: () => Effect.void, wake: () => Effect.void },
-      })
+      const host = objectOf(executionId, url, name)
       yield* host.start(yield* ExecutionHost.intent(Checks.ChecksRun, { executionId, payload: request }))
+      // The head's review runs the review flow's rounds as a child execution on its own object, which wakes this one
+      // when it settles: each object's alarm runs until checks/Run settles.
       let driven = yield* host.alarm()
-      for (let drives = 1; driven._tag !== "Settled" && drives < 20; drives++) driven = yield* host.alarm()
+      for (let drives = 1; driven._tag !== "Settled" && drives < 40; drives++) {
+        for (const [id, other] of [...objects]) if (id !== executionId) yield* other.alarm()
+        driven = yield* host.alarm()
+      }
       expect(driven).toMatchObject({ _tag: "Settled" })
+      expect(objects.size).toBeGreaterThan(1)
     })),
   )
   expect(await sql(runtime, `SELECT flow, status FROM runs ORDER BY flow`)).toEqual([

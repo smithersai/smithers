@@ -174,6 +174,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
     TodoBaseClosed.Invalidate,
     Checks.ChecksRun,
     Checks.ReviewRun,
+    ...Checks.reviewFlows,
   ],
   registration: Layer.mergeAll(
     flows.registration,

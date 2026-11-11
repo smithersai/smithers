@@ -478,6 +478,8 @@ const object = <E, R>(
               // reviews it when they saved one (decision 0099).
               reviewerFor: (ownerId: string) =>
                 seats("review", started, () => ownedBy(ownerId).pipe(Effect.provide(appDatabase))),
+              // The review flow's agents evaluate their cells in the QuickJS build this Worker bundles.
+              reviewAgent: AgentSandbox.defaults,
               invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) =>
                 ExecutionHost.intent(TodoBaseClosed.Invalidate, {
                   executionId: `todo-closed:${stop.attemptId}`,
