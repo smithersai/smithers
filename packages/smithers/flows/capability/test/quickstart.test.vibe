@@ -1,0 +1,35 @@
+import { expect, it } from "@effect/vitest"
+import { Capability } from "@smthrs/capability"
+import { decide, decideWithSession, loadPolicy, ruleFor, suspend } from "../examples/vibe/quickstart.vibe"
+
+const configured = ["fs:read:/workspace/**", "fs:write:/workspace/**", "proc:spawn:npm install"]
+const deploy = Capability.make("net:post", "https://api.example.test/deploy")
+const requests = [Capability.make("fs:read", "/workspace/README.md"), Capability.make("proc:spawn", "npm install"), deploy]
+const gitWrite = Capability.make("fs:write", "/workspace/.git/config")
+const gitRead = Capability.make("fs:read", "/workspace/.git/config")
+
+it.effect("refuses operator text the grammar rejects", effect () => {
+  const refused = ruleFor("allow", "not a pattern") catch (error) => `${error._tag}: ${error.declared}`
+  expect(refused).toBe("NotAPattern: not a pattern")
+})
+
+it.effect("allows covered requests and asks about the rest", effect () => {
+  const policy = try loadPolicy(configured)
+  expect(decide(policy, requests)).toEqual([
+    "fs:read:/workspace/README.md allow",
+    "proc:spawn:npm install allow",
+    "net:post:https://api.example.test/deploy ask"
+  ])
+})
+
+it("renders the suspended request with its irreversible tier", () => {
+  expect(suspend(deploy, "req-1")).toBe(
+    "permission_required: net:post:https://api.example.test/deploy (tier irreversible, request req-1)"
+  )
+})
+
+it.effect("keeps a configured deny final over a session grant", effect () => {
+  const policy = try loadPolicy(configured)
+  expect(try decideWithSession(policy, gitWrite)).toBe("deny")
+  expect(try decideWithSession(policy, gitRead)).toBe("allow")
+})

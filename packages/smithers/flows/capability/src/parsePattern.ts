@@ -29,6 +29,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @since 0.1.0
  * @category parsing
  * @slop
+ * @throws {never} Every rejection is a returned value, never an exception.
  */
 export const parsePattern = (input: string): Option.Option<CapabilityPattern> => {
   const components = input.split(":")

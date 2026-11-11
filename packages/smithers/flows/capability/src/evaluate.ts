@@ -40,6 +40,7 @@ import type { RuleEffect } from "./RuleEffect.ts"
  * @category policy
  * @since 0.1.0
  * @slop
+ * @throws {never} An undecidable request is `deny`, never an exception.
  */
 export const evaluate = (
   rulesets: ReadonlyArray<ReadonlyArray<Rule>>,

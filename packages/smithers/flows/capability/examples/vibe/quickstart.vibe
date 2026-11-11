@@ -1,0 +1,40 @@
+import { Capability, Permission } from "@smthrs/capability"
+
+/** Operator text the capability grammar does not accept. */
+export error NotAPattern { declared: string }
+
+/** Reads one configured pattern into a rule, failing instead of guessing a default. */
+export effect function ruleFor(effect: Permission.RuleEffect, declared: string): Permission.Rule!NotAPattern {
+  const pattern = Capability.parsePattern(declared)
+  if (Option.isNone(pattern)) throw new NotAPattern({ declared })
+  return new Permission.Rule({ effect, pattern: pattern.value })
+}
+
+/** The configured policy: read and write inside the workspace, and run one exact command. */
+export effect function loadPolicy(configured: ReadonlyArray<string>): ReadonlyArray<Permission.Rule>!NotAPattern {
+  return try forEach(configured, (declared) => ruleFor("allow", declared))
+}
+
+/** Decides each request and pairs it with its text form. */
+export const decide = (
+  policy: ReadonlyArray<Permission.Rule>,
+  requests: ReadonlyArray<Capability.Capability>
+): ReadonlyArray<string> =>
+  requests.map((request) => `${Capability.format(request)} ${Permission.evaluate([policy], request)}`)
+
+/** Classifies an undecided request and renders the failure a host raises while a person answers. */
+export const suspend = (request: Capability.Capability, requestId: string): string => {
+  const tier = Capability.tierOf(request, { workspaceRoot: "/workspace" })
+  const failure = Permission.permissionRequired({ requestId, capability: request, tier, meta: { flow: "deploy" } })
+  return Permission.formatError(failure)
+}
+
+/** Decides a request under configured policy, a final deny, and a session's grants. */
+export effect function decideWithSession(
+  policy: ReadonlyArray<Permission.Rule>,
+  request: Capability.Capability
+): Permission.RuleEffect!NotAPattern {
+  const guarded = [...policy, try ruleFor("deny", "fs:write:/workspace/.git/**")]
+  const session = [try ruleFor("allow", "fs:write:/workspace/.git/config")]
+  return Permission.evaluate([guarded, session], request)
+}

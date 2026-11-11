@@ -8,7 +8,9 @@ sidebar:
 This quickstart turns three lines of operator configuration into a policy, runs
 three requests through it, and produces the typed failure a host raises when a
 request needs a person. Nothing here talks to a filesystem, a network, or a
-model: the package decides, and the caller acts.
+model: the package decides, and the caller acts. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -128,6 +130,60 @@ Permission.evaluate([guarded, session], Capability.make("fs:read", "/workspace/.
 
 The read still succeeds. The deny rule names the action `fs:write`, so it never
 selects a read, and the `fs:read:/workspace/**` allow still covers the path.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) an unusable pattern is a
+typed failure instead of an exception: `ruleFor` is an `effect` function that
+fails with a `NotAPattern` error, so loading the policy fails in the error
+channel and a caller recovers it with `catch`. Deciding, classifying and
+rendering stay plain functions, because none of them can fail.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Capability, Permission } from "@smthrs/capability"
+
+/** Operator text the capability grammar does not accept. */
+export error NotAPattern { declared: string }
+
+/** Reads one configured pattern into a rule, failing instead of guessing a default. */
+export effect function ruleFor(effect: Permission.RuleEffect, declared: string): Permission.Rule!NotAPattern {
+  const pattern = Capability.parsePattern(declared)
+  if (Option.isNone(pattern)) throw new NotAPattern({ declared })
+  return new Permission.Rule({ effect, pattern: pattern.value })
+}
+
+/** The configured policy: read and write inside the workspace, and run one exact command. */
+export effect function loadPolicy(configured: ReadonlyArray<string>): ReadonlyArray<Permission.Rule>!NotAPattern {
+  return try forEach(configured, (declared) => ruleFor("allow", declared))
+}
+
+/** Decides each request and pairs it with its text form. */
+export const decide = (
+  policy: ReadonlyArray<Permission.Rule>,
+  requests: ReadonlyArray<Capability.Capability>
+): ReadonlyArray<string> =>
+  requests.map((request) => `${Capability.format(request)} ${Permission.evaluate([policy], request)}`)
+
+/** Classifies an undecided request and renders the failure a host raises while a person answers. */
+export const suspend = (request: Capability.Capability, requestId: string): string => {
+  const tier = Capability.tierOf(request, { workspaceRoot: "/workspace" })
+  const failure = Permission.permissionRequired({ requestId, capability: request, tier, meta: { flow: "deploy" } })
+  return Permission.formatError(failure)
+}
+
+/** Decides a request under configured policy, a final deny, and a session's grants. */
+export effect function decideWithSession(
+  policy: ReadonlyArray<Permission.Rule>,
+  request: Capability.Capability
+): Permission.RuleEffect!NotAPattern {
+  const guarded = [...policy, try ruleFor("deny", "fs:write:/workspace/.git/**")]
+  const session = [try ruleFor("allow", "fs:write:/workspace/.git/config")]
+  return Permission.evaluate([guarded, session], request)
+}
+```
 
 ## What just happened
 
