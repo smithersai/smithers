@@ -18,7 +18,7 @@ import { SqlClient } from "effect/sql"
 import { FetchHttpClient, HttpEffect, HttpServerResponse } from "effect/http"
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
-import { createServer, type Server } from "node:http"
+import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -115,6 +115,43 @@ const mirror = () => {
 const engineWriter = async (schema: string) =>
   ExecutionHost.database((await runtime.runPromise(TestDatabase.serverUrl)).toString(), schema)
 
+/** How each test's local hosts stop, after its runners exit. */
+let hosts: Array<() => Promise<void>> = []
+
+/**
+ * `handler` served over real HTTP on a free local port, its requests' URLs on `base`: answers the port's origin. Once
+ * the test ends it stops as a host stops: every request it still serves ends, a killed runner's claim waiting for a job
+ * included, before the next test empties the tables those requests lock (a claim left polling deadlocked the next
+ * `TRUNCATE`). A request ends on its signal only where `handler`'s effect is interruptible, as an `HttpRouter` route
+ * is: `toWebHandler` alone runs it uninterruptible.
+ */
+const listen = async (handler: (request: Request) => Promise<Response>, base = "http://localhost") => {
+  const stop = new AbortController()
+  const requests: Array<Promise<void>> = []
+  const server = createServer((incoming, outgoing) => {
+    requests.push((async () => {
+      const chunks: Array<Buffer> = []
+      for await (const chunk of incoming) chunks.push(chunk as Buffer)
+      const response = await handler(new Request(`${base}${incoming.url}`, {
+        method: incoming.method!,
+        headers: incoming.headers as Record<string, string>,
+        signal: stop.signal,
+        ...(incoming.method === "GET" ? {} : { body: Buffer.concat(chunks) }),
+      }))
+      outgoing.writeHead(response.status, Object.fromEntries(response.headers))
+      outgoing.end(Buffer.from(await response.arrayBuffer()))
+    })())
+  })
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+  hosts.push(async () => {
+    stop.abort()
+    await Promise.allSettled(requests)
+    server.closeAllConnections()
+    await new Promise<void>((done) => server.close(() => done()))
+  })
+  return `http://localhost:${(server.address() as AddressInfo).port}`
+}
+
 /**
  * The runner routes over real HTTP on a free local port, carrying the steers of runs in the engine's `schema`, and the
  * runs' transcripts they write. As ChatApi wires them: a claim tells the TODO's attempt it no longer waits for a runner,
@@ -129,20 +166,8 @@ const serve = async (schema: string) => {
       task.context?.attemptId === undefined ? Effect.void : TodoSession.claimed(task.context.attemptId).pipe(Effect.provide(db)),
     runOf: TodoSession.runOf,
     steering: TodoSession.steering(await engineWriter(schema)),
-  }).fetch.pipe(Effect.provide(transcripts.layer)))
-  const server = createServer(async (incoming, outgoing) => {
-    const chunks: Array<Buffer> = []
-    for await (const chunk of incoming) chunks.push(chunk as Buffer)
-    const response = await handler(new Request(`http://localhost${incoming.url}`, {
-      method: incoming.method!,
-      headers: incoming.headers as Record<string, string>,
-      ...(incoming.method === "GET" ? {} : { body: Buffer.concat(chunks) }),
-    }))
-    outgoing.writeHead(response.status, Object.fromEntries(response.headers))
-    outgoing.end(Buffer.from(await response.arrayBuffer()))
-  })
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
-  return { origin: `http://localhost:${(server.address() as AddressInfo).port}`, server, transcripts }
+  }).fetch.pipe(Effect.provide(transcripts.layer), Effect.interruptible))
+  return { origin: await listen(handler), transcripts }
 }
 
 /** A runner process over `config`, its stderr kept for a failure's report. */
@@ -163,18 +188,23 @@ const boxEngine = process.env.OVERFLOW_BOX_ENGINE ?? "podman"
 const BOX_AGENT = "/opt/test-agent/acp-test-agent.mjs"
 let containers: Array<string> = []
 let running: Array<ChildProcess> = []
-let servers: Array<Server> = []
 let schemas: Array<string> = []
+/** Kills `child`: answers once it exited. */
+const killed = (child: ChildProcess) =>
+  child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise<void>((done) => {
+    child.once("exit", () => done())
+    child.kill("SIGKILL")
+  })
 afterEach(async () => {
   for (const name of containers) spawnSync(boxEngine, ["rm", "-f", name], { stdio: "ignore" })
   containers = []
-  for (const child of running) child.kill("SIGKILL")
-  for (const server of servers) server.close()
+  await Promise.all(running.map(killed))
+  await Promise.all(hosts.map((stop) => stop()))
   for (const schema of schemas) {
     await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`))
   }
   running = []
-  servers = []
+  hosts = []
   schemas = []
 })
 
@@ -215,8 +245,7 @@ const setup = async (
   // The run's engine keeps its journal here, so the runner routes read and deliver its steers.
   const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
   schemas.push(schema)
-  const { origin, server, transcripts } = await serve(schema)
-  servers.push(server)
+  const { origin, transcripts } = await serve(schema)
   const state = join(scratch, `runner-${crypto.randomUUID()}`)
   mkdirSync(state)
   writeFileSync(join(state, "runner-token"), token, { mode: 0o600 })
@@ -526,25 +555,10 @@ describe("overflow on Cloudflare (decision 0144)", { timeout: 240_000 }, () => {
       Effect.provide(ctx.db),
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, upstream),
+      Effect.interruptible,
     ))
-    const intercept = async (host: string) => {
-      const server = createServer(async (incoming, outgoing) => {
-        const chunks: Array<Buffer> = []
-        for await (const chunk of incoming) chunks.push(chunk as Buffer)
-        const response = await egress(new Request(`${host}${incoming.url}`, {
-          method: incoming.method!,
-          headers: incoming.headers as Record<string, string>,
-          ...(incoming.method === "GET" ? {} : { body: Buffer.concat(chunks) }),
-        }))
-        outgoing.writeHead(response.status, Object.fromEntries(response.headers))
-        outgoing.end(Buffer.from(await response.arrayBuffer()))
-      })
-      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
-      servers.push(server)
-      return `http://localhost:${(server.address() as AddressInfo).port}`
-    }
-    const deploymentHost = await intercept(DEPLOYMENT)
-    const modelHost = await intercept(MODEL)
+    const deploymentHost = await listen(egress, DEPLOYMENT)
+    const modelHost = await listen(egress, MODEL)
 
     // The box: what its wake writes, from the same plan, its runner started on it. Only the network differs: the
     // runner reaches this deployment and the model through the intercepts, and its mirror is the test's.
