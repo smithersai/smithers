@@ -144,3 +144,28 @@ it("a person starts the tour and tabs through its controls", async ({ bench }) =
   for (const run of runs) expect(run).toEqual({ forward: 0, wrapped: true, step: 1 })
   await runPromise(artifact("web-tour-keys", "Vitest built-in bench, happy-dom with the actual app over the product MockFactory: Learn more starts the tour and its event stream delivers events; Tab focuses the first theatre control and Shift+Tab wraps to the last. The tour's events, its first stop and the focused control are checked. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout, paint or speech. Synthetic KeyboardEvents stand in for a keyboard.", "Each step includes the wait for its result (5 ms polling)."], { runs, result }))
 })
+
+it("Space before the walkthrough's first step leaves the tour as it is; Space after it pauses", async ({ bench }) => {
+  const runs: Array<{ early: string; earlyPaused: boolean; paused: boolean; error: string }> = []
+  const result = await workload(bench, "web-tour-pause", "async", async () => {
+    await runPromise(scoped(effect {
+      const { page, latest: current, send } = try app()
+      const document = page.ownerDocument
+      try send(() => Message.ClickedLearnMore())
+      try wait(() => { expect(current().tour).toBe(true); expect(current().tourClient?.conversation.seq ?? 0).toBeGreaterThan(0) })
+      // The sequencer refuses a control until the walkthrough's first step is driven (not-replying).
+      const before = current().tourClient?.conversation.walkthrough
+      try Effect.try(() => keyOn(document, " "))
+      try sleep("50 millis")
+      const early = current().tourError
+      const earlyPaused = current().theatre.paused
+      try wait(() => expect(current().tourClient?.conversation.walkthrough?.step ?? 0).toBeGreaterThan(0))
+      try Effect.try(() => keyOn(document, " "))
+      try wait(() => expect(current().theatre.paused).toBe(true))
+      runs.push({ early: before === undefined ? early : "walkthrough already driven", earlyPaused, paused: current().theatre.paused, error: current().tourError })
+    }))
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  for (const run of runs) expect(run).toEqual({ early: "", earlyPaused: false, paused: true, error: "" })
+  await runPromise(artifact("web-tour-pause", "Vitest built-in bench, happy-dom with the actual app over the product MockFactory: Learn more, Space as soon as the tour's first event arrives (before the walkthrough's first step, which the sequencer refuses), then Space once the walkthrough runs. Checked every sample: the early press shows no error and leaves the tour playing; the second pauses it.", ["happy-dom: no layout, paint or speech; a synthetic keydown stands in for the keyboard.", "The early press must land before the mock drives step 1 (about 50 ms after the first event on nyc-01); a sample where it lands later fails rather than passing silently."], result))
+})

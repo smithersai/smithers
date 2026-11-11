@@ -1522,7 +1522,9 @@ export const ControlTourCommand = Command.define("ControlTour", {
   args: { conversation: Schema.String, action: Schema.Literals(["pause", "resume", "seek"]), step: Schema.Number }, messages: [Message.FocusedPrompt, Message.FailedTourEvents],
   execute: effect ({ conversation, action, step }) => {
     const factory = try Factory
-    const ok = effect { if (factory.controlTour) try factory.controlTour(conversation, action, step); return factory.controlTour !== undefined } catch () => false
+    // A refusal (a pause before the walkthrough's first step, or after the tour ended) leaves the controls showing the
+    // tour as it is; only an unreachable agent or a backend without controls loses the tour's connection.
+    const ok = effect { if (factory.controlTour) try factory.controlTour(conversation, action, step); return factory.controlTour !== undefined } catch (error) => error._tag === "Refused"
     return try message(() => ok ? Message.FocusedPrompt() : Message.FailedTourEvents())
   },
 })

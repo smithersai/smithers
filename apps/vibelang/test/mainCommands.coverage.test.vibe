@@ -75,7 +75,7 @@ it.effect("EndTour counts a refusal as reached and gives Esc back only when the 
   }
 })
 
-it.effect("ControlTour fails on an unreachable agent and on a backend with no tour controls", () => effect {
+it.effect("ControlTour fails on an unreachable agent and on a backend with no tour controls, and a refusal is no lost connection", () => effect {
   provide MockFactory {
     const factory = try Factory
     const args = { conversation: "x", action: "pause" as const, step: 2 }
@@ -83,11 +83,14 @@ it.effect("ControlTour fails on an unreachable agent and on a backend with no to
     const ok = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: effect (conversation, action, step) => { seen.push(`${conversation}/${action}/${step}`) } }))
     const down = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: unavailable }))
     const absent = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: undefined }))
+    // A pause before the walkthrough's first step is refused (not-replying): the controls stay as they are.
+    const early = try Effect.provideService(run(() => ControlTourCommand(args)), Factory, overlaid(factory, { controlTour: refused("not-replying") }))
     try Effect.try(() => {
       expect(seen).toEqual(["x/pause/2"])
       expect(ok).toEqual({ _tag: "FocusedPrompt" })
       expect(down).toEqual({ _tag: "FailedTourEvents" })
       expect(absent).toEqual({ _tag: "FailedTourEvents" })
+      expect(early).toEqual({ _tag: "FocusedPrompt" })
     })
   }
 })
