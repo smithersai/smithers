@@ -2,6 +2,12 @@
 
 ## 0.1.0 (unreleased)
 
+### Fixed
+
+- Branch-scoped fetches now accept Git's gzip negotiation requests after a
+  repository grows beyond a few dozen commits, keeping the 1 MiB limit on
+  decoded bytes and the same branch checks.
+
 ### Added
 
 - `CodeStorage.CodeStorage`: the Code Storage client as a service, with

@@ -32,6 +32,7 @@
  * @since 0.2.0
  */
 
+import * as Channel from "effect/Channel"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -103,7 +104,7 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
  * credential, or refuses it with 403. An optional `branch` confines the guest
  * to that branch: discovery negotiates protocol v0 and synthesizes HEAD and
  * that ref only; fetch permits only its current tip. Scoped requests are
- * bounded to 1 MiB, accept uncompressed protocol v0 only, and strip haves to
+ * bounded to 1 MiB after gzip decoding, accept protocol v0 only, and strip haves to
  * avoid exposing other objects through ACKs. Shallow, partial, and thin packs
  * and arbitrary capabilities are refused. A failed scoped ref read is 502.
  * Unscoped upstream failures come back as their
@@ -141,7 +142,8 @@ export const uploadPack = (
       const encoding = request.headers["content-encoding"]
       const protocol = request.headers["git-protocol"]
       if (
-        !validBranch(branch) || (encoding !== undefined && encoding !== "identity") ||
+        !validBranch(branch) ||
+        (encoding !== undefined && encoding !== "identity" && encoding !== "gzip" && encoding !== "x-gzip") ||
         (protocol !== undefined && !/^version=[012]$/.test(protocol))
       ) {
         yield* done("refused", 403)
@@ -161,7 +163,16 @@ export const uploadPack = (
           { headers: { "content-type": "application/x-git-upload-pack-advertisement", "cache-control": "no-store" } }
         )
       }
-      const body = yield* readAtMost(request.stream, 1024 * 1024).pipe(Effect.option)
+      const decoded = encoding === "gzip" || encoding === "x-gzip"
+        ? request.stream.pipe(
+          Stream.map((chunk) => new Uint8Array(chunk)),
+          Stream.pipeThroughChannel(Channel.fromTransformStream({
+            evaluate: () => new DecompressionStream("gzip"),
+            onError: () => undefined
+          }))
+        )
+        : request.stream
+      const body = yield* readAtMost(decoded, 1024 * 1024).pipe(Effect.option)
       scopedBody = body._tag === "Some" && !body.value.truncated
         ? negotiation(body.value.bytes, tip.value)
         : undefined

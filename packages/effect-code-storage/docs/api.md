@@ -418,11 +418,13 @@ only HEAD and `refs/heads/<branch>`; even a protocol-v2 discovery request
 receives a valid protocol-v0 advertisement. No upstream ref list or capability
 list reaches the guest. The namespace remains part of the host's `upstream`.
 
-Scoped upload-pack accepts uncompressed protocol-v0 pkt-lines up to 1 MiB.
+Scoped upload-pack accepts protocol-v0 pkt-lines, uncompressed or with
+`Content-Encoding: gzip` or `x-gzip`. The 1 MiB limit applies to the decoded
+bytes; malformed gzip and larger decoded bodies return 403.
 Every want must equal the selected branch's current tip. Have lines are
 removed, preventing private-object ACK probes; side-band-64k and ofs-delta are
 the only accepted capabilities. Unknown commands, v2 command bodies, malformed frames,
-trailing bytes, shallow/filter requests and compressed bodies return 403.
+trailing bytes, shallow/filter requests and unsupported content encodings return 403.
 The proxy therefore supports complete clone/fetch, with potentially larger
 packs; shallow and partial clones are unsupported. A failed host ref lookup
 returns 502, and an invalid branch name is refused before any upstream call.
