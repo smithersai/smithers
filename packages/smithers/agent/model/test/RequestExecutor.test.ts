@@ -1353,6 +1353,42 @@ describe("RequestExecutor", () => {
     expect(serialized).toContain("<redacted>")
   })
 
+  it("redacts a key's URL-encoded, base64url and JSON-escaped echoes", async () => {
+    // `+`, `/`, `=`, `"` and `\` are the bytes those encodings rewrite, so each
+    // echo below shares no substring with the raw key that would hide a miss.
+    const key = "sk+/ab\"c\\d==?>"
+    const urlEncoded = encodeURIComponent(key)
+    const base64Url = Buffer.from(key).toString("base64url")
+    const jsonEscaped = JSON.stringify(key).slice(1, -1)
+    for (const form of [urlEncoded, base64Url, jsonEscaped]) expect(form).not.toContain(key)
+    expect(base64Url).not.toBe(Buffer.from(key).toString("base64"))
+
+    const echoes = [
+      // Parsed, then re-serialized: the key comes back JSON-escaped.
+      JSON.stringify({ error: { message: `url ${urlEncoded} b64url ${base64Url} raw ${key}` } }),
+      // Not JSON, so kept as text: a fragment of escaped JSON echoed as is.
+      `upstream said: url ${urlEncoded} b64url ${base64Url} json ${jsonEscaped}`
+    ]
+    for (const body of echoes) {
+      const error = expectModelError(
+        await run(
+          Effect.gen(function*() {
+            const executor = yield* RequestExecutor.RequestExecutor
+            return yield* execute(executor, request(undefined, "{}", { authorization: `Bearer ${key}` })).pipe(
+              Effect.flip
+            )
+          }),
+          executorLayer([{ status: 400, body }], [])
+        )
+      )
+      const surfaces = [JSON.stringify(error), error.message, String(error.body)]
+      for (const surface of surfaces) {
+        for (const form of [key, urlEncoded, base64Url, jsonEscaped]) expect(surface).not.toContain(form)
+      }
+      expect(error.body).toContain("<redacted>")
+    }
+  })
+
   it("classifies network failures as transport errors with a redacted URL", async () => {
     const secret = "transport-query-secret"
     const cause = Object.assign(new Error(`socket closed for ${secret}`), {
@@ -2592,15 +2628,51 @@ describe("RequestExecutor", () => {
   it("counts only the transport, and forgets it the moment anything answers", async () => {
     // A 500 arrived over a connection that worked, so it says nothing about the
     // client. Without this a provider having a bad afternoon would throw away a
-    // healthy connection pool every third request.
+    // healthy connection pool every third request. Each request below is one
+    // try, so the script is the order the executor sees: two transport failures
+    // then an answer, three times over, and only the final unbroken run of
+    // three transport failures earns the one rebuild.
+    type Step = "transport" | "denied" | 200 | 500
+    const script: ReadonlyArray<Step> = [
+      "transport",
+      "transport",
+      500, // answered: the count starts again
+      "transport",
+      "transport",
+      200, // answered
+      "transport",
+      "transport",
+      "denied", // refused by policy, not by the network
+      "transport",
+      "transport",
+      "transport", // the third in a row
+      200 // sent on the rebuilt client
+    ]
     let rebuilds = 0
-    let statuses: Array<number> = [500, 500, 500, 500]
     let cursor = 0
-    const client = HttpClient.make((attempted) =>
-      Effect.sync(() => response(attempted, { status: statuses[Math.min(cursor++, statuses.length - 1)]!, body: "{}" }))
-    )
+    const client = HttpClient.make((attempted) => {
+      const step = script[cursor++]
+      if (step === undefined) throw new Error("The script has no step for this request")
+      if (step === "transport") {
+        return Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request: attempted, description: "socket hang up" })
+          })
+        )
+      }
+      if (step === "denied") {
+        return Effect.fail(KernelHttpClient.toHttpClientError({
+          request: attempted,
+          error: Permission.PermissionDenied.new({
+            capability: Capability.make("model:call", "provider.test/test-model"),
+            reason: "denied by policy"
+          })
+        }))
+      }
+      return Effect.succeed(response(attempted, { status: step, body: "{}" }))
+    })
 
-    await Effect.runPromise(
+    const rebuiltBefore = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const executor = yield* RequestExecutor.makeWith({
@@ -2609,24 +2681,21 @@ describe("RequestExecutor", () => {
               rebuilds += 1
               return client
             })
-          })
-          for (let spent = 0; spent < RequestExecutor.rebuildAfter + 1; spent += 1) {
-            const fiber = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
-            yield* Effect.yieldNow
-            yield* TestClock.adjust(120_000)
-            yield* Fiber.join(fiber)
+          }, { maxRetries: 0 })
+          // The rebuild a third transport failure earns happens as the next
+          // request leaves, so the last request is the one that finds it.
+          const seen: Array<number> = []
+          for (let sent = 0; sent < script.length; sent += 1) {
+            yield* execute(executor, request()).pipe(Effect.exit)
+            seen.push(rebuilds)
           }
-          return undefined
-        }).pipe(
-          Effect.provide(TestClock.layer()),
-          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
-        )
+          return seen
+        }).pipe(Effect.provideService(HttpClient.TracerDisabledWhen, () => true))
       )
     )
 
-    expect(rebuilds).toBe(0)
-    statuses = []
-    cursor = 0
+    expect(cursor).toBe(script.length)
+    expect(rebuiltBefore).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
   })
 
   it("answers every rebuild with the same client when the host has nothing to replace", async () => {
@@ -2774,6 +2843,37 @@ describe("RequestExecutor", () => {
       expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), options)).attempts).toBe(3)
     }
     expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: -1 })).attempts).toBe(1)
+  })
+
+  it("caps each computed wait at 10 s and schedules no retry once 60 s have passed", async () => {
+    // A host that asks for many retries still waits at most 10 s between two
+    // tries (500 ms doubling would reach 64 s by the eighth) and schedules no
+    // retry once the ladder has run for 60 s: the last, at 55.5 s, is the tenth.
+    const sentAt: Array<number> = []
+    const client = HttpClient.make((attempted) =>
+      Effect.map(Clock.currentTimeMillis, (at) => {
+        sentAt.push(at)
+        return response(attempted, { status: 503, body: "unavailable" })
+      })
+    )
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(client), { maxRetries: 20 })
+          const fiber = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
+          for (let step = 0; step < 1_000; step += 1) yield* TestClock.adjust(250)
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(Random.Random, { nextDoubleUnsafe: () => 0.5, nextIntUnsafe: () => 0 }),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(expectModelError(error)).toMatchObject({ code: "provider_internal", httpStatus: 503 })
+    const waits = sentAt.slice(1).map((at, index) => at - sentAt[index]!)
+    expect(waits).toEqual([500, 1_000, 2_000, 4_000, 8_000, 10_000, 10_000, 10_000, 10_000, 10_000])
   })
 })
 
