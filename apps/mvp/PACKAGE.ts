@@ -811,7 +811,8 @@ const lint = Smithers.Shell.Test({
 /**
  * `pnpm test`: the Vitest suite in Node, on its own Postgres, PgBouncer and Electric. `db/test.sh` starts them with
  * Docker Compose for the run and removes them after it, so the target needs Docker and reaches its socket: it runs
- * unconfined, and its result stays in the local cache.
+ * unconfined, and it inherits `DOCKER_HOST` and `DOCKER_CONFIG`, which point a rootless Docker's client at its socket
+ * and its Compose plugin.
  *
  * @since 1.0.0
  * @category test
@@ -821,6 +822,7 @@ const test = Smithers.Shell.Test({
   shell: "cd apps/mvp && pnpm test",
   data: [appFiles, testDocuments],
   sandbox: "none",
+  inheritEnv: ["DOCKER_HOST", "DOCKER_CONFIG"],
   timeout: "120m"
 })
 
@@ -842,6 +844,7 @@ const testStack = Smithers.Shell.Test({
     Smithers.file("package.json")
   ],
   sandbox: "none",
+  inheritEnv: ["DOCKER_HOST", "DOCKER_CONFIG"],
   timeout: "10m"
 })
 
