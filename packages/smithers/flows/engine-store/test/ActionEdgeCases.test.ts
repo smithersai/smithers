@@ -310,7 +310,14 @@ describe("boundary violations on a compensable-snapshotted attempt", () => {
     StepBoundary.StepBoundary,
     StepBoundary.StepBoundary.of({
       prepare: () => Effect.succeed({ descriptor: boundary, readSnapshot: [] }),
-      settle: () => Effect.fail(new Error("write outside the declared write set") as never),
+      settle: () =>
+        Effect.fail(
+          new StepBoundary.UndeclaredWrite({
+            code: "undeclared_write",
+            paths: ["outside.txt"],
+            diffIdentity: "edge-diff"
+          })
+        ),
       replayOutputs: () => Effect.void
     })
   )
@@ -517,7 +524,7 @@ describe("boundary preparation failures", () => {
     })
   )
 
-  it.effect("journals a hard violation and never dispatches when preparation is rejected", () =>
+  it.effect("journals a failed finish, no hard violation, and never dispatches when preparation is rejected", () =>
     Effect.gen(function*() {
       let dispatches = 0
       const result = yield* withCrypto(
@@ -543,7 +550,9 @@ describe("boundary preparation failures", () => {
 
       expect(Exit.isFailure(result.exit)).toBe(true)
       expect(dispatches).toBe(0)
-      expect(result.types).toContain("flows.engine.hard-violation")
+      // A refused preparation is a host refusal, not a broken declaration (issue #4757).
+      expect(result.types).toContain("flows.engine.attempt-finished")
+      expect(result.types).not.toContain("flows.engine.hard-violation")
     }))
 
   it.effect("self-interrupts when a rejected preparation cannot be finished under this fence", () =>

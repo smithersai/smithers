@@ -693,7 +693,7 @@ describe("action executor failure paths", () => {
       }
     }))
 
-  it.effect("journals a hard violation and a failed finish when boundary.prepare fails", () =>
+  it.effect("journals a failed finish and no hard violation when boundary.prepare refuses", () =>
     Effect.gen(function*() {
       const key = "failure/prepare"
       const result = yield* run(
@@ -721,7 +721,7 @@ describe("action executor failure paths", () => {
       expect(failure._tag).toBe("@smthrs/engine-store/UnsupportedBoundary")
       expect(Option.getOrThrow(result.row).state).toBe("failed")
       const eventTypes = result.events.map((event) => event.eventType)
-      expect(eventTypes).toContain("flows.engine.hard-violation")
+      expect(eventTypes).not.toContain("flows.engine.hard-violation")
       const finished = result.events.filter((event) => event.eventType === "flows.engine.attempt-finished")
       expect(finished).toHaveLength(1)
       expect(finished[0]!.payload).toMatchObject({ state: "failed" })
@@ -759,7 +759,7 @@ describe("action executor failure paths", () => {
       expect(failure._tag).toBe("@smthrs/engine-store/UnsupportedBoundary")
       expect(Option.getOrThrow(result.row).state).toBe("failed")
       const eventTypes = result.events.map((event) => event.eventType)
-      expect(eventTypes).toContain("flows.engine.hard-violation")
+      expect(eventTypes).not.toContain("flows.engine.hard-violation")
       const finished = result.events.filter((event) => event.eventType === "flows.engine.attempt-finished")
       expect(finished).toHaveLength(1)
       expect(finished[0]!.payload).toMatchObject({ state: "failed" })
@@ -811,28 +811,34 @@ describe("action executor failure paths", () => {
   /**
    * Preparation, sandbox open, and settlement are the three places a sealed
    * attempt's boundary can refuse it, and all three are one durable
-   * transition: a failed row marked `hardViolation`, which is all the failed
-   * replay branch re-emits the violation from, then the hard-violation record
-   * and the failed finish. Under a lost fence none of it lands.
+   * transition: a failed row, then the failed finish. Only a contract
+   * violation marks the row `hardViolation`, which is all the failed replay
+   * branch re-emits the violation from, and journals the hard-violation
+   * record; a host refusal is a plain failed attempt (issue #4757). Under a
+   * lost fence none of it lands.
    */
   const boundaryRefusals = [
     {
       phase: "prepare",
+      violation: false,
       boundary: () => StepBoundary.layerTest({ supported: false }),
       refusal: "@smthrs/engine-store/UnsupportedBoundary"
     },
     {
       phase: "host-without-filesystem",
+      violation: false,
       boundary: () => StepBoundary.layerUnsupported,
       refusal: "@smthrs/engine-store/UnsupportedBoundary"
     },
     {
       phase: "sandbox-open",
+      violation: false,
       boundary: () => Layer.mergeAll(StepBoundary.layerTest(), StepSandbox.layerNoop),
       refusal: "@smthrs/engine-store/UnsupportedBoundary"
     },
     {
       phase: "settle",
+      violation: true,
       boundary: () =>
         StepBoundary.layerTest({
           failure: new StepBoundary.UndeclaredWrite({
@@ -845,7 +851,7 @@ describe("action executor failure paths", () => {
     }
   ] as const
 
-  for (const { boundary, phase, refusal } of boundaryRefusals) {
+  for (const { boundary, phase, refusal, violation } of boundaryRefusals) {
     const refuse = (runId: string, fenceLost: boolean) =>
       run(
         Effect.gen(function*() {
@@ -870,20 +876,21 @@ describe("action executor failure paths", () => {
         boundary()
       )
 
-    it.effect(`settles a ${phase} refusal as a failed hard-violation attempt and rethrows it`, () =>
+    const settles = violation ? "a failed hard-violation attempt" : "a failed attempt without a hard violation"
+    it.effect(`settles a ${phase} refusal as ${settles} and rethrows it`, () =>
       Effect.gen(function*() {
         const { events, exit, row } = yield* refuse(`${phase}-refused`, false)
 
         const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) as { readonly _tag?: string } : {}
         expect(failure._tag).toBe(refusal)
         expect(row.state).toBe("failed")
-        expect(row.meta).toEqual({ tier: "sealed", hardViolation: true })
+        expect(row.meta).toEqual(violation ? { tier: "sealed", hardViolation: true } : { tier: "sealed" })
         expect(row.error).toMatchObject({ reasons: [{ _tag: "Fail", error: { _tag: refusal } }] })
         const eventTypes = events.map((event) => event.eventType)
-        expect(eventTypes.filter((type) => type === "flows.engine.hard-violation")).toHaveLength(1)
+        expect(eventTypes.filter((type) => type === "flows.engine.hard-violation")).toHaveLength(violation ? 1 : 0)
         expect(eventTypes.filter((type) => type === "flows.engine.attempt-finished")).toHaveLength(1)
-        expect(events.slice(-2)).toMatchObject([
-          { eventType: "flows.engine.hard-violation" },
+        expect(events.slice(violation ? -2 : -1)).toMatchObject([
+          ...(violation ? [{ eventType: "flows.engine.hard-violation" }] : []),
           { eventType: "flows.engine.attempt-finished", payload: { state: "failed" } }
         ])
       }))

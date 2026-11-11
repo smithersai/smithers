@@ -66,15 +66,20 @@ const dispatch = (runId: string, key: string, execute: () => Effect.Effect<unkno
     metadata: declared
   })
 
-const provenance = (runId: string) =>
+const journalEntries = (runId: string) =>
   Effect.gen(function*() {
     const journal = yield* Journal.Journal
     yield* journal.flush
     const page = yield* journal.entries({ runId: runId as never, limit: 50 })
     return page.entries
+  })
+
+const provenance = (runId: string) =>
+  journalEntries(runId).pipe(Effect.map((entries) =>
+    entries
       .filter((entry) => entry.eventType === "flows.engine.cache-provenance")
       .map((entry) => entry.payload as { readonly action?: string })
-  })
+  ))
 
 describe("transient prepare host errors on a cache hit (issue #110)", () => {
   it.effect("keeps the valid row, journals no stale_read_set, and fails the attempt retryably", () =>
@@ -104,7 +109,8 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
           )
           const entry = yield* cache.get(keyDigest)
           const records = yield* provenance("prepare-transient-second")
-          return { executions, exit, entry, records }
+          const eventTypes = (yield* journalEntries("prepare-transient-second")).map((entry) => entry.eventType)
+          return { executions, exit, entry, records, eventTypes }
         }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
       )
       // The attempt fails as an ordinary host error the retry ladder owns…
@@ -115,6 +121,9 @@ describe("transient prepare host errors on a cache hit (issue #110)", () => {
       expect(Option.isSome(outcome.entry)).toBe(true)
       // …and no factually wrong stale_read_set record was journalled.
       expect(outcome.records.map((record) => record.action)).not.toContain("stale_read_set")
+      // …nor a hard violation: a host that cannot measure broke no declaration (issue #4757).
+      expect(outcome.eventTypes).toContain("flows.engine.attempt-finished")
+      expect(outcome.eventTypes).not.toContain("flows.engine.hard-violation")
     }))
 
   it.effect("a transient prepare failure refuses the hit, re-prepares, and runs the body (issue #126)", () =>

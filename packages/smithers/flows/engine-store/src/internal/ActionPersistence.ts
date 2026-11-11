@@ -276,9 +276,9 @@ const declarationViolated = (cause: Cause.Cause<unknown>): boolean =>
 
 /**
  * Whether a failed settle carries one of the boundary's own contract
- * violations, as opposed to a host refusal. Classification for the
- * `boundarySettlements` counter only — the journal record stays the source
- * of truth.
+ * violations, as opposed to a host refusal. Classifies the
+ * `boundarySettlements` counter and decides whether a refused attempt
+ * journals a hard violation.
  */
 const settlementViolated = (cause: Cause.Cause<unknown>): boolean =>
   cause.reasons.some((reason) =>
@@ -2990,9 +2990,12 @@ const restorePreviousPreImage = (dispatch: Dispatch, jj: Jj.Jj) =>
 /**
  * Settles an attempt its boundary refused and rethrows the refusal.
  * Preparation, sandbox open, and settlement can each refuse, and all
- * three are the same durable transition: a `failed` row marked
- * `hardViolation`, committed with the hard-violation record and the
- * failed finish. A lost fence self-interrupts instead.
+ * three are the same durable transition: a `failed` row committed with
+ * the failed finish. Only a refusal that is one of the boundary's own
+ * contract violations marks the row `hardViolation` and journals the
+ * hard-violation record (issue #4757); a host refusal, such as a host
+ * without a filesystem or a transient I/O error measuring the read set,
+ * is an ordinary failed attempt. A lost fence self-interrupts instead.
  *
  * A boundary exists only for sealed work, while snapshots are
  * created only for compensable work. The two capabilities are
@@ -3002,14 +3005,17 @@ const failBoundaryAttempt = (dispatch: Dispatch, cause: Cause.Cause<unknown>) =>
   Effect.gen(function*() {
     const { attemptId } = dispatch
     const finishedAtMs = yield* nowMillis
+    const violation = settlementViolated(cause) || declarationViolated(cause)
     const finished = yield* settleAttempt(dispatch, {
       ...attemptId,
       state: "failed",
       finishedAtMs,
       error: attemptPayload(persistCause(cause)),
-      meta: { ...dispatch.declarationMeta, hardViolation: true }
+      meta: { ...dispatch.declarationMeta, ...(violation ? { hardViolation: true as const } : {}) }
     }, [
-      JournalRecords.hardViolation(attemptSource(dispatch, "hard-violation"), { ...attemptId, error: cause }),
+      ...(violation
+        ? [JournalRecords.hardViolation(attemptSource(dispatch, "hard-violation"), { ...attemptId, error: cause })]
+        : []),
       JournalRecords.attemptFinished(attemptSource(dispatch, "finished"), { ...attemptId, state: "failed" })
     ])
     if (!finished) {
@@ -3020,7 +3026,7 @@ const failBoundaryAttempt = (dispatch: Dispatch, cause: Cause.Cause<unknown>) =>
 
 /**
  * Prepares a sealed attempt's declared boundary and opens its sandbox,
- * settling the attempt as a hard violation when either refuses. Other
+ * settling the attempt failed when either refuses. Other
  * attempts run without one.
  */
 const prepareIsolation = (dispatch: Dispatch) =>
@@ -3416,7 +3422,7 @@ const settlementKind = (
 
 /**
  * Settles the attempt's boundary and answers the evidence its row records,
- * settling the attempt as a hard violation when the boundary refuses.
+ * settling the attempt failed when the boundary refuses.
  */
 const settleBoundary = (
   dispatch: Dispatch,
