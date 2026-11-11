@@ -382,13 +382,15 @@ describe("harness notification adapter", () => {
     ])
   })
 
-  it("keeps a payload that is not a steering item out of the seat and tool changes", async () => {
+  it.each([
+    { kind: "Seat", seat: "reviewer" },
+    { kind: "Thinking", thinking: "high" },
+    { kind: "Tools", toolNames: ["grep"] }
+  ])("renders a system event carrying $kind as a fact without applying steering", async (payload) => {
     const drained = await Effect.runPromise(
       Effect.gen(function*() {
         const queue = yield* NotificationQueue.NotificationQueue
-        // A system event carrying a status, not a steer. It is rendered for
-        // the model, and it changes nothing about the turn.
-        yield* queue.admit("run", systemEvent("deploy", "run/root/child", { kind: "Seat", seat: 12 }))
+        yield* queue.admit("run", systemEvent("deploy", "run/root/child", payload))
         const source = yield* Notifications.make({ runId: "run", lineageId: "run/root/child" })
         return yield* source.drain({ boundary: "child/turn-1", wouldIdle: true })
       }).pipe(Effect.provide(notificationLayer()), Effect.scoped)
@@ -396,8 +398,9 @@ describe("harness notification adapter", () => {
 
     expect(drained.seatChanges).toEqual([])
     expect(drained.inserts).toEqual([
-      rendered("deploy", "{\"kind\":\"Seat\",\"seat\":12}", "machine:ci", "ci/root", 0)
+      rendered("deploy", JSON.stringify(payload), "machine:ci", "ci/root", 0)
     ])
+    expect(JSON.stringify(drained.inserts)).not.toContain(Notifications.precedence)
   })
 
   it("journals a typed drain through the record boundary", async () => {

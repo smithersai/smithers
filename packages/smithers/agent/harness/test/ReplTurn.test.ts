@@ -7,7 +7,7 @@
  * own journal rebuilds a realm byte-identical to the one it lost.
  */
 import { CanonicalJson, ModelRequest } from "@smthrs/model"
-import { Effect, Option, Stream } from "effect"
+import { Cause, Effect, Exit, Option, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
@@ -101,8 +101,16 @@ const durableEngine = (model: ScriptedModel.Fixture, kept: Journal): EngineLike.
       Effect.suspend(() => {
         const key = `${boundary.name}:${boundary.identity.frame}:${boundary.identity.boundary}`
         const recorded = kept.records.get(key)
-        if (recorded !== undefined) return Effect.succeed(recorded as never)
-        return Effect.tap(boundary.execute, (value) => Effect.sync(() => kept.records.set(key, value)))
+        if (recorded !== undefined) {
+          return Effect.succeed(Schema.decodeUnknownSync(boundary.success)(recorded))
+        }
+        const encode = Schema.encodeUnknownSync(
+          boundary.success as unknown as Schema.Schema<unknown> & { readonly "EncodingServices": never }
+        )
+        return Effect.tap(
+          boundary.execute,
+          (value) => Effect.sync(() => kept.records.set(key, encode(value)))
+        )
       }),
     observe: Effect.succeed(Option.none()),
     capture: () => Effect.succeed(Option.none()),
@@ -112,6 +120,7 @@ const durableEngine = (model: ScriptedModel.Fixture, kept: Journal): EngineLike.
 interface Run {
   readonly events: ReadonlyArray<AgentEvent.AgentEvent>
   readonly model: ScriptedModel.Fixture
+  readonly interrupted: boolean
   readonly failure?: unknown
 }
 
@@ -122,10 +131,13 @@ const run = async (options: {
   readonly sandbox?: Sandbox.Sandbox
   /** Stops the stream once this many cells have settled, as a kill would. */
   readonly killAfterCells?: number
+  /** Interrupts synchronously at a settled call, before its cell frame is saved. */
+  readonly killAfterCalls?: number
 }): Promise<Run> => {
   const model = ScriptedModel.make(options.script)
   const events: Array<AgentEvent.AgentEvent> = []
   let cells = 0
+  let calls = 0
   const outcome = await CellTurn.run({
     state: options.state ?? state(),
     flows
@@ -141,10 +153,23 @@ const run = async (options: {
       : Effect.provide(Sandbox.layer(options.sandbox)),
     Effect.provide(Steering.layerNoop()),
     Effect.provide(confidentEvaluator),
+    Effect.provideService(AgentEvent.Observer, (event) => {
+      if (event._tag === "cell-call-settled") calls++
+      return options.killAfterCalls !== undefined && calls >= options.killAfterCalls
+        ? Effect.interrupt
+        : Effect.void
+    }),
     Effect.result,
+    Effect.exit,
     Effect.runPromise
   )
-  return { events, model, failure: outcome._tag === "Failure" ? outcome.failure : undefined }
+  if (Exit.isFailure(outcome) && !Cause.hasInterruptsOnly(outcome.cause)) throw Cause.squash(outcome.cause)
+  return {
+    events,
+    model,
+    interrupted: Exit.isFailure(outcome) && Cause.hasInterruptsOnly(outcome.cause),
+    failure: Exit.isSuccess(outcome) && outcome.value._tag === "Failure" ? outcome.value.failure : undefined
+  }
 }
 
 /** The one trailing user message the controller appends after the transcript. */
@@ -406,7 +431,7 @@ describe("CellTurn repl completion, behind the check that decides it", () => {
   const drive = async (
     script: ScriptedModel.Script,
     engine: EngineLike.EngineLike
-  ): Promise<Run> => {
+  ): Promise<Omit<Run, "interrupted">> => {
     const model = ScriptedModel.make(script)
     const events: Array<AgentEvent.AgentEvent> = []
     const outcome = await CellTurn.run({ state: state({ maxFrames: 4 }), flows }).pipe(
@@ -512,6 +537,66 @@ describe("CellTurn repl durability", () => {
     emits(`ctx.done("rebuilt from " + checks.join(","))`)
   ]
 
+  it("encodes a boundary before retaining it and decodes a fresh value on replay", async () => {
+    const kept = journal()
+    const engine = durableEngine(ScriptedModel.make([]), kept)
+    const value = { count: 7 }
+    let executions = 0
+    const boundary: EngineLike.RecordBoundary<{ readonly count: number }> = {
+      name: "encoded-count",
+      identity: { frame: 0, boundary: "count" },
+      success: Schema.Struct({ count: Schema.NumberFromString }),
+      execute: Effect.sync(() => {
+        executions++
+        return value
+      })
+    }
+    await Effect.runPromise(engine.record(boundary))
+    expect(kept.records.get("encoded-count:0:count")).toEqual({ count: "7" })
+    value.count = 99
+    const replayed = await Effect.runPromise(engine.record(boundary))
+    expect(replayed).toEqual({ count: 7 })
+    expect(replayed).not.toBe(value)
+    expect(executions).toBe(1)
+  })
+
+  it("replays a settled call after interruption before its cell frame was recorded", async () => {
+    const script = [
+      emits(`var first = await ctx.call("fs/list", { path: "first" })
+var second = await ctx.call("fs/list", { path: first.input.path + "/second" })
+console.log(first.ran, second.ran)`),
+      emits(`ctx.done("restored " + second.input.path)`)
+    ]
+    const unkilled = journal()
+    const control = await run({ script, journal: unkilled })
+    expect(control.failure).toBeUndefined()
+    expect(of(control.events, "resolved")).toHaveLength(1)
+    const kept = journal()
+    const killed = await run({ script, journal: kept, killAfterCalls: 1 })
+
+    expect(killed.interrupted).toBe(true)
+    expect(killed.failure).toBeUndefined()
+    expect(kept.executed).toHaveLength(1)
+    // The attempt marker exists, but no terminal frame does: this is the
+    // window between a durable call and its enclosing frame's settlement.
+    const frames = [...kept.records.entries()].filter(([key]) => key.startsWith("cell-frame:0:"))
+    expect(frames).toHaveLength(1)
+    expect(frames[0]?.[1]).toBeNull()
+    expect(of(killed.events, "cell-settled")).toHaveLength(0)
+
+    const restored = await run({ script, journal: kept })
+    expect(restored.failure).toBeUndefined()
+    expect(restored.interrupted).toBe(false)
+    expect(restored.model.recorder.requests[1]).toEqual(control.model.recorder.requests[1])
+    expect(of(restored.events, "cell-printed").map((event) => event.text)).toEqual(["1 2", ""])
+    expect(of(restored.events, "cell-printed").map((event) => event.text))
+      .toEqual(of(control.events, "cell-printed").map((event) => event.text))
+    expect(of(restored.events, "resolved")[0]?.message.content)
+      .toEqual(of(control.events, "resolved")[0]?.message.content)
+    expect(kept.executed).toEqual(unkilled.executed)
+    expect(new Set(kept.executed).size).toBe(2)
+  })
+
   it("rebuilds a killed run's realm from the journal, byte for byte", async () => {
     const unkilled = journal()
     const control = await run({ script, journal: unkilled, state: state({ maxFrames: 7 }) })
@@ -519,6 +604,10 @@ describe("CellTurn repl durability", () => {
     const killed = await run({ script, journal: kept, state: state({ maxFrames: 7 }), killAfterCells: 5 })
     const restored = await run({ script, journal: kept, state: state({ maxFrames: 7 }) })
 
+    expect(control.failure).toBeUndefined()
+    expect(restored.failure).toBeUndefined()
+    expect(of(control.events, "resolved")).toHaveLength(1)
+    expect(of(restored.events, "resolved")).toHaveLength(1)
     // The killed attempt really did die mid-run, holding a realm nobody kept.
     expect(of(killed.events, "cell-settled").length).toBeLessThan(6)
     expect(of(killed.events, "resolved")).toHaveLength(0)
@@ -569,6 +658,10 @@ describe("CellTurn repl durability", () => {
     const killed = await run({ script: rough, journal: kept, state: state({ maxFrames: 8 }), killAfterCells: 4 })
     const restored = await run({ script: rough, journal: kept, state: state({ maxFrames: 8 }) })
 
+    expect(control.failure).toBeUndefined()
+    expect(restored.failure).toBeUndefined()
+    expect(of(control.events, "resolved")).toHaveLength(1)
+    expect(of(restored.events, "resolved")).toHaveLength(1)
     // The control really did take every rough path: a throw, and a cell that
     // never parsed and was re-asked inside its own frame.
     expect(of(control.events, "cell-settled").map((event) => event.outcome._tag))

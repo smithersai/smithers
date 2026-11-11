@@ -27,7 +27,16 @@ import * as Notifications from "../src/Notifications.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
-import { confidentEvaluator, descriptor, emits, manualClock, of, pattern, prose } from "./fixtures/cellTurn.ts"
+import {
+  confidentEvaluator,
+  descriptor,
+  emits,
+  manualClock,
+  of,
+  pattern,
+  prose,
+  run as runFixture
+} from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -3638,5 +3647,42 @@ describe("CellTurn timeout guard", () => {
     expect(of(observed.events, "cell-settled")[0]?.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
     expect(resolvedText(observed.events)).toBe("recovered")
     expect(observed.evaluated).toEqual([0, 1])
+  })
+})
+
+describe("shared run fixture failures", () => {
+  it("throws an observer defect instead of reporting success or interruption", async () => {
+    const defect = new Error("observer failed")
+    await expect(runFixture({
+      state: state(),
+      script: [emits("ctx.done('ok')")],
+      observer: () => Effect.die(defect)
+    })).rejects.toBe(defect)
+  })
+
+  it("reports a pure observer interruption separately from a typed failure", async () => {
+    const result = await runFixture({
+      state: state(),
+      script: [emits("ctx.done('ok')")],
+      observer: () => Effect.interrupt
+    })
+    expect(result.interrupted).toBe(true)
+    expect(result.failure).toBeUndefined()
+  })
+
+  it("reports a typed park failure without calling it interruption", async () => {
+    const result = await runFixture({
+      state: state({ approvalChannel: true }),
+      script: [emits("ctx.park('waiting-input', 'Choose a policy')")]
+    })
+    expect(result.failure).toMatchObject({ code: "suspended" })
+    expect(result.interrupted).toBe(false)
+  })
+
+  it("reports successful completion without failure or interruption", async () => {
+    const result = await runFixture({ state: state(), script: [emits("ctx.done('ok')")] })
+    expect(of(result.events, "resolved")).toHaveLength(1)
+    expect(result.failure).toBeUndefined()
+    expect(result.interrupted).toBe(false)
   })
 })

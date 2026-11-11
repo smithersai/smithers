@@ -182,13 +182,27 @@ describe("NarrowedCheck.find", () => {
     // Several checks can be narrowed by one call. The one worth naming is the
     // least constrained, because it is the one covering the most ground the
     // completion has not re-measured.
-    const middle = ran("bash", command("check suite -k one or two"), "tree-1")
+    const middle = ran("bash", command("check suite -k"), "tree-1")
     const later = ran("bash", command("check suite -k one"), "tree-2")
 
+    expect(NarrowedCheck.narrows(later.terms, middle.terms)).toBe(true)
+    expect(NarrowedCheck.narrows(later.terms, broad.terms)).toBe(true)
     expect(NarrowedCheck.find({ ledger: [middle, broad], frame: [later], digest: "tree-2" })?.earlier.label)
       .toBe(broad.label)
     expect(NarrowedCheck.find({ ledger: [broad, middle], frame: [later], digest: "tree-2" })?.earlier.label)
       .toBe(broad.label)
+  })
+  it("breaks equal-breadth ties in favor of the most recently run check", () => {
+    const first = ran("bash", command("check suite -k"), "tree-1")
+    const second = ran("bash", command("check suite --filter"), "tree-0")
+    const later = ran("bash", command("check suite -k --filter one"), "tree-2")
+
+    expect(first.terms).toHaveLength(second.terms.length)
+    expect(NarrowedCheck.narrows(later.terms, first.terms)).toBe(true)
+    expect(NarrowedCheck.narrows(later.terms, second.terms)).toBe(true)
+    for (const ledger of [[first, second], [second, first]]) {
+      expect(NarrowedCheck.find({ ledger, frame: [later], digest: "tree-2" })?.earlier).toBe(ledger[1])
+    }
   })
 })
 

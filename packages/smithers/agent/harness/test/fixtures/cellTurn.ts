@@ -2,7 +2,7 @@ import { Capability } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Cause, Clock, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
 import * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CellHistory from "../../src/CellHistory.ts"
 import * as CellTurn from "../../src/CellTurn.ts"
@@ -368,7 +368,8 @@ export interface Run {
  * Events are collected one by one, so a run that ends in a park, a budget
  * stop, or an abort is still observed through everything it published first.
  * The typed failure and the interruption are kept apart: a case that conflates
- * them cannot tell a cancelled run from a corrupted one.
+ * them cannot tell a cancelled run from a corrupted one. Defects are thrown so
+ * they fail the calling test rather than masquerading as a successful run.
  *
  * @category fixtures
  * @since 0.1.0
@@ -420,12 +421,15 @@ export const run = async (options: Options): Promise<Run> => {
     Effect.exit,
     Effect.runPromise
   )
+  if (Exit.isFailure(outcome) && !Cause.hasInterruptsOnly(outcome.cause)) {
+    throw Cause.squash(outcome.cause)
+  }
   const settled = outcome._tag === "Success" ? outcome.value : undefined
   return {
     events,
     engine,
     model,
     failure: settled !== undefined && settled._tag === "Failure" ? settled.failure : undefined,
-    interrupted: outcome._tag === "Failure"
+    interrupted: Exit.isFailure(outcome) && Cause.hasInterruptsOnly(outcome.cause)
   }
 }

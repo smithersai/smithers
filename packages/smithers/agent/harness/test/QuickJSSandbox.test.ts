@@ -10,8 +10,7 @@ import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Result, Schema, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
-import { newVariant } from "quickjs-emscripten-core"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
@@ -1005,51 +1004,61 @@ describe("QuickJSSandbox memory pressure", () => {
 
 describe("QuickJSSandbox module quarantine", () => {
   it("caps abandoned runtimes across frames, realms and sandbox instances", async () => {
-    const variant = QuickJSVariant.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
-    const module = await QuickJSVariant.compiledModule.pipe(Effect.provide(variant), Effect.runPromise)
-    const create = module.newRuntime.bind(module)
-    const allocation = vi.spyOn(module, "newRuntime").mockImplementation(() => {
-      const runtime = create()
-      const newContext = runtime.newContext.bind(runtime)
-      vi.spyOn(runtime, "newContext").mockImplementation(() => {
-        const context = newContext()
-        const evaluate = context.evalCode.bind(context)
-        vi.spyOn(context, "evalCode").mockImplementation((code, filename, options) => {
-          if (filename === "cell-0.js") throw new RangeError("injected host stack overflow")
-          return evaluate(code, filename, options)
-        })
-        return context
-      })
-      return runtime
-    })
-    try {
-      const result = await Effect.gen(function*() {
-        const sandbox = yield* QuickJSSandbox.makeWithVariant
-        const realm = yield* sandbox.openRealm!({ flows })
-        const first = yield* realm.evaluate({ cell: Cell.source("ctx.done(1)"), frame: 0, call: succeeds })
-        const second = yield* Effect.exit(
-          realm.evaluate({ cell: Cell.source("ctx.done(2)"), frame: 1, call: succeeds })
-        )
-        const reopened = yield* Effect.exit(sandbox.openRealm!({ flows }))
-        const another = yield* QuickJSSandbox.makeWithVariant
-        const shared = yield* Effect.exit(another.openRealm!({ flows }))
-        return { first, second, reopened, shared }
-      }).pipe(Effect.scoped, Effect.provide(variant), Effect.provide(QuickJSSandbox.layerClockLive), Effect.runPromise)
-      expect(result.first.outcome).toMatchObject({ _tag: "rejected", reason: "stack" })
-      for (
-        const exit of [result.second, result.reopened, result.shared] as ReadonlyArray<Exit.Exit<unknown, unknown>>
-      ) {
-        expect(Exit.isFailure(exit)).toBe(true)
-        if (Exit.isFailure(exit)) {
-          expect(exit.cause.reasons).toEqual([
-            expect.objectContaining({ _tag: "Fail", error: expect.objectContaining({ code: "runtime_failed" }) })
-          ])
+    const base = singlefile as unknown as QuickJSSyncVariant
+    let allocated = 0
+    let overflows = 0
+    // Inject a faulty Variant service; allocation and all other evaluation
+    // still run through the real WASM runtime.
+    const faulty: QuickJSSyncVariant = {
+      ...base,
+      importFFI: async () => {
+        const FFI = await base.importFFI()
+        return class extends FFI {
+          constructor(...args: ConstructorParameters<typeof FFI>) {
+            super(...args)
+            const allocate = this.QTS_NewRuntime
+            const evaluate = this.QTS_Eval
+            this.QTS_NewRuntime = () => {
+              allocated++
+              return allocate()
+            }
+            this.QTS_Eval = (...args) => {
+              if (args[3] === "cell-0.js") {
+                overflows++
+                throw new RangeError("injected host stack overflow")
+              }
+              return evaluate(...args)
+            }
+          }
         }
       }
-      expect(allocation).toHaveBeenCalledTimes(1)
-    } finally {
-      allocation.mockRestore()
     }
+    const variant = QuickJSVariant.layerVariant(faulty)
+    const result = await Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.makeWithVariant
+      const realm = yield* sandbox.openRealm!({ flows })
+      const first = yield* realm.evaluate({ cell: Cell.source("ctx.done(1)"), frame: 0, call: succeeds })
+      const second = yield* Effect.exit(
+        realm.evaluate({ cell: Cell.source("ctx.done(2)"), frame: 1, call: succeeds })
+      )
+      const reopened = yield* Effect.exit(sandbox.openRealm!({ flows }))
+      const another = yield* QuickJSSandbox.makeWithVariant
+      const shared = yield* Effect.exit(another.openRealm!({ flows }))
+      return { first, second, reopened, shared }
+    }).pipe(Effect.scoped, Effect.provide(variant), Effect.provide(QuickJSSandbox.layerClockLive), Effect.runPromise)
+    expect(result.first.outcome).toMatchObject({ _tag: "rejected", reason: "stack" })
+    for (
+      const exit of [result.second, result.reopened, result.shared] as ReadonlyArray<Exit.Exit<unknown, unknown>>
+    ) {
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(exit.cause.reasons).toEqual([
+          expect.objectContaining({ _tag: "Fail", error: expect.objectContaining({ code: "runtime_failed" }) })
+        ])
+      }
+    }
+    expect(allocated).toBe(1)
+    expect(overflows).toBe(1)
   })
 })
 
