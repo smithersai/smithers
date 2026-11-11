@@ -160,12 +160,21 @@ export const blocking = (onChange: ReadonlyArray<string>, onMain: ReadonlyArray<
   return onChange.filter((label) => !preexisting.has(label))
 }
 
+/**
+ * Files whose code the host runs during an install; a change to one needs a
+ * person. pnpm loads `.pnpmfile.mjs`, else `.pnpmfile.cjs`, plus any pnpmfile
+ * or config dependency that `.npmrc` or `pnpm-workspace.yaml` names.
+ */
+export const installHooks = [".pnpmfile.mjs", ".pnpmfile.cjs", ".npmrc", "pnpm-workspace.yaml"]
+
 /** Files outside any package whose change can turn every package's tests red. */
-export const globalInputs = ["pnpm-lock.yaml", "package.json", "WORKSPACE.ts", ".github/ci-known-red.json", ...[
-  ".pnpmfile.cjs",
-  ".npmrc",
-  "pnpm-workspace.yaml"
-]]
+export const globalInputs = [
+  "pnpm-lock.yaml",
+  "package.json",
+  "WORKSPACE.ts",
+  ".github/ci-known-red.json",
+  ...installHooks
+]
 
 /**
  * Whether `main` moving by `moved` files invalidates checks that ran the
@@ -272,9 +281,6 @@ export const install = (workspace: string) =>
         ? Effect.void
         : Effect.fail(fail(`pnpm install: exit ${exited.code}: ${tail(`${exited.stdout}\n${exited.stderr}`)}`))
   )
-
-/** Files whose code the host runs during an install; a change to one needs a person. */
-export const installHooks = [".pnpmfile.cjs", ".npmrc", "pnpm-workspace.yaml"]
 
 const IndexJson = Schema.fromJsonString(Schema.Struct({
   targets: Schema.Array(Schema.Struct({

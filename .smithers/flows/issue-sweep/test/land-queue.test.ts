@@ -274,3 +274,22 @@ test("a baseline that failed fails its askers and runs again on the next ask", a
   assert.deepEqual(await run(redOn("c1", ["//a:test"])), [])
   assert.equal(runs, 2)
 })
+
+test("a change to either default pnpmfile is refused before any install runs", { timeout: 60_000 }, async (t) => {
+  const { change, originMain } = fixture(t)
+  const before = originMain()
+  for (const file of [".pnpmfile.mjs", ".pnpmfile.cjs"]) {
+    const hooked = change(file.slice(1).replace(".", "-"), file)
+    const prepared: Array<string> = []
+    const { checks } = fakeChecks(() => Effect.succeed(green))
+    const land = makeLander({
+      checks: { ...checks, prepare: (workspace) => Effect.sync(() => void prepared.push(workspace)) }
+    })
+
+    const failure = await run(Effect.flip(land(hooked.workspace, hooked.id)))
+
+    assert.ok(failure.message.includes(`edits install hooks (${file}); land it by hand`), failure.message)
+    assert.deepEqual(prepared, [])
+  }
+  assert.equal(originMain(), before)
+})
