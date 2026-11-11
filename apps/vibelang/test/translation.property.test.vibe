@@ -148,7 +148,7 @@ describe("update's translation of proved steps", () => {
     try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
   })
 
-  it.effect("a tour control sends the proved move to this tab's tour and changes no state", () => effect {
+  it.effect("a tour control sends the proved move to this tab's tour and changes no state but a failure it retries", () => effect {
     const result = try Arbitrary.checkEffect(Arbitrary.schema(Tour), ({ tour, paused, step }) => {
       const model: Model = { ...home, tour, theatre: { ...home.theatre, paused, step } }
       const arms: ReadonlyArray<readonly [Message, TourDecision.TourControl]> = [
@@ -162,6 +162,10 @@ describe("update's translation of proved steps", () => {
         const moved = control.action === "none" ? [] : [{ name: "ControlTour", args: { conversation: "tour-u", action: control.action, step: control.step } }]
         const measured = tour ? [{ name: "MeasureTheatre", args: { target: model.theatre.target } }] : []
         expect(sent(after)).toEqual([...moved, ...measured])
+        // A control the server takes clears the last one's failure; no control keeps it.
+        const failed: Model = { ...model, tourError: "connection" }
+        const retried = update(failed, message).model
+        expect(retried).toEqual(control.action === "none" ? failed : model)
       }
       return true
     }, { runs: 200 })

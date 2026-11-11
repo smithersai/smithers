@@ -1,11 +1,12 @@
 import { IssueFailure } from "../../src/core/issueSchemas.vibe"
+import { WikiFailure } from "../../src/core/wikiSchemas.vibe"
 // A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
 import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -80,7 +81,11 @@ export function faultyFactory(fault: Fault, observation: Trace) {
           const read = try base.wiki!.read(page)
           return fault === "stale" ? { ...read, stale: STALE_AT } : read
         },
-        act: base.wiki.act,
+        // `wiki-edit`: the first save or proposal fails before anything is written; later ones are real.
+        act: effect (request) => {
+          if (request.op !== "read" && first("wiki-edit:act")) throw new WikiFailure({ reason: "unavailable", unwritten: true })
+          return try base.wiki!.act(request)
+        },
       } }),
       ...(base.issues === undefined ? {} : { issues: {
         read: effect () => {
@@ -120,7 +125,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.tour(conversation)
       },
       controlTour: effect (conversation, action, step) => {
-        if (base.controlTour === undefined) throw new Unavailable({ reason: "control unavailable" })
+        if (base.controlTour === undefined || first("tour-control:control")) throw new Unavailable({ reason: "control unavailable" })
         try base.controlTour(conversation, action, step)
       },
       endTour: effect (conversation) => {

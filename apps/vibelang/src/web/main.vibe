@@ -426,7 +426,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return { model: { ...model, theatre: { ...model.theatre, sound: present.sound } }, commands: [PresentTour(present)] }
     },
     ReceivedTourEvent: ({ event }) => receiveTour(model, event),
-    FailedTourEvents: () => ({ model: { ...model, tourError: "Connection lost" } }),
+    FailedTourEvents: () => ({ model: { ...model, tourError: "connection" } }),
     ClickedLearnMore: () => learnMore(model),
     ClickedEndTour: () => endTour(model),
     // Ended before the tour was even recorded: end it now that it is.
@@ -705,7 +705,8 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory | Action
   }
 }
 function runTourControl(model: Model, control: TourDecision.TourControl): Update.Return<Model, Message, Factory | Actions> {
-  return control.action === "none" ? { model } : { model, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action: control.action, step: control.step })] }
+  // A new control clears the last one's failure; it shows again if this one fails too.
+  return control.action === "none" ? { model } : { model: model.tourError === "" ? model : { ...model, tourError: "" }, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action: control.action, step: control.step })] }
 }
 function streamScreen(model: Model): TourDecision.StreamScreen {
   return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }

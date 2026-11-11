@@ -228,8 +228,12 @@ describe("the tour", () => {
     expect(result.model).toBe(home)
     expect(result.commands?.[0]).toMatchObject({ name: "FocusTourControl", args: { backward: true } })
   })
-  it("reports a lost connection", () => {
-    expect(update(touring, Message.FailedTourEvents()).model.tourError).toBe("Connection lost")
+  it("reports a lost connection, and the next control clears it", () => {
+    const lost = update(touring, Message.FailedTourEvents()).model
+    expect(lost.tourError).toBe("connection")
+    const retried = update(lost, Message.ClickedPauseTour())
+    expect(retried.model.tourError).toBe("")
+    expect(retried.commands?.[0]).toMatchObject({ name: "ControlTour", args: { action: "pause" } })
   })
   it("ending before the start was recorded ends it once the start lands", () => {
     expect(update(touring, Message.SucceededTour()).model).toBe(touring)

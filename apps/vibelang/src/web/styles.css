@@ -464,6 +464,7 @@ html { overflow-anchor: none; }
 .vl-theatre-progress .current{background:var(--vl-violet);animation:vl-theatre-pulse 1.8s ease-in-out infinite}
 .vl-theatre-bar{position:fixed;z-index:102;bottom:24px;left:50%;transform:translateX(-50%);width:min(calc(100% - 32px),640px);padding:16px 20px 12px;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:0 12px 40px #0008}
 .vl-theatre-meta{font-size:12px;color:var(--text-muted)}
+.vl-theatre-error{font-size:13px;margin:0 0 8px;color:var(--danger,#e5484d)}
 .vl-theatre-subtitle{font-size:16px;line-height:1.55;min-height:3.1em;margin:8px 0;overflow-wrap:break-word}
 .vl-theatre-controls{display:flex;align-items:center;justify-content:center;gap:8px}
 .vl-theatre-controls button{min-width:44px;min-height:44px;border:0;background:transparent;border-radius:8px;color:var(--text);font:inherit;cursor:pointer}

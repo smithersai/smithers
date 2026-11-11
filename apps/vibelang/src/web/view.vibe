@@ -145,6 +145,8 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
     h.section([h.Class("vl-theatre-bar"), h.AriaLabel("Walkthrough"), h.DataAttribute("step", String(step)), h.DataAttribute("paused", String(model.theatre.paused))], [
       h.div([h.Class("vl-theatre-meta")], [`${step} of 10`]),
       h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [walkthroughStop(step).subtitle]),
+      // The composer is hidden during the tour, so a failed tour request is named here.
+      ...(model.tourError === "" ? [] : [h.p([h.Class("vl-theatre-error"), h.Role("alert")], [postFailure(model.tourError)])]),
       h.div([h.Class("vl-theatre-controls")], [
         button("Back", "⏮", Message.ClickedBackStop(), step === 1),
         button(model.theatre.paused ? "Play" : "Pause", model.theatre.paused ? "▶" : "Ⅱ", Message.ClickedPauseTour()),

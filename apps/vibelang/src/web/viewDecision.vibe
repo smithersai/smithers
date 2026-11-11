@@ -14,7 +14,8 @@ export function failureOf(reason: string): string {
 //@ ensures reason == "busy" ==> \result == "Agent busy"
 //@ ensures reason == "not-replying" ==> \result == "Answer unavailable"
 //@ ensures reason == "full" ==> \result == "Conversation full"
-//@ ensures reason != "empty" && reason != "too-long" && reason != "duplicate" && reason != "busy" && reason != "not-replying" && reason != "full" ==> \result == "Send failed"
+//@ ensures reason == "connection" ==> \result == "Connection lost"
+//@ ensures reason != "empty" && reason != "too-long" && reason != "duplicate" && reason != "busy" && reason != "not-replying" && reason != "full" && reason != "connection" ==> \result == "Send failed"
 export function postFailure(reason: string): string {
   if (reason === "empty") return "Empty message"
   if (reason === "too-long") return "Message too long"
@@ -22,6 +23,7 @@ export function postFailure(reason: string): string {
   if (reason === "busy") return "Agent busy"
   if (reason === "not-replying") return "Answer unavailable"
   if (reason === "full") return "Conversation full"
+  if (reason === "connection") return "Connection lost"
   return "Send failed"
 }
 
