@@ -2144,12 +2144,6 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * the opened repository, its trusted typed target list, and one streamed
    * target run.
    */
-  /*
-   * The target-graph cards (@smthrs/rpc/TargetGraph): the typed DAG with
-   * plan facts and an optional live run overlay, one run's timeline with its
-   * critical path, the run history with replay, the diff-affected set, and
-   * the generated CI matrix.
-   */
   /* The agents a host answered for (its factory inventory, or the loaded repository's agent flows) or a repository's cloud session inventory. */
   z.object({
     ...cardBaseShape,

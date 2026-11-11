@@ -1,18 +1,6 @@
-import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { CardSchema } from "../src/Cards.ts"
-import {
-  draftCard,
-  issueDigest,
-  parseTodoArgs,
-  STACK_COMMAND,
-  TODO_COMMAND,
-  TODO_NEW_COMMAND,
-  todoCard,
-  TodoNewInputSchema,
-  todoPath,
-  TODOS_PATH
-} from "../src/TodoCommands.ts"
+import { STACK_COMMAND, TODO_COMMAND, TODO_NEW_COMMAND, todoCard, TodoNewInputSchema } from "../src/TodoCommands.ts"
 import { fixtures } from "./fixtures/Todo.ts"
 
 describe("the TODO commands every host binds", () => {
@@ -26,8 +14,6 @@ describe("the TODO commands every host binds", () => {
       args: "[text]",
       agent: "confirm"
     })
-    expect(TODOS_PATH).toBe("/api/todos")
-    expect(todoPath(12)).toBe("/api/todos/12")
   })
 
   test("todo.new's input takes a Draft's text, title, acceptance and place, or the Draft a Commit files", () => {
@@ -51,29 +37,6 @@ describe("the TODO commands every host binds", () => {
       { cardId: 1 }
     ]
     for (const input of refused) expect(TodoNewInputSchema.safeParse(input).success).toBe(false)
-  })
-
-  test("the grammar reads a TODO number and its text, or the whole line as text", () => {
-    const answer = parseTodoArgs("answer")
-    expect(answer("T12 yes\nsecond line")).toEqual({ payload: { n: 12, answer: "yes\nsecond line" } })
-    expect(answer("12")).toEqual({ payload: { n: 12 } })
-    expect(answer("  T12  ")).toEqual({ payload: { n: 12 } })
-    expect(answer("T0")).toEqual({ payload: {} })
-    expect(answer("twelve")).toEqual({ payload: {} })
-    expect(answer(undefined)).toEqual({ payload: {} })
-    expect(parseTodoArgs()("T12 ignored text")).toEqual({ payload: { n: 12 } })
-    const text = parseTodoArgs("text", false)
-    expect(text("Log retry counts\nin the worker")).toEqual({ payload: { text: "Log retry counts\nin the worker" } })
-    expect(text("   ")).toEqual({ payload: {} })
-  })
-
-  test("JSON input is lossless, and anything but an object is refused", () => {
-    const answer = parseTodoArgs("answer")
-    expect(answer("{\"n\":12,\"answer\":\" yes\\n \"}")).toEqual({ payload: { n: 12, answer: " yes\n " } })
-    expect(parseTodoArgs("text", false)("{\"text\":\"x\",\"cardId\":\"draft:1\"}")).toEqual({
-      payload: { text: "x", cardId: "draft:1" }
-    })
-    for (const refused of ["{broken", "{\"n\":1}x"]) expect(answer(refused)).toEqual({ error: "Invalid TODO input" })
   })
 
   test("the TODO card carries the model once read, and its number before", () => {
@@ -100,62 +63,5 @@ describe("the TODO commands every host binds", () => {
       payload: { n: 7, requests: [] }
     })
     expect(CardSchema.parse(blank)).toEqual(blank)
-  })
-
-  test("a Draft is private to its author and titled by its first line", () => {
-    const options = [{ n: 8, title: "Persist merge requests", state: "in_review" as const }]
-    const seed = {
-      id: "draft:1",
-      author: "ben",
-      text: "Log retry counts\nin the worker",
-      options,
-      idempotencyKey: "k-1"
-    }
-    const appended = draftCard(seed, 4, 9)
-    expect(appended).toEqual({
-      id: "draft:1",
-      kind: "draft",
-      audience_member_id: "ben",
-      title: "Log retry counts",
-      status: "active",
-      createdAt: 9,
-      ordinal: 4,
-      payload: {
-        title: "Log retry counts",
-        prompt: "Log retry counts\nin the worker",
-        acceptance: [],
-        place: { mode: "append", options },
-        private: true,
-        idempotencyKey: "k-1"
-      }
-    })
-    expect(CardSchema.parse(appended)).toEqual(appended)
-    const placed = draftCard({ ...seed, title: "Retry counts", acceptance: ["Counts log"], before: 8 }, 0, 0)
-    expect(placed.title).toBe("Retry counts")
-    expect(placed.payload).toMatchObject({
-      title: "Retry counts",
-      acceptance: ["Counts log"],
-      place: { mode: "before", n: 8, options }
-    })
-    expect(CardSchema.parse(placed)).toEqual(placed)
-    // An empty Draft is titled empty; the person fills it on the card.
-    expect(draftCard({ ...seed, text: "" }, 0, 0).title).toBe("")
-  })
-
-  test("a Draft made from an issue carries the issue and the digest of its text", () => {
-    const issue = { number: 42, title: "Retries vanish", url: "https://github.com/acme/app/issues/42", fixes: true }
-    const digest = issueDigest(issue.title, "The worker drops retry counts.")
-    const seed = { id: "draft:2", author: "ben", text: issue.title, options: [], idempotencyKey: "k-2" }
-    const draft = draftCard({ ...seed, issue, issueDigest: digest }, 0, 0)
-    expect(draft.payload).toMatchObject({ title: "Retries vanish", issue, issueDigest: digest })
-    expect(CardSchema.parse(draft)).toEqual(draft)
-    expect(draftCard({ ...seed, issue }, 0, 0).payload).not.toHaveProperty("issueDigest")
-  })
-
-  test("an issue digest is the SHA-256 of title, NUL and body", () => {
-    const expected = createHash("sha256").update("Retries vanish\u0000Body").digest("hex")
-    expect(issueDigest("Retries vanish", "Body")).toBe(expected)
-    expect(issueDigest("ab", "c")).not.toBe(issueDigest("a", "bc"))
-    expect(issueDigest("", "")).toBe(createHash("sha256").update("\u0000").digest("hex"))
   })
 })

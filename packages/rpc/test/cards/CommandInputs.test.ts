@@ -16,7 +16,6 @@ import type { ConfirmCard } from "../../src/ConfirmCard.ts"
 import { fixtures as agent } from "../fixtures/Agent.ts"
 import { fixtures as confirm } from "../fixtures/Confirm.ts"
 import { fixtures as draft } from "../fixtures/Draft.ts"
-import { fixtures as settings } from "../fixtures/Settings.ts"
 
 const actions = (stories: Readonly<Record<string, { readonly actions: ReadonlyArray<Action> }>>) =>
   Object.values(stories).flatMap((story) => story.actions)
@@ -72,9 +71,8 @@ describe("confirm.cancel", () => {
 describe("settings.model.set", () => {
   // Literal oracle: the role ids (mvp.md §6.5); `jev` shows as "Decisions".
   const ROLES = ["fast", "coding", "jev"] as const
-  const sets = [...bound("settings.model.set", actions(settings)), ...bound("settings.model.set", actions(agent))]
-  test("Settings offers Change for each role, and the Agent card offers Change model", () => {
-    expect(bound("settings.model.set", settings.ready.actions).map((action) => action.args?.role)).toEqual([...ROLES])
+  const sets = bound("settings.model.set", actions(agent))
+  test("the Agent card offers Change model", () => {
     expect(bound("settings.model.set", agent.coding.actions)).toHaveLength(1)
   })
   test("produces exactly { role, model } with a catalog model id", () => {
@@ -90,12 +88,12 @@ describe("settings.model.set", () => {
   test.each(["", "has space", "-flag", "x".repeat(82)])("rejects model id %j", (model) => {
     expect(SettingsModelSetInputSchema.safeParse({ role: "coding", model }).success).toBe(false)
   })
-  test("the Decisions label never shows the internal role id", () => {
-    const labels = [...actions(settings), ...actions(agent)].flatMap((action) => [
+  test("the Agent card keeps internal role ids out of labels", () => {
+    const labels = actions(agent).flatMap((action) => [
       action.label,
       ...(action.input ?? []).map((field) => field.label)
     ])
     expect(labels.filter((label) => /jev/i.test(label))).toEqual([])
-    expect(labels).toContain("Decisions")
+    expect(labels).toContain("Change model")
   })
 })

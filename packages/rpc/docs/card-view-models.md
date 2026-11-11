@@ -18,7 +18,6 @@ recorded cards; view models do not replace that history decoder.
 | ------------------ | -------------------------------------------- | ------------------------------------------------------------------------- |
 | ActorChipCard      | ActorChipCardSchema, ActorChipCard           | Actor, chip size and whether the agent is working now                     |
 | SetupCard          | SetupCardSchema, SetupCard                   | Address, the seven setup steps, this Mac, GitHub, repository and models   |
-| SettingsCard       | SettingsCardSchema, SettingsCard             | Setup fields plus capacity, parallel, laptop lines, health and Obsidian   |
 | EntryRowCard       | EntryRowCardSchema, EntryRowCard             | Author, title, summary, tone, TODO state, context and action              |
 | BranchTreeNodeCard | BranchTreeNodeCardSchema, BranchTreeNodeCard | Recursive open-branch tree and presence                                   |
 | HomeCard           | HomeCardSchema, HomeCard                     | Main sync, attention, stack items, counts, machines and background runs   |
@@ -27,14 +26,12 @@ recorded cards; view models do not replace that history decoder.
 | DraftCard          | DraftCardSchema, DraftCard                   | Title, prompt, acceptance, placement, issue, seed and commit receipt      |
 | TodoCard           | TodoCardSchema, TodoCard                     | Nine TODO states, steps, open waits, steers, rebase, evidence and PR      |
 | ToastCard          | ToastCardSchema, ToastStackCardSchema, ...   | Toasts, the toast stack, the edge map and per-member shell view state     |
-| TimelineCard       | TimelineCardSchema, TimelineCard             | One line per entry and the on-screen band                                 |
 | ConfirmCard        | ConfirmCardSchema, ConfirmCard               | Kind, action, summary, subject, who asked, review and receipt             |
 | CommandsCard       | CommandsCardSchema, CommandsCard             | Command groups with synopsis, description and agent policy                |
 | FlowCard           | FlowCardSchema, FlowCard                     | Source, versions, step agents and merge-wait signals                      |
 | MonitorCard        | MonitorCardSchema, MonitorCard               | Attempts, step instances, phases, cells, waits, journal and replay        |
 | AgentCard          | AgentCardSchema, AgentCard                   | Instructions, model role and choices, and runs it took part in            |
 | BranchCard         | BranchCard (TypeScript metadata)             | Machine, item or scratch, rebase, presence, terminals and activity        |
-| TerminalCard       | TerminalCard (TypeScript metadata)           | Owner, agents, watchers, command and frozen state                         |
 | SecretsCard        | SecretsCardSchema, SecretsCard               | Secret names, scopes, bound hosts and row actions; no values              |
 | ProposalCard       | ProposalCardSchema, ProposalCard             | Evidence, references, state and the TODO it became                        |
 

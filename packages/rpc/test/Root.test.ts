@@ -40,3 +40,19 @@ test("TODO creation has one schema, distinct from scratch adoption", () => {
     .toEqual({ text: "Adopt", after: 3 })
   expect(Rpc.CardAction.BranchAddToStackInputSchema.safeParse({ text: "  " }).success).toBe(false)
 })
+
+// Modules without consumers are not part of the shared contract surface.
+test.each([
+  "RepositorySubjectPath",
+  "TargetGraphCli",
+  "UpstreamProse",
+  "SettingsCard",
+  "TimelineCard",
+  "TerminalCard"
+])("the root omits the unused %s contract", (module) => {
+  expect(Rpc).not.toHaveProperty(module)
+})
+
+test("target cards retain their node schema without retired graph operations", () => {
+  expect(Object.keys(Rpc.TargetGraph)).toEqual(["GraphNodeSchema"])
+})

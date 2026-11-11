@@ -1,10 +1,8 @@
 import { describe, expect, test } from "vitest"
 import { CardSchema, WorkspaceDesktopSchema, WorkspaceServiceSchema } from "../src/Cards.ts"
 import { MythicalIssueSchema, MythicalPullRequestSchema } from "../src/Mythical.ts"
-import { SettingsCardSchema } from "../src/SettingsCard.ts"
 import { PersonaRefSchema, TaskMetaSchema } from "../src/Threads.ts"
 import { HttpUrlSchema, RelativeUrlPathSchema } from "../src/WebUrl.ts"
-import { fixtures as settings } from "./fixtures/Settings.ts"
 
 /*
  * Every URL a contract hands a renderer to link, embed or open is http(s) or
@@ -32,30 +30,6 @@ describe("URL contracts", () => {
       expect(HttpUrlSchema.safeParse(url).success).toBe(true)
     }
     for (const url of hostile) expect(HttpUrlSchema.safeParse(url).success).toBe(false)
-  })
-
-  test.each(["settings_url", "add_url"] as const)("settings callback %s refuses non-http(s) URLs", (field) => {
-    const model = settings.callback_fixes.model
-    for (const url of hostile) {
-      expect(
-        SettingsCardSchema.safeParse({
-          ...model,
-          callback_fixes: [{ ...model.callback_fixes![0], [field]: url }]
-        }).success,
-        url
-      ).toBe(false)
-    }
-  })
-
-  test("settings callback URLs keep http(s) values and remain optional", () => {
-    const model = settings.callback_fixes.model
-    expect(SettingsCardSchema.parse(model).callback_fixes).toEqual(model.callback_fixes)
-    for (const url of ["https://example.test/settings", "http://localhost:4000/callback", "HTTPS://Example.com"]) {
-      const callback_fixes = [{ settings_url: url, add_url: url }]
-      expect(SettingsCardSchema.parse({ ...model, callback_fixes }).callback_fixes).toEqual(callback_fixes)
-    }
-    expect(SettingsCardSchema.parse(settings.ready.model)).not.toHaveProperty("callback_fixes")
-    expect(SettingsCardSchema.parse({ ...model, callback_fixes: [] }).callback_fixes).toEqual([])
   })
 
   test("persona icons refuse non-http(s) URLs, including every issue role", () => {

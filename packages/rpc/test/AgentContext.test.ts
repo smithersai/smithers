@@ -519,7 +519,7 @@ describe("runtime context branch contracts", () => {
     expect(lines).toContain("  - \"smithers\" (id one)")
     expect(lines).toContain("  - \"other\" (id two)")
     for (const repositories of [undefined, []]) {
-      expect(renderAgentRuntimeContext(contextFixture({ repositories }))).not.toContain("Open repositories")
+      expect(renderAgentRuntimeContext(contextFixture({ repositories }))).not.toContain("- Repositories:")
     }
   })
 

@@ -5,12 +5,7 @@
 
 import { describe, expect, test } from "vitest"
 import { CatalogTagSchema } from "../../src/CatalogTags.ts"
-import {
-  confirmCancelRefusal,
-  type ConfirmCard,
-  ConfirmCardSchema,
-  MemberConfirmationSchema
-} from "../../src/ConfirmCard.ts"
+import { type ConfirmCard, ConfirmCardSchema } from "../../src/ConfirmCard.ts"
 import { cardContract } from "../cardContract.ts"
 import { fixtures } from "../fixtures/Confirm.ts"
 
@@ -100,108 +95,6 @@ describe("Confirm variants", () => {
   )
 })
 
-describe("confirmation cancellation", () => {
-  test.each([
-    { revision: "new" },
-    { revision: "old", answered: true },
-    {},
-    undefined
-  ])("refuses a stale or answered confirmation: %j", (confirmation) => {
-    expect(confirmCancelRefusal("old", confirmation)).toMatchObject({
-      code: "native_confirm_stale",
-      status: 409,
-      fault: "user",
-      retryAfter: null
-    })
-  })
-  test("permits the pending revision", () => {
-    expect(confirmCancelRefusal("old", { revision: "old" })).toBeUndefined()
-  })
-})
-
-test("Learning confirmation retains its proposal identity; Dismiss creates no TODO effect", () => {
-  const row = {
-    id: "10000000-0000-4000-8000-000000000006",
-    state: "approved",
-    command: "learning.dismiss",
-    revision: "proposal-1",
-    expires_at: "2026-10-07T00:00:00Z",
-    payload: { card: { ...fixtures.learning.model, action: { tag: "learning.dismiss", verb: "Dismiss" } }, input: {} }
-  }
-  expect(MemberConfirmationSchema.parse(row).payload.card.subject).toEqual({
-    kind: "proposal",
-    ref: "check:lint@review",
-    revision: "proposal-1"
-  })
-  expect(MemberConfirmationSchema.parse(row).payload).not.toHaveProperty("effect")
-  expect(
-    MemberConfirmationSchema.safeParse({
-      ...row,
-      payload: { ...row.payload, effect: { todo: 0, request: "confirmation:learning" } }
-    }).success
-  ).toBe(false)
-})
-
-test("Wiki deletion uses its initiating catalog tag in the private Confirm projection", () => {
-  const model = {
-    ...fixtures.one_click.model,
-    action: { tag: "wiki.delete", verb: "Delete" },
-    subject: { kind: "wiki", ref: "home", revision: "7:2" }
-  }
-  const row = {
-    id: "10000000-0000-4000-8000-000000000001",
-    command: "wiki.delete",
-    state: "pending",
-    revision: "7:2",
-    expires_at: "2099-01-01T00:00:00Z",
-    payload: { input: { owner: "ben", repo: "app" }, card: model }
-  }
-  expect(MemberConfirmationSchema.parse(row)).toEqual(row)
-})
-
-test("Review effects decode without a TODO and refuse ambiguous or empty effect identities", () => {
-  const row = {
-    id: "10000000-0000-4000-8000-000000000001",
-    command: "review",
-    state: "approved",
-    revision: "pinned-review",
-    expires_at: "2099-01-01T00:00:00Z",
-    payload: {
-      input: {},
-      card: { ...fixtures.one_click.model, action: { tag: "review", verb: "Review" } },
-      effect: { review: "review-op", request: "confirmation:1" }
-    }
-  }
-  expect(MemberConfirmationSchema.parse(row)).toEqual(row)
-  for (const effect of [{ request: "confirmation:1" }, { todo: 1, review: "review-op", request: "confirmation:1" }]) {
-    expect(MemberConfirmationSchema.safeParse({ ...row, payload: { ...row.payload, effect } }).success).toBe(false)
-  }
-})
-
-test("Issue comment confirmations preserve the exact text and unambiguous worker identity", () => {
-  const row = {
-    id: "10000000-0000-4000-8000-000000000001",
-    command: "issue.comment",
-    state: "approved",
-    revision: "1:7",
-    expires_at: "2099-01-01T00:00:00Z",
-    payload: {
-      input: { body: "Ready" },
-      card: fixtures.issue.model,
-      effect: { issue_comment: "20000000-0000-4000-8000-000000000001", request: "confirmation:1", state: "running" }
-    }
-  }
-  expect(MemberConfirmationSchema.parse(row)).toEqual(row)
-  for (
-    const effect of [{ ...row.payload.effect, todo: 7 }, { ...row.payload.effect, review: "review-op" }, {
-      ...row.payload.effect,
-      issue_comment: ""
-    }, { ...row.payload.effect, state: "approved" }]
-  ) {
-    expect(MemberConfirmationSchema.safeParse({ ...row, payload: { ...row.payload, effect } }).success).toBe(false)
-  }
-})
-
 // The initiating command is presentation; person decision tags own execution.
 test("wiki create confirmation preserves its command without granting a button dispatch", () => {
   const card = {
@@ -217,28 +110,4 @@ test("wiki create confirmation preserves its command without granting a button d
   expect(ConfirmCardSchema.safeParse({ ...card, action: { tag: "unknown-command", verb: "Create" } }).success).toBe(
     false
   )
-})
-
-test("issue creation decodes its durable delivery identity and refuses a second effect", () => {
-  const row = {
-    id: "10000000-0000-4000-8000-000000000001",
-    command: "issue.new",
-    state: "approved",
-    revision: "1:new",
-    expires_at: "2099-01-01T00:00:00Z",
-    payload: {
-      input: { title: "Title", body: "Exact bytes" },
-      card: { ...fixtures.one_click.model, action: { tag: "issue.new", verb: "Create" } },
-      effect: { issue_create: "20000000-0000-4000-8000-000000000001", request: "confirmation:1", state: "uncertain" }
-    }
-  }
-  expect(MemberConfirmationSchema.parse(row)).toEqual(row)
-  for (
-    const effect of [{ ...row.payload.effect, issue_comment: row.payload.effect.issue_create }, {
-      ...row.payload.effect,
-      todo: 7
-    }, { ...row.payload.effect, issue_create: "not-a-uuid" }]
-  ) {
-    expect(MemberConfirmationSchema.safeParse({ ...row, payload: { ...row.payload, effect } }).success).toBe(false)
-  }
 })

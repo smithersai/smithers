@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
         "A wiki note body, repo name, card title or setup step prompt interpolated without the line() newline fold or the quoted `|` prefix.",
         "Fetched page text or upstream prose placed in the prompt without a label marking it as untrusted data."
       ],
-      paths: ["src/AgentContext.ts", "src/AgentRoles.ts", "src/UpstreamProse.ts", "src/NativeAgent.ts"]
+      paths: ["src/AgentContext.ts", "src/AgentRoles.ts", "src/NativeAgent.ts"]
     },
     {
       id: "card-url-schemes",
