@@ -558,7 +558,15 @@ export const forward = (
   const method = request.method
   const body = method === "GET" || method === "HEAD"
     ? HttpBody.empty
-    : HttpBody.stream(request.stream, request.headers["content-type"])
+    : HttpBody.stream(
+      request.stream.pipe(
+        // Web requests with no body expose a failing stream; only that absence is an empty upload.
+        Stream.catch((error) =>
+          error.reason.description === "can not create stream from empty body" ? Stream.empty : Stream.fail(error)
+        )
+      ),
+      request.headers["content-type"]
+    )
   const outgoing = requestWithMethod(method, request.originalUrl, request.headers, body)
   return execute(outgoing, policy).pipe(
     Effect.map((answer) =>
