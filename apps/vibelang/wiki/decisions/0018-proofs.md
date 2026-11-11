@@ -5212,3 +5212,13 @@ Foldkit command construction (`accountCommand`, `actionCommand`: a Foldkit `Comm
 and `runTourControl`, which `test/translation.property.test.vibe` still checks. The `update` arms themselves belong to
 `vl-proveall`, whose unlanded LemmaScript chain changes the same `extract.ts` and must keep one structural-type
 mechanism when it rebases.
+
+## Per-mutant wall budget (lead decision, 2026-11-10)
+
+The lead, as the gate's owner, ruled that a mutant's wall budget is a resource limit, not a correctness threshold, and
+raised it to at least 300 s. `verify/mutation_targets.py` `wall_limit` (vl-proof-strengthen, "Strengthening lane
+follow-up") already gives a mutant 1,800 s and an isolated proof 7,200 s, so the ruling holds with no further change.
+Measurements behind it: `apply-action-actor` (`src/core/conversation.vibe` `apply`) is rejected by its contract in 117 s
+alone on a 2-core box, hit 180 s beside another mutant in two full `verify:broken` runs (the only one of 1,660 and 1,903
+that did not finish; none survived), and hit 300 s (311 s) beside 58 other mutants and a full proof run on nyc-01 at load
+~160 (2026-11-11). 300 s does not hold under that load; 1,800 s does. No contract or mutant changed.
