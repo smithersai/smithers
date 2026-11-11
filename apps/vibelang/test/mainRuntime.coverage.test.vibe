@@ -179,9 +179,15 @@ describe("the presenter", () => {
 describe("a backend that fails", () => {
   const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(FactoryService, map(FactoryService, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
   const actions = MockActions({ actor: "person" })
-  it.live("a broken tour stream reports the lost connection", () => scoped(effect {
-    const seen = try started(quiet({ tourClient: newClient }), actions, faulty({ events: () => Stream.fail(new Unavailable({ reason: "closed" })) }))
-    try settled(() => expect(seen.model.tourError).toBe("Connection lost"))
+  it.live("a broken tour stream follows again 2 seconds later and reports nothing", () => scoped(effect {
+    const follows: Array<number> = []
+    const seen = try started(quiet({ tourClient: newClient }), actions, faulty({ events: (conversation) => {
+      if (!conversation.startsWith("tour-")) return Stream.never
+      follows.push(Date.now())
+      return follows.length === 1 ? Stream.fail(new Unavailable({ reason: "closed" })) : Stream.never
+    } }))
+    try settled(() => expect(follows).toHaveLength(2), 6000)
+    try Effect.try(() => { expect(follows[1]! - follows[0]!).toBeGreaterThanOrEqual(1900); expect(seen.model.tourError).toBe("") })
   }))
   for (const [label, sandbox, reason] of [
     ["a refusal by its reason", () => Effect.fail(new Refused({ refusal: "forbidden" })), "forbidden"],

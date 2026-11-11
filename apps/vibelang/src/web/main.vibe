@@ -1270,7 +1270,12 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       modelToDependencies: (model: Model) => ({ active: model.tourClient !== undefined, session: walkthroughSession(model), epoch: model.epoch }),
       dependenciesToStream: ({ active, session }) => !active ? Stream.empty : Stream.unwrap(effect {
         const factory = try Factory
-        return factory.events(tourConversation(session), 0).pipe(Stream.map(event => Message.ReceivedTourEvent({ event })), Stream.catch(() => Stream.succeed(Message.FailedTourEvents())))
+        // A lost stream follows again 2 seconds later from the start; events the tour already has change nothing.
+        const follow = (): Stream.Stream<Machine.Event> => factory.events(tourConversation(session), 0).pipe(Stream.catch(() => Stream.concat(
+          Stream.fromEffect(Effect.andThen(Effect.logWarning("tour events lost; following again"), Effect.sleep("2 seconds"))).pipe(Stream.drain),
+          Stream.suspend(follow),
+        )))
+        return follow().pipe(Stream.map(event => Message.ReceivedTourEvent({ event })))
       }),
     }),
     theatreKeys: entry({ active: Schema.Boolean }, {
