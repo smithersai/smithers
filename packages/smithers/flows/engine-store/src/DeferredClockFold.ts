@@ -171,12 +171,21 @@ const digest = (value: unknown): value is string => typeof value === "string" &&
  * first consumption, exactly as the rows do. An entry of another type, or one
  * whose payload names no row, leaves the state unchanged.
  *
+ * Every clock and completion record is journalled on its own run's stream, so
+ * an entry whose payload names another run is a copy: a time-travel fork
+ * copies its parent's prefix verbatim, payloads still naming the parent. The
+ * parent's own stream explains that row, so the copy is skipped; folding it
+ * again would insert the parent's clock twice and reset its consumption.
+ *
  * @category folds
  * @since 1.0.0
  */
 export const reduce = (state: State, entry: JournalEvent.Entry): State => {
   const payload = record(entry.payload)
-  if (payload === undefined || !text(payload.flowName) || !text(payload.executionId)) return state
+  if (
+    payload === undefined || !text(payload.flowName) || !text(payload.executionId) ||
+    payload.executionId !== entry.runId
+  ) return state
   const flowName = payload.flowName
   const executionId = payload.executionId
   switch (entry.eventType) {

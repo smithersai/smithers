@@ -326,6 +326,49 @@ describe("DeferredClockFold", () => {
       expect(error.unjoined).toEqual([{ reason: "checkpoint_missing", executionId: "pending" }])
     })))
 
+  it.effect("skips a fork's copied parent records and rebuilds the parent's rows once", () =>
+    run(Effect.gen(function*() {
+      const live = yield* scenario
+      const journal = yield* Journal.Journal
+      const sql = yield* SqlClient.SqlClient
+      const seqOf = (runId: string, eventType: string) =>
+        journal.entries({ runId: runId as JournalEvent.RunId, limit: 100 }).pipe(
+          Effect.map((page) => page.entries.find((entry) => entry.eventType === eventType)!.seq)
+        )
+      /** Copies the parent's prefix verbatim, as `@smthrs/time-travel` forks a run. */
+      const fork = (parentRunId: string, runId: string, frameSeq: number) =>
+        sql`
+          INSERT INTO flows_journal_events
+            (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+          SELECT ${runId}, seq, ${`fork:${runId}:`} || event_id, source_id, source_seq, emitted_at_ms,
+                 event_type, payload_json, meta_json
+          FROM flows_journal_events
+          WHERE run_id = ${parentRunId} AND seq <= ${frameSeq}
+        `
+      // A fork after `duplicate`'s completion but before its consumption. Its id
+      // sorts after the parent's, so it is folded last and must not reset the
+      // parent's consumption.
+      yield* fork("duplicate", "duplicate:fork:1:1", yield* seqOf("duplicate", EventTypes.deferredCompleted))
+      yield* damage
+      const forked = yield* DeferredClockFold.rebuild()
+      expect(yield* tables).toEqual(live)
+      expect(forked).toEqual({ runs: 5, clocks: 3, deferreds: 3, unexplained: 0 })
+      // A fork after `pending` scheduled its clock: the copy names the parent's clock row.
+      yield* fork("pending", "pending:fork:1:1", yield* seqOf("pending", EventTypes.clockScheduled))
+      const copied = yield* journal.entries({ runId: "pending:fork:1:1" as JournalEvent.RunId, limit: 100 })
+      expect(copied.entries.map((entry) => entry.payload)).toContainEqual(
+        expect.objectContaining({ executionId: "pending", clockName: "long" })
+      )
+      yield* damage
+      const rebuilt = yield* DeferredClockFold.rebuild()
+      expect(rebuilt).toEqual({ runs: 6, clocks: 3, deferreds: 3, unexplained: 0 })
+      expect(yield* tables).toEqual(live)
+      expect(yield* DeferredClockFold.capture("pending:fork:1:1", copied.entries.at(-1)!.seq)).toEqual({
+        clocks: [],
+        deferreds: []
+      })
+    })))
+
   it.effect("folds only the entries up to a checkpoint's sequence", () =>
     run(Effect.gen(function*() {
       yield* scenario
