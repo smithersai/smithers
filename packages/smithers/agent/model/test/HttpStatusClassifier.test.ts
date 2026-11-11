@@ -238,6 +238,18 @@ describe("limits in opaque text", () => {
   })
 })
 
+describe("a refusal the provider words its own way", () => {
+  it("reads a stream that failed on flagged content as a content refusal, not an unknown fault", () => {
+    // gpt-6.1-sol on the ChatGPT route, after HTTP 200 and 13 s of thinking.
+    const message =
+      "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request."
+    expect(classifyHttpStatus(undefined, undefined, message, "provider")).toBe("content_policy")
+    expect(classifyHttpStatus(undefined, "cyber_policy", "Request refused.", "provider")).toBe("content_policy")
+    // An opaque 5xx page that happens to use the words stays a server fault.
+    expect(classifyHttpStatus(503, undefined, message, "opaque")).toBe("provider_internal")
+  })
+})
+
 describe("opaque safety prose", () => {
   it("keeps an opaque 503 retryable when its page mentions safety", () => {
     expect(classifyHttpStatus(503, undefined, "Service unavailable during safety maintenance", "opaque"))

@@ -154,6 +154,10 @@
 
 ### Fixed
 
+- A stream the provider fails with "This content was flagged for possible
+  cybersecurity risk" is classified `content_policy`. It was `unknown`, so a
+  run it ended read as an unexplained fault instead of a refusal of the
+  content.
 - A 400, 404, 409, 413 or 422 whose message quotes the request no longer
   classifies as a limit, a sign-in fault or a safety refusal. A tool named
   `get_rate_limit` with a bad schema used to come back `rate_limited` and be

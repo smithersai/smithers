@@ -65,9 +65,11 @@ export const classifyHttpStatus = (
   if (status === 429 || (named && /rate[-_\s]?limit|usage[-_\s]?limit|too many requests/.test(normalized))) {
     return "rate_limited"
   }
+  // ChatGPT's stream fails after HTTP 200 with "This content was flagged for
+  // possible cybersecurity risk": a refusal of the content, in other words.
   if (
     (named || status === undefined || status < 500) &&
-    /content[-_\s]?policy|content[-_\s]?filter|safety/.test(normalized)
+    /content[-_\s]?policy|content[-_\s]?filter|safety|cyber[-_\s]?(security|policy)|content was flagged/.test(normalized)
   ) return "content_policy"
   // Quota and overflow must precede their generic invalid-request envelopes.
   if ((named || status === undefined || status < 500) && isContextOverflow(code, message)) return "context_overflow"
