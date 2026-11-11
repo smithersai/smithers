@@ -682,7 +682,12 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
     }
     regressions++
     const measured = yield* evaluate(property, value, entry.input, resolved, [])
-    if (measured.outcome._tag === "Passed" || measured.outcome._tag === "Limited") continue
+    if (measured.outcome._tag === "Passed") continue
+    if (measured.outcome._tag === "Limited") {
+      return yield* Effect.fail(
+        fuzzError("Execution", `the ${resolved.execution.name} execution reached its step limit while replaying a saved failure`)
+      )
+    }
     const signature = signatureOf(measured.outcome)
     finding(
       signature,
@@ -907,11 +912,16 @@ const replay = Effect.fnUntraced(function*<A, E, R>(
   const sample = generated.attempt._tag === "Generated" ? yield* follow(generated.attempt, data.path) : undefined
   if (sample === undefined) return { _tag: "ReplayMismatch", stats: { ...stats, stale: 1 } }
   const measured = yield* evaluate(target.property, sample.value, data.input, options, [])
-  // The token's signature names a failure (decodeReplay checks it), so an equal signature is a failure outcome.
-  if (signatureOf(measured.outcome) !== data.signature) return { _tag: "Passed", stats }
+  if (measured.outcome._tag === "Passed") return { _tag: "Passed", stats }
+  if (measured.outcome._tag === "Limited") {
+    return yield* Effect.fail(
+      fuzzError("Execution", `the ${options.execution.name} execution reached its step limit during replay`)
+    )
+  }
+  const signature = signatureOf(measured.outcome)
   const finding: Fuzz.Finding<A, E> = {
-    signature: data.signature,
-    failure: measured.outcome as Fuzz.Failure<E>,
+    signature,
+    failure: measured.outcome,
     input: sample.value,
     initialInput: (generated.attempt as Model.Sample<A>).value,
     shrinks: data.path.length,
@@ -919,7 +929,7 @@ const replay = Effect.fnUntraced(function*<A, E, R>(
     replay: token,
     saved: "None"
   }
-  const recheck = yield* confirm(target.property, sample.value, data.input, options, data.signature)
+  const recheck = yield* confirm(target.property, sample.value, data.input, options, signature)
   return report([recheck === undefined ? finding : { ...finding, recheck }], stats)
 })
 
