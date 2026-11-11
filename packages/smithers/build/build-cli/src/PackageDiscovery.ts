@@ -173,6 +173,19 @@ const undeclaredNestedWorkspace = (repositoryPath: string, marker: string): Pack
   )
 
 /**
+ * Refuses a directory that declares its package twice, once in TypeScript and
+ * once in VibeLang: neither file silently wins.
+ */
+const twoDeclarations = (relative: string, names: ReadonlyArray<string>): PackageError => {
+  const files = names.map((name) => relative === "" ? name : `${relative}/${name}`).sort(byCodeUnit)
+  return new PackageError(
+    "duplicate_package_path",
+    `${files.join(" and ")} both declare //${relative}; keep one of them`,
+    { path: files[0] }
+  )
+}
+
+/**
  * Walks one directory. Each directory costs one confined resolve and one
  * confined listing and nothing else: every classification of a child, the
  * nested-checkout and nested-workspace checks included, is answered from a
@@ -235,6 +248,7 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
   // inventory: `walk.found` is sorted by the caller, so discovery order never
   // escapes this function.
   const directories: Array<string> = []
+  const declarations: Array<string> = []
   for (const child of entries) {
     walk.signal?.throwIfAborted()
     // Distribution trees are build products, never package declarations.
@@ -259,11 +273,13 @@ const walkDirectory = async (walk: Walk, relative: string): Promise<void> => {
       if (!child.isFile()) {
         throw new PackageError("module_not_regular", `${child.name} is not a regular file`, { path: childRelative })
       }
+      declarations.push(child.name)
       walk.found.push(childRelative)
       continue
     }
     if (child.isDirectory()) directories.push(childRelative)
   }
+  if (declarations.length > 1) throw twoDeclarations(relative, declarations)
   await Promise.all(directories.map((childRelative) => walkDirectory(walk, childRelative)))
 }
 

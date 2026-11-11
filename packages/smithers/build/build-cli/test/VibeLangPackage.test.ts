@@ -138,6 +138,20 @@ describe("a package declared in PACKAGE.vibe", () => {
     expect(ci.output).toContain("//lib:test")
   })
 
+  it("refuses a directory that also has a PACKAGE.ts, naming both files", async () => {
+    const root = await fixture("PACKAGE.vibe")
+    await write(
+      root,
+      "lib/PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {} })
+`
+    )
+    const targets = await serve(root, ["targets"])
+    expect(targets.code).not.toBe(0)
+    expect(targets.output).toContain("lib/PACKAGE.ts and lib/PACKAGE.vibe both declare //lib; keep one of them")
+  })
+
   it.each<DeclarationFile>(["PACKAGE.vibe", "PACKAGE.ts"])(
     "reports a rejected declaration at its %s line",
     async (name) => {

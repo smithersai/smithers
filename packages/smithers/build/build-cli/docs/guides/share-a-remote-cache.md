@@ -144,7 +144,6 @@ digest.
 - [Target execution](../concepts/execution.md): why an unconfined result stays
   local.
 
-
 Artifact transfers have a 60-second deadline, including their bounded response
 body, verification, and local blob publication. Metadata retains 3-second reads
 and 8-second writes. A programmatic `timeouts` override applies to both.

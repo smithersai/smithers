@@ -89,6 +89,10 @@ PACKAGE.vibe                      -> //
 packages/greeter/PACKAGE.vibe     -> //packages/greeter
 ```
 
+A directory holds one declaration. One with both `PACKAGE.ts` and
+`PACKAGE.vibe` fails discovery with `duplicate_package_path`, naming both
+files; neither wins.
+
 The CLI loads a `PACKAGE.vibe` through `vibelang/register`, from the optional
 `vibelang` peer of `@smthrs/build-cli` or the workspace's own install. VibeLang
 compiles a module with the nearest `tsconfig.json` above it, so that project
