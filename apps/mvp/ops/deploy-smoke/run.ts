@@ -1,4 +1,5 @@
-// The deploy smoke (docs/infrastructure.md#the-deploy-smoke): the one command to run after every production deploy.
+// The deploy smoke (docs/infrastructure.md#the-deploy-smoke): the rollout flow (`smthrs flow start rollout`) runs it
+// after every production deploy, and restores the earlier release when it fails. By hand:
 //
 //   cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
 //
