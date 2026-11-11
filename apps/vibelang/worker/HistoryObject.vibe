@@ -7,7 +7,7 @@
 //             event/<seq> every event after it
 import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { Approve, Bootstrap, Export, exportRegistration, ExportTarget, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
 import { type Exporter, off } from "./HistoryExport.vibe"
 import type { Event, History } from "../src/history/mythical.vibe"

@@ -41,7 +41,6 @@
     "./internal/*": null,
     "./*/index": null,
     "./Jj": "./src/Jj.ts",
-    "./Repository": "./src/Repository.ts",
     "./browser/BrowserJj": "./src/browser/BrowserJj.ts",
     "./browser/WasiFs": "./src/browser/WasiFs.ts",
     "./browser/WasiPreview1": "./src/browser/WasiPreview1.ts",
@@ -91,16 +90,6 @@
         "require": {
           "types": "./dist/cjs/Jj.d.ts",
           "default": "./dist/cjs/Jj.js"
-        }
-      },
-      "./Repository": {
-        "import": {
-          "types": "./dist/esm/Repository.d.ts",
-          "default": "./dist/esm/Repository.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Repository.d.ts",
-          "default": "./dist/cjs/Repository.js"
         }
       },
       "./browser/BrowserJj": {

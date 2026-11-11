@@ -435,6 +435,8 @@ and removal conditions.
 
 ## Tool list: the mythical history's git export (0020)
 
-`@smthrs/jj`, the monorepo's own jj package (`workspace:*`), is a new runtime dependency of this app for its
-`Repository` service (`@smthrs/jj/Repository`), and of `@smthrs/integrations` (`1.0.0-rc.17`) for
-`GitHub.GitDatabase`. No external package is added. Awaiting Will's VL-5 approval.
+`@smthrs/jj`, the monorepo's own jj package (`workspace:*`), is a runtime dependency of this app for its
+`Repository` service, imported from the package's root entry (SDK-5), and of `@smthrs/integrations` (`1.0.0-rc.17`) for
+`GitHub.GitDatabase`. It needs no VL-5 sign-off (the lead's reading, 2026-11-11): VL-5 forbids third-party
+dependencies, and `@smthrs/jj` is the monorepo's own package, like the `@smthrs/*` packages the app already uses.
+No external package is added.

@@ -2,7 +2,7 @@
 // git export"): the flow on the engine in memory over the mock's repository, read back through the same `Repository`
 // service. Every unhappy path injects a faulty `Repository` that wraps the real one.
 import { describe, expect, it } from "@effect/vitest"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { EXPORTER, messageOf, noteOf, readManifest, REF_NAMES } from "../src/history/export.vibe"
 import type { Intent } from "../src/history/mythical.vibe"
 import { chainOf, told, world } from "./support/exportFlow.vibe"

@@ -2,7 +2,7 @@
 // contracts as executable oracles (Dafny proves the same text; this runs it), the Export flow over random stories on
 // the mock's repository with every result read back through `Repository`, and the setting the Worker reads.
 import { it } from "@effect/vitest"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
 import * as D from "../src/history/exportDecision.vibe"
 import type { Intent, Real } from "../src/history/mythical.vibe"

@@ -20,7 +20,7 @@
 // (`historyRegistration`); the action host reaches the history through its `HistoryReader`
 // (src/actions/execution.vibe). Every host's authorize step reads who asks from `Caller`.
 import { Action as Step, Flow, Interpreter } from "@smthrs/flow"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { Node } from "@smthrs/plan"
 import { check, NONE, prepare, publish, readRefs } from "./export.vibe"
 import { confirmed, type RefNames, same } from "./exportDecision.vibe"

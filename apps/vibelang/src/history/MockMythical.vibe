@@ -7,7 +7,7 @@
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { Digest } from "effect/crypto"
 import type { Mode } from "../core/Factory.vibe"
 import { REF_NAMES } from "./export.vibe"

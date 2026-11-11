@@ -2,7 +2,7 @@
 // history in mock mode, an export that finds nothing new, an export after one new commit, a refused publication, and
 // the pure decisions it runs on, on the real flow, sequencer and memory repository.
 import { it, expect } from "@effect/vitest"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
 import { confirmed, kept, lastFold, moves, treeSource } from "../src/history/exportDecision.vibe"
 import { EXPORTER, REF_NAMES } from "../src/history/export.vibe"

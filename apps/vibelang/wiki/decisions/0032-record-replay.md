@@ -155,7 +155,9 @@ compare exactly; only content blob hashes normalize after their decoded bytes ag
 `OTHER_CONTRACTS` names the real-GitHub recordings of APIs no fuzz target sends the fake, each with its reason, and
 fails when a named file is gone: `history-export.json` (0020), GitHub's Git database API and GraphQL `updateRefs`. The
 export fuzzes `@smthrs/jj`'s memory `Repository`; `GitHub.GitDatabase` checks every object id GitHub answers against the
-hash that repository uses.
+hash that repository uses. This is the lead's reading of VL-38 (2026-11-11): VL-38 exists so the
+fuzz fake cannot drift on what fuzz targets use; the fake never serves the export's git endpoints and no target sends
+them, so the fake need not model them.
 
 GitHub's asynchronous inputs are explicit, separate from normalization: the recordings omit request times, so the
 first observed index visibility and timeline visibility supply the fake's logical-clock publication schedule.

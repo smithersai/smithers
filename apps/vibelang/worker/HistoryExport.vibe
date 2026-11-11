@@ -5,7 +5,7 @@
 //   HISTORY_EXPORT        off (the default) | github:<owner>/<repo>
 //   HISTORY_EXPORT_TOKEN  a token that may write that repository's refs; required for github:
 import { GitHub } from "@smthrs/integrations"
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { HttpClient } from "effect/http"
 import { REF_NAMES } from "../src/history/export.vibe"
 import type { RefNames } from "../src/history/exportDecision.vibe"

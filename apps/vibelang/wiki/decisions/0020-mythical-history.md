@@ -39,7 +39,7 @@ issue ─▶ task ─▶ Plan (append | insert | amend) ─▶ Start (lane) ─�
 ## The git export
 
 `vibelang/history/Export` (`src/history/export.vibe`, decisions in `src/history/exportDecision.vibe`, proved) writes
-through `@smthrs/jj`'s `Repository` service (`@smthrs/jj/Repository`), the SDK seam this lane added: git object I/O
+through `@smthrs/jj`'s `Repository` service (from the package's root entry), the SDK seam this lane added: git object I/O
 under ids hashed exactly as git hashes them, and one fenced compare-and-swap over several refs that checks every old
 value (`updateRefs`). It runs no git command, notes included. An adapter that cannot apply the transaction atomically
 fails `unsupported`; nothing pushes refs one at a time. Adapters: memory (`Repository.makeMemory`, the mock's) and
@@ -345,7 +345,7 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 
 | Alternative | Why not |
 | --- | --- |
-| Sol: a real `mythical` bookmark and notes ref as the published authority now, with publication generations | The History object stays the store of record; the bookmark is an export of it. The atomic ref seam now exists (`@smthrs/jj/Repository`); the GitHub write is still not granted. |
+| Sol: a real `mythical` bookmark and notes ref as the published authority now, with publication generations | The History object stays the store of record; the bookmark is an export of it. The atomic ref seam now exists (`@smthrs/jj`'s `Repository`); the GitHub write is still not granted. |
 | Sol: the full task lifecycle (proposed, accepted, checking, queued, integrated, on main, folded) with operation receipts and HumanTask merges | Needs issues (brick 3), sandboxes (brick 6) and a queue adapter that pins candidates; none exists. The four states here map onto a subset. |
 | Opus first draft: first-parent commits only | 248 side commits of green-cut merges would map to nothing. Sol's buckets fix it. |
 | Grouping by jj change id | The queue lands copies under new change ids: 0 of 6,490 matched. Titles matched 3,954. |

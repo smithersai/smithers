@@ -13,10 +13,14 @@
 // A planned, working or approved commit with nothing folded into it is an empty reservation: its tree is its
 // parent's, so the bookmark's tree is always the tree of the last real commit it folds. The commits' author, committer
 // and date are fixed, so the same history is the same commits, and preparing again writes nothing new.
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { kept, moves, type RefNames, type Refs, treeSource } from "./exportDecision.vibe"
 import type { Commit, History, Real } from "./mythical.vibe"
 import { stacked } from "./pages.vibe"
+
+// Git's empty tree, read once at load. Vitest maps no coverage statement to a named import's member read inside a
+// function, so another runtime's never-run copy of that read would count as the only, uncovered one.
+const EMPTY_TREE = Repository.EMPTY_TREE
 
 /** Where VibeLang's export lives in its repository. */
 export const REF_NAMES: RefNames = {
@@ -112,7 +116,7 @@ export effect function prepare(history: History, names: RefNames) {
   const trees = new Map<string, string>((previous?.commits ?? []).filter((entry) => entry[2] !== "").map((entry) => [entry[2], entry[3]]))
   const chain: Array<Link> = []
   let parent = ""
-  let parentTree = Repository.EMPTY_TREE
+  let parentTree = EMPTY_TREE
   for (const commit of stacked(history)) {
     const source = treeSource(history.real, commit.id)
     let tree = parentTree
@@ -201,7 +205,7 @@ export effect function check(published: Refs, candidate: Refs) {
       const commit = try repository.readCommit(oid)
       const parents = parent === "" ? [] : [parent]
       const tree = source === ""
-        ? parent === "" ? Repository.EMPTY_TREE : (try repository.readCommit(parent)).tree
+        ? parent === "" ? EMPTY_TREE : (try repository.readCommit(parent)).tree
         : (try repository.readCommit(source)).tree
       if (commit.parents.length !== parents.length || commit.parents.some((each, at) => each !== parents[at])) refusal = "linear"
       else if (commit.tree !== tree) refusal = "tree"

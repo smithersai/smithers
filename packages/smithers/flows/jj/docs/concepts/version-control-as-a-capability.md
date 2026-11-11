@@ -131,7 +131,7 @@ pins both for exactly that reason. See
 A flow that publishes history, such as a curated `mythical` bookmark with its
 notes, writes commits whose trees it chose and moves several refs together.
 That is not a working-copy operation, so it is not on `Jj`: it is
-[`@smthrs/jj/Repository`](../api.md#smthrsjjrepository), a git repository's
+[`@smthrs/jj`'s `Repository`](../api.md#repository), a git repository's
 objects and refs, answered by a hosting adapter or by memory, with no process
 and no `git` command.
 

@@ -28,7 +28,7 @@
  * @since 1.0.0
  */
 
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { Effect, Layer, Schema } from "effect"
 import type { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"

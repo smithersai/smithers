@@ -23672,16 +23672,16 @@ bounds every field by `causeMessageLimit`. The `JjError` constructor and the
 journal decoder reject an over-length field; `jjErrorCause` is the supported
 projection and truncates each field to fit.
 
-## @smthrs/jj/Repository
+## Repository
 
 A git repository's objects and refs as a service, for a flow that publishes
 history rather than snapshots a working copy. It runs no process and no `git`
 command: a hosting adapter answers it (`GitHub.GitDatabase` in
-[`@smthrs/integrations`](/docs/reference/api/integrations/)), or the memory adapter here. The root
-re-exports the module as the `Repository` namespace.
+[`@smthrs/integrations`](/docs/reference/api/integrations/)), or the memory adapter here. Import it
+from the root entry as the `Repository` namespace.
 
 ```ts
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 
 const publish = Effect.gen(function*() {
@@ -24119,16 +24119,15 @@ pins both. See [Content addressing](/docs/concepts/content-addressing/).
 
 ## Which entry points bundle for a browser
 
-| Entry point                       | Bundles for a browser                  |
-| --------------------------------- | -------------------------------------- |
-| `@smthrs/jj`                      | Yes. Contract, error, and no-op layer. |
-| `@smthrs/jj/Repository`           | Yes. WebCrypto only.                   |
-| `@smthrs/jj/browser/BrowserJj`    | Yes.                                   |
-| `@smthrs/jj/browser/WasiPreview1` | Yes.                                   |
-| `@smthrs/jj/browser/WasiFs`       | Yes. Types only, and imports nothing.  |
-| `@smthrs/jj/node/NodeJj`          | No. Imports `node:child_process`.      |
-| `@smthrs/jj/node/resolveJjBinary` | No. Imports `node:fs` and `node:path`. |
-| `@smthrs/jj/bun/BunJj`            | No. Re-exports the Node adapter.       |
+| Entry point                       | Bundles for a browser                                                 |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `@smthrs/jj`                      | Yes. Contract, error, no-op layer, and `Repository` (WebCrypto only). |
+| `@smthrs/jj/browser/BrowserJj`    | Yes.                                                                  |
+| `@smthrs/jj/browser/WasiPreview1` | Yes.                                                                  |
+| `@smthrs/jj/browser/WasiFs`       | Yes. Types only, and imports nothing.                                 |
+| `@smthrs/jj/node/NodeJj`          | No. Imports `node:child_process`.                                     |
+| `@smthrs/jj/node/resolveJjBinary` | No. Imports `node:fs` and `node:path`.                                |
+| `@smthrs/jj/bun/BunJj`            | No. Re-exports the Node adapter.                                      |
 
 Those answers are executed rather than asserted. Every entry point in the table
 is bundled for a browser target and the result is required to match the column:

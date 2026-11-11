@@ -7,7 +7,7 @@
  * `@smthrs/jj`'s memory repository, whose ids `test/Repository.test.ts` pins
  * to ids GitHub answered. A real-GitHub replay lives in `apps/vibelang`.
  */
-import * as Repository from "@smthrs/jj/Repository"
+import { Repository } from "@smthrs/jj"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
