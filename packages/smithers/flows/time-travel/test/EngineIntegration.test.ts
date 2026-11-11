@@ -588,6 +588,156 @@ describe("time travel over an engine-written journal", () => {
       expect(result.remaining).toBeLessThan(result.total)
     }))
 
+  for (const tier of ["compensable", "irreversible"] as const) {
+    for (const position of ["snapshot", "intended", "succeeded"] as const) {
+      for (const inherited of position === "succeeded" ? [false, true] : [false]) {
+        it.effect(
+          inherited
+            ? `preserves an inherited ${tier} crossing rewound to its succeeded record`
+            : `resumes a ${tier} crossing rewound to its ${position} record`,
+          () =>
+            Effect.scoped(
+              Effect.gen(function*() {
+                let executions = 0
+                let reversions = 0
+                let observed: string | undefined
+                const harness: Harness = { notifications: [], jjCalls: [] }
+                const kind = "time-travel/RewoundCrossing"
+                const handlers: ReadonlyArray<CompensationHandlers.Handler> = [{
+                  kind,
+                  tier: "irreversible",
+                  residue: () => "The effect was reverted.",
+                  revert: () =>
+                    Effect.sync(() => {
+                      reversions++
+                      return { reverted: true }
+                    }),
+                  rollback: () => Effect.void
+                }]
+                const replayFlow = Flow.make("time-travel/CrossingReplay", {
+                  payload: {},
+                  success: Schema.String,
+                  body: () => Post.call({})
+                })
+                return yield* Effect.gen(function*() {
+                  const engine = yield* FlowRuntime.FlowRuntime
+                  const target = Action.make({
+                    name: kind,
+                    tier,
+                    success: Schema.String,
+                    idempotencyKey: "rewound-crossing",
+                    execute: Effect.sync(() => `result-${++executions}`)
+                  })
+                  yield* engine.register(replayFlow, () =>
+                    Effect.gen(function*() {
+                      // Give irreversible crossings a retained workspace anchor too.
+                      yield* Action.make({
+                        name: "time-travel/CrossingAnchor",
+                        tier: "compensable",
+                        success: Schema.Void,
+                        idempotencyKey: "crossing-anchor",
+                        execute: Effect.void
+                      })
+                      observed = yield* target
+                      yield* DurableDeferred.await(Settled)
+                      return observed
+                    }))
+                  const runs = yield* RunStore.RunStore
+                  const running = yield* engine.execute(replayFlow, {
+                    executionId: "crossing-replay",
+                    payload: {}
+                  }).pipe(Effect.forkChild)
+                  yield* TestDatabase.until(
+                    runs.get("crossing-replay").pipe(
+                      Effect.option,
+                      Effect.map((row) => Option.isSome(row) && row.value.status === "suspended")
+                    )
+                  )
+                  yield* Fiber.interrupt(running)
+                  expect(executions).toBe(1)
+                  expect(observed).toBe("result-1")
+                  const journal = yield* Journal.Journal
+                  yield* journal.flush
+                  const committed = yield* journal.entries({
+                    runId: "crossing-replay" as JournalEvent.RunId,
+                    limit: 200
+                  })
+                  const boundaries = committed.entries.filter((entry) =>
+                    entry.eventType === EffectBoundary.eventType &&
+                    (entry.payload as { effect: { kind: string } }).effect.kind === kind
+                  )
+                  const intended = boundaries.find((entry) =>
+                    (entry.payload as { effect: { status: string } }).effect.status === "intended"
+                  )!
+                  const succeeded = boundaries.find((entry) =>
+                    (entry.payload as { effect: { status: string } }).effect.status === "succeeded"
+                  )!
+                  const snapshot = committed.entries.filter((entry) =>
+                    entry.eventType === "flows.engine.snapshot-identified" && entry.seq < intended.seq
+                  ).at(-1)!
+                  const frame = {
+                    lineageId: FlowEngine.Lineage.root("crossing-replay"),
+                    seq: { snapshot, intended, succeeded }[position].seq
+                  }
+                  const timeTravel = yield* TimeTravel
+                  const runId = inherited
+                    ? (yield* timeTravel.fork({
+                      runId: "crossing-replay",
+                      frame: { lineageId: frame.lineageId, seq: committed.entries.at(-1)!.seq }
+                    })).runId
+                    : "crossing-replay"
+                  const rewound = yield* timeTravel.rewind({ runId, frame })
+                  const sql = yield* SqlClient.SqlClient
+                  const ref = snapshot.payload as { stepKeyDigest: string; attempt: number }
+                  const reset = yield* sql<{
+                    readonly state: string
+                    readonly meta_json: string
+                    readonly outcome_json: string | null
+                  }>`SELECT state, meta_json, outcome_json FROM flows_attempts
+                WHERE run_id = ${runId} AND step_key_digest = ${ref.stepKeyDigest} AND attempt = ${ref.attempt}`
+                  expect(reset[0]?.state).toBe("running")
+                  expect(JSON.parse(reset[0]!.meta_json).effectCrossing).toBe(
+                    position === "succeeded" ? "succeeded" : undefined
+                  )
+                  expect(reset[0]!.outcome_json).toBe(position === "succeeded" ? "\"result-1\"" : null)
+                  if (inherited) return
+                  if (position !== "succeeded") {
+                    expect(rewound.assessments.some((assessment) => assessment.effect.kind === kind)).toBe(true)
+                    if (tier === "compensable") {
+                      expect(harness.jjCalls.some((call) => call.startsWith("restore:"))).toBe(true)
+                    }
+                  }
+                  expect(reversions).toBe(tier === "irreversible" && position !== "succeeded" ? 1 : 0)
+                  observed = undefined
+                  yield* engine.execute(replayFlow, {
+                    executionId: runId,
+                    payload: {},
+                    discard: true
+                  })
+                  yield* engine.resume(replayFlow, runId)
+                  const expected = position === "succeeded" ? "result-1" : "result-2"
+                  yield* engine.deferredDone(Settled, {
+                    flowName: replayFlow._tag,
+                    executionId: runId,
+                    deferredName: Settled.name,
+                    exit: Exit.succeed("settled")
+                  })
+                  expect(
+                    yield* engine.execute(replayFlow, {
+                      executionId: runId,
+                      payload: {}
+                    })
+                  ).toBe(expected)
+                  expect(executions).toBe(position === "succeeded" ? 1 : 2)
+                  expect(observed).toBe(expected)
+                }).pipe(Effect.provide(engineLayer(harness, handlers)))
+              })
+            )
+        )
+      }
+    }
+  }
+
   it.effect("parks a re-reached deferred after rewinding its completion", () =>
     Effect.gen(function*() {
       const result = yield* drive([], () =>

@@ -1686,3 +1686,95 @@ it.effect("rewind discards attempt results and checkpoints from beyond the frame
       expect(attempts).toEqual([{ state: "running", outcome_json: null, checkpoint_json: null }])
     })
   ))
+
+it.effect("rewind preserves only outcomes explained by a matching retained succeeded crossing", () =>
+  run((store, sql) =>
+    Effect.gen(function*() {
+      yield* insertOwnedRun(sql, "run")
+      const metadata = { effectCrossing: "succeeded", boundary: { snapshot: "anchor" }, keep: true }
+      const outcome = { value: "executable-result" }
+      const samples = [
+        { digest: "retained", attempt: 1, meta: { boundary: { snapshot: "anchor" }, keep: true } },
+        { digest: "retained", attempt: 2, meta: metadata },
+        { digest: "intended", attempt: 1, meta: metadata },
+        { digest: "unknown", attempt: 1, meta: metadata },
+        { digest: "wrong-run", attempt: 1, meta: metadata },
+        { digest: "foreign-event", attempt: 1, meta: metadata },
+        { digest: "foreign-journal", attempt: 1, meta: metadata },
+        { digest: "future", attempt: 1, meta: metadata },
+        { digest: "finished", attempt: 1, meta: metadata },
+        { digest: "null-meta", attempt: 1, meta: null },
+        { digest: "scalar-meta", attempt: 1, meta: "ordinary" },
+        { digest: "plain-meta", attempt: 1, meta: { keep: true } }
+      ]
+      let seq = 0
+      const emit = (eventType: string, payload: unknown) => {
+        const next = seq++
+        return sql`INSERT INTO flows_journal_events
+          (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+          VALUES ('run', ${next}, ${`event-${next}`}, 'source', ${next}, ${next}, ${eventType},
+            ${JSON.stringify(payload)}, '{"lineageId":"run/root"}')`
+      }
+      for (const sample of samples) {
+        yield* emit("flows.engine.attempt-started", { stepKeyDigest: sample.digest, attempt: sample.attempt })
+        yield* sql`INSERT INTO flows_attempts
+          (run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms, heartbeat_at_ms,
+            checkpoint_json, error_json, outcome_json, meta_json)
+          VALUES ('run', ${sample.digest}, ${sample.attempt}, 'succeeded', 0, 100, 100,
+            '{"future":true}', '{"future":true}', ${JSON.stringify(outcome)},
+            ${JSON.stringify(sample.meta)})`
+      }
+      for (const digest of ["retained", "intended", "unknown", "wrong-run", "foreign-event"]) {
+        yield* emit(digest === "foreign-event" ? "unrelated-event" : "flows.time-travel.effect-boundary", {
+          effect: {
+            id: `${digest === "wrong-run" ? "other" : "run"}:${digest}:1`,
+            runId: "run",
+            status: digest === "intended" ? "intended" : digest === "unknown" ? "unknown" : "succeeded",
+            output: { value: "[REDACTED]" }
+          }
+        })
+      }
+      yield* emit("flows.engine.attempt-finished", { stepKeyDigest: "finished", attempt: 1, state: "succeeded" })
+      const frameSeq = seq - 1
+      yield* insertRun(sql, "other")
+      yield* sql`INSERT INTO flows_journal_events
+        (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+        VALUES ('other', 0, 'foreign-boundary', 'source', 0, 0, 'flows.time-travel.effect-boundary',
+          '{"effect":{"id":"run:foreign-journal:1","runId":"run","status":"succeeded"}}', '{}')`
+      yield* emit("flows.time-travel.effect-boundary", {
+        effect: { id: "run:future:1", runId: "run", status: "succeeded" }
+      })
+      yield* store.archiveAndTruncate("run", { lineageId: "run/root", seq: frameSeq }, [], owner)
+      const rows = yield* sql<{
+        readonly step_key_digest: string
+        readonly attempt: number
+        readonly state: string
+        readonly finished_at_ms: number | null
+        readonly heartbeat_at_ms: number | null
+        readonly checkpoint_json: string | null
+        readonly error_json: string | null
+        readonly outcome_json: string | null
+        readonly meta_json: string | null
+      }>`SELECT * FROM flows_attempts WHERE run_id = 'run'`
+      expect(rows).toHaveLength(samples.length)
+      for (const sample of samples) {
+        const row = rows.find((row) => row.step_key_digest === sample.digest && row.attempt === sample.attempt)!
+        const completed = sample.digest === "finished"
+        const crossed = sample.digest === "retained" && sample.attempt === 1
+        expect(row).toMatchObject({
+          state: completed ? "succeeded" : "running",
+          finished_at_ms: completed ? 100 : null,
+          heartbeat_at_ms: completed ? 100 : null,
+          checkpoint_json: completed ? "{\"future\":true}" : null,
+          error_json: completed ? "{\"future\":true}" : null,
+          outcome_json: completed || crossed ? JSON.stringify(outcome) : null
+        })
+        const expectedMeta = crossed ?
+          metadata
+          : completed || sample.meta !== metadata ?
+          sample.meta
+          : { boundary: { snapshot: "anchor" }, keep: true }
+        expect(row.meta_json === null ? null : JSON.parse(row.meta_json)).toEqual(expectedMeta)
+      }
+    })
+  ))

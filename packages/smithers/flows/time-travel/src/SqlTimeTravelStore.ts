@@ -962,14 +962,34 @@ export const make: Effect.Effect<
             WHERE run_id = ${runId}
               AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(survivors)})
           `
-                    // A started attempt may have completed or checkpointed in the
-                    // truncated future. Keep its counter, but only a retained
-                    // completion authorizes its terminal state and result.
+                    // A retained crossing settles from the row's executable
+                    // outcome, even before attempt-finished. Otherwise adoption
+                    // must re-run the reverted body, with no future crossing flag.
                     const completed = yield* attemptsAtFrame(runId, frame, EventTypes.attemptFinished)
+                    const succeededCrossing = sql`EXISTS (
+                      SELECT 1 FROM flows_journal_events AS events
+                      WHERE events.run_id = ${runId} AND events.seq <= ${frame.seq}
+                        AND events.event_type = ${EffectBoundary.eventType}
+                        AND ${Dialect.jsonText(sql, sql`events.payload_json`, "$.effect.status")} = 'succeeded'
+                        AND ${Dialect.jsonText(sql, sql`events.payload_json`, "$.effect.id")} =
+                          ${Dialect.jsonText(sql, sql`events.payload_json`, "$.effect.runId")} || ':' ||
+                          flows_attempts.step_key_digest || ':' || flows_attempts.attempt
+                    )`
+                    // Normal completion replaces the crossing metadata, so
+                    // rebuilding a running row also restores its retained flag.
+                    const succeededCrossingMeta = Dialect.isPostgres(sql)
+                      ? sql`jsonb_set(meta_json::jsonb, '{effectCrossing}', '"succeeded"'::jsonb)::text`
+                      : sql`json_set(meta_json, '$.effectCrossing', 'succeeded')`
+                    const clearedCrossingMeta = Dialect.isPostgres(sql)
+                      ? sql`CASE WHEN jsonb_typeof(meta_json::jsonb) = 'object'
+                          THEN (meta_json::jsonb - 'effectCrossing')::text ELSE meta_json END`
+                      : sql`json_remove(meta_json, '$.effectCrossing')`
                     yield* sql`
                     UPDATE flows_attempts
                     SET state = 'running', finished_at_ms = NULL, heartbeat_at_ms = NULL,
-                        checkpoint_json = NULL, error_json = NULL, outcome_json = NULL
+                        checkpoint_json = NULL, error_json = NULL,
+                        outcome_json = CASE WHEN ${succeededCrossing} THEN outcome_json ELSE NULL END,
+                        meta_json = CASE WHEN ${succeededCrossing} THEN ${succeededCrossingMeta} ELSE ${clearedCrossingMeta} END
                     WHERE run_id = ${runId}
                       AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(completed)})
                   `

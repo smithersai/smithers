@@ -16,6 +16,12 @@ takes only an idle run: `pending`, or `suspended` at a durable wait such as
 `DurableDeferred.await`. A parked run rewinds, and when it resumes, every step
 above the frame runs again.
 
+For a `compensable` or `irreversible` step already started at the frame,
+resumption follows its retained boundary records. Before its `succeeded`
+boundary, the compensated step runs again and produces a new result. At or
+after that boundary, the engine keeps the recorded result and settles the
+step without repeating its body, even if `attempt-finished` was above the frame.
+
 A finished run (`completed`, `failed`, or `cancelled`) is never idle again, and
 a rewind refuses it with `TimeTravelError` code `busy`:
 `run <id> is not available for rewind`. Fork it instead. A fork copies the
