@@ -1,0 +1,123 @@
+// The vl-test stage's probe Worker body (worker/sandboxProbeFetch.vibe, 0024) over the product's account and machine
+// objects, SQLite storage and a container whose commands are local processes (fuzz/machine-box.ts). Faults come from the
+// box and from an account binding that throws; nothing intercepts a request. The Alchemy binding (SandboxProbe.vibe)
+// runs only in the vl-test stage.
+import { it } from "@effect/vitest"
+import { RuntimeContext } from "alchemy"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { accountObject, gatewayOf } from "../worker/accountObject.vibe"
+import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
+import { deadlineOf, leaseClamped, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
+import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { run, Int } from "./run.vibe"
+
+const TOKEN = "probe-token-for-fuzz"
+const FAULTS = ["start", "stuck", "snapshot", "destroy", "running"] as const satisfies ReadonlyArray<BoxFault>
+const Input = Schema.Struct({
+  prefix: Schema.Boolean,
+  configured: Schema.Boolean,
+  steps: Schema.Array(Schema.Struct({
+    kind: Schema.Literals(["sweep", "start", "read", "stop", "alarm", "lease", "other"]),
+    get: Schema.Boolean,
+    token: Schema.Literals(["right", "wrong", "blank", "none"]),
+    owner: Schema.Literals(["live", "past", "beyond", "person", "none"]),
+    binding: Schema.Boolean,
+    faulty: Schema.Boolean,
+    fault: Int,
+  })).check(Schema.isMaxLength(10)),
+})
+type Step = typeof Input.Type["steps"][number]
+
+function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
+  return { raw: { storage }, id: { toString: () => id } } as unknown as ObjectState
+}
+const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope)) => Effect.provideService(body, RuntimeContext, {} as never)
+
+/** The probe answers 404 off its two routes, 403 without the token, 400 for a non-probe owner and 503 when an object is
+ * unreachable; a sweep that answers "not running" has stopped the container; only an admitted owner starts one, and
+ * no lease outlives that owner's deadline. */
+it.live("sandbox/probe", () => run("sandbox/probe", Input, (input) => provided(effect {
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const machineStorage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(machineStorage, "m"))
+  // A stage deployed without its token refuses every request as signed out.
+  const token = input.configured ? TOKEN : ""
+  const identity = probeIdentity(token)
+  let healthy = true
+  const machines = try Effect.try(() => namespaceOf(() => true, machine))
+  const account = try accountObject(stateOf(try Effect.try(() => objectStorage()), "a"), leaseClamped(machines) as never, identity)
+  const accounts = try Effect.try(() => namespaceOf(() => healthy, account))
+  const { gateway } = gatewayOf(accounts as never, identity)
+  const fetch = probeFetch(token, gateway, accounts, machines)
+  const now = Date.now()
+  const deadline = now + 60_000
+  const owners = { live: probeOwner(deadline), past: probeOwner(now - 1), beyond: probeOwner(now + PROBE_WINDOW_MS + 60_000), person: "person-1", none: undefined }
+  const clean = { binding: true, faulty: false, fault: 0, get: false, token: "right" as const, owner: "live" as const }
+  const lifecycle: ReadonlyArray<Step> = input.prefix ? [
+    { ...clean, kind: "start" }, { ...clean, kind: "alarm" }, { ...clean, kind: "sweep" }, { ...clean, kind: "sweep" }, { ...clean, kind: "sweep", binding: false },
+    { ...clean, kind: "sweep", owner: "none" }, { ...clean, kind: "lease", owner: "person" },
+  ] : []
+  let generation = 0
+  let operation = 0
+  for (const step of [...lifecycle, ...input.steps]) {
+    healthy = step.binding
+    local.faults.clear()
+    if (step.faulty) local.faults.add(FAULTS[step.fault % FAULTS.length]!)
+    if (step.kind === "alarm") {
+      try account.alarm()
+      continue
+    }
+    if (step.kind === "lease") {
+      // The clamp serves any machine name: one without a probe deadline gets machineObject's one-second floor.
+      const holder = step.owner === "live" || step.owner === "past" ? owners[step.owner] : step.owner === "person" ? "person-1" : "bare"
+      try leaseClamped(machines as never).getByName(`${holder}/${PROBE_CONVERSATION}`).apply("lease", generation, `lease-${++operation}`, String((step.fault + 1) * 3_600_000))
+      const leased = (machineStorage.kv.get("machine") as { readonly leaseUntil?: number } | undefined)?.leaseUntil
+      if (leased !== undefined && leased > Math.max(deadlineOf(holder) ?? 0, deadline, Date.now() + 1000) + 50) return false
+      continue
+    }
+    const path = step.kind === "sweep" ? "/api/probe/sweep" : step.kind === "other" ? "/api/health"
+      : step.kind === "read" ? `/api/sandboxes/${PROBE_CONVERSATION}` : `/api/sandboxes/${PROBE_CONVERSATION}/${step.kind}`
+    let request = HttpClientRequest.make(step.get ? "GET" : "POST")(`https://probe.invalid${path}`)
+    if (step.token !== "none") request = HttpClientRequest.setHeader(request, "authorization", `Bearer ${step.token === "right" ? TOKEN : step.token === "wrong" ? "guess" : ""}`)
+    const owner = owners[step.owner]
+    if (owner !== undefined) request = HttpClientRequest.setHeader(request, OWNER_HEADER, owner)
+    if (!step.get && step.kind !== "sweep") request = HttpClientRequest.bodyText(request, JSON.stringify({ operationId: `op-${++operation}`, generation }), "application/json")
+    const startsBefore = local.state.starts
+    const web = try HttpClientRequest.toWeb(request)
+    let response: HttpServerResponse.HttpServerResponse
+    provide HttpServerRequest.HttpServerRequest = HttpServerRequest.fromWeb(web) {
+      response = try fetch
+    }
+    const text = try promise(() => HttpServerResponse.toWeb(response).text())
+    const body = try Effect.orDie(Effect.try(() => JSON.parse(text) as Record<string, unknown>))
+    const admitted = input.configured && step.token === "right" && step.owner === "live"
+    if (step.kind === "other" || (step.kind === "sweep" && step.get) || (step.kind === "read" && !step.get)) {
+      if (response.status !== 404) return false
+      continue
+    }
+    if (step.kind === "sweep") {
+      const expected = !input.configured || step.token !== "right" ? 403 : owner === undefined || step.owner === "person" ? 400 : healthy ? 200 : 503
+      if (response.status !== expected) return false
+      // "Not running" is the container's own state, never the ledger's hope.
+      if (response.status === 200 && body["running"] === false && local.state.running) return false
+      continue
+    }
+    if (step.get && step.kind !== "read") {
+      if (response.status !== 404) return false
+      continue
+    }
+    // The sandbox protocol: a principal other than the admitted probe owner is signed out and starts nothing.
+    if (!admitted && local.state.starts !== startsBefore) return false
+    // A signed-out read is the empty snapshot and a signed-out write is refused, both before any object is reached.
+    if (!admitted && response.status !== (step.kind === "read" ? 200 : 403)) return false
+    if (admitted && !healthy && response.status !== 503) return false
+    if (admitted && healthy && !step.faulty && step.kind === "start" && (response.status !== 200 || body["status"] !== "running")) return false
+    if (typeof body["generation"] === "number") generation = body["generation"]
+    // No lease outlives the owner's deadline, beyond machineObject's one-second floor.
+    const leased = (machineStorage.kv.get("machine") as { readonly leaseUntil?: number } | undefined)?.leaseUntil
+    if (leased !== undefined && leased > Math.max(deadline, Date.now() + 1000) + 50) return false
+  }
+  return true
+})))
+

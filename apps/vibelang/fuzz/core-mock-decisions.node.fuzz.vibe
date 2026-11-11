@@ -1,0 +1,33 @@
+// The mock factory's verified decisions (src/core/mockFactoryDecision.vibe) on arbitrary arguments, each held to its
+// `//@ ensures` contract. The mock calls them only with what its rooms hold, so only arbitrary input reaches every arm.
+import { it } from "@effect/vitest"
+import { actorKey, actorKind, afterCursor, draftOutcome, fixtureLogin, liveEvent, replayedTo, replyKind, restoredCounter, selfGrant } from "../src/core/mockFactoryDecision.vibe"
+import { run, Int } from "./run.vibe"
+
+const Word = Schema.Literals(["", "1", "2", "new", "forbidden", "failed", "maintainer", "1/person"])
+const Input = Schema.Struct({
+  flags: Schema.Array(Schema.Boolean).check(Schema.isMinLength(5), Schema.isMaxLength(5)),
+  a: Int, b: Int, c: Int, same: Schema.Boolean, word: Word, other: Word,
+})
+
+it.live("decisions/mock-factory", () => run("decisions/mock-factory", Input, (input) => {
+  const [review, wiki, issue, sandbox, history] = input.flags as unknown as readonly [boolean, boolean, boolean, boolean, boolean]
+  const kind = replyKind(review, wiki, issue, sandbox, history)
+  if (kind !== (review ? "specification" : wiki ? "wiki" : issue ? "issue" : sandbox ? "sandbox" : history ? "history" : "script")) return false
+  const outcome = draftOutcome(review, input.word)
+  if (outcome !== (!review ? "drafted" : input.word === "forbidden" ? "forbidden" : "failed")) return false
+  if (actorKind(wiki) !== (wiki ? "agent" : "person")) return false
+  // A person and their device sign-in never share a journal, and two ids never do.
+  const key = actorKey(input.word, wiki)
+  if (key !== `${input.word}/${wiki ? "agent" : "person"}` || key === actorKey(input.word, !wiki) || (input.other !== input.word && key === actorKey(input.other, wiki))) return false
+  const restored = restoredCounter(input.a, input.b)
+  if (restored < input.a || restored < input.b || (restored !== input.a && restored !== input.b)) return false
+  if (afterCursor(input.a, input.b) !== input.a > input.b) return false
+  const count = input.same ? 0 : input.c
+  if (replayedTo(input.a, count, input.b) !== (count === 0 ? input.a : input.b)) return false
+  const live = liveEvent(input.same, input.a, input.b)
+  if (live !== (input.same && input.a > input.b) || (live && !afterCursor(input.a, input.b))) return false
+  const target = issue ? input.word : input.other
+  if (selfGrant(input.word, target) !== (input.word !== "" && input.word === target)) return false
+  return fixtureLogin(input.word, input.other) === (input.word === "new" ? "joss" : input.word) + input.other
+}))

@@ -34,6 +34,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
 | [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
+| [0015 the rest of the server](decisions/0015-fuzzing.md#lane-vl-fuzz2-the-rest-of-the-server-2026-11-10) | Lane vl-fuzz2: worker and core files held to their contracts, the probe Worker, wiki links |
 | [0015 surfaces, history and actions](decisions/0015-fuzzing.md#lane-vl-fuzz3-surfaces-history-and-actions-2026-11-10) | Lane vl-fuzz3: steered targets for the CLI, MCP and sign-in, the mythical history's sequencer and machines, and registered actions |
 | [0016](decisions/0016-coverage.md) | Boundary tests, strict opt-in source gates and independent suite measurements |
 | [0016 browser gate scope](decisions/0016-coverage.md#browser-gate-scope-the-leads-call-2026-11-10) | The browser gate counts `src/web` and what the bundle ships; unit and workerd gates keep every file (lane vl-coverage) |

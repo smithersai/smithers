@@ -932,3 +932,26 @@ vl-fuzz3's two whole-suite runs at `90f526f0` failed `screens/issues-view-names-
 
 Neither target is flaky: each failure reproduces from its seed on its tree and is gone on current `main`.
 
+## Lane vl-fuzz2: the rest of the server, 2026-11-10
+
+Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
+`worker/apiObjects.vibe`, the drafts) and vl-fuzz3's (`src/surfaces`, `src/history`, `src/actions`). The full
+`pnpm fuzz:coverage` on `45f23a98` left 54 of these files below 100% of lines or branches; the lane report on nyc-01
+lists them.
+
+The verified decision modules are fuzzed on arbitrary arguments, lawful or not, and held to their own `//@ ensures`
+clauses, written again in each oracle rather than read from the body: the emitted JavaScript must be the proved model.
+Product flows call them only in lawful order, so only arbitrary input reaches the guards that leave a state unchanged.
+
+| Target | Exercises |
+| --- | --- |
+| `sandbox/probe` | The vl-test probe Worker's body (`worker/sandboxProbeFetch.vibe`) over the product's account and machine objects, SQLite storage and a container of local processes: routes, token (right, wrong, blank, none, or a stage deployed without one), owner (inside the window, expired, beyond it, not a probe owner, none), an account binding that throws, box faults, alarms, and direct leases through the clamp. Oracles: 404 off its two routes, 403 without the token, 400 for a non-probe owner, 503 for an unreachable object; a signed-out read is the empty snapshot and a signed-out write is refused before any object; only the admitted owner starts a container; "not running" is the container's own state; no lease outlives the owner's deadline beyond the one-second floor |
+| `wiki/links` | `wikiLink` against WHATWG URL resolution of the same link under its page's path: absolute links pass through; a link inside the wiki names a known page or its index under `/wiki/`, else its source file; one that climbs out keeps its `..` in the repository URL |
+| `decisions/reply-run`, `decisions/tour-run` | The reply and tour state machines (`flowDecision.vibe`) from a fresh or an arbitrary run, any order of steps: each keeps a lawful run lawful, leaves a run it cannot act on unchanged, and moves its counters as proved |
+| `decisions/flow-helpers` | `appends`, `endsTourEvent`, `startAnswer`, `readingHold` (to 2^32 - 1 words), `firstUndispatched`, the tour counters and choices |
+| `decisions/mock-factory` | `mockFactoryDecision.vibe`'s ten decisions, including the journal key's separation of a person and their device |
+| `conversation/sequences` (extended) | `replayDecision.vibe`: each intent's record equals decide and apply, the log's replay equals the live conversation, the specification fold agrees, and a conversation at the cursor's capacity, or below zero, takes no step |
+
+`leaseFor`'s `id.split("/")[0] ?? ""` had an arm no input reaches (`split` returns at least one element); it is
+`split("/")[0]!` now. Findings so far: two oracle errors, fixed in the targets (a signed-out read answers the empty
+snapshot, not 503; a link climbing to `..` ends in `/..`). No product bug.

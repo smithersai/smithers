@@ -1,0 +1,41 @@
+// The wiki's link rule (src/core/wikiLinks.vibe), shared by the cold wiki build and the pane's edited pages, held to
+// WHATWG URL resolution of the same relative link against its page's own path.
+import { it } from "@effect/vitest"
+import { wikiLink } from "../src/core/wikiLinks.vibe"
+import { run } from "./run.vibe"
+
+const IDS = ["index", "rulings", "a/index", "a/b", "decisions/0001-x", "designs/index", "x.md"]
+const FROM = ["index", "a/b", "a/index", "decisions/0001-x", "deep/er/page"]
+const SEGMENTS = ["a", "b", "index", "decisions", "designs", ".", "..", "b.md", "x.md", "rulings", "missing"]
+const ABSOLUTE = ["https://example.com/a", "http://example.com", "#top", "/wiki/index", "/"]
+const REPOSITORY = "https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/"
+const Input = Schema.Struct({
+  from: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: FROM.length - 1 })),
+  absolute: Schema.Union([Schema.Null, Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: ABSOLUTE.length - 1 }))]),
+  segments: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: SEGMENTS.length - 1 }))).check(Schema.isMinLength(1), Schema.isMaxLength(6)),
+  slash: Schema.Boolean,
+  hash: Schema.Literals(["none", "empty", "part"]),
+  known: Schema.Boolean,
+})
+
+/** Absolute links pass through; a relative one names a known page (or its index) under /wiki/, else the source file. */
+it.live("wiki/links", () => run("wiki/links", Input, (input) => {
+  const ids = input.known ? IDS : []
+  const fromId = FROM[input.from]!
+  if (input.absolute !== null) return wikiLink(fromId, ABSOLUTE[input.absolute]!, ids) === ABSOLUTE[input.absolute]
+  const relative = input.segments.map((index) => SEGMENTS[index]!).join("/") + (input.slash ? "/" : "")
+  const hash = input.hash === "part" ? "sec-1" : ""
+  const href = relative + (input.hash === "none" ? "" : `#${hash}`)
+  const link = wikiLink(fromId, href, ids)
+  const suffix = hash === "" ? "" : `#${hash}`
+  // Three directories above the wiki root show a link that climbs out of it.
+  const root = "/r1/r2/r3/"
+  const resolved = new URL(relative, `https://wiki.invalid${root}${fromId}`).pathname
+  // GitHub resolves the kept ".." segments of the repository URL, outside the wiki directory.
+  if (!resolved.startsWith(root)) return link.startsWith(REPOSITORY) && link.endsWith(suffix) && link.slice(REPOSITORY.length).split("#")[0]!.split("/").includes("..")
+  const path = resolved.slice(root.length).replace(/\/$/, "")
+  const target = path.replace(/\.md$/, "")
+  const page = ids.includes(target) ? target : ids.includes(`${target}/index`) ? `${target}/index` : target
+  const expected = ids.includes(page) || page === "decisions" || page === "designs" ? `/wiki/${page}${suffix}` : `${REPOSITORY}${path}${suffix}`
+  return link === expected
+}))

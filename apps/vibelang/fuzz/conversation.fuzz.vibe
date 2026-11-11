@@ -3,6 +3,7 @@ import { Fuzz } from "@smthrs/fuzz"
 import * as M from "../src/core/conversation.vibe"
 import * as Decide from "../src/core/decide.vibe"
 import { EventSchema, RefusalReason } from "../src/core/schemas.vibe"
+import { conversationStep, recordedConversation, replayedLog, replayedLogPrefix, replayLog } from "../src/core/replayDecision.vibe"
 import { Int, run, same, Steps } from "./run.vibe"
 
 /** The proved invariants, checked after each transition rather than just at the end. */
@@ -50,6 +51,10 @@ it.live("conversation/sequences", () => run("conversation/sequences", Steps, (st
     if (command.type === "Post") client = M.post(client, command.clientId, command.text)
     const result = Decide.decide(state, command)
     try Fuzz.observe(result.ok ? `accepted/${result.event.type}` : `refused/${result.refusal}`)
+    // The sequencer's record step (replayDecision.vibe): the same decision, and the replay of the log it extends.
+    const recorded = recordedConversation(M.empty, state, events, command)
+    if (recorded.decision.ok !== result.ok) return false
+    if (!result.ok ? recorded.conversation !== state || recorded.log !== events : recorded.log.length !== events.length + 1 || !same(recorded.conversation, replayedLog(M.empty, recorded.log, recorded.log.length))) return false
     if (!result.ok) {
       if (!["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden", "full"].includes(result.refusal)) return false
       if (command.type === "Post") {
@@ -73,6 +78,12 @@ it.live("conversation/sequences", () => run("conversation/sequences", Steps, (st
     if (M.receive(client, event) !== client) return false
     if (!same(client.conversation, state)) return false
   }
+  // Replay: the loaded conversation is the left fold of its log, the specification's fold agrees on every prefix, and a
+  // conversation at the cursor's capacity takes no further step.
+  if (!same(replayLog(M.empty, events), state) || !same(replayedLog(M.empty, events, events.length), state) || !replayedLogPrefix(M.empty, events, [...events], events.length)) return false
+  const full = { ...state, seq: Number.MAX_SAFE_INTEGER }
+  const below = { ...state, seq: -1 }
+  if (events.length > 0 && (conversationStep(full, events[0]!) !== full || conversationStep(below, events[0]!) !== below || !same(conversationStep(M.empty, events[0]!), M.apply(M.empty, events[0]!)))) return false
   return same(events.reduce(M.apply, M.empty), state) && new Set(client.pending.map((p) => p.clientId)).size === client.pending.length
 }))
 

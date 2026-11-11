@@ -1,0 +1,123 @@
+// The reply and tour state machines (src/core/flowDecision.vibe) on arbitrary runs, lawful or not, held to their
+// verified contracts (the `//@ ensures` clauses beside each function): the emitted JavaScript must be the proved model.
+// Product flows call these only in lawful order, so only arbitrary runs reach the guards that leave a run unchanged.
+import { it } from "@effect/vitest"
+import {
+  appends, beginReply, beginReplyComposition, beginTourBody, canComposeReply, canSettleReply, canSpeakTour, endsTourEvent,
+  finishReplyComposition, finishTourSpeech, firstTourVisit, firstUndispatched, nextTourCounter, nextTourStep, observeTourActivity,
+  readingHold, recordReplySettlement, recordReplyStart, replyLawful, startAnswer, startTourSpeech, tourControlChoice, tourLawful,
+  tourWait, type ReplyRun, type TourRun,
+} from "../src/core/flowDecision.vibe"
+import { run, Int } from "./run.vibe"
+
+const Count = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 }))
+const Answer = Schema.Literals(["", "done", "busy"])
+const Reply = Schema.Struct({ phase: Schema.Literals(["begun", "started", "refused", "composing", "ready", "settled"]), starts: Count, compositions: Count, settlements: Count, answer: Answer })
+const Tour = Schema.Struct({ phase: Schema.Literals(["begun", "ready", "inactive", "speaking", "finished", "ended"]), speakers: Count, outcome: Schema.Literals(["", "finished", "ended"]) })
+const ReplyInput = Schema.Struct({ lawful: Schema.Boolean, run: Reply, ops: Schema.Array(Schema.Struct({ op: Schema.Literals(["start", "compose", "finish", "settle"]), answer: Answer })).check(Schema.isMaxLength(8)) })
+const TourInput = Schema.Struct({ lawful: Schema.Boolean, run: Tour, ops: Schema.Array(Schema.Struct({ op: Schema.Literals(["observe", "speak", "finish"]), flag: Schema.Boolean })).check(Schema.isMaxLength(8)) })
+
+const sameReply = (a: ReplyRun, b: ReplyRun) => a.phase === b.phase && a.starts === b.starts && a.compositions === b.compositions && a.settlements === b.settlements && a.answer === b.answer
+const sameTour = (a: TourRun, b: TourRun) => a.phase === b.phase && a.speakers === b.speakers && a.outcome === b.outcome
+/** replyLawful's contract, written from its `ensures`, not from its body. */
+const replySpec = (r: ReplyRun) => (r.phase === "begun" && r.starts === 0 && r.compositions === 0 && r.settlements === 0 && r.answer === "")
+  || (r.phase === "refused" && r.starts === 1 && r.compositions === 0 && r.settlements === 0 && r.answer !== "done")
+  || (r.phase === "started" && r.starts === 1 && r.compositions === 0 && r.settlements === 0 && r.answer === "done")
+  || ((r.phase === "composing" || r.phase === "ready") && r.starts === 1 && r.compositions === 1 && r.settlements === 0 && r.answer === "done")
+  || (r.phase === "settled" && r.starts === 1 && r.compositions === 1 && r.settlements === 1 && r.answer === "done")
+const tourSpec = (t: TourRun) => ((t.phase === "begun" || t.phase === "ready" || t.phase === "inactive") && t.speakers === 0 && t.outcome === "")
+  || (t.phase === "speaking" && t.speakers === 1 && t.outcome === "")
+  || (t.phase === "finished" && t.speakers === 1 && t.outcome === "finished")
+  || (t.phase === "ended" && t.speakers === 1 && t.outcome === "ended")
+
+/** Each reply step keeps a lawful run lawful, leaves a run it cannot act on unchanged, and moves its counters as proved. */
+it.live("decisions/reply-run", () => run("decisions/reply-run", ReplyInput, (input) => {
+  let current: ReplyRun = input.lawful ? beginReply() : input.run
+  if (input.lawful && !(sameReply(current, { phase: "begun", starts: 0, compositions: 0, settlements: 0, answer: "" }) && replyLawful(current))) return false
+  for (const step of input.ops) {
+    if (replyLawful(current) !== replySpec(current)) return false
+    const composable = current.phase === "started" && current.starts === 1 && current.compositions === 0 && current.settlements === 0 && current.answer === "done"
+    const settleable = current.phase === "ready" && current.starts === 1 && current.compositions === 1 && current.settlements === 0 && current.answer === "done"
+    if (canComposeReply(current) !== composable || canSettleReply(current) !== settleable) return false
+    const before = current
+    const next = step.op === "start" ? recordReplyStart(before, step.answer) : step.op === "compose" ? beginReplyComposition(before)
+      : step.op === "finish" ? finishReplyComposition(before) : recordReplySettlement(before)
+    if (replySpec(before) && !replySpec(next)) return false
+    if (step.op === "start") {
+      if (before.phase !== "begun" ? !sameReply(next, before)
+        : !(next.starts === 1 && next.compositions === 0 && next.settlements === 0 && next.answer === step.answer && next.phase === (step.answer === "done" ? "started" : "refused"))) return false
+    } else if (step.op === "compose") {
+      if (!composable ? !sameReply(next, before) : !(next.phase === "composing" && next.compositions === 1)) return false
+      if (next.starts !== before.starts || next.settlements !== before.settlements || next.answer !== before.answer) return false
+    } else if (step.op === "finish") {
+      if (before.phase !== "composing" ? !sameReply(next, before) : next.phase !== "ready") return false
+      if (next.starts !== before.starts || next.compositions !== before.compositions || next.settlements !== before.settlements || next.answer !== before.answer) return false
+    } else {
+      if (!settleable ? !sameReply(next, before) : !(next.phase === "settled" && next.settlements === 1)) return false
+      if (next.starts !== before.starts || next.compositions !== before.compositions || next.answer !== before.answer) return false
+    }
+    current = next
+  }
+  return replyLawful(current) === replySpec(current)
+}))
+
+/** Each tour step keeps a lawful run lawful, admits one speaker after an active observation, and ends as proved. */
+it.live("decisions/tour-run", () => run("decisions/tour-run", TourInput, (input) => {
+  let current: TourRun = input.lawful ? beginTourBody() : input.run
+  if (input.lawful && !(sameTour(current, { phase: "begun", speakers: 0, outcome: "" }) && tourLawful(current))) return false
+  for (const step of input.ops) {
+    if (tourLawful(current) !== tourSpec(current)) return false
+    const speakable = current.phase === "ready" && current.speakers === 0 && current.outcome === ""
+    if (canSpeakTour(current) !== speakable) return false
+    const before = current
+    const next = step.op === "observe" ? observeTourActivity(before, step.flag) : step.op === "speak" ? startTourSpeech(before) : finishTourSpeech(before, step.flag)
+    if (tourSpec(before) && !tourSpec(next)) return false
+    if (step.op === "observe") {
+      if (before.phase !== "begun" ? !sameTour(next, before) : !(next.speakers === 0 && next.outcome === "" && next.phase === (step.flag ? "ready" : "inactive"))) return false
+    } else if (step.op === "speak") {
+      if (!speakable ? !sameTour(next, before) : !(next.phase === "speaking" && next.speakers === 1)) return false
+      if (next.outcome !== before.outcome) return false
+    } else {
+      const ended = step.flag
+      if (before.phase !== "speaking" ? !sameTour(next, before) : !(next.phase === (ended ? "ended" : "finished") && next.outcome === (ended ? "ended" : "finished"))) return false
+      if (next.speakers !== before.speakers) return false
+    }
+    current = next
+  }
+  return tourLawful(current) === tourSpec(current)
+}))
+
+const KINDS = ["TourEnded", "ReplyFinished", "ReplyFailed", "TourStarted", ""] as const
+const SmallInput = Schema.Struct({
+  a: Int, b: Int, c: Int, d: Int, flag: Schema.Boolean, other: Schema.Boolean, text: Schema.Literals(["", "x", "two words"]),
+  kind: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: KINDS.length - 1 })), word: Schema.Literals(["", "busy", "refused", "x"]),
+  words: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4294967295 })),
+})
+/** The small flow helpers, each against its contract. */
+it.live("decisions/flow-helpers", () => run("decisions/flow-helpers", SmallInput, (input) => {
+  const counter = [0n, 1n, 41n, 2n ** 64n][input.a % 4]!
+  if (nextTourCounter(counter) !== counter + 1n || firstTourVisit(counter) !== (counter === 0n)) return false
+  if (tourWait(input.flag) !== (input.flag ? "control" : "race")) return false
+  const target = input.other ? input.word : ""
+  const choice = tourControlChoice(input.a, target, input.b)
+  if (target === "" ? !(choice.action === "seek" && choice.step === input.b) : !(choice.action === "wait" && choice.step === input.a)) return false
+  if (nextTourStep(input.c) !== input.c + 1) return false
+  const posts = Array.from({ length: input.d % 6 }, (_, index) => `p${index % 4}`)
+  const dispatched = new Set(posts.filter((_, index) => ((input.b >> index) & 1) === 1))
+  const first = firstUndispatched(posts, dispatched)
+  if (!(first >= 0 && first <= posts.length) || (first < posts.length && dispatched.has(posts[first]!)) || posts.slice(0, first).some((post) => !dispatched.has(post))) return false
+  const words = input.flag ? input.a : input.words
+  const hold = readingHold(words)
+  if (hold < 4000 || hold > 1288490189500 || hold !== (words <= 10 ? 4000 : words * 300 + 1000)) return false
+  const accepted = input.flag && input.other
+  const already = (input.c & 1) === 1
+  const answer = startAnswer(accepted, already, input.word)
+  if (answer !== (accepted || already ? "done" : input.word === "busy" ? "busy" : "refused")) return false
+  // Equal operands come from one draw, so each conjunct of appends and endsTourEvent is reached alone.
+  const attempt = input.other ? input.a : input.b
+  const offset = (input.c & 2) === 2 ? input.d : input.c
+  if (appends(input.a, attempt, input.d, offset, input.text) !== (attempt === input.a && offset === input.d && input.text !== "")) return false
+  const id = input.other ? input.word : input.text
+  const kind = KINDS[input.kind]!
+  return endsTourEvent(kind, id, input.word) === (id === input.word && (kind === "TourEnded" || kind === "ReplyFinished" || kind === "ReplyFailed"))
+}))
