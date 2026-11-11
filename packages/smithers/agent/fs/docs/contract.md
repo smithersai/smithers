@@ -27,8 +27,9 @@ An invocation follows this order:
 Missing schema services, parse failures, validation failures, and defects are
 all converted to sanitized `FsError` values. Raw arguments, input values,
 output values, and implementation causes are never retained in those errors.
-Incur maps invoker defects, synchronous throws, and non-`FsError` failures to
-`invocation_unavailable` with the fixed message `The flow invocation failed`.
+Incur and `CommandSurface.execute` and `call` map invoker defects, synchronous
+throws, and non-`FsError` failures to `invocation_unavailable` with the fixed
+message `The flow invocation failed`.
 Deliberately public typed `FsError` failures keep their code and description.
 Interruption remains interruption. Original unexpected causes go only to the
 host's Effect debug logger; built-in console logging uses stderr. Custom

@@ -2,6 +2,7 @@ import { throwingProxy } from "./modules.ts"
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import * as Command from "../src/Command.vibe"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
+import { FsError } from "../src/FsError.vibe"
 import * as CommandLine from "../src/internal/CommandLine.vibe"
 import * as SchemaBridge from "../src/internal/SchemaBridge.vibe"
 import * as Route from "../src/Route.vibe"
@@ -350,6 +351,62 @@ describe("Command.call decoded boundary", () => {
       expect(error).toMatchObject({ code: "decode_failed", method: "Command.call" })
       expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
     }
+  })
+
+  describe.each(["execute", "call"] as const)("%s invocation boundary", (method) => {
+    const run = (surface: Command.CommandSurface) =>
+      method === "execute" ? surface.execute("scalar 1") : surface.call("scalar", 1)
+
+    it.effect.each(["die", "throw", "failure"])("sanitizes an invoker %s", effect (kind) => {
+      const sentinel = "SECRET_SENTINEL_credential_from_backend"
+      const invoke: FlowInvoker.FlowInvoker.Shape["invoke"] = kind === "throw"
+        // A plain function that throws instead of returning a program.
+        ? try sync(() => (): never => {
+          $raise(new Error(sentinel))
+        })
+        : kind === "die"
+        ? () => die(new Error(sentinel))
+        // A JavaScript host can violate the service's typed failure contract.
+        : (effect (): never!Error => {
+          // @vibelang-diagnostics-next-line EK4804:off
+          throw new Error(sentinel)
+        }) as unknown as FlowInvoker.FlowInvoker.Shape["invoke"]
+      const surface = try surfaceFor(Schema.Number, Schema.Number)
+      provide FlowInvoker.layerNoop({ invoke }) {
+        const error = try failureOf(run(surface))
+        expect(error).toMatchObject({
+          code: "invocation_unavailable",
+          method: `Command.${method}`,
+          description: "The flow invocation failed"
+        })
+        expect(JSON.stringify(error)).not.toContain(sentinel)
+      }
+    })
+
+    it.effect("preserves interruption with a concurrent defect", effect () => {
+      const sentinel = "SECRET_SENTINEL_interrupted_backend"
+      const surface = try surfaceFor(Schema.Number, Schema.Number)
+      provide FlowInvoker.layerNoop({
+        invoke: () =>
+          Effect.failCause(Cause.fromReasons<never>([
+            ...Cause.interrupt().reasons,
+            ...Cause.die(new Error(sentinel)).reasons
+          ]))
+      }) {
+        const outcome = try exit(run(surface))
+        if (!(outcome is Exit.Failure(let cause))) return try sync(() => expect.unreachable())
+        expect(cause.reasons.every(Cause.isInterruptReason)).toBe(true)
+        expect(cause.reasons).not.toHaveLength(0)
+      }
+    })
+
+    it.effect("preserves deliberately public typed failures", effect () => {
+      const surface = try surfaceFor(Schema.Number, Schema.Number)
+      const refusal = new FsError({ code: "invocation_unavailable", method: "test.invoke", description: "Public refusal" })
+      provide FlowInvoker.layerNoop({ invoke: () => fail(refusal) }) {
+        expect(try failureOf(run(surface))).toBe(refusal)
+      }
+    })
   })
 })
 

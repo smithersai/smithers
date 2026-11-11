@@ -10,6 +10,7 @@ import * as FlowInvoker from "./FlowInvoker.vibe"
 import { FsError } from "./FsError.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 import * as CommandLine from "./internal/CommandLine.vibe"
+import * as Invocation from "./internal/Invocation.vibe"
 import * as SchemaBridge from "./internal/SchemaBridge.vibe"
 import * as Route from "./Route.vibe"
 
@@ -123,8 +124,12 @@ export effect function make(routes: ReadonlyArray<Route.Route>): CommandSurface!
     return Object.freeze({ route: resolved.route, flow, argv, input })
   }
 
-  const invoke = effect (route: Route.Route, flow: Loaded, input: unknown) =>
-    try (try FlowInvoker.FlowInvoker).invoke(Object.freeze({ name: route.name, flow, input }))
+  const invoke = (method: "Command.execute" | "Command.call", route: Route.Route, flow: Loaded, input: unknown) =>
+    Invocation.sanitize(
+      effect { return try (try FlowInvoker.FlowInvoker).invoke(Object.freeze({ name: route.name, flow, input })) },
+      method,
+      `${method} invocation failed`
+    )
 
   const listed = Object.freeze(
     CommandTree.traverse(tree).map((route) =>
@@ -144,7 +149,7 @@ export effect function make(routes: ReadonlyArray<Route.Route>): CommandSurface!
     execute: (commandString) =>
       withSpan(effect {
         const { flow, input, route } = try prepare(commandString)
-        return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
+        return try SchemaBridge.encodeOutput(flow.output, try invoke("Command.execute", route, flow, input))
       }, "Command.execute"),
     call: <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
       withSpan(effect {
@@ -153,7 +158,7 @@ export effect function make(routes: ReadonlyArray<Route.Route>): CommandSurface!
         const route = try CommandTree.resolveExact(tree, segments)
         const flow = try Route.load(route)
         const decoded = try validateDecoded(flow.input, input, "input")
-        const output = try invoke(route, flow, decoded)
+        const output = try invoke("Command.call", route, flow, decoded)
         return try validateDecoded(flow.output, output, "output") as Route.Output<N>
       }, "Command.call")
   }

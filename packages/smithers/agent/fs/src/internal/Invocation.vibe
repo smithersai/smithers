@@ -1,0 +1,35 @@
+/**
+ * Settles a flow invocation behind the public `FsError` boundary.
+ *
+ * @private
+ * @since 0.1.0
+ */
+
+import { FsError } from "../FsError.vibe"
+
+/**
+ * Runs an invocation program and keeps its private causes out of the result.
+ *
+ * Deliberately public typed `FsError` failures pass through unchanged and
+ * interruption stays interruption. Defects, synchronous throws, and foreign
+ * failures go only to the debug logger and become a fixed
+ * `invocation_unavailable` failure for `method`.
+ *
+ * @private
+ * @since 0.1.0
+ */
+export effect function sanitize<A, R>(program: A!FsError!R, method: string, message: string): A!FsError!R {
+  const outcome = try exit(program)
+  if (outcome is Exit.Success(let value)) return value
+  const cause = outcome.cause
+  if (cause.reasons is [{ _tag: "Fail", error: FsError and let error }]) throw error
+  provide Logger.LogToStderr = true {
+    try logDebug(message, cause)
+  }
+  if (Cause.hasInterrupts(cause)) return try failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+  throw new FsError({
+    code: "invocation_unavailable",
+    method,
+    description: "The flow invocation failed"
+  })
+}

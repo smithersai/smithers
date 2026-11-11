@@ -9,6 +9,7 @@ import * as CommandTree from "./CommandTree.vibe"
 import * as FlowInvoker from "./FlowInvoker.vibe"
 import { FsError } from "./FsError.vibe"
 import * as IncurHost from "./internal/IncurHost.ts"
+import * as Invocation from "./internal/Invocation.vibe"
 import * as SchemaBridge from "./internal/SchemaBridge.vibe"
 import * as Route from "./Route.vibe"
 
@@ -21,7 +22,7 @@ effect function refuse(context: IncurHost.Context, error: FsError): never!! {
 }
 
 effect function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): unknown!never!FlowInvoker.FlowInvoker {
-  const outcome = try exit(effect {
+  const outcome = try exit(Invocation.sanitize(effect {
     const input = try selected.schema.decode(selected.schema.assemble(context.args, context.options))
     const output = try (try FlowInvoker.FlowInvoker).invoke(Object.freeze({
       name: selected.route.name,
@@ -29,19 +30,12 @@ effect function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Co
       input
     }))
     return try SchemaBridge.encodeOutput(selected.flow.output, output)
-  })
+  }, "Incur.execute", "Incur invocation failed"))
   if (outcome is Exit.Success(let output)) return try sync(() => context.ok(output))
   const cause = outcome.cause
   if (cause.reasons is [{ _tag: "Fail", error: FsError and let error }]) return try refuse(context, error)
-  provide Logger.LogToStderr = true {
-    try logDebug("Incur invocation failed", cause)
-  }
-  if (Cause.hasInterrupts(cause)) return try failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
-  return try refuse(context, new FsError({
-    code: "invocation_unavailable",
-    method: "Incur.execute",
-    description: "The flow invocation failed"
-  }))
+  // Sanitizing leaves only interruption here.
+  return try failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
 }
 
 effect function project(route: Route.Route): IncurHost.Projection!! {
