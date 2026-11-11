@@ -1,22 +1,21 @@
 /**
- * Deterministic map-reduce declaration pattern.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `MapReduce`: its types, its payload schema and
+ * `make`, which throws a `PatternError` for a declaration it cannot build.
+ * `MapReduce.vibe` re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Bounded from "./Bounded.ts"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Bounded from "./BoundedMake.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
 
 /**
  * Empty-input policy for {@link make}.
@@ -172,85 +171,4 @@ export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
     error: Failure.schemaFor([PatternError], [stages.map, stages.reduce]) as typeof Schema.Unknown,
     body: Node.capture({ concurrency, onEmpty }, body)
   })
-}
-
-/**
- * Executes map work with bounded concurrency, preserves shard order, and
- * reduces the real mapped values.
- *
- * `reduce` and `fail` return the reducer's result type. `succeed` can also
- * return an empty array of mapped values.
- *
- * @category combinators
- * @since 0.1.0
- */
-export function run<
-  I extends { readonly shards: ReadonlyArray<unknown> },
-  Mapped,
-  Reduced,
-  E,
-  R,
-  E2,
-  R2
->(
-  input: I,
-  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2> & {
-    readonly onEmpty: "reduce" | "fail"
-  }
-): Effect.Effect<Reduced, E | E2 | PatternError, R | R2>
-export function run<
-  I extends { readonly shards: ReadonlyArray<unknown> },
-  Mapped,
-  Reduced,
-  E,
-  R,
-  E2,
-  R2
->(
-  input: I,
-  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2>
-export function run<
-  I extends { readonly shards: ReadonlyArray<unknown> },
-  Mapped,
-  Reduced,
-  E,
-  R,
-  E2,
-  R2
->(
-  input: I,
-  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2> {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the shard array or the option object in between must not reach
-  // it. The input itself is handed to the callbacks as the caller's object.
-  const stages = { map: options.map, reduce: options.reduce }
-  const concurrency = options.concurrency
-  const onEmpty = options.onEmpty
-  const shards: ReadonlyArray<I["shards"][number]> = [...input.shards]
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: "MapReduce concurrency must be a positive safe integer"
-      })
-    )
-  }
-  if (shards.length === 0) {
-    if (onEmpty === "fail") {
-      return Effect.fail(new PatternError({ code: "exhausted", message: "MapReduce received no shards" }))
-    }
-    return onEmpty === "succeed"
-      ? Effect.succeed([])
-      : Effect.suspend(() => stages.reduce({ input, mapped: [] }))
-  }
-  return Effect.flatMap(
-    Effect.forEach(
-      shards,
-      (shard, index) => stages.map({ shard, index, input }),
-      { concurrency }
-    ),
-    (mapped) => stages.reduce({ input, mapped })
-  )
 }

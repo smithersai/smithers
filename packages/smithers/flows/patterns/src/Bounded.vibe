@@ -1,0 +1,80 @@
+/**
+ * Bounded fan-out: a fixed set of members run at most `concurrency` at a time,
+ * highest priority first.
+ *
+ * `Node.all` joins members without a width bound, which is the right default
+ * for a handful of independent calls and the wrong one for fifty. {@link all}
+ * keeps the same named-record shape and adds the bound as static topology: one
+ * `Node.all` per batch, batches sequenced. {@link run} is the Effect form of
+ * the same contract.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import * as Compose from "./internal/Compose.ts"
+import { PatternError } from "./PatternError.ts"
+import { nonEmptyRefusal, ranked, type RuntimeOptions, widthRefusal } from "./internal/BoundedMake.ts"
+
+export { all, type AllOptions, type RuntimeOptions } from "./internal/BoundedMake.ts"
+
+
+/**
+ * Runs a record of effects at most `concurrency` at a time, starting the
+ * highest priority member first.
+ *
+ * Failure and interruption follow `Effect.forEach`: the first failure
+ * interrupts the members still in flight. Use `Quarantine.run` when siblings
+ * must finish instead.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <A, E, R>(
+  members: Readonly<Record<string, A!E!R>>,
+  options: RuntimeOptions
+): Readonly<Record<string, A>>!(E | PatternError)!R => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the record or the option object in between must not reach it.
+  // Own entries only, so a prototype-shaped member name stays a data property.
+  const declared: Readonly<Record<string, A!E!R>> = Object.fromEntries(Object.entries(members))
+  const concurrency = options.concurrency
+  const priority = options.priority
+  const priorities = options.priorities === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(options.priorities))
+  return effect {
+    // The refusals and the ranking read caller values in `sync`, so a throw
+    // while reading one stays a defect, as in the suspended original.
+    const refusal = try sync(() => widthRefusal(concurrency) ?? nonEmptyRefusal(Object.keys(declared)))
+    if (refusal !== undefined) throw refusal
+    for (const name of Object.keys(priorities ?? {})) {
+      if (!Object.hasOwn(declared, name)) {
+        throw new PatternError({
+          code: "invalid_decorator",
+          message: `Bounded declares a priority for the unknown member "${name}"`
+        })
+      }
+    }
+    const ranks = new Map<string, number>()
+    for (const name of Object.keys(declared)) {
+      const value: unknown = priorities !== undefined && Object.hasOwn(priorities, name)
+        ? priorities[name]
+        : priority ?? 0
+      const invalid = try sync(() => Compose.safeIntegerPriorityRefusal("Bounded", name, value))
+      if (invalid !== undefined) throw invalid
+      ranks.set(name, value as number)
+    }
+    const order = try sync(() => ranked(declared, (name) => ranks.get(name)!))
+    const pairs = try forEach(
+      order,
+      effect (entry) => {
+        const value = try entry.member
+        return [entry.name, value] as const
+      },
+      { concurrency }
+    )
+    return Object.fromEntries(pairs) as Readonly<Record<string, A>>
+  }
+}

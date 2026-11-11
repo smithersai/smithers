@@ -1,24 +1,16 @@
 /**
- * Bounded fan-out: a fixed set of members run at most `concurrency` at a time,
- * highest priority first.
- *
- * `Node.all` joins members without a width bound, which is the right default
- * for a handful of independent calls and the wrong one for fifty. {@link all}
- * keeps the same named-record shape and adds the bound as static topology: one
- * `Node.all` per batch, batches sequenced. {@link run} is the Effect form of
- * the same contract.
- *
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Bounded`: its types and `all`, which throws a
+ * `PatternError` for a declaration it cannot build. `Bounded.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
 
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
 import type * as Types from "effect/Types"
-import * as Compose from "./internal/Compose.ts"
-import { PatternError } from "./PatternError.ts"
+import type { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
 
 /**
  * Configuration for {@link all}.
@@ -61,10 +53,22 @@ interface Ranked<Member> {
 // FAILS with it, because `PatternError` is in its declared error channel and a
 // caller composing it must be able to claim the refusal with `Effect.catchTag`.
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
-const widthRefusal = (concurrency: number): PatternError | undefined =>
+/**
+ * Shared with `run` in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const widthRefusal = (concurrency: number): PatternError | undefined =>
   Compose.concurrencyRefusal("Bounded", concurrency)
 
-const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
+/**
+ * Shared with `run` in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined =>
   Compose.nonEmptyMembersRefusal("Bounded", names)
 
 const width = (concurrency: number): void => {
@@ -81,7 +85,13 @@ const declaredPriority = (node: Node.Any): number | undefined => Node.declaredPr
 
 // Descending priority, declaration order among equals, so a plan built twice
 // from the same record is identical.
-const ranked = <Member>(
+/**
+ * Shared with `run` in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const ranked = <Member>(
   members: Readonly<Record<string, Member>>,
   rank: (name: string, member: Member) => number
 ): ReadonlyArray<Ranked<Member>> =>
@@ -167,63 +177,4 @@ export const all = <const Nodes extends Readonly<Record<string, Node.Any>>>(
     Node.Error<Nodes[keyof Nodes]>,
     Node.Services<Nodes[keyof Nodes]>
   >
-}
-
-/**
- * Runs a record of effects at most `concurrency` at a time, starting the
- * highest priority member first.
- *
- * Failure and interruption follow `Effect.forEach`: the first failure
- * interrupts the members still in flight. Use `Quarantine.run` when siblings
- * must finish instead.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <A, E, R>(
-  members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
-  options: RuntimeOptions
-): Effect.Effect<Readonly<Record<string, A>>, E | PatternError, R> => {
-  // Snapshots taken at the call, ahead of the suspend: the effect may run
-  // later, and a caller's edit to the record or the option object in between
-  // must not reach it. Own entries only, so a prototype-shaped member name
-  // stays a data property.
-  const declared: Readonly<Record<string, Effect.Effect<A, E, R>>> = Object.fromEntries(Object.entries(members))
-  const concurrency = options.concurrency
-  const priority = options.priority
-  const priorities = options.priorities === undefined
-    ? undefined
-    : Object.fromEntries(Object.entries(options.priorities))
-  return Effect.suspend((): Effect.Effect<Readonly<Record<string, A>>, E | PatternError, R> => {
-    const refusal = widthRefusal(concurrency) ?? nonEmptyRefusal(Object.keys(declared))
-    if (refusal !== undefined) return Effect.fail(refusal)
-    for (const name of Object.keys(priorities ?? {})) {
-      if (!Object.hasOwn(declared, name)) {
-        return Effect.fail(
-          new PatternError({
-            code: "invalid_decorator",
-            message: `Bounded declares a priority for the unknown member "${name}"`
-          })
-        )
-      }
-    }
-    const ranks = new Map<string, number>()
-    for (const name of Object.keys(declared)) {
-      const value: unknown = priorities !== undefined && Object.hasOwn(priorities, name)
-        ? priorities[name]
-        : priority ?? 0
-      const invalid = Compose.safeIntegerPriorityRefusal("Bounded", name, value)
-      if (invalid !== undefined) return Effect.fail(invalid)
-      ranks.set(name, value as number)
-    }
-    const order = ranked(declared, (name) => ranks.get(name)!)
-    return Effect.map(
-      Effect.forEach(
-        order,
-        (entry) => Effect.map(entry.member, (value) => [entry.name, value] as const),
-        { concurrency }
-      ),
-      (pairs) => Object.fromEntries(pairs) as Readonly<Record<string, A>>
-    )
-  })
 }

@@ -1,0 +1,90 @@
+/**
+ * Deterministic map-reduce declaration pattern.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import type { RuntimeOptions } from "./internal/MapReduceMake.ts"
+
+export * from "./internal/MapReduceMake.ts"
+
+/**
+ * Executes map work with bounded concurrency, preserves shard order, and
+ * reduces the real mapped values.
+ *
+ * `reduce` and `fail` return the reducer's result type. `succeed` can also
+ * return an empty array of mapped values.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export function run<
+  I extends { readonly shards: ReadonlyArray<unknown> },
+  Mapped,
+  Reduced,
+  E,
+  R,
+  E2,
+  R2
+>(
+  input: I,
+  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2> & {
+    readonly onEmpty: "reduce" | "fail"
+  }
+): Reduced!(E | E2 | PatternError)!(R | R2)
+export function run<
+  I extends { readonly shards: ReadonlyArray<unknown> },
+  Mapped,
+  Reduced,
+  E,
+  R,
+  E2,
+  R2
+>(
+  input: I,
+  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
+): (Reduced | ReadonlyArray<Mapped>)!(E | E2 | PatternError)!(R | R2)
+export function run<
+  I extends { readonly shards: ReadonlyArray<unknown> },
+  Mapped,
+  Reduced,
+  E,
+  R,
+  E2,
+  R2
+>(
+  input: I,
+  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
+): (Reduced | ReadonlyArray<Mapped>)!(E | E2 | PatternError)!(R | R2) {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the shard array or the option object in between must not reach
+  // it. The input itself is handed to the callbacks as the caller's object.
+  const stages = { map: options.map, reduce: options.reduce }
+  const concurrency = options.concurrency
+  const onEmpty = options.onEmpty
+  const shards: ReadonlyArray<I["shards"][number]> = [...input.shards]
+  return effect {
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: "MapReduce concurrency must be a positive safe integer"
+      })
+    }
+    if (shards.length === 0) {
+      if (onEmpty === "fail") {
+        throw new PatternError({ code: "exhausted", message: "MapReduce received no shards" })
+      }
+      if (onEmpty === "succeed") {
+        const none: ReadonlyArray<Mapped> = []
+        return none
+      }
+      return try stages.reduce({ input, mapped: [] })
+    }
+    const mapped = try forEach(shards, (shard, index) => stages.map({ shard, index, input }), { concurrency })
+    return try stages.reduce({ input, mapped })
+  }
+}

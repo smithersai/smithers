@@ -1,0 +1,55 @@
+/**
+ * A deterministic panel deliberation pattern.
+ *
+ * A panel asks several flows the same question under different instructions
+ * and hands one moderator every answer. {@link make} declares that topology,
+ * {@link run} performs it.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import { type RuntimeOptions, widthRefusal } from "./internal/PanelMake.ts"
+
+export { make, type MakeOptions, type PanelFlow, type RuntimeOptions } from "./internal/PanelMake.ts"
+
+
+/**
+ * Runs every panelist against the same input and hands the moderator one
+ * record of opinions keyed by panelist name.
+ *
+ * `concurrency` bounds how many panelists run at once; without it they all
+ * start together. Keys follow declaration order whatever order the panelists
+ * settle in, so a moderator never sees a race in its payload.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, A, E, R, B, E2, R2>(
+  input: I,
+  options: RuntimeOptions<I, A, E, R, B, E2, R2>
+): B!(E | E2 | PatternError)!(R | R2) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the record or the option object in between must not reach it.
+  const panelists = Object.entries(options.panelists)
+  const moderator = options.moderator
+  const concurrency = options.concurrency
+  return effect {
+    if (panelists.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "Panel requires at least one panelist" })
+    }
+    const width = try sync(() => widthRefusal(concurrency))
+    if (width !== undefined) throw width
+    const opinions = try forEach(
+      panelists,
+      effect ([name, panelist]) => {
+        const opinion = try panelist(input)
+        return [name, opinion] as const
+      },
+      { concurrency: concurrency ?? "unbounded" }
+    )
+    return try moderator({ input, opinions: Object.fromEntries(opinions) })
+  }
+}

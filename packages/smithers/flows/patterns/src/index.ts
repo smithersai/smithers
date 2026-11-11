@@ -28,7 +28,7 @@ export * as Debate from "./Debate.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Panel from "./Panel.ts"
+export * as Panel from "./Panel.vibe"
 
 /**
  * @category patterns
@@ -46,7 +46,7 @@ export * as ReviewLoop from "./ReviewLoop.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as MapReduce from "./MapReduce.ts"
+export * as MapReduce from "./MapReduce.vibe"
 
 /**
  * @category patterns
@@ -58,7 +58,7 @@ export * as Recursion from "./Recursion.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Bounded from "./Bounded.ts"
+export * as Bounded from "./Bounded.vibe"
 
 /**
  * @category patterns

@@ -6,7 +6,7 @@ import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as Panel from "../src/Panel.ts"
+import * as Panel from "../src/Panel.vibe"
 import { PatternError } from "../src/PatternError.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

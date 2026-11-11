@@ -1,26 +1,22 @@
 /**
- * A deterministic panel deliberation pattern.
- *
- * A panel asks several flows the same question under different instructions
- * and hands one moderator every answer. {@link make} declares that topology,
- * {@link run} performs it.
- *
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Panel`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Panel.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Bounded from "./Bounded.ts"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Bounded from "./BoundedMake.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * Configuration for {@link make}.
@@ -83,7 +79,13 @@ export type PanelFlow<R = never> = Flow.Flow<
 // A thrown refusal inside `Effect.suspend` would be a defect no handler claims.
 // An absent concurrency is no bound at all, which is what `Node.all` already
 // gives, so only a declared one is checked.
-const widthRefusal = (concurrency: number | undefined): PatternError | undefined =>
+/**
+ * Shared with `run` in the public module.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const widthRefusal = (concurrency: number | undefined): PatternError | undefined =>
   concurrency === undefined ? undefined : Compose.concurrencyRefusal("Panel", concurrency)
 
 /**
@@ -164,45 +166,5 @@ export const make = <R = never>(options: MakeOptions<R>): PanelFlow<R> => {
       [...panelists.map(([, panelist]) => panelist), moderator]
     ) as typeof Schema.Unknown,
     body: Node.capture(material, body)
-  })
-}
-
-/**
- * Runs every panelist against the same input and hands the moderator one
- * record of opinions keyed by panelist name.
- *
- * `concurrency` bounds how many panelists run at once; without it they all
- * start together. Keys follow declaration order whatever order the panelists
- * settle in, so a moderator never sees a race in its payload.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, A, E, R, B, E2, R2>(
-  input: I,
-  options: RuntimeOptions<I, A, E, R, B, E2, R2>
-): Effect.Effect<B, E | E2 | PatternError, R | R2> => {
-  // Snapshots taken at the call, ahead of the suspend: the effect may run
-  // later, and a caller's edit to the record or the option object in between
-  // must not reach it.
-  const panelists = Object.entries(options.panelists)
-  const moderator = options.moderator
-  const concurrency = options.concurrency
-  return Effect.suspend((): Effect.Effect<B, E | E2 | PatternError, R | R2> => {
-    if (panelists.length === 0) {
-      return Effect.fail(
-        new PatternError({ code: "invalid_decorator", message: "Panel requires at least one panelist" })
-      )
-    }
-    const width = widthRefusal(concurrency)
-    if (width !== undefined) return Effect.fail(width)
-    return Effect.flatMap(
-      Effect.forEach(
-        panelists,
-        ([name, panelist]) => Effect.map(panelist(input), (opinion) => [name, opinion] as const),
-        { concurrency: concurrency ?? "unbounded" }
-      ),
-      (opinions) => moderator({ input, opinions: Object.fromEntries(opinions) })
-    )
   })
 }
