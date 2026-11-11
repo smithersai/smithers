@@ -90,6 +90,16 @@ it("reads a file another checkout hard-linked while it was being read", async ()
   expect(linked).toBe(true)
 })
 
+it("reads a file whose other name another checkout replaced, leaving its link count unchanged", async () => {
+  await Fs.link(path, join(root, "store-link"))
+  const entry = await SafeFs.resolveFile(path, { root })
+  // Past the filesystem's coarse status-time tick, so the ctime moves.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  await Fs.rm(join(root, "store-link"))
+  await Fs.link(path, join(root, "store-link-2"))
+  expect(await SafeFs.digestEntry(entry!, { root })).toMatch(/^[0-9a-f]{64}$/)
+})
+
 it("rejects a file whose status changed with no link made or removed", async () => {
   const entry = await SafeFs.resolveFile(path, { root })
   // Past the filesystem's coarse status-time tick, so the change is visible.

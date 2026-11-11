@@ -270,18 +270,19 @@ const timestamp = (stats: Stats, kind: "mtime" | "ctime"): string => {
 
 /**
  * Whether two stat results of one inode agree on its status-change time, or
- * differ only because its link count changed.
+ * the inode has more than one name, so its `ctime` is not this name's.
  *
- * Making or removing a hard link to a file advances its `ctime` and touches
+ * Making or removing any hard link to a file advances its `ctime` and touches
  * nothing else. A package store links one inode into every checkout that
- * installs it, so any other checkout's install or removal moves the `ctime` of
- * a file this read holds. The link count moved with it, while size,
- * modification time and identity are still compared on their own. A `ctime`
- * change with the same link count (a permission change, or a modification time
- * written back) is still a change.
+ * installs it, and another checkout's reinstall removes one link and makes
+ * another, which moves the `ctime` of a file this read holds while its link
+ * count ends where it began. For a file with several names the `ctime` says
+ * nothing about this name's content; size, modification time and identity are
+ * still compared. For a file with one name, a `ctime` change (a permission
+ * change, or a modification time written back) is still a change.
  */
 const sameStatus = (left: Stats, right: Stats): boolean =>
-  timestamp(left, "ctime") === timestamp(right, "ctime") || left.nlink !== right.nlink
+  timestamp(left, "ctime") === timestamp(right, "ctime") || left.nlink > 1 || right.nlink > 1
 
 /**
  * One filesystem object, named by the canonical path it was found at and
