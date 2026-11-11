@@ -8,7 +8,9 @@ sidebar:
 This quickstart builds the production composition over one SQLite file, runs a
 flow through it, and then builds a second engine over the same file. The second
 run replays the recorded attempt instead of executing the step again, which is
-the whole point of the package.
+the whole point of the package. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -194,6 +196,111 @@ console.log(await Effect.runPromise(main("./.quickstart/.flows/engine.db", "./.q
 The assembled program is
 [`examples/quickstart.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/examples/quickstart.ts);
 the package's test suite runs it on every change.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the declarations and the
+layers are unchanged, and `main` becomes an `effect` function: `try` replaces
+each `yield*`, the step body is an `effect` arrow rather than `Effect.sync`,
+and each run is the execution piped through `Effect.provide` and `scoped`. The
+caller provides Node's services once, so `main` names no host for the file
+system.
+
+This is `examples/vibe/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { DurableWriter } from "@smthrs/database"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import {
+  DurableEngineState,
+  EngineStore,
+  Migrations,
+  OwnerIdentity,
+  StepBoundary,
+  WorkspaceSandbox
+} from "@smthrs/engine-store"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { SqlJournal } from "@smthrs/journal"
+import * as Workspace from "@smthrs/kernel/Workspace"
+import { NodeHost } from "@smthrs/platform-node"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
+import { CacheStore } from "@smthrs/step-cache"
+
+/** A sealed action: its result is addressable, so a later run can replay it. */
+export const Measure = Action.make("quickstart/Measure", {
+  payload: {},
+  success: Schema.String,
+  tier: "sealed",
+  idempotencyKey: "quickstart/measure/v1",
+  implementationVersion: "measure/v1"
+})
+
+export const Analyse = Flow.make("quickstart/Analyse", {
+  payload: {},
+  success: Schema.String,
+  body: (payload) => Measure.call(payload)
+})
+
+/** The schema for every storage package, under the stores, so none is exposed before its tables exist. */
+const database = (filename: string) =>
+  Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename })))
+
+/** The journal, the run and cache stores, engine state, owner, workspace and artifacts. */
+const stores = (filename: string, root: string) =>
+  Layer.mergeAll(
+    SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+    RunStore.layer,
+    AttemptStore.layer,
+    CacheStore.layer,
+    DurableEngineState.layer,
+    OwnerIdentity.layer,
+    Workspace.layer(root),
+    ArtifactStore.layerFileSystem({ directory: `${root}/.flows/objects` })
+  ).pipe(Layer.provideMerge(database(filename)))
+
+/** One engine owner over the file: the step boundary, the sandbox, and the Node host. */
+const engine = (filename: string, root: string, hostId: string) =>
+  EngineStore.layer({
+    owner: { hostId },
+    journalSource: `${hostId}-engine`,
+    isAlive: Ownership.sameHostPidProbe
+  }).pipe(
+    Layer.provideMerge(Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)),
+    Layer.provideMerge(stores(filename, root)),
+    Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, NodePath.layer))
+  )
+
+/** Runs `analyse-1` on one engine, then on a second engine over the same file, counting executions. */
+export effect function main(filename: string, root: string) {
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
+  try fileSystem.makeDirectory(path.dirname(filename), { recursive: true })
+  let executions = 0
+
+  const implementation = Measure.toLayer(effect () => {
+    executions += 1
+    return "42"
+  }, { implementationVersion: "measure/v1" })
+  const flow = Layer.mergeAll(implementation, Interpreter.layer(Analyse)).pipe(
+    Layer.provideMerge(Action.layerImplementations)
+  )
+
+  const run = (hostId: string) =>
+    Analyse.execute({}, { executionId: "analyse-1" })
+      |> Effect.provide(%, flow.pipe(Layer.provideMerge(engine(filename, root, hostId))))
+      |> scoped(%)
+
+  const first = try run("worker-a")
+  // A second engine over the same file: a different process, in effect.
+  const second = try run("worker-b")
+  return { first, second, executions }
+}
+```
 
 ## What just happened
 

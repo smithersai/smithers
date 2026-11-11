@@ -1,0 +1,15 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/vibe/quickstart.vibe"
+
+it.live("replays the sealed step from a second engine over the same file", effect () => {
+  provide NodeServices.layer {
+    try scoped(effect {
+      const root = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const filename = `${root}/.flows/engine.db`
+      expect(try main(filename, root)).toEqual({ first: "42", second: "42", executions: 1 })
+      // The file already holds the succeeded attempt, so neither engine runs the body.
+      expect(try main(filename, root)).toEqual({ first: "42", second: "42", executions: 0 })
+    })
+  }
+}, 120_000)
