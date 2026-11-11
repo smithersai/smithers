@@ -280,6 +280,40 @@ describe("sourceShape: tokens", () => {
     expect(sourceShape("() => class { static #p() {} }")).toBe("( ) => class { static #0 ( ) { } }")
   })
 
+  it("keeps a class field name that follows a line break instead of `;`", () => {
+    const pairs: ReadonlyArray<readonly [string, string]> = [
+      ["() => class { retries = 1\n timeout = 2 }", "() => class { retries = 1\n attempts = 2 }"],
+      ["() => class { a\n b }", "() => class { a\n c }"],
+      ["() => class { a = () => 1\n b = 2 }", "() => class { a = () => 1\n c = 2 }"],
+      ["() => class { a = {}\n b = 2 }", "() => class { a = {}\n c = 2 }"],
+      // A reserved word as a property name or a key ends the field too.
+      ["() => class { a = x.default\n b = 2 }", "() => class { a = x.default\n c = 2 }"],
+      ["() => class { delete\n b = 2 }", "() => class { delete\n c = 2 }"],
+      ["() => class { static new\n b }", "() => class { static new\n c }"],
+      // An arrow function's parameter is not in scope past its field.
+      ["x => class { a = x => x\n b = x }", "x => class { a = y => y\n b = y }"],
+      // A class head's `extends` after a line break is no member.
+      [
+        "() => class { a = class D\n extends B { m() { return D } } }",
+        "() => class { a = class D\n extends B { m() { return E } } }"
+      ]
+    ]
+    for (const [before, after] of pairs) expect(sourceShape(before)).not.toBe(sourceShape(after))
+    // The unbundled layout reads as the minified one, whose `;` ends each field.
+    expect(sourceShape("() => class { retries = 1\n timeout = 2 }")).toBe(
+      sourceShape("()=>class{retries=1;timeout=2}")
+    )
+    expect(sourceShape("x => class { a = y => y\n b = x }")).toBe(sourceShape("x=>class{a=y=>y;b=x}"))
+    expect(sourceShape("() => class { a = async\n b = 2 }")).toBe(sourceShape("()=>class{a=async;b=2}"))
+    expect(sourceShape("() => class { a = 1\n #b = 2\n 'c' = 3\n static d\n async m(x) { return x } }")).toBe(
+      "( ) => class { a = 1 ; #0 = 2 ; 'c' = 3 ; static d ; async m ( $0 ) { return $0 } }"
+    )
+    // A line break before an operator, a bracket or `in` continues the field.
+    expect(sourceShape("() => class { a = b\n [c]\n d = e\n in f }")).toBe(
+      "( ) => class { a = $f0 [ $f1 ] ; d = $f2 in $f3 }"
+    )
+  })
+
   it("tells an object from a block by what comes before the brace", () => {
     // A block after `=>`, `)`, a statement, `else` and a statement colon; an
     // object after an operator, a declaration keyword, a key or a conditional.
