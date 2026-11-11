@@ -20,10 +20,12 @@ and no verification obligation is suppressed. The previously supplied probe docu
 
 ## Expanded app proof boundaries (0018)
 
-`finite-round.ts`, `json-codec.ts`, `uri-codec.ts`, `regexp.ts` and `object-constant.ts` are minimal unsupported
+`finite-round.ts`, `json-codec.ts`, `uri-codec.ts` and `object-constant.ts` are minimal unsupported
 operations encountered while inventorying the app. Every source strictly typechecks; the failures occur in
 LemmaScript emission or Dafny resolution. They do not count as rejected executable mutations. Decision 0018 names
-which production behavior each leaves unproved and the retained host reproduction directory.
+which production behavior each leaves unproved and the retained host reproduction directory. `regexp.ts` (a `test` on
+a literal pattern) proves since LemmaScript's RegExp subset (0018 third-lane batch 24) and was removed; `exec`,
+`replace`, flags and `\b` remain unsupported and are refused by name.
 
 `unicode-case.ts` shows a correct non-ASCII casing contract the backend cannot prove (casing is exact only on ASCII strings, so no false casing claim proves either); `event-key.ts` retains the
 production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have

@@ -1,7 +1,8 @@
 // The bootstrap's own decisions (wiki/decisions/0020-mythical-history.md, 0018 third-lane batch 4): which epic a scope
 // tells, which queue entries a seed counts, which mythical commit a step of main joins, where a note's sentences are
 // cut, how an evidence paragraph grows, and how a fold reads back its stored title. `seed.vibe`
-// calls these; its regular expressions, maps and the commit graph walk stay outside the proof.
+// calls these; its `exec`, `replace` and `\b` regular expressions, maps and the commit graph walk stay outside the
+// proof. Its `test` patterns are proved through LemmaScript's RegExp subset (batch 24).
 //
 // VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
 // file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
@@ -126,4 +127,20 @@ export function evidenceStep(trailer: boolean, open: boolean, blank: boolean, ow
 //@ ensures stored != "" ==> \result == stored
 export function foldedTitle(stored: string, own: string): string {
   return stored === "" ? own : stored
+}
+
+/** A note ends a sentence: `.`, `!` or `?`, then only closing quotes and brackets (0018 third-lane batch 24). */
+//@ verify
+//@ ensures \result == \matches("[.!?][\"'`)\\]]*$", text)
+//@ ensures text == "" ==> !\result
+export function sentenceEnded(text: string): boolean {
+  return /[.!?]["'`)\]]*$/.test(text)
+}
+
+/** A line that starts something of its own: another `Key:` line, a list item or a numbered item. */
+//@ verify
+//@ ensures \result == \matches("^(?:[A-Z][\\w-]*:\\s|[-*•]\\s|\\d+[.)]\\s)", line)
+//@ ensures line == "" ==> !\result
+export function ownsLine(line: string): boolean {
+  return /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/.test(line)
 }

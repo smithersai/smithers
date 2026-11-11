@@ -8,7 +8,7 @@
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
-import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, sentenceCut } from "./seedDecision.vibe"
+import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded } from "./seedDecision.vibe"
 
 // An area is the proved decision module's (seedDecision.vibe); this module names the bootstrap's areas.
 export type { Area }
@@ -226,14 +226,13 @@ export function sanitize(text: string, max = MAX_SEED_NOTE): string {
 }
 
 /** Text ends a sentence: `.`, `!` or `?`, then any closing quotes, brackets or backticks. */
-const ENDED = /[.!?]["'`)\]]*$/
 
 /** A sentence's end inside text: its punctuation and closers, then a space and what starts a sentence. */
 const BOUNDARY = /[.!?]["'`)\]]*(?=\s+["'`(\[]?[A-Z0-9])/g
 
 /** Whether `text` ends a sentence, so a note never stops mid-sentence. */
 export function endsSentence(text: string): boolean {
-  return ENDED.test(text)
+  return sentenceEnded(text)
 }
 
 /**
@@ -262,7 +261,6 @@ export function titleOf(description: string): string {
 const TRAILERS = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/
 
 /** A line that starts something of its own: another `Key:` line or a list item. */
-const OWN_LINE = /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/
 
 /**
  * Evidence a commit's message states: its `Validation`, `Tests`, `Regression`, `Before` and `After` paragraphs, each
@@ -274,7 +272,7 @@ export function evidenceOf(description: string): ReadonlyArray<string> {
   for (const raw of description.split("\n")) {
     const line = raw.trim()
     const match = TRAILERS.exec(line)
-    const step = evidenceStep(match !== null, open, line === "", OWN_LINE.test(line))
+    const step = evidenceStep(match !== null, open, line === "", ownsLine(line))
     if (step === "start" && match !== null) {
       paragraphs.push(`${match[1]}: ${match[2]}`)
       open = true

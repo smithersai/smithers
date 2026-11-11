@@ -10,6 +10,7 @@ import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
 import { epicByTitle, foldTitle, planStep } from "./stackDecision.vibe"
 import { followCut, fresh } from "../core/followDecision.vibe"
+import { trailerParagraph } from "./trailerDecision.vibe"
 
 // Decode failures report only the boundary, never stored titles, tasks or notes.
 const checkedHistory = (value: unknown) => Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(HistorySchema)(value), () => new Error("Invalid history state")))
@@ -60,8 +61,6 @@ export interface MainCommit {
   readonly message: string
 }
 
-const TRAILER = /^[A-Za-z0-9][A-Za-z0-9-]*:/
-const CONTINUATION = /^[ \t]/
 const MYTHICAL = /^Mythical:\s*(m\d+)$/
 
 /**
@@ -73,7 +72,7 @@ export function trailerOf(message: string): string {
   const paragraphs = message.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").replace(/\n+$/, "").split(/\n\n+/)
   if (paragraphs.length < 2) return ""
   const paragraph = paragraphs[paragraphs.length - 1]!.split("\n")
-  if (!paragraph.every((line, at) => TRAILER.test(line) || (at > 0 && CONTINUATION.test(line)))) return ""
+  if (!trailerParagraph(paragraph)) return ""
   const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match): match is RegExpExecArray => match !== null)
   return named === undefined ? "" : named[1]!
 }

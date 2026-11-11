@@ -1,0 +1,53 @@
+// The RegExp tests the history proves (0018 third-lane batch 24) answer as the patterns they replaced, natively.
+import { describe, expect, it } from "@effect/vitest"
+import { ownsLine, sentenceEnded } from "../src/history/seedDecision.vibe"
+import { trailerLine, trailerParagraph } from "../src/history/trailerDecision.vibe"
+import { trailerOf } from "../src/history/Sequencer.vibe"
+
+const ENDED = /[.!?]["'`)\]]*$/
+const OWN_LINE = /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/
+const TRAILER = /^[A-Za-z0-9][A-Za-z0-9-]*:/
+const CONTINUATION = /^[ \t]/
+const alphabet = ["a", "Z", "7", ".", "!", "?", ")", "]", "'", "\"", "`", ":", " ", "\t", "-", "*", "•", "(", "\n", "_", "M"]
+
+function* strings(seed: number, count: number) {
+  let state = seed
+  const next = () => (state = (state * 1103515245 + 12345) % 2147483648)
+  for (let n = 0; n < count; n++) {
+    let s = ""
+    for (let i = next() % 8; i > 0; i--) s += alphabet[next() % alphabet.length]
+    yield s
+  }
+}
+
+describe("the history's proved RegExp tests", () => {
+  it("end a sentence on . ! or ? before closing quotes and brackets", () => {
+    expect(sentenceEnded("Done.")).toBe(true)
+    expect(sentenceEnded("Done.)\"")).toBe(true)
+    expect(sentenceEnded("Done. Then")).toBe(false)
+    expect(sentenceEnded("")).toBe(false)
+    for (const s of strings(24, 2000)) expect(sentenceEnded(s)).toBe(ENDED.test(s))
+  })
+  it("start a line of its own on a Key:, a bullet or a numbered item", () => {
+    expect(ownsLine("Tests: ok")).toBe(true)
+    expect(ownsLine("• item")).toBe(true)
+    expect(ownsLine("12) x")).toBe(true)
+    expect(ownsLine("tests: ok")).toBe(false)
+    expect(ownsLine("")).toBe(false)
+    for (const s of strings(25, 2000)) expect(ownsLine(s)).toBe(OWN_LINE.test(s))
+  })
+  it("read a trailer paragraph: Key: lines, each continuation after the first line", () => {
+    expect(trailerLine("Mythical: m7", 0)).toBe(true)
+    expect(trailerLine("  more", 0)).toBe(false)
+    expect(trailerLine("  more", 1)).toBe(true)
+    expect(trailerParagraph(["Mythical: m7", "  wrapped"])).toBe(true)
+    expect(trailerParagraph(["See Mythical: m7"])).toBe(false)
+    expect(trailerParagraph([])).toBe(true)
+    for (const s of strings(26, 1000)) {
+      const lines = s.split("\n")
+      expect(trailerParagraph(lines)).toBe(lines.every((line, at) => TRAILER.test(line) || (at > 0 && CONTINUATION.test(line))))
+    }
+    expect(trailerOf("fix: x\n\nMythical: m7\n")).toBe("m7")
+    expect(trailerOf("fix: x\n\nSee Mythical: m7\n")).toBe("")
+  })
+})

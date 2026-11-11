@@ -5751,3 +5751,16 @@ cases.extend([('src/history/mockMainDecision.vibe', *case) for case in [
 ('mock-key-operation', 'executionKey', 'prefix + "/operation/" + digest', 'prefix + "/" + digest', 'an operation id is marked'),
 ('mock-key-choice', 'executionKey', 'operation !== undefined ?', 'digest !== "" ?', 'the operation decides the addressing'),
 ]])
+
+# Lane vl-proveall3, batch 24: the history's RegExp tests (src/history/seedDecision.vibe, trailerDecision.vibe).
+cases.extend([
+('src/history/seedDecision.vibe', 're-ended-class', 'sentenceEnded', '/[.!?]', '/[.!]', 'a question mark ends a sentence'),
+('src/history/seedDecision.vibe', 're-ended-anchor', 'sentenceEnded', ']*$/', ']*/', 'the sentence end is the text end'),
+('src/history/seedDecision.vibe', 're-own-bullet', 'ownsLine', '[-*•]', '[-*]', 'a bullet line is its own'),
+('src/history/seedDecision.vibe', 're-own-number', 'ownsLine', '\\d+[.)]', '\\d[.)]', 'item numbers of any length'),
+('src/history/trailerDecision.vibe', 're-trailer-key', 'trailerLine', '[A-Za-z0-9-]*:/', '[A-Za-z0-9-]*/', 'a key ends at its colon'),
+('src/history/trailerDecision.vibe', 're-trailer-first', 'trailerLine', '(at > 0 && ', '(at >= 0 && ', 'the first line never continues'),
+('src/history/trailerDecision.vibe', 're-trailer-tab', 'trailerLine', '/^[ \\t]/', '/^[ ]/', 'a tab continues a trailer'),
+('src/history/trailerDecision.vibe', 're-paragraph-all', 'trailerParagraph', 'return false\n', 'return true\n', 'one other line disqualifies the paragraph'),
+('src/history/trailerDecision.vibe', 're-paragraph-index', 'trailerParagraph', 'trailerLine(lines[i]!, i)', 'trailerLine(lines[i]!, 0)', 'each line knows its position'),
+])

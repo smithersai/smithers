@@ -1,0 +1,25 @@
+// Which paragraph of a commit message is its trailer (0018, third-lane batch 24). `Sequencer.vibe` trailerOf calls
+// these; its line splitting and the `Mythical:` capture stay outside the regular-expression subset.
+
+/** A trailer line: a `Key:` line, or after the first one a line continuing the one before (a space or a tab). */
+//@ verify
+//@ ensures \result == (\matches("^[A-Za-z0-9][A-Za-z0-9-]*:", line) || (at > 0 && \matches("^[ \\t]", line)))
+//@ ensures line == "" ==> !\result
+export function trailerLine(line: string, at: number): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9-]*:/.test(line) || (at > 0 && /^[ \t]/.test(line))
+}
+
+/** Every line of the paragraph is a trailer line: the message's trailer, if it is its last paragraph. */
+//@ verify
+//@ ensures \result == forall(i, 0 <= i && i < lines.length ==> trailerLine(lines[i], i))
+export function trailerParagraph(lines: ReadonlyArray<string>): boolean {
+  let i = 0
+  while (i < lines.length) {
+    //@ invariant 0 <= i && i <= lines.length
+    //@ invariant forall(k, 0 <= k && k < i ==> trailerLine(lines[k], k))
+    //@ decreases lines.length - i
+    if (!trailerLine(lines[i]!, i)) return false
+    i += 1
+  }
+  return true
+}
