@@ -5,6 +5,7 @@ import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
 import type { EscapeRoute, EscapeStep } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
+import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
 import { escapeScreen } from "./screenRead.vibe"
 
@@ -88,4 +89,26 @@ export function tourStartWrite(model: Model, step: TourStarted, fresh: Model["cl
     tourClient: fresh, theatre: { ...model.theatre, step: started.step, paused: started.paused, target: started.target },
     epoch: started.epoch, from: started.from, stream: started.stream,
   }
+}
+
+/** The Model after a sandbox action starts: the screen's surface, palette and docs, and its pane, operation, busy flag,
+ *  error, request number and terminal draft; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: state.surface, palette: state.palette, docs: state.docs, sandboxPane: state.pane, sandboxOperation: state.operation, sandboxBusy: state.busy, sandboxError: state.error, sandboxRequest: state.request, terminalDraft: state.draft }
+export function sandboxWrite(model: Model, state: SandboxScreen): Model {
+  return { ...model, surface: state.surface, palette: state.palette, docs: state.docs, sandboxPane: state.pane, sandboxOperation: state.operation, sandboxBusy: state.busy, sandboxError: state.error, sandboxRequest: state.request, terminalDraft: state.draft }
+}
+
+/** The Model after a sandbox answers: its pane, busy flag, operation and error; nothing else. */
+//@ verify
+//@ ensures \result == { ...model, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error }
+export function sandboxResultWrite(model: Model, result: SandboxResult): Model {
+  return { ...model, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error }
+}
+
+/** The Model after a sandbox fails: its busy flag and error; the pane and operation stay as they are, absent or not. */
+//@ verify
+//@ ensures \result == { ...model, sandboxBusy: result.busy, sandboxError: result.error }
+export function sandboxFailureWrite(model: Model, result: SandboxResult): Model {
+  return { ...model, sandboxBusy: result.busy, sandboxError: result.error }
 }

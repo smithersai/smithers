@@ -454,9 +454,9 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       const opens = ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null)
       const result = polled === true ? PaneDecision.polledSandbox(sandboxResult(model), opens) : PaneDecision.loadedSandbox(sandboxResult(model), opens)
       const notice = PaneDecision.sandboxNotice(zero, low, model.sandbox?.resetAt !== snapshot.resetAt)
-      return { model: { ...model, sandbox: snapshot, sandboxPane: result.pane, sandboxBusy: result.busy, sandboxOperation: result.operation, sandboxError: result.error, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
+      return { model: { ...ModelWrite.sandboxResultWrite(model, result), sandbox: snapshot, minuteNotice: minuteNotice(notice, snapshot.id, snapshot.remaining, model.minuteNotice ?? ""), warnedMonth: PaneDecision.warnedMonthAfter(low, snapshot.resetAt, model.warnedMonth ?? 0) } }
     },
-    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
+    FailedSandbox: ({ conversation, request, reason, polled }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = polled === true ? PaneDecision.polledFailure(sandboxResult(model), reason) : PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: ModelWrite.sandboxFailureWrite(model, result) } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
     // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
@@ -1324,8 +1324,7 @@ export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ p
 function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
   if (!canSandboxAction(model.sandboxBusy ?? false, kind, model.terminalDraft ?? "")) return { model }
   const step = PaneDecision.startSandboxAction(sandboxScreen(model), kind, model.sandbox?.generation ?? 0)
-  const { pane, operation, busy, error, request, draft, ...screen } = step.state
-  return { model: { ...model, ...screen, sandboxPane: pane, sandboxOperation: operation, sandboxBusy: busy, sandboxError: error, sandboxRequest: request, terminalDraft: draft }, commands: step.commands.map((command) => SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${command.request}`, request: command.request, kind: command.kind, generation: command.generation, command: command.command })) }
+  return { model: ModelWrite.sandboxWrite(model, step.state), commands: step.commands.map((command) => SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${command.request}`, request: command.request, kind: command.kind, generation: command.generation, command: command.command })) }
 }
 
 function sandboxScreen(model: Model): PaneDecision.SandboxScreen { return ScreenRead.sandboxScreen(model) }
