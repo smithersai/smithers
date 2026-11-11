@@ -2155,3 +2155,30 @@ describe("machine-declared custom presentation", () => {
     })
   })
 })
+
+test("a monitor can skip encoding raw journal text while retaining its folded view", () => {
+  let encodings = 0
+  const records = [{
+    sequence: 0,
+    kind: "event",
+    occurredAt: 1,
+    payload: {
+      toJSON: () => {
+        encodings++
+        return { text: "journal" }
+      }
+    }
+  }]
+  const live = monitorFromJournal(RUN, records, undefined, { includeJournal: false })
+  expect(live.journal).toEqual([])
+  expect(encodings).toBe(0)
+  const replay = monitorFromJournal(RUN, records, 0)
+  expect(replay.journal).toEqual([{
+    seq: 0,
+    at: "1970-01-01T00:00:00.001Z",
+    type: "event",
+    text: "{\"text\":\"journal\"}"
+  }])
+  expect(encodings).toBe(1)
+  expect({ ...live, journal: undefined }).toEqual({ ...monitorFromJournal(RUN, records), journal: undefined })
+})

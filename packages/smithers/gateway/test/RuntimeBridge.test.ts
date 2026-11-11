@@ -4,7 +4,7 @@ import * as Control from "@smthrs/control/Control"
 import * as ControlError from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import type { PlanCard, Principal, RunSummary } from "@smthrs/control/ControlSchema"
-import { Effect, Layer, Logger, Schema, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Schema, Stream } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
@@ -1128,4 +1128,97 @@ it.effect("monitor evicts the oldest prefix after observing 33 distinct runs", (
     const reread = yield* RuntimeBridge.monitor(control, "run-0")
     expect(reread).toEqual(first)
     expect(cursors.at(-1)).toEqual({ runId: "run-0", after: undefined })
+  }))
+
+it.effect("stops an oversized monitor scan and refuses repeated polls from its bounded prefix", () =>
+  Effect.gen(function*() {
+    let reads = 0
+    let watches = 0
+    const payload = { text: "😀".repeat(256 * 1024) }
+    const control = service({
+      watch: () => {
+        watches++
+        return Stream.range(0, 100).pipe(Stream.mapEffect((sequence) =>
+          Effect.sync(() => {
+            reads++
+            return { sequence, kind: "event", runId: "run-1", occurredAt: 1, payload }
+          })
+        ))
+      }
+    })
+    expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({
+      code: "resource_limit",
+      retryable: false
+    })
+    // UTF-8 bytes, including the event envelope, cross 64 MiB on this row.
+    expect(reads).toBe(64)
+    expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({ code: "resource_limit" })
+    expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1", 1))).toMatchObject({ code: "resource_limit" })
+    expect(watches).toBe(1)
+    expect(reads).toBe(64)
+  }))
+
+it.effect("bounds observation bytes before collecting the rest of a page", () =>
+  Effect.gen(function*() {
+    let reads = 0
+    const payload = { text: "😀".repeat(256 * 1024) }
+    const control = service({
+      watch: () =>
+        Stream.range(0, 20).pipe(Stream.mapEffect((sequence) =>
+          Effect.sync(() => {
+            reads++
+            return { sequence, kind: "event", runId: "run-1", occurredAt: 1, payload }
+          })
+        ))
+    })
+    expect(
+      yield* Effect.flip(RuntimeBridge.observe(control, {
+        protocol: RuntimeBridge.protocol,
+        runId: "run-1",
+        limit: 20
+      }))
+    ).toMatchObject({ code: "resource_limit", retryable: false })
+    expect(reads).toBe(4)
+  }))
+
+it.effect("a slower monitor cannot replace a longer or overflowing cached prefix", () =>
+  Effect.gen(function*() {
+    for (const overflow of [false, true]) {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const cursors: Array<number | undefined> = []
+      const row = { sequence: 4, kind: "event", runId: "run-1", occurredAt: 1, payload: null }
+      const control = service({
+        watch: (filter) => {
+          cursors.push(filter.afterSequence)
+          if (cursors.length === 1) {
+            return Stream.concat(
+              overflow ? Stream.empty : Stream.make(row),
+              Stream.fromEffect(
+                Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)))
+              ).pipe(Stream.drain)
+            )
+          }
+          return overflow
+            ? Stream.make({ ...row, payload: { text: "x".repeat(64 * 1024 * 1024) } })
+            : Stream.make(row, { ...row, sequence: 5 })
+        }
+      })
+      const slow = yield* Effect.forkChild(RuntimeBridge.monitor(control, "run-1"))
+      yield* Deferred.await(entered)
+      if (overflow) {
+        expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({ code: "resource_limit" })
+      } else {
+        yield* RuntimeBridge.monitor(control, "run-1")
+      }
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(slow)
+      if (overflow) {
+        expect(yield* Effect.flip(RuntimeBridge.monitor(control, "run-1"))).toMatchObject({ code: "resource_limit" })
+        expect(cursors).toEqual([undefined, undefined])
+      } else {
+        yield* RuntimeBridge.monitor(control, "run-1")
+        expect(cursors).toEqual([undefined, undefined, 4])
+      }
+    }
   }))

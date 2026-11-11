@@ -2541,7 +2541,7 @@ export const monitorFromJournal = (
   run: TraceRun,
   records: ReadonlyArray<JournalRecord>,
   at?: number,
-  options: { readonly childBoundaries?: boolean } = {}
+  options: { readonly childBoundaries?: boolean; readonly includeJournal?: boolean } = {}
 ) => {
   const last = records.reduce((last, row) => Math.max(last, row.sequence ?? 0), 0)
   const journal = at === undefined ? records : records.filter((row) => (row.sequence ?? 0) <= at)
@@ -2786,7 +2786,7 @@ export const monitorFromJournal = (
     engine: trace.rows.filter((row) =>
       row.kind === "event" || row.kind === "execution" || row.kind === "attempt" || bookkeeping(row)
     ).map((row) => ({ label: row.label, detail: row.detail.output ?? row.detail.message ?? "" })),
-    journal: journal.map((row) => ({
+    journal: options.includeJournal === false ? [] : journal.map((row) => ({
       seq: row.sequence ?? 0,
       at: new Date(row.occurredAt ?? 0).toISOString(),
       type: row.kind ?? "event",

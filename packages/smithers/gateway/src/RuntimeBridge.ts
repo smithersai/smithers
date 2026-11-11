@@ -490,19 +490,32 @@ export const observe = (control: Control["Service"], input: ObserveRequest, rece
         new BridgeError({ code: "run_not_found", message: "Runtime execution was not found", retryable: true })
       )
     }
-    const events = Array.from(
-      yield* Stream.runCollect(Stream.take(
-        control.watch({
-          runId: input.runId,
-          ...(after === undefined
-            ? {}
-            : after.offset === undefined
-            ? { afterSequence: after.sequence }
-            : { afterCursor: after }),
-          follow: false
-        }),
-        limit + 1
-      ))
+    const events: Array<ControlEvent> = []
+    let bytes = 0
+    yield* control.watch({
+      runId: input.runId,
+      ...(after === undefined
+        ? {}
+        : after.offset === undefined
+        ? { afterSequence: after.sequence }
+        : { afterCursor: after }),
+      follow: false
+    }).pipe(
+      Stream.take(limit + 1),
+      Stream.runForEach((row) => {
+        bytes += new TextEncoder().encode(JSON.stringify(row)).byteLength
+        if (bytes > Projections.maxProjectionBytes) {
+          return Effect.fail(
+            new BridgeError({
+              code: "resource_limit",
+              message: "Observation page exceeds the inspection limit",
+              retryable: false
+            })
+          )
+        }
+        events.push(row)
+        return Effect.void
+      })
     )
     const page = events.slice(0, limit)
     const last = page.at(-1)
@@ -566,6 +579,7 @@ const monitorJournals = new WeakMap<
   Map<string, {
     readonly records: ReadonlyArray<ControlEvent>
     readonly bytes: number
+    readonly limited: boolean
   }>
 >()
 const monitorJournalBytes = 64 * 1024 * 1024
@@ -586,42 +600,33 @@ export const monitor = (control: Control["Service"], runId: string, at?: number)
       })
     }
     const cache = monitorJournals.get(control) ??
-      new Map<string, { readonly records: ReadonlyArray<ControlEvent>; readonly bytes: number }>()
+      new Map<
+        string,
+        { readonly records: ReadonlyArray<ControlEvent>; readonly bytes: number; readonly limited: boolean }
+      >()
     monitorJournals.set(control, cache)
     const cached = cache.get(runId)
-    const last = cached?.records.at(-1)?.sequence
-    // Replay the final entry because one entry may expand into several events.
-    const consumed = last === undefined ? 0 : cached!.records.filter((row) => row.sequence === last).length
-    let skipped = 0
-    const suffix = Array.from(
-      yield* Stream.runCollect(
-        control.watch({
-          runId,
-          follow: false,
-          ...(last === undefined || last === 0 ? {} : { afterSequence: last - 1 })
-        }).pipe(
-          Stream.filter((row) =>
-            last === undefined || row.sequence > last || row.sequence === last && skipped++ >= consumed
-          ),
-          Stream.take(Projections.maxEventsScanned + 1)
-        )
-      )
-    )
-    const records = [...(cached?.records ?? []), ...suffix]
-    if (records.length > Projections.maxEventsScanned) {
-      return yield* new BridgeError({
+    const limitError = () =>
+      new BridgeError({
         code: "resource_limit",
         message: "Run journal exceeds the inspection limit",
         retryable: false
       })
-    }
-    const bytes = (cached?.bytes ?? 0) +
-      suffix.reduce((sum, row) => sum + new TextEncoder().encode(JSON.stringify(row)).byteLength, 0)
-    const current = cache.get(runId)
-    // A slower reader cannot overwrite a longer committed prefix.
-    if (bytes <= monitorJournalBytes && (current === undefined || current.records.length <= records.length)) {
+    // Journal records are immutable. Once a prefix proves overflow, later
+    // polls can refuse without reading the same oversized journal again.
+    if (cached?.limited === true) return yield* limitError()
+    const last = cached?.records.at(-1)?.sequence
+    // Replay the final entry because one entry may expand into several events.
+    const consumed = last === undefined ? 0 : cached!.records.filter((row) => row.sequence === last).length
+    let skipped = 0
+    const records = [...(cached?.records ?? [])]
+    let bytes = cached?.bytes ?? 0
+    const remember = (limited: boolean) => {
+      const current = cache.get(runId)
+      // A slower reader cannot overwrite a longer committed prefix.
+      if (current !== undefined && (current.records.length > records.length || current.limited)) return
       cache.delete(runId)
-      cache.set(runId, { records, bytes })
+      cache.set(runId, { records, bytes, limited })
       let total = [...cache.values()].reduce((sum, entry) => sum + entry.bytes, 0)
       while (cache.size > 32 || total > monitorJournalBytes) {
         const oldest = cache.keys().next().value!
@@ -629,7 +634,30 @@ export const monitor = (control: Control["Service"], runId: string, at?: number)
         cache.delete(oldest)
       }
     }
-    const folded = monitorFromJournal({ runId, flowId: run.flowId, status: run.status }, records, at)
+    yield* control.watch({
+      runId,
+      follow: false,
+      ...(last === undefined || last === 0 ? {} : { afterSequence: last - 1 })
+    }).pipe(
+      Stream.filter((row) =>
+        last === undefined || row.sequence > last || row.sequence === last && skipped++ >= consumed
+      ),
+      Stream.take(Projections.maxEventsScanned + 1),
+      Stream.runForEach((row) => {
+        const size = new TextEncoder().encode(JSON.stringify(row)).byteLength
+        if (records.length >= Projections.maxEventsScanned || bytes + size > monitorJournalBytes) {
+          remember(true)
+          return Effect.fail(limitError())
+        }
+        records.push(row)
+        bytes += size
+        return Effect.void
+      })
+    )
+    remember(false)
+    const folded = monitorFromJournal({ runId, flowId: run.flowId, status: run.status }, records, at, {
+      includeJournal: at !== undefined
+    })
     // The journal is read page by page when its tab opens (run-events). Only a
     // replay frame carries its own journal prefix. The extent bounds the run.
     let start = Infinity

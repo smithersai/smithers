@@ -83,7 +83,9 @@ below `Number.MAX_SAFE_INTEGER`. Existing decimal cursors remain accepted.
 
 `hasMore` indicates another event page; `terminal` independently reports the
 run's current lifecycle. Backend failures retain their stable Control code and
-retryability without exposing backend message text.
+retryability without exposing backend message text. A page, including its
+lookahead event, is limited to 4 MiB of UTF-8 encoded event data; overflow
+returns `resource_limit` before the remaining events are read.
 
 ### Runtime monitor
 
@@ -94,7 +96,11 @@ The authenticated `POST /runtime/v1/monitor` door accepts
 `{ protocol: "smithers.flow-runtime/v1", runId, at? }`; `at` is a nonnegative
 journal sequence. Its response is `{ protocol, ok: true, value }`, or the
 bridge's typed error envelope. Unknown runs return `run_not_found`; bounded
-journal and projection overflow return `resource_limit`.
+journal and projection overflow return `resource_limit`. Journal scans stop
+before retaining more than 100,000 events or 64 MiB of UTF-8 encoded event
+data. The disposable prefix cache retains at most 32 runs and 64 MiB across
+one Control service. While cached, an overflowing prefix refuses later polls
+without restarting the scan; eviction permits a fresh bounded scan.
 
 Spend is priced where model calls are metered. A run with journaled model
 tokens returns no `cost_usd`; its steps carry `meter`, the
@@ -104,7 +110,9 @@ therefore only ever means a run with no model tokens.
 
 The current monitor omits the raw journal, which its reader pages from the
 `run-events` projection when the journal tab opens, and carries the run's
-`extent: { start, end }`. A replay frame (`at`) carries its own journal prefix.
+`extent: { start, end }`. It does not encode raw journal text. A replay
+frame (`at`) carries its own journal prefix. Encoded monitor responses are
+limited to 4 MiB.
 
 ### Types and constants
 
@@ -507,9 +515,11 @@ evidence do not acquire invented phases, successful checks, or file changes.
 
 - `traceFromJournal(run, records, options?)` builds a `TraceModel`: nested
   spans, frame summaries, phase bands, milestone pins, and discipline notes.
-- `monitorFromJournal(run, records, at?)` adapts that same fold to the install
+- `monitorFromJournal(run, records, at?, options?)` adapts that same fold to the install
   monitor: recorded step instances, deterministic phases, approval, sleep and deferred signal waits,
-  bookkeeping and the raw journal. Steps are the nodes that dispatched an
+  bookkeeping and the raw journal. Passing `{ includeJournal: false }` returns
+  an empty `journal` array without serializing payload text; the default
+  preserves the raw journal. Steps are the nodes that dispatched an
   action; plan structure (`AndThen`, `Branch`, `Map` and the rest) and
   child-flow calls, whose own nodes are the steps, are not steps. A phase's
   title is its label plus the failures its recorded check receipts report
