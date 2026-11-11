@@ -820,6 +820,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/concepts/events-and-signals/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/events-and-signals.md"],
     ["/github-sign-in/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/github-sign-in.md"],
     ["/guides/github/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/github.md"],
+    ["/guides/polling-source/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/polling-source.md"],
     ["/guides/webhook-ingress/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/webhook-ingress.md"],
     ["/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/quickstart.md"],
     ["/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md"],

@@ -77,6 +77,7 @@ raw exceptions and schema issues never enter logs.
 | `credentialSecret` | `(credentials: Credential) => SecretResolver`                                       | Resolves through the control plane's credential store.                                                                                                                                                                                                              |
 | `startFlow`        | `(flowId: FlowId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>` | A route that starts `flowId` with the event as its input.                                                                                                                                                                                                           |
 | `signalRun`        | `(runId: RunId) => (event: ExternalEvent) => Effect<InboundResult, InvalidInput>`   | A route that signals `runId` with the event's signal name and payload.                                                                                                                                                                                              |
+| `fromSource`       | `(config: SourceConfig) => SourceDoor`                                              | Builds the control-plane door for one polling source. Its channel refuses every delivery that did not come through the door's own `ingest` as `Unauthorized`; see [Polling source](./guides/polling-source.md).                                                     |
 
 `Config` fields: `name` (the name `Channels.register` and `Channels.ingest`
 address the channel by), `credential` (the journal-safe `CredentialRef`),
@@ -89,6 +90,17 @@ verifies; a throw, a failure or a defect refuses the delivery.
 
 `SecretResolver` is
 `(credential: Redacted<CredentialRef>) => Effect<Redacted<string>, Unauthorized>`.
+
+`SourceConfig` fields: `name`, `route`, and an optional `project` that
+defaults to the same no-op projection. `SourceDoor` has three members.
+`channel` is what `Channels.register` takes, once, at host startup.
+`ingest(event)` is `Effect<Receipt, IntegrationError, Channels>`: it routes one
+`Core.ExternalEvent` through `Channels.ingest` under the event's `dedupeKey`,
+with `receivedAtMs` left out of the delivered bytes, so an event polled again
+answers `AlreadyApplied`. `handle(events)` is
+`Effect<void, IntegrationError, Channels>`, the `onBatch` of
+`Core.Source.runWithCursor`: it routes the batch in order and fails
+`delivery-failed` at the first `Parked` or `Conflict` receipt.
 
 ### Core.ExternalEvent
 

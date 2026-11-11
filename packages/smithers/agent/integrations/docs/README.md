@@ -41,7 +41,8 @@ the backend at `POST /webhooks/github`.
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.
 Verification reads the exact delivered bytes. The receiver bounds body size
 before `Channels.ingest`, and gives every delivery an `idempotencyKey` to
-prevent duplicate work. See [the receiver guide](./guides/webhook-ingress.md).
+prevent duplicate work. See [the receiver guide](./guides/webhook-ingress.md). A polled
+source uses the same door: see [the polling source guide](./guides/polling-source.md).
 
 ## Tests
 

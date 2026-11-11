@@ -56,7 +56,8 @@ matching marker, because the original may be older than the visible copy.
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.
 Verification reads the exact delivered bytes. The receiver bounds body size
 before `Channels.ingest`, and gives every delivery an `idempotencyKey` to
-prevent duplicate work. Decoder warnings omit raw errors and schema issues. See [the receiver guide](docs/guides/webhook-ingress.md).
+prevent duplicate work. Decoder warnings omit raw errors and schema issues. See [the receiver guide](docs/guides/webhook-ingress.md). A polled
+source uses the same door: see [the polling source guide](docs/guides/polling-source.md).
 
 ## Tests
 

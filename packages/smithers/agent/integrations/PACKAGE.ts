@@ -68,6 +68,7 @@ const securityReview = Smithers.SecurityReview({
         "A digest, hash, or token compared with ===, startsWith, or an early-return loop instead of constantTimeEqual or timingSafeEqualHex.",
         "A verify path that parses or reads the body before the HMAC over the exact raw bytes passes.",
         "A verifier throw, empty secret, or missing header that resolves to success instead of Unauthorized.",
+        "A polling-source door (Channel.fromSource) whose channel accepts a delivery without the door's in-process pass.",
         "An idempotency or dedupe key built from attacker-chosen fields alone, so a replay with a new key is processed twice."
       ],
       paths: [

@@ -15,3 +15,9 @@ time or omit it when a provider may redeliver.
 `Core.CursorStore` retains a source's committed position. Commit a proposed
 cursor only after the batch it acknowledges has been handled. Storage and
 migrations remain independent of a provider adapter.
+
+A polled event reaches the control plane through `Core.Channel.fromSource`. Its
+`handle` is the batch handler of `Core.Source.runWithCursor`: every event
+starts a flow or signals a run under its dedupe key, and the cursor commits
+only after the control plane took the whole batch. See the
+[polling source guide](../guides/polling-source.md).
