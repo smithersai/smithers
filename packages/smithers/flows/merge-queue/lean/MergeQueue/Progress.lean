@@ -293,6 +293,8 @@ theorem State.nextStart_some {cfg : Config} {s : State} {count : Nat} (h : s.nex
         split at h
         · rename_i gap
           cases h
+          have step := bisectStep_bounds (gap := m - s.longestUnfailed m)
+            (free := cfg.maxRuns - s.pendingCount cfg) (by omega) (by omega)
           obtain ⟨inList, least⟩ := minOf_some (by rw [State.shortestFailed] at found; exact found)
           obtain ⟨y, yMember, yPrefix, _⟩ := State.mem_failedPrefixes.mp inList
           have mBounds := State.prefixLength_bounds yPrefix
@@ -511,9 +513,12 @@ theorem bisection_narrows {cfg : Config} {s : State} {m count : Nat} (known : s.
   · cases next
   · split at next
     · cases next
-    · simp only [known] at next
+    · rename_i slots _
+      simp only [known] at next
       split at next
       · cases next
+        have step := bisectStep_bounds (gap := m - s.longestUnfailed m)
+          (free := cfg.maxRuns - s.pendingCount cfg) (by omega) (by omega)
         omega
       · cases next
 

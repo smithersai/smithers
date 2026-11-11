@@ -163,10 +163,22 @@ export const outOfOrder = (config: Config, state: State): boolean =>
   )
 
 /**
+ * How far the next bisection run reaches into a failing gap of `gap` changes
+ * with `free` run slots: the gap is cut into `free + 1` parts. With one slot
+ * it is cut in half; with enough slots every split point is tested at once,
+ * so the culprit is found in one CI run's time.
+ *
+ * @category decisions
+ * @since 0.1.0
+ */
+export const bisectStep = (gap: number, free: number): number => Math.floor((gap + free) / (free + 1))
+
+/**
  * How many ready changes the next run should take, if the queue should start
  * one. With no known failure it extends the longest prefix under test by up to
  * `maxBatch` (speculation). With the first `m` known to fail it tests a prefix
- * halfway between the longest unfailed prefix and `m` (bisection).
+ * between the longest unfailed prefix and `m`, one split point per free run
+ * slot (bisection, in parallel).
  *
  * @category decisions
  * @since 0.1.0
@@ -181,7 +193,9 @@ export const nextStart = (config: Config, state: State): number | undefined => {
     return tested < waiting ? tested + Math.min(Math.max(config.maxBatch, 1), waiting - tested) : undefined
   }
   const tested = longestUnfailed(state, shortest)
-  return tested + 1 < shortest ? tested + Math.floor((shortest - tested + 1) / 2) : undefined
+  return tested + 1 < shortest
+    ? tested + bisectStep(shortest - tested, config.maxRuns - pendingCount(config, state))
+    : undefined
 }
 
 /**

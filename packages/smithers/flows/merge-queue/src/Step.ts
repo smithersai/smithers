@@ -98,13 +98,31 @@ export const inOrder = (changes: ReadonlyArray<Change>): ReadonlyArray<Change> =
   [...changes].sort((left, right) => before(left, right) ? (before(right, left) ? 0 : -1) : 1)
 
 /**
+ * Remembers a function of the queue's change list. The list is immutable, so
+ * the answer for one list never changes; the policy asks the same question of
+ * the same list many times in one decision.
+ */
+const perChanges = <A>(compute: (changes: ReadonlyArray<Change>) => A): (state: State) => A => {
+  const known = new WeakMap<ReadonlyArray<Change>, A>()
+  return (state) => {
+    if (!known.has(state.changes)) known.set(state.changes, compute(state.changes))
+    return known.get(state.changes)!
+  }
+}
+
+/**
  * The changes waiting to land, in landing order.
  *
  * @category order
  * @since 0.1.0
  */
-export const ready = (state: State): ReadonlyArray<Change> =>
-  inOrder(state.changes.filter((change) => change.status._tag === "queued"))
+export const ready: (state: State) => ReadonlyArray<Change> = perChanges((changes) =>
+  inOrder(changes.filter((change) => change.status._tag === "queued"))
+)
+
+const readyParts = perChanges((changes) =>
+  new Set(changes.filter((change) => change.status._tag === "queued").map((change) => `${change.id}.${change.rev}`))
+)
 
 /**
  * What `candidate` adds to `main`, when `candidate` extends it.
@@ -123,8 +141,7 @@ export const strip = (main: Tree, candidate: Tree): ReadonlyArray<Part> | undefi
  * @category liveness
  * @since 0.1.0
  */
-export const partReady = (state: State, entry: Part): boolean =>
-  state.changes.some((change) => samePart(part(change), entry) && change.status._tag === "queued")
+export const partReady = (state: State, entry: Part): boolean => readyParts(state).has(`${entry.id}.${entry.rev}`)
 
 /**
  * A run is live when its tree is the target's tree plus at least one part, and

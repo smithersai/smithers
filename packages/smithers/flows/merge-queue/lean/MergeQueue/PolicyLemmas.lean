@@ -61,6 +61,19 @@ theorem maxOf_mem (l : List Nat) : maxOf l = 0 ∨ maxOf l ∈ l := by
       · omega
       · exact Or.inr (List.mem_cons_of_mem _ member)
 
+/-! ## bisectStep -/
+
+/-- A bisection step is at least one change and strictly inside the gap. -/
+theorem bisectStep_bounds {gap free : Nat} (wide : 2 ≤ gap) (slot : 1 ≤ free) :
+    1 ≤ bisectStep gap free ∧ bisectStep gap free < gap := by
+  unfold bisectStep
+  constructor
+  · exact Nat.div_pos (by omega) (by omega)
+  · rw [Nat.div_lt_iff_lt_mul (by omega)]
+    have : 2 * free ≤ gap * free := Nat.mul_le_mul_right free wide
+    rw [Nat.mul_add]
+    omega
+
 /-! ## prefixLength -/
 
 theorem State.prefixLength_some {s : State} {r : Run} {n : Nat} (h : s.prefixLength r = some n) :

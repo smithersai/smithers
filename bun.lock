@@ -26,6 +26,7 @@
         "@smthrs/rpc": "workspace:*",
         "@smthrs/run-store": "workspace:*",
         "@smthrs/targets": "workspace:*",
+        "@smthrs/triggers": "workspace:*",
         "@smthrs/ui": "workspace:*",
         "@types/node": "26.4.1",
         "effect": "4.1.1",
@@ -1540,6 +1541,7 @@
         "@smthrs/model": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
         "@smthrs/platform-node": "1.0.0-rc.17",
+        "@smthrs/triggers": "1.0.0-rc.17",
         "@smthrs/views": "1.0.0-rc.17",
         "ignore": "7.0.8",
         "minimatch": "10.2.6",
@@ -2152,9 +2154,16 @@
     "packages/smithers/flows/merge-queue": {
       "name": "@smthrs/merge-queue",
       "version": "0.1.0",
+      "dependencies": {
+        "@smthrs/flow": "1.0.0-rc.17",
+        "@smthrs/plan": "1.0.0-rc.17",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
+        "@effect/platform-node": "4.1.1",
         "@eslint/js": "9.39.5",
+        "@smthrs/engine": "1.0.0-rc.17",
+        "@smthrs/platform-node": "1.0.0-rc.17",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",

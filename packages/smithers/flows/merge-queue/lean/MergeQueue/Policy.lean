@@ -88,10 +88,17 @@ the queue starts nothing new until it lands or fails. -/
 def State.outOfOrder (cfg : Config) (s : State) : Bool :=
   s.runs.any fun r => (s.live r).isSome && (s.prefixLength r).isNone && r.pending cfg
 
+/-- How far the next bisection run reaches into a failing gap of `gap` changes
+with `free` run slots: the gap is cut into `free + 1` parts. With one slot it
+is cut in half; with enough slots every split point is tested at once, so the
+culprit is found in one CI run's time. -/
+def bisectStep (gap free : Nat) : Nat := (gap + free) / (free + 1)
+
 /-- How many ready changes the next run should take, if the queue should start
 one. With no known failure it extends the longest prefix under test by up to
 `maxBatch` (speculation). With the first `m` known to fail it tests a prefix
-halfway between the longest unfailed prefix and `m` (bisection). -/
+between the longest unfailed prefix and `m`, one split point per free run slot
+(bisection, in parallel). -/
 def State.nextStart (cfg : Config) (s : State) : Option Nat :=
   if cfg.maxRuns ≤ s.pendingCount cfg then none
   else if s.outOfOrder cfg then none
@@ -103,7 +110,7 @@ def State.nextStart (cfg : Config) (s : State) : Option Nat :=
       if tested < ready then some (tested + min (max cfg.maxBatch 1) (ready - tested)) else none
     | some m =>
       let tested := s.longestUnfailed m
-      if tested + 1 < m then some (tested + (m - tested + 1) / 2) else none
+      if tested + 1 < m then some (tested + bisectStep (m - tested) (cfg.maxRuns - s.pendingCount cfg)) else none
 
 /-- The landable run with the longest tree; the earliest such run on a tie. -/
 def State.bestLandable (cfg : Config) (s : State) : Option Run :=

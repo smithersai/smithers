@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   ahead,
   bestLandable,
+  bisectStep,
   doomed,
   evidence,
   fixBriefs,
@@ -220,6 +221,23 @@ describe("what the world must be doing", () => {
     const { state } = play(standard, "enqueue 1 0", "enqueue 2 3", "enqueue 3 0", "enqueue 4 0", "withdraw 4")
     expect(ahead(state, state.changes[2]!)).toEqual([{ id: 2, fixing: false }, { id: 1, fixing: false }])
     expect(ahead(state, state.changes[1]!)).toEqual([])
+  })
+})
+
+describe("bisection uses every free run slot", () => {
+  it("cuts the failing gap in half with one slot and into single steps with enough slots", () => {
+    expect(bisectStep(8, 1)).toBe(4)
+    expect(bisectStep(8, 3)).toBe(2)
+    expect(bisectStep(8, 7)).toBe(1)
+    expect(bisectStep(2, 9)).toBe(1)
+  })
+
+  it("starts one run per split point until the slots are used", () => {
+    const wide = "config required=1 maxAttempts=1 maxBatch=8 maxRuns=4 window=3 defaultDuration=60"
+    const lines = [wide, ...[1, 2, 3, 4, 5, 6, 7, 8].map((id) => `enqueue ${id} 0`), "plan", "result 0 1 fail 1"]
+    const { config, state } = play(...lines)
+    const settled = settle(config, 10, state)
+    expect(settled.runs.map((run) => run.batch.length)).toEqual([8, 2, 4, 6, 7])
   })
 })
 

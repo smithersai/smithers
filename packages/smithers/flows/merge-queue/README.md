@@ -30,6 +30,7 @@ with `effect` at this exact version.
 {
   "dependencies": {
     "@smthrs/merge-queue": "workspace:*",
+    "@smthrs/flow": "workspace:*",
     "effect": "4.1.1"
   }
 }

@@ -500,13 +500,13 @@
     "what": "Retest the whole failing prefix instead of a shorter one.",
     "lean": {
       "file": "lean/MergeQueue/Policy.lean",
-      "original": "      if tested + 1 < m then some (tested + (m - tested + 1) / 2) else none",
-      "mutated": "      if tested + 1 < m then some (tested + (m - tested)) else none"
+      "original": "def bisectStep (gap free : Nat) : Nat := (gap + free) / (free + 1)",
+      "mutated": "def bisectStep (gap _free : Nat) : Nat := gap"
     },
     "ts": {
       "file": "src/Policy.ts",
-      "original": "  return tested + 1 < shortest ? tested + Math.floor((shortest - tested + 1) / 2) : undefined",
-      "mutated": "  return tested + 1 < shortest ? tested + (shortest - tested) : undefined"
+      "original": "Math.floor((gap + free) / (free + 1))",
+      "mutated": "gap + 0 * free"
     }
   },
   {
@@ -699,6 +699,20 @@
       "file": "src/Step.ts",
       "original": "    pushing: null\n  }\n}",
       "mutated": "    pushing: state.pushing\n  }\n}"
+    }
+  },
+  {
+    "name": "bisect-one-at-a-time",
+    "what": "Bisect with one run at a time although more run slots are free.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "def bisectStep (gap free : Nat) : Nat := (gap + free) / (free + 1)",
+      "mutated": "def bisectStep (gap _free : Nat) : Nat := (gap + 1) / 2"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "Math.floor((gap + free) / (free + 1))",
+      "mutated": "Math.floor((gap + 1 + 0 * free) / 2)"
     }
   }
 ]

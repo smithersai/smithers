@@ -112,6 +112,32 @@ queue did not put there becomes a `foreign` event. A tip that does not extend
 the tree the queue knows (rewritten history) fails the round with
 `TargetDiverged` and changes nothing.
 
+## The durable flow
+
+`QueueFlow.Queue` is the queue as an `@smthrs/flow` flow. One flow round is
+one driver round: a single recorded action (`QueueFlow.Round`) whose result,
+the queue's next position, is the payload of the next round. The queue's
+whole state lives in the flow's journal, so a host that dies resumes at the
+last recorded position on another engine over the same store. A round that
+fails because a service is down is retried from 200 ms up to every 30 s,
+without end: an outage delays landings and loses nothing. The flow has no
+pause or hold; it ends only when the inbox was closed and every change ended.
+
+```ts
+import { Action, Interpreter } from "@smthrs/flow"
+import { empty, QueueFlow } from "@smthrs/merge-queue"
+
+const layer = Layer.mergeAll(QueueFlow.layer, Interpreter.layer(QueueFlow.Queue)).pipe(
+  Layer.provideMerge(services), // Inbox, Ci, Fixer, Target
+  Layer.provideMerge(Action.layerImplementations),
+  Layer.provideMerge(engine)
+)
+QueueFlow.Queue.execute(
+  { config, state: empty, cursor: 0, closed: false, round: 0 },
+  { executionId: "main" }
+)
+```
+
 ## When a change is unmergeable
 
 Two things put a change out of the queue, and both record why:
