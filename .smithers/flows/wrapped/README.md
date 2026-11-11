@@ -22,7 +22,11 @@ Recall -> Launch                  (resume)
   it started still holds stdout. A timeout, oversized output, interruption or host
   SIGINT/SIGTERM/SIGHUP kills the whole group. The harness does not inherit
   `AI_GATEWAY_API_KEY`, `NODE_OPTIONS`, `NODE_PATH` or the build cache
-  credentials.
+  credentials (including separate read and write tokens). Repository, gateway,
+  GitHub and npm credentials are also withheld, including token-file paths and
+  npm auth configuration. Filtering is case-insensitive and runs before login
+  probes as well as execution. Claude Code retains its Anthropic credentials;
+  Codex withholds Anthropic credentials and OpenAI/Codex API keys and uses its vendor login.
 
 Codex runs `exec --json` with user config and rules disabled, no shell tool,
 web search disabled, and `read-only` or `workspace-write` according to the

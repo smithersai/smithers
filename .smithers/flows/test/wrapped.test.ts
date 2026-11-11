@@ -34,6 +34,7 @@ import Wrapped, {
 } from "../wrapped/flow.ts"
 import {
   adapters,
+  childEnvironment,
   commandFor,
   launch,
   type LaunchInput,
@@ -986,6 +987,113 @@ test("a failed prompt rename removes its temporary file", async () => {
   assert.equal(error.code, "prompt_failed")
   assert.equal(readdirSync(dirname(path)).some((name) => name.endsWith(".tmp")), false)
 })
+
+// Synthetic credentials only; check names in real child processes, never host values.
+const unrelatedCredentials = [
+  "SMITHERS_CACHE_URL",
+  "SMITHERS_CACHE_TOKEN",
+  "SMITHERS_CACHE_READ_TOKEN",
+  "SMITHERS_CACHE_WRITE_TOKEN",
+  "SMITHERS_JJHUB_TOKEN",
+  "SMITHERS_ISSUE_TOKENS",
+  "SMITHERS_AUTH_FILE",
+  "SMITHERS_GITHUB_PROXY_CAPABILITY_FILE",
+  "ISSUE_CLAIM_APP_KEY_FILE",
+  "ISSUE_CLAIM_APP_CONFIG",
+  "ISSUE_CLAIM_CACHE",
+  "GITHUB_APP_PRIVATE_KEY",
+  "GH_APP_SECRET",
+  "NPM_AUTH_TOKEN",
+  "SMITHERS_NATIVE_REPOSITORY_TOKEN",
+  "SMITHERS_TOKEN",
+  "SMITHERS_TOKEN_FILE",
+  "SMITHERS_GATEWAY_TOKEN",
+  "SMITHERS_GATEWAY_SECRET",
+  "SMITHERS_GATEWAY_PASSWORD",
+  "SMITHERS_WORKSPACE_CHILDREN_TOKEN_FILE",
+  "SMITHERS_API_KEY",
+  "SMITHERS_AGENT_TOKEN",
+  "SMITHERS_CRED_TOKEN",
+  "SMITHERS_GITHUB_TOKEN",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "GITHUB_ENTERPRISE_TOKEN",
+  "NPM_TOKEN",
+  "NODE_AUTH_TOKEN",
+  "NPM_CONFIG__AUTH",
+  "NPM_CONFIG__AUTHTOKEN",
+  "NPM_CONFIG__PASSWORD",
+  "NPM_CONFIG_TOKEN",
+  "npm_config_//registry.npmjs.org/:_authToken"
+]
+const credentialNames = unrelatedCredentials.flatMap((name) => [
+  name,
+  name.toLowerCase(),
+  [...name].map((char, index) => index % 2 === 0 ? char.toUpperCase() : char.toLowerCase()).join("")
+])
+const claudeCredentials = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"
+]
+
+test("wrapped children remove repository, gateway and registry credentials before reading values", () => {
+  for (const harness of ["claude-code", "codex"] as const) {
+    const source: NodeJS.ProcessEnv = {
+      PATH: "/bin",
+      HOME: "/test-home",
+      SMITHERS_MEMORY_DB: "memory.db",
+      SMITHERS_OPENAI_AUTH: "login",
+      SMITHERS_HOTKEY: "Ctrl+K"
+    }
+    for (const name of credentialNames) {
+      Object.defineProperty(source, name, {
+        configurable: true,
+        enumerable: true,
+        get() {
+          assert.fail(`read denied credential ${name}`)
+        }
+      })
+    }
+    assert.deepEqual(childEnvironment(source, harness), {
+      PATH: "/bin",
+      HOME: "/test-home",
+      SMITHERS_MEMORY_DB: "memory.db",
+      SMITHERS_OPENAI_AUTH: "login",
+      SMITHERS_HOTKEY: "Ctrl+K"
+    })
+    assert.ok(Object.hasOwn(source, "SMITHERS_CACHE_READ_TOKEN"), "filtering must not mutate the caller")
+  }
+})
+
+for (const harness of ["claude-code", "codex"] as const) {
+  test(`wrapped ${harness} login and execution withhold unrelated credentials`, async () => {
+    const fake = harness === "codex" ? fakeCodex() : fakeClaude()
+    const input = { ...(await prepare(fake.dir)), harness }
+    const env = {
+      ...fake.env(),
+      ...Object.fromEntries([...credentialNames, ...claudeCredentials].map((name) => [name, "synthetic-credential"])),
+      WRAPPED_KEEP: "kept"
+    }
+    await Effect.runPromise(launch(input, { env }))
+    const files = harness === "codex" ? ["login-env", "env.0"] : ["env.0"]
+    for (const file of files) {
+      const inherited = Object.fromEntries(
+        readFileSync(join(fake.log, file), "utf8").trim().split("\n").map((line) => {
+          const equals = line.indexOf("=")
+          return [line.slice(0, equals), line.slice(equals + 1)]
+        })
+      )
+      for (const name of credentialNames) assert.ok(!Object.hasOwn(inherited, name), `${harness} ${file}: ${name}`)
+      assert.equal(inherited.WRAPPED_KEEP, "kept")
+      for (const name of claudeCredentials) {
+        assert.equal(inherited[name], harness === "claude-code" ? "synthetic-credential" : undefined, name)
+      }
+    }
+  })
+}
 
 test("wrapped Codex probe and exec share credential filtering without reading denied getters", async () => {
   const fake = fakeCodex()

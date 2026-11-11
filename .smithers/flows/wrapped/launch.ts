@@ -214,17 +214,45 @@ export const adapters: Record<Harness, Adapter> = {
   }
 }
 
-/** Cache credentials withheld in addition to the shared vendor credential policy. */
+/** Host credentials withheld from both wrapped login probes and harness execution. */
 export const withheld: ReadonlyArray<string> = [
   "SMITHERS_CACHE_URL",
-  "SMITHERS_CACHE_TOKEN"
+  "SMITHERS_CACHE_TOKEN",
+  "SMITHERS_AUTH_FILE",
+  "SMITHERS_GITHUB_PROXY_CAPABILITY_FILE",
+  "ISSUE_CLAIM_APP_KEY_FILE",
+  "ISSUE_CLAIM_APP_CONFIG",
+  "ISSUE_CLAIM_CACHE",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "GITHUB_ENTERPRISE_TOKEN",
+  "NPM_TOKEN",
+  "NODE_AUTH_TOKEN"
 ]
+const denied = new Set(withheld)
+const claudeCredentials = new Set([
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR"
+])
 
-/** Applies the shared credential policy and wrapped cache exclusions. */
-export const childEnvironment = (base: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = codexEnvironment(base)
-  for (const name of withheld) delete env[name]
-  return env
+/** Filters names case-insensitively before any denied credential value is read. */
+export const childEnvironment = (base: NodeJS.ProcessEnv, harness?: Harness): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {}
+  for (const name of Object.keys(base)) {
+    const upper = name.toUpperCase()
+    if (
+      denied.has(upper) ||
+      /^(?:SMITHERS|GITHUB|GH|NPM)_(?:.*_)?(?:TOKENS?|KEY|SECRET|PASSWORD)(?:_|$)/.test(upper) ||
+      /^NPM_CONFIG_.*(?:_AUTH(?:TOKEN)?|_PASSWORD|TOKEN)$/.test(upper) ||
+      (harness !== "claude-code" && claudeCredentials.has(upper))
+    ) continue
+    // Preserve descriptors so the shared policy can also reject names before reading getters.
+    Object.defineProperty(env, name, Object.getOwnPropertyDescriptor(base, name)!)
+  }
+  return codexEnvironment(env)
 }
 
 /** How long pipes may drain after the harness exits, for a holder outside its group. */
@@ -237,6 +265,7 @@ export interface RunOptions {
   readonly maxBytes: number
   readonly env?: NodeJS.ProcessEnv | undefined
   readonly includeStderr?: boolean | undefined
+  readonly harness?: Harness | undefined
 }
 
 /**
@@ -257,7 +286,7 @@ export const run = (command: Command, options: RunOptions): Effect.Effect<string
     try {
       child = spawn(command.executable, [...command.args], {
         cwd: options.cwd,
-        env: childEnvironment(options.env ?? process.env),
+        env: childEnvironment(options.env ?? process.env, options.harness),
         stdio: ["pipe", "pipe", "pipe"],
         shell: false,
         detached: true
@@ -404,6 +433,7 @@ export const launch = (input: LaunchInput, options: LaunchOptions = {}): Effect.
         timeoutMs: 15_000,
         maxBytes: 16 * 1024,
         env: options.env,
+        harness: input.harness,
         includeStderr: true
       }).pipe(
         Effect.mapError((error) =>
@@ -424,7 +454,8 @@ export const launch = (input: LaunchInput, options: LaunchOptions = {}): Effect.
       stdin: input.task,
       timeoutMs: options.timeoutMs ?? 30 * 60_000,
       maxBytes: options.maxBytes ?? 16 * 1024 * 1024,
-      env: options.env
+      env: options.env,
+      harness: input.harness
     })
     options.observeOutput?.(stdout)
     return yield* adapters[input.harness].parse(
