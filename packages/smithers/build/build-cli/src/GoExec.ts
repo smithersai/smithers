@@ -436,6 +436,16 @@ const compilerInputCollections = [
   "SysoFiles"
 ] as const satisfies ReadonlyArray<keyof GoListRow>
 
+/**
+ * The compiler inputs of a build that compiles no test: `go build` never
+ * reads a `_test.go` file or its embeds, so an edit to one must not change a
+ * binary's key or open its reads.
+ */
+const buildInputCollections = compilerInputCollections.filter((collection) =>
+  collection !== "TestGoFiles" && collection !== "XTestGoFiles" && collection !== "TestEmbedFiles" &&
+  collection !== "XTestEmbedFiles"
+)
+
 const jsonRows = (text: string): ReadonlyArray<GoListRow> => {
   const rows: Array<GoListRow> = []
   let start = -1, depth = 0, string = false, escape = false
@@ -542,7 +552,7 @@ const closure = async (
     if (row.Dir === undefined || row.Standard === true) continue
     const replacementDir = row.Module?.Replace?.Dir
     const replacementPath = row.Module?.Replace?.Path ?? row.Module?.Path
-    for (const collection of compilerInputCollections) {
+    for (const collection of tests ? compilerInputCollections : buildInputCollections) {
       for (const name of row[collection] ?? []) {
         // The generated test main uses an absolute path in Go's build cache.
         const absolute = NodePath.resolve(row.Dir, name)
@@ -681,7 +691,9 @@ export const planRule = async (
   }
   if (rule === "Go.Packages") {
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
-    const graph = await closure(packages, context, goPath, listEnv)
+    // A selection's consumer may test it (a shard runner, a fuzz script), so
+    // the closure is the test closure: test files and test-only imports too.
+    const graph = await closure(packages, context, goPath, listEnv, true)
     return {
       cwd,
       env,
@@ -806,7 +818,8 @@ export const planRule = async (
   }
   if (rule === "Go.Generate") {
     const packages = await selectedPackages(attrs["pkgs"], context, goPath, listEnv)
-    const graph = await closure(packages, context, goPath, listEnv)
+    // `go generate` scans `_test.go` files for directives too.
+    const graph = await closure(packages, context, goPath, listEnv, true)
     return {
       cwd,
       argv: [goPath, "generate", ...packages],

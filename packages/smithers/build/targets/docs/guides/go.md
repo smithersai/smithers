@@ -29,10 +29,12 @@ switch toolchains, which a closed network refuses.
 ## Package sets
 
 `S.Go.Packages({ pkgs })` resolves a set of packages with `go list`, and
-composes through `S.Files.difference` the way any other file set does. Tests
-and binaries key on digests of the transitive Go files, test files, cgo files,
-and `go:embed` files that `go list -deps -json` reports, so an edit outside
-that closure stays a cache hit.
+composes through `S.Files.difference` the way any other file set does. Targets
+key on digests of the transitive Go files, cgo files and `go:embed` files that
+`go list -deps -json` reports, so an edit outside that closure stays a cache
+hit. `Go.Test`, `Go.Fuzz`, `Go.Generate` and `Go.Packages` add the test files
+and test-only imports (`go list -deps -test`); `Go.Binary` does not, so a test
+edit never rebuilds a binary.
 
 A target that names a selection in `data` reads its closure: `go.mod`,
 `go.sum` and every file above, test files included. A confined shell that runs

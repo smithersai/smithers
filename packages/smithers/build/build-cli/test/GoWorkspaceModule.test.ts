@@ -318,6 +318,21 @@ export const Package = S.Package({ targets: {
   }, 240_000)
 })
 
+describe.runIf(launcher !== undefined && canConfine)("Go.Binary keys", () => {
+  it("do not change when only a test file changes", async () => {
+    const root = await module(`export const Package = S.Package({ targets: {
+  binary: S.Go.Binary({ pkg: "./", out: "bin/probe", offline: true, sandbox: {} }),
+  tests: S.Go.Test({ pkgs: ["./"], offline: true, sandbox: {} })
+} })`)
+    expect((await ran(root, ["build", "//:binary"])).exitCode).toBe(0)
+    expect((await ran(root, ["test", "//:tests"])).exitCode).toBe(0)
+    await Fs.appendFile(NodePath.join(root, "main_test.go"), "// test edit\n")
+    expect((await ran(root, ["build", "//:binary"])).text).toContain("//:binary  hit")
+    // The test target still keys on its test files.
+    expect((await ran(root, ["test", "//:tests"])).text).toContain("//:tests  ran")
+  }, 240_000)
+})
+
 describe.runIf(launcher !== undefined && canConfine)("offline Go rules", () => {
   it("keep the declared GOFLAGS and add -mod=readonly", async () => {
     const root = await module(

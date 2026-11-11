@@ -376,7 +376,7 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     })
     const calls = await host.calls()
     expect(calls[0]).toBe("go list -json ./pkg/lib ./other GOEXPERIMENT=jsonv2,synctest CGO_ENABLED=1 GOOS=linux")
-    expect(calls[1]).toMatch(/^go list -deps -json example.test\/pkg\/lib /)
+    expect(calls[1]).toMatch(/^go list -deps -test -json example.test\/pkg\/lib /)
   })
 
   it("selects the left packages a files difference leaves after the right", async () => {
@@ -443,6 +443,27 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     expect(planned.argv).toEqual([goPath(), "test", "-timeout", "30s", "-parallel=4", "example.test/pkg/lib"])
     expect(planned.readSet).toEqual(["pkg/lib/lib.go", "pkg/lib/lib_test.go"])
     expect((await host.calls())[1]).toMatch(/^go list -deps -test -json /)
+  })
+
+  it("keys a binary on its build inputs only, and every other closure on its test files too", async () => {
+    await listPackage(
+      { "lib.go": "package lib\n", "lib_test.go": "package lib\n", "x_test.go": "package lib_test\n", "t.txt": "t" },
+      { GoFiles: ["lib.go"], TestGoFiles: ["lib_test.go"], XTestGoFiles: ["x_test.go"], TestEmbedFiles: ["t.txt"] }
+    )
+    const binary = await GoExec.planRule("Go.Binary", { pkg: "./lib", out: "bin/app" }, host.context, goPath())
+    expect(binary.readSet).toEqual(["pkg/lib/lib.go"])
+    expect((await host.calls()).at(-1)).toMatch(/^go list -deps -json /)
+    const tests = ["pkg/lib/lib.go", "pkg/lib/lib_test.go", "pkg/lib/t.txt", "pkg/lib/x_test.go"]
+    for (
+      const [rule, attrs] of [["Go.Packages", { pkgs: ["./lib"] }], ["Go.Generate", {
+        pkgs: ["./lib"],
+        changes: []
+      }]] as const
+    ) {
+      const planned = await GoExec.planRule(rule, attrs, host.context, goPath())
+      expect(planned.readSet).toEqual(tests)
+      expect((await host.calls()).at(-1)).toMatch(/^go list -deps -test -json /)
+    }
   })
 
   it("renders a binary with ldflags and stamps, and a fuzz run", async () => {
