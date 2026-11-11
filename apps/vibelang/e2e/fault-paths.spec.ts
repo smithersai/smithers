@@ -20,6 +20,23 @@ test("a save that fails says so, keeps the text, and the next save opens the cha
   await expect(wiki(page).getByRole("link", { name: "Review", exact: true })).toHaveAttribute("href", /\/pull\/[0-9]+$/)
 })
 
+test("after a save, a page shows the repository's copy, not the build's", async ({ page }) => {
+  await page.goto(`${local}/e2e/runtime/index.html?fault=wiki-repository`)
+  await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+  await page.getByRole("button", { name: "Wiki", exact: true }).click()
+  await wiki(page).getByRole("link", { name: "Benchmark methods and measurements", exact: true }).click()
+  await expect(wiki(page).getByRole("button", { name: "Edit", exact: true })).toBeVisible()
+  await expect(wiki(page).getByText("A real repository page.", { exact: true })).toHaveCount(0)
+  await wiki(page).getByRole("button", { name: "Edit", exact: true }).click()
+  const editor = wiki(page).getByRole("textbox", { name: "Edit Benchmarks" })
+  await expect(editor).toHaveValue(/^# Wiki fixture\n\nA real repository page\./)
+  await editor.fill((await editor.inputValue()) + "\nA line from the browser.\n")
+  await wiki(page).getByRole("button", { name: "Save", exact: true }).click()
+  await expect(editor).toHaveCount(0)
+  await expect(wiki(page).getByRole("heading", { name: "Wiki fixture", exact: true })).toBeVisible()
+  await expect(wiki(page).getByText("A real repository page.", { exact: true })).toBeVisible()
+})
+
 test("a pause the server doesn't take is visible during the tour", async ({ page }) => {
   await page.goto(`${local}/e2e/runtime/index.html?fault=tour-control`)
   await page.getByRole("button", { name: "Learn more", exact: true }).click()

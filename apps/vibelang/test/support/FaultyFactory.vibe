@@ -4,9 +4,10 @@ import { WikiFailure } from "../../src/core/wikiSchemas.vibe"
 import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { AccountUnavailable, Accounts } from "../../src/core/roles.vibe"
-import { MockFactory } from "../../src/core/MockFactory.vibe"
+import { MockFactory, mockFactoryFor } from "../../src/core/MockFactory.vibe"
+import { recordedWikiStore } from "./recordedWiki.vibe"
 
-export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
+export type Fault = "accounts" | "live-details" | "wiki" | "wiki-edit" | "wiki-repository" | "tour-control" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header" | "sandbox-read" | "sandbox-start" | "roles" | "tour-events" | "stale"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -54,6 +55,7 @@ function accountsFault(accounts: Accounts.Shape, first: (name: string) => boolea
  * fails every sandbox read; `sandbox-start` fails the first start; `roles` ends the first role subscription with AccountUnavailable;
  * `tour-events` ends the first tour conversation subscription with Unavailable; `accounts` fails the first sign-in or role
  * choice, member list, grant and sign-out; `live-details` runs live mode and fails the first issue's details read.
+ * `wiki-repository` faults nothing: its fixture repository's Benchmarks page is the recorded GitHub copy (recordedWiki.vibe).
  * Each fault happens once.
  */
 export function faultyFactory(fault: Fault, observation: Trace) {
@@ -173,5 +175,5 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         )
       }),
     }
-  }).pipe(Layer.provide(MockFactory))
+  }).pipe(Layer.provide(fault === "wiki-repository" ? mockFactoryFor(undefined, recordedWikiStore()) : MockFactory))
 }

@@ -1,0 +1,25 @@
+// The test repository's wiki as GitHub answered it in the committed recording (test/recordings/wiki.json, VL-36), for
+// hosts that have no network: the browser fault host seeds its fixture repository with it.
+import recording from "../recordings/wiki.json?raw"
+import { applyWikiEdits } from "../../src/core/conversation.vibe"
+import { makeWikiStore, type WikiFixtureStore } from "../../src/core/WikiFactory.vibe"
+
+const Recording = Schema.Struct({ exchanges: Schema.Array(Schema.Struct({ request: Schema.Struct({ method: Schema.String, url: Schema.String }), response: Schema.Struct({ status: Schema.Number, body: Schema.Unknown }) })) })
+const Contents = Schema.Struct({ path: Schema.String, sha: Schema.String, content: Schema.String })
+
+/** The copy of `path` on the recording's base branch: the first contents answer GitHub gave for it. */
+export effect function recordedWikiFile(path: string): { readonly source: string; readonly sha: string }!! {
+  const exchanges = (try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(Recording))(recording))).exchanges
+  const answer = exchanges.find((exchange) => exchange.request.method === "GET" && exchange.response.status === 200 && exchange.request.url.includes(`/contents/${path}?ref=vibelang%2Fwiki-base-`))!
+  const contents = try Effect.orDie(Schema.decodeUnknownEffect(Contents)(answer.response.body))
+  const source = try Effect.orDie(Effect.try(() => new TextDecoder().decode(Uint8Array.from(atob(contents.content.replace(/\n/g, "")), (char) => char.charCodeAt(0)))))
+  return { source, sha: contents.sha }
+}
+
+/** A fixture repository whose Benchmarks page is the recorded repository copy, not the build's. */
+export effect function recordedWikiStore(): WikiFixtureStore!! {
+  const store = try makeWikiStore()
+  const benchmarks = try recordedWikiFile("wiki/benchmarks.md")
+  try Ref.update(store.state, (state) => applyWikiEdits(state, { type: "WikiEditsObserved", seq: state.seq + 1, pages: [{ id: "benchmarks", source: benchmarks.source, revision: benchmarks.sha }] }))
+  return store
+}

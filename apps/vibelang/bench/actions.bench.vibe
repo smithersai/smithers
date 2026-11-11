@@ -242,7 +242,7 @@ it("markdown, wiki and small shared decisions", async ({ bench }) => {
     expect(html).toContain(">bold</strong>")
     expect(html).toContain('href="/wiki/./other.md"')
     expect(html).toContain("const a = 1 &lt; 2")
-    expect(toHtml("plain")).toContain("<p")
+    expect(toHtml("plain", href => href)).toContain("<p")
     expect(wikiPath("/wiki/rulings")).toBe("/wiki/rulings")
     expect(wikiPath("")).toBe("/wiki/index")
     expect(wikiPath("roadmap.md")).toBe("/wiki/roadmap")

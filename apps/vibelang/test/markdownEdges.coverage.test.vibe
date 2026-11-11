@@ -30,7 +30,7 @@ describe("lists", () => {
     assert(compile("1. **VL-7.** Mock mode always works.")).toEqual([{ tag: "ol", children: [
       { tag: "li", id: "vl-7", children: [{ tag: "strong", children: ["VL-7."] }, " Mock mode always works."] },
     ] }])
-    assert(toHtml("- **VL-12.** x")).toContain("<li class=\"sui-md-li\" id=\"vl-12\">")
+    assert(toHtml("- **VL-12.** x", href => href)).toContain("<li class=\"sui-md-li\" id=\"vl-12\">")
   })
 })
 

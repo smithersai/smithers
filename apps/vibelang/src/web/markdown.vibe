@@ -171,7 +171,7 @@ function escape(text: string): string {
 }
 
 /** Build-time HTML. Link resolution receives the file containing the link, so relative wiki links remain stable. */
-export function toHtml(text: string, resolve: (href: string) => string = href => href): string {
+export function toHtml(text: string, resolve: (href: string) => string): string {
   const draw = (item: MarkdownNode | string, inPre = false): string => {
     if (typeof item === "string") return escape(item)
     const href = item.href === undefined ? "" : resolve(item.href)

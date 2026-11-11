@@ -49,7 +49,7 @@ function decisions() {
   expect(writeFailure("forbidden", "Issue write failed.")).toBe("Not allowed.")
   expect(writeFailure("unavailable", "Issue write failed.")).toBe("Issue write failed.")
   // Without a resolver a link is printed as written.
-  expect(toHtml("[Guide](guide/x.md)")).toContain(' href="guide/x.md"')
+  expect(toHtml("[Guide](guide/x.md)", href => href)).toContain(' href="guide/x.md"')
 }
 
 it("decisions at the edges of links, sessions, paths and failures", async ({ bench }) => {

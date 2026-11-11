@@ -20,7 +20,7 @@ describe("wiki documents", () => {
     expect(wikiPage("/wiki/decisions/0014-agent-tour")?.rulings).toContain("VL-28")
   })
   it("renders shared Markdown structure and escapes HTML and unsafe links", () => {
-    const html = toHtml('# Heading\n\n| Page | Why |\n| --- | --- |\n| [Home](index.md) | **Memory** |\n\n- `code`\n\n> Quote\n\n<script>alert(1)</script>\n\n[x](javascript:alert)')
+    const html = toHtml('# Heading\n\n| Page | Why |\n| --- | --- |\n| [Home](index.md) | **Memory** |\n\n- `code`\n\n> Quote\n\n<script>alert(1)</script>\n\n[x](javascript:alert)', href => href)
     expect(html).toContain('<h1 class="sui-md-heading sui-md-h1" id="heading">Heading</h1>')
     expect(html).toContain('<table')
     expect(html).toContain('<strong')

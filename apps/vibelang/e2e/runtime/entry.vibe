@@ -13,7 +13,7 @@ import { canonical } from "./probe.vibe"
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
-  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "roles" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale") return requested
+  if (requested === "issue-write" || requested === "wiki" || requested === "wiki-edit" || requested === "wiki-repository" || requested === "tour-control" || requested === "live-header" || requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable" || requested === "sandbox-read" || requested === "sandbox-start" || requested === "roles" || requested === "accounts" || requested === "live-details" || requested === "tour-events" || requested === "stale") return requested
   return requested === "issues" ? "issues" : requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 
