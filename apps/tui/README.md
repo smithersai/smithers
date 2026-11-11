@@ -649,7 +649,9 @@ The tab runs as a worker with the body appended to the worker instructions,
 `effort` as its reasoning effort, `capabilities` as its envelope and `flows`
 narrowing the filesystem and shell flows. For an agent declaring `flows:`, the
 registry lists its declared `capabilities:`; if omitted, it lists `*`. The tab
-runs under the file's `capabilities:`. Retry rereads the file, applies edits,
+runs under the file's `capabilities:`. An explicit `capabilities: []` grants no
+authority, even when `flows:` lists a write or shell flow. Omitting `capabilities:`
+keeps wildcard authority. Retry rereads the file, applies edits,
 and keeps the agent and model. The tab records `agent: {name, digest}` and
 `by`, who requested it. A restart relaunches with that requester, and a retry
 runs as whoever asks for it: the coordinator's `tab.retry` never starts a

@@ -39,7 +39,7 @@ export class AgentError extends Data.TaggedError("AgentError")<{
   }
 }
 
-/** What `host.run` applies to a worker turn. Empty `flows` and `envelope` keep the host's defaults. */
+/** What `host.run` applies to a worker turn. Empty `flows` keep the host's catalog; an empty envelope grants nothing. */
 export interface Profile {
   readonly name: string
   readonly digest: string
@@ -88,11 +88,8 @@ export const profile = (
   if (descriptor.effort !== undefined && !isEffort(descriptor.effort)) {
     throw new AgentError("unknown_effort", `Unknown effort ${descriptor.effort}`, String(descriptor.effort))
   }
-  // The file's own list: the registry widens a body that declares `flows:` to `*`, but the
-  // worker enforces this envelope per call, so the declared narrowing still holds.
+  // Prefer the fresh file's declaration, including an explicitly empty capability ceiling.
   const declared = body.capabilities ?? descriptor.capabilities
-  // A bare `*` (no `capabilities:`) is the host default.
-  const envelope = declared.filter((capability) => capability !== "*")
   return {
     name: descriptor.name,
     digest: body.digest,
@@ -103,7 +100,7 @@ export const profile = (
     ...(fallbackSeats === undefined ? {} : { fallbackSeats }),
     ...(descriptor.effort === undefined ? {} : { thinking: descriptor.effort }),
     flows: descriptor.flows,
-    envelope: envelope.length === declared.length ? envelope : []
+    envelope: declared
   }
 }
 

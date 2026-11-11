@@ -64,7 +64,7 @@ describe("profile", () => {
   test("narrows to the file's declared capabilities when the registry widened them for flows", () => {
     const widened = agent({ capabilities: ["*"], flows: ["read", "grep"] })
     expect(Agents.profile(widened, { ...body, capabilities: ["fs:read:**"] }, seatOf).envelope).toEqual(["fs:read:**"])
-    expect(Agents.profile(widened, body, seatOf).envelope).toEqual([])
+    expect(Agents.profile(widened, body, seatOf).envelope).toEqual(["*"])
   })
   test("renders the body as the system prompt and resolves the declared seat", () => {
     const profile = Agents.profile(agent(), body, seatOf)
@@ -79,7 +79,7 @@ describe("profile", () => {
     expect(profile.system).toStartWith("Review the change.")
     expect(profile.system).toContain("Base directory: /repo/.smithers/flows/review")
   })
-  test("empty flows and capabilities keep the host defaults", () => {
+  test("empty capabilities grant nothing while an omitted declaration keeps wildcard authority", () => {
     const profile = Agents.profile(
       agent({ flows: [], capabilities: [], seat: undefined, effort: undefined }),
       body,
@@ -87,10 +87,12 @@ describe("profile", () => {
     )
     expect(profile.flows).toEqual([])
     expect(profile.envelope).toEqual([])
+    expect(Agents.profile(agent({ capabilities: ["*"] }), { ...body, capabilities: [] }, seatOf).envelope)
+      .toEqual([])
     expect(profile.seat).toBeUndefined()
     expect(profile.thinking).toBeUndefined()
-    // The registry's bare `*` is the host default too.
-    expect(Agents.profile(agent({ capabilities: ["*"] }), body, seatOf).envelope).toEqual([])
+    // Only the registry's bare `*` retains wildcard authority.
+    expect(Agents.profile(agent({ capabilities: ["*"] }), body, seatOf).envelope).toEqual(["*"])
   })
   test("an unknown seat or effort is a typed failure", () => {
     expect(code(() => Agents.profile(agent({ seat: "gpt-9" }), body, seatOf))).toBe("unknown_seat")

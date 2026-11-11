@@ -30,8 +30,9 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type * as Agents from "../src/agents.ts"
+import * as Agents from "../src/agents.ts"
 import * as Approvals from "../src/approvals.ts"
+import * as FlowControl from "../src/flow-control.ts"
 import * as Host from "../src/host.ts"
 import * as Log from "../src/log.ts"
 import * as Runtime from "../src/runtime.ts"
@@ -1088,7 +1089,8 @@ describe("turnOptions", () => {
     expect(opens()).toBe(true)
     expect(opens(undefined, "coordinator")).toBe(false)
     expect(opens({ flows: ["read", "memory"] })).toBe(true)
-    expect(opens({ flows: [], envelope: [] })).toBe(true)
+    expect(opens({ flows: [], envelope: [] })).toBe(false)
+    expect(opens({ flows: [], envelope: ["*"] })).toBe(true)
     // The review profile's flows drop memory.
     expect(opens({})).toBe(false)
     expect(opens({ flows: ["memory"], envelope: ["proc:spawn:*"] })).toBe(false)
@@ -1096,11 +1098,10 @@ describe("turnOptions", () => {
     expect(opens({ flows: ["memory"], envelope: ["fs:read:/repo/**"] })).toBe(false)
   })
 
-  test("an agent with no declared flows or capabilities keeps the host defaults", async () => {
+  test("an agent with an empty capability ceiling keeps the catalog without granting authority", async () => {
     const options = Host.turnOptions({ ...base, agent: { ...profile, flows: [], envelope: [] } }, "/repo", standard)
     expect(await names(options.flows)).toEqual(["read", "write", "grep", "bash"])
-    expect(options.capabilityEnvelope).toHaveLength(1)
-    expect(options.capabilityEnvelope[0]!.action).toBe("*")
+    expect(options.capabilityEnvelope).toEqual([])
   })
 })
 
@@ -1151,6 +1152,63 @@ describe("coordinatorSources", () => {
     // Pinned with the standard catalog, so no relevance reading withholds them.
     expect(Host.coordinatorSources(services, "/repo").map((source) => source.name)).toEqual(["std/filesystem"])
   })
+})
+
+describe("Host.run markdown capability ceilings", () => {
+  for (const flows of ["", "flows: [write, bash]\n"]) {
+    for (const capabilities of ["capabilities: []\n", ""]) {
+      test(
+        `a markdown worker ${capabilities === "" ? "without a ceiling may act" : "with an empty ceiling cannot act"} ${
+          flows === "" ? "with the default catalog" : "with listed flows"
+        }`,
+        async () => {
+          const cwd = mkdtempSync(join(tmpdir(), "tui-agent-authority-"))
+          roots.push(cwd)
+          const directory = join(cwd, ".smithers", "flows", "writer")
+          mkdirSync(directory, { recursive: true })
+          writeFileSync(
+            join(directory, "flow.mdx"),
+            `---\ndescription: Write a note\n${flows}${capabilities}---\nWrite the note.\n`
+          )
+          const host = Host.make({ cwd, environment: {}, judge: ScriptedJudge.layer, approvals: "all" })
+          const port = FlowControl.make({ cwd, environment: {}, approvals: host.approvals! })
+          try {
+            const body = await port.body("writer")
+            const profile = Agents.profile(body.descriptor, body, () => undefined)
+            const cell = `const write = await ctx.call("write", { path: "note.txt", content: "written" });
+const bash = await ctx.call("bash", { command: "touch process-ran" });
+ctx.done(JSON.stringify({ write, bash }))`
+            const outcome = await host.run({
+              prompt: "write a note and run a command",
+              role: "worker",
+              agent: profile,
+              seat: `replay:${doneReplay(cwd, cell)}`,
+              history: [],
+              onEvent: () => {}
+            }).done
+            expect(outcome._tag).toBe("done")
+            if (outcome._tag !== "done") throw new Error(JSON.stringify(outcome))
+            const results = JSON.parse(outcome.answer)
+            if (capabilities === "") {
+              expect(results.write).toMatchObject({ path: "note.txt", bytesWritten: 7, created: true })
+              expect(results.bash).toMatchObject({ exitCode: 0 })
+              expect(readFileSync(join(cwd, "note.txt"), "utf8")).toBe("written")
+              expect(existsSync(join(cwd, "process-ran"))).toBe(true)
+            } else {
+              expect(results.write).toMatchObject({ ok: false, error: { code: "capability_refused" } })
+              expect(results.bash).toMatchObject({ ok: false, error: { code: "capability_refused" } })
+              expect(existsSync(join(cwd, "note.txt"))).toBe(false)
+              expect(existsSync(join(cwd, "process-ran"))).toBe(false)
+            }
+          } finally {
+            await port.dispose()
+            await host.dispose()
+          }
+        },
+        90_000
+      )
+    }
+  }
 })
 
 describe("Host.run approval preparation", () => {

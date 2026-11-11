@@ -1031,7 +1031,7 @@ export const turnOptions = (
       })
     ])
   ]
-  const capabilityEnvelope = agent === undefined || agent.envelope.length === 0
+  const capabilityEnvelope = agent === undefined
     ? [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
     : AgentSession.patterns(agent.envelope)
   return {
