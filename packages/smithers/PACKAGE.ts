@@ -73,8 +73,8 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidCalls",
-      files: ["test/{Open,CommandVerbs,CommandProjections}.test.ts"],
-      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      files: ["test/{Open,CommandVerbs,CommandProjections,GenerateBehavior,HistoryVerify*}.test.ts"],
+      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
       because: "test.no-mocks-of-our-code: inject faulty Effect services or use real dependencies."
     },
     {

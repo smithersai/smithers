@@ -139,9 +139,72 @@ const parkedProject = async (runs = 1, cancelled = 0, adopt = false) => {
   return { root, runId: runIds[0]!, runIds }
 }
 
-const storeBytes = (root: string) =>
-  readdirSync(join(root, ".flows")).filter((name) => name.endsWith(".db")).sort().map((name) =>
-    readFileSync(join(root, ".flows", name))
+const invokeVerify = async (root: string, args: ReadonlyArray<string> = [], signal?: AbortSignal) => {
+  let stdout = ""
+  const codes: Array<number> = []
+  await appendHistoryCommands(Cli.create("runs"), { environment: {}, ...(signal === undefined ? {} : { signal }) })
+    .serve(
+      ["verify", ...args, "--root", root, "--json"],
+      { stdout: (text) => void (stdout += text), exit: (code) => void codes.push(code) }
+    )
+  return { stdout, codes }
+}
+
+it.each([false, true])("verifies persisted history through the CLI (against: %s)", async (against) => {
+  const { root, runId } = await parkedProject(1, 1)
+  const store = mkdtempSync(join(tmpdir(), "smithers-verify-store-"))
+  roots.push(store)
+  if (against) {
+    cpSync(join(root, ".flows"), store, { recursive: true })
+    rmSync(join(root, ".flows"), { recursive: true, force: true })
+  }
+  const options = against ? ["--against", join(store, "engine.db")] : []
+  const before = storeBytes(root, against ? store : undefined)
+  const one = await invokeVerify(root, [runId, ...options])
+  expect(one.codes, one.stdout).toEqual([])
+  expect(JSON.parse(one.stdout)).toMatchObject({ runId, verdict: "consistent", notReplayed: [] })
+  const all = await invokeVerify(root, options)
+  expect(all.codes, all.stdout).toEqual([])
+  expect(JSON.parse(all.stdout)).toMatchObject({
+    verdict: "consistent",
+    reports: [{ runId, verdict: "consistent" }],
+    settled: [{ status: "cancelled" }],
+    unverified: []
+  })
+  const controller = new AbortController()
+  controller.abort()
+  for (const args of [[runId, ...options], options]) {
+    const cancelled = await invokeVerify(root, args, controller.signal)
+    expect(cancelled.codes, cancelled.stdout).toEqual([1])
+  }
+  expect(storeBytes(root, against ? store : undefined)).toEqual(before)
+  renameSecond(root)
+  for (const args of [[runId, ...options], options]) {
+    const divergent = await invokeVerify(root, args)
+    expect(divergent.codes).toEqual([1])
+    expect(divergent.stdout).toContain("run_divergent")
+    expect(divergent.stdout).toContain("verify/second-renamed")
+    expect(divergent.stdout).toContain(runId)
+  }
+  // A parked run whose declaration is absent cannot be verified.
+  rmSync(join(root, ".smithers", "flows", "steps"), { recursive: true })
+  const summary = await Verify.verifyAll(root, against ? { against: join(store, "engine.db") } : {})
+  expect(summary.verdict).toBe("unverified")
+  expect(summary.reports).toEqual([])
+  expect(summary.unverified).toMatchObject([{ runId }])
+  const incomplete = await invokeVerify(root, options)
+  expect(incomplete.codes).toEqual([1])
+  expect(incomplete.stdout).toContain("verify_incomplete")
+  expect(incomplete.stdout).toContain(runId)
+  expect(incomplete.stdout).toContain(summary.unverified[0]!.code)
+  expect(storeBytes(root, against ? store : undefined)).toEqual(before)
+  expect(recordedActions(root)).toEqual(Array(2).fill(["verify/first", "verify/second"]).flat())
+  if (against) expect(existsSync(join(root, ".flows", "engine.db"))).toBe(false)
+}, 240_000)
+
+const storeBytes = (root: string, directory = join(root, ".flows")) =>
+  readdirSync(directory).filter((name) => name.endsWith(".db")).sort().map((name) =>
+    readFileSync(join(directory, name))
   )
 
 it("replays every recorded step of an unchanged flow and changes nothing", async () => {

@@ -3,13 +3,15 @@
  * @since 1.0.0
  */
 
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { openPackageIndex, runPackageVerb, type RuntimeConfig } from "@smthrs/build-cli/Cli"
 import * as Reporter from "@smthrs/build-cli/Reporter"
 import * as TargetInstall from "@smthrs/targets/Install"
 import * as Target from "@smthrs/targets/Target"
+import { Effect, FileSystem } from "effect"
 import { Cli, z } from "incur"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as CliError from "../CliError.ts"
@@ -45,21 +47,22 @@ export const initialize = async (
   root: string,
   name: string,
   environment: Readonly<Record<string, string | undefined>>,
-  options: { readonly vibe?: boolean } = {}
+  options: { readonly vibe?: boolean; readonly fileSystem?: FileSystem.FileSystem } = {}
 ) => {
   const problem = Init.nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
   await mkdir(root, { recursive: true })
+  const fs = options.fileSystem ??
+    await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer)))
   const created: Array<string> = []
   const retained: Array<string> = []
   const create = async (file: string, contents: string) => {
-    try {
-      await writeFile(join(root, file), contents, { flag: "wx" })
-      created.push(file)
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-      retained.push(file)
-    }
+    const result = await Effect.runPromise(
+      Effect.result(fs.writeFileString(join(root, file), contents, { flag: "wx" }))
+    )
+    if (result._tag === "Success") created.push(file)
+    else if (result.failure.reason._tag === "AlreadyExists") retained.push(file)
+    else throw result.failure.reason.cause ?? result.failure
   }
   let repository = pathToFileURL(root).href
   let manager = "pnpm@11.25.0"

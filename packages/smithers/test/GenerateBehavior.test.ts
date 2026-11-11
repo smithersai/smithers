@@ -1,35 +1,15 @@
-import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import * as Node from "@smthrs/plan/Node"
-import * as Target from "@smthrs/targets/Target"
-import { Schema } from "effect"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import { CliServices, cliServicesLive, type RuntimeConfig } from "@smthrs/build-cli/Cli"
+import { Effect, FileSystem, Layer } from "effect"
+import * as PlatformError from "effect/PlatformError"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { createGenerateCli, initialize } from "../src/cli/Generate.ts"
-
-const ports = vi.hoisted(() => ({
-  openPackageIndex: vi.fn(),
-  runPackageVerb: vi.fn(),
-  writeFailure: vi.fn()
-}))
-vi.mock("@smthrs/build-cli/Cli", async (load) => ({
-  ...await load<typeof import("@smthrs/build-cli/Cli")>(),
-  openPackageIndex: ports.openPackageIndex,
-  runPackageVerb: ports.runPackageVerb
-}))
-vi.mock("node:fs/promises", async (load) => {
-  const actual = await load<typeof import("node:fs/promises")>()
-  return {
-    ...actual,
-    writeFile: (...args: Parameters<typeof actual.writeFile>) => {
-      const failure = ports.writeFailure(...args)
-      return failure === undefined ? actual.writeFile(...args) : Promise.reject(failure)
-    }
-  }
-})
 
 const roots: Array<string> = []
 const directory = async () => {
@@ -37,14 +17,8 @@ const directory = async () => {
   roots.push(root)
   return root
 }
-beforeEach(() => {
-  ports.openPackageIndex.mockReset().mockResolvedValue({ targets: () => [] })
-  ports.runPackageVerb.mockReset().mockResolvedValue({ ok: true, generated: ["result.ts"] })
-  ports.writeFailure.mockReset()
-})
 afterEach(async () => {
   vi.unstubAllEnvs()
-  vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -82,15 +56,6 @@ const invoke = async (args: Array<string>, overrides: RuntimeConfig = {}) => {
   })
   return { ...result, config }
 }
-
-const declaration = (rule: string, label: string) => ({
-  label,
-  target: Target.make(rule, {
-    attrs: Schema.Struct({}),
-    kinds: ["build"],
-    implementation: () => Node.succeed(undefined)
-  })({})
-})
 
 describe("workspace initialization behavior", () => {
   it("creates a usable default workspace, target declaration and selected-provider flow", async () => {
@@ -242,23 +207,39 @@ describe("workspace initialization behavior", () => {
     expect(await readdir(unreadable)).toEqual(["package.json"])
   })
 
-  it("propagates a write failure and leaves later declarations and flow uncreated", async () => {
-    const root = await directory()
-    const failure = Object.assign(new Error("fixture disk full"), { code: "ENOSPC" })
-    ports.writeFailure.mockImplementation((path) => path === join(root, "WORKSPACE.ts") ? failure : undefined)
-    await expect(initialize(root, "example", {})).rejects.toBe(failure)
-    expect(await readdir(root)).toEqual(["package.json"])
-    expect(existsSync(join(root, "PACKAGE.ts"))).toBe(false)
-    expect(existsSync(join(root, ".smithers", "flows"))).toBe(false)
-  })
+  it.each([true, false])(
+    "preserves a write failure and leaves later files uncreated (native cause: %s)",
+    async (nativeCause) => {
+      const root = await directory()
+      const failure = Object.assign(new Error("fixture disk full"), { code: "ENOSPC" })
+      const platformFailure = PlatformError.systemError({
+        _tag: "Unknown",
+        module: "FileSystem",
+        method: "writeFileString",
+        ...(nativeCause ? { cause: failure } : {})
+      })
+      const live = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer)))
+      const fileSystem: FileSystem.FileSystem = {
+        ...live,
+        writeFileString: (path, contents, options) =>
+          path === join(root, "WORKSPACE.ts")
+            ? Effect.fail(platformFailure)
+            : live.writeFileString(path, contents, options)
+      }
+      await expect(initialize(root, "example", {}, { fileSystem })).rejects.toBe(
+        nativeCause ? failure : platformFailure
+      )
+      expect(await readdir(root)).toEqual(["package.json"])
+      expect(existsSync(join(root, "PACKAGE.ts"))).toBe(false)
+      expect(existsSync(join(root, ".smithers", "flows"))).toBe(false)
+    }
+  )
 })
 
 describe("generator command behavior", () => {
   it.each([["flow"], ["package"], ["ci"]])("keeps %s help inert", async (args) => {
     const result = await invoke([...args, "--help"])
     expect(result.codes).not.toContain(1)
-    expect(ports.openPackageIndex).not.toHaveBeenCalled()
-    expect(ports.runPackageVerb).not.toHaveBeenCalled()
   })
 
   it("refuses the retired app generator without running a workspace generator", async () => {
@@ -266,8 +247,6 @@ describe("generator command behavior", () => {
     const result = await invoke(["app", join(root, "my-app")])
     expect(result.codes).toContain(1)
     expect(await readdir(root)).toEqual([])
-    expect(ports.openPackageIndex).not.toHaveBeenCalled()
-    expect(ports.runPackageVerb).not.toHaveBeenCalled()
   })
 
   it("writes a requested flow without changing package declarations and preserves it on repeat", async () => {
@@ -288,13 +267,18 @@ describe("generator command behavior", () => {
 
   it("uses the cwd project and process environment only when flow configuration omits them", async () => {
     const root = await directory()
-    vi.spyOn(process, "cwd").mockReturnValue(root)
-    vi.stubEnv("ANTHROPIC_API_KEY", "fixture")
-    const result = await invoke(["flow", "example"], { environment: undefined })
-    expect(result.codes).not.toContain(1)
-    expect(await readFile(join(root, ".smithers", "flows", "example", "flow.ts"), "utf8")).toContain(
-      "model: \"anthropic:claude-sonnet-4-5\""
-    )
+    const previous = process.cwd()
+    process.chdir(root)
+    try {
+      vi.stubEnv("ANTHROPIC_API_KEY", "fixture")
+      const result = await invoke(["flow", "example"], { environment: undefined })
+      expect(result.codes).not.toContain(1)
+      expect(await readFile(join(root, ".smithers", "flows", "example", "flow.ts"), "utf8")).toContain(
+        "model: \"anthropic:claude-sonnet-4-5\""
+      )
+    } finally {
+      process.chdir(previous)
+    }
   })
 
   it("rejects a traversal flow name without filesystem or build activity", async () => {
@@ -304,123 +288,128 @@ describe("generator command behavior", () => {
     expect(result.codes).toContain(2)
     expect(result.stdout).toContain("one path segment")
     expect(await readdir(root)).toEqual([])
-    expect(ports.openPackageIndex).not.toHaveBeenCalled()
   })
 
-  it("selects the sole NewPackage rule and forwards the name, plan flag and mandatory write/cache policy", async () => {
-    ports.openPackageIndex.mockResolvedValue({
-      targets: () => [declaration("Filegroup", "//:sources"), declaration("NewPackage", "//:new-package")]
+  it("plans the real package target without writing, then generates every scaffold file", async () => {
+    const root = await workspace()
+    const planned = await invoke(["package", "library", "--workspace", root, "--plan"])
+    expect(planned.codes, planned.stdout + planned.stderr).toEqual([])
+    expect(JSON.parse(planned.stdout)).toMatchObject({
+      verb: "auto",
+      pattern: "//:newPackage",
+      roots: ["//:newPackage"],
+      targets: [{ label: "//:newPackage", rule: "NewPackage", cacheable: false, dependencies: [] }]
     })
-    const result = await invoke(["package", "library", "--workspace", "/fixture", "--plan"])
-    expect(JSON.parse(result.stdout)).toEqual({ ok: true, generated: ["result.ts"] })
-    expect(ports.openPackageIndex).toHaveBeenCalledExactlyOnceWith({ workspace: "/fixture", plan: true }, result.config)
-    expect(ports.runPackageVerb).toHaveBeenCalledExactlyOnceWith(
-      "auto",
-      ["//:new-package"],
-      {
-        workspace: "/fixture",
-        plan: true,
-        cache: false,
-        write: true,
-        name: "library"
-      },
-      result.config,
-      expect.any(Object)
+    expect(existsSync(join(root, "packages"))).toBe(false)
+    const generated = await invoke(["package", "@fixture/library", "--workspace", root])
+    expect(generated.codes, generated.stdout + generated.stderr).toEqual([])
+    expect(JSON.parse(generated.stdout)).toMatchObject({ ok: true })
+    const packageRoot = join(root, "packages/library")
+    expect(await readdir(packageRoot)).toEqual(["README.md", "package.json", "src", "test", "tsconfig.json"])
+    expect(JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"))).toMatchObject({
+      name: "@fixture/library",
+      license: "MIT",
+      version: "0.1.0",
+      description: "generated fixture"
+    })
+    expect(await readFile(join(packageRoot, "src/index.ts"), "utf8")).toContain("library")
+    expect(await readFile(join(packageRoot, "test/index.test.ts"), "utf8")).toContain("library")
+    expect(JSON.parse(await readFile(join(packageRoot, "tsconfig.json"), "utf8"))).toMatchObject({
+      extends: "../../tsconfig.base.json"
+    })
+    expect(await readFile(join(packageRoot, "README.md"), "utf8")).toContain("@fixture/library")
+    await writeFile(join(packageRoot, "src/index.ts"), "authored source")
+    const repeated = await invoke(["package", "@fixture/library", "--workspace", root])
+    expect(repeated.codes).toContain(1)
+    expect(repeated.stdout).toContain("generator_failed")
+    expect(await readFile(join(packageRoot, "src/index.ts"), "utf8")).toBe("authored source")
+    expect(await readdir(join(root, "packages"))).toEqual(["library"])
+  })
+
+  it("requires an explicit matching label and runs only the selected package generator", async () => {
+    const root = await workspace(
+      "one: S.NewPackage({ directory: \"one\", license: \"MIT\" }), two: S.NewPackage({ directory: \"two\", license: \"MIT\" })"
     )
-  })
-
-  it.each(["Github.CiGen", "GithubCiGen"])("selects %s for CI without passing a package name", async (rule) => {
-    ports.openPackageIndex.mockResolvedValue({
-      targets: () => [declaration("NewPackage", "//:package"), declaration(rule, "//:ci")]
-    })
-    const result = await invoke(["ci"])
-    expect(result.codes).not.toContain(1)
-    expect(ports.runPackageVerb).toHaveBeenCalledExactlyOnceWith(
-      "auto",
-      ["//:ci"],
-      {
-        workspace: process.cwd(),
-        plan: false,
-        cache: false,
-        write: true
-      },
-      result.config,
-      expect.any(Object)
-    )
-  })
-
-  it("uses an explicit declared label to disambiguate candidates", async () => {
-    ports.openPackageIndex.mockResolvedValue({
-      targets: () => [declaration("NewPackage", "//:one"), declaration("NewPackage", "//:two")]
-    })
-    const result = await invoke(["package", "chosen", "--target", "//:two", "--workspace", "/fixture"])
-    expect(result.codes).not.toContain(1)
-    expect(ports.runPackageVerb.mock.calls[0]?.slice(0, 3)).toEqual(["auto", ["//:two"], {
-      workspace: "/fixture",
-      plan: false,
-      cache: false,
-      write: true,
-      name: "chosen"
-    }])
-  })
-
-  it.each([["package", "library"], ["ci"]])(
-    "refuses missing %s generators before running a target",
-    async (...args) => {
-      const result = await invoke(args)
-      expect(result.codes).toContain(1)
-      expect(result.stdout).toContain(`No declared ${args[0]} generator matches`)
-      expect(result.stdout).toContain("generator_missing")
-      expect(result.stdout).toContain(args[0] === "package" ? "S.NewPackage" : "S.Github.CiGen")
-      expect(ports.runPackageVerb).not.toHaveBeenCalled()
-    }
-  )
-
-  it("refuses ambiguous selection and explicit labels that are not matching generators", async () => {
-    ports.openPackageIndex.mockResolvedValue({
-      targets: () => [
-        declaration("Github.CiGen", "//:one"),
-        declaration("Github.CiGen", "//:two"),
-        declaration("Filegroup", "//:files")
-      ]
-    })
-    const ambiguous = await invoke(["ci"])
-    // Retyping with --target fixes it: a usage error, exit 2.
+    const ambiguous = await invoke(["package", "chosen", "--workspace", root])
     expect(ambiguous.codes).toContain(2)
     expect(ambiguous.stdout).toContain("Choose a generator with --target: //:one, //:two")
-    const mismatched = await invoke(["ci", "--target", "//:files"])
+    const mismatched = await invoke(["package", "chosen", "--workspace", root, "--target", "//:sources"])
     expect(mismatched.codes).toContain(1)
-    expect(mismatched.stdout).toContain("(//:files)")
-    expect(ports.runPackageVerb).not.toHaveBeenCalled()
+    expect(mismatched.stdout).toContain("generator_missing")
+    expect(existsSync(join(root, "one"))).toBe(false)
+    expect(existsSync(join(root, "two"))).toBe(false)
+    const selected = await invoke(["package", "chosen", "--workspace", root, "--target", "//:two"])
+    expect(selected.codes, selected.stdout + selected.stderr).toEqual([])
+    expect(JSON.parse(selected.stdout)).toMatchObject({ ok: true })
+    expect(JSON.parse(await readFile(join(root, "two/chosen/package.json"), "utf8")).name).toBe("chosen")
+    expect(existsSync(join(root, "one"))).toBe(false)
   })
 
-  it("preserves plan-only outcomes without requiring an execution ok field", async () => {
-    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.CiGen", "//:ci")] })
-    ports.runPackageVerb.mockResolvedValue({ planned: [".github/workflows/ci.yml"] })
-    const result = await invoke(["ci", "--plan"], { stderr: undefined, environment: undefined })
-    expect(result.codes).not.toContain(1)
-    expect(JSON.parse(result.stdout)).toEqual({ planned: [".github/workflows/ci.yml"] })
-  })
-
-  it("propagates target discovery and execution transport failures", async () => {
-    ports.openPackageIndex.mockRejectedValueOnce(new Error("workspace failed to load"))
-    const discovery = await invoke(["ci"])
-    expect(discovery.codes).toContain(1)
-    expect(discovery.stdout).toContain("workspace failed to load")
-    expect(ports.runPackageVerb).not.toHaveBeenCalled()
-    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("Github.CiGen", "//:ci")] })
-    ports.runPackageVerb.mockRejectedValueOnce(new Error("executor unavailable"))
-    const execution = await invoke(["ci"])
-    expect(execution.codes).toContain(1)
-    expect(execution.stdout).toContain("executor unavailable")
-  })
-
-  it.each([true, false])("reports unsuccessful execution even when exit hook is present=%s", async (withExit) => {
-    ports.openPackageIndex.mockResolvedValue({ targets: () => [declaration("NewPackage", "//:new-package")] })
-    ports.runPackageVerb.mockResolvedValue({ ok: false, failures: ["write denied"] })
-    const result = await invoke(["package", "example"], withExit ? {} : { exit: undefined })
+  it.each([["package", "library"], ["ci"]])("refuses missing %s generators without outputs", async (...args) => {
+    const root = await workspace("")
+    const result = await invoke([...args, "--workspace", root])
     expect(result.codes).toContain(1)
-    expect(result.stdout).toContain("package generator failed; inspect the target diagnostics")
+    expect(result.stdout).toContain("generator_missing")
+    expect(result.stdout).toContain(args[0] === "package" ? "S.NewPackage" : "S.Github.CiGen")
+    expect(existsSync(join(root, "packages"))).toBe(false)
+    expect(existsSync(join(root, ".github"))).toBe(false)
+  })
+
+  it("propagates workspace discovery faults from the injected Effect service", async () => {
+    const root = await workspace()
+    const result = await invoke(["package", "example", "--workspace", root], {
+      services: Layer.succeed(CliServices)({
+        ...cliServicesLive,
+        findWorkspaceRoot: () => Effect.fail(new Error("workspace unavailable"))
+      })
+    })
+    expect(result.codes).toContain(1)
+    expect(result.stdout).toContain("workspace unavailable")
+    expect(existsSync(join(root, "packages"))).toBe(false)
+  })
+
+  it.each([true, false])("reports a real generator refusal with exit hook present=%s", async (withExit) => {
+    const root = await workspace()
+    const result = await invoke(["package", "../escape", "--workspace", root], withExit ? {} : { exit: undefined })
+    expect(result.codes).toContain(1)
+    expect(result.stdout).toContain("generator_failed")
+    expect(existsSync(join(root, "packages/escape"))).toBe(false)
+    expect(existsSync(join(root, "escape"))).toBe(false)
     expect(result.codes.filter((code) => code === 1)).toHaveLength(withExit ? 2 : 1)
   })
 })
+
+const workspace = async (
+  declarations = "newPackage: S.NewPackage({ license: \"MIT\", fields: { description: \"generated fixture\" } })"
+) => {
+  const root = await directory()
+  await mkdir(join(root, "node_modules/@smthrs"), { recursive: true })
+  await symlink(
+    dirname(createRequire(import.meta.url).resolve("@smthrs/targets/package.json")),
+    join(root, "node_modules/@smthrs/targets"),
+    "dir"
+  )
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ name: "fixture", type: "module", packageManager: "pnpm@11.25.0" })
+  )
+  await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
+  await writeFile(
+    join(root, "WORKSPACE.ts"),
+    [
+      "import { Smithers as S } from \"@smthrs/targets\"",
+      "export const Workspace = S.Workspace(\"fixture\", {",
+      "repository: \"https://example.invalid/fixture\", cache: S.Cache({ directory: \".flows\" }),",
+      "runtime: S.Runtime.Node({ version: \">=22.19.0\" }),",
+      "packageManager: S.PackageManager.Pnpm({ manifest: S.file(\"//package.json\"), lockfile: S.file(\"//pnpm-lock.yaml\") }),",
+      "nodeModules: S.Npm.NodeModules({ packageJson: S.file(\"//package.json\") })",
+      "})"
+    ].join("\n")
+  )
+  await writeFile(
+    join(root, "PACKAGE.ts"),
+    "import { Smithers as S } from \"@smthrs/targets\"\nexport const Package = S.Package({ targets: { sources: S.Filegroup({ srcs: [] }), " +
+      declarations + " } })\n"
+  )
+  return root
+}
