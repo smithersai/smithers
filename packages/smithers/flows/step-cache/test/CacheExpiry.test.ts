@@ -169,7 +169,7 @@ describe("expiry sweeps", () => {
       expect(Option.isNone(yield* cache.get("below-floor"))).toBe(true)
     })))
 
-  it.effect("preserves foreign provenance when no retention policy is supplied", () =>
+  it.effect("preserves legacy foreign provenance when no retention policy is supplied", () =>
     withStore(Effect.gen(function*() {
       // Foreign provenance can be referenced by a local journal. Age alone
       // cannot authorize deleting it; retention requires the host's policy.
@@ -186,6 +186,9 @@ describe("expiry sweeps", () => {
         }
       })
       expect(Option.isSome(yield* combined.get("write-back"))).toBe(true)
+      // Seed the recorded evidence older versions imported. New read-through
+      // imports only the head; retention must still preserve legacy rows.
+      yield* cache.put(foreign)
 
       yield* TestClock.adjust("10 seconds")
       expect(yield* cache.evict("write-back")).toBe(true)

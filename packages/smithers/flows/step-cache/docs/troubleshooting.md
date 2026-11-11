@@ -304,8 +304,9 @@ true of `evict`.
 
 Also correct behavior. `RemoteCacheStore` updates no counters, so a lookup
 served from the shared tier registers one local `miss` plus the write-back's
-`Inserted`. The rate measures how often this machine already held the entry,
-not how often a result was reused. See
+`Inserted`. Fenced lookups count their local evidence recheck too. The rate
+describes local store reads, including rechecks, rather than complete combined
+lookups. See
 [observe cache outcomes](./guides/observe-cache-outcomes.md).
 
 ## flows_step_cache_recorded grows and nothing reclaims it
@@ -313,7 +314,9 @@ not how often a result was reused. See
 By default, `sweepExpired` preserves the ledger. Whole-run reclamation belongs
 to [`@smthrs/engine-store`](/api/engine-store), whose retention pass erases a
 terminal run's ledger rows by `recorded_run_id` together with its journal.
-That pass cannot match a write-back recorded by a run on another host.
+New shared write-back uses `importHead` and creates no ledger rows.
+Older versions imported recorded evidence; run-scoped retention cannot match
+those legacy rows when they name a run on another host.
 
 Configure `sweepExpired(olderThanMs, { canReclaimRecorded })` on the local or
 combined store to collect old, unreferenced imports. The callback receives
@@ -338,5 +341,5 @@ store forwards the policy only to its local tier.
 Schedule this sweep with the host's retention pass. Releasing the last local
 reference lets the next sweep collect an old import, including imports made
 before this policy existed. Without the callback, ledger retention remains
-conservative and foreign rows continue to accumulate. See
+conservative and legacy foreign rows remain. See
 [the head and the ledger](./concepts/head-and-ledger.md).

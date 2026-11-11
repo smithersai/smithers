@@ -44,7 +44,7 @@ import * as CacheAdmission from "./internal/CacheAdmission.ts"
  * @since 0.1.0
  */
 export interface Options {
-  /** The machine-local, durable tier. Every lookup tries this one first. */
+  /** The machine-local, durable tier. Write-back requires its optional `importHead` operation. */
   readonly local: CacheStore.Service
   /** The shared tier. Consulted on a local miss unless an exact record expired; written through on put. */
   readonly remote: CacheStore.Service
@@ -147,13 +147,14 @@ export const make = (options: Options): CacheStore.Service => {
       if (maxAgeMs !== undefined && (yield* refreshExpiredHead(keyDigest, selector, maxAgeMs))) {
         return Option.none()
       }
-      // Write-back, exactly as `downloadActionResultFromRemote` does: the
-      // shared entry becomes a local row so this machine's next lookup — and
-      // every sibling run on it — is a local hit. Its original provenance must
-      // survive for local replay; reference-aware sweeps reclaim it once the
-      // host has released all frames that could read it.
-      const written = yield* local.put(shared.value)
-      if (written._tag === "Inserted") return shared
+      // A shared tier chooses the entry's provenance; importing it must not
+      // create immutable evidence for a local journal event. Custom tiers
+      // without head-only imports remain readable without unsafe write-back.
+      const written = local.importHead === undefined ? undefined : yield* local.importHead(shared.value)
+      // A local event may have been recorded while the shared lookup was
+      // suspended, even if its head was evicted again. A successful head
+      // import says nothing about that immutable evidence.
+      if (written?._tag === "Inserted" && recordedBy === undefined) return shared
       // The write-back lost: a sibling run recorded its own row under the key
       // while this lookup was inside the remote tier. The durable local row is
       // the one this machine replays from and the one a fenced eviction must
@@ -239,7 +240,7 @@ export const make = (options: Options): CacheStore.Service => {
       local.sweepExpired(olderThanMs, options)
   )
 
-  return { get, put, evict, sweepExpired }
+  return { get, put, evict, sweepExpired, importHead: local.importHead }
 }
 
 /**

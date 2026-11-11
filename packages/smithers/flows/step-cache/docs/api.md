@@ -72,6 +72,7 @@ interface Service {
     options?: GetOptions
   ) => Effect.Effect<Option.Option<CacheEntry>, CacheStoreError>
   readonly put: (entry: CacheEntry) => Effect.Effect<PutResult, CacheStoreError>
+  readonly importHead?: ((entry: CacheEntry) => Effect.Effect<PutResult, CacheStoreError>) | undefined
   readonly evict: (
     keyDigest: string,
     options?: EvictOptions
@@ -83,9 +84,15 @@ interface Service {
 | Method         | Answers                                                                                                                                                           |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get`          | The entry under `keyDigest`: the mutable head by default, the version a named provenance recorded when `options.recordedBy` is set, `Option.none()` for a miss.   |
+| `importHead`   | Optional head-only import, with the same result arbitration as `put`. Never writes ledger evidence.                                                               |
 | `put`          | `Inserted`, `ExistingSame`, or `Conflict`. One call writes the head row and the provenance row in a single transaction.                                           |
 | `evict`        | `true` when a row was deleted, `false` when none matched. With `options.ifRecordedBy` the delete is one fenced compare-and-swap.                                  |
 | `sweepExpired` | How many head rows were deleted. Rows recorded strictly before the floor go; a row recorded exactly at it stays. Ledger collection requires `canReclaimRecorded`. |
+
+The SQL store supplies `importHead`. The combined store forwards that local
+capability and uses it for shared write-back. Custom local stores may omit it;
+shared hits are then returned without write-back. The composition never uses
+`put` to import shared provenance.
 
 `get` and `evict` validate their arguments before any statement is issued, so a
 malformed key, provenance, or age bound fails with `invalid_cache` rather than

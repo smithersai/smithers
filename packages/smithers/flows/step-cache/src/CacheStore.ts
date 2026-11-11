@@ -97,7 +97,7 @@ export type EvictOptions = {
 }
 
 /**
- * Optional collection policy for ledger evidence, including remote imports.
+ * Optional collection policy for ledger evidence, including legacy remote imports.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -151,6 +151,16 @@ export interface Service {
   ) => Effect.Effect<Option.Option<CacheEntry>, CacheStoreError>
   readonly put: (entry: CacheEntry) => Effect.Effect<PutResult, CacheStoreError>
   /**
+   * Imports a shared entry into the mutable head only. Never creates or
+   * changes ledger evidence under the entry's untrusted provenance. Uses
+   * the same admission, transaction, and head-result arbitration as `put`.
+   *
+   * Optional for custom tiers. Combined lookups skip write-back when the
+   * local tier does not support head-only imports; they never use `put`
+   * as a fallback.
+   */
+  readonly importHead?: ((entry: CacheEntry) => Effect.Effect<PutResult, CacheStoreError>) | undefined
+  /**
    * Removes the row for `keyDigest`, returning whether a row was deleted.
    * With `ifRecordedBy` the delete is a single fenced compare-and-swap, so a
    * fresher row landed by a foreign process is never deleted with the poison
@@ -172,9 +182,9 @@ export interface Service {
    * return value counts heads only, even when ledger rows are reclaimed.
    *
    * Whole-run reclamation remains `@smthrs/engine-store`'s Retention, which
-   * deletes ledger rows with the run's journal. Foreign imports cannot match
-   * that run-scoped delete; a host composing a shared tier must schedule a
-   * reference-aware sweep to bound unreferenced imported evidence.
+   * deletes ledger rows with the run's journal. Legacy foreign imports cannot
+   * match that run-scoped delete; a reference-aware sweep can reclaim them.
+   * New shared imports write only the head and create no ledger evidence.
    */
   readonly sweepExpired: (olderThanMs: number, options?: SweepOptions) => Effect.Effect<number, CacheStoreError>
 }

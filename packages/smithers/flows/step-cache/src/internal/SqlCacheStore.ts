@@ -189,73 +189,79 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     })
   )
 
-  const put: Service["put"] = Effect.fn("CacheStore.put")((candidate) =>
-    Effect.gen(function*() {
-      const entry = yield* snapshotEntry(candidate)
-      yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest })
-      const result = yield* encodeCanonical(entry.result, "result")
-      const meta = yield* encodeCanonical(entry.meta, "meta")
-      return yield* writer.write(
-        Effect.gen(function*() {
-          // The provenance row is immutable. If another write already used
-          // this exact journal identity, its complete bytes decide whether
-          // this attempt is a retry or a conflict before a mutable head can
-          // be created or restored.
-          const recorded = yield* sql`
-            INSERT INTO flows_step_cache_recorded (
-              key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
-            ) VALUES (
-              ${entry.keyDigest}, ${result}, ${meta}, ${entry.createdAtMs}, ${entry.recordedRunId}, ${entry.recordedEventSeq}
-            ) ON CONFLICT (key_digest, recorded_run_id, recorded_event_seq) DO NOTHING
-          `.raw.pipe(Effect.mapError(mapPersistenceError))
-          if ((yield* affectedRows(recorded)) === 0) {
-            const ledger = yield* sql<CacheRow>`
-              SELECT key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
-              FROM flows_step_cache_recorded
-              WHERE key_digest = ${entry.keyDigest}
-                AND recorded_run_id = ${entry.recordedRunId}
-                AND recorded_event_seq = ${entry.recordedEventSeq}
-            `.pipe(Effect.mapError(mapPersistenceError))
-            /* v8 ignore next -- the row blocked this insert in the same serialized transaction */
-            if (ledger.length === 0) {
-              return yield* Effect.fail(error("unknown", "cache provenance disappeared during put"))
+  const writeEntry = (recordProvenance: boolean): Service["put"] =>
+    Effect.fn(recordProvenance ? "CacheStore.put" : "CacheStore.importHead")((candidate) =>
+      Effect.gen(function*() {
+        const entry = yield* snapshotEntry(candidate)
+        yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest })
+        const result = yield* encodeCanonical(entry.result, "result")
+        const meta = yield* encodeCanonical(entry.meta, "meta")
+        return yield* writer.write(
+          Effect.gen(function*() {
+            if (recordProvenance) {
+              // The provenance row is immutable. If another write already used
+              // this exact journal identity, its complete bytes decide whether
+              // this attempt is a retry or a conflict before a mutable head can
+              // be created or restored.
+              const recorded = yield* sql`
+              INSERT INTO flows_step_cache_recorded (
+                key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
+              ) VALUES (
+                ${entry.keyDigest}, ${result}, ${meta}, ${entry.createdAtMs}, ${entry.recordedRunId}, ${entry.recordedEventSeq}
+              ) ON CONFLICT (key_digest, recorded_run_id, recorded_event_seq) DO NOTHING
+            `.raw.pipe(Effect.mapError(mapPersistenceError))
+              if ((yield* affectedRows(recorded)) === 0) {
+                const ledger = yield* sql<CacheRow>`
+                SELECT key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
+                FROM flows_step_cache_recorded
+                WHERE key_digest = ${entry.keyDigest}
+                  AND recorded_run_id = ${entry.recordedRunId}
+                  AND recorded_event_seq = ${entry.recordedEventSeq}
+              `.pipe(Effect.mapError(mapPersistenceError))
+                /* v8 ignore next -- the row blocked this insert in the same serialized transaction */
+                if (ledger.length === 0) {
+                  return yield* Effect.fail(error("unknown", "cache provenance disappeared during put"))
+                }
+                const existing = ledger[0]!
+                if (
+                  existing.result_json !== result ||
+                  existing.meta_json !== meta ||
+                  existing.created_at_ms !== entry.createdAtMs
+                ) {
+                  return { _tag: "Conflict" } as const
+                }
+              }
             }
-            const existing = ledger[0]!
-            if (
-              existing.result_json !== result ||
-              existing.meta_json !== meta ||
-              existing.created_at_ms !== entry.createdAtMs
-            ) {
-              return { _tag: "Conflict" } as const
-            }
-          }
-          const inserted = yield* sql`
+            const inserted = yield* sql`
             INSERT INTO flows_step_cache (
               key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
             ) VALUES (
               ${entry.keyDigest}, ${result}, ${meta}, ${entry.createdAtMs}, ${entry.recordedRunId}, ${entry.recordedEventSeq}
             ) ON CONFLICT (key_digest) DO NOTHING
           `.raw.pipe(Effect.mapError(mapPersistenceError))
-          if ((yield* affectedRows(inserted)) > 0) {
-            return { _tag: "Inserted" } as const
-          }
-          const rows = yield* sql<Pick<CacheRow, "result_json">>`
+            if ((yield* affectedRows(inserted)) > 0) {
+              return { _tag: "Inserted" } as const
+            }
+            const rows = yield* sql<Pick<CacheRow, "result_json">>`
             SELECT result_json FROM flows_step_cache WHERE key_digest = ${entry.keyDigest}
           `.pipe(Effect.mapError(mapPersistenceError))
-          /* v8 ignore next -- the conflicting row is read in the same serialized write transaction */
-          if (rows.length === 0) {
-            return yield* Effect.fail(error("unknown", "cache entry disappeared during put"))
-          }
-          return rows[0]!.result_json === result
-            ? { _tag: "ExistingSame" } as const
-            : { _tag: "Conflict" } as const
-        })
-      ).pipe(
-        Effect.mapError(mapPersistenceError),
-        Effect.tap((outcome) => Metric.update(CacheStoreMetrics.put[outcome._tag], 1))
-      )
-    })
-  )
+            /* v8 ignore next -- the conflicting row is read in the same serialized write transaction */
+            if (rows.length === 0) {
+              return yield* Effect.fail(error("unknown", "cache entry disappeared during put"))
+            }
+            return rows[0]!.result_json === result
+              ? { _tag: "ExistingSame" } as const
+              : { _tag: "Conflict" } as const
+          })
+        ).pipe(
+          Effect.mapError(mapPersistenceError),
+          Effect.tap((outcome) => Metric.update(CacheStoreMetrics.put[outcome._tag], 1))
+        )
+      })
+    )
+
+  const put = writeEntry(true)
+  const importHead = writeEntry(false)
 
   const evict: Service["evict"] = Effect.fn("CacheStore.evict")((keyDigest, options) =>
     Effect.gen(function*() {
@@ -337,7 +343,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     })
   )
 
-  return { get, put, evict, sweepExpired }
+  return { get, put, importHead, evict, sweepExpired }
 })
 
 /**

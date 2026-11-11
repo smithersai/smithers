@@ -68,7 +68,7 @@ const tier = (options: { readonly putOutcome?: CacheStore.PutResult } = {}) => {
         return swept
       })
   }
-  return { rows, calls, getOptions, store }
+  return { rows, calls, getOptions, store: { ...store, importHead: store.put } }
 }
 
 /**
@@ -138,7 +138,7 @@ const durableTier = (
         return swept
       })
   }
-  return { rows, calls, getOptions, outcomes, store }
+  return { rows, calls, getOptions, outcomes, store: { ...store, importHead: store.put } }
 }
 
 /**
@@ -307,7 +307,7 @@ const withSqlStore = <A, E>(effect: Effect.Effect<A, E, CacheStore.CacheStore | 
     Effect.provide(TestDatabase.layer)
   )
 
-describe("imported provenance retention", () => {
+describe("legacy imported provenance retention", () => {
   it.effect("collects released imports while preserving local replay references", () =>
     withSqlStore(Effect.gen(function*() {
       const local = yield* CacheStore.CacheStore
@@ -318,8 +318,10 @@ describe("imported provenance retention", () => {
       const combined = CombinedCacheStore.make({ local, remote: remote.store })
       expect(Option.getOrThrow(yield* combined.get(entry.keyDigest))).toEqual(imported)
 
-      // The host's journal owns these references, including references to a
-      // foreign producer. A retention pass runs while execution is quiescent.
+      // Older versions imported ledger rows. Reference-aware collection
+      // still supports that persisted evidence, but new imports add none.
+      expect(yield* sql`SELECT * FROM flows_step_cache_recorded`).toEqual([])
+      yield* local.put(imported)
       const references = new Set(["foreign-run"])
       const retention = {
         canReclaimRecorded: (record: { readonly recordedRunId: string }) =>
@@ -514,10 +516,12 @@ describe("age-bounded SQL composition", () => {
       }))
   )
 
-  it.effect.each([
-    { result: "different", fenced: true },
-    { result: "same", fenced: false }
-  ] as const)(
+  it.effect.each(
+    [
+      { result: "different", fenced: true },
+      { result: "same", fenced: false }
+    ] as const
+  )(
     "refreshes a local head the bound refused with the shared entry: %j",
     ({ fenced, result }) =>
       withSqlStore(Effect.gen(function*() {
@@ -540,9 +544,11 @@ describe("age-bounded SQL composition", () => {
         expect(remote.calls).toEqual(["get"])
         expect(yield* count(CacheStoreMetrics.put.Conflict)).toBe(conflicts)
         // The refused head's ledger row survives for its own replay.
-        expect(Option.getOrThrow(yield* local.get(entry.keyDigest, {
-          recordedBy: { runId: stale.recordedRunId, eventSeq: stale.recordedEventSeq }
-        }))).toEqual(stale)
+        expect(Option.getOrThrow(
+          yield* local.get(entry.keyDigest, {
+            recordedBy: { runId: stale.recordedRunId, eventSeq: stale.recordedEventSeq }
+          })
+        )).toEqual(stale)
       }))
   )
 
@@ -579,7 +585,10 @@ describe("age-bounded SQL composition", () => {
       const remote = tier()
       remote.rows.set(entry.keyDigest, fresh)
       const combined = CombinedCacheStore.make({
-        local: { ...sqlLocal, put: (candidate) => sqlLocal.put(expired).pipe(Effect.andThen(sqlLocal.put(candidate))) },
+        local: {
+          ...sqlLocal,
+          importHead: (candidate) => sqlLocal.put(expired).pipe(Effect.andThen(sqlLocal.importHead!(candidate)))
+        },
         remote: remote.store
       })
       expect(yield* combined.get(entry.keyDigest, options)).toEqual(Option.none())

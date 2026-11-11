@@ -133,8 +133,11 @@ engine, prefer that composition to this one.
 ## What you get
 
 A lookup tries the local tier, falls through to the shared tier on a miss, and
-writes a shared hit back into the local store before the caller sees it. Your
-`GetOptions` travel to both tiers, so a provenance fence or an age bound means
+writes a shared hit into the local head before the caller sees it. Its
+claimed provenance never enters the local ledger. The SQL store supplies the
+optional `importHead` operation; a custom local store without it serves shared
+hits without write-back. Your `GetOptions` travel to both tiers, so a
+provenance fence or an age bound means
 the same thing at each.
 
 If the shared tier refuses a lookup, the composition counts the refusal and
@@ -153,8 +156,9 @@ owns its own retention.
 
 Read the counters knowing that `RemoteCacheStore` updates none. A lookup served
 from the shared tier registers one local `miss` plus the write-back's
-`Inserted`, so a two-tier hit rate measures how often this machine already held
-the entry. See [observe cache outcomes](./observe-cache-outcomes.md).
+`Inserted`. Fenced lookups count their local evidence recheck too, so the
+counters describe local store reads rather than complete combined lookups.
+See [observe cache outcomes](./observe-cache-outcomes.md).
 
 ## Publish artifacts before entries
 

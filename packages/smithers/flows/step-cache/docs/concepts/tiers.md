@@ -15,7 +15,10 @@ back into the local store so the next lookup is local.
 
 A lookup tries the local tier first and returns its answer if it has one. On a
 miss it asks the shared tier, and a shared hit is written back locally before
-the caller sees it. The caller's `GetOptions` travel to both tiers, so a
+the caller sees it. The SQL tier's `importHead` writes only the mutable head:
+the shared entry's claimed provenance never creates local ledger evidence.
+Custom local stores without `importHead` serve shared hits without write-back.
+The caller's `GetOptions` travel to both tiers, so a
 provenance fence or an age bound means the same thing at each. If an exact
 local `recordedBy` ledger row exists but `maxAgeMs` refuses it, the lookup
 returns a miss without consulting the shared tier. An absent exact record
@@ -37,7 +40,9 @@ the row this machine replays from and the row a fenced eviction must name.
 Handing out the shared entry over a local `Conflict` would be a cache collision
 the caller could not detect. If the local winner is already gone again, the
 shared entry is the only row anyone holds and it stands. An expired exact
-local record still stops this fallback with a miss.
+local record still stops this fallback with a miss. Fenced lookups also recheck
+local history after a successful head import, so an event recorded during the
+shared lookup still takes precedence.
 
 ## Writes: the local outcome is the answer
 
@@ -80,6 +85,8 @@ whose results contain secrets must not be cached on a shared tier. In the other
 direction, a shared hit is written back locally and replayed as the step's own
 output, so whoever can write to the tier decides what other machines replay:
 [authenticate and authorize every request](../guides/implement-a-shared-tier.md#authenticate-and-authorize-every-request).
+Shared writers cannot reserve or overwrite local event history: write-back
+never writes the ledger, even when an entry claims a local event's identity.
 
 ## Publication order is the caller's job
 
@@ -105,8 +112,9 @@ argument, issues no request, and answers `0`.
 
 `RemoteCacheStore` updates no counters. A lookup the composition serves from
 the shared tier therefore registers one `miss`, for the local tier that did not
-hold it, plus the write-back's `Inserted`. A two-tier hit rate measures how
-often this machine already held the entry, not how often a result was reused.
+hold it, plus the write-back's `Inserted`. Fenced lookups also recheck local
+evidence after write-back and count that read. These counters describe local
+store reads, including rechecks, rather than complete combined lookups.
 A bounded provenance miss also performs an unbounded local read to distinguish
 an absent exact record from an expired one. That read contributes its own
 lookup counter even when the combined result remains a miss.

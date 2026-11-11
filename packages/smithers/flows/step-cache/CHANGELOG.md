@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Shared-cache reads now import only the reusable head. A shared entry
+  claiming a local event's identity can no longer create immutable history
+  that conflicts with the event's real recording or survives head eviction.
+
 - The CommonJS build of `Migrations` no longer reads the migration module's
   whole exports object in place of its Effect. esbuild compiles a default
   import of a sibling under `"type": "module"` to Node-style interop, so

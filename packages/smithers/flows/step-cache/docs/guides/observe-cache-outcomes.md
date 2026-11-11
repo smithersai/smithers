@@ -93,9 +93,10 @@ serves from the shared tier therefore registers one `miss`, for the local tier
 that did not hold it, plus the write-back's `Inserted`. The write-back makes
 the next lookup a `hit`.
 
-So on a machine with a shared tier, the hit rate measures how often this
-machine already held the entry, not how often a result was reused. If you want
-the second number, count it on the tier.
+Fenced lookups also recheck local evidence after write-back, contributing
+another local lookup counter. The hit rate therefore describes local store
+reads, including provenance and race rechecks, rather than complete combined
+lookups. Count reuse on the shared tier when you need that number.
 
 The composition adds one count of its own: when a shared `put` answers
 `Conflict`, it records a `conflict`. That answer means the shared tier refused
