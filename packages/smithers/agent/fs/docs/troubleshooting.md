@@ -118,7 +118,8 @@ flow. Confirm the file parses, its dependencies resolve, and the default
 export satisfies `isFlow` from [@smthrs/core](/api/core).
 
 The message `The selected flow is not model-invocable` means the route says the
-flow is visible but the flow now declares `modelInvocable: false`. The route
+flow is visible but the flow now declares `modelInvocable: false`, or a schema
+record declares `disableModelInvocation: true` without `modelInvocable`. The route
 metadata is older than the flow. Scan the flow root again.
 
 Incur also reports this code for a route whose metadata load or projection

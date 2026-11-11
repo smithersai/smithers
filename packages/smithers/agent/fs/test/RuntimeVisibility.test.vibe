@@ -8,15 +8,22 @@ import * as FileRouter from "../src/FileRouter.vibe"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
 import * as Incur from "../src/Incur.vibe"
 import * as Route from "../src/Route.vibe"
-import { hiddenRuntimeRoot as root } from "./fixtureRoots.ts"
+import { hiddenRecordRoot, hiddenRuntimeRoot as root } from "./fixtureRoots.ts"
 import { failureOf } from "./helpers.vibe"
 
 const platformLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
-effect function scan() {
+effect function scan(scanRoot: string = root) {
   provide platformLayer {
-    return try FileRouter.scan({ root })
+    return try FileRouter.scan({ root: scanRoot })
   }
+}
+
+/** The scanned schema-record route with this name, as captured before its author hid it. */
+effect function staleRecord(name: string) {
+  const route = (try scan(hiddenRecordRoot)).routes.find((candidate) => candidate.name === name)
+  expect(route?.modelInvocable).toBe(false)
+  return { ...route!, modelInvocable: true }
 }
 
 const invoked: Array<string> = []
@@ -71,5 +78,38 @@ describe("runtime model visibility", () => {
     const [scanned] = (try scan()).routes
     const loaded = try Route.load(scanned!)
     expect(loaded.name).toBe("hidden")
+  })
+
+  for (const name of ["hidden", "disabled"]) {
+    it.effect(`refuses a stale route to a ${name} schema record`, effect () => {
+      const stale = try staleRecord(name)
+      const surface = try Command.make([stale])
+      expect((try failureOf(invoking(surface.execute(`${name} --number 1`)))).code).toBe("load_failed")
+      expect((try failureOf(invoking(surface.call(name, { number: 1 })))).code).toBe("load_failed")
+      expect(invoked).toEqual([])
+    })
+
+    it.effect(`refuses a stale route to a ${name} schema record over Incur HTTP dispatch`, effect () => {
+      const stale = try staleRecord(name)
+      const cli = try invoking(Incur.createCli("app", [stale]))
+      try ensuring(effect {
+        const response = try promise(async () => cli.fetch(new Request(`http://localhost/${name}?number=1`)))
+        expect(response.status).toBe(400)
+        expect(try promise(async () => response.json())).toMatchObject({
+          ok: false,
+          error: { code: "load_failed" }
+        })
+        expect(invoked).toEqual([])
+      }, effect {
+        try (promise(async () => cli.close()))
+      })
+    })
+  }
+
+  it.effect("lets a boolean modelInvocable outrank disableModelInvocation on a schema record", effect () => {
+    const route = (try scan(hiddenRecordRoot)).routes.find((candidate) => candidate.name === "shown")
+    expect(route?.modelInvocable).toBe(true)
+    const loaded = try Route.load(route!)
+    expect(loaded.name).toBe("shown")
   })
 })

@@ -351,15 +351,23 @@ const importFailed = (): FsError => loadFailed("The selected flow module could n
 
 const exportMissing = (): FsError => loadFailed("The selected flow module has no default flow export")
 
+// Mirrors the registry's static precedence: a boolean `modelInvocable` wins,
+// otherwise `disableModelInvocation: true` hides the record.
+const recordModelInvocable = (declared: object): boolean =>
+  "modelInvocable" in declared && typeof declared.modelInvocable === "boolean"
+    ? declared.modelInvocable
+    : !("disableModelInvocation" in declared && declared.disableModelInvocation === true)
+
 /**
  * Materializes the flow behind a route.
  *
  * Only module routes can be materialized here. Markdown and skill bodies are
  * registry inputs, not executable commands in this private adapter.
  *
- * A route marked model-invocable whose imported flow declares
- * `modelInvocable: false` fails with `load_failed`, so route metadata captured
- * before the author hid the flow cannot run it.
+ * A route marked model-invocable whose imported flow or schema record is
+ * hidden (`modelInvocable: false`, or `disableModelInvocation: true` without a
+ * boolean `modelInvocable`) fails with `load_failed`, so route metadata
+ * captured before the author hid the flow cannot run it.
  *
  * @category constructors
  * @since 0.1.0
@@ -398,5 +406,8 @@ export effect function load(input: Route): Loaded!FsError {
     !("input" in module.default) || !Schema.isSchema(module.default.input) ||
     !("output" in module.default) || !Schema.isSchema(module.default.output)
   ) throw exportMissing()
+  if (route.modelInvocable && !recordModelInvocable(module.default)) {
+    throw loadFailed("The selected flow is not model-invocable")
+  }
   return module.default as Loaded
 }

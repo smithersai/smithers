@@ -571,6 +571,7 @@ inputs rather than executable commands, and fail with `unsupported_body`. The mo
 file URL, so spaces, Unicode, percent signs, hashes, and query characters in
 the path name the intended file. An import failure, or a module whose default
 export is not a flow, fails with `load_failed`. A route marked model-invocable
-whose imported flow declares `modelInvocable: false` also fails with
-`load_failed`, so a route captured before the author hid the flow cannot run
-it.
+whose imported flow or schema record is hidden also fails with `load_failed`,
+so a route captured before the author hid the flow cannot run it. A record is
+hidden when it declares `modelInvocable: false`, or declares
+`disableModelInvocation: true` without a boolean `modelInvocable`.
