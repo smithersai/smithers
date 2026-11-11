@@ -5,6 +5,7 @@ import { initialIssues } from "../src/web/issues.vibe"
 import { newClient, type Role } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import { pages } from "../src/core/wiki.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 const initial = () => ({ ...init({ session: "bench", mode: "mock", name: "Guest" }).model, surface: "chat" as const })
@@ -127,10 +128,22 @@ it("wiki editing state fences late responses, cancellation and uncertain submiss
       expect(failed.wikiEdit?.submission).toEqual(sent.wikiEdit?.submission)
       expect(update(sent, Message.FailedWikiEdit({ request: 2, reason, unwritten: true })).model.wikiEdit?.submission).toBeUndefined()
     }
+    // Retry after a failure that may have written: the same write and key, under a fresh recovery key.
+    const retained = update(sent, Message.FailedWikiEdit({ request: 2, reason: "other" })).model
+    const retried = update(retained, Message.SubmittedWikiEdit())
+    expect(retried.model.wikiEdit?.submission).toEqual({ ...sent.wikiEdit?.submission, recovery: `${model.session}-wiki-retry-${(sent.wikiSerial ?? 0) + 1}` })
+    expect(retried.model.wikiEdit?.submission?.key).toBe(sent.wikiEdit?.submission?.key)
+    expect(commands(retried)).toEqual(["SubmitWikiEdit"])
     const completed = update(sent, Message.CompletedWikiEdit({ request: 2, page: "index", source: "before", revision: "r", review: "https://example.invalid/pull/1" })).model
     expect(completed.wikiEdit).toBeUndefined()
     expect(completed.wikiPages).toEqual([{ id: "index", source: "before", revision: "r" }])
     expect(completed.wikiReview).toEqual({ page: "index", url: "https://example.invalid/pull/1" })
+    // Another page's editor, after a save: the observed index is skipped and the page's embedded source opens.
+    const roadmap = pages.find(page => page.id === "roadmap")?.source
+    const other = update({ ...completed, client: { ...completed.client, conversation: { ...completed.client.conversation, pane: "/wiki/roadmap" } } }, Message.ClickedEditWiki())
+    expect(roadmap).toBeTypeOf("string")
+    expect(other.model.wikiEdit).toEqual({ page: "roadmap", base: roadmap, text: roadmap, busy: false, error: "" })
+    expect(commands(other)).toEqual(["OpenWikiEditor"])
     expect(update(edited, Message.CanceledWikiEdit()).model.wikiEdit).toBeUndefined()
     expect(update(model, Message.FilteredWiki({ value: "rule" })).model.wikiQuery).toBe("rule")
     expect(update(model, Message.WikiLocationChanged({ page: "/" })).model.surface).toBe("splash")
@@ -139,7 +152,7 @@ it("wiki editing state fences late responses, cancellation and uncertain submiss
     expect(update(waiting, Message.FailedWiki({ request: 2 })).model.wikiStatus).toBe("error")
     expect(update(model, Message.SucceededWiki()).model).toBe(model)
   }).run(quick)
-  await runPromise(artifact("web-wiki-state", "Vitest built-in bench; wiki editor begin/type/submit/cancel, Escape preserves a pending Save without emitting work, immutable uncertain request, stale completion/failure fences, five exact failure labels and unwritten correction, unchanged observed source with review, filter/location and page-open failure identity. Exact model fields asserted each callback.", ["Pure update-state cost; does not execute emitted services or simulate browser dialogs/network. Native and SQLite wiki journeys run separately."], result))
+  await runPromise(artifact("web-wiki-state", "Vitest built-in bench; wiki editor begin/type/submit/cancel, Escape preserves a pending Save without emitting work, immutable uncertain request and its retry under the same key, stale completion/failure fences, five exact failure labels and unwritten correction, unchanged observed source with review, a second page's embedded source, filter/location and page-open failure identity. Exact model fields asserted each callback.", ["Pure update-state cost; does not execute emitted services or simulate browser dialogs/network. Native and SQLite wiki journeys run separately."], result))
 })
 
 

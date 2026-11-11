@@ -1,0 +1,146 @@
+// Links and keys a person uses in the real app, in happy-dom over the product MockFactory: a wiki page's link to
+// another page, the agent's "Review it" link under a drafted wiki edit, the account menu's arrow keys, and Tab in the
+// tour. A person's other steps enter as messages through one test channel; every product subscription, command and
+// service is the shipped one.
+import { it, expect } from "@effect/vitest"
+import { vi } from "vitest"
+import { Dom, Runtime, Subscription } from "foldkit"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import { accountOf, Flags, init, Message, Model, subscriptions, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { container, remove } from "../test/support/browser.ts"
+import { click, focusedId, focusedIndex, hrefs, keyOn, press, steps } from "./dom-input.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const flags = { session: "links", name: "Ada", mode: "mock" as const }
+const ROADMAP_DRAFT = "Draft an edit to the roadmap wiki page."
+const PAGE_LINKS = ".vl-wiki-content a[href^='/wiki/']"
+const REVIEW_LINK = ".sui-chat-bubble a[href='#wiki-draft-roadmap']"
+const drafted = `${(pages.find(entry => entry.id === "roadmap")?.source ?? "").trimEnd()}\n\n${ROADMAP_DRAFT}\n`
+
+/** The real app embedded in a fresh container; `latest` is the model as update leaves it, `send` the test channel. */
+effect function app() {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const input = try Effect.try(() => steps<Message>())
+  let latest: Model = init(flags).model
+  const program = try Effect.try(() => Runtime.makeApplication({
+    Model, Flags, init, view,
+    // The model as update leaves it; the DOM is read from the page.
+    update: (model, message) => { const next = update(model, message); latest = next.model; return next },
+    subscriptions: Subscription.aggregate(subscriptions(node.ownerDocument, node.ownerDocument), Subscription.make<Model, Message>()(() => ({
+      steps: Subscription.persistentEntry(Dom.streamFromEvent({ target: input.target, type: "step", mapEvent: input.read })),
+    }))), resources: MockActions({ actor: "person" }).pipe(Layer.provideMerge(MockFactory)), container: node,
+  }))
+  try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  const send = (make: () => Message) => Effect.try(() => input.send(make()))
+  const page = node.ownerDocument.body
+  // The app has rendered and subscribed before the first step.
+  try wait(() => expect(page.querySelector("textarea")).not.toBeNull())
+  try sleep("50 millis")
+  return { page, latest: () => latest, send }
+}
+
+const wait = (check: () => void) => promise(() => vi.waitFor(check, { timeout: 15000, interval: 5 }))
+
+it("a person follows a wiki link and opens the agent's drafted edit from its answer", async ({ bench }) => {
+  const runs: Array<{ followed: string; ignored: boolean; opened: string; editor: string; draft: string }> = []
+  const result = await workload(bench, "web-wiki-links", "async", async () => {
+    await runPromise(scoped(effect {
+      const { page, latest: current, send } = try app()
+      try send(() => Message.ChoseIdentity({ role: "maintainer" }))
+      try wait(() => expect(accountOf(current()).identity.role).toBe("maintainer"))
+      try send(() => Message.WikiLocationChanged({ page: "/wiki/index" }))
+      try wait(() => expect(hrefs(page, PAGE_LINKS).length).toBeGreaterThan(0))
+      const target = (try Effect.try(() => hrefs(page, PAGE_LINKS))).find(href => href !== "/wiki/index") ?? ""
+      // A modified click is the browser's (a new tab): the app leaves the page where it is.
+      try Effect.try(() => click(page.querySelector(`.vl-wiki-content a[href='${target}']`)!, true))
+      try sleep("20 millis")
+      const ignored = current().client.conversation.pane === "/wiki/index"
+      try Effect.try(() => click(page.querySelector(`.vl-wiki-content a[href='${target}']`)!))
+      try wait(() => expect(current().client.conversation.pane).toBe(target))
+      // Asked by name, the agent opens the designs index.
+      try send(() => Message.UpdatedDraft({ value: "Open the designs wiki." }))
+      try send(() => Message.SubmittedDraft())
+      try wait(() => expect(current().client.conversation.pane).toBe("/wiki/designs/index"))
+      const opened = current().client.conversation.pane
+      try send(() => Message.UpdatedDraft({ value: ROADMAP_DRAFT }))
+      try send(() => Message.SubmittedDraft())
+      try wait(() => expect(hrefs(page, REVIEW_LINK)).toEqual(["#wiki-draft-roadmap"]))
+      try Effect.try(() => click(page.querySelector(REVIEW_LINK)!))
+      // The mock agent's draft is the page with the request appended as a note (WikiFactory).
+      try wait(() => expect(current().wikiEdit).toMatchObject({ page: "roadmap", text: drafted, busy: false }))
+      try Effect.try(() => {
+        expect(pages.some(entry => `/wiki/${entry.id}` === target)).toBe(true)
+        expect(current().client.conversation.pane).toBe("/wiki/roadmap")
+      })
+      runs.push({ followed: target, ignored, opened, editor: current().wikiEdit?.page ?? "", draft: current().wikiEdit?.text ?? "" })
+    }))
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  for (const run of runs) expect(run).toEqual({ followed: runs[0]!.followed, ignored: true, opened: "/wiki/designs/index", editor: "roadmap", draft: drafted })
+  await runPromise(artifact("web-wiki-links", "Vitest built-in bench, happy-dom with the actual app: Foldkit runtime, update, view and the shipped subscriptions over the product MockFactory. A maintainer opens /wiki/index, Ctrl-clicks a page link (ignored), clicks it (the pane follows), asks the mock agent to open the designs wiki (the pane opens designs/index), asks it to draft an edit to the roadmap, and clicks the answer's Review link: the editor opens on the roadmap with the drafted text (the page with the request appended). Identity, the wiki location and the post enter through one test message channel. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout or paint. The mock agent's 25 ms scripted chunk delays are included.", "A synthetic MouseEvent stands in for a pointer; no browser default action runs."], { runs, result }))
+})
+
+it("a signed-in person moves between the account menu's items with the arrow keys", async ({ bench }) => {
+  const runs: Array<ReadonlyArray<string>> = []
+  const result = await workload(bench, "web-account-menu-keys", "async", async () => {
+    await runPromise(scoped(effect {
+      const { page, latest: current, send } = try app()
+      const document = page.ownerDocument
+      try send(() => Message.ChoseIdentity({ role: "maintainer" }))
+      try wait(() => expect(page.querySelector("#vl-account")).not.toBeNull())
+      try Effect.try(() => click(page.querySelector("#vl-account")!))
+      try wait(() => expect(page.querySelector("#vl-account-people")).not.toBeNull())
+      const people = try Effect.try(() => page.querySelector<HTMLElement>("#vl-account-people")!)
+      const out = try Effect.try(() => page.querySelector<HTMLElement>("#vl-account-out")!)
+      // Focus moves through the app's focus command, after the key: each step waits for its target.
+      const seen: Array<string> = []
+      for (const [element, key, target] of [[people, "ArrowDown", "vl-account-out"], [out, "ArrowUp", "vl-account-people"], [people, "ArrowUp", "vl-account-out"], [out, "ArrowDown", "vl-account-people"]] as const) {
+        try Effect.try(() => press(element, key))
+        try wait(() => expect(focusedId(document)).toBe(target))
+        seen.push(try Effect.try(() => focusedId(document)))
+      }
+      // Any other key leaves focus where it is.
+      try Effect.try(() => press(people, "Enter"))
+      try sleep("50 millis")
+      seen.push(try Effect.try(() => focusedId(document)))
+      try Effect.try(() => {
+        expect(seen).toEqual(["vl-account-out", "vl-account-people", "vl-account-out", "vl-account-people", "vl-account-people"])
+        expect(accountOf(current()).menu).toBe(true)
+      })
+      runs.push(seen)
+    }))
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  await runPromise(artifact("web-account-menu-keys", "Vitest built-in bench, happy-dom with the actual app over the product MockFactory: a maintainer opens the account menu with a click, then ArrowDown, ArrowUp, ArrowUp and ArrowDown move focus between People and Sign out, and Enter leaves it. Focused element after each key checked, menu still open. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout or paint. Synthetic KeyboardEvents stand in for a keyboard.", "Each arrow step includes the wait for its focus (5 ms polling); the non-arrow step includes a 50 ms settle."], { runs, result }))
+})
+
+const CONTROLS = ".vl-theatre-controls button:not(:disabled)"
+
+it("a person starts the tour and tabs through its controls", async ({ bench }) => {
+  const runs: Array<{ forward: number; wrapped: boolean; step: number }> = []
+  const result = await workload(bench, "web-tour-keys", "async", async () => {
+    await runPromise(scoped(effect {
+      const { page, latest: current, send } = try app()
+      const document = page.ownerDocument
+      try send(() => Message.ClickedLearnMore())
+      // The tour's own event stream (the tourEvents subscription) delivers its first events.
+      try wait(() => { expect(current().tour).toBe(true); expect(current().tourClient?.conversation.seq ?? 0).toBeGreaterThan(0) })
+      try wait(() => expect(document.querySelectorAll(CONTROLS).length).toBeGreaterThan(1))
+      const count = try Effect.try(() => document.querySelectorAll(CONTROLS).length)
+      // Tab with nothing focused takes the first control; Shift+Tab from there wraps to the last.
+      try Effect.try(() => keyOn(document, "Tab"))
+      try wait(() => expect(focusedIndex(document, CONTROLS)).toBe(0))
+      const forward = try Effect.try(() => focusedIndex(document, CONTROLS))
+      try Effect.try(() => keyOn(document, "Tab", true))
+      try wait(() => expect(focusedIndex(document, CONTROLS)).toBe(count - 1))
+      const back = try Effect.try(() => focusedIndex(document, CONTROLS))
+      runs.push({ forward, wrapped: back === count - 1, step: current().theatre.step })
+    }))
+  }).run(slow)
+  expect(runs.length).toBeGreaterThan(0)
+  for (const run of runs) expect(run).toEqual({ forward: 0, wrapped: true, step: 1 })
+  await runPromise(artifact("web-tour-keys", "Vitest built-in bench, happy-dom with the actual app over the product MockFactory: Learn more starts the tour and its event stream delivers events; Tab focuses the first theatre control and Shift+Tab wraps to the last. The tour's events, its first stop and the focused control are checked. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout, paint or speech. Synthetic KeyboardEvents stand in for a keyboard.", "Each step includes the wait for its result (5 ms polling)."], { runs, result }))
+})
