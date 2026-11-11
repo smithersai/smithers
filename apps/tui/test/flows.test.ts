@@ -175,6 +175,39 @@ describe("flow runs", () => {
     )
   })
 
+  it("gives simultaneous default requests distinct UUIDs and launches both inputs", async () => {
+    const f = setup()
+    try {
+      const receipts = [1, 2].map((n) => f.runs.request({ flow: "review", input: { n }, by: "user" }))
+      expect(new Set(receipts.map((receipt) => receipt.id)).size).toBe(2)
+      for (const receipt of receipts) {
+        expect(receipt.id).toMatch(/^review-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+        expect(receipt.status).toBe("requested")
+      }
+      expect(f.runs.snapshot().map((run) => run.input)).toEqual([{ n: 1 }, { n: 2 }])
+      expect(f.records.filter((record) => record.type === "flow")).toHaveLength(2)
+      expect(f.calls).toEqual([])
+      await tick()
+      expect(f.calls.filter((call) => call.startsWith("plan:"))).toEqual([
+        "plan:review:{\"n\":1}",
+        "plan:review:{\"n\":2}"
+      ])
+      expect(f.starts).toHaveLength(2)
+      expect(f.runs.snapshot().map((run) => [run.id, run.runId, run.status])).toEqual(
+        receipts.map((receipt, index) => [receipt.id, `run-${index + 1}`, "running"])
+      )
+      f.watches[0]!.done.resolve({ kind: "done", answer: "First result" })
+      f.watches[1]!.done.resolve({ kind: "done", answer: "Second result" })
+      await tick()
+      expect(f.runs.snapshot().map((run) => [run.id, run.answer, run.status])).toEqual([
+        [receipts[0]!.id, "First result", "done"],
+        [receipts[1]!.id, "Second result", "done"]
+      ])
+    } finally {
+      await f.runs.dispose()
+    }
+  })
+
   it("an unresolved input() keeps it busy, and cancel ignores the stale answer", async () => {
     const f = setup({ schema: Schema.Struct({}) })
     f.auto.input = false

@@ -596,8 +596,9 @@ export class FlowRuns {
       }
       return { id: existing.id, status: existing.status }
     }
-    const id = request.id ?? `${request.flow}-${Date.now().toString(36)}`
+    const id = request.id ?? `${request.flow}-${crypto.randomUUID()}`
     if (this.options.occupied?.(id)) throw new Error("Request id already belongs to a worker tab")
+    if (this.runs.has(id)) throw new Error("Request id already belongs to another request")
     // Persist FIRST; the receipt acknowledges only the request.
     const run = this.runs.create({
       id,

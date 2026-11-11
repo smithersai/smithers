@@ -65,6 +65,7 @@ beforeEach(async () => {
     discover: async () => [{
       name: "review",
       description: "Review",
+      tui: { status: true },
       kind: "module",
       modelInvocable: true,
       flows: [],
@@ -167,6 +168,17 @@ test.each([
       expect(frame()).toContain("second line")
       expect(frame().match(/Review finished/g)).toHaveLength(1)
     }
+    // The completed run has no strip chip while Chat stays open; its footer still opens it.
+    const lines = frame().split("\n")
+    const footer = lines.findLastIndex((line) => line.includes(`${mark} review`))
+    expect(footer).toBeGreaterThanOrEqual(lines.length - 3)
+    await act(async () => {
+      await setup!.mockMouse.click(lines[footer]!.indexOf(`${mark} review`) + 2, footer)
+      await setImmediate()
+    })
+    await setup!.renderOnce()
+    expect(frame()).not.toContain("No view")
+    expect(frame()).toContain("esc Chat")
   },
   15000
 )

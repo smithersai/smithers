@@ -327,51 +327,97 @@ test("a contributed global key queues its prompt only when invoked and leaves th
   expect(frame()).toContain("Unsent draft")
 })
 
-test("a panel open action selects its named view only after explicit invocation", async () => {
-  await publish({
-    kind: "panel",
-    placement: "tab",
-    panel: {
-      ...panel([{ id: "detail", label: "Owned detail content", details: [] }]),
-      id: "detail",
-      title: "Detail view"
-    }
-  })
-  await publish({
-    kind: "panel",
-    placement: "tab",
-    panel: panel([{
-      id: "open",
-      label: "Open detail",
-      details: [],
-      action: { label: "Open", action: { kind: "open", surface: "ui:detail" } }
-    }])
-  })
-  expect(frame()).not.toContain("Owned detail content")
-  await complete()
-  await openView("Audit view")
-  expect(frame()).toContain("Open detail")
-  expect(frame()).not.toContain("Owned detail content")
-  await key("a")
-  expect(frame()).toContain("Owned detail content")
-  expect(turns).toHaveLength(1)
-})
+test.each(["tab", "card"] as const)(
+  "a panel open action selects its named %s view only after explicit invocation",
+  async (placement) => {
+    await publish({
+      kind: "panel",
+      placement,
+      panel: {
+        ...panel([{ id: "detail", label: "Owned detail content", details: [] }]),
+        id: "detail",
+        title: "Detail view"
+      }
+    })
+    await publish({
+      kind: "panel",
+      placement: "tab",
+      panel: panel([{
+        id: "open",
+        label: "Open detail",
+        details: [],
+        action: { label: "Open", action: { kind: "open", surface: "ui:detail" } }
+      }])
+    })
+    if (placement === "tab") expect(frame()).not.toContain("Owned detail content")
+    await complete()
+    await openView("Audit view")
+    expect(frame()).toContain("Open detail")
+    expect(frame()).not.toContain("Owned detail content")
+    await key("a")
+    expect(frame()).toContain("Owned detail content")
+    expect(turns).toHaveLength(1)
+  }
+)
 
-test("an unavailable target in a panel action remains visible as a refusal instead of opening an empty view", async () => {
-  await publish({
-    kind: "panel",
-    placement: "tab",
-    panel: panel([{
-      id: "missing",
-      label: "Missing target row",
-      details: [],
-      action: { label: "Open", action: { kind: "open", surface: "ui:missing" } }
-    }])
-  })
-  await complete()
-  await openView("Audit view")
-  await key("a")
-  expect(frame()).toContain("No view ui:missing")
-  expect(frame()).toContain("Missing target row")
-  expect(turns).toHaveLength(1)
-})
+test.each(["ui:missing", "tab:missing", "flow:missing"])(
+  "an unavailable %s target remains visible as a refusal",
+  async (surface) => {
+    await publish({
+      kind: "panel",
+      placement: "tab",
+      panel: panel([{
+        id: "missing",
+        label: "Missing target row",
+        details: [],
+        action: { label: "Open", action: { kind: "open", surface } }
+      }])
+    })
+    await complete()
+    await openView("Audit view")
+    await key("a")
+    expect(frame()).toContain(`No view ${surface}`)
+    expect(frame()).toContain("Missing target row")
+    expect(turns).toHaveLength(1)
+  }
+)
+
+test.each(["done", "failed", "cancelled"] as const)(
+  "a contributed key opens a %s worker after its strip chip disappears",
+  async (status) => {
+    await act(async () => {
+      turns[0]!.input.runtime!.delegate!({ id: "finished", title: "Inspect result", prompt: "Inspect result" })
+      await setImmediate()
+    })
+    await render()
+    await act(async () => {
+      const worker = turns[1]!
+      if (status === "done") {
+        worker.input.onEvent(
+          new AgentEvent.Resolved({
+            eventType: "flows.harness.resolved.v1",
+            message: ModelRequest.Message.assistant("Stored worker result")
+          })
+        )
+      }
+      worker.done.resolve(
+        status === "done"
+          ? { _tag: "done", answer: "Stored worker result" }
+          : status === "failed"
+          ? { _tag: "failed", message: "Worker refused", detail: "Execution refused" }
+          : { _tag: "cancelled" }
+      )
+      await setImmediate()
+    })
+    await render()
+    await publish({
+      kind: "key",
+      key: { id: "result", key: "alt+z", label: "Open result", action: { kind: "open", surface: "tab:finished" } }
+    })
+    await key("z", { meta: true })
+    expect(frame()).not.toContain("No view")
+    expect(frame()).toContain("esc Chat")
+    expect(frame()).toContain("Inspect result")
+    expect(turns).toHaveLength(2)
+  }
+)

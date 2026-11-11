@@ -1910,8 +1910,13 @@ export function App(props: AppProps) {
         return startAgent(action.agent, action.prompt?.trim() ?? "")
       case "open": {
         const target = action.surface === "smithers" ? `ui:${Smithers.id}` : action.surface
-        const card = target.startsWith("ui:") && cardIds.has(target.slice(3))
-        if (target !== "chat" && !card && !surfaces.some((each) => each.id === target)) {
+        const exists = target === "chat" || target === "summary" ||
+          snapshot.tabs.some((tab) => target === `tab:${tab.id}`) ||
+          flowRuns.some((run) => target === `flow:${run.id}`) ||
+          snapshot.panels.some((panel) => target === `ui:${panel.id}`) ||
+          extensions.panels.some(({ panel }) => target === `ui:${panel.id}`) ||
+          (extensionPanel !== undefined && target === `ui:${extensionPanel.id}`)
+        if (!exists) {
           return setStatus(`No view ${target}`, "warning")
         }
         if (liveForm.current !== undefined) changeForm(undefined)

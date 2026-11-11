@@ -467,7 +467,10 @@ click, `a` on a row, Ctrl+K) or an agent does.
 
 An action is `{ kind: "prompt", prompt }`, `{ kind: "flow", flow, input? }`,
 `{ kind: "agent", agent, prompt? }` or `{ kind: "open", surface }`. A panel
-row's action is `{ label, prompt }` or `{ label, action }`.
+row's action is `{ label, prompt }` or `{ label, action }`. An `open` action can
+open a stored worker, flow run or available panel even when it has no visible
+tab. Completed runs remain reachable from status items, keys and panel rows.
+Each flow action gets its own request ID, including actions invoked together.
 
 Cells publish with `ui.publish`; a worker's ids are prefixed `<tab>/` and its
 cards stay in its lane. A repository declares UI in a markdown flow's
