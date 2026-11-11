@@ -160,6 +160,11 @@ export interface ScriptedGitHub {
   readonly accounts: Map<string, number>
   /** Whether the repository is private. */
   private: boolean
+  /**
+   * Other repositories GitHub shows anyone, by `owner/name` in any case: a metadata read with no credential answers them
+   * public. The App isn't installed on them.
+   */
+  readonly publicElsewhere: Set<string>
   /** GitHub's clock, in epoch ms: the real one, moved on a second at least by each change, so `updated_at` is ordered. */
   now: number
   /** The installation tokens GitHub minted, newest last, with what each was asked for. */
@@ -372,6 +377,11 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
       return { response: token === "user" && login !== undefined
         ? json({ ...user(login), type: login.endsWith("[bot]") ? "Bot" : "User" })
         : json({ message: "Resource not accessible by integration" }, 403) }
+    }
+    const elsewhere = /^\/repos\/([^/]+\/[^/]+)$/.exec(path)?.[1]
+    if (elsewhere !== undefined && path !== apiPath && method === "GET" && token === "none"
+      && [...github.publicElsewhere].some((repository) => repository.toLowerCase() === elsewhere)) {
+      return { response: json({ id: REPOSITORY_ID + 1, private: false, default_branch: "main" }) }
     }
     if (!path.startsWith(apiPath)) return { response: json({ message: "Not Found" }, 404) }
     if (path === apiPath && method === "GET" && token === "none") {
@@ -1156,6 +1166,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     roles: new Map(),
     accounts: new Map(),
     private: false,
+    publicElsewhere: new Set(),
     now: Date.now(),
     minted: [],
     revoked: [],

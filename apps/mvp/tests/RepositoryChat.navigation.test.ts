@@ -56,6 +56,8 @@ test.each([false, true])("branch=%s: cold sync keeps the existing view and the n
     }))
     await vi.waitFor(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("signed_in"), { timeout: 40_000 })
     const about = { name: "octocat/Spoon-Knife", description: null, homepage: null, topics: [], stars: 0, forks: 0, watchers: 0, license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: null, contributors: [], contributorCount: null, commits: null, branches: null, tags: null, head: null, root: [], readme: { path: "README.md", text: "# Spoon-Knife" }, installUrl: null }
+    // Spoon-Knife is public on GitHub, and the App isn't on it: its public metadata admits the deployment's Member (decision 0156).
+    api.github.scripted.publicElsewhere.add("octocat/Spoon-Knife")
     await app.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO repo_about (repo_id, about, via, read_at, fresh_until) VALUES ('github/octocat/spoon-knife', ${JSON.stringify(about)}, 'anonymous', now(), now() + interval '1 hour')`)))
     const conversationId = branch ? (await app.runPromise(api.branches.run(Conversations.track("github/octocat/spoon-knife", "feature", "open", shaOf("feature"))))).branch.conversationId : undefined
     await chatState.actions.show(conversationId ?? null)
