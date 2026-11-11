@@ -114,6 +114,53 @@ describe("ModuleMetadata", () => {
     })
   })
 
+  it.each([
+    ["an escaped quoted key", "\"capabilitie\\x73\": [\"bash\"],"],
+    ["a single-quoted escaped key", "'capabilitie\\u0073': [\"bash\"],"],
+    ["a prototype member", "__proto__: { capabilities: [\"bash\"] },"],
+    ["a quoted prototype member", "\"__proto__\": { capabilities: [\"bash\"] },"]
+  ])("keeps flow members the reader cannot read as written conservative (%s)", (_, member) => {
+    const metadata = ModuleMetadata.parse([
+      "export default Flow.make(\"x\", {",
+      "  description: \"d\",",
+      `  ${member}`,
+      "  body: () => 1",
+      "})"
+    ].join("\n"))
+    expect(metadata.capabilities).toEqual(["*"])
+    expect(metadata.effects).toEqual({
+      reads: ["**"],
+      writes: ["**"],
+      mode: "expected",
+      onConflict: "serialize",
+      tier: "irreversible"
+    })
+    expect(metadata.warnings).toContainEqual({
+      message:
+        "Object spread or computed properties make schemas and authority unprojectable; using conservative projections",
+      line: 3
+    })
+  })
+
+  it.each([
+    ["an escaped quoted key", "\"write\\x73\": [\"**\"]"],
+    ["a prototype member", "__proto__: { writes: [\"**\"] }"]
+  ])("keeps effects members the reader cannot read as written conservative (%s)", (_, member) => {
+    const metadata = ModuleMetadata.parse(
+      `export default Flow.make("x", { description: "d", capabilities: ["fs:read"], effects: { reads: [], ${member}, mode: "hermetic", onConflict: "fail" }, body: () => 1 })`
+    )
+    expect(metadata.effects).toEqual({
+      reads: ["**"],
+      writes: ["**"],
+      mode: "expected",
+      onConflict: "serialize",
+      tier: "irreversible"
+    })
+    expect(metadata.warnings).toContainEqual({
+      message: "Effects contain an object spread or computed member; using conservative effects"
+    })
+  })
+
   it.each(["[...grants]", "[grant]", "grants", "[\"fs:read\" + suffix]", "[\"fs:read\" \"net:get\"]"])(
     "keeps nonliteral capability expressions conservative with their declaration line (%s)",
     (capabilities) => {
