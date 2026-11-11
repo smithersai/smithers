@@ -666,6 +666,33 @@ describe("write-set applier", () => {
     }
   })
 
+  it("rejects a version-control database at any depth, in any case", async () => {
+    const applier = AgentSession.makeLocalWriteSetApplier(root)
+    for (
+      const path of [
+        ".GIT/config",
+        "vendor/lib/.git/config",
+        "vendor/lib/.git",
+        ".jj/repo/config.toml",
+        "a/.Jj/repo/config.toml",
+        ".git./config",
+        ".git /hooks/pre-commit",
+        ".hg/hgrc",
+        "a/.svn/entries"
+      ]
+    ) {
+      const error = await Effect.runPromise(
+        Effect.flip(applier.apply([{ path, contents: "x" }], ["**"], undefined))
+      )
+      expect(error._tag).toBe("smithers-build/AgentWriteEscape")
+      expect(error.message).toContain("names a version-control database")
+    }
+    const accepted = await Effect.runPromise(
+      applier.apply([{ path: "src/.github/x.yml", contents: "x" }, { path: "src/git/x.ts", contents: "x" }], ["**"])
+    )
+    expect([...accepted.files.keys()]).toEqual(["src/.github/x.yml", "src/git/x.ts"])
+  })
+
   it("rejects an edit travelling through a symlinked component", async () => {
     await Fs.mkdir(NodePath.join(root, "elsewhere"))
     await Fs.symlink(NodePath.join(root, "elsewhere"), NodePath.join(root, "src", "link"))

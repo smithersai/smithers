@@ -941,9 +941,19 @@ const editPathFailure = (path: string): string | undefined => {
   const segments = path.split(/[/\\]/)
   if (segments.some((segment) => segment === "" || segment === ".")) return "is not normalized"
   if (segments.includes("..")) return "leaves the workspace"
-  if (segments[0] === ".git") return "names the repository database"
+  if (segments.some(isVersionControlSegment)) return "names a version-control database"
   return undefined
 }
+
+/** Version-control databases whose config or hooks run commands on the next VCS invocation. */
+const versionControlDirectories: ReadonlySet<string> = new Set([".git", ".jj", ".hg", ".svn"])
+
+/**
+ * Matches a segment the way case-insensitive (APFS, NTFS) and trailing-dot or
+ * trailing-space stripping (Windows) file systems resolve it.
+ */
+const isVersionControlSegment = (segment: string): boolean =>
+  versionControlDirectories.has(segment.replace(/[. ]+$/, "").toLowerCase())
 
 const overlayOf = (
   workspaceRoot: string,
