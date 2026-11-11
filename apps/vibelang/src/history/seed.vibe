@@ -9,6 +9,7 @@
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 import { admitsLine, pairCut } from "./stackDecision.vibe"
 import { type Area, areaIndex, entryUse, evidenceStep, foldedTitle, joins, ownsLine, sentenceCut, sentenceEnded, titleScope } from "./seedDecision.vibe"
+import { evidenceStart, firstLine, regeneratedTitle, revertedTitle } from "./seedTextDecision.vibe"
 
 // An area is the proved decision module's (seedDecision.vibe); this module names the bootstrap's areas.
 export type { Area }
@@ -245,11 +246,9 @@ export const UNTITLED = "(no description)"
 
 /** A description's first line, `UNTITLED` when it is empty. */
 export function titleOf(description: string): string {
-  const title = description.replace(/\n[\s\S]*$/, "").trim()
+  const title = firstLine(description).trim()
   return title === "" ? UNTITLED : title
 }
-
-const TRAILERS = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/
 
 /** A line that starts something of its own: another `Key:` line or a list item. */
 
@@ -262,10 +261,10 @@ export function evidenceOf(description: string): ReadonlyArray<string> {
   let open = false
   for (const raw of description.split("\n")) {
     const line = raw.trim()
-    const match = TRAILERS.exec(line)
-    const step = evidenceStep(match !== null, open, line === "", ownsLine(line))
-    if (step === "start" && match !== null) {
-      paragraphs.push(`${match[1]}: ${match[2]}`)
+    const start = evidenceStart(line)
+    const step = evidenceStep(start !== "", open, line === "", ownsLine(line))
+    if (step === "start") {
+      paragraphs.push(start)
       open = true
     } else if (step === "wrap") {
       paragraphs[paragraphs.length - 1] += ` ${line}`
@@ -275,10 +274,6 @@ export function evidenceOf(description: string): ReadonlyArray<string> {
   }
   return paragraphs.map((paragraph) => sanitize(paragraph)).filter((line) => line !== "")
 }
-
-const REGENERATED = /^chore\(docs\): regenerate\b/
-
-const REVERT = /^Revert "(.+)"$/
 
 /** One mythical commit while grouping: its real commits and the queue entry it came from. */
 interface Group {
@@ -307,7 +302,7 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
   const attempts = new Map<string, Array<QueueEntry>>()
   for (const entry of entries) {
     for (const title of entry.titles) {
-      const use = entryUse(REGENERATED.test(title), entry.state)
+      const use = entryUse(regeneratedTitle(title), entry.state)
       if (use === "skip") continue
       const into = use === "landed" ? landed : attempts
       const list = into.get(title) ?? []
@@ -326,13 +321,13 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
     if (step !== commit.sha) continue
     const title = titleOf(commit.description)
     const entry = landed.get(title)?.shift()
-    const reverted = REVERT.exec(title)
+    const reverted = revertedTitle(title)
     const previous = groups[groups.length - 1]
-    const join = joins(REGENERATED.test(title), previous !== undefined, reverted !== null && byTitle.has(reverted[1]!), entry !== undefined && byEntry.has(entry.id))
+    const join = joins(regeneratedTitle(title), previous !== undefined, reverted !== "" && byTitle.has(reverted), entry !== undefined && byEntry.has(entry.id))
     let group: Group | undefined
     if (join === "previous") group = previous
     else if (join === "reverted") {
-      group = byTitle.get(reverted![1]!)!
+      group = byTitle.get(reverted)!
       pushOnce(group.tried, `Reverted in ${commit.sha.slice(0, SHA_LENGTH)}.`)
     } else if (join === "entry") group = byEntry.get(entry!.id)!
     if (group === undefined) {

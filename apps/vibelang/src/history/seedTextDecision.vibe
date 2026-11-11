@@ -1,0 +1,76 @@
+// The bootstrap's text decisions (wiki/decisions/0020-mythical-history.md, 0018 third-lane batch 26): a description's
+// first line, a regenerated-docs title, the title a revert names, and the `Validation:`-style evidence line. `seed.vibe`
+// calls these in place of its `replace`, `exec` and `\b` regular expressions; each match is decided by LemmaScript's
+// proved RegExp `test` where the pattern is in its subset, and each capture is a proved index walk.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+import { unitFrom } from "./seedDecision.vibe"
+
+/** A code unit JavaScript's `\s` matches: ECMAScript WhiteSpace and LineTerminator. */
+//@ verify
+//@ ensures \result == ((9 <= unit && unit <= 13) || unit == 32 || unit == 160 || unit == 5760 || (8192 <= unit && unit <= 8202) || unit == 8232 || unit == 8233 || unit == 8239 || unit == 8287 || unit == 12288 || unit == 65279)
+export function spaceUnit(unit: number): boolean {
+  return (9 <= unit && unit <= 13) || unit === 32 || unit === 160 || unit === 5760 || (8192 <= unit && unit <= 8202) ||
+    unit === 8232 || unit === 8233 || unit === 8239 || unit === 8287 || unit === 12288 || unit === 65279
+}
+
+/** A code unit `\w` matches: an ASCII letter, digit or `_`. */
+//@ verify
+//@ ensures \result == ((48 <= unit && unit <= 57) || (65 <= unit && unit <= 90) || unit == 95 || (97 <= unit && unit <= 122))
+export function wordUnit(unit: number): boolean {
+  return (48 <= unit && unit <= 57) || (65 <= unit && unit <= 90) || unit === 95 || (97 <= unit && unit <= 122)
+}
+
+/** A description's first line: everything before its first line feed. */
+//@ verify
+//@ ensures unitFrom(text, 0, 10) < 0 ==> \result == text
+//@ ensures unitFrom(text, 0, 10) >= 0 && unitFrom(text, 0, 10) <= text.length ==> \result == text.slice(0, unitFrom(text, 0, 10))
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result.charCodeAt(i) != 10)
+export function firstLine(text: string): string {
+  const end = unitFrom(text, 0, 10)
+  return end < 0 ? text : text.slice(0, end)
+}
+
+/** A regenerated-docs title: `chore(docs): regenerate`, then no further word character (`\b`, stated exactly). */
+//@ verify
+//@ ensures \result == (title.startsWith("chore(docs): regenerate") && (title.length == 23 || !wordUnit(title.charCodeAt(23))))
+export function regeneratedTitle(title: string): boolean {
+  if (!title.startsWith("chore(docs): regenerate")) return false
+  return title.length === 23 || !wordUnit(title.charCodeAt(23))
+}
+
+/** The title a `Revert "title"` commit names, `""` for any other title. */
+//@ verify
+//@ ensures !\matches("^Revert \".+\"$", title) ==> \result == ""
+//@ ensures \result != "" ==> \matches("^Revert \".+\"$", title) && title.length >= 10 && \result == title.slice(8, title.length - 1)
+export function revertedTitle(title: string): string {
+  if (!/^Revert ".+"$/.test(title) || title.length < 10) return ""
+  return title.slice(8, title.length - 1)
+}
+
+/** Where the run of `\s` code units that starts at `at` ends. */
+//@ verify
+//@ decreases text.length - at
+//@ ensures 0 <= at && at <= text.length ==> at <= \result && \result <= text.length
+//@ ensures 0 <= at ==> forall(i, at <= i && i < \result ==> spaceUnit(text.charCodeAt(i)))
+//@ ensures \result < 0 || \result >= text.length || !spaceUnit(text.charCodeAt(\result))
+export function spacesEnd(text: string, at: number): number {
+  if (at < 0 || at >= text.length || !spaceUnit(text.charCodeAt(at))) return at
+  return spacesEnd(text, at + 1)
+}
+
+/**
+ * The paragraph an evidence line starts, `Key: text`: a `Validation`, `Test`, `Tests`, `Regression`, `Before` or
+ * `After` key, its colon, and the rest of the line after any spaces; `""` for any other line.
+ */
+//@ verify
+//@ ensures !\matches("^(?:Validation|Tests?|Regression|Before|After):\\s*.+$", line) ==> \result == ""
+//@ ensures \result != "" ==> \matches("^(?:Validation|Tests?|Regression|Before|After):\\s*.+$", line)
+//@ ensures \result != "" ==> 0 <= unitFrom(line, 0, 58) && 0 <= spacesEnd(line, unitFrom(line, 0, 58) + 1) && spacesEnd(line, unitFrom(line, 0, 58) + 1) <= line.length && \result == line.slice(0, unitFrom(line, 0, 58)) + ": " + line.slice(spacesEnd(line, unitFrom(line, 0, 58) + 1))
+export function evidenceStart(line: string): string {
+  if (!/^(?:Validation|Tests?|Regression|Before|After):\s*.+$/.test(line)) return ""
+  const colon = unitFrom(line, 0, 58)
+  if (colon < 0) return ""
+  return line.slice(0, colon) + ": " + line.slice(spacesEnd(line, colon + 1))
+}

@@ -5791,3 +5791,16 @@ cases.extend([
 ('src/history/seedDecision.vibe', 'scope-prefix-lower', 'titleScope', 'title.slice(0, colon).toLowerCase()', 'title.slice(0, colon)', 'a bare prefix reads in lower case'),
 ('src/history/seedDecision.vibe', 'scope-prefix-pattern', 'titleScope', '/^[A-Za-z][\\w./-]*:\\s/', '/^[A-Za-z][\\w./-]*:/', 'a bare prefix is followed by a space'),
 ])
+
+# Lane vl-proveall3, batch 26: the bootstrap's text decisions (src/history/seedTextDecision.vibe).
+cases.extend([
+('src/history/seedTextDecision.vibe', 'text-space-bom', 'spaceUnit', 'unit === 65279', 'unit === 65278', 'a byte-order mark is a space'),
+('src/history/seedTextDecision.vibe', 'text-word-underscore', 'wordUnit', 'unit === 95', 'unit === 45', 'an underscore is a word character'),
+('src/history/seedTextDecision.vibe', 'text-first-line', 'firstLine', 'text.slice(0, end)', 'text.slice(0, end + 1)', 'the first line stops before its line feed'),
+('src/history/seedTextDecision.vibe', 'text-regenerated-end', 'regeneratedTitle', 'title.length === 23 ||', 'title.length === 22 ||', 'the title may end right after regenerate'),
+('src/history/seedTextDecision.vibe', 'text-regenerated-boundary', 'regeneratedTitle', '!wordUnit(title.charCodeAt(23))', 'wordUnit(title.charCodeAt(23))', 'a word character after regenerate is no boundary'),
+('src/history/seedTextDecision.vibe', 'text-revert-start', 'revertedTitle', 'title.slice(8, title.length - 1)', 'title.slice(7, title.length - 1)', 'the reverted title starts after the quote'),
+('src/history/seedTextDecision.vibe', 'text-spaces-step', 'spacesEnd', 'return spacesEnd(text, at + 1)', 'return at + 1', 'every leading space is skipped'),
+('src/history/seedTextDecision.vibe', 'text-evidence-separator', 'evidenceStart', '+ ": " +', '+ ":" +', 'a key and its text are separated by one space'),
+('src/history/seedTextDecision.vibe', 'text-evidence-spaces', 'evidenceStart', 'line.slice(spacesEnd(line, colon + 1))', 'line.slice(colon + 1)', 'spaces after the colon are dropped'),
+])

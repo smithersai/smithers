@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { ownsLine, sentenceEnded, titleScope } from "../src/history/seedDecision.vibe"
 import { mythicalName, trailerLine, trailerName, trailerParagraph } from "../src/history/trailerDecision.vibe"
 import { trailerOf } from "../src/history/Sequencer.vibe"
+import { evidenceStart, firstLine, regeneratedTitle, revertedTitle, spaceUnit, wordUnit } from "../src/history/seedTextDecision.vibe"
 
 const ENDED = /[.!?]["'`)\]]*$/
 const OWN_LINE = /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/
@@ -121,6 +122,36 @@ describe("the history's proved RegExp tests", () => {
       let title = ""
       for (let i = next() % 9; i > 0; i--) title += units[next() % units.length]
       expect(titleScope(title)).toBe(replacedScopeOf(title))
+    }
+  })
+  it("decide JavaScript's \\s and \\w on every code unit", () => {
+    for (let unit = 0; unit < 65536; unit++) {
+      const text = String.fromCharCode(unit)
+      expect(spaceUnit(unit)).toBe(/\s/.test(text))
+      expect(wordUnit(unit)).toBe(/\w/.test(text))
+    }
+  })
+  it("read a description's first line, a regenerated-docs title, a revert and an evidence line as the replaced patterns did", () => {
+    expect(firstLine("a\nb\nc")).toBe("a")
+    expect(regeneratedTitle("chore(docs): regenerate")).toBe(true)
+    expect(regeneratedTitle("chore(docs): regenerated")).toBe(false)
+    expect(regeneratedTitle("chore(docs): regenerate-all")).toBe(true)
+    expect(revertedTitle("Revert \"fix: x\"")).toBe("fix: x")
+    expect(revertedTitle("Revert \"\"")).toBe("")
+    expect(evidenceStart("Tests:\u00a0 ok")).toBe("Tests: ok")
+    expect(evidenceStart("Tests:")).toBe("")
+    const units = ["chore(docs): regenerate", "Revert \"", "\"", "Tests", "Test", "Validation", "After", ":", " ", "\t", "\u00a0",
+      "\u2028", "\r", "\n", "_", "s", "x", "9", "-", "fix: y"]
+    let state = 30
+    const next = () => (state = (state * 1103515245 + 12345) % 2147483648)
+    for (let n = 0; n < 8000; n++) {
+      let text = ""
+      for (let i = next() % 6; i > 0; i--) text += units[next() % units.length]
+      expect(firstLine(text)).toBe(text.replace(/\n[\s\S]*$/, ""))
+      expect(regeneratedTitle(text)).toBe(/^chore\(docs\): regenerate\b/.test(text))
+      expect(revertedTitle(text)).toBe(/^Revert "(.+)"$/.exec(text)?.[1] ?? "")
+      const trailer = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/.exec(text)
+      expect(evidenceStart(text)).toBe(trailer === null ? "" : `${trailer[1]}: ${trailer[2]}`)
     }
   })
 })
