@@ -162,6 +162,21 @@ export const makeFileSystem = (
     Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true }),
     (drawn) => drawn.toString(36)
   )
+  let lastFreshenWarningAt: number | undefined
+  const freshenFailed = (digest: string, cause: PlatformError.PlatformError) =>
+    Effect.gen(function*() {
+      yield* Metric.update(ArtifactStoreMetrics.freshenFailures, 1)
+      const now = yield* Clock.currentTimeMillis
+      if (lastFreshenWarningAt !== undefined && now - lastFreshenWarningAt < 60_000) return
+      lastFreshenWarningAt = now
+      yield* Effect.logWarning("Artifact freshen failed").pipe(
+        Effect.annotateLogs({
+          digest,
+          reason: cause instanceof PlatformError.PlatformError ? cause.reason._tag : "Unknown"
+        })
+      )
+    })
+
   /**
    * Best-effort reclamation of scratch files orphaned by a crash: `.tmp-*`
    * payloads left between the temp write and the rename, and `.locks/*` stale
@@ -328,7 +343,13 @@ export const makeFileSystem = (
                   yield* checkBlob.pipe(Effect.mapError(hostFailure))
                   const alive = yield* fs.utimes(blob.path, timestamp, timestamp).pipe(
                     Effect.as(true),
-                    Effect.catch(() => fs.exists(blob.path).pipe(Effect.catch(() => Effect.succeed(true))))
+                    Effect.catch((cause) =>
+                      Effect.gen(function*() {
+                        const present = yield* fs.exists(blob.path).pipe(Effect.catch(() => Effect.succeed(true)))
+                        if (present) yield* freshenFailed(digest, cause)
+                        return present
+                      })
+                    )
                   )
                   if (!alive) {
                     verified = false
@@ -351,34 +372,38 @@ export const makeFileSystem = (
                       yield* checkRoot
                       yield* checkParent
                       const tempPath = `${blob.path}.tmp-${yield* freshTempToken}-${attempt}`
-                      const file = yield* fs.open(tempPath, { flag: "wx", mode: fileMode }).pipe(
-                        Effect.map(Option.some),
-                        Effect.catch((cause) =>
-                          cause.reason._tag === "AlreadyExists"
-                            ? Effect.succeed(Option.none())
-                            : Effect.fail(cause)
-                        )
+                      let published = false
+                      const file = yield* Effect.acquireRelease(
+                        fs.open(tempPath, { flag: "wx", mode: fileMode }).pipe(
+                          Effect.map(Option.some),
+                          Effect.catch((cause) =>
+                            cause.reason._tag === "AlreadyExists"
+                              ? Effect.succeed(Option.none())
+                              : Effect.fail(cause)
+                          )
+                        ),
+                        (opened) =>
+                          Effect.gen(function*() {
+                            if (Option.isNone(opened) || published) return
+                            const checkTemp = yield* ArtifactPath.guard(fs, tempPath, "File", yield* opened.value.stat)
+                            yield* checkRoot
+                            yield* checkParent
+                            yield* checkTemp
+                            yield* fs.remove(tempPath)
+                          }).pipe(Effect.ignore)
                       )
                       if (Option.isNone(file)) continue
-                      // Install cleanup only after exclusive acquisition. Never unlink
-                      // a colliding entry, which may belong to another writer.
+                      // Acquisition and cleanup registration are one masked step.
+                      // Never unlink a collision or a replacement of the opened file.
                       const checkTemp = yield* ArtifactPath.guard(fs, tempPath, "File", yield* file.value.stat)
-                      yield* Effect.gen(function*() {
-                        if (snapshot.byteLength > 0) yield* file.value.writeAll(snapshot)
-                        yield* durability === "best-effort" ? Effect.ignore(file.value.sync) : file.value.sync
-                        yield* checkRoot
-                        yield* checkParent
-                        yield* checkTemp
-                        yield* fs.rename(tempPath, blob.path)
-                        yield* syncPath(blob.parent, "r")
-                      }).pipe(Effect.onError(() =>
-                        Effect.gen(function*() {
-                          yield* checkRoot
-                          yield* checkParent
-                          yield* checkTemp
-                          yield* fs.remove(tempPath)
-                        }).pipe(Effect.ignore)
-                      ))
+                      if (snapshot.byteLength > 0) yield* file.value.writeAll(snapshot)
+                      yield* durability === "best-effort" ? Effect.ignore(file.value.sync) : file.value.sync
+                      yield* checkRoot
+                      yield* checkParent
+                      yield* checkTemp
+                      yield* fs.rename(tempPath, blob.path)
+                      published = true
+                      yield* syncPath(blob.parent, "r")
                       return
                     }
                     return yield* Effect.fail(
@@ -405,17 +430,17 @@ export const makeFileSystem = (
    * before a read or probe follows it. The digest check alone guards `get`'s
    * bytes, but `has` would otherwise report a planted foreign link as a stored
    * blob and let a publication skip its upload. The returned check re-inspects
-   * all three and refuses an observed replacement.
+   * directory identities. A read verifies its captured bytes; a concurrent
+   * heal may legitimately replace the blob.
    */
   const guardBlob = (blob: { readonly parent: string; readonly path: string }) =>
     Effect.gen(function*() {
       const checkRoot = yield* ArtifactPath.guard(fs, directory)
       const checkParent = yield* ArtifactPath.guard(fs, blob.parent)
-      const checkFile = yield* ArtifactPath.guard(fs, blob.path, "File")
+      yield* Effect.asVoid(ArtifactPath.guard(fs, blob.path, "File"))
       return Effect.gen(function*() {
         yield* checkRoot
         yield* checkParent
-        yield* checkFile
       }).pipe(Effect.mapError(hostFailure))
     }).pipe(Effect.mapError(hostFailure))
 
@@ -438,6 +463,11 @@ export const makeFileSystem = (
         })
       )
       yield* checkBlob
+      // A sweep may unlink the blob after readFile; that is a cache miss,
+      // while a healing rename cannot invalidate the bytes already captured.
+      if (!(yield* fs.exists(blob.path).pipe(Effect.mapError(hostFailure)))) {
+        return yield* Effect.fail(new ArtifactMissing({ code: "artifact_missing", digest: validated }))
+      }
       const measured = yield* measureBytes(bytes)
       if (measured !== validated) {
         return yield* Effect.fail(

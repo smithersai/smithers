@@ -81,3 +81,14 @@ export const remoteFailure: {
   put: Metric.withAttributes(remoteFailures, { operation: "put" }),
   write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" })
 }
+
+/**
+ * Counter over deduplicated puts whose modification-time freshen failed while
+ * the blob still existed (or its existence could not be checked).
+ *
+ * @category metrics
+ * @since 1.0.0-rc.17
+ */
+export const freshenFailures = Metric.counter("flows_artifact_freshen_failures", {
+  description: "Failed artifact modification-time freshens over retained blobs"
+})

@@ -100,12 +100,16 @@ bytes.
 New payloads are created exclusively (`wx`) with mode `0600`. New objects,
 fanout, and lock directories use `0700`. The host umask may restrict these
 modes further. Set `fileMode` and `directoryMode` explicitly to share payloads
-and object directories; lock directories remain private. Creation modes do
-not change existing entries or ACLs.
+and object directories; lock directories remain private. Writers sharing a
+filesystem store must use one owning uid: explicit modification-time freshening
+requires file ownership even when another uid has write permission. Creation
+modes do not change existing entries or ACLs.
 
 Scratch creation retries collisions with a fresh random token, keeping the
-opened handle through writing and syncing. Both durability modes require
-exclusive writable handles and symlink inspection. `best-effort` tolerates
+opened handle through writing and syncing. Cleanup is registered atomically
+with exclusive creation, so a failed or interrupted inspection, write, or sync
+removes the scratch file if its path and parent identities still match. Both
+durability modes require exclusive writable handles and symlink inspection. `best-effort` tolerates
 sync refusals only. Hosts without those capabilities fail as `unavailable`;
 use the memory or remote tier until the host supplies them.
 
@@ -113,9 +117,12 @@ Publication and sweep removal reject detected symlinks at the objects root,
 fanout, and blob paths, and recheck directory identities before mutation.
 Reads and probes (`get`, `has`, `findMissing`) refuse the same symlinks as
 `unavailable` instead of following them, so a planted link is never reported
-as a stored blob. The `.locks` directory is refused as a symlink before and
-after creation, and its identity is rechecked before every lock, claim, and
-tombstone mutation.
+as a stored blob. After reading, `get` rechecks the root and fanout identities,
+then verifies its captured bytes. A concurrent healing rename does not
+invalidate those bytes; a blob that vanished is `ArtifactMissing`, allowing the
+combined store to read from the shared tier. The `.locks` directory is refused
+as a symlink before and after creation, and its identity is rechecked before
+every lock, claim, and tombstone mutation.
 Scratch cleanup and inventory inspect one directory level at a time and skip
 symlinked entries. The portable Effect filesystem API provides no `lstat`,
 no-follow open, or descriptor-relative rename/unlink. Inspection uses

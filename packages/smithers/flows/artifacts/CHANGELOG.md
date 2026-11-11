@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Reads racing a sweep now report a miss so the shared tier can answer; a
+  healing rename preserves digest-verified reads. Failed dedupe freshens now
+  warn and count failures, and interrupted scratch inspection cleans up its
+  exclusive file (#4523).
 - The filesystem store's required directory sync ends at the first ancestor
   the host refuses to open for reading, so a traverse-only ancestor such as
   `/home` at `0711` no longer fails every `put` as `unavailable` (#4522).

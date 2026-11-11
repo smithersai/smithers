@@ -129,10 +129,18 @@ no tier attribute. Read them as local artifact store traffic:
 - Missing and corrupt reads count nothing. They are error evidence, not
   throughput.
 
-A third counter, `flows_artifact_remote_failures`, counts the shared uploads
+The counter `flows_artifact_remote_failures`, counts the shared uploads
 (`operation: put`) and local write-backs (`operation: write_back`) a combined
 store dropped. Neither fails the caller, so this counter and its warning are
 the only evidence that the shared tier stopped filling.
+
+The filesystem store also counts `flows_artifact_freshen_failures` when a
+deduplicated put cannot refresh the blob's modification time and the blob
+remains (or its existence is unknown). A warning, limited to once per minute
+per store, names the digest and platform reason tag. Such a put still succeeds,
+but its old modification time weakens the collector's grace fence. Shared
+filesystem writers must use one owning uid; write permission alone cannot
+authorize an explicit modification-time update.
 
 No exporter ships in this package; provide one, for example
 [`@smthrs/observability`](/api/observability), and the counters appear in it.

@@ -195,6 +195,20 @@ observes: the fence reads as armed and protects nothing.
 `directory`. Nothing checks the pairing at runtime, and no error is raised.
 See [Coordination between processes](./concepts/coordination.md).
 
+## A deduplicated put did not freshen the blob
+
+**What happened.** The host refused `utimes` while the blob still existed, or
+its existence could not be checked. The put still succeeds without rewriting,
+but the old modification time cannot protect a new reference from a concurrent
+collector. Every such failure increments `flows_artifact_freshen_failures`.
+`Artifact freshen failed` warns at most once per minute per store, with the
+digest and platform reason tag; host error details are omitted.
+
+**What to change.** Use one owning uid for all writers sharing a filesystem
+store, even with shared `fileMode` and `directoryMode`. Check the host's
+modification-time support and permissions before relying on the collector's
+grace fence. A vanished blob is republished instead.
+
 ## The get counter looks too low
 
 **What happened.** `flows_artifact_gets` and `flows_artifact_puts` count local
