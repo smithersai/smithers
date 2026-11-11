@@ -14,7 +14,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll } from "vitest"
+import { afterAll, expectTypeOf } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
@@ -23,6 +23,12 @@ import { platform } from "./helpers/containedPlatform.ts"
 
 // The tools run real shell scripts and real git in a real scratch directory (DirectorySandbox), as they run in a
 // container: what each call answers is what the guest did.
+
+// `execute` answers the call's own result: a run's output reads without checking `tool`; an unknown call, any result.
+type Answer<C extends SandboxTools.Call> = Effect.Success<ReturnType<typeof SandboxTools.execute<C>>>
+expectTypeOf<Answer<typeof SandboxTools.Run.Type>>().toEqualTypeOf<typeof SandboxTools.RunResult.Type>()
+expectTypeOf<Answer<typeof SandboxTools.Read.Type>>().toEqualTypeOf<typeof SandboxTools.ReadResult.Type>()
+expectTypeOf<Answer<SandboxTools.Call>>().toEqualTypeOf<SandboxTools.Result>()
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-sandbox-tools-")))
 const calls = join(root, "calls")

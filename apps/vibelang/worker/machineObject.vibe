@@ -108,7 +108,7 @@ export function machineObject(box: MachineBox, state: ObjectState) {
         const latest = try saved()
         if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return refused("not-current")
         try promise(() => state.raw.storage.put("machine", { ...latest, snapshot }))
-        const output = result.tool === "run" ? commandOutput(result.stdout, result.stderr, result.truncated, result.exitCode !== 0, String(result.exitCode)) : ""
+        const output = commandOutput(result.stdout, result.stderr, result.truncated, result.exitCode !== 0, String(result.exitCode))
         try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("UPDATE sandbox_machine_commands SET phase = 'done', output = ? WHERE id = ?", output, key)))
         return answered(output)
       })

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- `SandboxTools.execute` answers the call's own result type, `SandboxTools.ResultOf<C>`: a `run` call's answer is a
+  `RunResult`, so a caller no longer checks `tool` before reading `stdout`.
 - `SandboxMerge.apply` requires `@smthrs/jj`'s `RepositoryMutation` service
   instead of loading `@smthrs/jj/node/NodeJj` through a dynamic import, so the
   root imports no Node code even at run time. Node and Bun hosts provide

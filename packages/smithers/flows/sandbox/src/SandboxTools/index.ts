@@ -326,6 +326,15 @@ export const Result = Schema.Union([RunResult, ReadResult, WriteResult, ListResu
 export type Result = typeof Result.Type
 
 /**
+ * The result a call of `C` answers: a `run` call's is a {@link RunResult}, a
+ * `read` call's a {@link ReadResult}, and so on.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export type ResultOf<C extends Call> = Extract<Result, { readonly tool: C["tool"] }>
+
+/**
  * Why a tool refused a call, before or without changing anything:
  *
  * - `path`: the path leaves the workdir;
@@ -811,9 +820,10 @@ const diff = (session: Session, call: typeof Diff.Type) =>
   })
 
 /**
- * Runs `call` on `session`'s working copy. A `run` runs at most once per
- * `options.callId`: the same call again answers the result the first attempt
- * recorded, or fails {@link ToolLost} when that attempt never finished.
+ * Runs `call` on `session`'s working copy and answers its tool's own result
+ * ({@link ResultOf}). A `run` runs at most once per `options.callId`: the same
+ * call again answers the result the first attempt recorded, or fails
+ * {@link ToolLost} when that attempt never finished.
  *
  * Each call is a span `sandbox.tool` with the tool, its outcome and, for a
  * command, its exit code; never a path, a command, content or output.
@@ -821,7 +831,7 @@ const diff = (session: Session, call: typeof Diff.Type) =>
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const execute = (session: Session, call: Call, options: ExecuteOptions): Effect.Effect<Result, ToolFailure> => {
+export const execute = <C extends Call>(session: Session, call: C, options: ExecuteOptions): Effect.Effect<ResultOf<C>, ToolFailure> => {
   const effect: Effect.Effect<Result, ToolFailure> = call.tool === "run"
     ? run(session, call, options)
     : call.tool === "read"
@@ -833,6 +843,7 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
     : call.tool === "status"
     ? status(session, call)
     : diff(session, call)
+  // The dispatch above answers the result of `call.tool` exactly, which TypeScript can't follow through `C`.
   return effect.pipe(
     Effect.tap((result) =>
       Effect.annotateCurrentSpan({
@@ -844,7 +855,7 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
       Effect.annotateCurrentSpan({ "smithers.sandbox.tool.outcome": error._tag.split("/").at(-1)! })
     ),
     Effect.withSpan("sandbox.tool", { attributes: { "smithers.sandbox.tool": call.tool } })
-  )
+  ) as Effect.Effect<ResultOf<C>, ToolFailure>
 }
 
 /**

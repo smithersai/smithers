@@ -307,6 +307,9 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
 // { tool: "run", exitCode, timedOut, stdout, stderr, stdoutBytes, stderrBytes, truncated }
 ```
 
+`execute` answers the call's own result type, `SandboxTools.ResultOf<typeof call>`: a `run` call's answer is a `RunResult`, so a
+caller reads `stdout` without checking `tool`.
+
 | Tool     | Input (`Call`)                       | Output (`Result`)                                                    |
 | -------- | ------------------------------------ | -------------------------------------------------------------------- |
 | `run`    | `command`, `cwd?`, `timeoutSeconds?` | exit code, whether the timeout stopped it, each stream's first bytes |
