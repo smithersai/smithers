@@ -55,7 +55,8 @@ const suite = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/rollout.test.ts"),
     Smithers.file("//.smithers/flows/test/worker-rollout.test.ts"),
     Smithers.file("//.smithers/flows/test/alchemy-rollout.test.ts"),
-    Smithers.file("//.smithers/flows/test/notes.test.ts")
+    Smithers.file("//.smithers/flows/test/notes.test.ts"),
+    Smithers.file("//.smithers/flows/test/telegram-inbox.test.ts")
   ]),
   srcs: [
     sources,
