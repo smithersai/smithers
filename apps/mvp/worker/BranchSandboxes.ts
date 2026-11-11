@@ -139,7 +139,7 @@ export const overflowInstance = Config.schema(
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
 
 /** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
-type WakeStage = "admit" | "start" | "checkout" | "restore" | "placeholders" | "agent"
+type WakeStage = "admit" | "start" | "ledger" | "checkout" | "restore" | "placeholders" | "agent"
 
 /** What a TODO's box keeps of its committer's subscription: no credential. */
 interface BoxSubscription {
@@ -372,6 +372,14 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         Effect.map((value) => (value !== undefined && isBranch(value) ? value : undefined))
       )
 
+      /** The object's storage, as the machine and the ledger's mark use it (worker/branch/Machine.ts). */
+      const storage: Machine.Store<RuntimeContext> = {
+        get: (key) => state.storage.get(key),
+        put: (key, value) => state.storage.put(key, value),
+        delete: (key) => state.storage.delete(key),
+        list: (prefix) => state.storage.list({ prefix })
+      }
+
       /** Starts the box unless it runs, and advances the generation when it started it. */
       const start = Effect.gen(function*() {
         const outcome = yield* SandboxHost.wake(box, {
@@ -387,23 +395,26 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       })
 
       /**
-       * `start`, for `ownerId`: a generation it started takes the branch's slot in the sandbox ledger, with the instance
-       * type it runs on (worker/branch/Budget.ts), so its awake time counts and is priced.
+       * Generation `generation`'s slot in the sandbox ledger, for `ownerId`, with the instance type it runs on
+       * (worker/branch/Budget.ts), so its awake time counts and is priced. The object advances the generation before
+       * the ledger learns of it, so a write Postgres refused while the machine runs is tried again at the generation's
+       * next wake, until it lands.
        */
+      const recorded = (branch: SandboxBranch, ownerId: string | undefined, generation: number) =>
+        Budget.recorded(storage, {
+          branchId: branch.branchId,
+          personId: Budget.personOf(ownerId),
+          kind: Budget.kindOf(branch),
+          generation,
+          instance: instanceOf(branch)
+        }).pipe(Effect.provide(database))
+
+      /** `start`, for `ownerId`, with the running generation's slot in the ledger (`recorded`). */
       const startFor = (ownerId: string | undefined) =>
         Effect.gen(function*() {
-          const before = (yield* state.storage.get<number>("generation")) ?? 0
           const generation = yield* start
           const branch = yield* branchOf
-          if (generation !== before && branch !== undefined) {
-            yield* Budget.started({
-              branchId: branch.branchId,
-              personId: Budget.personOf(ownerId),
-              kind: Budget.kindOf(branch),
-              generation,
-              instance: instanceOf(branch)
-            }).pipe(Effect.provide(database))
-          }
+          if (branch !== undefined) yield* recorded(branch, ownerId, generation)
           return generation
         })
 
@@ -423,9 +434,9 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
       /** Runs `argv` as the machine's user `name`, answering its exit code. */
       const run = (argv: Array<string>, name: string) => runOn(runBox, argv, name)
 
-      // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
-      // the placeholders, so a failure only production shows says where it happened. A wake that works logs how long
-      // each step took, so a slow one says which step was slow.
+      // A wake's failure is logged with the step it failed in: the container's start, its slot in the ledger, the
+      // checkout, the restore or the placeholders, so a failure only production shows says where it happened. A wake
+      // that works logs how long each step took, so a slow one says which step was slow.
       const wake = (branch: SandboxBranch, ownerId?: string) =>
         Effect.suspend(() => {
           let stage: WakeStage = "admit"
@@ -435,7 +446,11 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             yield* state.storage.put("branch", branch)
             if (!(yield* timed(admitted(branch, ownerId)))) return { _tag: "Waiting" } as const
             stage = "start"
-            const generation = yield* timed(startFor(ownerId))
+            const generation = yield* timed(start)
+            // The wake answers Woken only once the ledger holds the generation: a refused write fails it, and the next
+            // wake of the same generation writes it again.
+            stage = "ledger"
+            yield* timed(recorded(branch, ownerId, generation))
             // An overflow box checks nothing out: its runner keeps its own mirror and a checkout per job.
             if (Overflow.isBox(branch.branchId)) {
               stage = "placeholders"
@@ -484,7 +499,8 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
                   Effect.logWarning("sandbox.wake").pipe(
                     Effect.annotateLogs({ branchId: branch.branchId, stage, ...took, ...failureFields(cause) })
                   ),
-                  // A machine that never started gives its slot back; one that did keeps it until it sleeps.
+                  // A machine that never started gives its slot back; one that did keeps it until it sleeps, one whose
+                  // ledger write was refused included.
                   stage === "start"
                     ? Budget.release(branch.branchId).pipe(Effect.provide(database), Effect.ignore)
                     : Effect.void
@@ -732,12 +748,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         run,
         running: box.running,
         destroy: box.destroy(),
-        storage: {
-          get: (key) => state.storage.get(key),
-          put: (key, value) => state.storage.put(key, value),
-          delete: (key) => state.storage.delete(key),
-          list: (prefix) => state.storage.list({ prefix })
-        }
+        storage
       }
 
       /** Saves the running generation's working copy, as a terminal comes or goes; nothing when the box is stopped. */

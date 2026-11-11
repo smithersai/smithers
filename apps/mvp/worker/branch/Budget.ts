@@ -3,6 +3,7 @@ import { SqlClient } from "effect/sql"
 import { DEFAULT_SANDBOX_LIMITS, type SandboxLimits } from "../../src/features/spend/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { CI_OWNER } from "../flows/CiJobMachine.ts"
+import type { Store } from "./Machine.ts"
 import type { SandboxBranch } from "./Sandboxes.ts"
 
 // Sandbox budgets (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md): how many machines may be awake, and
@@ -12,9 +13,9 @@ import type { SandboxBranch } from "./Sandboxes.ts"
 // one per branch. A machine is admitted before it starts (`admit`): under one Postgres advisory lock, a branch whose
 // slot is live keeps it, and any other is admitted only while fewer than `awake` machines are awake and, for a branch's
 // own machine, fewer than `perPerson` of the person's. `started` records the generation and instance type once the
-// machine runs, `seen` renews the slot every minute `sandbox/Keep` finds the machine awake, and `ended` closes it when
-// the machine sleeps or is gone. A slot nobody renewed for `LEASE_SECONDS` stops counting, so a machine whose
-// keep-awake died never holds a slot for good.
+// machine runs (`recorded`: once per generation, tried again at each wake until it lands), `seen` renews the slot every
+// minute `sandbox/Keep` finds the machine awake, and `ended` closes it when the machine sleeps or is gone. A slot
+// nobody renewed for `LEASE_SECONDS` stops counting, so a machine whose keep-awake died never holds a slot for good.
 //
 // Cloudflare's `durable_object` scheduling policy has no `max_instances` ("The `durable_object` policy does not support
 // `max_instances`", developers.cloudflare.com/containers/configuration/scheduling-policy/), so this admission is the
@@ -202,6 +203,22 @@ export const started = (machine: Started) =>
         INSERT INTO sandbox_generations (branch_id, generation, person_id, kind, instance)
         VALUES (${machine.branchId}, ${machine.generation}, ${machine.personId}, ${machine.kind}, ${machine.instance})`
     }))
+  })
+
+/** The object's storage key naming the generation whose slot the ledger holds: the last one `recorded` wrote. */
+export const LEDGER_KEY = "ledger"
+
+/**
+ * `started`, unless `storage` says the ledger holds `machine`'s generation already, and the mark once it does. The
+ * object advances the generation before the ledger learns of it, so a write Postgres refused while the machine runs
+ * is tried again at the generation's every wake until it lands: a running generation never stays outside the budget,
+ * and a generation the ledger holds costs its later wakes no query.
+ */
+export const recorded = <R>(storage: Pick<Store<R>, "get" | "put">, machine: Started) =>
+  Effect.gen(function* () {
+    if ((yield* storage.get<number>(LEDGER_KEY)) === machine.generation) return
+    yield* started(machine)
+    yield* storage.put(LEDGER_KEY, machine.generation)
   })
 
 /** Closes the branch's slot if no machine ever started on it: a wake that failed gives it back. */

@@ -2,13 +2,14 @@
 // schema of the compose Postgres: limits, admission under them, a machine's start, renewal, end and release, and the
 // month's spend. Time passes by moving a slot's timestamps back, never by waiting.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Effect, Exit, Logger, Metric, Redacted, Tracer } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Metric, Redacted, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DEFAULT_SANDBOX_LIMITS } from "../../src/features/spend/contract.ts"
 import { CI_OWNER } from "../flows/CiJobMachine.ts"
+import { memory } from "../test/box.ts"
 import { testFile } from "../test/harness.ts"
 import * as Budget from "./Budget.ts"
 
@@ -257,6 +258,49 @@ describe("a machine's slot over its life", () => {
     await run(Budget.ended("one", 2))
     expect((await slots()).every((row) => !row.open)).toBe(true)
     expect(await run(Budget.awake)).toBe(0)
+  })
+
+  test("a ledger write Postgres refused after the machine started is written again at its next wake, the slot kept", async () => {
+    await run(Budget.setLimits({ awake: 20, perPerson: 1, monthlyAlertUsd: 100 }, "a"))
+    const machine = { branchId: "one", personId: "maya", kind: "branch", generation: 1, instance: "standard-1" } as const
+    const { map, store } = memory({ generation: 1 })
+    // Postgres refuses the next `refusals` asks, then answers.
+    let refusals = 1
+    const ledger = Layer.effect(
+      SqlClient.SqlClient,
+      Effect.suspend(() => refusals-- > 0 ? Effect.fail(new Error("connection refused")) : Effect.service(SqlClient.SqlClient)),
+    )
+    const recorded = (generation: number) =>
+      runtime.runPromiseExit(Budget.recorded(store, { ...machine, generation }).pipe(Effect.provide(ledger)))
+    const renewed = () =>
+      sql<{ fresh: boolean }>(`SELECT seen_at > now() - interval '5 seconds' AS fresh FROM sandbox_generations WHERE branch_id = 'one'`)
+
+    // Admitted, then the container started: the first write of its generation is refused, so nothing says it landed.
+    await run(Budget.admit(slot("one")))
+    expect(Exit.isFailure(await recorded(1))).toBe(true)
+    expect(map.has(Budget.LEDGER_KEY)).toBe(false)
+    // The slot is kept, and it counts: the person's second machine waits behind it.
+    expect(await slots()).toMatchObject([{ branchId: "one", generation: null, open: true }])
+    expect(await run(Budget.admit(slot("two", "maya")))).toMatchObject({ _tag: "Waiting", scope: "person" })
+    // The next wake of the same generation writes it: the slot takes the generation and the instance type.
+    expect(Exit.isSuccess(await recorded(1))).toBe(true)
+    expect(await slots()).toMatchObject([{ branchId: "one", generation: 1, instance: "standard-1", open: true }])
+    expect(map.get(Budget.LEDGER_KEY)).toBe(1)
+    expect(await run(Budget.admit(slot("two", "maya")))).toMatchObject({ _tag: "Waiting", scope: "person" })
+    // A generation the ledger holds costs its later wakes no query: the same start again would have renewed the slot.
+    await age("one", 120)
+    expect(Exit.isSuccess(await recorded(1))).toBe(true)
+    expect(await renewed()).toEqual([{ fresh: false }])
+    // The next generation is written, closing the earlier one's slot; refused, the mark stays on the earlier one.
+    refusals = 1
+    expect(Exit.isFailure(await recorded(2))).toBe(true)
+    expect(map.get(Budget.LEDGER_KEY)).toBe(1)
+    expect(Exit.isSuccess(await recorded(2))).toBe(true)
+    expect((await slots()).map(({ generation, open }) => ({ generation, open }))).toEqual([
+      { generation: 1, open: false },
+      { generation: 2, open: true },
+    ])
+    expect(map.get(Budget.LEDGER_KEY)).toBe(2)
   })
 
   test("a wake that failed before its machine started gives the slot back; a started one keeps it", async () => {

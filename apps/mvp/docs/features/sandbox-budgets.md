@@ -20,14 +20,15 @@ a call, a command's start or a terminal  ─▶ SandboxObject.wake ─▶ runnin
                                             │ the branch's slot live ─▶ admitted
                                             │ awake < 20 and, for a branch's own machine, the person's < 2 ─▶ admitted, slot opens
                                             └ else ─▶ Waiting: the step tries again (SandboxUnavailable `waiting`)
-                                         admitted ─▶ the container starts ─▶ Budget.started: generation, instance type
+                                         admitted ─▶ the container starts ─▶ Budget.recorded: generation, instance type
+                                                                              (refused ─▶ Unavailable; the next wake writes it again)
 sandbox/Keep, every minute ─▶ busy ─▶ Budget.seen (renews the slot) · slept or gone ─▶ Budget.ended
 ```
 
 - **Awake** means open and renewed within `LEASE_SECONDS` (5 minutes). A machine whose keep-awake died stops counting once its lease lapses; its branch's next admission closes the row at its last renewal.
 - **Per person** counts only a branch's own machines (terminals and tool calls) woken for that person. A TODO's machine, a pull request's check job, a CI job and a repository's overflow box (kind `overflow`, decision 0144) count toward the deployment's limit only, so a person's background work never locks them out of their own terminal. CI's own owner is no person.
 - **The hard cap.** Cloudflare's `durable_object` scheduling policy has no `max_instances`: "The `durable_object` policy does not support `max_instances`" ([scheduling policies](https://developers.cloudflare.com/containers/configuration/scheduling-policy/)), and Alchemy refuses the prop for it. So the admission is the cap, and it fails closed: a wake that can't ask Postgres starts no machine and is tried again. Cloudflare's account limits stay the last stop.
-- **Fails safe the other way too.** A wake that fails before its container starts gives its slot back (`Budget.release`); one that started keeps it until `sandbox/Keep` ends it.
+- **Fails safe the other way too.** A wake that fails before its container starts gives its slot back (`Budget.release`); one that started keeps it until `sandbox/Keep` ends it. A ledger write Postgres refused after the container started keeps the slot too: the object remembers the generation the ledger holds (`ledger` in its storage, `Budget.recorded`) and writes it again at the generation's next wake, which answers `Woken` only once it landed, so a running machine never stays outside the budget.
 
 ## Waiting for a sandbox
 
@@ -59,7 +60,7 @@ An Admin sets the three numbers at **Settings → Sandboxes** and presses Save (
 
 | Test | Proves |
 |---|---|
-| `worker/branch/Budget.test.ts` | the defaults and an Admin's limits; admission to the deployment's limit and the person's, kinds that don't count per person, a live slot kept at the limit, a lapsed one closed; eight concurrent admissions never pass a limit of three; a machine's slot from admission to start, renewal, end and release; the month's spend priced by instance type, within the month only; its records; Postgres down fails the admission |
+| `worker/branch/Budget.test.ts` | the defaults and an Admin's limits; admission to the deployment's limit and the person's, kinds that don't count per person, a live slot kept at the limit, a lapsed one closed; eight concurrent admissions never pass a limit of three; a machine's slot from admission to start, renewal, end and release; a ledger write refused after the start is written again at the next wake, the slot kept and counted meanwhile; the month's spend priced by instance type, within the month only; its records; Postgres down fails the admission |
 | `worker/branch/BudgetApi.test.ts` | an Admin sets the limits; every refusal; the shape to Admins only |
 | `worker/flows/TerminalOpen.test.ts` | the terminal's wait: `waiting`, asked again, admitted, its deadline from then; Postgres down; the admission before the wake |
 | `worker/branch/Terminals.test.ts` | a waiting terminal keeps the person's place for the wait; an admitted one has its deadline from the admission |
