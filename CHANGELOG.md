@@ -9,10 +9,25 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-2765 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+2811 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
+- **vibelang:** vl-test stage with a real Container probe and an on-demand sandbox suite (VL-35, VL-36) ([cc3e981d68](https://github.com/smithersai/smithers/commit/cc3e981d686d12ca819cecec6f427d240782336e))
+- **vibelang:** prove the session cookie a request presents ([810ba6f67c](https://github.com/smithersai/smithers/commit/810ba6f67ce68983f00ec1bebb37e54b6afa4ab5))
+- **vibelang:** prove the issue and wiki flow policies ([d34f58cf38](https://github.com/smithersai/smithers/commit/d34f58cf389e72ebb16e8674e4df85dedcfd07ad))
+- **vibelang:** prove the mythical history's route and page decoding ([7be10d9902](https://github.com/smithersai/smithers/commit/7be10d9902fd147059fa8c72ddffd7af6bcb2760))
+- **testing:** HttpRecording keeps a run's label, prunes unread fields and keeps GitHub's state ([9bf7041539](https://github.com/smithersai/smithers/commit/9bf70415390543264e673eadf9a8bb66e01973f1))
+- **vibelang:** prove the fixture issue host's refusals ([3c9747a70f](https://github.com/smithersai/smithers/commit/3c9747a70f5a5fde97fe709abedb9ca8532e3929))
+- **vibelang:** prove machine admission receipt and checkpoint policies ([0dbd9a87eb](https://github.com/smithersai/smithers/commit/0dbd9a87ebf1155b0a923c63cdb822570c63d612))
+- **vibelang:** prove action host settlement and list admission ([ee686dcca3](https://github.com/smithersai/smithers/commit/ee686dcca339ad22f676905b2ef13701ec845256))
+- **vibelang:** prove seed generator input order and batching ([6ca9480e5f](https://github.com/smithersai/smithers/commit/6ca9480e5fcc5dc12a4325b49a4443767155be35))
+- **vibelang:** prove mock sandbox commands and leases ([9df7ddd6d9](https://github.com/smithersai/smithers/commit/9df7ddd6d9076e34cca9e4517c56af7c40d781e7))
+- **vibelang:** prove action recovery cancellation and settlement ([8379c7c9f6](https://github.com/smithersai/smithers/commit/8379c7c9f6dd15aba32724cb96b7768ed3236baa))
+- **vibelang:** prove history totals ordering and search ([df3e1c195a](https://github.com/smithersai/smithers/commit/df3e1c195a8672d8ed160fe1a9bb38258dbb5bb2))
+- **vibelang:** prove wiki page and edit decisions ([46d650a03b](https://github.com/smithersai/smithers/commit/46d650a03b628486b6985d2e094c4b8a0455e560))
+- **vibelang:** prove mock replies and actor journal isolation ([a57a72111a](https://github.com/smithersai/smithers/commit/a57a72111ae074e83b3e78e8aaf3941d447683e6))
+- **vibelang:** prove issues host decisions and bound revisions ([17efef0024](https://github.com/smithersai/smithers/commit/17efef00245c32f19d5a65877c753d2ff6d0f360))
 - **testing:** HttpRecording records, replays or passes through an HttpClient ([9a22e2b64b](https://github.com/smithersai/smithers/commit/9a22e2b64b15322c94f65db121f3aae58391172b))
 - **lemmascript:** opaque proofs and safe imported constants ([e40fbc5a3b](https://github.com/smithersai/smithers/commit/e40fbc5a3b8119c8d608e4c34c6070e5b2a5aaa5))
 - **vibelang:** mark a stale GitHub copy in the issues pane and wiki editor ([163b3a35ff](https://github.com/smithersai/smithers/commit/163b3a35ff3c670ce34e8f5536b57709ca51c4d8))
@@ -333,6 +348,21 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** refuse, not install, a latest Effect the exact peer excludes ([9f6fb31120](https://github.com/smithersai/smithers/commit/9f6fb3112013f0788368e39d80ad7329ded6216b))
+- **repo-targets:** keep the patched-only JsonValueSchema out of published declarations ([13deb11be5](https://github.com/smithersai/smithers/commit/13deb11be517b9a1ac04c4ca4511568b653f783d))
+- **mvp:** the owned test stack publishes ports the kernel says are free ([6e2d397d4f](https://github.com/smithersai/smithers/commit/6e2d397d4f8c9b286e835b6c287d01e789970789))
+- **mvp:** the tab's module-graph check bundles .vibe modules ([22f300f051](https://github.com/smithersai/smithers/commit/22f300f051a0f977f4eadcd2b14f58bc47db63cf))
+- **mvp:** flow tests compare a failed call's error, not its annotated cause ([0e90ad269c](https://github.com/smithersai/smithers/commit/0e90ad269c281248e62c10d1ef4e608b69f7db25))
+- **vibelang:** count browser coverage on the structure of the build Chromium runs ([9fa0b2101f](https://github.com/smithersai/smithers/commit/9fa0b2101fa0d3a127c4ef3ad93822645a1f882d))
+- **plan:** number-keyed records have a schema identity ([1ec83a3fa6](https://github.com/smithersai/smithers/commit/1ec83a3fa6ad28ca5fa6ea740452d460fc0ae831))
+- **mvp:** web page flow tests compare a refusal's errors, not its annotated cause ([bc37087911](https://github.com/smithersai/smithers/commit/bc37087911bd209393c3c675228106bfdd6e7600))
+- **mvp:** count the bug-report shape's 503 with its reason ([a746915fff](https://github.com/smithersai/smithers/commit/a746915fff8c7c2a3943df4a3eaea90057c1b137))
+- **mvp:** the notification backlog test passes the shown entries to detailQuery ([866d91a5b3](https://github.com/smithersai/smithers/commit/866d91a5b37fd881477f187a390f36ad0ba77791))
+- **platform-node:** load Effect's HTTP modules under node --eval ([2ce4c0bb04](https://github.com/smithersai/smithers/commit/2ce4c0bb04d425fe1ccc4739e2cf324bb68538f1))
+- **mvp:** browser layout tests bundle .vibe modules ([bd7a30760e](https://github.com/smithersai/smithers/commit/bd7a30760edcaae6f05f17ae8f5e643bdf01dde4))
+- **lemmascript:** support array flatMap and specification spreads ([afb5efffb8](https://github.com/smithersai/smithers/commit/afb5efffb819eff4cf1e22197dda3906a216e65c))
+- **lemmascript:** preserve names and bound string case models ([4e5b52efc4](https://github.com/smithersai/smithers/commit/4e5b52efc42b03b6230f94f611078129e00bdd88))
+- **vibelang:** check each offline read against its own 0030 boundary ([17c1778350](https://github.com/smithersai/smithers/commit/17c177835083c8026026210c6149e784b6270c5a))
 - **vibelang:** a mock action cancelled before its run starts never starts ([ec6a03a93f](https://github.com/smithersai/smithers/commit/ec6a03a93f0219519e4aef3913dd5a64ecf03fd0))
 - **vibelang:** measure every browser check and fail the gate on one without evidence ([6c450ff32e](https://github.com/smithersai/smithers/commit/6c450ff32e2a9bf3ce7f6ef9c75a952baed99ae5))
 - **vibelang:** allow a cold public issue read to finish within a bounded deadline ([19d7afac87](https://github.com/smithersai/smithers/commit/19d7afac87ac60430603261de9189433c4dc9002))
@@ -1840,6 +1870,11 @@ the release notes at
 
 ### 📝 Documentation
 
+- **mvp:** measured shard times, sandbox suites in one shard, and what a test host needs ([5ee4d2e82c](https://github.com/smithersai/smithers/commit/5ee4d2e82c64f9cf11727be43c8915ef2aee62de))
+- **vibelang:** record Will's ruling VL-38 (fuzz targets use a fake GitHub held to recordings) ([30182670b3](https://github.com/smithersai/smithers/commit/30182670b3b56d12ed9febd69743cd18b7075e23))
+- **vibelang:** record Rolldown's dropped segments and the build structure in decision 0016 ([6adf418950](https://github.com/smithersai/smithers/commit/6adf41895038461166471e64ff9896fe82e11cca))
+- **vibelang:** name the 14 source-map lines as measured ([fc01cc1f31](https://github.com/smithersai/smithers/commit/fc01cc1f318df342e25dbbd13c3e15e28afa65cc))
+- **vibelang:** record the draft usage fallbacks as unreachable in production ([e569e29474](https://github.com/smithersai/smithers/commit/e569e2947449fabf379e6eb7eebe3fadc36ed72f))
 - **vibelang:** record Will's rulings VL-34 to VL-37 (test tools, real sandboxes, record and replay, exhaustive match) ([02b2282299](https://github.com/smithersai/smithers/commit/02b22822997e31d05d5ea92e622936d6dc788830))
 - **vibelang:** record worker benchmark evidence and remaining gaps ([8676281940](https://github.com/smithersai/smithers/commit/867628194034cf290a04141595d457d18f15242e))
 - **vibelang:** record audit reconciliations and measured budget costs ([e224320cdf](https://github.com/smithersai/smithers/commit/e224320cdf6c2143dbe230ab2bacc04aab932815))
@@ -2186,6 +2221,17 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(vibelang):** a 30 s floor for the steered wiki and action targets under coverage ([9fea2b9807](https://github.com/smithersai/smithers/commit/9fea2b9807e74c1fed6deeb631ed29328d5887d0))
+- **test(vibelang):** scope the browser gate to the code a browser runs ([d2c82b4040](https://github.com/smithersai/smithers/commit/d2c82b4040e6123435c12b27210e2ead161dbbe7))
+- **test(vibelang):** fuzz cancel, terminal and issue/wiki replies; issue and wiki numbers are Seq ([8d835fa6eb](https://github.com/smithersai/smithers/commit/8d835fa6ebdc9db72ac7a9a64c7d677715d61100))
+- **test(vibelang):** wiki edits replay real GitHub through smithers.sh's delegation ([97ff50fb7c](https://github.com/smithersai/smithers/commit/97ff50fb7cbf540cb96bff3e8f67b635be9df1da))
+- **test(vibelang):** issues and main's log replay real GitHub; a write's answer shows the write ([4f8950a444](https://github.com/smithersai/smithers/commit/4f8950a44466cd689dd191ef1fc5316fc26c1dc5))
+- **bench(vibelang):** issue and wiki writes through smithers.sh's delegation ([c3a8187b77](https://github.com/smithersai/smithers/commit/c3a8187b7734fb5e419011632f0e6d2efe47bf07))
+- **bench(vibelang):** the mock agent starts, commands and stops a sandbox ([1792a1ef11](https://github.com/smithersai/smithers/commit/1792a1ef11e0a19554a1a8e9f69e3f5170fb8c89))
+- **bench(vibelang):** history outages, keyboard and wiki filter, docs pane and backend doors ([e795fe923e](https://github.com/smithersai/smithers/commit/e795fe923e872ccd988b470a70d17a73358a3751))
+- **test(vibelang):** fuzz run --wait over a scripted follow stream ([90f526f0f3](https://github.com/smithersai/smithers/commit/90f526f0f3f3a9db2eb99c9c48027416e928a5e9))
+- **test(vibelang):** register seed and action mutations and proof receipts ([56d98b92c0](https://github.com/smithersai/smithers/commit/56d98b92c0c37e4b30e658226c11e4721ae5e83b))
+- **test(vibelang):** register proof mutations and record outside-web boundaries ([bb68c06869](https://github.com/smithersai/smithers/commit/bb68c06869e7d1ed870c5d7b1a3688673b45ea20))
 - **test(vibelang):** run the machine object's setup, checkpoint and destroy faults in workerd ([f10ae04fdd](https://github.com/smithersai/smithers/commit/f10ae04fdde9adf073329911ce77c7089ba4dda9))
 - **test(vibelang):** measure fuzz-preflight through its emitted script ([22f39ed385](https://github.com/smithersai/smithers/commit/22f39ed3859469b1c8febb1d1ef618e6b140ffad))
 - **proof(vibelang):** preserve issue forests and exact journal replay ([38d9e1dd60](https://github.com/smithersai/smithers/commit/38d9e1dd60cd5bf52636a5237aaae85a63a77514))
