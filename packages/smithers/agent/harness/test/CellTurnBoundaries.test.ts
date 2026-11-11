@@ -1480,6 +1480,48 @@ describe("CellTurn defaults and refusals a shipped binding cannot reach", () => 
 describe("CellTurn frame failures", () => {
   it.each(
     [
+      [
+        "over its memory ceiling",
+        `var held = ["a".repeat(1200 * 1024), "b".repeat(1200 * 1024)]`,
+        { memoryBytes: 4 * 1024 * 1024, steps: Number.MAX_SAFE_INTEGER },
+        "held ("
+      ],
+      [
+        "past the probe's node budget",
+        "var tooWide = []\nfor (var index = 0; index < 200100; index++) tooWide.push({})",
+        { memoryBytes: Sandbox.defaultLimits.memoryBytes, steps: Number.MAX_SAFE_INTEGER, timeMs: 60_000 },
+        "too large to measure"
+      ],
+      [
+        "past the probe's depth ceiling",
+        "var tooDeep = {}\nvar cursor = tooDeep\nfor (var depth = 0; depth < 40; depth++) { cursor.next = {}; cursor = cursor.next }",
+        { steps: Number.MAX_SAFE_INTEGER },
+        "too large to measure"
+      ]
+    ] as const
+  )(
+    "ends the turn at the first frame a realm %s refuses, buying no further model call",
+    async (_, bind, limits, named) => {
+      const { events, failure, model } = await run({
+        script: [emits(bind), emits(`console.log("refused")`), emits(`console.log("never asked for")`)],
+        state: state({ maxFrames: 3 }),
+        limits
+      })
+
+      // The realm states it refuses every later frame, and nothing can run in
+      // it to free a name, so one refusal is the whole of what the run can buy.
+      expect(failure).toMatchObject({ code: "realm_exhausted" })
+      expect((failure as HarnessError).message).toContain(named)
+      const settled = of(events, "cell-settled")
+      expect(settled).toHaveLength(2)
+      expect(settled[1]?.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded", reason: "memory" })
+      expect(model.recorder.requests).toHaveLength(2)
+    },
+    120_000
+  )
+
+  it.each(
+    [
       ["string", { blob: "z".repeat(3 * 1024 * 1024) }],
       ["array", Array(200_000).fill(0)]
     ] as const

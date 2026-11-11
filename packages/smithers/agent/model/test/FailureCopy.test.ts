@@ -323,6 +323,7 @@ describe("FailureCopy.describe", () => {
         "render_failed",
         "model_failed",
         "read_only_cap",
+        "realm_exhausted",
         "completion_unjudged",
         "completion_incomplete",
         "claim_unproven",

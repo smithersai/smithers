@@ -70,6 +70,15 @@ export const keyEncoding3Key = "key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e
 // new name. Key encoding 3 still derives `keyEncoding3Key`.
 export const keyEncoding4Key = "key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf"
 
+// Moved when `HarnessErrorCode` gained `realm_exhausted` (#4829): the error
+// union folded into the declaration grew a member, so the declaration digest
+// and the key moved under every key encoding. The three keys above keep the
+// preceding declaration's preimages. This material is the encoding-2 form;
+// encodings 3 and 4 add `keyEncoding` to it.
+export const realmExhaustedKey = "key1_2fb352392ce2a085f7f134eed416f7532ed7b90aa701a39c51b8b683c73c1458"
+export const realmExhaustedEncoding3Key = "key1_8007b26b04c33c3d23975776270fdfc14aa23c8994200c034aa72689d7abb135"
+export const realmExhaustedEncoding4Key = "key1_a703e449614ccfa068ebb77b8945c903552bbc94e0798e20a0ff58bbd08ac128"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {

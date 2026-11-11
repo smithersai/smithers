@@ -278,9 +278,15 @@ describe("the sealed model step key", () => {
     // Moved again on 2026-11-11 with key encoding 4, which hashes what a JSON
     // string in the declaration decodes to (#4623). This move strands nothing
     // either: key encoding 3 still derives the previous key.
-    expect(observed.encoding2).toBe("key1_8ea4786bba8082954abcb2c65b209b3528f9b4307df90a94d34031369879cc2d")
-    expect(observed.encoding3).toBe("key1_f56e335aa68923604edc22e7c3da6298f8198caeb3cf3d5c75da647d1629c58c")
-    expect(observed.host).toBe("key1_4c04056ff0a24810a021a292499ddc319e17d320aa3c167ff11ad95ae6ca0624")
+    expect(observed.encoding2).not.toBe("key1_8ea4786bba8082954abcb2c65b209b3528f9b4307df90a94d34031369879cc2d")
+    expect(observed.encoding3).not.toBe("key1_f56e335aa68923604edc22e7c3da6298f8198caeb3cf3d5c75da647d1629c58c")
+    expect(observed.host).not.toBe("key1_4c04056ff0a24810a021a292499ddc319e17d320aa3c167ff11ad95ae6ca0624")
+    // Moved under every key encoding when `HarnessErrorCode` gained
+    // `realm_exhausted` (#4829), a declaration change. Same rule as above for
+    // runs already in flight.
+    expect(observed.encoding2).toBe("key1_f185dec9fdba72ad15bf311b8e257845c69b9eb6839b2df826fbd5e2ffeb7750")
+    expect(observed.encoding3).toBe("key1_165e33cc42efdf88b5913c6b30041cff375da03b0614e891a744a6bf06018579")
+    expect(observed.host).toBe("key1_78e08824b2f814c189f018444f1f6541e4ce2d80a88e681118c86e5c091dd421")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -327,9 +333,14 @@ describe("the sealed cell-call key", () => {
     // name their encoding (`keyEncoding: 3`), which key encoding 2 undoes, so a
     // recorded call replays. Key encoding 4 (#4623) moved it once more, and
     // key encoding 3 undoes that the same way.
-    expect(observed.encoding2).toBe("key1_c753452803048e450f3f45a4ff5b97455bc729f6c3011cc8364f4c344caf6208")
-    expect(observed.encoding3).toBe("key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388")
-    expect(observed.host).toBe("key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf")
+    expect(observed.encoding2).not.toBe("key1_c753452803048e450f3f45a4ff5b97455bc729f6c3011cc8364f4c344caf6208")
+    expect(observed.encoding3).not.toBe("key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388")
+    expect(observed.host).not.toBe("key1_6e660a70edea56a06510877cbaa94eea27ffb96a7e7ce549344023d4cfb054cf")
+    // `HarnessErrorCode` gained `realm_exhausted` (#4829), which moved it
+    // under every key encoding; see `CellCallV1.realmExhaustedKey`.
+    expect(observed.encoding2).toBe("key1_2fb352392ce2a085f7f134eed416f7532ed7b90aa701a39c51b8b683c73c1458")
+    expect(observed.encoding3).toBe("key1_8007b26b04c33c3d23975776270fdfc14aa23c8994200c034aa72689d7abb135")
+    expect(observed.host).toBe("key1_a703e449614ccfa068ebb77b8945c903552bbc94e0798e20a0ff58bbd08ac128")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

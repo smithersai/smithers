@@ -247,8 +247,13 @@ export class Raised extends Schema.TaggedClass<Raised>("flows/harness/Cell/Raise
 export class Rejected extends Schema.TaggedClass<Rejected>("flows/harness/Cell/Rejected")("rejected", {
   code: RejectionCode,
   message: Schema.String,
-  /** The spent resource when `code` is `limit_exceeded`. */
-  reason: Schema.optional(Schema.Literals(["heap", "stack"]))
+  /**
+   * The spent resource when `code` is `limit_exceeded`. `"memory"` is a realm
+   * whose names are over, or cannot be shown to be under, the run's memory
+   * ceiling: admission refused the frame before the cell ran and refuses every
+   * later one, so the controller ends the turn as `realm_exhausted`.
+   */
+  reason: Schema.optional(Schema.Literals(["heap", "stack", "memory"]))
 }) {}
 
 /**

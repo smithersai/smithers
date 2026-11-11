@@ -31,6 +31,7 @@ export const HarnessErrorCode = Schema.Literals([
   "model_failed",
   "engine_failed",
   "read_only_cap",
+  "realm_exhausted",
   "completion_unjudged",
   "completion_incomplete",
   "claim_unproven",
@@ -95,6 +96,9 @@ Fault.register(
     // A spent cap, unfinished work or an unproven claim is the plan not
     // converging: a replan's to fix.
     read_only_cap: "factory",
+    // The run bound more than its realm may hold; a replan works in smaller
+    // pieces.
+    realm_exhausted: "factory",
     completion_incomplete: "factory",
     claim_unproven: "factory",
     suspended: "wait"

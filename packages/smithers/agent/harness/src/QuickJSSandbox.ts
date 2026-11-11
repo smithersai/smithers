@@ -901,6 +901,7 @@ const overBudget = (
     .map((entry) => `${entry.name} (${entry.bytes})`)
   return new Cell.Rejected({
     code: "limit_exceeded",
+    reason: "memory",
     message: `The names this realm holds weigh ${held} bytes, over this run's ceiling of ${ceiling}. ` +
       `Largest names: ${heaviest.join(", ")}. Nothing ran this frame. Close this realm to release its memory; ` +
       "further frames in this realm are refused."
@@ -920,10 +921,21 @@ const overBudget = (
  *
  * The name is rendered the way {@link overBudget} renders one, so a model that
  * has read one refusal can act on the other without learning a second shape.
+ * A partial reading is as permanent as an over-budget one, since nothing runs
+ * to change the names, so it carries the same `"memory"` reason. A probe that
+ * did not run at all passes no reason: the next frame retries it under a fresh
+ * budget.
  */
-const tooLargeToWeigh = (held: number, ceiling: number, root: string, bytes: number): Cell.Rejected =>
+const tooLargeToWeigh = (
+  held: number,
+  ceiling: number,
+  root: string,
+  bytes: number,
+  reason?: "memory"
+): Cell.Rejected =>
   new Cell.Rejected({
     code: "limit_exceeded",
+    ...(reason === undefined ? {} : { reason }),
     message: `This realm is too large to measure: weighing it stopped inside ${root} (${bytes}) before it finished, ` +
       `so the ${held} bytes counted are a floor and not a total, and this run's ceiling of ${ceiling} is treated as spent. ` +
       "Nothing ran this frame. Further frames require a complete reading within the ceiling. " +
@@ -1363,7 +1375,7 @@ const openRuntime = (
         if (needsProbe) readProbe()
         if (needsProbe) return frameOf(tooLargeToWeigh(0, memoryBytes, "unknown", 0))
         if (unweighed !== undefined) {
-          const refusal = tooLargeToWeigh(held, memoryBytes, unweighed.root, unweighed.bytes)
+          const refusal = tooLargeToWeigh(held, memoryBytes, unweighed.root, unweighed.bytes, "memory")
           return frameOf(refusal)
         }
         if (held > memoryBytes) {

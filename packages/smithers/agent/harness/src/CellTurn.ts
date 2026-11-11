@@ -4105,6 +4105,17 @@ const frame = (
     // each of them judges the frame by this cap.
     const cap = state.readOnlyCap
 
+    // A realm over its memory ceiling refused this frame before the cell ran,
+    // and it refuses every later one the same way: nothing can run to free
+    // the names it holds. Another frame would only pay for a model call whose
+    // cell is refused unrun, so the turn ends here, under its own name.
+    if (outcome._tag === "rejected" && outcome.reason === "memory") {
+      return yield* new HarnessError({
+        code: "realm_exhausted",
+        message: `The realm refused frame ${state.frame} and every later one: ${outcome.message}`
+      })
+    }
+
     if (outcome._tag !== "settled") {
       // The frame settled no transition, but it either changed the workspace
       // or it did not, and that is the whole of what the streak counts.

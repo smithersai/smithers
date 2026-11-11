@@ -35,6 +35,15 @@
   `Digest.digest(Function.prototype.toString.call(handler))`, as `bodyDigest`
   (#4828).
 
+- A realm over its memory ceiling, or too large for its probe to finish
+  weighing (past the node or depth budget), no longer keeps a turn paying for
+  model calls up to `maxFrames`. Admission refused every later frame unrun, and
+  the controller treated each refusal as an ordinary rejected frame. The
+  refusal now carries the new `Cell.Rejected` reason `"memory"`, and `CellTurn`
+  ends the turn at the first one with the new `HarnessError` code
+  `realm_exhausted` (#4829). A probe that did not run at all carries no reason
+  and is retried next frame as before.
+
 - A cell that recurses deeply no longer takes down the host. The QuickJS realm
   bounds its interpreter stack at 128 KiB, so the recursion raises a catchable
   `InternalError: stack overflow` and the realm keeps its names. If the host's

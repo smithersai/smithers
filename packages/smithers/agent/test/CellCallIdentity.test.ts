@@ -16,6 +16,7 @@ import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { 
 import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }
 import materialEncoding4 from "./fixtures/cell-call-material-key-encoding-4.json" with { type: "json" }
 import materialModelErrorCause from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
+import materialRealmExhausted from "./fixtures/cell-call-material-realm-exhausted.json" with { type: "json" }
 import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
 import material112 from "./fixtures/cell-call-material-v1.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
@@ -113,23 +114,32 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
   // Key encoding 3 names itself in the same material.
   const encoding3 = V1.canonical(materialEncoding3)
   expect(`key1_${createHash("sha256").update(encoding3).digest("hex")}`).toBe(V1.keyEncoding3Key)
-  // Key encoding 4 does too, and is what a new record is written under.
-  const current = V1.canonical(materialEncoding4)
-  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.keyEncoding4Key)
+  // Key encoding 4 does too.
+  const encoding4 = V1.canonical(materialEncoding4)
+  expect(`key1_${createHash("sha256").update(encoding4).digest("hex")}`).toBe(V1.keyEncoding4Key)
+  // The `realm_exhausted` declaration (#4829) under key encoding 4 is what a
+  // new record is written under.
+  expect(`key1_${createHash("sha256").update(V1.canonical(materialRealmExhausted)).digest("hex")}`)
+    .toBe(V1.realmExhaustedKey)
+  const realmEncoding3 = V1.canonical({ ...materialRealmExhausted, keyEncoding: 3 })
+  expect(`key1_${createHash("sha256").update(realmEncoding3).digest("hex")}`).toBe(V1.realmExhaustedEncoding3Key)
+  const current = V1.canonical({ ...materialRealmExhausted, keyEncoding: 4 })
+  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.realmExhaustedEncoding4Key)
   expect(material).not.toContain(modelErrorCause)
   expect(material).not.toContain(encoding3)
+  expect(material).not.toContain(encoding4)
   expect(material).toContain(current)
-  expect(observed.value).toBe(V1.keyEncoding4Key)
+  expect(observed.value).toBe(V1.realmExhaustedEncoding4Key)
 })
 
 it("derives the encoding-3 key under key encoding 3, so a recorded call is found again", async () => {
   const { material, observed } = await observe(3)
-  expect(material).toContain(V1.canonical(materialEncoding3))
-  expect(observed.value).toBe(V1.keyEncoding3Key)
+  expect(material).toContain(V1.canonical({ ...materialRealmExhausted, keyEncoding: 3 }))
+  expect(observed.value).toBe(V1.realmExhaustedEncoding3Key)
 })
 
 it("derives the pre-encoding-3 key under key encoding 2, so a recorded call is found again", async () => {
   const { material, observed } = await observe(2)
-  expect(material).toContain(V1.canonical(materialModelErrorCause))
-  expect(observed.value).toBe(V1.modelErrorCauseKey)
+  expect(material).toContain(V1.canonical(materialRealmExhausted))
+  expect(observed.value).toBe(V1.realmExhaustedKey)
 })
