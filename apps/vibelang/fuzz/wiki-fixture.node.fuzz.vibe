@@ -1,0 +1,116 @@
+// The mock wiki (src/core/WikiFactory.vibe) at the edges its room reaches only by chance, against VL-13 and 0021: an
+// engine's flow cycle is a `failed` refusal that writes nothing; an unrecorded step is `unavailable`, may have written,
+// and its retry reads the one review it opened; a lone held-identity defect is a `conflict`; any other defect, or a
+// held identity with another defect, reaches the caller unchanged; another writer over the same repository answers a
+// person's repeated key with the review it opened, and the repository (or an engine that ran the key) refuses the key
+// reused for other words; a person who changes between the request and its step is refused; a factory with its own
+// repository reads the build's pages.
+import { it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import type { FixturePerson } from "../src/core/IssuesFactory.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import { run, Text } from "./run.vibe"
+
+const Engines = ["cycle", "unavailable", "defect", "held", "held-and-defect"] as const
+const Input = Schema.Struct({
+  engine: Schema.Literals(Engines),
+  op: Schema.Literals(["save", "propose"]),
+  text: Text,
+  reuse: Schema.Literals(["same", "text", "page"]),
+})
+
+/** The memory engine, except that every execution ends with `cause`. */
+function faultyEngine(cause: Cause.Cause<FlowRuntime.FlowCycleDetected | FlowRuntime.StoreUnavailable>) {
+  return Layer.effect(FlowRuntime.FlowRuntime)(effect {
+    const real = try FlowRuntime.FlowRuntime
+    return { ...real, execute: () => Effect.failCause(cause) }
+  }).pipe(Layer.provide(FlowEngine.layerMemory))
+}
+
+/** The memory engine, losing the first execution's receipt after its flow committed. */
+function lostReceipt(lost: Ref.Ref<boolean>) {
+  return Layer.effect(FlowRuntime.FlowRuntime)(effect {
+    const real = try FlowRuntime.FlowRuntime
+    const faulty: typeof real = {
+      ...real,
+      execute: (flow, options) => real.execute(flow, options).pipe(Effect.tap(effect {
+        if (try Ref.getAndSet(lost, false)) throw new FlowRuntime.StoreUnavailable({ executionId: options.executionId })
+      })),
+    }
+    return faulty
+  }).pipe(Layer.provide(FlowEngine.layerMemory))
+}
+
+const held = () => new FlowRuntime.ExecutionIdentityConflict({ executionId: "wiki/a", field: "payload", expected: "a", actual: "b", message: "held identity" })
+function causeOf(engine: typeof Engines[number]) {
+  if (engine === "cycle") return Cause.fail(new FlowRuntime.FlowCycleDetected({ path: ["wiki/a", "wiki/a"] }))
+  if (engine === "unavailable") return Cause.fail(new FlowRuntime.StoreUnavailable({ executionId: "wiki/a" }))
+  if (engine === "defect") return Cause.die(new Error("engine lost the run"))
+  if (engine === "held") return Cause.die(held())
+  return Cause.combine(Cause.die(held()), Cause.die(new Error("engine lost its store")))
+}
+
+const failure = (exit: Exit.Exit<unknown, unknown>) => exit._tag === "Failure" && exit.cause.reasons.length === 1 && Cause.isFailReason(exit.cause.reasons[0]!) ? exit.cause.reasons[0].error : undefined
+const refused = (exit: Exit.Exit<unknown, unknown>, reason: string, unwritten: boolean) => {
+  const error = failure(exit)
+  return error instanceof WikiFailure && error.reason === reason && (error.unwritten ?? false) === unwritten
+}
+
+/** One faulty engine: its typed refusal, or its defects unchanged; a refused or defective write opens no review. */
+effect function onFaultyEngine(engine: typeof Engines[number], save: { readonly op: "save" | "propose"; readonly page: string; readonly base: string; readonly text: string; readonly key: string }) {
+  const store = try makeWikiStore()
+  const cause = causeOf(engine)
+  const api = try makeWikiFactory("maintainer", store, faultyEngine(cause))
+  const exit = try Effect.exit(api.act(save))
+  if ((try Ref.get(store.proposals)).length !== 0) return false
+  if (engine === "cycle") return refused(exit, "failed", true)
+  if (engine === "unavailable") return refused(exit, "unavailable", false)
+  if (engine === "held") return refused(exit, "conflict", true)
+  return exit._tag === "Failure" && exit.cause.reasons.length === cause.reasons.length && exit.cause.reasons.every(Cause.isDieReason)
+}
+
+it.live("wiki/fixture-edges", () => run("wiki/fixture-edges", Input, (input) => scoped(effect {
+  const roadmap = pages.find((page) => page.id === "roadmap")!.source
+  const index = pages.find((page) => page.id === "index")!.source
+  // Only well-formed text is an edit (lone surrogates are invalid, wiki/roles-draft-submit-replay).
+  const words = try Effect.try(() => new TextDecoder().decode(new TextEncoder().encode(input.text)))
+  const edit = { op: input.op, page: "roadmap", base: roadmap, text: `${roadmap}\nReviewed ${words}\n`, key: "k1" }
+
+  for (const engine of [...Engines, input.engine]) if (!(try onFaultyEngine(engine, edit))) return false
+
+  // A receipt lost after the review opened: unavailable, written; the retry reads the same single review.
+  const lostStore = try makeWikiStore()
+  const lost = try Ref.make(true)
+  const losing = try makeWikiFactory("maintainer", lostStore, lostReceipt(lost))
+  if (!refused(try Effect.exit(losing.act(edit)), "unavailable", false)) return false
+  const opened = try Ref.get(lostStore.proposals)
+  const retried = try losing.act(edit)
+  if (opened.length !== 1 || retried.review !== opened[0]!.review || (try Ref.get(lostStore.proposals)).length !== 1) return false
+
+  // Writers over one repository, each with its own engine (a Durable Object's next incarnation): the repository answers
+  // the person's repeated key with the review the first opened, and refuses the key reused for other words.
+  const store = try makeWikiStore()
+  const first = try (try makeWikiFactory("maintainer", store)).act(edit)
+  const other = (reuse: "same" | "text" | "page") => reuse === "same" ? edit : reuse === "text" ? { ...edit, text: `${edit.text}other\n` } : { ...edit, page: "index", base: index, text: `${index}\nMore.\n` }
+  for (const reuse of ["same", "text", "page", input.reuse] as const) {
+    const exit = try Effect.exit((try makeWikiFactory("maintainer", store)).act(other(reuse)))
+    if (reuse === "same" ? !(exit._tag === "Success" && exit.value.review === first.review) : !refused(exit, "conflict", true)) return false
+  }
+  // One engine that already ran the key refuses other words itself, before the repository is asked.
+  const replaying = try makeWikiFactory("maintainer", store)
+  if ((try replaying.act(edit)).review !== first.review || !refused(try Effect.exit(replaying.act(other(input.reuse === "same" ? "text" : input.reuse))), "conflict", true)) return false
+  if ((try Ref.get(store.proposals)).length !== 1) return false
+
+  // A person who changes between the request and its step: refused, nothing opened.
+  let calls = 0
+  const changing = (): FixturePerson!! => succeed(++calls === 1 ? { id: "fixture-will", login: "will", role: "maintainer" } : { id: "fixture-jun", login: "jun", role: "maintainer" })
+  const changedStore = try makeWikiStore()
+  if (!refused(try Effect.exit((try makeWikiFactory(changing, changedStore)).act(edit)), "forbidden", false) || (try Ref.get(changedStore.proposals)).length !== 0) return false
+
+  // Its own repository: the build's page.
+  const own = try (try makeWikiFactory("viewer")).read("roadmap")
+  return own.pages.find((page) => page.id === "roadmap")?.source === roadmap
+})))

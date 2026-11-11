@@ -1178,3 +1178,20 @@ reproduction (`~/vl/vibelang-bugs/coverage-v8-suspend-else-arm`, `node variants.
 suspending else arm's zero to the end of the function on Node 26.5.0 (V8 14.6.202.34-node.24), so the record stands.
 `src/core/flows.vibe` has the same shape at 257, 266, 338, 347 and 494, but each of those else arms is taken, so no
 count there is misreported.
+
+Two more targets close the next two gaps, `src/core/sandboxHost.vibe` (4 lines, 11 arms) and
+`src/core/WikiFactory.vibe` (3 lines, 11 arms):
+
+| Target | Exercises |
+| --- | --- |
+| `sandbox/host-races` | `makeSandboxHost` while a command is held on the machine, against 0024: the generation stopped meanwhile is `stale-generation`; a lost machine is `command-uncertain`; a second writer over the same storage that meets the running command records it `command-uncertain`; whichever writer records the operation first decides its one answer; a refused command adds no output line, an answered one adds exactly one; `failureReason` over drawn values |
+| `wiki/fixture-edges` | `makeWikiFactory` and the fixture host on faulty engines (a flow cycle is `failed` and unwritten; a lost receipt is `unavailable`, written, and its retry reads the one review; a lone held identity is `conflict`; other defects reach the caller unchanged); writers with their own engines over one repository (the repeated key answers the first review, the key reused for other words is refused); a person who changes between request and step; a factory with its own repository |
+
+The first version of `wiki/fixture-edges` sent the repeated key and then the other words to one second writer. Its
+engine already held that execution, so it refused the other words itself and the repository's own check
+(`WikiFactory.vibe` 63) never ran. Each reuse now gets a writer with its own engine, and one engine that ran the key is
+checked separately.
+
+Mutants, each caught and restored: the repository's reuse check removed; a refused receipt replayed as output; a
+stopped sandbox's command not stale; `failureReason` ignoring an Unavailable's reason. From these two targets alone
+every `sandboxHost.vibe` and `WikiFactory.vibe` line and arm the fourth measurement missed is reached.

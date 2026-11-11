@@ -1,0 +1,93 @@
+// The sandbox host (src/core/sandboxHost.vibe) while a command runs on the machine, against 0024: a command whose
+// generation stops meanwhile is refused `stale-generation`; one the machine loses is `command-uncertain`; a second
+// writer over the same storage (a Durable Object's next incarnation) that meets the running command records it
+// `command-uncertain`; and whichever writer records an operation first decides its one answer for every caller. A
+// refused command adds nothing to the terminal's output; an answered one adds its line. `failureReason` names an
+// Unavailable by its own reason, anything else tagged by its tag, and the rest `defect`.
+import { it } from "@effect/vitest"
+import { Unavailable } from "../src/core/Factory.vibe"
+import { failureReason, makeSandboxHost, type Machines, type Receipt, type SandboxState } from "../src/core/sandboxHost.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Scenarios = ["answered", "machine-lost", "stopped", "other-writer-meets", "other-writer-answers"] as const
+const VALUES: ReadonlyArray<readonly [unknown, string]> = [
+  [undefined, "defect"], [null, "defect"], [7, "defect"], ["Unavailable", "defect"], [{}, "defect"], [{ _tag: 3 }, "defect"],
+  [{ _tag: "Unavailable", reason: "machine" }, "machine"], [{ _tag: "Unavailable" }, "Unavailable"], [{ _tag: "Refused", reason: "x" }, "Refused"],
+]
+const Input = Schema.Struct({ scenario: Schema.Literals(Scenarios), text: Text, value: Int })
+
+/** Storage shared by every writer of one sandbox object. */
+effect function memoryStore() {
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const receipts = try Ref.make<ReadonlyMap<string, Receipt>>(new Map())
+  return {
+    read: () => Ref.get(state),
+    receipt: (id: string) => Ref.get(receipts).pipe(Effect.map((all) => all.get(id))),
+    write: (next: SandboxState, receipt?: Receipt) => Effect.andThen(Ref.set(state, next), receipt === undefined ? Effect.void : Ref.update(receipts, (all) => new Map(all).set(receipt.request.operationId, receipt))),
+    alarm: () => Effect.void,
+  }
+}
+
+/** Waits up to 10 live seconds for `deferred`; false when it never completes. */
+effect function within(deferred: Deferred.Deferred<void>) {
+  return Option.isSome(try Effect.timeoutOption(Deferred.await(deferred), "10 seconds"))
+}
+const answer = (exit: Exit.Exit<string, unknown>) => exit._tag === "Success" ? `ok ${exit.value}` : `${failureReason(Cause.squash(exit.cause))}`
+
+/** One scenario: the held command's answer, every other caller's answer for it, and the terminal's output after. */
+effect function scenario(name: typeof Scenarios[number], text: string) {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  let held = true
+  const machines: Machines = {
+    start: () => Effect.void,
+    stop: () => Effect.void,
+    lease: () => succeed(true),
+    command: effect (_id, _generation, operationId, command) => {
+      if (operationId === "held" && held) {
+        held = false
+        try Deferred.succeed(entered, undefined)
+        try Deferred.await(release)
+        if (name === "machine-lost") throw new Unavailable({ reason: "lost" })
+      }
+      return `${operationId}:${command.length}`
+    },
+  }
+  const store = try memoryStore()
+  provide mockPolicy("contributor") {
+    const first = try makeSandboxHost(store, machines)
+    const second = try makeSandboxHost(store, machines)
+    const { generation } = try first.start("c", "start")
+    const running = fork Effect.exit(first.command("c", "held", text, generation))
+    if (!(try within(entered))) return false
+    let other: string | undefined
+    if (name === "stopped") try first.stop("c", "stop", generation)
+    if (name === "other-writer-meets") try second.tick()
+    if (name === "other-writer-answers") {
+      // A later command of the first writer takes the pending slot, so the second writer runs the held operation itself.
+      try first.command("c", "later", "pwd", generation)
+      other = answer(try Effect.exit(second.command("c", "held", text, generation)))
+    }
+    try Deferred.succeed(release, undefined)
+    const answered = answer(join running)
+    const replay = answer(try Effect.exit(first.command("c", "held", text, generation)))
+    const output = (try second.snapshot("c")).output
+    const expected = name === "answered" ? `ok held:${text.length}`
+      : name === "machine-lost" || name === "other-writer-meets" ? "command-uncertain"
+      : name === "stopped" ? "stale-generation"
+      : other!
+    if (name === "other-writer-answers" && other !== `ok held:${text.length}`) return false
+    if (answered !== expected || replay !== expected) return false
+    const line = `$ ${text}\nheld:${text.length}\n`
+    const lines = output.split(line).length - 1
+    return expected.startsWith("ok ") ? lines === 1 : lines === 0
+  }
+}
+
+it.live("sandbox/host-races", () => run("sandbox/host-races", Input, (input) => scoped(effect {
+  const [value, reason] = VALUES[input.value % VALUES.length]!
+  if (failureReason(value) !== reason) return false
+  for (const name of [...Scenarios, input.scenario]) if (!(try scenario(name, input.text))) return false
+  return true
+})))
