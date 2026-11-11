@@ -458,6 +458,8 @@ describe("TestRun", () => {
     )
     expect(result.tail).toBe("1 passed in 0.1s\nrunner warning")
     expect(result.tailTruncated).toBe(false)
+    expect(result.passed).toBe(1)
+    expect(result.parsed).toBe(true)
   })
 
   it("refuses a container runner without contacting the host when its transport is missing", async () => {
