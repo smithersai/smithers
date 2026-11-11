@@ -57,6 +57,44 @@ export const Profile = Schema.Struct({
 export type Profile = typeof Profile.Type
 
 /**
+ * A workstream or task id: lowercase letters, digits and `-`, starting with a
+ * letter or digit.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const WorkstreamId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/))
+
+/**
+ * One planned task of a workstream: its id, what it is called and the
+ * criteria that make it done.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const PlannedTask = Schema.Struct({
+  id: WorkstreamId,
+  title: NonEmpty,
+  criteria: Schema.optional(Schema.Array(NonEmpty))
+})
+
+/**
+ * One workstream's plan: what it is called, the one sentence that says what
+ * done looks like, the criteria that make it done and the tasks planned for
+ * it. Lanes join its tasks with `runner start --workstream --task`; its
+ * status is read from their runs (`runner/Workstreams`).
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const WorkstreamPlan = Schema.Struct({
+  title: NonEmpty,
+  goal: Schema.optional(NonEmpty),
+  criteria: Schema.optional(Schema.Array(NonEmpty)),
+  tasks: Schema.optional(Schema.Array(PlannedTask))
+})
+
+/**
  * When the runner takes another job ({@link Admission}): while its load
  * stays under `loadPerCpu` of its CPUs (0.5 unless set), its state
  * directory's disk has `diskFloorGb` free (40 unless set), counting each job
@@ -99,7 +137,9 @@ export const Config = Schema.Struct({
   minQueuedSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 86_400 }))),
   idleExitSeconds: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400 }))),
   repositories: Schema.Record(NonEmpty, Schema.Struct({ mirror: NonEmpty })),
-  profiles: Schema.Record(AgentRunner.Profile, Profile)
+  profiles: Schema.Record(AgentRunner.Profile, Profile),
+  // Keys are checked by `check`: a record with a refined key drops a key that fails it instead of refusing it.
+  workstreams: Schema.optional(Schema.Record(Schema.String, WorkstreamPlan))
 })
 
 /**
@@ -172,6 +212,17 @@ export const check = (config: Config, home: string = homedir()): Effect.Effect<C
     for (const [repository, { mirror }] of Object.entries(config.repositories)) {
       if (!isAbsolute(mirror)) {
         return yield* new RunnerConfigError({ message: `repositories.${repository}.mirror must be an absolute path` })
+      }
+    }
+    for (const [workstream, plan] of Object.entries(config.workstreams ?? {})) {
+      if (!Schema.is(WorkstreamId)(workstream)) {
+        return yield* new RunnerConfigError({
+          message: "a workstreams key is lowercase letters, digits and -, up to 64 characters"
+        })
+      }
+      const ids = (plan.tasks ?? []).map((task) => task.id)
+      if (new Set(ids).size !== ids.length) {
+        return yield* new RunnerConfigError({ message: `workstreams.${workstream}.tasks has a task id twice` })
       }
     }
     const stateDir = expand(config.stateDir ?? defaultStateDir(home), home)

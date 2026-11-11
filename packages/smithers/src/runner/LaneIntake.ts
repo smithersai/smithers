@@ -53,12 +53,21 @@ export const Request = Schema.Struct({
 export type Request = typeof Request.Type
 
 /**
- * Where a request was admitted: the request and its control run.
+ * Where a request was admitted: the request and its control run, and what
+ * `runner status` reads of the request once it is gone: the lane's
+ * workstream task, its profile and whether it is standing. Records written
+ * before those were kept carry only the first two.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Admitted = Schema.Struct({ id: Id, runId: Schema.String })
+export const Admitted = Schema.Struct({
+  id: Id,
+  runId: Schema.String,
+  task: Schema.optional(Lane.Task),
+  profile: Schema.optional(Schema.String),
+  standing: Schema.optional(Schema.Boolean)
+})
 
 const RequestJson = Schema.fromJsonString(Request)
 const encodeRequest = Schema.encodeSync(RequestJson)
@@ -147,7 +156,16 @@ export const admit = (stateDir: string, name: string) =>
       return yield* reject(path, name, receipt._tag)
     }
     yield* fs.makeDirectory(join(at.dir, "admitted"), { recursive: true, mode: 0o700 })
-    yield* writeWhole(at.admitted(request.id), encodeAdmitted({ id: request.id, runId: receipt.runId }))
+    yield* writeWhole(
+      at.admitted(request.id),
+      encodeAdmitted({
+        id: request.id,
+        runId: receipt.runId,
+        ...(request.input.task === undefined ? {} : { task: request.input.task }),
+        profile: request.input.profile,
+        standing: request.input.standing
+      })
+    )
     yield* fs.remove(path)
     yield* Effect.logInfo("runner.lane").pipe(
       Effect.annotateLogs({

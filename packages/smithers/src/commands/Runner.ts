@@ -17,7 +17,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { Control } from "@smthrs/control"
 import { NodeRuntime } from "@smthrs/platform-node"
-import { Cause, Context, Deferred, Effect, FileSystem, Layer, Option, Stream } from "effect"
+import { Cause, Context, Deferred, Effect, FileSystem, Layer, Logger, Option, Schema, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
 import { dirname, join } from "node:path"
@@ -33,6 +33,7 @@ import * as LocalJobs from "../runner/LocalJobs.ts"
 import type * as Machine from "../runner/Machine.ts"
 import * as Serve from "../runner/Serve.ts"
 import type * as Session from "../runner/Session.ts"
+import * as Workstreams from "../runner/Workstreams.ts"
 
 /**
  * Serves the runner the configuration at `path` describes, until the process
@@ -170,6 +171,9 @@ export interface StartOptions {
   readonly standing: boolean
   readonly maxHours: number
   readonly restarts: number
+  readonly workstream?: string | undefined
+  readonly task?: string | undefined
+  readonly title?: string | undefined
 }
 
 /**
@@ -184,8 +188,8 @@ export const LANE_LIMITS: AgentRunner.Limits = { files: 1000, bytes: 16 * 1024 *
  * Queues a lane for the runner the configuration at `options.config` names,
  * which must be its own host (no `origin`): checks the profile, the
  * repository and the brief, resolves the base (the mirror's `main` unless
- * set) and writes the request for the runner's daemon, up or not. Answers the
- * request's id.
+ * set) and the workstream task, when named, and writes the request for the
+ * runner's daemon, up or not. Answers the request's id.
  *
  * @category constructors
  * @since 1.0.0
@@ -203,6 +207,7 @@ export const start = (options: StartOptions) =>
     if (repository === undefined) {
       return yield* new Config.RunnerConfigError({ message: `no repository ${options.repository} in runner.json` })
     }
+    const task = yield* laneTask(config, options)
     const fs = yield* FileSystem.FileSystem
     const brief = yield* fs.readFileString(options.brief).pipe(
       Effect.mapError(() => new Config.RunnerConfigError({ message: "the brief file can't be read" }))
@@ -222,7 +227,8 @@ export const start = (options: StartOptions) =>
           restarts: options.restarts,
           standing: options.standing,
           // A standing lane's next rounds start from the same revision, resolved again.
-          ...(options.standing ? { follow } : {})
+          ...(options.standing ? { follow } : {}),
+          ...(task === undefined ? {} : { task })
         }),
       catch: () =>
         new Config.RunnerConfigError({
@@ -234,6 +240,78 @@ export const start = (options: StartOptions) =>
     )
     return { request, base, standing: options.standing }
   }).pipe(Effect.provide(NodeServices.layer))
+
+/** The workstream task `options` names: none, or one of a workstream `config` declares. */
+const laneTask = (config: Config.Checked, options: StartOptions) =>
+  Effect.gen(function*() {
+    if (options.workstream === undefined && options.task === undefined) {
+      return options.title === undefined
+        ? undefined
+        : yield* new Config.RunnerConfigError({ message: "--title needs --workstream and --task" })
+    }
+    if (options.workstream === undefined || options.task === undefined) {
+      return yield* new Config.RunnerConfigError({ message: "--workstream and --task go together" })
+    }
+    if (config.workstreams?.[options.workstream] === undefined) {
+      return yield* new Config.RunnerConfigError({ message: `no workstream ${options.workstream} in runner.json` })
+    }
+    return yield* Schema.decodeUnknownEffect(Lane.Task)({
+      workstream: options.workstream,
+      id: options.task,
+      ...(options.title === undefined ? {} : { title: options.title })
+    }).pipe(
+      Effect.mapError(() =>
+        new Config.RunnerConfigError({
+          message: "--task is lowercase letters, digits and -, and --title is not empty"
+        })
+      )
+    )
+  })
+
+/**
+ * The workstreams of the runner the configuration at `path` names, which
+ * must be its own host: each one's tasks, the lanes on them and its
+ * progress, read from the lanes' runs on the lanes root.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const status = (path: string) =>
+  Effect.gen(function*() {
+    const config = yield* Config.load(path)
+    if (config.origin !== undefined) {
+      return yield* new Config.RunnerConfigError({ message: "runner status needs a runner.json with no origin" })
+    }
+    return yield* Workstreams.read(config, NodeControl.layer({ root: config.lanesRoot, startsRuns: false }))
+  }).pipe(Effect.provide(NodeServices.layer))
+
+/**
+ * The text `runner status` prints for people: one block per workstream, one
+ * line per task with the lanes on it.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const renderStatus = (workstreams: ReadonlyArray<Workstreams.Workstream>): string =>
+  workstreams.length === 0
+    ? "No workstreams. Declare them under workstreams in runner.json."
+    : workstreams.map((workstream) =>
+      [
+        `${workstream.title} (${workstream.id})  ${workstream.status}  ${workstream.progress.done}/${workstream.progress.total} tasks`,
+        ...(workstream.goal === undefined ? [] : [`  goal: ${workstream.goal}`]),
+        ...workstream.tasks.map((task) =>
+          `  ${task.status.padEnd(7)} ${task.title} (${task.id})  ${
+            task.owners.length === 0
+              ? "no lane"
+              : task.owners.map((owner) =>
+                [owner.runId ?? owner.request, owner.profile, owner.status].filter((part) => part !== undefined).join(
+                  " "
+                )
+              ).join(", ")
+          }`
+        )
+      ].join("\n")
+    ).join("\n\n")
 
 /**
  * Builds the `runner` command group.
@@ -282,12 +360,35 @@ export const createRunnerCli = (_config: Bridge.Runtime = {}) =>
         base: z.string().optional().describe("The revision its checkout starts from (default: the mirror's main)"),
         standing: z.boolean().default(false).describe("Start a new round after each one, until cancelled"),
         maxHours: z.number().int().default(4).describe("Hours each round's agent may work"),
-        restarts: z.number().int().default(1).describe("Replacement generations after a retryable end")
+        restarts: z.number().int().default(1).describe("Replacement generations after a retryable end"),
+        workstream: z.string().optional().describe("The runner.json workstream the lane works toward"),
+        task: z.string().optional().describe("The workstream task the lane works on"),
+        title: z.string().optional().describe("The task's title, for a task the workstream's plan doesn't list")
       }),
       run: (context) =>
         Presentation.guard(
           context,
           () => Effect.runPromise(start({ brief: context.args.brief, ...context.options })),
           { render: (queued) => ({ human: queued.request }) }
+        )
+    })
+    .command("status", {
+      description: "Show each workstream's tasks, the lanes on them and its progress, read from the lanes' runs",
+      mcp: false,
+      options: z.object({
+        config: z.string().describe("Path to runner.json")
+      }),
+      run: (context) =>
+        Presentation.guard(
+          context,
+          () =>
+            Effect.runPromise(
+              status(context.options.config).pipe(
+                Effect.map((workstreams) => ({ workstreams })),
+                // The control plane's own logs go to stderr: stdout is the document.
+                Effect.provideService(Logger.LogToStderr, true)
+              )
+            ),
+          { render: (read) => ({ human: renderStatus(read.workstreams) }) }
         )
     })

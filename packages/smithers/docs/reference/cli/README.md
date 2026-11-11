@@ -38,7 +38,7 @@ run-kind targets; `flow start` starts durable flows.
 | `host backup`, `host upgrade`, `host restore <directory>` | Host maintenance commands. Currently refuse until capture, drain and owner authorization are composed; restore validates the backup before any state change. |
 | `serve`, `doctor`, `suggest`, `migrate`, `update`, `bug` | Host, diagnose, discover uses, migrate source, check versions, or submit a report. |
 | `token mint` | Mint a scoped, expiring gateway token under `SMITHERS_TOKEN`. |
-| `runner token`, `runner serve`, `runner start` | Attach this machine as a runner that does a host's external agent jobs, or run coding-agent lanes on it as its own host ([runner commands](runner.md)). |
+| `runner token`, `runner serve`, `runner start`, `runner status` | Attach this machine as a runner that does a host's external agent jobs, or run coding-agent lanes on it as its own host and read their workstreams' progress ([runner commands](runner.md)). |
 | `agent` | Configure an agent |
 | `agents` | The factory's agents |
 | `api` | Make raw API calls to the Smithers server |

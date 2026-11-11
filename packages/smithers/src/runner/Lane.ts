@@ -46,12 +46,35 @@ export const MODULE = "lane"
 export const AGENT = "lane"
 
 /**
+ * The workstream task a lane works on: the workstream's and the task's ids
+ * (`runner.json` `workstreams`) and, for a task the plan doesn't list, its
+ * title.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Task = Schema.Struct({
+  workstream: Config.WorkstreamId,
+  id: Config.WorkstreamId,
+  title: Schema.optional(Schema.String.check(Schema.isMinLength(1)))
+})
+
+/**
+ * The workstream task a lane works on, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Task = typeof Task.Type
+
+/**
  * What a lane works on: the brief its agent is prompted with, the runner
  * profile that runs the agent, the repository (by its `runner.json` id) and
  * the commit its checkout starts from, the change's limits, the hours and
  * restarts each round's agent may have, whether it is standing (a new
  * round after each one) or one-shot, and the revision a standing lane
- * follows: each next round's base is that revision, resolved again.
+ * follows: each next round's base is that revision, resolved again; and the
+ * workstream task it works on, if any.
  *
  * @category schemas
  * @since 1.0.0
@@ -65,7 +88,8 @@ export const Input = Schema.Struct({
   maxHours: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: AgentRunner.MAX_HOURS })),
   restarts: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: AgentRunner.MAX_RESTARTS })),
   standing: Schema.Boolean,
-  follow: Schema.optional(Schema.String.check(Schema.isMinLength(1)))
+  follow: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  task: Schema.optional(Task)
 })
 
 /**

@@ -57,6 +57,9 @@ describe("smthrs runner, its own host", () => {
   test(
     "a one-shot lane is a run in runs list while it works, ends completed, and its checkout is removed",
     async () => {
+      lanes.configure({
+        workstreams: { alpha: { title: "Alpha", tasks: [{ id: "notes", title: "Write the notes" }] } }
+      })
       const queued = await lanes.smthrs([
         "runner",
         "start",
@@ -67,6 +70,10 @@ describe("smthrs runner, its own host", () => {
         "test-agent",
         "--repository",
         Lanes.REPOSITORY,
+        "--workstream",
+        "alpha",
+        "--task",
+        "notes",
         "--format",
         "json"
       ])
@@ -79,7 +86,20 @@ describe("smthrs runner, its own host", () => {
       // While its agent works in its checkout, the lane is an open run: parked between its step's probes.
       await Lanes.until(() => lanes.checkouts().length > 0, 60_000, "checkout made")
       expect(["running", "parked"]).toContain(await lanes.statusOf(runId))
+      // runner status reads the task's state from the lane's run: doing while it works, done once it completed.
+      const notes = await lanes.workstreams()
+      expect(notes).toMatchObject([{ id: "alpha", status: "active", progress: { done: 0, total: 1 } }])
+      expect(notes[0]!.tasks[0]).toMatchObject({
+        id: "notes",
+        status: "doing",
+        owners: [{ request, runId, profile: "test-agent", standing: false }]
+      })
       await Lanes.until(async () => (await lanes.statusOf(runId)) === "completed", 120_000, "run completed")
+      expect(await lanes.workstreams()).toMatchObject([{
+        status: "done",
+        progress: { done: 1, total: 1 },
+        tasks: [{ id: "notes", status: "done", owners: [{ runId, status: "completed" }] }]
+      }])
       await Lanes.until(() => lanes.checkouts().length === 0, 60_000, "checkout removed")
       expect(lanes.workspaces()).toEqual(["default"])
       for (const pid of lanes.agentPids()) await Lanes.until(() => !Lanes.alive(pid), 10_000, "agent gone")
@@ -199,6 +219,23 @@ describe("smthrs runner, its own host", () => {
     expect(await started(startOptions(brief, { base: "nothing-here" })))
       .toBe("--base nothing-here names no single commit in the mirror")
     expect(await started(startOptions(brief, { maxHours: 13 }))).toBe("--max-hours is 1 to 12 and --restarts 0 to 5")
+    expect(await started(startOptions(brief, { workstream: "alpha" }))).toBe("--workstream and --task go together")
+    expect(await started(startOptions(brief, { task: "notes" }))).toBe("--workstream and --task go together")
+    expect(await started(startOptions(brief, { title: "Notes" }))).toBe("--title needs --workstream and --task")
+    expect(await started(startOptions(brief, { workstream: "alpha", task: "notes" })))
+      .toBe("no workstream alpha in runner.json")
+    lanes.configure({ workstreams: { alpha: { title: "Alpha" } } })
+    for (const bad of [{ task: "Notes" }, { task: "notes", title: "" }]) {
+      expect(await started(startOptions(brief, { workstream: "alpha", ...bad })))
+        .toBe("--task is lowercase letters, digits and -, and --title is not empty")
+    }
+    const task = await started(startOptions(brief, { workstream: "alpha", task: "notes", title: "Write the notes" }))
+    expect(
+      JSON.parse(
+        readFileSync(LaneIntake.paths(lanes.stateDir).request((task as { readonly request: string }).request), "utf8")
+      )
+        .input.task
+    ).toEqual({ workstream: "alpha", id: "notes", title: "Write the notes" })
     const queued = await started(startOptions(brief, { base: lanes.mirror.base, standing: true }))
     expect(queued).toMatchObject({ base: lanes.mirror.base, standing: true })
     const id = (queued as { readonly request: string }).request

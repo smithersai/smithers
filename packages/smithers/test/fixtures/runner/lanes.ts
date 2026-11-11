@@ -10,6 +10,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as LaneIntake from "../../../src/runner/LaneIntake.ts"
 import * as LocalJobs from "../../../src/runner/LocalJobs.ts"
+import type * as Workstreams from "../../../src/runner/Workstreams.ts"
 import * as Host from "./host.ts"
 
 const AGENT = fileURLToPath(new URL("../../../agent/test/fixtures/acp-test-agent.mjs", import.meta.url))
@@ -127,6 +128,12 @@ export const make = () => {
       return file
     },
     /** The run status `runs list` shows for `runId`. */
+    /** What `smthrs runner status` reads now. */
+    workstreams: async () => {
+      const read = await smthrs(["runner", "status", "--config", configPath, "--format", "json"])
+      if (read.code !== 0) throw new Error(`runner status: ${read.stdout}${read.stderr}`)
+      return (JSON.parse(read.stdout) as { readonly workstreams: ReadonlyArray<Workstreams.Workstream> }).workstreams
+    },
     statusOf: async (runId: string) =>
       ((await runs(["list"])) as { readonly items: ReadonlyArray<{ readonly runId: string; readonly status: string }> })
         .items.find((item) => item.runId === runId)?.status,

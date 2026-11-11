@@ -15,7 +15,8 @@ no `origin` makes the runner its own host, for [local lanes](#local-lanes).
 | --- | --- |
 | `smthrs runner token [--state <dir>] [--rotate]` | Make the runner's token and print its SHA-256 |
 | `smthrs runner serve --config <runner.json>` | Claim and run jobs until stopped; with no `origin`, also host the lanes |
-| `smthrs runner start <brief> --config <runner.json> --profile <p> --repository <id> [--base <rev>] [--standing] [--max-hours <n>] [--restarts <n>]` | Queue a lane for a runner that is its own host, and print the request's id |
+| `smthrs runner start <brief> --config <runner.json> --profile <p> --repository <id> [--base <rev>] [--standing] [--max-hours <n>] [--restarts <n>] [--workstream <w> --task <t> [--title <text>]]` | Queue a lane for a runner that is its own host, and print the request's id |
+| `smthrs runner status --config <runner.json>` | Show each [workstream](#workstreams)'s tasks, the lanes on them and its progress, read from the lanes' runs |
 
 ## Register a runner
 
@@ -83,6 +84,7 @@ job's deadline.
 | `idleExitSeconds` | End `serve` after this many seconds with no job, so an overflow box sleeps; never unless set. |
 | `repositories` | Each repository the host may name, by the host's repository id, mapped to a local jj repository the runner checks out from. The runner fetches it when a job's base commit is missing. |
 | `profiles` | What each profile runs. The host only ever passes a profile's name. |
+| `workstreams` | With no `origin`: the plans the lanes work toward, by id ([workstreams](#workstreams)). |
 
 A profile:
 
@@ -316,6 +318,71 @@ has the hosted store's rules: a cancel before a job starts wins, a job past
 its agent's hours ends `timeout`, and a retryable end past its restarts ends
 `exhausted`. A file that doesn't decode is logged and left; nothing claims
 its job. One `serve` owns a state directory.
+
+## Workstreams
+
+A workstream groups lanes under one goal. You declare its plan once, in
+`runner.json`; `runner status` reads everything else from the lanes' runs, so
+no agent writes a status file and nothing goes stale.
+
+```json
+{
+  "workstreams": {
+    "parser-port": {
+      "title": "Parser port",
+      "goal": "The new parser replaces the old one.",
+      "criteria": ["The old parser's tests pass on the new one"],
+      "tasks": [
+        { "id": "lexer", "title": "Port the lexer", "criteria": ["lexer tests pass"] },
+        { "id": "docs", "title": "Document the parser" }
+      ]
+    }
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| key | The workstream's id: lowercase letters, digits and `-`, up to 64 characters. `runner.json` with any other key is refused. |
+| `title` | What the workstream is called. |
+| `goal` | One sentence: what done looks like. |
+| `criteria` | Checkable statements that are true when it is done. |
+| `tasks` | The tasks planned for it, in order: `id` (as a workstream id, once per workstream), `title`, `criteria`. |
+
+`runner start --workstream <w> --task <t>` makes the lane an owner of task
+`t` of workstream `w`. The workstream must be declared; the task need not be:
+a task the plan doesn't list joins it with `--title` as its title, or its id.
+
+```
+smthrs runner start lexer.md --config runner.json --profile claude --repository app \
+  --workstream parser-port --task lexer
+smthrs runner status --config runner.json
+Parser port (parser-port)  active  0/2 tasks
+  goal: The new parser replaces the old one.
+  doing   Port the lexer (lexer)  9f3c… claude parked
+  todo    Document the parser (docs)  no lane
+```
+
+`runner status` reads the requests still queued, the admitted lanes and each
+lane's run on the lanes root; `--format json` prints the same as
+`{ "workstreams": [...] }`, each with `status`, `progress`
+(`{ done, total, unit: "tasks" }`) and `tasks`, each task with `status` and
+`owners` (the request, the run once admitted, the profile, whether it is
+standing, and the lane's status: `queued`, the run's status, or `missing`
+when the lanes root no longer holds the run).
+
+| Task status | When |
+| --- | --- |
+| `done` | One of its lanes' runs completed. |
+| `doing` | One of its lanes' runs is `accepted`, `running` or `parked`. |
+| `blocked` | One waits for an approval, or its last lane failed. |
+| `todo` | Otherwise: no lane, a lane still queued, or the last one cancelled. |
+
+A workstream is `done` when it has tasks and every one is done, `active` while
+any task is `doing`, `blocked` when tasks are blocked and none is `doing`, and
+`idle` otherwise. A standing lane never completes, so its task stays `doing`
+until it is cancelled. A lane naming a workstream `runner.json` no longer
+declares still shows, under the workstream's id.
 
 ## Records
 
