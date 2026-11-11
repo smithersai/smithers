@@ -223,6 +223,36 @@ describe.runIf(hasGo)("Go package execution", () => {
     expect(hit.logs).toContain("//:smoke  hit")
   }, 120_000)
 
+  it("restores only the binary on a hit, never the directory beside it (#5089)", async () => {
+    const root = await fixture()
+    const source = await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")
+    await write(
+      root,
+      "PACKAGE.ts",
+      source
+        .replace(
+          "const smoke =",
+          "const sibling = S.Go.Binary({ pkg: \"./cmd/app\", out: \"//build/sibling\" })\nconst smoke ="
+        )
+        .replace("targets: { all, binary,", "targets: { all, binary, sibling,")
+    )
+    const built = await serve(root, ["build", "//:binary"])
+    expect(built.exitCode, built.logs).toBe(0)
+    const sibling = await serve(root, ["build", "//:sibling"])
+    expect(sibling.exitCode, sibling.logs).toBe(0)
+    await write(root, "build/notes.txt", "kept\n")
+    const hit = await serve(root, ["build", "//:binary"])
+    expect(hit.exitCode, hit.logs).toBe(0)
+    expect(hit.logs).toContain("//:binary  hit")
+    expect((await Fs.stat(NodePath.join(root, "build/sibling"))).isFile()).toBe(true)
+    expect(await Fs.readFile(NodePath.join(root, "build/notes.txt"), "utf8")).toBe("kept\n")
+    await Fs.rm(NodePath.join(root, "build/app"))
+    const restored = await serve(root, ["build", "//:binary"])
+    expect(restored.logs).toContain("//:binary  hit")
+    expect(NodeChildProcess.execFileSync(NodePath.join(root, "build/app"), { encoding: "utf8" })).toContain("ok v1.2.3")
+    expect((await Fs.stat(NodePath.join(root, "build/sibling"))).isFile()).toBe(true)
+  }, 180_000)
+
   it("runs Generate/Fuzz and gives Nix's typed host refusal", async () => {
     const root = await fixture()
     const generated = await serve(root, ["//:generate", "--write"])

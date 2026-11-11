@@ -56,6 +56,12 @@ export interface Planned {
   readonly argv?: ReadonlyArray<string>
   readonly env: Readonly<Record<string, string>>
   readonly outDirs: ReadonlyArray<string>
+  /**
+   * The workspace-relative files the rule produces, such as a `Go.Binary`
+   * executable. A file output is captured and restored on its own, so a cache
+   * hit never replaces the directory that holds it.
+   */
+  readonly outFiles?: ReadonlyArray<string>
   readonly writeSet: ReadonlyArray<string>
   /**
    * The workspace-relative files the spawned toolchain reads: the module
@@ -726,7 +732,11 @@ export const planRule = async (
       cwd,
       argv,
       env,
-      outDirs: [NodePath.dirname(out)],
+      // The binary is one file, not its directory. Declaring the parent let a
+      // hit swap that whole directory back to its capture-time snapshot,
+      // reverting sibling binaries or, for `out: "app"`, the package sources.
+      outDirs: [],
+      outFiles: [out],
       writeSet: [],
       readSet: [...authority, ...graph.files],
       closureIdentity: graph.identity

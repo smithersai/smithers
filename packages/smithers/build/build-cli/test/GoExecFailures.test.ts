@@ -463,9 +463,12 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
       expect.stringMatching(/^-s -X main\.version=\{smthrs:stamp:[A-Za-z0-9_-]+\}$/),
       "./pkg/cmd"
     ])
-    expect(binary.outDirs).toEqual(["pkg/bin"])
+    expect(binary.outDirs).toEqual([])
+    expect(binary.outFiles).toEqual(["pkg/bin/app"])
     const plain = await GoExec.planRule("Go.Binary", { pkg: "//cmd", out: "app" }, host.context, goPath())
     expect(plain.argv).toEqual([goPath(), "build", "-buildvcs=false", "-o", "pkg/app", "./cmd"])
+    expect(plain.outDirs).toEqual([])
+    expect(plain.outFiles).toEqual(["pkg/app"])
     const fuzz = await GoExec.planRule(
       "Go.Fuzz",
       { pkg: "./lib", fuzz: "FuzzParse", time: "10s", parallel: 2 },

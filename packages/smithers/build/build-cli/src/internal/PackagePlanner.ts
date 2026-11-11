@@ -2136,6 +2136,7 @@ const visit = async (
         const moduleCache = env["GOMODCACHE"]
         if (moduleCache !== undefined && !NodePath.isAbsolute(moduleCache)) absoluteEnv.push("GOMODCACHE")
         outDirs.push(...plannedGo.outDirs)
+        outFiles.push(...(plannedGo.outFiles ?? []))
         writeSet.push(...plannedGo.writeSet)
         // `go` resolves its own module and package graph from import paths, so
         // the confinement has to admit the files the closure named or the
