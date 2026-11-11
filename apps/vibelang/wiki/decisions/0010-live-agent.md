@@ -67,7 +67,9 @@ its reservation and charges the usable provider count, or the whole ceiling when
 incomplete. Explicit reported zero remains zero. Receipts retain the admission day across UTC rollover.
 
 The SDK seals the model answer and its receipts before accounting. A failed ledger write retries accounting from
-that sealed value without another provider call. Unsealed failures also settle their receipts. A process killed
+that sealed value without another provider call. Unsealed failures also settle their receipts. A VIP or wiki draft
+whose model call the ledger cannot record, or refuses because the day is spent, fails as `budget`, not `draft`; the
+unrecorded case is logged as `vibelang.draft.spend` and counted in `vibelang_draft_spend_failures`. A process killed
 before settlement conservatively leaves its reservation held; it never makes that unknown call free. No model
 configured means no reservation. Tests that replace the whole agent service still reconcile the initial admission.
 

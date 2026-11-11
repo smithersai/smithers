@@ -31,6 +31,20 @@ function refusingOnce() {
   return { log, spend }
 }
 
+/**
+ * A day's budget that admits each draft's run, and for each model call either cannot record its charge
+ * (`unreachable`) or refuses it because the day is spent (`spent`). `failed` counts the unrecorded charges.
+ */
+function callBudgetFault(fault: "unreachable" | "spent") {
+  const day = ledger("admit")
+  const log = { failed: 0 }
+  const spend: Spend.Shape = {
+    admit: (name, key, ceiling) => fault === "spent" && key.startsWith("model/") ? succeed(false) : day.spend.admit(name, key, ceiling),
+    spend: (name, key, tokens, reported, ceiling) => key.startsWith("model/") ? effect { log.failed += 1; throw new Unreachable({ what: "budget" }) } : day.spend.spend(name, key, tokens, reported, ceiling),
+  }
+  return { log, spend }
+}
+
 /** `program`'s answer as JSON, or its failure's reason. */
 effect function outcome<A, R>(program: A!{ readonly reason: string }!R) {
   const result = try Effect.result(program)
@@ -103,4 +117,23 @@ it.live("an agent seam without a model refuses no-model when asked directly", ()
   expect([vipAgent.available, wikiAgent.available]).toEqual([false, false])
   expect(try within(Layer.empty, outcome(vipAgent.run(VIP, meter)))).toBe("no-model")
   expect(try within(Layer.empty, outcome(wikiAgent.run(PAGE, meter)))).toBe("no-model")
+}))
+
+it.live("a model call the day's ledger cannot record or refuses ends either draft as budget; an unrecorded one is counted", () => scoped(effect {
+  const failures = effect (draft: string) => (try Metric.value(Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft }))).count
+  const wikiBefore = try failures("wiki")
+  const vipBefore = try failures("vip")
+  const vipDraft = { title: "T", summary: "S", example: "E", prior: "P" }
+  const wikiUnreachable = callBudgetFault("unreachable")
+  expect(try wiki([answering({ page: "roadmap", text: "# Shorter\n" })], wikiUnreachable.spend)).toBe("budget")
+  expect(wikiUnreachable.log.failed).toBeGreaterThan(0)
+  const vipUnreachable = callBudgetFault("unreachable")
+  const unrecorded = try vipCalls([answering(vipDraft)], vipUnreachable.spend)
+  // The answer is sealed before accounting: retrying the charge never asks the model again.
+  expect([unrecorded.answer, unrecorded.requests]).toEqual(["budget", 1])
+  expect([(try failures("wiki")) - wikiBefore, (try failures("vip")) - vipBefore]).toEqual([1, 1])
+  expect(try wiki([answering({ page: "roadmap", text: "# Shorter\n" })], callBudgetFault("spent").spend)).toBe("budget")
+  const refused = try vipCalls([answering(vipDraft)], callBudgetFault("spent").spend)
+  expect([refused.answer, refused.requests]).toEqual(["budget", 0])
+  expect([(try failures("wiki")) - wikiBefore, (try failures("vip")) - vipBefore]).toEqual([1, 1])
 }))

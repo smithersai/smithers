@@ -7,7 +7,7 @@ import { ModelRequest } from "@smthrs/model"
 import { WikiDraft, WikiWriter } from "../src/core/WikiWriter.vibe"
 import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
+import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf, daySpent } from "./Reply.vibe"
 /** Frame and answer limits; initial admission holds one call, then each physical invocation reserves separately. */
 const WIKI_FRAMES = 8
 const WIKI_ANSWER_TOKENS = 8192
@@ -36,7 +36,8 @@ export const wikiAgentLayer = Layer.effect(WikiDraftAgent, effect {
           return try (try DraftWiki.requirement).action({ page: request.page, source: request.source, ask: request.ask })
         }
       })
-      if (result._tag === "Failure") throw new WikiFailure({ reason: "draft" })
+      // A model call refused because the day is spent is the budget's failure, not the draft's.
+      if (result._tag === "Failure") throw new WikiFailure({ reason: daySpent(result.failure) ? "budget" : "draft" })
       // The agent already refused an output that is not a WikiDraft; this decode only types it.
       const decoded = try Effect.orDie(Schema.decodeUnknownEffect(WikiDraft)(result.success))
       if (decoded.page !== request.page || decoded.text.trim() === "") throw new WikiFailure({ reason: "draft" })
@@ -65,7 +66,15 @@ export const wikiWriter = Layer.effect(WikiWriter, effect {
         return { tokens: 0, calls: 0, unreported: 1 }
       }
       try Effect.tapError(effect { try Action.make({ name: "vibelang/wiki/draft-spend", error: WikiFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `wiki-draft/${instance.executionId}`, usage.tokens, usage.calls > 0 && usage.unreported === undefined, WIKI_CEILING).pipe(Effect.mapError(() => new WikiFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("wiki"))
-      if (result._tag === "Failure") throw result.failure
+      if (result._tag === "Failure") {
+        // The run failed because the ledger could not record a model call (its answer is sealed, so a retry pays
+        // the ledger, not the provider): the budget's failure, logged and counted like a failed settlement.
+        if (meter.ledgerUnavailable()) {
+          try draftSpendFailed("wiki")
+          throw new WikiFailure({ reason: "budget" })
+        }
+        throw result.failure
+      }
       return result.success
     },
   }

@@ -7,7 +7,7 @@ import { ModelRequest } from "@smthrs/model"
 import { VipDraft, VipWriter } from "../src/core/VipWriter.vibe"
 import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf } from "./Reply.vibe"
+import { agentOf, ChatModel, dayOf, Spend, draftSpend, draftSpendFailed, ceilingOf, daySpent } from "./Reply.vibe"
 /** Frame and answer limits; initial admission holds one call, then each physical invocation reserves separately. */
 const VIP_FRAMES = 8
 const VIP_ANSWER_TOKENS = 2048
@@ -36,7 +36,8 @@ export const agentLayer = Layer.effect(DraftAgent, effect {
           return try (try DraftVip.requirement).action({ title: request.title, text: request.text, example: request.example, prior: request.prior })
         }
       })
-      if (result._tag === "Failure") throw new IssueFailure({ reason: "draft" })
+      // A model call refused because the day is spent is the budget's failure, not the draft's.
+      if (result._tag === "Failure") throw new IssueFailure({ reason: daySpent(result.failure) ? "budget" : "draft" })
       // The agent already refused an output that is not a VipDraft; this decode only types it.
       return try Effect.orDie(Schema.decodeUnknownEffect(VipDraft)(result.success))
     },
@@ -63,7 +64,15 @@ export const writer = Layer.effect(VipWriter, effect {
         return { tokens: 0, calls: 0, unreported: 1 }
       }
       try Effect.tapError(effect { try Action.make({ name: "vibelang/vip/spend", error: IssueFailure, retryPolicy: draftSpend, execute: spend.spend(admission.day, `vip-draft/${instance.executionId}`, usage.tokens, usage.calls > 0 && usage.unreported === undefined, VIP_CEILING).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }) }, () => draftSpendFailed("vip"))
-      if (result._tag === "Failure") throw result.failure
+      if (result._tag === "Failure") {
+        // The run failed because the ledger could not record a model call (its answer is sealed, so a retry pays
+        // the ledger, not the provider): the budget's failure, logged and counted like a failed settlement.
+        if (meter.ledgerUnavailable()) {
+          try draftSpendFailed("vip")
+          throw new IssueFailure({ reason: "budget" })
+        }
+        throw result.failure
+      }
       return result.success
     },
   }

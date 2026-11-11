@@ -15,16 +15,27 @@ export const INPUT_CEILING = 32_768
 const Receipt = Schema.fromJsonString(Schema.Struct({ day: Schema.String, key: Schema.String, ceiling: Schema.Number }))
 const unavailable = (cause: unknown) => new Budget.AccountingUnavailable({ phase: "record", runId: "physical-call", message: "The daily budget ledger is unavailable", cause })
 
-/**
- * A ledger operation retried through a brief outage, then reported unavailable. Admission and settlement are keyed and
- * idempotent (worker/budgetDecision.vibe), so a retry never holds or charges twice.
- */
-const steady = <A>(operation: Effect.Effect<A, unknown>) => operation.pipe(Effect.retry({ times: 3, schedule: Schedule.exponential("50 millis") }), Effect.mapError(unavailable))
+/** A call meter that also says whether the day's ledger was unreachable during the run. */
+export interface CallBudget extends Budget.Service {
+  /** Whether a ledger operation of this run stayed unavailable through its retries. The harness's error loses the cause's tag. */
+  readonly ledgerUnavailable: () => boolean
+}
 
 /** Replaces the ordinary meter's provider boundary; its logical-step ledger remains unchanged. */
-export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string, admittedDay: string, parentCeiling: number): Budget.Service {
+export function callBudget(meter: Budget.Service, ledger: Ledger, parent: string, admittedDay: string, parentCeiling: number): CallBudget {
+  let outage = false
+  /**
+   * A ledger operation retried through a brief outage, then reported unavailable. Admission and settlement are keyed
+   * and idempotent (worker/budgetDecision.vibe), so a retry never holds or charges twice.
+   */
+  const steady = <A>(operation: Effect.Effect<A, unknown>) => operation.pipe(
+    Effect.retry({ times: 3, schedule: Schedule.exponential("50 millis") }),
+    Effect.tapError(() => Effect.sync(() => { outage = true })),
+    Effect.mapError(unavailable),
+  )
   return {
     ...meter,
+    ledgerUnavailable: () => outage,
     reserveCall: request => Effect.gen(function*() {
       // The run admission prevents work when the day is full. Physical receipts
       // take over its reservation, once; the final run charge is then an idempotent no-op.

@@ -124,6 +124,11 @@ export function draftSpendFailed(draft: "wiki" | "vip" | "specification") {
   )
 }
 
+/** Whether an agent run failed because a model call was refused: the day's budget is spent (worker/CallBudget.vibe). */
+export function daySpent(failure: unknown): boolean {
+  return typeof failure === "object" && failure !== null && "cause" in failure && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded"
+}
+
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {
   return new Date(millis).toISOString().slice(0, 10)
