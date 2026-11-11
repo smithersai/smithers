@@ -38,7 +38,8 @@ interface Manifest {
   lockfileDigest: string
   compiled: Record<string, { source: string; links: Array<{ start: number; end: number; target: string }> }>
 }
-const fixture = (lockfiles = false) =>
+const aliasedSource = source.replace("\"./helper.ts\"", "\"#helper\"")
+const fixture = (lockfiles = false, aliased = false) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -47,8 +48,14 @@ const fixture = (lockfiles = false) =>
     const entry = `${root}/flows/snapshot/flow.ts`
     const helper = `${root}/flows/snapshot/helper.ts`
     yield* fs.makeDirectory(path.dirname(entry), { recursive: true })
-    yield* fs.writeFileString(entry, source)
+    yield* fs.writeFileString(entry, aliased ? aliasedSource : source)
     yield* fs.writeFileString(helper, "export const value = \"approved\"")
+    if (aliased) {
+      yield* fs.writeFileString(
+        `${root}/package.json`,
+        JSON.stringify({ imports: { "#helper": "./flows/snapshot/helper.ts" } })
+      )
+    }
     const scanned = yield* (yield* Discovery.Discovery).scan({
       source: "project",
       root: `${root}/flows`,
@@ -230,6 +237,10 @@ describe("execution snapshot admission boundaries", () => {
       "missing-link-target",
       "compiled-source",
       "link-range",
+      "link-dropped",
+      "link-retargeted",
+      "link-widened",
+      "link-added",
       "missing-entry",
       "entry-digest",
       "closure-size",
@@ -248,6 +259,14 @@ describe("execution snapshot admission boundaries", () => {
       if (mode === "missing-link-target") manifest.compiled[entry]!.links[0]!.target = `${root}/outside.ts`
       if (mode === "compiled-source") manifest.compiled[entry]!.source = "UNAPPROVED_COMPILED_SOURCE"
       if (mode === "link-range") manifest.compiled[entry]!.links[0]!.end = source.length + 1
+      // The four below keep every digest and stay inside the source: only the links say which text runs (#4731).
+      if (mode === "link-dropped") manifest.compiled[entry]!.links = []
+      if (mode === "link-retargeted") manifest.compiled[entry]!.links[0]!.target = entry
+      if (mode === "link-widened") manifest.compiled[entry]!.links[0]!.start = source.indexOf("import { value }")
+      if (mode === "link-added") {
+        const start = source.indexOf("Node.succeed(value)")
+        manifest.compiled[entry]!.links.push({ start, end: start + "Node.succeed(value)".length, target: helper })
+      }
       if (mode === "missing-entry") manifest.entry = `${root}/absent.ts`
       if (mode === "entry-digest") manifest.entry = helper
       if (mode === "closure-size") {
@@ -352,6 +371,106 @@ describe("execution snapshot admission boundaries", () => {
         expect(failure.code).toBe("corrupt")
         expect(failure.message).toBe("Cannot verify source compilation")
       }
+    }))
+  })
+
+  it.each(["dropped", "outside"] as const)(
+    "refuses a package imports specifier whose stored link is %s",
+    async (mode) => {
+      await run(Effect.gen(function*() {
+        const { root, entry, helper, digest, manifest, publish, snapshots } = yield* fixture(false, true)
+        const start = aliasedSource.indexOf("\"#helper\"")
+        // The walk linked `#helper` through package.json, and the untouched snapshot restores with that link.
+        expect((yield* snapshots.restore(digest)).modules.get(entry)!.links).toEqual([
+          { start, end: start + "\"#helper\"".length, target: helper }
+        ])
+        if (mode === "dropped") manifest.compiled[entry]!.links = []
+        else manifest.compiled[entry]!.links[0]!.target = `${root}/outside.ts`
+        yield* publish(manifest)
+        const failure = yield* (yield* Snapshot.makeFileSystem({ root })).restore(digest).pipe(Effect.flip)
+        expect(failure.code).toBe("corrupt")
+        expect(failure.message).toBe("Execution source compilation or static links differ")
+      }))
+    }
+  )
+
+  it.each(["none", "one"] as const)("admits a Markdown body only with no links: %s", async (mode) => {
+    await run(Effect.gen(function*() {
+      const { fs, path, root, entry, executable, index } = yield* fixture()
+      yield* fs.remove(index)
+      // Prose that spells an import is not a module: nothing in it is a link.
+      const text = "Read the helper:\nimport \"./helper.ts\"\n"
+      const bytes = new TextEncoder().encode(text)
+      const prompt = `${root}/flows/snapshot/SKILL.md`
+      const descriptor = new Descriptor.FlowDescriptor({
+        ...executable.descriptor,
+        body: new Descriptor.BodyRefMarkdown({
+          path: prompt,
+          baseDirectory: path.dirname(prompt),
+          contentDigest: Digest.digest(bytes)
+        })
+      })
+      const start = text.indexOf("\"./helper.ts\"")
+      const captured = {
+        ...executable,
+        descriptor,
+        source: {
+          entry: prompt,
+          bytes,
+          modules: new Map([[prompt, {
+            bytes,
+            source: text,
+            links: mode === "none" ? [] : [{ start, end: start + "\"./helper.ts\"".length, target: entry }]
+          }]])
+        }
+      }
+      const snapshots = yield* Snapshot.makeFileSystem({ root })
+      if (mode === "none") {
+        yield* snapshots.pin(captured)
+        expect((yield* snapshots.restore(Descriptor.executionDigest(descriptor)!)).modules.get(prompt)!.links).toEqual(
+          []
+        )
+      } else {
+        const failure = yield* snapshots.pin(captured).pipe(Effect.flip)
+        expect(failure.code).toBe("corrupt")
+        expect(failure.message).toBe("Execution source compilation or static links differ")
+      }
+    }))
+  })
+
+  it("loads a restored closure at the descriptor's own locators, whatever paths the manifest stores", async () => {
+    await run(Effect.gen(function*() {
+      const { fs, root, entry, helper, executable, manifest, publish } = yield* fixture()
+      // A manifest moved, consistently, to a directory the descriptor never named. Every digest still matches.
+      const moved = (file: string) => file.replace(`${root}/flows/snapshot`, `${root}/elsewhere`)
+      manifest.entry = moved(entry)
+      manifest.modules = Object.fromEntries(Object.entries(manifest.modules).map(([file, blob]) => [moved(file), blob]))
+      manifest.compiled = Object.fromEntries(
+        Object.entries(manifest.compiled).map(([file, compiled]) => [moved(file), {
+          ...compiled,
+          links: compiled.links.map((link) => ({ ...link, target: moved(link.target) }))
+        }])
+      )
+      yield* publish(manifest)
+      yield* fs.writeFileString(entry, "throw 'CURRENT_ENTRY_MUST_NOT_LOAD'")
+      const loaded: Array<
+        { readonly specifier: string; readonly modules: ReadonlyArray<string>; readonly targets: ReadonlyArray<string> }
+      > = []
+      const restored = yield* Executable.fromDescriptor(executable.descriptor, {
+        delegates: [],
+        snapshots: yield* Snapshot.makeFileSystem({ root }),
+        load: (specifier, verified) => {
+          loaded.push({
+            specifier,
+            modules: [...verified!.modules.keys()].sort(),
+            targets: verified!.modules.get(entry)!.links.map((link) => link.target)
+          })
+          return Effect.succeed({ default: flow })
+        }
+      })
+      expect(loaded).toEqual([{ specifier: entry, modules: [entry, helper].sort(), targets: [helper] }])
+      expect(restored.source!.entry).toBe(entry)
+      expect(yield* fs.exists(`${root}/elsewhere`)).toBe(false)
     }))
   })
 

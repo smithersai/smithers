@@ -1009,6 +1009,20 @@ const verifyImports = (
         Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))
       )
       : platformPath.normalize(path)
+    const cannotPin = (entry: Descriptor.ModuleImport) =>
+      Effect.fail(
+        refuse({
+          code: "body_unavailable",
+          flow: descriptor.name,
+          path,
+          message:
+            `flow "${descriptor.name}" runs code this host cannot pin: ${entry.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
+        })
+      )
+    // Discovery already refused to measure this load, for instance one that
+    // leaves a pack's root. Measuring it here would read the file it declined.
+    const unmeasured = recorded.find((entry) => entry.contentDigest === undefined)
+    if (unmeasured !== undefined) return yield* cannotPin(unmeasured)
     const { imports: measured, modules, unsupported } = yield* ModuleClosure.snapshot(
       fs,
       platformPath,
@@ -1016,17 +1030,7 @@ const verifyImports = (
       bytes
     )
     const unpinnable = measured.find((entry) => entry.contentDigest === undefined)
-    if (unpinnable !== undefined) {
-      return yield* Effect.fail(
-        refuse({
-          code: "body_unavailable",
-          flow: descriptor.name,
-          path,
-          message:
-            `flow "${descriptor.name}" runs code this host cannot pin: ${unpinnable.path}. Every module a flow's entry loads from beside itself has to be measurable before it runs`
-        })
-      )
-    }
+    if (unpinnable !== undefined) return yield* cannotPin(unpinnable)
     const pinned = new Map(recorded.map((entry) => [entry.path, entry.contentDigest] as const))
     const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
       [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath))
@@ -1055,6 +1059,35 @@ const verifyImports = (
     return modules
   })
 
+/**
+ * A restored closure keyed by this descriptor's own locators.
+ *
+ * A snapshot manifest stores absolute paths, and the loader writes each module
+ * beside the path it is keyed by. The store is not evidence of where approved
+ * code lives, so only each module's position relative to the entry is kept
+ * (restore checked those against the descriptor) and the closure is placed at
+ * the entry this descriptor names.
+ */
+const relocated = (
+  platformPath: Path.Path,
+  restored: VerifiedSource,
+  entry: string
+): VerifiedSource => {
+  const place = (file: string) =>
+    platformPath.resolve(
+      platformPath.dirname(entry),
+      platformPath.relative(platformPath.dirname(restored.entry), file)
+    )
+  return {
+    entry,
+    bytes: restored.bytes,
+    modules: new Map([...restored.modules].map(([file, module]) => [place(file), {
+      ...module,
+      links: module.links.map((link) => ({ ...link, target: place(link.target) }))
+    }]))
+  }
+}
+
 const loadModule = (
   descriptor: Descriptor.FlowDescriptor,
   path: string,
@@ -1064,11 +1097,9 @@ const loadModule = (
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const platformPath = yield* Path.Path
-    const source = yield* Effect.gen(function*() {
-      const bytes = yield* sourceBytes(descriptor, path)
-      const modules = yield* verifyImports(descriptor, path, bytes, recorded)
-      const entry = path.startsWith("file:")
-        ? yield* platformPath.fromFileUrl(new URL(path)).pipe(Effect.mapError((cause) =>
+    const located = path.startsWith("file:")
+      ? Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url)).pipe(
+        Effect.mapError((cause) =>
           refuse({
             code: "body_unavailable",
             flow: descriptor.name,
@@ -1076,13 +1107,22 @@ const loadModule = (
             message: "Invalid module source locator",
             cause
           })
-        ))
-        : platformPath.resolve(path)
+        )
+      )
+      : Effect.succeed(platformPath.resolve(path))
+    const source = yield* Effect.gen(function*() {
+      const bytes = yield* sourceBytes(descriptor, path)
+      const modules = yield* verifyImports(descriptor, path, bytes, recorded)
+      const entry = yield* located
       return { entry, bytes, modules, loadPath: path.startsWith("file:") ? path : platformPath.resolve(path) }
     }).pipe(Effect.catch((error) =>
       options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
-        : options.snapshots.restore(approvedDigest).pipe(Effect.mapError((cause) => snapshotFailure(error, cause)))
+        : Effect.flatMap(located, (entry) =>
+          options.snapshots!.restore(approvedDigest).pipe(
+            Effect.map((restored) => relocated(platformPath, restored, entry)),
+            Effect.mapError((cause) => snapshotFailure(error, cause))
+          ))
     ))
     const { bytes, modules } = source
     const loadPath = "loadPath" in source ? source.loadPath : source.entry

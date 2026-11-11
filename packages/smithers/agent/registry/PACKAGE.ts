@@ -32,9 +32,10 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "withinRoot in Discovery.ts returning true when realPath of the candidate fails while the root resolved.",
         "A stat, readFile, or readDirectory in Discovery.visit reached before withinRoot vetted that location.",
-        "A path-prefix containment test without a trailing separator, so /pack-evil passes for /pack."
+        "A path-prefix containment test without a trailing separator, so /pack-evil passes for /pack.",
+        "ModuleClosure.walk reading or hashing a closure target, by a ../ specifier or a symbolic link, that the confinement root does not contain."
       ],
-      paths: ["src/Discovery.ts", "src/Pack.ts"]
+      paths: ["src/Discovery.ts", "src/Pack.ts", "src/internal/ModuleClosure.ts"]
     },
     {
       id: "pack-manifest-paths",

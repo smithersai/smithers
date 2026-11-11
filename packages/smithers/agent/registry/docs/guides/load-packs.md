@@ -135,12 +135,13 @@ A pack is third-party content, so this module holds exactly one piece of
 filesystem policy: source roots, descended directories, and selected entry
 files stay inside the pack root. The pack root's real path must resolve.
 
-| Rule                                                                                                                                    | Where it is enforced                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| A manifest entry is a relative path with no empty, `.`, or `..` segment, no NUL byte, no backslash, no leading `/`, and no drive prefix | `Pack.read`, as a decode refusal that fails `invalid_pack` naming the offending entry                                                       |
-| A resolved entry stays under the resolved pack root                                                                                     | `Pack.sources`, so a directly constructed `Installed` value is checked too                                                                  |
-| A manifest source root's real path stays under the pack root's real path                                                                | `Pack.sources`; an unresolved pack root fails `invalid_pack`, as does a symlinked escape                                                    |
-| Every descended directory and selected entry file stays under the pack root's real path                                                 | `Discovery.scan`, using `Source.confinementRoot` from `Pack.sources`; escapes are skipped with `outside_root` before reading their contents |
+| Rule                                                                                                                                    | Where it is enforced                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A manifest entry is a relative path with no empty, `.`, or `..` segment, no NUL byte, no backslash, no leading `/`, and no drive prefix | `Pack.read`, as a decode refusal that fails `invalid_pack` naming the offending entry                                                               |
+| A resolved entry stays under the resolved pack root                                                                                     | `Pack.sources`, so a directly constructed `Installed` value is checked too                                                                          |
+| A manifest source root's real path stays under the pack root's real path                                                                | `Pack.sources`; an unresolved pack root fails `invalid_pack`, as does a symlinked escape                                                            |
+| Every descended directory and selected entry file stays under the pack root's real path                                                 | `Discovery.scan`, using `Source.confinementRoot` from `Pack.sources`; escapes are skipped with `outside_root` before reading their contents         |
+| Every module a pack flow's entry imports, directly or transitively, stays under the pack root's real path                               | `Discovery.scan`; an import that leaves the root is recorded with no digest and its target is never read, and `Executable` refuses to run that flow |
 
 The check is repeated in `Pack.sources` because callers may construct an
 `Installed` value without decoding a manifest first. Nested directory links
@@ -151,8 +152,12 @@ real path resolves, a target whose real path cannot be resolved is refused as
 well; `Pack.sources` permits a not-yet-created source (`NotFound`) under a resolved
 root. If the pack root cannot resolve, `Pack.sources` fails `invalid_pack`.
 Discovery independently refuses an unresolved confinement root with `outside_root`.
-These checks apply during discovery. They do not sandbox module
-imports or protect against concurrent filesystem changes.
+A pack `flow.ts` that imports `../../../host-file`, or a file inside the pack
+that is a symbolic link to one outside it, therefore gets no host file hashed
+into its descriptor: the import is listed as one the host cannot pin, and the
+flow is refused before any module is evaluated or any load sibling is written.
+These checks apply during discovery. They do not sandbox what a module does
+once it runs, or protect against concurrent filesystem changes.
 
 ## The content address
 
