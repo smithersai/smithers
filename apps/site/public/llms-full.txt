@@ -13713,6 +13713,7 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 | `verify`          | function | `(key, token, now) => Effect<Claims, Unauthorized>`. Signature and expiry; every malformation is the same refusal.                           |
 | `authorizes`      | function | `(claims, call) => boolean`. The procedure must be named; a confined token authorizes only calls naming its run or flow.                     |
 | `authenticator`   | function | `(options: AuthenticatorOptions) => Authenticator`. Signature and expiry always; procedure and confinement when the boundary knows the call. |
+| `FlowLookup`      | model    | `{ ofRun; ofPlan }`, each `(id) => Effect<string \| undefined>`. Passed as `flows`, it confines a flow token to runs and plans of its flow.  |
 | `isScopedToken`   | function | `(credential) => boolean`.                                                                                                                   |
 | `procedures`      | function | `(scopes) => ReadonlyArray<string>`, each once.                                                                                              |
 | `prefix`          | constant | `"smt1"`.                                                                                                                                    |
@@ -24187,6 +24188,14 @@ write. The flow engine queues its node records this way, so a drive writes a
 handful of transactions instead of one per record. Optional on the service: a
 journal without it is used through `emitDurable`.
 
+A queued entry refused permanently, such as an `idempotency_conflict` or an
+exhausted producer sequence, is dropped without failing the host write. The
+journal logs and counts the loss under `channel: "deferred"`; the next `flush`
+reports it once after committing the remaining entries. If another failure
+is reported first, the deferred report stays pending for the next flush.
+A rolled-back transaction keeps its queued entries and reports no loss.
+SQL failures keep the batch for retry. Sequence reservations may leave gaps when an entry is refused.
+
 An entry the journal knows is committed with the same content is dropped
 rather than queued. The journal knows what it committed itself, what its
 startup read retained (the latest `sourceEventCache` entries), and what
@@ -24613,8 +24622,9 @@ counts when its receipt is produced; under `transact` that is still inside the
 caller's transaction, so a receipt that later rolls back has already counted.
 The counter is throughput evidence, not commit evidence.
 
-`lostEntries` moves by the number of admitted lossy entries the writer failed
-to commit, when it gives them up, whether or not a `flush` is waiting. The
+`lostEntries` moves by the number of admitted entries the writer failed to
+commit, when it gives them up, whether or not a `flush` is waiting. Its
+`channel` is `lossy` or `deferred`; `lost(code)` selects the lossy channel. The
 writer also logs a warning naming the error code, the count, and the runs. A
 final flush that fails while the journal closes logs a warning too.
 

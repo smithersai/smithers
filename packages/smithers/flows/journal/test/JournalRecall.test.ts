@@ -218,7 +218,7 @@ describe("SqlJournal.emitDeferred over what the journal holds", () => {
       })
     ))
 
-  it.effect("queues a re-emission with other content, and the write that commits it reports the conflict", () =>
+  it.effect("drops a conflicting re-emission without failing the next write, and flush reports it once", () =>
     withDatabase((open, sql) =>
       Effect.gen(function*() {
         const first = yield* open()
@@ -226,9 +226,10 @@ describe("SqlJournal.emitDeferred over what the journal holds", () => {
         const resumed = yield* open()
         yield* resumed.recall!(run)
         yield* resumed.emitDeferred!(input(run, "settled", { label: "changed" }), owner)
-        const conflict = yield* Effect.flip(resumed.emitDurable(input(run, "next"), owner))
-        expect(conflict.code).toBe("idempotency_conflict")
-        expect(yield* committed(sql, run)).toEqual(["0:source/settled"])
+        expect((yield* resumed.emitDurable(input(run, "next"), owner))._tag).toBe("Accepted")
+        expect(yield* committed(sql, run)).toEqual(["0:source/settled", "1:source/next"])
+        expect((yield* Effect.flip(resumed.flush)).code).toBe("idempotency_conflict")
+        yield* resumed.flush
       })
     ))
 })

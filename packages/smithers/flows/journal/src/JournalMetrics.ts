@@ -65,8 +65,8 @@ export const lossy: {
 }
 
 /**
- * Counter over lossy entries the writer admitted and then failed to commit,
- * dimensioned by `channel` (always `lossy`) and the `code` of the
+ * Counter over queued entries the writer admitted and then failed to commit,
+ * dimensioned by `channel` (`lossy` or `deferred`) and the `code` of the
  * `JournalError` that lost them.
  *
  * **Details**
@@ -80,11 +80,11 @@ export const lossy: {
  * @since 1.0.0-rc.1
  */
 export const lostEntries = Metric.counter("flows_journal_lost", {
-  description: "Admitted lossy journal entries the writer failed to commit"
+  description: "Admitted journal entries the writer failed to commit"
 })
 
 /**
- * The {@link lostEntries} view for one `JournalError` code.
+ * The lossy-channel {@link lostEntries} view for one `JournalError` code.
  *
  * @category metrics
  * @since 1.0.0-rc.1

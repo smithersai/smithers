@@ -2267,6 +2267,8 @@ export const make = (
      * commits, so a rolled-back write leaves them to the run's next one.
      */
     const deferred = new Map<string, Array<DeferredEntry>>()
+    /** Permanent deferred losses are reported once by the next explicit flush. */
+    let deferredFailure: JournalError | undefined
 
     const discard = (runId: string, drop: (entry: DeferredEntry) => boolean): void => {
       // Sibling savepoints can flush the same batch before their outer
@@ -2286,7 +2288,9 @@ export const make = (
      * An owner that lost the run loses what it queued: those entries can
      * never commit, so they are dropped and the write goes on without them.
      * The owner learns of the loss from its own next fenced write, as it
-     * would have.
+     * would have. A permanent per-entry failure is likewise dropped, logged
+     * and counted, then reported once by `flush`; it must not fail an
+     * unrelated host write. SQL failures still roll back and keep the batch.
      */
     const flushRun = (runId: string): Effect.Effect<void, JournalError | SqlError.SqlError> =>
       Effect.gen(function*() {
@@ -2305,20 +2309,43 @@ export const make = (
         const batch = [...deferred.get(runId) ?? []]
         if (batch.length === 0) return
         for (const entry of batch) {
-          const validated = entry.sourceSeq === undefined
-            ? entry.prepared.validated
-            : { ...entry.prepared.validated, sourceSeq: entry.sourceSeq }
-          const durableSourceSeq = validated.sourceSeq === undefined
-            ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
-            : 0
-          const { seq, sourceSeq } = yield* reserve(validated, 0, durableSourceSeq)
-          // Keep one producer identity even if sibling savepoints flush this
-          // batch again before COMMIT, or a rollback leaves it queued.
-          entry.sourceSeq = sourceSeq
-          const queued = queuedOf(entry.prepared, entry.emittedAtMs, seq, sourceSeq)
-          const commit = yield* insertOne(queued, guarded)
-          yield* Effect.asVoid(settleCommit(queued, commit, (effect) => effect))
-          yield* Metric.update(JournalMetrics.durable[commit.inserted ? "Accepted" : "Duplicate"], 1)
+          yield* Effect.gen(function*() {
+            const validated = entry.sourceSeq === undefined
+              ? entry.prepared.validated
+              : { ...entry.prepared.validated, sourceSeq: entry.sourceSeq }
+            const durableSourceSeq = validated.sourceSeq === undefined
+              ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
+              : 0
+            const { seq, sourceSeq } = yield* reserve(validated, 0, durableSourceSeq)
+            // Keep one producer identity even if sibling savepoints flush this
+            // batch again before COMMIT, or a rollback leaves it queued.
+            entry.sourceSeq = sourceSeq
+            const queued = queuedOf(entry.prepared, entry.emittedAtMs, seq, sourceSeq)
+            const commit = yield* insertOne(queued, guarded)
+            yield* Effect.asVoid(settleCommit(queued, commit, (effect) => effect))
+            yield* Metric.update(JournalMetrics.durable[commit.inserted ? "Accepted" : "Duplicate"], 1)
+          }).pipe(
+            Effect.catchIf(isJournalError, (cause) =>
+              Effect.asVoid(afterCommit(
+                Effect.gen(function*() {
+                  // A competing identity can belong to this same transaction.
+                  // Its refusal is permanent only after the outer commit.
+                  // Sibling savepoints may register this loss more than once.
+                  if (!deferred.get(runId)?.includes(entry)) return
+                  discard(runId, (queued) => queued === entry)
+                  deferredFailure ??= cause
+                  yield* Metric.update(
+                    Metric.withAttributes(JournalMetrics.lostEntries, {
+                      channel: "deferred",
+                      code: cause.code
+                    }),
+                    1
+                  )
+                  yield* Effect.logWarning(`journal lost 1 deferred entry (${cause.code}) for run ${runId}`)
+                }),
+                sql
+              )))
+          )
         }
         yield* afterCommit(Effect.sync(() => discard(runId, (entry) => batch.includes(entry))), sql)
       })
@@ -2351,6 +2378,13 @@ export const make = (
         isJournalError(cause) ? cause : error("sink_failed", "could not write queued journal entries", cause)
       )
     )
+
+    /** Consume the deferred report only when no earlier flush failure hides it. */
+    const reportDeferredFailure: Effect.Effect<void, JournalError> = Effect.suspend(() => {
+      const failure = deferredFailure
+      deferredFailure = undefined
+      return failure === undefined ? Effect.void : Effect.fail(failure)
+    })
 
     const emitDeferred: NonNullable<Service["emitDeferred"]> = Effect.fn("Journal.emitDeferred")((
       input: Input,
@@ -2932,7 +2966,7 @@ export const make = (
         // would drop the lossy entries or the `emitDeferred` entries still
         // queued.
         yield* Effect.forEach(
-          [reportUnflushedLoss, awaitQueued, flushDeferred],
+          [reportUnflushedLoss, awaitQueued, flushDeferred, reportDeferredFailure],
           (step) =>
             step.pipe(Effect.catch((cause) => Effect.logWarning("journal final flush failed while closing", cause))),
           { discard: true }
@@ -3028,7 +3062,10 @@ export const make = (
           // entries, so they are written either way; the first failure wins.
           Effect.andThen(Effect.exit(flushInternal)),
           Effect.flatMap((lossy) =>
-            Effect.flatMap(Effect.exit(flushDeferred), (queued) => Exit.isFailure(lossy) ? lossy : queued)
+            Effect.flatMap(
+              Effect.exit(flushDeferred),
+              (queued) => Exit.isFailure(lossy) ? lossy : Exit.isFailure(queued) ? queued : reportDeferredFailure
+            )
           )
         )
       )(),

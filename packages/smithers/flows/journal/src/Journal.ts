@@ -510,6 +510,13 @@ export interface Service {
    * with it. A resumed walk re-emits every record it already wrote, so this
    * keeps a replay from writing at all.
    *
+   * A queued entry refused permanently (for example an identity conflict or
+   * exhausted producer sequence) is dropped, logged and counted without
+   * failing the host write. The next `flush` reports the loss once, after
+   * writing the remaining entries; an earlier flush failure leaves this report
+   * pending. A rolled-back transaction retains its entries and reports no
+   * loss. SQL failures retain the batch for retry.
+   *
    * Optional: a journal without it is used through `emitDurable`.
    */
   readonly emitDeferred?: ((input: Input, owner: OwnerId) => Effect.Effect<void, JournalError>) | undefined
