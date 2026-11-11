@@ -271,6 +271,8 @@ https://<APP_DOMAIN>/<path>
 
 Set these in the environment of `pnpm plan`, `pnpm run deploy` and `pnpm destroy`. Alchemy also loads `apps/mvp/.env`, which git ignores: keep identifiers such as `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` there, and secrets in your shell or a secret manager, never in a file in the repository. ChatApi reads its settings with Effect `Config` while Alchemy plans it, and Alchemy binds each one that is set to the Worker as a secret. A setting read only later, or only on a path the plan doesn't take, is never bound, and production reads it as unset: `worker/ChatApi.bindings.test.ts` plans ChatApi offline with every setting below that ChatApi, `FlowExecution` or `SandboxObject` uses, and fails on one it doesn't bind.
 
+The scripted deploy resolves required credentials, including `CLOUDFLARE_API_TOKEN`, from the same configuration as Alchemy: the shell overrides an optional `.env`; an explicit `--env-file` overrides the shell. A secret manager may supply values without printing them.
+
 A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_BUDGET`, raises it in production too when you deploy from that checkout. Deploy from a clean `jj workspace` of the pushed revision, which has no `.env`, and pass the two identifiers and `APP_DOMAIN` in the environment.
 
 | Variable | Required | Used by | Notes |
@@ -321,8 +323,8 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and 
 
 ### Deploy
 
-1. Set the credentials above.
-2. `pnpm plan` shows what `pnpm run deploy` would create, update or run, and changes nothing.
+1. From the repository root, run `pnpm --dir apps/mvp run deploy:install`. This frozen install includes the root build tooling and derives its filters from pnpm's workspace dependency graph and the declared build inputs in `.smithers/target-index.json`. It includes the CLI's bundled TUI workspace and the docs site's Astro dependencies. A bare `--filter @smthrs/mvp...` omits those build inputs. `node apps/mvp/infra/deploy/filter.mjs --check @smthrs/mvp...` demonstrates the omission; with no package arguments, `--check` validates the derived filter. `pnpm run deploy:check` in `apps/mvp` refuses missing dependencies before packing or publication.
+2. Set the credentials above. In `apps/mvp`, run `pnpm run deploy:preflight`. It checks Node, pnpm, npm, the running Docker engine, a usable Buildx builder, every installed deployment dependency, and required credential names (including those named by custom model configuration). Probes discard output and never print credential values. Missing prerequisites are reported together. Both `pnpm plan` and `pnpm run deploy` repeat this check before packing or starting Alchemy. `pnpm plan` shows what `pnpm run deploy` would create, update or run, and changes nothing.
 3. `pnpm run deploy` (`pnpm deploy` is pnpm's own command, not this script) asks before it changes anything; `pnpm run deploy --yes` doesn't, and a terminal that can't prompt needs it. It creates the Neon project, runs the migrations, then creates Hyperdrive, Electric's container and gateway, ChatApi and the site. It prints the site's URL.
 
    In production, deploy through the rollout flow instead, from the repository root:

@@ -2,6 +2,7 @@
 // and Cloudflare runs a route before the app's custom domain, so every other path stays the app's
 // (docs/infrastructure.md#domain).
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import { docsDirectory } from "./DocsBuild.ts"
 import { docsRoutes } from "./Domain.ts"
 
 /**
@@ -11,7 +12,7 @@ import { docsRoutes } from "./Domain.ts"
 export const DocsSite = (domain: string) =>
   Cloudflare.Website.StaticSite("SmithersDocs", {
     command: "pnpm build",
-    cwd: "../site",
+    cwd: docsDirectory,
     outdir: "dist",
     routes: docsRoutes(domain),
     assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page" }

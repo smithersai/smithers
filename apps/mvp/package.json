@@ -9,8 +9,8 @@
     "db:down": "docker compose down",
     "db:migrate": "node db/migrate.ts",
     "build": "vite build",
-    "plan": "node infra/sandbox/pack-cli.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy plan --stage prod",
-    "deploy": "node infra/sandbox/pack-cli.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage prod",
+    "plan": "node infra/deploy/run.mjs plan",
+    "deploy": "node infra/deploy/run.mjs deploy",
     "destroy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy destroy --stage prod",
     "typecheck": "vibelang -p tsconfig.json && vibelang -p worker/tsconfig.json && vibelang -p infra/tsconfig.json && vibelang -p evals/tsconfig.json",
     "e2e": "playwright test",
@@ -22,13 +22,17 @@
     "bench:first-load": "node bench/first-load.ts",
     "eval": "vitest run --config evals/vitest.config.ts",
     "eval:memory": "vitest run --config vitest.memory.config.ts",
-    "test": "bash db/test.sh",
+    "test": "pnpm run test:deploy && bash db/test.sh",
     "test:stack": "bash db/test-stack.test.sh",
     "lint": "eslint --config eslint.config.js . --max-warnings=0",
     "test:worker-io-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.worker-inflight.test.mjs",
     "test:failure-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.frontend-failures.test.mjs",
     "test:mobile:visitors": "playwright test mobile.spec.ts --project=deployment --no-deps --grep 'signed out.*(curated-home|branch|doc-page|docs|home):'",
-    "test:production-runner": "node --import=vibelang/register --test e2e/resource-locks.test.mjs"
+    "test:production-runner": "node --import=vibelang/register --test e2e/resource-locks.test.mjs",
+    "deploy:install": "node infra/deploy/filter.mjs --install",
+    "deploy:check": "node infra/deploy/filter.mjs --verify",
+    "test:deploy": "node --test infra/deploy/*.test.mjs",
+    "deploy:preflight": "node infra/deploy/run.mjs preflight"
   },
   "imports": {
     "#quickjs.wasm": "@jitl/quickjs-wasmfile-release-sync/wasm"
