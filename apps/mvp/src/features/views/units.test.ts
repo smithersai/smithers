@@ -134,6 +134,45 @@ describe("the form rules", () => {
     expect(formRefusal({ type: "object", properties: { a: { type: "string", writeOnly: true } } })).toBe("secret")
   })
 
+  test("takes the rendered union object's fields in either document shape, including references", () => {
+    const union = { anyOf: [{ type: "string" }, url] }
+    const referenced = { $ref: "#/$defs/Input", $defs: { Input: union } }
+    const values = { url: "https://a.example" }
+    for (const schema of [union, { schema: union, definitions: {} }, referenced]) {
+      expect(formRefusal(schema)).toBeUndefined()
+      expect(acceptedValues(schema, values)).toEqual(values)
+      expect(acceptedValues(schema, { url: 1 })).toBeUndefined()
+      expect(acceptedValues(schema, {})).toBeUndefined()
+      expect(acceptedValues(schema, { ...values, other: "x" })).toBeUndefined()
+    }
+  })
+
+  test("does not accept another union object's unrendered fields or a mix of variants", () => {
+    const union = {
+      anyOf: [url, { type: "object", properties: { other: { type: "string" } }, required: ["other"] }],
+    }
+    expect(acceptedValues(union, { url: "https://a.example" })).toEqual({ url: "https://a.example" })
+    expect(acceptedValues(union, { other: "x" })).toBeUndefined()
+    expect(acceptedValues(union, { url: "https://a.example", other: "x" })).toBeUndefined()
+    expect(acceptedValues({ type: "string" }, { url: "x" })).toBeUndefined()
+  })
+
+  test("rejects hidden forbidden fields even when another union variant takes them", () => {
+    const union = {
+      anyOf: [
+        { ...url, properties: { ...url.properties, other: false } },
+        { type: "object", properties: { other: { type: "string" } }, required: ["other"] },
+      ],
+    }
+    expect(acceptedValues(union, { url: "https://a.example" })).toEqual({ url: "https://a.example" })
+    expect(acceptedValues(union, { other: "x" })).toBeUndefined()
+    expect(acceptedValues(union, { url: "https://a.example", other: "x" })).toBeUndefined()
+    expect(acceptedValues({ anyOf: [{ type: "string" }, { type: "number" }] }, {})).toBeUndefined()
+    const flexible = { type: "object", properties: { value: { anyOf: [{ type: "string" }, { type: "boolean" }] } } }
+    expect(acceptedValues(flexible, { value: true })).toEqual({ value: true })
+    expect(acceptedValues(flexible, { value: "yes" })).toEqual({ value: "yes" })
+  })
+
   test("takes only values the form's own schema decodes, with no other field", () => {
     expect(acceptedValues(url, { url: "https://a.example" })).toEqual({ url: "https://a.example" })
     expect(acceptedValues(url, { url: 1 })).toBeUndefined()

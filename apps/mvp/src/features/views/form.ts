@@ -31,10 +31,6 @@ const hasFields = (ast: SchemaAST.AST): boolean =>
     ? ast.propertySignatures.length > 0
     : ast._tag === "Union" && ast.types.some(hasFields)
 
-/** The properties a form's schema declares, whichever document shape it came in. */
-const propertiesOf = (schema: Readonly<Record<string, unknown>>) =>
-  record(record(documentOf(schema).schema)?.properties) ?? {}
-
 /**
  * Why a form can't be shown:
  * - `no_fields`: its schema isn't an object schema with at least one field the form renders;
@@ -66,7 +62,18 @@ export const formRefusal = (schema: Readonly<Record<string, unknown>>): FormRefu
 export const acceptedValues = (schema: Readonly<Record<string, unknown>>, values: FormValues): FormValues | undefined => {
   const input = inputOf(schema)
   if (input === undefined) return undefined
-  const fields = new Set(Object.keys(propertiesOf(schema)))
+  // FlowFormView derives controls with no draft payload, selecting the first object in a union.
+  const ast = input.ast._tag === "Union"
+    ? input.ast.types.find((member) => member._tag === "Objects")
+    : input.ast
+  const fields = new Set(ast?._tag === "Objects"
+    ? ast.propertySignatures.filter((signature) => {
+      const types = signature.type._tag === "Union"
+        ? signature.type.types.filter((member) => member._tag !== "Undefined")
+        : [signature.type]
+      return types.length !== 1 || types[0]!._tag !== "Never"
+    }).map((signature) => String(signature.name))
+    : [])
   if (!Object.keys(values).every((name) => fields.has(name))) return undefined
   return Option.isSome(Schema.decodeUnknownOption(input as Schema.Codec<unknown>)(values)) ? values : undefined
 }

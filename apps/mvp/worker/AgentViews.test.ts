@@ -134,6 +134,37 @@ describe("a form", () => {
     expect(recorded(h)).not.toContain("Spoon-Knife")
   })
 
+  test("a union form submits its rendered fields to the next answer, refusing invalid or extra fields", async () => {
+    const h = await open()
+    const base = cloneForm()
+    const form = { ...base, props: { ...base.props, schema: { anyOf: [base.props.schema, { type: "string" }] } } }
+    expect((await post(h, "/api/views", form)).status).toBe(202)
+    const source = { viewId: form.id, event: "submit" }
+    const values = { url: "https://github.com/octocat/Spoon-Knife" }
+
+    for (const data of [{}, { url: 4 }, { ...values, extra: "x" }]) {
+      const submission = question("Clone", { source, data })
+      const refused = await h.ask(submission)
+      expect(refused.status).toBe(400)
+      expect(await viewRow(form.id)).toMatchObject({ state: { submitted: false }, revision: 0 })
+      const messages = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT id FROM messages WHERE id = ${submission.id}`))
+      expect(messages).toEqual([])
+    }
+
+    const submission = question("Clone", { source, data: values })
+    expect((await h.ask(submission)).status).toBe(202)
+    expect(await viewRow(form.id)).toMatchObject({
+      state: { submitted: true, values, questionId: submission.id },
+      revision: 1,
+    })
+    const turn = await (await h.fetch(`/api/answers/${submission.answerId}`)).json() as { readonly question: string }
+    expect(turn.question).toBe('Clone\nThe values the person sent with it: {"url": "https://github.com/octocat/Spoon-Knife"}')
+    expect((await h.ask(submission)).status).toBe(200)
+    expect(await viewRow(form.id)).toMatchObject({ revision: 1 })
+    expect(recorded(h)).not.toContain("Spoon-Knife")
+  })
+
   test("the same question id with other values, or from another form, is another question: 409, and nothing changes", async () => {
     const h = await open()
     const [form, other] = [cloneForm(), cloneForm()]
