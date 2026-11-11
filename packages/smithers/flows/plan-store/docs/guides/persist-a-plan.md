@@ -71,7 +71,7 @@ Three outcomes, and each one means something different:
 | `_tag`         | What happened                                                                        |
 | -------------- | ------------------------------------------------------------------------------------ |
 | `Recorded`     | The rows were written. This call is the first writer.                                |
-| `ExistingSame` | The identical plan is already stored. Not an error; retry safely.                    |
+| `ExistingSame` | This generation 0 is already stored, grown by appends or not. Retry safely.          |
 | `Conflict`     | A different plan holds this id. `digest` is the one stored, and nothing was written. |
 
 Handle `Conflict` rather than retrying it. The store refuses to overwrite

@@ -75,6 +75,28 @@ describe("PlanStore", () => {
       expect(conflict).toEqual({ _tag: "Conflict", digest: plan.digest })
     }))
 
+  it.effect("re-recording the base of a grown plan answers ExistingSame, a different base a conflict", () =>
+    Effect.gen(function*() {
+      const base = yield* withCrypto(samplePlan())
+      const grown = yield* withCrypto(
+        Plan.append(base, [draft("late", { inputs: [{ _tag: "Pending", from: "child" }] })])
+      )
+      const other = yield* withCrypto(compile([draft("root", { body: { seed: 9 } })]))
+      const { conflict, read, same } = yield* withStore((store) =>
+        Effect.gen(function*() {
+          yield* store.record(base, 1)
+          yield* store.append(grown)
+          const same = yield* store.record(base, 2)
+          const conflict = yield* store.record({ ...other, planId: base.planId }, 3)
+          const read = yield* store.get(base.planId)
+          return { conflict, read, same }
+        })
+      )
+      expect(same).toEqual({ _tag: "ExistingSame" })
+      expect(conflict).toEqual({ _tag: "Conflict", digest: grown.digest })
+      expect(Option.getOrThrow(read)).toEqual(grown)
+    }))
+
   it.effect("appends an elaborated subgraph and advances the digest", () =>
     Effect.gen(function*() {
       const base = yield* withCrypto(samplePlan())

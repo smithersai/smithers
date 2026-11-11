@@ -86,9 +86,10 @@ export type RecordResult =
  */
 export interface Service {
   /**
-   * Verifies and atomically records generation 0. An identical stored plan
-   * returns `ExistingSame`; a different verified plan under the same id
-   * returns `Conflict` with the stored digest and leaves storage unchanged.
+   * Verifies and atomically records generation 0. A stored plan with this
+   * generation 0, grown by appends or not, returns `ExistingSame`; a different
+   * verified plan under the same id returns `Conflict` with the stored digest
+   * and leaves storage unchanged.
    *
    * @param plan - Compiled generation-zero plan whose base digest equals its digest.
    * @param createdAtMs - Creation time in milliseconds, a nonnegative safe integer.
@@ -261,13 +262,15 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
                 // Equality with an unverified stored digest is not an integrity
                 // proof. A corrupt existing row must not answer ExistingSame.
                 yield* get(plan.planId)
-                const rows = yield* sql<{ digest: string }>`
-              SELECT digest FROM flows_plans WHERE plan_id = ${plan.planId}
+                // Appends advance `digest`; `base_digest` keeps naming the
+                // generation 0 this record call carries, so compare with it.
+                const rows = yield* sql<{ base_digest: string; digest: string }>`
+              SELECT base_digest, digest FROM flows_plans WHERE plan_id = ${plan.planId}
             `
-                const existing = rows[0]!.digest
-                return existing === plan.digest
+                const existing = rows[0]!
+                return existing.base_digest === plan.digest
                   ? { _tag: "ExistingSame" } as const
-                  : { _tag: "Conflict", digest: existing } as const
+                  : { _tag: "Conflict", digest: existing.digest } as const
               }
               yield* insertNodes(plan.planId, plan.nodes, 0)
               return { _tag: "Recorded" } as const
