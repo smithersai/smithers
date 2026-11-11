@@ -22,7 +22,7 @@
 import * as MemoryMine from "@smthrs/agent/MemoryMine"
 import { Fault } from "@smthrs/flow"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Effect, FileSystem, Path, Schema } from "effect"
+import { Effect, FileSystem, Option, Path, Schema } from "effect"
 import * as Bank from "../../../packages/smithers/agent/memory/src/Bank.ts"
 import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
 
@@ -121,7 +121,8 @@ export const marker = (runId: string): string => `<!-- memory/mine run=${runId} 
 /**
  * Appends this run's section to `.smithers/wiki/decisions/<item>.md`. A page
  * with a line that is the run's marker is left as it is; otherwise its bytes
- * are kept and the section follows them.
+ * are kept and the section follows them. A page, or a directory between it and
+ * `root`, that is a link is refused before anything is read or written.
  */
 const appendPage = (input: Input, decisions: ReadonlyArray<MemoryMine.Cited>) =>
   Effect.gen(function*() {
@@ -130,6 +131,18 @@ const appendPage = (input: Input, decisions: ReadonlyArray<MemoryMine.Cited>) =>
     const path = yield* Path.Path
     const relative = `${MemoryMine.decisionsDirectory}/${input.item}.md`
     const file = path.join(input.root, relative)
+    // A link at the page or any directory above it, even a dangling one,
+    // would carry the write outside the workspace, so none is followed.
+    let at = input.root
+    for (const part of relative.split("/")) {
+      at = path.join(at, part)
+      if (Option.isSome(yield* fs.readLink(at).pipe(Effect.option))) {
+        return yield* fail(
+          "wiki_failed",
+          `${path.relative(input.root, at)} is a link; decisions stay inside the workspace`
+        )
+      }
+    }
     const existing = (yield* fs.exists(file)) ? yield* fs.readFileString(file) : `# Decisions: ${input.item}\n`
     if (existing.split("\n").includes(marker(input.runId))) return null
     const section = [

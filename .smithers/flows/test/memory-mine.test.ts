@@ -5,7 +5,7 @@ import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -360,3 +360,35 @@ test("a decisions page that cannot be written is a typed failure", async () => {
     await done()
   }
 })
+
+const page = ".smithers/wiki/decisions/item-7.md"
+for (
+  const [name, at, target] of [
+    ["the page", page, "outside.md"],
+    ["an ancestor of the page", ".smithers/wiki", ""],
+    ["a dangling page", page, "missing.md"]
+  ] as const
+) {
+  test(`a link at ${name} is refused and the file outside the workspace is untouched`, async () => {
+    const { root, done } = await workspace()
+    const outside = await mkdtemp(join(tmpdir(), "memory-mine-outside-"))
+    try {
+      const sentinel = "# Outside the workspace\n"
+      await writeFile(join(outside, "outside.md"), sentinel)
+      await mkdir(join(outside, "decisions"))
+      await writeFile(join(outside, "decisions/item-7.md"), sentinel)
+      await mkdir(join(root, at, ".."), { recursive: true })
+      await symlink(join(outside, target), join(root, at))
+      const exit = await run(Mine.mine(input(root)).pipe(Effect.provide(TestMemory.layer)), judge({}, []))
+      const error = errorOf(exit) as Mine.MineFailed | undefined
+      assert.equal(error?.code, "wiki_failed")
+      assert.match(error?.message ?? "", /is a link/)
+      assert.equal(await readFile(join(outside, "outside.md"), "utf8"), sentinel)
+      assert.equal(await readFile(join(outside, "decisions/item-7.md"), "utf8"), sentinel)
+      await assert.rejects(readFile(join(outside, "missing.md"), "utf8"))
+    } finally {
+      await done()
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+}
