@@ -275,10 +275,11 @@ const securityReview = Smithers.SecurityReview({
       threat: "A model or tool emits deeply nested, cyclic, or huge output that freezes or crashes the user's app tab.",
       lookFor: [
         "Recursion in parseAgentOutput, formatPartialJson, or SchemaDisplay without the MAX_*_DEPTH, property, or seen-set guards.",
+        "Markdown document blockquotes rescanning beyond MAX_DOCUMENT_DEPTH, or renderFlow building unbounded HTML frames.",
         "A regex over agent text or diffs with nested quantifiers that backtracks catastrophically.",
         "diff-paginate or diff-hunks materializing an unbounded hunk or line list for one render."
       ],
-      paths: ["src/agentic/**", "src/artifacts/SchemaDisplay.tsx", "src/diff*.ts", "src/diff-hunks.tsx", "src/vault/**"]
+      paths: ["src/agentic/**", "src/artifacts/SchemaDisplay.tsx", "src/diff*.ts", "src/diff-hunks.tsx", "src/vault/**", "src/primitives/markdown.tsx"]
     },
     {
       id: "generated-view-frame",

@@ -85,7 +85,8 @@ export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorEleme
  * inside a paragraph is a space. `>` lines are a blockquote, and one whose first
  * line is exactly `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or
  * `[!CAUTION]` is a GitHub alert. An image renders as its alt text: no `<img>`
- * is created, so the source never makes the page fetch anything.
+ * is created, so the source never makes the page fetch anything. Blockquotes
+ * and inline HTML formatting stop nesting at 16 levels, retaining deeper text.
  */
 export type MarkdownVariant = "chat" | "document";
 
@@ -130,6 +131,10 @@ function MarkdownLink({ href: raw, label, onLinkClick }: { href: string | undefi
 const linkNode = (href: string | undefined, label: ReactNode, key: string, onLinkClick?: MarkdownLinkClick) => (
   <MarkdownLink key={key} href={href} label={label} {...(onLinkClick ? { onLinkClick } : {})} />
 );
+
+/** Bound both rescanning quotes and the React tree built from document HTML. */
+const MAX_DOCUMENT_DEPTH = 16;
+const INLINE_TAGS = new Set(["strong", "b", "em", "i", "code", "a"]);
 
 const keep = (text: string) => text;
 
@@ -239,6 +244,35 @@ const centered = (attrs: Readonly<Record<string, string>>) => attrs.align?.toLow
 /** One paragraph (or heading) an HTML flow produced. */
 type FlowBlock = { readonly level?: number; readonly center: boolean; readonly nodes: ReactNode[] };
 type Frame = { readonly tag: Tag; readonly children: ReactNode[] };
+type BlockContext = { readonly name: string; readonly level: number | undefined; readonly center: boolean };
+
+/**
+ * Remember only names beyond the rendered depth. Counts make unmatched closes
+ * constant-time; each name is popped once when its ancestor closes.
+ */
+const overflowTags = () => {
+  const names: string[] = [];
+  const counts = new Map<string, number>();
+  return {
+    push(name: string) {
+      names.push(name);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    },
+    close(name: string): boolean {
+      if ((counts.get(name) ?? 0) === 0) return false;
+      let child: string;
+      do {
+        child = names.pop()!;
+        counts.set(child, counts.get(child)! - 1);
+      } while (child !== name);
+      return true;
+    },
+    clear() {
+      names.length = 0;
+      counts.clear();
+    },
+  };
+};
 
 const isBlank = (nodes: ReadonlyArray<ReactNode>) => nodes.every((node) => typeof node === "string" && node.trim() === "");
 
@@ -263,8 +297,13 @@ const trimEdges = (nodes: ReactNode[]): ReactNode[] => {
  */
 function renderFlow(source: string, keyPrefix: string, onLinkClick: MarkdownLinkClick | undefined, markdown: boolean): FlowBlock[] {
   const blocks: FlowBlock[] = [];
-  const open: Tag[] = [];
+  // Block tags create flat paragraphs, not nested React frames. Cache their
+  // inherited presentation so omitted end tags cannot make each flush rescan.
+  const open: BlockContext[] = [];
+  const openCounts = new Map<string, number>();
   const stack: Frame[] = [];
+  // Overflow tags are flattened; their closing tags must not close retained frames.
+  const inlineOverflow = overflowTags();
   let root: ReactNode[] = [];
   let n = 0;
   const key = () => `${keyPrefix}.${n++}`;
@@ -295,9 +334,10 @@ function renderFlow(source: string, keyPrefix: string, onLinkClick: MarkdownLink
   };
   const flush = () => {
     closeTo(0);
+    inlineOverflow.clear();
     if (!isBlank(root)) {
-      const heading = [...open].reverse().find((tag) => /^h[1-6]$/.test(tag.name));
-      blocks.push({ level: heading ? Number(heading.name[1]) : undefined, center: open.some((tag) => centered(tag.attrs)), nodes: trimEdges(root) });
+      const context = open[open.length - 1];
+      blocks.push({ level: context?.level, center: context?.center ?? false, nodes: trimEdges(root) });
     }
     root = [];
   };
@@ -312,19 +352,40 @@ function renderFlow(source: string, keyPrefix: string, onLinkClick: MarkdownLink
     if (BLOCK_TAGS.has(parsed.name)) {
       flush();
       if (parsed.closing) {
-        const at = open.map((tag) => tag.name).lastIndexOf(parsed.name);
-        if (at !== -1) open.length = at;
-      } else if (!parsed.empty) open.push(parsed);
+        if ((openCounts.get(parsed.name) ?? 0) > 0) {
+          let context: BlockContext;
+          do {
+            context = open.pop()!;
+            openCounts.set(context.name, openCounts.get(context.name)! - 1);
+          } while (context.name !== parsed.name);
+        }
+      } else if (!parsed.empty) {
+        const previous = open[open.length - 1];
+        open.push({
+          name: parsed.name,
+          level: /^h[1-6]$/.test(parsed.name) ? Number(parsed.name[1]) : previous?.level,
+          center: centered(parsed.attrs) || (previous?.center ?? false),
+        });
+        openCounts.set(parsed.name, (openCounts.get(parsed.name) ?? 0) + 1);
+      }
       return;
     }
     if (parsed.closing) {
-      const at = stack.map((frame) => frame.tag.name).lastIndexOf(parsed.name);
-      if (at !== -1) closeTo(at);
+      if (!inlineOverflow.close(parsed.name)) {
+        const at = stack.map((frame) => frame.tag.name).lastIndexOf(parsed.name);
+        if (at !== -1) {
+          closeTo(at);
+          inlineOverflow.clear();
+        }
+      }
       return;
     }
     if (parsed.name === "br") top().push(<br key={key()} />);
     else if (parsed.name === "img" && parsed.attrs.alt) top().push(parsed.attrs.alt);
-    else if (!parsed.empty && ["strong", "b", "em", "i", "code", "a"].includes(parsed.name)) stack.push({ tag: parsed, children: [] });
+    else if (!parsed.empty && INLINE_TAGS.has(parsed.name)) {
+      if (stack.length < MAX_DOCUMENT_DEPTH) stack.push({ tag: parsed, children: [] });
+      else inlineOverflow.push(parsed.name);
+    }
   };
 
   // Code spans stay whole so a tag inside one is text; an autolink is a link; comments are dropped.
@@ -623,6 +684,7 @@ function renderSpan(
   variant: MarkdownVariant = "chat",
   quoted = false,
   resolveImage?: MarkdownImageResolver,
+  quoteDepth = 0,
 ): ReactNode {
   const lines = span.lines;
   const inline =
@@ -635,10 +697,13 @@ function renderSpan(
       return null;
 
     case "blockquote": {
+      if (quoteDepth >= MAX_DOCUMENT_DEPTH) {
+        return <p className="sui-md-p" key={key}>{span.text}</p>;
+      }
       const content = lines.map((line) => (isQuote(line) ? unquote(line) : line));
       const alert = quoted ? undefined : ALERTS.get(content[0]!.trim());
       const body = scanBlocks((alert ? content.slice(1) : content).join("\n"), "document").map((child, index) =>
-        renderSpan(child, index, onLinkClick, "document", true),
+        renderSpan(child, index, onLinkClick, "document", true, undefined, quoteDepth + 1),
       );
       if (alert === undefined) {
         return (
@@ -763,7 +828,7 @@ function renderSpan(
       if (files === undefined) {
         // A host that draws images but has none for this source shows the alt text, never a link to the file;
         // without a resolver the line reads exactly as it would as a paragraph in this variant.
-        if (resolveImage === undefined) return renderSpan({ ...span, kind: "paragraph" }, key, onLinkClick, variant, quoted);
+        if (resolveImage === undefined) return renderSpan({ ...span, kind: "paragraph" }, key, onLinkClick, variant, quoted, undefined, quoteDepth);
         return (
           <p className="sui-md-p" key={key}>
             {image[1]!}
