@@ -350,7 +350,10 @@ Schema-encoded `ModelEvent` per line, then exactly one terminal line.
 
 A model that fails after the headers were sent ends the stream with
 `{"type":"error","code":"rate_limited","message":"Model usage limit reached","retryAfterMillis":1200}`
-instead. A body that stops before either line was cut. Any other status
+instead. The line also carries the error's `resetAtEpochMillis`,
+`resetSource` and `quotaScope` when it has them, so the client's `ModelError`
+keeps the reset and scope a quota policy needs to park the run. A body that
+stops before either line was cut. Any other status
 carries `{"code","message","requestId"}`. `ModelProxy.Line` and
 `ModelProxy.ErrorBody` are the schemas.
 

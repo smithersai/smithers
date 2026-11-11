@@ -99,7 +99,9 @@ export type EndLine = typeof EndLine.Type
 /**
  * The terminal line of a stream that failed after its headers were sent: the
  * `ModelError` code, a fixed message for that code, and the provider's
- * `retryAfterMillis` when it named one. Never provider text or credentials.
+ * `retryAfterMillis`, `resetAtEpochMillis`, `resetSource` and `quotaScope`
+ * when it named them, so a client can park until the reset instead of reading
+ * a quota refusal as terminal. Never provider text or credentials.
  *
  * @category wire
  * @since 1.0.0
@@ -108,7 +110,10 @@ export const ErrorLine = Schema.Struct({
   type: Schema.Literal("error"),
   code: ModelErrorCode,
   message: Schema.String,
-  retryAfterMillis: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
+  retryAfterMillis: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+  resetAtEpochMillis: Schema.optionalKey(Schema.Finite),
+  resetSource: Schema.optionalKey(Schema.String),
+  quotaScope: Schema.optionalKey(Schema.Literals(["model", "account"]))
 })
 
 /**
@@ -781,7 +786,7 @@ const clientError = (
   requestId: string,
   code: ModelErrorCode,
   message: string,
-  extra: { readonly httpStatus?: number; readonly retryAfterMillis?: number } = {}
+  extra: Pick<ModelError, "httpStatus" | "quotaScope" | "resetAtEpochMillis" | "resetSource" | "retryAfterMillis"> = {}
 ): ModelError => new ModelError({ code, message, requestId, ...extra })
 
 /** The largest error-status body a client reads before falling back to the status alone. */
@@ -911,12 +916,8 @@ const decodeLines = (
       Stream.takeUntil((line) => line.type === "end" || line.type === "error"),
       Stream.mapEffect((line) => {
         if (line.type === "error") {
-          return Effect.fail(clientError(
-            requestId,
-            line.code,
-            line.message,
-            line.retryAfterMillis === undefined ? {} : { retryAfterMillis: line.retryAfterMillis }
-          ))
+          const { code, message, type: _type, ...reset } = line
+          return Effect.fail(clientError(requestId, code, message, reset))
         }
         if (line.type === "end") call.outcome = "success"
         return Effect.succeed(line)
@@ -1014,11 +1015,15 @@ class Call {
     this.errorCode = code
     this.failureStatus = httpStatus
     this.errorTag = Result.isSuccess(found) ? tagOf(found.success) : "defect"
+    const resetAtEpochMillis = modelError?.resetAtEpochMillis
     return {
       type: "error",
       code,
       message: safeMessage(code),
-      ...(modelError?.retryAfterMillis === undefined ? {} : { retryAfterMillis: modelError.retryAfterMillis })
+      ...(modelError?.retryAfterMillis === undefined ? {} : { retryAfterMillis: modelError.retryAfterMillis }),
+      ...(resetAtEpochMillis !== undefined && Number.isFinite(resetAtEpochMillis) ? { resetAtEpochMillis } : {}),
+      ...(modelError?.resetSource === undefined ? {} : { resetSource: modelError.resetSource }),
+      ...(modelError?.quotaScope === undefined ? {} : { quotaScope: modelError.quotaScope })
     }
   }
 

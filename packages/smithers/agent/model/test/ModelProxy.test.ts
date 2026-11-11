@@ -18,7 +18,7 @@ import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as FailureCopy from "../src/FailureCopy.ts"
 import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import { isTerminalRefusal, ModelError } from "../src/ModelError.ts"
 import { ModelEvent } from "../src/ModelEvent.ts"
 import * as ModelProxy from "../src/ModelProxy.ts"
 import { GenerationParams, Message, ModelRequest, SystemPart, ToolDefinition } from "../src/ModelRequest.ts"
@@ -471,6 +471,50 @@ describe("ModelProxy liveness", () => {
 })
 
 describe("ModelProxy failures", () => {
+  it("carries a quota refusal's reset and scope to the client, so the refusal is not terminal", async () => {
+    const resetAtEpochMillis = 1_900_000_000_000
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.fail(
+            new ModelError({
+              code: "quota_exceeded",
+              message: "provider body: spend cap for acct_123",
+              resetAtEpochMillis,
+              resetSource: "retry-after",
+              quotaScope: "account",
+              providerCode: "acct_123"
+            })
+          )
+      })
+    })
+
+    const { error } = await h.call()
+
+    expect(error).toMatchObject({
+      code: "quota_exceeded",
+      resetAtEpochMillis,
+      resetSource: "retry-after",
+      quotaScope: "account"
+    })
+    expect(error?.providerCode).toBeUndefined()
+    expect(isTerminalRefusal(error!)).toBe(false)
+  })
+
+  it("drops a non-finite reset instead of breaking the error line", async () => {
+    const h = harness({
+      model: Model.make({
+        stream: () =>
+          Stream.fail(new ModelError({ code: "quota_exceeded", message: "x", resetAtEpochMillis: Number.NaN }))
+      })
+    })
+
+    const { error } = await h.call()
+
+    expect(error?.code).toBe("quota_exceeded")
+    expect(error?.resetAtEpochMillis).toBeUndefined()
+  })
+
   it("turns a mid-stream provider failure into the typed ModelError on the client", async () => {
     const providerFailure = new ModelError({
       code: "rate_limited",
