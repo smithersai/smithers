@@ -1077,3 +1077,9 @@ Two gaps were the draw's, not the code's:
 `CallBudget.vibe` is at 100% from its target alone; the Accounts targets alone leave 13 lines of `Accounts.vibe`: the
 issue and wiki reads (each waits out its flow's deadline against an unreachable GitHub, 6 to 13 s, so the walk sends
 only writes), the read-queue deadline, the `github/` migration, and the broker's local-development option.
+
+`history/arbitrary-update` failed every run on `main` after `9380a9e6` (the mythical history export) added the required
+`exported` key to `HistoryModel`: its saved value no longer decoded ("the json codec cannot decode a saved value:
+Missing key at model.exported"), so `pnpm fuzz:coverage` stopped before its report. The value now carries `exported:
+""`, the model's initial value, and replays as a regression again. A schema change to a fuzzed model migrates that
+model's saved values in the same commit.
