@@ -1,4 +1,5 @@
 {
+  "apiVersion": 1,
   "summary": "How smithersai/smithers develops itself.",
   "flows": [
     {
@@ -2081,5 +2082,23 @@
       "roninjin10"
     ],
     "dailyTokens": 2000000000
+  },
+  "contributes": {
+    "triggers": [
+      {
+        "on": "github.push",
+        "flow": "gate",
+        "title": "gate-push",
+        "branches": [
+          "main",
+          "gate/**"
+        ]
+      },
+      {
+        "on": "github.pull_request",
+        "flow": "gate",
+        "title": "gate-pull-request"
+      }
+    ]
   }
 }

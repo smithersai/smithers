@@ -71,6 +71,7 @@
     "@smthrs/rpc": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/targets": "workspace:*",
+    "@smthrs/triggers": "workspace:*",
     "@smthrs/ui": "workspace:*",
     "@types/node": "26.4.1",
     "effect": "4.1.1",

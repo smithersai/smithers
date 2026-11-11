@@ -168,7 +168,7 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 - **Unreadable is not an outage.** A manifest or a `flow.ts` GitHub refuses, or won't give as text (a directory, over 1 MB, not UTF-8), is read as absent at once; only an outage is retried. One unreadable flow never holds back the others.
 - **Secrets.** A fork's pull request, or one whose author is below Member (`author_association` not `OWNER`, `MEMBER` or `COLLABORATOR`), runs with `secrets: false`. Jobs get no secrets yet in any case ([job secrets](../work/ci-parity-job-secrets.md)).
 - **Off unless `REPO_FLOWS=true`.** Only repositories in `REPO_FLOWS_REPOSITORIES` can start flows; the App must also have access.
-- Not yet: `trust: "base"` (`pull_request_target`), issues, comments, labels and reviews as triggers; `concurrency`; path filters; a manifest written as `FACTORY.ts` with `Trigger.bind` (flows-as-code-api.md §5.7), which projects to the same JSON. `.smithers/factory.json` written by `S.Factory`, as smithersai/smithers' is today, has no `apiVersion` and starts nothing.
+- Not yet: `trust: "base"` (`pull_request_target`), issues, comments, labels and reviews as triggers; `concurrency`; path filters; a binding's `input`, `concurrency` and `report` (flows-as-code-api.md §5.7). A `FACTORY.ts` writes these rows with `S.Factory({ triggers })` and `@smthrs/triggers`' `Trigger.bind` and `On`, which project to this JSON with `apiVersion: 1`; smithersai/smithers' own binds `gate` to pushes to `main` and `gate/**` and to every pull request. A `factory.json` that binds nothing has no `apiVersion` and starts nothing.
 
 ## Schedules
 

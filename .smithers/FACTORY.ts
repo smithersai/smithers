@@ -8,6 +8,8 @@
  * reads from the public mirror signed out; `ci` fails on drift.
  */
 import { Smithers as S } from "@smthrs/targets"
+import { On, Trigger } from "@smthrs/triggers"
+import Gate from "./flows/gate/flow.ts"
 
 // --- featured flows --------------------------------------------------------
 // The flows this repository recommends first, and the one line each shows
@@ -86,6 +88,14 @@ export const factory = S.Factory({
       flow: "improve.suggest",
       description: "Suggest factory improvements once a week; every one needs your approval"
     }
+  },
+  // The checks every commit gets, as Smithers flow runs that write the
+  // commit status smithers/gate (decision 0145, ruling GH-10): a push to main
+  // or to a merge-queue candidate's gate/<name> branch, and every pull
+  // request. The app reads these rows from .smithers/factory.json on main.
+  triggers: {
+    "gate-push": Trigger.bind({ flow: Gate, on: On.push({ branches: ["main", "gate/**"] }) }),
+    "gate-pull-request": Trigger.bind({ flow: Gate, on: On.pullRequest() })
   },
   // For now GitHub writes main: a Change opens a GitHub pull request that a
   // maintainer merges there, Smithers Cloud follows GitHub's main, and issues

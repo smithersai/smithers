@@ -132,13 +132,16 @@ describe("flowsFor", () => {
   })
 })
 
-test("smithersai/smithers factory at main eeb01ea499d0 is legacy data and never triggers runs", () => {
-  const source = readFileSync(new URL("./test/smithers-factory.json", import.meta.url), "utf8")
-  expect(Object.keys(JSON.parse(source))).toEqual(expect.arrayContaining(["summary", "flows", "on", "github"]))
+test("smithersai/smithers' own factory.json starts the gate on main, on merge-queue candidates and on every pull request", () => {
+  // The projection FACTORY.ts writes (`S.Factory`'s `triggers`), read as the webhook reads it on the default branch.
+  const source = readFileSync(new URL("../../../../.smithers/factory.json", import.meta.url), "utf8")
   const triggers = Triggers.triggersOf(source)
-  expect(triggers).toEqual([])
-  expect(Triggers.flowsFor(triggers, push("main"))).toEqual([])
-  expect(Triggers.flowsFor(triggers, pull("main"))).toEqual([])
+  expect(Triggers.flowsFor(triggers, push("main"))).toEqual(["gate"])
+  expect(Triggers.flowsFor(triggers, push("gate/stack-1"))).toEqual(["gate"])
+  expect(Triggers.flowsFor(triggers, pull("main"))).toEqual(["gate"])
+  expect(Triggers.flowsFor(triggers, pull("main", "synchronize"))).toEqual(["gate"])
+  expect(Triggers.flowsFor(triggers, push("feature/x"))).toEqual([])
+  expect(Triggers.flowsFor(triggers, push(null, "v1.0.0"))).toEqual([])
 })
 
 describe("manualFlows", () => {

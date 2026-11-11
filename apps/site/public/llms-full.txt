@@ -4802,6 +4802,51 @@ known-red lists.
 `--lifecycle evergreen|artifact|all`, filtering roots without dropping their
 required dependencies or overriding wildcard omission.
 
+### Repository flow triggers
+
+`S.Factory`'s `triggers` binds the repository's own flows to events with
+`@smthrs/triggers`' `Trigger.bind` and `On`. Each key is the binding's
+contribution id (`^[a-z0-9][a-z0-9-]{0,63}$`, at most 64), and the flow is the
+imported flow value, never a tag string:
+
+```ts
+import { Smithers as S } from "@smthrs/targets"
+import { On, Trigger } from "@smthrs/triggers"
+import Gate from "./flows/gate/flow.ts"
+
+export const factory = S.Factory({
+  summary: "Repository checks",
+  triggers: {
+    "gate-push": Trigger.bind({ flow: Gate, on: On.push({ branches: ["main"] }) }),
+    "gate-pull-request": Trigger.bind({ flow: Gate, on: On.pullRequest() })
+  }
+})
+```
+
+The projection writes them into `.smithers/factory.json` as a plugin
+manifest's rows, with `apiVersion: 1` first, so a host that receives a push or
+a pull request (the hosted app's repository flows) starts the bound flow at
+the event's commit:
+
+```json
+{
+  "apiVersion": 1,
+  "summary": "Repository checks",
+  "contributes": {
+    "triggers": [
+      { "on": "github.push", "flow": "gate", "title": "gate-push", "branches": ["main"] },
+      { "on": "github.pull_request", "flow": "gate", "title": "gate-pull-request" }
+    ]
+  }
+}
+```
+
+A row's `title` is its id unless the binding names one. The projection fails
+with `FlowCatalogError` when a binding's flow is no discovered `flow.ts` one
+directory under the flows root, because the host plans a bound flow from that
+file and no other. A factory that binds nothing projects neither key. The
+`on` table is separate: it is the Dispatcher table the stack service runs.
+
 ## Namespaces
 
 `src/index.ts` declares one namespace export:
@@ -46841,7 +46886,7 @@ https://smithers.sh/docs/reference/api/triggers/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/)
 
-`@smthrs/triggers` exports twelve modules from its root entry point, and each is
+`@smthrs/triggers` exports thirteen modules from its root entry point, and each is
 also importable from `@smthrs/triggers/<Module>`:
 
 ```ts
@@ -46850,7 +46895,7 @@ import { Scheduler, Trigger, TriggerStore } from "@smthrs/triggers"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 ```
 
-The in-memory store for tests is a thirteenth module at
+The in-memory store for tests is a fourteenth module at
 `@smthrs/triggers/test/TestTriggers`.
 
 Services and tags are Effect constructs: a `Layer` provides a service, and an
@@ -46935,6 +46980,50 @@ Decodes the declaration, applies the three policy defaults, and validates the
 schedule. A shape failure is `invalid_trigger` with `TriggerError.path` naming
 the offending field; a schedule failure is `invalid_cron` or
 `unsatisfiable_cron`.
+
+### Trigger.bind
+
+```ts
+const bind: (options: {
+  readonly flow: Pick<Flow.Any, "_tag">
+  readonly on: On.On
+  readonly title?: string
+}) => Binding
+```
+
+Binds an imported flow to an event, as `.smithers/FACTORY.ts` declares it
+(decision 0017's `Trigger` contribution). The result is data: `Binding` is a
+`TriggerBinding` tagged struct carrying the flow's tag, the `On` value and the
+optional title (1 to 80 characters). Nothing listens until a host reads the
+projected row.
+
+### Trigger.manifestRow and Trigger.ManifestRow
+
+```ts
+const manifestRow: (id: string, binding: Binding) => ManifestRow
+```
+
+The plugin manifest's `contributes.triggers` row for a binding contributed as
+`id`: `on` is `github.push`, `github.pull_request`, `manual` or `cron`, then
+`flow`, `title` (the binding's, else `id`), and the event's fields
+(`branches`, `tags`, `actions`, or `cron` and its written policies).
+`ManifestRow` is its schema. `@smthrs/targets`' `S.Factory({ triggers })`
+writes these rows into `.smithers/factory.json`.
+
+## On
+
+The events a flow can be bound to, as plain values.
+
+| Constructor                                                           | Value            | Matches                                                                                                    |
+| --------------------------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `On.push({ branches?, tags? })`                                       | `On.Push`        | a push to the `branches` globs, every branch when absent; a tag push only when `tags` names it             |
+| `On.pullRequest({ branches?, actions? })`                             | `On.PullRequest` | a pull request against the base `branches`, on `actions` (`opened`, `synchronize`, `reopened` when absent) |
+| `On.manual()`                                                         | `On.Manual`      | a run a person starts by hand                                                                              |
+| `On.cron(expression, { timezone?, overlap?, catchUp?, maxCatchUp? })` | `On.Cron`        | a schedule of five cron fields; only the policies written are carried                                      |
+
+`On.On` is the union. `On.Patterns` is at most 32 globs of 1 to 255
+characters; `*` is any run of characters but `/`, `**` any run at all. A cron
+expression with a seconds field fails `On.Cron`.
 
 ## Schedule
 

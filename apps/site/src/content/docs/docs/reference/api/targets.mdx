@@ -85,6 +85,51 @@ known-red lists.
 `--lifecycle evergreen|artifact|all`, filtering roots without dropping their
 required dependencies or overriding wildcard omission.
 
+### Repository flow triggers
+
+`S.Factory`'s `triggers` binds the repository's own flows to events with
+`@smthrs/triggers`' `Trigger.bind` and `On`. Each key is the binding's
+contribution id (`^[a-z0-9][a-z0-9-]{0,63}$`, at most 64), and the flow is the
+imported flow value, never a tag string:
+
+```ts
+import { Smithers as S } from "@smthrs/targets"
+import { On, Trigger } from "@smthrs/triggers"
+import Gate from "./flows/gate/flow.ts"
+
+export const factory = S.Factory({
+  summary: "Repository checks",
+  triggers: {
+    "gate-push": Trigger.bind({ flow: Gate, on: On.push({ branches: ["main"] }) }),
+    "gate-pull-request": Trigger.bind({ flow: Gate, on: On.pullRequest() })
+  }
+})
+```
+
+The projection writes them into `.smithers/factory.json` as a plugin
+manifest's rows, with `apiVersion: 1` first, so a host that receives a push or
+a pull request (the hosted app's repository flows) starts the bound flow at
+the event's commit:
+
+```json
+{
+  "apiVersion": 1,
+  "summary": "Repository checks",
+  "contributes": {
+    "triggers": [
+      { "on": "github.push", "flow": "gate", "title": "gate-push", "branches": ["main"] },
+      { "on": "github.pull_request", "flow": "gate", "title": "gate-pull-request" }
+    ]
+  }
+}
+```
+
+A row's `title` is its id unless the binding names one. The projection fails
+with `FlowCatalogError` when a binding's flow is no discovered `flow.ts` one
+directory under the flows root, because the host plans a bound flow from that
+file and no other. A factory that binds nothing projects neither key. The
+`on` table is separate: it is the Dispatcher table the stack service runs.
+
 ## Namespaces
 
 `src/index.ts` declares one namespace export:

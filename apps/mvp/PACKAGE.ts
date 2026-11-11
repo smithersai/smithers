@@ -772,7 +772,8 @@ const appFiles = [
   Smithers.Target.subtree("//packages/smithers/ui/...", "check"),
   Smithers.Target.subtree("//packages/smithers/ui/...", "sourceFiles"),
   Smithers.file("//.smithers/flows/notification-policy/flow.ts"),
-  Smithers.file("//.smithers/flows/notification-policy/src/policy.ts")
+  Smithers.file("//.smithers/flows/notification-policy/src/policy.ts"),
+  Smithers.file("//.smithers/factory.json")
 ]
 
 /** The docs the unit suite reads: the bug disclosure page, the bindings table and the home view's fixture. */

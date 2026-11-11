@@ -10,6 +10,8 @@ export * as TriggerError from "./TriggerError.ts"
 export * as Cron from "./Cron.ts"
 /** @category declarations @since 0.1.0 */
 export * as Trigger from "./Trigger.ts"
+/** @category declarations @since 1.1.0 */
+export * as On from "./On.ts"
 /** @category declarations @since 0.1.0 */
 export * as Schedule from "./Schedule.ts"
 /** @category policies @since 0.1.0 */

@@ -42,6 +42,7 @@
     "./Channel": "./src/Channel.ts",
     "./Cron": "./src/Cron.ts",
     "./DispatchReader": "./src/DispatchReader.ts",
+    "./On": "./src/On.ts",
     "./Overlap": "./src/Overlap.ts",
     "./Schedule": "./src/Schedule.ts",
     "./Scheduler": "./src/Scheduler.ts",
@@ -122,6 +123,16 @@
         "require": {
           "types": "./dist/cjs/DispatchReader.d.ts",
           "default": "./dist/cjs/DispatchReader.js"
+        }
+      },
+      "./On": {
+        "import": {
+          "types": "./dist/esm/On.d.ts",
+          "default": "./dist/esm/On.js"
+        },
+        "require": {
+          "types": "./dist/cjs/On.d.ts",
+          "default": "./dist/cjs/On.js"
         }
       },
       "./Overlap": {

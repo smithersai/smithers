@@ -112,6 +112,9 @@ importers:
       '@smthrs/targets':
         specifier: workspace:*
         version: link:packages/smithers/build/targets
+      '@smthrs/triggers':
+        specifier: workspace:*
+        version: link:packages/smithers/agent/triggers
       '@smthrs/ui':
         specifier: workspace:*
         version: link:packages/smithers/ui
@@ -3606,6 +3609,9 @@ importers:
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.17
         version: link:../../flows/platform-node
+      '@smthrs/triggers':
+        specifier: 1.0.0-rc.17
+        version: link:../../agent/triggers
       '@smthrs/views':
         specifier: 1.0.0-rc.17
         version: link:../../ui/views

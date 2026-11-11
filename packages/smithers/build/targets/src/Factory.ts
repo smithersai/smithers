@@ -34,6 +34,7 @@
 
 import { Action } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
+import { Trigger } from "@smthrs/triggers"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
@@ -571,6 +572,45 @@ const decodeIssueTransitions = (value: unknown): ReadonlyArray<IssueTransition> 
 }
 
 /**
+ * A `triggers` key: the contribution id of one binding, which titles its
+ * manifest row unless the binding names a title.
+ *
+ * @category schemas
+ * @since 1.1.0
+ */
+export const TriggerId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/))
+
+/**
+ * The most bindings a factory may declare: as many as a host reads from one
+ * manifest.
+ *
+ * @category constants
+ * @since 1.1.0
+ */
+export const maximumTriggers = 64
+
+/**
+ * The name a repository flow has: its directory under the flows root, one
+ * segment, as the host that starts it on an event requires.
+ */
+const repositoryFlowName = /^[a-z0-9][a-z0-9_-]{0,63}$/
+
+const decodeTriggers = (value: unknown): Readonly<Record<string, Trigger.Binding>> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Factory triggers must be a record of ids to Trigger.bind values")
+  }
+  const entries = Object.entries(value)
+  if (entries.length > maximumTriggers) {
+    throw new TypeError(`Factory triggers declares more than ${maximumTriggers} bindings`)
+  }
+  for (const [id, binding] of entries) {
+    Home.decode(`Factory triggers key ${JSON.stringify(id)}`, TriggerId, id)
+    Home.decode(`Factory triggers[${JSON.stringify(id)}]`, Trigger.Binding, binding)
+  }
+  return value as Readonly<Record<string, Trigger.Binding>>
+}
+
+/**
  * Explicit repository policy for artifact tests. Every field is required;
  * absent policy preserves ordinary blocking and selection behavior.
  * @category schemas
@@ -619,7 +659,9 @@ export const Declaration = Schema.TaggedStruct("FactoryDeclaration", {
   /** The saved issue views, in declaration order, when declared. */
   issueViews: Schema.optionalKey(Schema.Array(IssueView)),
   /** The issue transitions, in declaration order, when declared. */
-  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
+  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition)),
+  /** The repository flows bound to events, by contribution id, when declared. */
+  triggers: Schema.optionalKey(Schema.Record(TriggerId, Trigger.Binding))
 })
 
 /**
@@ -672,6 +714,13 @@ export interface FactoryOptions {
   readonly machine?: Machine | undefined
   readonly issueViews?: ReadonlyArray<IssueView> | undefined
   readonly issueTransitions?: ReadonlyArray<IssueTransition> | undefined
+  /**
+   * The repository's flows bound to events, by contribution id:
+   * `{ "gate-main": Trigger.bind({ flow: Gate, on: On.push({ branches: ["main"] }) }) }`.
+   * Projected as the manifest's `contributes.triggers`; a host that receives
+   * the event starts the flow at its commit.
+   */
+  readonly triggers?: Readonly<Record<string, Trigger.Binding>> | undefined
 }
 
 /**
@@ -709,7 +758,18 @@ export const Factory = (options: FactoryOptions): Declaration => {
   const plain = Home.plainOptions(
     "Factory",
     options,
-    new Set(["summary", "flows", "on", "github", "lifecycle", "policy", "machine", "issueViews", "issueTransitions"])
+    new Set([
+      "summary",
+      "flows",
+      "on",
+      "github",
+      "lifecycle",
+      "policy",
+      "machine",
+      "issueViews",
+      "issueTransitions",
+      "triggers"
+    ])
   )
   const flows = plain["flows"] ?? []
   if (!Array.isArray(flows)) throw new TypeError("Factory flows must be an array of Smithers.Flow declarations")
@@ -749,6 +809,7 @@ export const Factory = (options: FactoryOptions): Declaration => {
   const issueTransitions = plain["issueTransitions"] === undefined
     ? undefined
     : decodeIssueTransitions(plain["issueTransitions"])
+  const triggers = plain["triggers"] === undefined ? undefined : decodeTriggers(plain["triggers"])
   return Home.freezeDeep(Home.decode("Factory", Declaration, {
     _tag: "FactoryDeclaration",
     summary: plain["summary"],
@@ -759,7 +820,8 @@ export const Factory = (options: FactoryOptions): Declaration => {
     ...(plain["policy"] === undefined ? {} : { policy: FactoryPolicy.make(plain["policy"] as FactoryPolicy.Options) }),
     ...(machine === undefined ? {} : { machine }),
     ...(issueViews === undefined ? {} : { issueViews }),
-    ...(issueTransitions === undefined ? {} : { issueTransitions })
+    ...(issueTransitions === undefined ? {} : { issueTransitions }),
+    ...(triggers === undefined ? {} : { triggers })
   }))
 }
 
@@ -835,6 +897,8 @@ export const GithubProjection = Schema.Struct({
  * @since 1.0.0
  */
 export const Projection = Schema.Struct({
+  /** Present with `contributes`: the plugin manifest version a host reads triggers from. */
+  apiVersion: Schema.optionalKey(Schema.Literal(1)),
   summary: Summary,
   flows: Schema.Array(FlowCatalog.Row),
   on: Schema.Array(Rule),
@@ -844,7 +908,9 @@ export const Projection = Schema.Struct({
   policy: Schema.optionalKey(FactoryPolicy.Policy),
   machine: Schema.optionalKey(Machine),
   issueViews: Schema.optionalKey(Schema.Array(IssueView)),
-  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
+  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition)),
+  /** The bound triggers, as plugin manifest rows, when any are declared. */
+  contributes: Schema.optionalKey(Schema.Struct({ triggers: Schema.Array(Trigger.ManifestRow) }))
 })
 
 /**
@@ -866,9 +932,12 @@ const formatIssue = SchemaIssue.makeFormatterDefault()
  */
 export const renderProjection = (declaration: Declaration, catalog: ReadonlyArray<FlowCatalog.Row>): string => {
   checkSchedulePayloads(declaration, catalog)
+  checkTriggerFlows(declaration, catalog)
+  const triggers = Object.entries(declaration.triggers ?? {})
   return `${
     JSON.stringify(
       Schema.encodeSync(Projection)({
+        ...(triggers.length === 0 ? {} : { apiVersion: 1 as const }),
         summary: declaration.summary,
         flows: catalog,
         on: rules(declaration),
@@ -897,7 +966,10 @@ export const renderProjection = (declaration: Declaration, catalog: ReadonlyArra
           : { issueViews: declaration.issueViews }),
         ...(declaration.issueTransitions === undefined || declaration.issueTransitions.length === 0 ?
           {}
-          : { issueTransitions: declaration.issueTransitions })
+          : { issueTransitions: declaration.issueTransitions }),
+        ...(triggers.length === 0 ?
+          {}
+          : { contributes: { triggers: triggers.map(([id, binding]) => Trigger.manifestRow(id, binding)) } })
       }),
       null,
       2
@@ -929,6 +1001,24 @@ const checkSchedulePayloads = (declaration: Declaration, catalog: ReadonlyArray<
           }: a Markdown flow takes { args: string } and nothing else`
         })
       }
+    }
+  }
+}
+
+/**
+ * Refuses a binding whose flow is not a discovered TypeScript flow one
+ * directory under the flows root: the host plans a bound flow from its
+ * `flow.ts` at the event's commit, and reads no other entry.
+ */
+const checkTriggerFlows = (declaration: Declaration, catalog: ReadonlyArray<FlowCatalog.Row>) => {
+  for (const [id, binding] of Object.entries(declaration.triggers ?? {})) {
+    const found = catalog.find((flow) => flow.id === binding.flow)
+    if (found === undefined || found.kind !== "ts" || !repositoryFlowName.test(binding.flow)) {
+      throw new FlowCatalog.FlowCatalogError({
+        message: `Factory triggers[${JSON.stringify(id)}] binds the flow ${
+          JSON.stringify(binding.flow)
+        }, which is no discovered flow.ts one directory under the flows root`
+      })
     }
   }
 }

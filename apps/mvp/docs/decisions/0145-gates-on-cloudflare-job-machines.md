@@ -82,7 +82,7 @@ and the stage is destroyed when idle.
 
 1. Build and push the gate image for `main`'s lockfile from nyc-02, and set the deployment's gate image to its digest.
 2. Deploy: the `gate` machine's container class and the artifacts bucket.
-3. Add `smithersai/smithers` to `REPO_FLOWS_REPOSITORIES`, and the `gate/**` trigger to `.smithers/factory.json`.
+3. Add `smithersai/smithers` to `REPO_FLOWS_REPOSITORIES`. The `gate` triggers (pushes to `main` and `gate/**`, every pull request) are declared in `.smithers/FACTORY.ts` and projected into `.smithers/factory.json`.
 4. Point the lander at `smithers/gate` instead of the Latitude suite.
 
 ## Rejected

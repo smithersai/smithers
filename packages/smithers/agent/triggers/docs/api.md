@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/triggers: trigger and schedule declarations, the cron wrappers, the overlap and catch-up policies, the durable store contract and its SQL implementation, the scheduler and its runner port, and the channel and webhook declarations."
 ---
 
-`@smthrs/triggers` exports twelve modules from its root entry point, and each is
+`@smthrs/triggers` exports thirteen modules from its root entry point, and each is
 also importable from `@smthrs/triggers/<Module>`:
 
 ```ts
@@ -12,7 +12,7 @@ import { Scheduler, Trigger, TriggerStore } from "@smthrs/triggers"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 ```
 
-The in-memory store for tests is a thirteenth module at
+The in-memory store for tests is a fourteenth module at
 `@smthrs/triggers/test/TestTriggers`.
 
 Services and tags are Effect constructs: a `Layer` provides a service, and an
@@ -97,6 +97,50 @@ Decodes the declaration, applies the three policy defaults, and validates the
 schedule. A shape failure is `invalid_trigger` with `TriggerError.path` naming
 the offending field; a schedule failure is `invalid_cron` or
 `unsatisfiable_cron`.
+
+### Trigger.bind
+
+```ts
+const bind: (options: {
+  readonly flow: Pick<Flow.Any, "_tag">
+  readonly on: On.On
+  readonly title?: string
+}) => Binding
+```
+
+Binds an imported flow to an event, as `.smithers/FACTORY.ts` declares it
+(decision 0017's `Trigger` contribution). The result is data: `Binding` is a
+`TriggerBinding` tagged struct carrying the flow's tag, the `On` value and the
+optional title (1 to 80 characters). Nothing listens until a host reads the
+projected row.
+
+### Trigger.manifestRow and Trigger.ManifestRow
+
+```ts
+const manifestRow: (id: string, binding: Binding) => ManifestRow
+```
+
+The plugin manifest's `contributes.triggers` row for a binding contributed as
+`id`: `on` is `github.push`, `github.pull_request`, `manual` or `cron`, then
+`flow`, `title` (the binding's, else `id`), and the event's fields
+(`branches`, `tags`, `actions`, or `cron` and its written policies).
+`ManifestRow` is its schema. `@smthrs/targets`' `S.Factory({ triggers })`
+writes these rows into `.smithers/factory.json`.
+
+## On
+
+The events a flow can be bound to, as plain values.
+
+| Constructor                                                           | Value            | Matches                                                                                                    |
+| --------------------------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `On.push({ branches?, tags? })`                                       | `On.Push`        | a push to the `branches` globs, every branch when absent; a tag push only when `tags` names it             |
+| `On.pullRequest({ branches?, actions? })`                             | `On.PullRequest` | a pull request against the base `branches`, on `actions` (`opened`, `synchronize`, `reopened` when absent) |
+| `On.manual()`                                                         | `On.Manual`      | a run a person starts by hand                                                                              |
+| `On.cron(expression, { timezone?, overlap?, catchUp?, maxCatchUp? })` | `On.Cron`        | a schedule of five cron fields; only the policies written are carried                                      |
+
+`On.On` is the union. `On.Patterns` is at most 32 globs of 1 to 255
+characters; `*` is any run of characters but `/`, `**` any run at all. A cron
+expression with a seconds field fails `On.Cron`.
 
 ## Schedule
 
