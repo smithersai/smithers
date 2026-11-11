@@ -196,10 +196,11 @@ describe("app/jev/classify", () => {
       expect.objectContaining({ level: "WARN", annotations: expect.objectContaining({ outcome: "invalid_answer", items: 1 }) }),
     ])
 
-    // Signed out: the endpoint refuses before any model runs (401), and the step says the judge was unavailable.
+    // Signed out: the endpoint refuses before any model runs (401). A refused credential is unconfigured, not unreachable,
+    // so no backup model on another credential is asked (5901b91aa2eb, packages/smithers/agent/model Evaluator).
     const signedOut = await openJudge(judged(bugs), { actor: null })
     expect(failureOf(await signedOut.classify("classify-signed-out", { question: "Bug?", items: ["It crashes"] }))).toEqual(
-      new JudgeFailed({ code: "unreachable" }),
+      new JudgeFailed({ code: "unconfigured" }),
     )
     expect(signedOut.h.requests).toEqual([])
   })
