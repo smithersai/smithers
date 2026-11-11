@@ -31,6 +31,12 @@ it is what a collector's log pipeline expects. A line logged inside a span
 carries the span's `trace_id` and `span_id` in its annotations, so a log search
 can join it to the trace and to browser records `OtlpRelay` relayed.
 
+Every layer that installs a sink, `Logger.layer` included, wraps it in
+`RedactedLogger.wrap` from `@smthrs/journal`. The journal's redaction rules run
+over the message, the cause and the log annotations before the line is
+rendered, so a token a log line quotes reaches the console as a marker, never
+in clear.
+
 To install a logger you wrote, or one from another package, use `Logger.layer`:
 
 ```ts
