@@ -3,10 +3,12 @@
  * CLI: discovered, loaded through `vibelang/register`, and planned exactly
  * like a `PACKAGE.ts` package.
  */
+import { spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import { findPackageJSON } from "node:module"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -112,6 +114,20 @@ const serve = async (root: string, args: ReadonlyArray<string>) => {
   return { code, output }
 }
 
+const git = (root: string, ...args: ReadonlyArray<string>): void => {
+  const child = spawnSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", ...args], {
+    cwd: root,
+    encoding: "utf8"
+  })
+  expect(child.status, child.stderr).toBe(0)
+}
+
+interface AffectedList {
+  readonly conservative: boolean
+  readonly globalInputs: ReadonlyArray<string>
+  readonly targets: ReadonlyArray<{ readonly label: string }>
+}
+
 const labels = (output: string): ReadonlyArray<string> =>
   (JSON.parse(output) as { targets: ReadonlyArray<{ label: string }> }).targets.map((row) => row.label)
 
@@ -173,6 +189,56 @@ export const Package = S.Package({
       expect(targets.output).toContain(`Shell.Test declaration at ${Path.join(root, "lib", name)}:5:`)
     }
   )
+
+  it.each<DeclarationFile>(["PACKAGE.vibe", "PACKAGE.ts"])(
+    "is a global input of smthrs affected, as %s",
+    async (name) => {
+      const root = await fixture(name)
+      git(root, "init", "-q")
+      git(root, "add", "-A")
+      git(root, "commit", "-q", "-m", "fixture")
+      await Fs.appendFile(Path.join(root, "lib", name), "\n")
+      const listed = await serve(root, ["affected", "test", "//...", "--list"])
+      expect(listed.code, listed.output).toBe(0)
+      const selection = JSON.parse(listed.output) as AffectedList
+      expect(selection.conservative).toBe(true)
+      expect(selection.globalInputs).toEqual([`lib/${name}`])
+      expect(selection.targets.map((row) => row.label)).toContain("//lib:test")
+    }
+  )
+
+  it("compiles the workspace's VibeLang only when it declares a PACKAGE.vibe", async () => {
+    const main = fileURLToPath(new URL("../src/main.js", import.meta.url))
+    // The projects vibelang/register compiled or read from its cache, by tsconfig. A
+    // source checkout of the CLI also compiles its own migrated dependencies.
+    const compiled = async (name: DeclarationFile) => {
+      const root = await fixture(name)
+      if (name === "PACKAGE.ts") {
+        await Fs.rm(Path.join(root, "lib", "summary.vibe"))
+        const file = Path.join(root, "lib", "PACKAGE.ts")
+        await Fs.writeFile(
+          file,
+          (await Fs.readFile(file, "utf8"))
+            .replace("import { summary } from \"./summary.vibe\"\n", "const summary = \"Library sources\"\n")
+        )
+      }
+      const child = spawnSync(process.execPath, [main, "targets", "--workspace", root], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, VIBELANG_REGISTER_DEBUG: "1" },
+        timeout: 120_000
+      })
+      expect(child.status, child.stdout + child.stderr).toBe(0)
+      const projects = [...child.stderr.matchAll(/^vibelang\/register: (?:compiled )?(\S+tsconfig\.json) /gm)].map((
+        match
+      ) => match[1])
+      return projects.filter((project) => project!.startsWith(`${root}${Path.sep}`))
+    }
+    expect(await compiled("PACKAGE.ts")).toEqual([])
+    const vibe = await compiled("PACKAGE.vibe")
+    expect(vibe).toHaveLength(1)
+    expect(vibe[0]).toMatch(/tsconfig\.json$/)
+  })
 
   it("plans the same labels and keys as its PACKAGE.ts twin", async () => {
     const vibe = await fixture("PACKAGE.vibe")

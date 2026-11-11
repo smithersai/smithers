@@ -136,7 +136,8 @@ Failure code: `targets_failed`.
 
 Selects targets reached by changed files and reverse dependencies, then runs
 the requested verb. Repository-wide and unknown inputs conservatively select
-the graph.
+the graph; a changed package declaration, `PACKAGE.ts` or `PACKAGE.vibe`, is
+repository-wide, because any package may import it.
 
 ```sh
 smithers-build affected test //packages/... --base main

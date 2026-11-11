@@ -100,7 +100,7 @@ export const changedPaths = async (root: string, options: {
 }
 
 const globalPath = (path: string): boolean =>
-  !path.includes("/") || path.startsWith(".smithers/") || Path.posix.basename(path) === "PACKAGE.ts" ||
+  !path.includes("/") || path.startsWith(".smithers/") || Input.isDeclarationFileName(Path.posix.basename(path)) ||
   /(^|\/)(?:[^/]*lock[^/]*|package\.json|tsconfig[^/]*\.json|\.npmrc|\.yarnrc[^/]*|\.gitignore)$/.test(path)
 
 const ambientInput = (input: Input.Declared): boolean => input._tag === "GitDiff" || input._tag === "PnpmWorkspace"

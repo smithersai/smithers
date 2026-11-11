@@ -586,7 +586,8 @@ cache. `targets` lists the available target surface and defaults to `//...`.
 It compares `--base` (default `HEAD`) with `--head`, or with the working tree
 and untracked files when `--head` is absent. Repeatable `--files` bypasses Git
 discovery, and `--list` explains the selection without executing it. Unknown
-or ambient inputs conservatively select the graph. Any change selects every
+or ambient inputs conservatively select the graph, and so does a changed
+`PACKAGE.ts` or `PACKAGE.vibe`, which `--list` reports in `globalInputs`. Any change selects every
 uncacheable target and its dependents, because only a cache key declares
 complete inputs.
 
