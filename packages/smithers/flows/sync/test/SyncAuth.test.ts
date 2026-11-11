@@ -14,7 +14,12 @@ import { Base64Url } from "effect/encoding"
 import * as RpcClient from "effect/rpc/RpcClient"
 import * as RpcTest from "effect/rpc/RpcTest"
 import { TestClock } from "effect/testing"
+import * as BranchCommands from "../src/BranchCommands.ts"
+import * as BranchIds from "../src/BranchIds.ts"
+import * as BranchPresence from "../src/BranchPresence.ts"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
+import { BranchRpcs } from "../src/BranchRpcs.ts"
+import * as BranchServer from "../src/BranchServer.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncAuth from "../src/SyncAuth.ts"
@@ -145,6 +150,56 @@ describe("SyncAuth", () => {
       )
 
       expect(codes).toEqual(["unauthorized", "unauthorized", "unauthorized", "unauthorized", "unauthorized"])
+    }))
+
+  // `SyncAuth.layer` verified the header for `read` and dropped the granted
+  // level, so a read-only dashboard credential opened a branch and received a
+  // write capability for it.
+  it.effect("opens a branch only for a workspace capability that grants write", () =>
+    Effect.gen(function*() {
+      const [readRefused, writeAccess] = yield* Effect.gen(function*() {
+        const share = yield* WorkspaceShare.WorkspaceShare
+        const client = yield* RpcTest.makeClient(BranchRpcs)
+        const createWith = (access: BranchProtocol.Access) =>
+          Effect.flatMap(
+            share.mint({ capabilityId: `cap-${access}`, access, ttlMs: 60_000 }),
+            (capability) =>
+              Effect.flatMap(SyncAuth.encodeCapability(capability), (header) =>
+                RpcClient.withHeaders(client["Branch.CreateBranch"]({ ttlMs: 60_000 }), {
+                  [SyncAuth.capabilityHeader]: header
+                }))
+          )
+        const refused = yield* Effect.flip(createWith("read"))
+        const created = yield* createWith("write")
+        return [(refused as SyncError).code, created.capability.claims.access] as const
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(BranchServer.layerHandlers, SyncAuth.layer).pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(
+                WorkspaceShare.layerHmac(keyring),
+                BranchPresence.layerWith({ leaseMs: 60_000 }),
+                BranchCommands.layer,
+                BranchIds.layer
+              )
+            ),
+            Layer.provideMerge(
+              Layer.mergeAll(
+                TestJournal.layer(),
+                BranchShare.layerHmac({
+                  activeKid: "primary",
+                  keys: [{ kid: "primary", secret: Redacted.make("auth-branch-secret-0123456789abc") }]
+                })
+              )
+            )
+          )
+        ),
+        Effect.provide(TestClock.layer()),
+        Effect.scoped
+      )
+
+      expect(readRefused).toBe("unauthorized")
+      expect(writeAccess).toBe("write")
     }))
 
   it.effect("still serves a branch read to an anonymous connection with a branch capability", () =>

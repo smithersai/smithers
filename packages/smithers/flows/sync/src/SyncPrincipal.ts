@@ -15,6 +15,7 @@
 
 import * as Context from "effect/Context"
 import * as Layer from "effect/Layer"
+import type { Access } from "./BranchProtocol.ts"
 
 /**
  * A request that presented no credential. It may still read branch runs
@@ -51,6 +52,12 @@ export interface Workspace {
    * disconnect.
    */
   readonly expiresAtMs: number
+  /**
+   * The access level the credential grants: `read` admits the workspace's
+   * non-branch runs, `write` additionally opens branches. An in-process owner
+   * holds the journal and so has `write`.
+   */
+  readonly access: Access
 }
 
 /**
@@ -74,15 +81,17 @@ export const anonymous: Principal = { _tag: "Anonymous" }
  *
  * `expiresAtMs` defaults to `Infinity`, which is the honest answer for an
  * in-process owner that already holds the journal: it presented no credential,
- * so no credential can expire under it.
+ * so no credential can expire under it. `access` defaults to `write` for the
+ * same owner; a transport passes the level its verified credential grants.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const workspace = (
   capabilityId: string,
-  expiresAtMs: number = Number.POSITIVE_INFINITY
-): Principal => ({ _tag: "Workspace", capabilityId, expiresAtMs })
+  expiresAtMs: number = Number.POSITIVE_INFINITY,
+  access: Access = "write"
+): Principal => ({ _tag: "Workspace", capabilityId, expiresAtMs, access })
 
 /**
  * Returns `true` when a principal may read non-branch runs.

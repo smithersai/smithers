@@ -26,7 +26,11 @@ There are exactly two ways to become the workspace principal:
   no claim.
 - **In process.** A caller that already owns the journal provides
   `SyncPrincipal.layerWorkspace(capabilityId)` itself. That is the sanctioned
-  bypass, and it is never a transport's to take.
+  bypass, and it is never a transport's to take. The in-process principal has
+  `write` access.
+
+The principal carries the access level its credential grants
+(`SyncPrincipal.Workspace.access`): `read` or `write` from a verified header.
 
 Every decode failure of the header folds to the same `unauthorized` refusal, so
 the header is not a parsing oracle for an attacker probing its shape.
@@ -94,8 +98,9 @@ credential, so its `expiresAtMs` is `Infinity` and no deadline applies.
 
 Opening a branch is a bootstrap: no capability for it can exist yet.
 `Branch.CreateBranch` therefore requires an authenticated workspace principal
-supplied by the same `SyncAuth` middleware, and its handler refuses any other
-principal. Every later branch procedure carries its own capability and
+with `write` access, supplied by the same `SyncAuth` middleware, and its handler
+refuses any other principal. A `read` workspace capability reads non-branch runs
+but cannot open a branch. Every later branch procedure carries its own capability and
 authorizes through `BranchShare`, so past the bootstrap the capability is the
 credential.
 

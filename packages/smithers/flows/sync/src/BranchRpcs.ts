@@ -4,8 +4,8 @@
  *
  * Authorization has two stages. Opening a branch is the bootstrap: no
  * capability can exist yet, so `CreateBranch` requires an authenticated
- * workspace principal supplied by the group's {@link SyncAuth} middleware,
- * and its handler refuses any other principal.
+ * workspace principal with `write` access, supplied by the group's
+ * {@link SyncAuth} middleware, and its handler refuses any other principal.
  *
  * Every later procedure carries its own share capability and authorizes
  * through {@link BranchShare}: past the bootstrap the capability IS the

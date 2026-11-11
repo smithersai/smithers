@@ -113,10 +113,13 @@ export const layerHandlers: Layer.Layer<
       "Branch.CreateBranch": ({ ttlMs }) =>
         Effect.gen(function*() {
           const principal = yield* SyncPrincipal.SyncPrincipal
-          if (!SyncPrincipal.isWorkspace(principal)) {
+          // The handler mints a write capability, so a read-only workspace
+          // credential must not reach the mint: it would turn a dashboard
+          // credential into journal writes and more write links.
+          if (!SyncPrincipal.isWorkspace(principal) || principal.access !== "write") {
             return yield* new SyncError({
               code: "unauthorized",
-              message: "Creating a branch requires an authenticated workspace principal"
+              message: "Creating a branch requires a workspace principal with write access"
             })
           }
           // Decoded, not branded: `BranchIds` is a host port whose `fresh` is

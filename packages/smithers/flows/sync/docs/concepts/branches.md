@@ -171,8 +171,9 @@ the same rules.
 Two procedures enforce policy in the adapter itself, on top of what
 `BranchShare` checks:
 
-- `Branch.CreateBranch` refuses any principal that is not an authenticated
-  workspace with `unauthorized` before it mints the first capability;
+- `Branch.CreateBranch` refuses with `unauthorized`, before it mints the first
+  capability, any principal that is not an authenticated workspace with `write`
+  access;
 - `Branch.MintShare` verifies the presented capability for write access to the
   branch, refuses an expired parent with `unauthorized`, and passes the parent's
   expiry as `maxExpiresAtMs` so the child never outlives it.

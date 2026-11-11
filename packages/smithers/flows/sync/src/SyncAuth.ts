@@ -120,7 +120,7 @@ export const layer: Layer.Layer<SyncAuth, never, WorkspaceShare.WorkspaceShare> 
             // The signed expiry travels WITH the identity. A handler that
             // opens a stream authorizes once; reducing the verified claims to
             // a capability id here left the stream with nothing to expire on.
-            SyncPrincipal.workspace(claims.capabilityId, claims.expiresAtMs)
+            SyncPrincipal.workspace(claims.capabilityId, claims.expiresAtMs, claims.access)
           )
         )
       )
