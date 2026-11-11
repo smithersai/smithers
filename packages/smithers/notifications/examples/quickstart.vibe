@@ -1,0 +1,72 @@
+import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import { NotificationQueue } from "@smthrs/notifications"
+import type { Notification } from "@smthrs/notifications/Notification"
+
+const from = {
+  sourceRunId: "operator",
+  sourceLineageId: "operator",
+  sourceTurn: 0,
+  sourceActor: "human:will"
+}
+
+/** Urgent: this one is delivered in a batch when the current turn closes. */
+export const steer: Notification = {
+  _tag: "human-steer",
+  id: "message-1",
+  delivery: "steer",
+  targetLineageId: "run-1/root",
+  provenance: from,
+  payload: { kind: "Message", body: "look at the failing test first" }
+}
+
+/** Not urgent: this one waits until the run would otherwise have nothing to do. */
+export const followup: Notification = {
+  _tag: "human-followup",
+  id: "message-2",
+  delivery: "queue",
+  targetLineageId: "run-1/root",
+  provenance: from,
+  payload: { kind: "Message", body: "and update the changelog when you get a moment" }
+}
+
+const ids = (receipt: NotificationQueue.DrainReceipt) => receipt.notifications.map((item) => item.id)
+
+/** The drain request a run sends when it closes a turn with nothing left to do. */
+export const closeTurn = (boundary: string) => ({
+  runId: "run-1",
+  targetLineageId: "run-1/root",
+  boundary,
+  wouldIdle: true
+})
+
+/** Admits both notifications, then drains two turn boundaries. */
+export effect function quickstart() {
+  const queue = try NotificationQueue.NotificationQueue
+
+  const first = try queue.admit("run-1", steer)
+  const second = try queue.admit("run-1", followup)
+
+  // Steers are delivered at turn close, in a batch.
+  const turn1 = try queue.drain(closeTurn("turn-1"))
+  // Nothing else to do, so the next boundary accepts one queued follow-up.
+  const turn2 = try queue.drain(closeTurn("turn-2"))
+
+  return {
+    admitted: [first.decision, second.decision],
+    turn1: ids(turn1),
+    turn2: ids(turn2),
+    stillPending: (try queue.pending("run-1")).map((item) => item.id)
+  }
+}
+
+/** The queue over the production SQLite journal on an in-memory database. */
+export const layer = Layer.provide(NotificationQueue.layer, TestJournal.layer())
+
+/** Runs the walkthrough in a scope that closes the in-memory journal. */
+export effect function main() {
+  return try scoped(effect {
+    provide layer {
+      return try quickstart()
+    }
+  })
+}

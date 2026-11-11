@@ -1,0 +1,26 @@
+import { expect, it } from "@effect/vitest"
+import { NotificationQueue } from "@smthrs/notifications"
+import { closeTurn, followup, layer, main, steer } from "../examples/quickstart.vibe"
+
+it.effect("delivers the steer at the first boundary and the follow-up at the next", effect () => {
+  expect(try main()).toEqual({
+    admitted: ["admitted", "admitted"],
+    turn1: ["message-1"],
+    turn2: ["message-2"],
+    stillPending: []
+  })
+})
+
+it.effect("answers a repeated drain from the committed promotion record", effect () => {
+  const again = try scoped(effect {
+    provide layer {
+      const queue = try NotificationQueue.NotificationQueue
+      try queue.admit("run-1", steer)
+      try queue.admit("run-1", followup)
+      try queue.drain(closeTurn("turn-1"))
+      return try queue.drain(closeTurn("turn-1"))
+    }
+  })
+  expect(again.duplicate).toBe(true)
+  expect(again.notifications.map((item) => item.id)).toEqual(["message-1"])
+})

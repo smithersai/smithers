@@ -9,7 +9,9 @@ This quickstart runs the durable queue end to end. The journal is the
 production SQLite one over an in-memory database, so nothing is stubbed and
 nothing needs configuring. By the end you will have admitted two notifications
 from one process, drained them from the code that stands in for a run, and read
-back what each step decided.
+back what each step decided. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -145,6 +147,93 @@ Both operations are journaled, so a second process over the same database sees
 the same answers. Drain `turn-1` again and the receipt comes back with
 `duplicate: true` and the same notifications, read from the committed promotion
 record rather than decided a second time.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the program is an
+`effect` function and `try` runs each queue call. The journal goes in once:
+`layer` provides it to `NotificationQueue.layer`, a `provide` block supplies
+that layer, and `scoped` closes the in-memory database when the walkthrough
+ends. A queue failure stays in the error channel instead of becoming a defect
+through `Effect.orDie`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as TestJournal from "@smthrs/journal/test/TestJournal"
+import { NotificationQueue } from "@smthrs/notifications"
+import type { Notification } from "@smthrs/notifications/Notification"
+
+const from = {
+  sourceRunId: "operator",
+  sourceLineageId: "operator",
+  sourceTurn: 0,
+  sourceActor: "human:will"
+}
+
+/** Urgent: this one is delivered in a batch when the current turn closes. */
+export const steer: Notification = {
+  _tag: "human-steer",
+  id: "message-1",
+  delivery: "steer",
+  targetLineageId: "run-1/root",
+  provenance: from,
+  payload: { kind: "Message", body: "look at the failing test first" }
+}
+
+/** Not urgent: this one waits until the run would otherwise have nothing to do. */
+export const followup: Notification = {
+  _tag: "human-followup",
+  id: "message-2",
+  delivery: "queue",
+  targetLineageId: "run-1/root",
+  provenance: from,
+  payload: { kind: "Message", body: "and update the changelog when you get a moment" }
+}
+
+const ids = (receipt: NotificationQueue.DrainReceipt) => receipt.notifications.map((item) => item.id)
+
+/** The drain request a run sends when it closes a turn with nothing left to do. */
+export const closeTurn = (boundary: string) => ({
+  runId: "run-1",
+  targetLineageId: "run-1/root",
+  boundary,
+  wouldIdle: true
+})
+
+/** Admits both notifications, then drains two turn boundaries. */
+export effect function quickstart() {
+  const queue = try NotificationQueue.NotificationQueue
+
+  const first = try queue.admit("run-1", steer)
+  const second = try queue.admit("run-1", followup)
+
+  // Steers are delivered at turn close, in a batch.
+  const turn1 = try queue.drain(closeTurn("turn-1"))
+  // Nothing else to do, so the next boundary accepts one queued follow-up.
+  const turn2 = try queue.drain(closeTurn("turn-2"))
+
+  return {
+    admitted: [first.decision, second.decision],
+    turn1: ids(turn1),
+    turn2: ids(turn2),
+    stillPending: (try queue.pending("run-1")).map((item) => item.id)
+  }
+}
+
+/** The queue over the production SQLite journal on an in-memory database. */
+export const layer = Layer.provide(NotificationQueue.layer, TestJournal.layer())
+
+/** Runs the walkthrough in a scope that closes the in-memory journal. */
+export effect function main() {
+  return try scoped(effect {
+    provide layer {
+      return try quickstart()
+    }
+  })
+}
+```
 
 ## Next steps
 
