@@ -1,0 +1,37 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+
+/** The declared form: schemas and a stable name, no code. */
+export const Greet = Action.make("examples/Greet", {
+  payload: { name: Schema.String },
+  success: Schema.String
+})
+
+export const Greeting = Flow.make("examples/Greeting", {
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: Node.capture(
+    { action: Greet.name, implementationVersion: "greeting/v1" },
+    (payload) => Greet.call(payload)
+  )
+})
+
+/** The code lives in the layer: the implementation is an `effect` arrow. */
+export const GreetingLayer = Interpreter.layerWithImplementations(
+  Greeting,
+  Greet.toLayer(effect ({ name }) => `Hello, ${name}.`)
+).pipe(
+  Layer.provideMerge(FlowEngine.layerMemory),
+  Layer.provideMerge(NodeCrypto.layer)
+)
+
+/** Runs `greeting-ada-1` twice; the second call answers with the settled run's result. */
+export effect function twice() {
+  provide GreetingLayer {
+    const first = try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })
+    const second = try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })
+    return [first, second] as const
+  }
+}

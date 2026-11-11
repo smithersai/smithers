@@ -7,7 +7,9 @@ sidebar:
 
 This quickstart runs one flow end to end on the in-memory engine. Nothing here
 touches a database or the network, and the result arrives as a typed value
-decoded by the schema you declared.
+decoded by the schema you declared. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 A runnable copy of this program is published in the Smithers examples,
 [`01-define-and-run.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/examples/01-define-and-run.ts).
@@ -146,6 +148,58 @@ Identity is a function of the declaration, so a repeat is a read.
 An execution id is also a claim about what the run is. Reusing one for a
 different flow, or for a different payload, is refused rather than silently
 joined.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the declarations and the
+layer composition are unchanged, and the implementation is an `effect` arrow
+rather than `Effect.succeed`. `provide` supplies `GreetingLayer` around both
+runs, and `try` replaces `yield*`, so `twice` needs no `Effect.gen`. The test
+also reuses the execution id for a different payload and reads the refusal with
+`catch`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+
+/** The declared form: schemas and a stable name, no code. */
+export const Greet = Action.make("examples/Greet", {
+  payload: { name: Schema.String },
+  success: Schema.String
+})
+
+export const Greeting = Flow.make("examples/Greeting", {
+  payload: { name: Schema.String },
+  success: Schema.String,
+  body: Node.capture(
+    { action: Greet.name, implementationVersion: "greeting/v1" },
+    (payload) => Greet.call(payload)
+  )
+})
+
+/** The code lives in the layer: the implementation is an `effect` arrow. */
+export const GreetingLayer = Interpreter.layerWithImplementations(
+  Greeting,
+  Greet.toLayer(effect ({ name }) => `Hello, ${name}.`)
+).pipe(
+  Layer.provideMerge(FlowEngine.layerMemory),
+  Layer.provideMerge(NodeCrypto.layer)
+)
+
+/** Runs `greeting-ada-1` twice; the second call answers with the settled run's result. */
+export effect function twice() {
+  provide GreetingLayer {
+    const first = try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })
+    const second = try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })
+    return [first, second] as const
+  }
+}
+```
 
 ## What just happened
 

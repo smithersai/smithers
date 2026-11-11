@@ -1,0 +1,24 @@
+import { expect, it } from "@effect/vitest"
+import { Greet, Greeting, GreetingLayer, twice } from "../examples/quickstart.vibe"
+
+it.effect("decodes the greeting from the declared success schema", effect () => {
+  provide GreetingLayer {
+    expect(try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })).toBe("Hello, Ada.")
+  }
+})
+
+it.effect("answers a repeated execution id with the first run's result", effect () => {
+  expect(try twice()).toEqual(["Hello, Ada.", "Hello, Ada."])
+})
+
+it.effect("refuses an execution id reused for a different payload", effect () => {
+  provide GreetingLayer {
+    try Greeting.execute({ name: "Ada" }, { executionId: "greeting-ada-1" })
+    const refused = Greeting.execute({ name: "Grace" }, { executionId: "greeting-ada-1" }) catch (error) => error._tag
+    expect(refused).toBe("@smthrs/engine/ExecutionIdentityConflict")
+  }
+})
+
+it("declares the action by its stable name", () => {
+  expect(Greet.name).toBe("examples/Greet")
+})

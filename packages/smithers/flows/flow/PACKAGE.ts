@@ -3,8 +3,9 @@
  * six target calls.
  *
  * These targets are executable and must stay equivalent to what
- * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability] })`
- * emits; the file exists to show the expansion, not to diverge from it.
+ * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability], examples })`
+ * emits, with `examples` holding the quickstart page to its VibeLang tab; the file exists to show
+ * the expansion, not to diverge from it.
  */
 import {
   CircularImports,
@@ -29,8 +30,8 @@ const canonical = canonicalPackage.lib
 
 const cwd = "packages/smithers/flows/flow"
 const sources = Smithers.glob("src/**/*.ts")
-const tests = Smithers.glob("test/**/*.test.ts")
-const examples = Smithers.glob("examples/**/*.ts")
+const tests = Smithers.glob("test/**/*.test.{ts,vibe}")
+const examples = Smithers.glob("examples/**/*.{ts,vibe}")
 
 const importRules = ImportRules({
   cwd,
@@ -54,7 +55,7 @@ const lib = Smithers.TsBuild({
 })
 
 const check = Smithers.Typecheck({
-  srcs: [sources, examples, Smithers.glob("test/**/*.ts")],
+  srcs: [sources, examples, Smithers.glob("test/**/*.{ts,vibe}")],
   deps: [lib, plan, crypto, keys, canonical, capability],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
@@ -91,7 +92,12 @@ const fmt = Smithers.Dprint({
 
 const docs = Smithers.DocsParity({
   readme: Smithers.file("README.md"),
-  deps: [],
+  examples: [{
+    page: Smithers.file("docs/quickstart.md"),
+    example: Smithers.file("examples/quickstart.vibe"),
+    test: Smithers.file("test/quickstart.test.vibe")
+  }],
+  deps: [check, test],
   cwd
 })
 
