@@ -452,8 +452,68 @@ describe("model review execution reports", () => {
       status: "skipped",
       error: "the codex CLI is not installed on this host, so the review did not run"
     }])
+    expect(result.ok).toBe(true)
     expect(result.counts).toMatchObject({ hit: 0, ran: 0, skipped: 1 })
     expect(notes.join("\n")).toContain("smthrs: skipped //:command:")
+  })
+
+  it.each([1, 4])("fails consumers of an unavailable review with %s workers", async (jobs) => {
+    const source = valueTarget("Schema.Unknown", "null").replace(
+      "export const Package = S.Package({ targets: { command: value } })",
+      `const alias = S.Alias(value)
+const command = S.Shell.Test({ shell: "touch launched", data: [value], sandbox: "none" })
+const outer = S.Alias(alias)
+const after = S.Alias(command)
+const independent = S.Shell.Test({ shell: "touch independent", sandbox: "none" })
+export const Package = S.Package({ targets: { review: value, alias, command, outer, after, independent } })`
+    )
+    const { root, options } = await fixture(source)
+    const runOptions = { ...options, patterns: ["//:outer", "//:after", "//:independent"], jobs, readCache: false }
+    const plan = await PackageExec.plan(runOptions)
+    for (const unavailable of [true, false]) {
+      const result = await Effect.runPromise(
+        executeEffect(plan, runOptions).pipe(Effect.provideService(ExecutionServices, {
+          ...executionServicesLive,
+          target: () =>
+            unavailable
+              ? Effect.fail(
+                new LlmLint.ModelCliMissing({
+                  engine: "codex",
+                  executable: "codex",
+                  message: "model CLI absent"
+                })
+              )
+              : Effect.fail(new Error("review failed"))
+        }))
+      )
+      expect(result.ok).toBe(false)
+      expect(result.results.find((row) => row.label === "//:review")).toMatchObject({
+        status: unavailable ? "skipped" : "failed"
+      })
+      for (const label of ["//:alias", "//:command"]) {
+        expect(result.results.find((row) => row.label === label)).toMatchObject({
+          status: unavailable ? "failed" : "skipped",
+          error: unavailable
+            ? "dependency //:review was skipped, so this target did not run"
+            : "dependency //:review did not succeed",
+          ...(unavailable ? {} : { blockedBy: "//:review" })
+        })
+      }
+      for (const [label, blockedBy] of [["//:outer", "//:alias"], ["//:after", "//:command"]]) {
+        expect(result.results.find((row) => row.label === label)).toMatchObject({ status: "skipped", blockedBy })
+      }
+      expect(result.results.find((row) => row.label === "//:independent")).toMatchObject({ status: "ran" })
+      expect(result.counts).toMatchObject({
+        failed: unavailable ? 2 : 1,
+        skipped: unavailable ? 3 : 4,
+        ran: 1
+      })
+      await expect(Fs.stat(Path.join(root, "launched"))).rejects.toMatchObject({ code: "ENOENT" })
+    }
+    const recovered = await PackageExec.execute(plan, runOptions)
+    expect(recovered.ok).toBe(true)
+    expect(recovered.counts).toMatchObject({ failed: 0, skipped: 0, ran: 6 })
+    expect(await Fs.readFile(Path.join(root, "launched"), "utf8")).toBe("")
   })
 
   it("logs successful review findings through the same target result boundary", async () => {

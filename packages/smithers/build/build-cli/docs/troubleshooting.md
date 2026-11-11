@@ -249,13 +249,18 @@ the target again.
 **`smthrs: skipped <label>: the <executable> CLI is not installed on this
 host, so the review did not run`**
 
-The review target selected an engine executable this machine does not have. A
-skip leaves the run green, because `ok` counts failures alone, and the skip
-still appears in the report under its own glyph.
+The review target selected an engine executable this machine does not have.
+The review stays `skipped`: the machine cannot say whether the change is clean.
+A standalone review skip leaves a plain-verb run green and appears in its report.
 
-This is the honest report, not a bug: a machine with no `codex` on `PATH`
-cannot say whether the change is clean, and reporting "unclean" would be a red
-gate no commit could turn green. Install the engine CLI, or accept the skip.
+A target that depends on that review fails with
+`dependency <label> was skipped, so this target did not run`. Its dependents
+are skipped, and the run reports `ok: false` and exits nonzero. This applies
+to aliases and ordinary dependencies under `ci`, `test`, `lint`, `build`,
+and bare labels. A suite also fails when a member did not run; `affected`
+promotes independent skips to failures.
+
+Install the engine CLI and run the targets again.
 
 ## An input flag was rejected
 

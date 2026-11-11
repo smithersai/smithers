@@ -1296,10 +1296,9 @@ export const executeEffect = (
      * The outcome of a failed target body: a skip when the failure is a missing
      * model CLI, and the failure itself otherwise.
      *
-     * A skip leaves the run green — `ok` counts failures alone — and still
-     * appears in the report, under its own glyph, carrying the executable that
-     * was not found. That is the honest report for an absent engine: the review
-     * did not run, and nothing claims it passed.
+     * The review stays skipped, carrying the executable that was not found.
+     * Consumers of an independently skipped dependency fail in `settle`, so
+     * a graph that needs this review cannot report success without running it.
      */
     const outcomeOfTargetFailure = (label: string, cause: Cause.Cause<unknown>): Outcome => {
       const value: unknown = Cause.squash(cause)
@@ -3546,7 +3545,7 @@ export const executeEffect = (
     const settle = (node: PackageNode): Effect.Effect<Outcome, unknown> =>
       Effect.gen(function*() {
         // A red gate is a refusal with the gate report attached; a red data or
-        // plain dependency skips the consumer. A suite aggregates its members
+        // plain dependency skips the consumer; an independent skip fails it. A suite aggregates its members
         // instead of skipping.
         if (node.rule !== "Suite") {
           const redGate = node.gateDeps.find((gate) => notGreen.has(gate))
@@ -3558,6 +3557,12 @@ export const executeEffect = (
           }
           const blocked = node.dependencies.find((dependency) => notGreen.has(dependency))
           if (blocked !== undefined) {
+            const dependency = reports.get(blocked)
+            // An independent skip has no failed receipt behind it. Fail its
+            // consumer so a missing review cannot silently make this run green.
+            if (dependency?.status === "skipped" && dependency.blockedBy === undefined) {
+              return fail(`dependency ${blocked} was skipped, so this target did not run`)
+            }
             return { status: "skipped", error: `dependency ${blocked} did not succeed`, blockedBy: blocked }
           }
         }

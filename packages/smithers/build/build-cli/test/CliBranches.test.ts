@@ -571,6 +571,52 @@ export const Package = S.Package({ targets: { check } })
     })
   })
 
+  it.each(["ci", "test", "lint", "build", "auto"])(
+    "fails %s when a consumer depends on an unavailable review",
+    async (verb) => {
+      const root = await packageFixture()
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+import * as Target from "@smthrs/targets/Target"
+import * as LlmLint from "@smthrs/targets/LlmLint"
+import * as Node from "@smthrs/plan/Node"
+import * as Schema from "effect/Schema"
+const review = Target.make("UnavailableReview", {
+  attrs: Schema.Struct({}), kinds: ["build", "test", "lint"], success: Schema.Void,
+  error: LlmLint.ModelCliMissing,
+  implementation: () => Node.fail(new LlmLint.ModelCliMissing({
+    engine: "codex", executable: "missing-review-host", message: "review host unavailable"
+  }))
+})({})
+const alias = S.Alias(review)
+const outer = S.Alias(alias)
+export const Package = S.Package({ targets: { review, alias, outer } })
+`
+      )
+      const result = await jsonCommand(root, [
+        ...(verb === "auto" ? [] : [verb]),
+        "//:outer",
+        "--no-cache",
+        "--results-file",
+        "receipt.json"
+      ])
+      expect(result.exitCode, result.envelope + result.stderr).toBe(1)
+      expect(result.envelope).toContain("targets_failed")
+      expect(result.envelope).toContain("1 of 3 targets failed")
+      expect(result.stderr).toContain("dependency //:review was skipped, so this target did not run")
+      const receipt = JSON.parse(await Fs.readFile(NodePath.join(root, "receipt.json"), "utf8"))
+      expect(receipt).toMatchObject({ ok: false, counts: { failed: 1, skipped: 2 } })
+      const rows: ReadonlyArray<{ readonly label: string }> = receipt.results
+      expect([...rows].sort((left, right) => left.label.localeCompare(right.label))).toMatchObject([
+        { label: "//:alias", status: "failed" },
+        { label: "//:outer", status: "skipped" },
+        { label: "//:review", status: "skipped" }
+      ])
+    }
+  )
+
   it("keeps a missing host executable refusal in an affected plan", async () => {
     const root = await packageFixture()
     const workspace = await Fs.readFile(NodePath.join(root, "WORKSPACE.ts"), "utf8")
