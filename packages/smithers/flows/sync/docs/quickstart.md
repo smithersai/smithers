@@ -10,6 +10,9 @@ real `SyncClient`, and needs no database of your own and no network. The only
 piece that is not production is the transport: an in-memory socket pair stands
 in for a WebSocket. By the end you will have one subscription that delivers two
 entries of history and then a third entry that commits while you are watching.
+Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same follower as
+`effect` functions.
 
 A runnable copy lives in the Smithers repository, as
 [`packages/smithers/flows/sync/examples/07-sync-follower.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/examples/07-sync-follower.ts).
@@ -148,6 +151,73 @@ then opened `Sync.Subscribe` from its delivered bookmarks. The third
 entry arrived on the second phase. Nothing was delivered twice, because the
 cursor the follow resumed from was exactly the last sequence the replay handed
 over.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) each stage is an `effect`
+function and `try` runs each journal and client call. `join` waits for the
+forked subscription, and one `provide` block supplies `TestSync.layerTest` to
+the follower, with `scoped` closing the socket pair when it returns.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Journal, JournalEvent } from "@smthrs/journal"
+import * as TestSocket from "@smthrs/sync/test/TestSocket"
+import * as TestSync from "@smthrs/sync/test/TestSync"
+
+const runId = "sync-demo-1" as JournalEvent.RunId
+const sourceId = "quickstart" as JournalEvent.SourceId
+
+/** One journal entry from this producer, identified by its source sequence. */
+const entry = (sourceSeq: number, eventType: string) =>
+  new JournalEvent.Input({
+    runId,
+    sourceId,
+    sourceSeq: sourceSeq as JournalEvent.SourceSeq,
+    eventType,
+    payload: { sourceSeq },
+    meta: null
+  })
+
+/** Commits two entries before anything subscribes. */
+export effect function writeHistory() {
+  const journal = try Journal.Journal
+  try journal.emitDurableUnfenced(entry(0, "run.started"))
+  try journal.emitDurableUnfenced(entry(1, "step.recorded"))
+}
+
+/** A production client over an in-memory socket pair served by a production server. */
+export effect function connect() {
+  const pair = try TestSocket.makePair()
+  return try TestSync.connect(pair)
+}
+
+/** Replays the history, then follows one entry that commits while the subscription is open. */
+export effect function follow() {
+  try writeHistory()
+  const follower = try connect()
+  const subscription = follower.subscribe({ scope: { _tag: "Run", runId }, cursors: [] })
+  // Attached before the third entry commits, so that entry is followed, not replayed.
+  const collected = try Effect.forkChild(Stream.runCollect(Stream.take(subscription, 3)), { startImmediately: true })
+
+  try (try Journal.Journal).emitDurableUnfenced(entry(2, "run.completed"))
+
+  const entries = Array.from(join collected)
+  return {
+    caughtUp: entries.slice(0, 2).map((committed) => committed.eventType),
+    followed: entries.slice(2).map((committed) => committed.eventType)
+  }
+}
+
+/** The follower against the in-memory journal, catalog, and owner authentication. */
+export effect function quickstart() {
+  provide TestSync.layerTest {
+    return try scoped(follow())
+  }
+}
+```
 
 ## Next steps
 

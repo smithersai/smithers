@@ -1,0 +1,9 @@
+import { expect, it } from "@effect/vitest"
+import { quickstart } from "../examples/quickstart.vibe"
+
+it.live("replays two committed entries, then follows the one that commits while subscribed", effect () => {
+  expect(try quickstart()).toEqual({
+    caughtUp: ["run.started", "step.recorded"],
+    followed: ["run.completed"]
+  })
+})

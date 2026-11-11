@@ -1,0 +1,54 @@
+import { Journal, JournalEvent } from "@smthrs/journal"
+import * as TestSocket from "@smthrs/sync/test/TestSocket"
+import * as TestSync from "@smthrs/sync/test/TestSync"
+
+const runId = "sync-demo-1" as JournalEvent.RunId
+const sourceId = "quickstart" as JournalEvent.SourceId
+
+/** One journal entry from this producer, identified by its source sequence. */
+const entry = (sourceSeq: number, eventType: string) =>
+  new JournalEvent.Input({
+    runId,
+    sourceId,
+    sourceSeq: sourceSeq as JournalEvent.SourceSeq,
+    eventType,
+    payload: { sourceSeq },
+    meta: null
+  })
+
+/** Commits two entries before anything subscribes. */
+export effect function writeHistory() {
+  const journal = try Journal.Journal
+  try journal.emitDurableUnfenced(entry(0, "run.started"))
+  try journal.emitDurableUnfenced(entry(1, "step.recorded"))
+}
+
+/** A production client over an in-memory socket pair served by a production server. */
+export effect function connect() {
+  const pair = try TestSocket.makePair()
+  return try TestSync.connect(pair)
+}
+
+/** Replays the history, then follows one entry that commits while the subscription is open. */
+export effect function follow() {
+  try writeHistory()
+  const follower = try connect()
+  const subscription = follower.subscribe({ scope: { _tag: "Run", runId }, cursors: [] })
+  // Attached before the third entry commits, so that entry is followed, not replayed.
+  const collected = try Effect.forkChild(Stream.runCollect(Stream.take(subscription, 3)), { startImmediately: true })
+
+  try (try Journal.Journal).emitDurableUnfenced(entry(2, "run.completed"))
+
+  const entries = Array.from(join collected)
+  return {
+    caughtUp: entries.slice(0, 2).map((committed) => committed.eventType),
+    followed: entries.slice(2).map((committed) => committed.eventType)
+  }
+}
+
+/** The follower against the in-memory journal, catalog, and owner authentication. */
+export effect function quickstart() {
+  provide TestSync.layerTest {
+    return try scoped(follow())
+  }
+}
