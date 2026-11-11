@@ -89,8 +89,9 @@ adapter that builds the capability. If your resources need normalizing, do it
 before you construct the `Capability`, once, in one place.
 
 One exception fails closed. A filesystem capability (`fs:read`, `fs:write`)
-whose absolute resource still has a `.` or `..` segment was never
-canonicalized, and text matching would let `/workspace/**` select
+whose absolute resource still has a `.`, `..`, or empty segment (repeated
+or trailing `/`, except the canonical root `/`) was never canonicalized.
+Text matching would let `/workspace/**` select
 `/workspace/../etc/passwd`. No pattern selects such a capability, and none
 selects a relative resource whose `..` climbs above its start (`../x`).
 `Permission.evaluate` returns `deny` for both, and `Capability.subsumes` never
@@ -110,7 +111,9 @@ valid: a pattern selects one only when it selects both the text and its
 lexical normal form. `**` selects `.`, and `src/**` selects `src/a/../out` but
 not `src/a/../../etc`, whose normal form is `etc`. `Permission.evaluate`
 applies a deny or ask rule when it selects either form, so a deny on
-`secrets/**` also denies `x/../secrets/key`.
+`secrets/**` also denies `x/../secrets/key` and `secrets//key`. A deny on
+`secrets/key` also denies `secrets/key/`. The same path checks apply to
+`fs:*` and `*` patterns because either can select filesystem actions.
 
 ## Edge three: matching and proving are not the same
 

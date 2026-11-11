@@ -13,8 +13,9 @@ import { matchesResource } from "./internal/matchesResource.ts"
 /**
  * Tests whether an exact capability is selected by a pattern.
  *
- * Matching is textual, so a filesystem resource with a `.` or `..` segment
- * gets extra checks: an absolute one (`/w/../etc/passwd`) is selected by no
+ * Matching is textual, so a filesystem resource with a `.`, `..`, or empty
+ * segment (repeated or trailing `/`, except the root `/`) gets extra checks:
+ * an absolute one (`/w/../etc/passwd`) is selected by no
  * pattern, since adapters canonicalize before building a capability. A
  * relative declared scope (`.`, `./src/./out`, `src/a/../out`) is selected
  * only when it stays inside its start and the pattern selects both its text

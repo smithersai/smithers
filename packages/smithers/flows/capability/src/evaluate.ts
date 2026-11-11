@@ -29,13 +29,15 @@ import type { RuleEffect } from "./RuleEffect.ts"
  * deny fall through to a later allow. The kernel turns that `deny` into a
  * `PermissionDenied`.
  *
- * An absolute filesystem resource that still has a `.` or `..` segment, or a
- * relative one whose `..` climbs above its start, is `deny` for the same
+ * An absolute filesystem resource that still has a `.`, `..`, or empty segment
+ * (repeated or trailing `/`, except the root `/`), or a relative one whose
+ * `..` climbs above its start, is `deny` for the same
  * reason: the matcher cannot say what it names, so no rule can decide it and
  * a deny rule must not fall through to an allow. A relative declared scope
  * such as `.` or `./src` is evaluated normally: an allow must select both the
  * text and its normal form, while a deny or ask applies when it selects
- * either, so `x/../secrets/key` cannot slip past a deny on `secrets/key`.
+ * either, so `x/../secrets/key`, `secrets//key`, and `secrets/key/` cannot
+ * slip past a deny on `secrets/key`.
  *
  * @category policy
  * @since 0.1.0

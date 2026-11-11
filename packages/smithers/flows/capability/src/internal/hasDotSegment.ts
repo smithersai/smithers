@@ -1,5 +1,5 @@
 /**
- * Handling of filesystem resources that carry `.` or `..` segments.
+ * Handling of filesystem resources with dot or empty path segments.
  *
  * @since 1.0.0-rc.1
  */
@@ -10,13 +10,19 @@ const isDotSegment = (segment: string): boolean => segment === "." || segment ==
 
 /**
  * Reports whether a resource for a filesystem action (`fs:*`, or the `*`
- * wildcard that selects it) contains a `.` or `..` path segment.
+ * wildcard that selects it) contains a `.`, `..`, or empty path segment.
+ * The leading slash of an absolute path and the canonical root `/` are valid.
  *
  * @since 1.0.0-rc.1
  * @private
  */
-export const hasDotSegment = (action: string, resource: string): boolean =>
-  selectsFilesystem(action) && resource.split("/").some(isDotSegment)
+export const hasDotSegment = (action: string, resource: string): boolean => {
+  if (!selectsFilesystem(action) || resource === "/") {
+    return false
+  }
+  const segments = resource.split("/")
+  return segments.some(isDotSegment) || segments.slice(1).includes("")
+}
 
 /**
  * Lexically normalizes a relative resource: drops `.` and empty segments and
@@ -43,12 +49,12 @@ const normalizeRelative = (resource: string): string | undefined => {
 
 /**
  * The resource forms a pattern must select for a filesystem resource with a
- * dot segment, or `undefined` when no pattern may select it.
+ * dot or empty segment, or `undefined` when no pattern may select it.
  *
  * The matcher compares text, so `/w/**` textually selects `/w/../etc/passwd`
  * and `src/**` selects `src/../../etc`. An absolute resource is what an
- * adapter produces after canonicalizing; one that still carries a dot segment
- * skipped that step, so it is refused. A relative resource is a flow's
+ * adapter produces after canonicalizing; one that still carries a dot or empty
+ * segment skipped that step, so it is refused. A relative resource is a flow's
  * declared scope (`fs:read:.`, `fs:write:./src/./out`) that a consumer
  * resolves against the workspace root later; it is accepted only when it
  * stays inside its starting directory, and a pattern must select both the
@@ -56,8 +62,8 @@ const normalizeRelative = (resource: string): string | undefined => {
  * metacharacters before a `..` are refused, since a `*` may span segments and
  * the fold would be unsound.
  *
- * Returns `[resource]` for anything without a dot segment or outside the
- * filesystem.
+ * Returns `[resource]` for anything without a dot or empty segment or outside
+ * the filesystem.
  *
  * @since 1.0.0-rc.1
  * @private

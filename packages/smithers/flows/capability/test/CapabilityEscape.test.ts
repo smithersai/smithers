@@ -1,4 +1,5 @@
 import { Option } from "effect"
+import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import * as Capability from "../src/Capability.ts"
 import { evaluate, Rule } from "../src/Permission.ts"
@@ -50,16 +51,38 @@ describe("Capability.tierOf foreign-rooted resources", () => {
 describe("uncanonicalized filesystem resources", () => {
   const grant = Capability.parsePattern("fs:write:/w/**")
 
-  it.each([["/w/../etc/passwd"], ["/w/./x"], ["/w/a/.."], [".."], ["../etc/passwd"], ["src/../../etc"], ["C:/w/../x"], [
-    "~/../x"
-  ], ["x\\y/../z"]])(
+  it.each([
+    ["/w//x"],
+    ["/w/x/"],
+    ["//w/x"],
+    ["//"],
+    ["C:/"],
+    ["~/"],
+    ["/w///x//"],
+    ["/w/../etc/passwd"],
+    ["/w/./x"],
+    ["/w/a/.."],
+    [".."],
+    ["../etc/passwd"],
+    ["src/../../etc"],
+    ["C:/w/../x"],
+    [
+      "~/../x"
+    ],
+    ["x\\y/../z"]
+  ])(
     "no grant selects %s",
     (resource) => {
       expect(Option.isSome(grant)).toBe(true)
       const pattern = Option.getOrThrow(grant)
-      expect(Capability.matches(pattern, write(resource))).toBe(false)
-      expect(Capability.matches(new Capability.CapabilityPattern({ action: "*", resource: "**" }), write(resource)))
-        .toBe(false)
+      const all = new Capability.CapabilityPattern({ action: "*", resource: "**" })
+      for (const action of ["fs:read", "fs:write"] as const) {
+        const capability = Capability.make(action, resource)
+        expect(Capability.matches(pattern, capability)).toBe(false)
+        expect(Capability.matches(all, capability)).toBe(false)
+        expect(evaluate([[new Rule({ effect: "allow", pattern: all })]], capability)).toBe("deny")
+        expect(Capability.subsumes(all, new Capability.CapabilityPattern({ action, resource }))).toBe(false)
+      }
     }
   )
 
@@ -79,7 +102,7 @@ describe("uncanonicalized filesystem resources", () => {
       .toBe(true)
   })
 
-  it.each([["."], ["./src/./out"], ["src/nested/../out"]])(
+  it.each([["."], ["./src/./out"], ["src/nested/../out"], ["src//out"], ["src/out/"]])(
     "an allow-all grant selects the declared scope %s",
     (resource) => {
       const all = new Capability.CapabilityPattern({ action: "*", resource: "**" })
@@ -103,7 +126,9 @@ describe("uncanonicalized filesystem resources", () => {
     expect(evaluate([[new Rule({ effect: "allow", pattern: src })]], write("src/../../etc"))).toBe("deny")
   })
 
-  it.each([["x/../secrets/key"], ["./secrets/key"], ["secrets/./key"], ["secrets/key/."]])(
+  it.each([["x/../secrets/key"], ["./secrets/key"], ["secrets/./key"], ["secrets/key/."], ["secrets//key"], [
+    "secrets/key/"
+  ], ["secrets///key//"]])(
     "a deny or ask on the normal form still applies to %s",
     (resource) => {
       const rule = (effect: "allow" | "deny" | "ask", pattern: string) =>
@@ -116,6 +141,72 @@ describe("uncanonicalized filesystem resources", () => {
       expect(evaluate([[allowAll, rule("deny", "other/key")]], write(resource))).toBe("allow")
     }
   )
+
+  it("empty segments cannot bypass restrictions on a generated normal path", () => {
+    const segment = FastCheck.string({ unit: FastCheck.constantFrom("a", "b", "c"), minLength: 1, maxLength: 8 })
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.constantFrom("fs:read", "fs:write"),
+        FastCheck.array(segment, { minLength: 2, maxLength: 6 }),
+        FastCheck.nat({ max: 20 }),
+        FastCheck.integer({ min: 1, max: 4 }),
+        (action, segments, position, count) => {
+          const index = position % segments.length + 1
+          const resource = [...segments.slice(0, index), ...Array<string>(count).fill(""), ...segments.slice(index)]
+            .join("/")
+          const normal = segments.join("/")
+          const all = new Capability.CapabilityPattern({ action, resource: "**" })
+          const allow = new Rule({ effect: "allow", pattern: all })
+          const exact = new Capability.CapabilityPattern({ action, resource: normal })
+          const capability = Capability.make(action, resource)
+          for (const clean of [normal, `/${normal}`]) {
+            const literal = new Capability.CapabilityPattern({ action, resource: clean })
+            const cleanCapability = Capability.make(action, clean)
+            expect(Capability.matches(literal, cleanCapability)).toBe(true)
+            expect(Capability.matches(literal, Capability.make(action, `${clean}x`))).toBe(false)
+            expect(evaluate([[new Rule({ effect: "allow", pattern: literal })]], cleanCapability)).toBe("allow")
+            expect(Capability.subsumes(literal, literal)).toBe(true)
+          }
+          expect(Capability.matches(all, capability)).toBe(true)
+          for (const effect of ["deny", "ask"] as const) {
+            expect(evaluate([[allow, new Rule({ effect, pattern: exact })]], capability)).toBe(effect)
+          }
+          expect(evaluate([[new Rule({ effect: "deny", pattern: exact })], [allow]], capability)).toBe("deny")
+          expect(Capability.matches(all, Capability.make(action, `/${resource}`))).toBe(false)
+          expect(evaluate([[allow]], Capability.make(action, `/${resource}`))).toBe("deny")
+        }
+      ),
+      { numRuns: 100, seed: 4532 }
+    )
+  })
+
+  it.each(["fs:write", "fs:*", "*"] as const)("keeps the canonical root selectable by %s", (action) => {
+    const root = new Capability.CapabilityPattern({ action, resource: "/" })
+    expect(Capability.matches(root, write("/"))).toBe(true)
+    expect(evaluate([[new Rule({ effect: "allow", pattern: root })]], write("/"))).toBe("allow")
+    expect(Capability.subsumes(root, new Capability.CapabilityPattern({ action: "fs:write", resource: "/" })))
+      .toBe(true)
+  })
+
+  it.each(["secrets//key", "secrets/key/"])("requires an allow to select the normal form of %s", (resource) => {
+    const literal = new Capability.CapabilityPattern({ action: "fs:write", resource })
+    expect(Capability.matches(literal, write(resource))).toBe(false)
+    expect(evaluate([[new Rule({ effect: "allow", pattern: literal })]], write(resource))).toBe("ask")
+    expect(Capability.subsumes(literal, literal)).toBe(false)
+  })
+
+  it("checks filesystem-selecting wildcard scopes while keeping exact network scopes textual", () => {
+    const allActions = new Capability.CapabilityPattern({ action: "*", resource: "https://h/**" })
+    const network = new Capability.CapabilityPattern({ action: "net:get", resource: "https://h/**" })
+    const request = Capability.make("net:get", "https://h/x/")
+    // A whole-authority scope also selects filesystem paths; an exact network
+    // scope has no filesystem interpretation.
+    expect(Capability.subsumes(allActions, allActions)).toBe(false)
+    expect(Capability.subsumes(allActions, network)).toBe(true)
+    expect(Capability.subsumes(network, network)).toBe(true)
+    expect(Capability.matches(allActions, request)).toBe(true)
+    expect(evaluate([[new Rule({ effect: "allow", pattern: allActions })]], request)).toBe("allow")
+  })
 
   it("leaves dot segments literal for non-filesystem actions", () => {
     const pattern = new Capability.CapabilityPattern({ action: "net:get", resource: "https://h/**" })

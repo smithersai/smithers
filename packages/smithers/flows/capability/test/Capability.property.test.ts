@@ -37,6 +37,9 @@ const exactActions = [
 ] as const satisfies ReadonlyArray<Capability.Action>
 
 const actionArb = FastCheck.constantFrom<Capability.Action>(...exactActions)
+// These properties isolate textual glob semantics. Filesystem path-form
+// authorization is exercised separately in CapabilityEscape.test.ts.
+const textualActionArb = actionArb.filter((action) => !action.startsWith("fs:"))
 const patternActionArb = FastCheck.constantFrom<Capability.PatternAction>(...Capability.PatternAction.literals)
 
 const digitArb = FastCheck.constantFrom("0", "1", "2", "3", "4", "5", "6", "7", "8", "9")
@@ -87,7 +90,7 @@ describe("Capability properties", () => {
   it("a glob-free pattern matches exactly its own literal resource and nothing one character away", () => {
     FastCheck.assert(
       FastCheck.property(
-        actionArb,
+        textualActionArb,
         globFreePattern,
         FastCheck.nat({ max: 1023 }),
         digitArb,
@@ -113,7 +116,7 @@ describe("Capability properties", () => {
     const fragment = FastCheck.string({ unit: literalUnit, maxLength: 12 })
     FastCheck.assert(
       FastCheck.property(
-        actionArb,
+        textualActionArb,
         fragment,
         metacharacterArb,
         fragment,
@@ -235,8 +238,8 @@ describe("Capability properties", () => {
           const resource = mirror
             ? `${resourceDrive}${left}${filler}${middle}${extra}${right}`
             : `${resourceDrive}${filler}${extra}`
-          const selectedPattern = pattern("fs:read", patternResource)
-          const selectedCapability = capability("fs:read", resource)
+          const selectedPattern = pattern("net:get", patternResource)
+          const selectedCapability = capability("net:get", resource)
           expect(Capability.matches(selectedPattern, selectedCapability)).toBe(oracle(patternResource, resource))
         }
       ),

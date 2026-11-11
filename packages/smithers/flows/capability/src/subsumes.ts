@@ -23,10 +23,10 @@ const resourceSubsumes = (left: string, right: string): boolean => {
  * Conservatively determines whether every capability selected by `right` is
  * also selected by `left`. It returns `false` for glob relationships that
  * cannot be proven by its syntactic checks. A filesystem `right` whose
- * resource is absolute with a `.` or `..` segment, or relative and climbing
- * above its start, is never covered, since `/w/**` does not cover `/w/../**`.
- * A relative dot resource is covered only when both its text and its lexical
- * normal form are.
+ * resource is absolute with a `.`, `..`, or empty segment (except the root
+ * `/`), or relative and climbing above its start, is never covered, since `/w/**` does not cover `/w/../**`.
+ * A relative dot or empty-segment resource is covered only when both its text
+ * and its lexical normal form are.
  *
  * @since 0.1.0
  * @category predicates
