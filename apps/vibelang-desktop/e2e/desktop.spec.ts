@@ -261,11 +261,17 @@ test("the model picker moves keyboard focus and Escape returns it to the message
 
 test("external links cannot execute shell substitutions", async () => {
   const marker = join(root, "external-shell-marker")
-  await fetch("http://127.0.0.1:44509/desktop/external", {
-    method: "POST", headers: { origin: "http://127.0.0.1:44509", "content-type": "application/json" },
-    body: JSON.stringify({ url: `https://example.invalid/$(touch ${marker})` }),
-  })
+  await page.evaluate(async (url) => { await fetch("/desktop/external", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) }) }, `https://example.invalid/$(touch ${marker})`)
   expect(await readFile(marker).then(() => true).catch(() => false)).toBe(false)
+})
+
+test("a local process that forges Host and Origin without the launch secret is refused", async () => {
+  const headers = { origin: "http://127.0.0.1:44509", "content-type": "application/json" }
+  const state = await fetch("http://127.0.0.1:44509/desktop/state", { headers })
+  const model = await fetch("http://127.0.0.1:44509/desktop/change", { method: "POST", headers, body: JSON.stringify({ operation: "model", endpoint: "http://127.0.0.1:24509", model: "forged" }) })
+  const launch = await fetch("http://127.0.0.1:44509/desktop/launch?key=forged", { headers, redirect: "manual" })
+  expect([state.status, model.status, launch.status]).toEqual([403, 403, 403])
+  expect(await page.evaluate(async () => (await fetch("/desktop/state")).status)).toBe(200)
 })
 
 test("a failed old reply cannot disable a reselected model", async () => {

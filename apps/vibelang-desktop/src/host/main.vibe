@@ -2,6 +2,7 @@
 import { BunDesktop, BunFileSystem, BunHost, BunRuntime, BunServer } from "@smthrs/platform-bun"
 import { Ownership } from "@smthrs/run-store"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { SecureRandom } from "effect/crypto"
 import { HttpServer } from "effect/http"
 import { ExperimentalBunServices } from "vibelang-runtime/experimental/platform-bun"
 import { Unavailable } from "../../../vibelang/src/core/Factory.vibe"
@@ -27,8 +28,10 @@ export effect function main() {
   provide runtime, BunServer.layer(port) {
     const server = try HttpServer.HttpServer
     const origin = try orDie(Effect.try(() => HttpServer.formatAddress(server.address)))
-    try server.serve(handler(origin, assets))
-    try window.open(origin)
+    const random = try SecureRandom.SecureRandom
+    const launch = Array.from(try random.randomBytes(32), (byte) => byte.toString(16).padStart(2, "0")).join("")
+    try server.serve(handler(origin, assets, launch))
+    try window.open(`${origin}/desktop/launch?key=${launch}`)
     try Effect.logInfo("vibelang.desktop.ready")
     try Effect.never
   }

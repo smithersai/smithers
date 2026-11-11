@@ -1,5 +1,6 @@
 import { sandboxRequest, signedOutGateway } from "../../../vibelang/worker/SandboxHttp.vibe"
-// Loopback desktop API and bundled assets. Local privileges never follow web navigation.
+// Loopback desktop API and bundled assets. Local privileges never follow web navigation, and only the window
+// launched with this run's secret holds the cookie that admits /desktop/* and /api/* requests.
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Factory } from "../../../vibelang/src/core/Factory.vibe"
 import { viewer } from "../../../vibelang/src/core/roles.vibe"
@@ -8,9 +9,18 @@ import { Desktop } from "./Factory.vibe"
 
 schema ChangeBody { readonly operation: "open" | "close" | "model" | "mock"; readonly endpoint?: string; readonly model?: string }
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-src https://vibelang.sh; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+const LAUNCH_COOKIE = "vibelang-desktop-launch"
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
 
-effect function handle(origin: string, assets: string) {
+/** Compares a presented launch secret without an early exit on the first differing character. */
+function launched(presented: string | null | undefined, launch: string) {
+  if (presented === null || presented === undefined || presented.length !== launch.length) return false
+  let difference = 0
+  for (let index = 0; index < launch.length; index++) difference |= presented.charCodeAt(index) ^ launch.charCodeAt(index)
+  return difference === 0
+}
+
+effect function handle(origin: string, assets: string, launch: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const factory = try Factory
   const desktop = try Desktop
@@ -20,6 +30,11 @@ effect function handle(origin: string, assets: string) {
   if (request.headers.host !== new URL(origin).host) return json({ error: "host" }, 403)
   if (request.headers["sec-fetch-site"] === "cross-site") return json({ error: "origin" }, 403)
   if (request.method !== "GET" && request.method !== "HEAD" && request.headers.origin !== origin) return json({ error: "origin" }, 403)
+  if (url.pathname === "/desktop/launch" && request.method === "GET") {
+    if (!launched(url.searchParams.get("key"), launch)) return json({ error: "launch" }, 403)
+    return try HttpServerResponse.redirect("/", { status: 303, headers: { "cache-control": "no-store" } }).pipe(HttpServerResponse.setCookie(LAUNCH_COOKIE, launch, { httpOnly: true, sameSite: "strict", path: "/" }), Effect.orDie)
+  }
+  if ((url.pathname.startsWith("/desktop/") || url.pathname.startsWith("/api/")) && !launched(request.cookies[LAUNCH_COOKIE], launch)) return json({ error: "launch" }, 403)
   if (url.pathname === "/desktop/state" && request.method === "GET") return json(try desktop.snapshot())
   if (url.pathname === "/desktop/models" && request.method === "GET") {
     const listed = desktop.models(url.searchParams.get("endpoint") ?? "") catch () => undefined
@@ -63,9 +78,10 @@ effect function handle(origin: string, assets: string) {
   return HttpServerResponse.uint8Array(content, { contentType: types[extension ?? ""] ?? "application/octet-stream", headers: { "content-security-policy": CSP, "x-content-type-options": "nosniff" } })
 }
 
-export function handler(origin: string, assets: string) {
+/** Serves the desktop; `launch` is this run's secret, handed only to the native window through `/desktop/launch`. */
+export function handler(origin: string, assets: string, launch: string) {
   return withSpan(effect {
-    const result = try exit(handle(origin, assets))
+    const result = try exit(handle(origin, assets, launch))
     const status = Exit.isSuccess(result) ? result.value.status : 500
     try Effect.logInfo("vibelang.desktop.http").pipe(Effect.annotateLogs({ status }))
     try Metric.update(Metric.withAttributes(Metric.counter("vibelang_desktop_requests", { incremental: true }), { status: String(status) }), 1)

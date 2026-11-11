@@ -40,8 +40,11 @@ tool effects run in the Bun SQLite flow engine. The conversation's sequencer rem
 Settings and conversation events persist on this machine, independently of the chosen working folder.
 
 The native window serves trusted bundled assets and its API from a loopback server with same-origin checks and a
-CSP. Native navigation is restricted to that origin, the view has no Electrobun RPC, and ordinary builds enable no
-CDP port. The headless test build opts into a CDP port for Playwright. Mock is the product MockFactory, with no
+CSP. Every `/desktop/*` and `/api/*` request also needs this launch's random secret: the host opens the window at
+`/desktop/launch` with it, which sets an HttpOnly SameSite=Strict cookie and redirects to the app, so another local
+process cannot read the person's folder or choose the model by forging Host and Origin.
+Native navigation is restricted to that origin, the view has no Electrobun RPC, and ordinary builds enable no CDP
+port. The headless test build opts into a CDP port for Playwright. Mock is the product MockFactory, with no
 model or backend; selecting a local model changes the injected Factory. The agent's tour retains its existing
 mock flow in its isolated tour conversation, labelled Mock. A saved Mock choice restores without consulting its
 saved local provider. Selecting a local model exits that mock conversation.

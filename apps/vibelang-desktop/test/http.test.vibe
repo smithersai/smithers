@@ -1,0 +1,59 @@
+// Loopback admission: spoofed Host and Origin headers alone never reach the desktop or conversation API.
+import { BunHost } from "@smthrs/platform-bun"
+import { expect, it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../../vibelang/src/core/Factory.vibe"
+import { MockFactory } from "../../vibelang/src/core/MockFactory.vibe"
+import { Desktop } from "../src/host/Factory.vibe"
+import { handler } from "../src/host/Http.vibe"
+
+const origin = "http://127.0.0.1:44509"
+const launch = "a".repeat(64)
+const empty = { mock: true, folder: null, model: null, tools: [] }
+
+it.effect("admits only the window that presented this launch's secret", () => (effect {
+  const calls: Array<string> = []
+  const desktop = Layer.succeed(Desktop, {
+    external: effect (url) => { calls.push(`external ${url}`) },
+    snapshot: effect () => { calls.push("snapshot"); return empty },
+    change: effect (operation, endpoint) => { calls.push(`change ${operation} ${endpoint}`); return empty },
+    models: effect (endpoint) => { calls.push(`models ${endpoint}`); return [] },
+  })
+  const fs = try FileSystem.FileSystem
+  const assets = try fs.makeTempDirectoryScoped()
+  // Exactly what a non-browser client on this machine can send: any method, Host, Origin, cookie and body.
+  effect function send(path: string, options: { readonly method?: "GET" | "POST"; readonly cookie?: string; readonly body?: string } = {}) {
+    const base = options.method === "POST" ? HttpClientRequest.post(`${origin}${path}`).pipe(HttpClientRequest.bodyText(options.body ?? "", "application/json")) : HttpClientRequest.get(`${origin}${path}`)
+    const forged = base.pipe(HttpClientRequest.setHeaders({ host: "127.0.0.1:44509", origin, ...(options.cookie === undefined ? {} : { cookie: options.cookie }) }))
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(forged))
+    const response = try handler(origin, assets, launch).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+    return HttpServerResponse.toWeb(response)
+  }
+  provide desktop, MockFactory {
+    // A local process forges Host and Origin but has no cookie: every privileged route refuses it.
+    const state = try send("/desktop/state")
+    const model = try send("/desktop/change", { method: "POST", body: JSON.stringify({ operation: "model", endpoint: "http://127.0.0.1:1", model: "x" }) })
+    const external = try send("/desktop/external", { method: "POST", body: JSON.stringify({ url: "https://example.invalid" }) })
+    const conversation = try send("/api/conversations/home/posts", { method: "POST", body: "{}" })
+    const guessed = try send("/desktop/state", { cookie: `vibelang-desktop-launch=${"b".repeat(64)}` })
+    const wrongKey = try send(`/desktop/launch?key=${"b".repeat(64)}`)
+    const noKey = try send("/desktop/launch")
+    // The native window opens the launch URL, receives the cookie and is redirected to the app.
+    const launched = try send(`/desktop/launch?key=${launch}`)
+    const cookie = launched.headers.get("set-cookie") ?? ""
+    const admitted = try send("/desktop/state", { cookie: cookie.split(";")[0]! })
+    const changed = try send("/desktop/change", { method: "POST", cookie: cookie.split(";")[0]!, body: JSON.stringify({ operation: "mock" }) })
+    try Effect.try(() => {
+      expect([state.status, model.status, external.status, conversation.status, guessed.status, wrongKey.status, noKey.status]).toEqual([403, 403, 403, 403, 403, 403, 403])
+      expect(wrongKey.headers.get("set-cookie")).toBeNull()
+      expect(launched.status).toBe(303)
+      expect(launched.headers.get("location")).toBe("/")
+      expect(cookie).toContain(`vibelang-desktop-launch=${launch}`)
+      expect(cookie).toContain("HttpOnly")
+      expect(cookie).toContain("SameSite=Strict")
+      expect(admitted.status).toBe(200)
+      expect(changed.status).toBe(200)
+      expect(calls).toEqual(["snapshot", "change mock undefined"])
+    })
+  }
+}).pipe(Effect.provide(BunHost.layer), Effect.scoped))
