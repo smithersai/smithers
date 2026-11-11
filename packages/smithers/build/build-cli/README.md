@@ -95,8 +95,12 @@ discovery in the per-user global temp directory; confinement denies those
 `xcrun_db` writes and can make every compilation repeat expensive Xcode lookup.
 Using the real compiler preserves the sandbox and the existing test deadlines.
 
-Docker integration tests require a responsive daemon, cached Alpine images or
-registry access, and a buildx builder supporting OCI export. `docker info`
+Docker integration tests require a responsive daemon, cached Alpine and
+`registry:2.8.3` images or registry access, and buildx with OCI export support.
+Granted-approval tests create a private builder and loopback registry, build an
+image from a Dockerfile, load and push every tag, and verify each registry
+manifest against the built config digest. They remove their builder, registry,
+and image tags on completion. `docker info`
 alone does not establish that containers can start within the service readiness
 deadline. Diagnose container startup delays before changing readiness budgets.
 The real Codex envelope smoke is opt-in with `SMTHRS_CODEX_SMOKE=1`; it requires

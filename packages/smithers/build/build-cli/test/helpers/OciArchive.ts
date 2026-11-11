@@ -98,7 +98,7 @@ export const imageArchive = (options: {
   const descriptors: Array<unknown> = []
   for (const platform of options.platforms ?? ["linux/arm64"]) {
     const [os, architecture] = platform.split("/")
-    const layer = `layer ${platform} ${options.seed ?? ""}`
+    const layer = tar([{ name: "hello.txt", body: `layer ${platform} ${options.seed ?? ""}` }])
     const config = JSON.stringify({ architecture, os, rootfs: { type: "layers", diff_ids: [digest(layer)] } })
     const manifest = JSON.stringify({
       schemaVersion: 2,
