@@ -303,7 +303,7 @@ export class MigrationReport extends Schema.Class("@smthrs/migrate/MigrationRepo
  * @category models
  * @since 1.0.0-rc.0
  */
-export const tool = { name: "@smthrs/migrate", version: "1.0.0-rc.16" };
+export const tool = { name: "@smthrs/migrate", version: "1.0.0-rc.17" };
 /**
  * Projects a {@link Detection} into the report's project section.
  *

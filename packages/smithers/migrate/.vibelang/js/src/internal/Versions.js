@@ -44,4 +44,4 @@ export const effectPinFor = (field) => field === "peerDependencies" ? effectRang
  * @since 1.0.0-rc.0
  * @private
  */
-export const smithersVersion = "1.0.0-rc.16";
+export const smithersVersion = "1.0.0-rc.17";
