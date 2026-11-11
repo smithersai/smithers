@@ -897,6 +897,7 @@
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",
+    "vibelang-runtime": "0.0.12",
     "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0",

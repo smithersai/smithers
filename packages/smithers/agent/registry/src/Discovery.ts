@@ -69,7 +69,7 @@ export interface SkillSource extends Source {
   readonly skills: true
 }
 
-const entryPrecedence = ["flow.ts", "flow.mdx", "SKILL.md"] as const
+const entryPrecedence = ["flow.ts", "flow.vibe", "flow.mdx", "SKILL.md"] as const
 
 /**
  * Root directories a path-named source never reads as flows.
@@ -419,7 +419,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         const projectEntry = (
           directory: string,
           location: string,
-          selected: (typeof entryPrecedence)[number],
           contents: Extract<EntryMetadata, { readonly _tag: "Metadata" }>,
           segments: ReadonlyArray<string>,
           imports: ReadonlyArray<ModuleImport>,
@@ -429,7 +428,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           readonly warnings: ReadonlyArray<DiscoveryWarning>
         } => {
           const pathName = Names.deriveFromPath(segments)
-          if (selected !== "flow.ts") {
+          if (contents.source === undefined) {
             if (skills) {
               const parsed = CoreMarkdown.parseSkill(contents.text)
               if (Result.isFailure(parsed) || parsed.success.name !== path.basename(directory)) {
@@ -585,7 +584,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 )
               } else {
                 const contents = yield* Effect.result(
-                  readMetadata(fs, location, selected === "flow.ts" ? "module" : "markdown")
+                  readMetadata(fs, location, selected === "flow.ts" || selected === "flow.vibe" ? "module" : "markdown")
                 )
                 if (Result.isFailure(contents)) {
                   warnings.push(
@@ -617,7 +616,6 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                   const projected = projectEntry(
                     directory,
                     location,
-                    selected,
                     contents.success,
                     segments,
                     imports,

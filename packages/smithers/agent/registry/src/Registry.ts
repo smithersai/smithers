@@ -563,7 +563,7 @@ export const layer = (
  */
 export interface ProjectOptions {
   readonly snapshots?: ExecutionSnapshot.Service | undefined
-  /** The project root. `<root>/.smithers/flows` is scanned for `flow.ts`, `flow.mdx` and `SKILL.md`. */
+  /** The project root. `<root>/.smithers/flows` is scanned for `flow.ts`, `flow.vibe`, `flow.mdx` and `SKILL.md`. */
   readonly root: string
   /** Additional workspace-relative skill libraries, scanned after project flows in declared order. */
   readonly skills?: ReadonlyArray<string | { readonly root: string }> | undefined

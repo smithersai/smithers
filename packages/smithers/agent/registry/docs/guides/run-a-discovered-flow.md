@@ -112,7 +112,7 @@ requirement as one type.
 
 ## Module action implementations
 
-A `.smithers/flows/<name>/flow.ts` module default-exports its `@smthrs/flow` declaration
+A `.smithers/flows/<name>/flow.ts` or `flow.vibe` module default-exports its `@smthrs/flow` declaration
 and may also export `layer`, an Effect `Layer` containing its implementations:
 
 ```ts

@@ -63,7 +63,7 @@ Two more stop the walk rather than one entry:
 | `directory_name_mismatch` | The retained `name` differs from the directory's name, whether valid or invalid. The retained name was used.                                                     |
 | `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant.         |
 | `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](./load-packs.md).                        |
-| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                                      |
+| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.vibe`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                         |
 
 See [Sources and naming](../concepts/sources.md#two-ways-a-flow-gets-its-name)
 for the grammar. Use the descriptor's `name` for lookup. For example, `name: Review--PR` in

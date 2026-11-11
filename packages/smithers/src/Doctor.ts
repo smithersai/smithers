@@ -199,7 +199,7 @@ const registry = (
     return {
       name: "registry",
       level: "warn",
-      detail: `${directory} holds no flow.ts, flow.mdx, or SKILL.md; discovery finds nothing`
+      detail: `${directory} holds no flow.ts, flow.vibe, flow.mdx, or SKILL.md; discovery finds nothing`
     }
   }
   return {

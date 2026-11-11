@@ -141,7 +141,7 @@ const readWithin = (fs: FileSystem.FileSystem, file: string, limit: number, read
  * The exact path is checked first; these are what an extensionless specifier such as
  * `"../coding/schema"` means under this project's loaders.
  */
-const suffixes = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json"]
+const suffixes = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json", ".vibe"]
 
 /**
  * The TypeScript sources a JavaScript specifier stands for.
@@ -157,7 +157,15 @@ const typeScriptCounterparts: ReadonlyArray<readonly [string, ReadonlyArray<stri
 ]
 
 /** The files a specifier naming a DIRECTORY resolves to. */
-const indexNames = ["index.ts", "index.tsx", "index.mts", "index.js", "index.mjs"]
+const indexNames = ["index.ts", "index.tsx", "index.mts", "index.js", "index.mjs", "index.vibe"]
+
+/** VibeLang's source loader follows the compiler's extensionless lookup order. */
+const vibeSuffixes = [".ts", ".tsx", ".vibe", ".js", ".jsx"]
+const vibeIndexNames = vibeSuffixes.map((extension) => `index${extension}`)
+
+/** A shared directory can hold importers in both languages with different .js counterparts. */
+const resolutionKey = (directory: string, specifier: string, vibe: boolean): string =>
+  `${directory}\0${specifier}\0${vibe}`
 
 /**
  * The literal specifier of one static `import` or `export`, and the source
@@ -347,15 +355,18 @@ const relativePath = (path: Path.Path, fromDirectory: string, target: string): s
   path.relative(fromDirectory, target).replaceAll("\\", "/")
 
 /** What `base` can stand for when it is not itself a file, in the loader's order. */
-const fallbacks = (path: Path.Path, base: string): ReadonlyArray<string> => {
+const fallbacks = (path: Path.Path, base: string, vibe: boolean): ReadonlyArray<string> => {
   const candidates: Array<string> = []
   for (const [extension, sources] of typeScriptCounterparts) {
     if (!base.endsWith(extension)) continue
-    for (const source of sources) {
+    for (const source of vibe && extension === ".js" ? [".vibe", ...sources] : sources) {
       candidates.push(`${base.slice(0, -extension.length)}${source}`)
     }
   }
-  candidates.push(...suffixes.map((suffix) => `${base}${suffix}`), ...indexNames.map((name) => path.join(base, name)))
+  candidates.push(
+    ...(vibe ? vibeSuffixes : suffixes).map((suffix) => `${base}${suffix}`),
+    ...(vibe ? vibeIndexNames : indexNames).map((name) => path.join(base, name))
+  )
   return candidates
 }
 
@@ -369,10 +380,11 @@ const member = (
   path: Path.Path,
   directory: string,
   specifier: string,
-  has: (file: string) => boolean
+  has: (file: string) => boolean,
+  vibe: boolean
 ): string | undefined => {
   const base = path.resolve(directory, specifier)
-  return [base, ...fallbacks(path, base)].find(has)
+  return [base, ...fallbacks(path, base, vibe)].find(has)
 }
 
 /**
@@ -385,10 +397,11 @@ const resolve = (
   path: Path.Path,
   fromDirectory: string,
   specifier: string,
-  memo: Cache
+  memo: Cache,
+  vibe: boolean
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function*() {
-    const key = `${fromDirectory}\0${specifier}`
+    const key = resolutionKey(fromDirectory, specifier, vibe)
     if (memo.resolutions.has(key)) return memo.resolutions.get(key)
     // Different importers and aliases can probe the same absolute candidate.
     // Cache misses too: wildcard paths usually leave bare imports to packages.
@@ -406,7 +419,7 @@ const resolve = (
       memo.resolutions.set(key, base)
       return base
     }
-    const candidates = fallbacks(path, base)
+    const candidates = fallbacks(path, base, vibe)
     // Most fallbacks are missing wildcard aliases. Overlap their host reads,
     // then select in loader order regardless of which probe finished first.
     const matches = yield* Effect.forEach(candidates, isFile, { concurrency: 16 })
@@ -835,7 +848,7 @@ const walk = (
           }
           let mapped = false
           for (const file of targets.files) {
-            if ((yield* resolve(fs, path, directory, file, memo)) !== undefined) {
+            if ((yield* resolve(fs, path, directory, file, memo, from.endsWith(".vibe"))) !== undefined) {
               mapped = true
               if (from.endsWith(".mdx") && specifier === "@smthrs/registry/Prompt/jsx-runtime") {
                 const description = `${importer} maps the MDX text runtime to project files`
@@ -881,7 +894,7 @@ const walk = (
         escapes()
         continue
       }
-      const resolved = yield* resolve(fs, path, directory, specifier, memo)
+      const resolved = yield* resolve(fs, path, directory, specifier, memo, from.endsWith(".vibe"))
       if (resolved === undefined) {
         const description = `${importer} imports "${specifier}", which resolves to no file`
         found.set(description, unpinnable(description))
@@ -1049,7 +1062,7 @@ export const snapshot = (
       // closure needs project-module admission rather than host package trust.
       const hasMappedModule = (literal: string) =>
         memo.bare.get(`${directory}\0${literal}`)?.files.some((candidate) => {
-          const resolved = memo.resolutions.get(`${directory}\0${candidate}`)
+          const resolved = memo.resolutions.get(resolutionKey(directory, candidate, file.endsWith(".vibe")))
           return resolved !== undefined && reads.has(resolved)
         }) ?? false
       for (const literal of specifiers.runtime) {
@@ -1061,9 +1074,9 @@ export const snapshot = (
       }
       for (const site of specifiers.statics) {
         const target = isRelativeSpecifier(site.literal)
-          ? member(path, directory, site.literal, (candidate) => reads.has(candidate))
+          ? member(path, directory, site.literal, (candidate) => reads.has(candidate), file.endsWith(".vibe"))
           : site.literal.startsWith("#")
-          ? yield* soleImportsTarget(fs, path, directory, site.literal, memo)
+          ? yield* soleImportsTarget(fs, path, directory, site.literal, memo, file.endsWith(".vibe"))
           : undefined
         if (target !== undefined && reads.has(target)) links.push({ start: site.start, end: site.end, target })
         else if (hasMappedModule(site.literal)) {
@@ -1085,14 +1098,15 @@ const soleImportsTarget = (
   path: Path.Path,
   directory: string,
   specifier: string,
-  memo: Cache
+  memo: Cache,
+  vibe: boolean
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function*() {
     // The walk followed every bare specifier of every module it read, so the
     // mapping is already in `memo`.
     const targets = memo.bare.get(`${directory}\0${specifier}`)!
     return targets.files.length === 1 && targets.unpinnable.length === 0
-      ? yield* resolve(fs, path, directory, targets.files[0]!, memo)
+      ? yield* resolve(fs, path, directory, targets.files[0]!, memo, vibe)
       : undefined
   })
 
@@ -1124,7 +1138,9 @@ export const linked = (
   for (const site of specifiersOf(module.source).statics) {
     const relative = isRelativeSpecifier(site.literal)
     if (!relative && !site.literal.startsWith("#")) continue
-    const target = relative ? member(path, directory, site.literal, has) : module.links[count]?.target
+    const target = relative
+      ? member(path, directory, site.literal, has, file.endsWith(".vibe"))
+      : module.links[count]?.target
     if (relative && target === undefined) continue
     const link = module.links[count++]
     if (

@@ -355,6 +355,140 @@ describe("where a regular expression may start (#3106)", () => {
 })
 
 describe("resolving a specifier to a file", () => {
+  it.effect("pins VibeLang helpers through extensionless, index and emitted JavaScript imports", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.vibe":
+          "import \"./extensionless\"; import \"./folder\"; import \"./emitted.js\"; import \"./module.mjs\"; import \"./common.cjs\"",
+        "extensionless.vibe": "export const value = 1",
+        "folder/index.vibe": "export const value = 2",
+        "emitted.vibe": "export const value = 3",
+        "module.mts": "export const value = 4",
+        "common.cts": "export const value = 5"
+      })
+      const imports = yield* walk(root, "flow.vibe")
+      expect(imports.map((entry) => entry.path)).toEqual([
+        "common.cts",
+        "emitted.vibe",
+        "extensionless.vibe",
+        "folder/index.vibe",
+        "module.mts"
+      ])
+      expect(imports.every((entry) => entry.contentDigest !== undefined)).toBe(true)
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const snapshot = yield* ModuleClosure.snapshot(
+        fs,
+        path,
+        join(root, "flow.vibe"),
+        yield* fs.readFile(join(root, "flow.vibe"))
+      )
+      expect(snapshot.unsupported).toEqual([])
+      expect(snapshot.modules.get(join(root, "flow.vibe"))!.links.map((link) => link.target)).toEqual([
+        join(root, "extensionless.vibe"),
+        join(root, "folder/index.vibe"),
+        join(root, "emitted.vibe"),
+        join(root, "module.mts"),
+        join(root, "common.cts")
+      ])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("verifies VibeLang snapshot links in the same order as discovery when alternatives are measured", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.vibe":
+          "import \"./helper\"; import \"./helper.js\"; import \"./emitted.js\"; import \"./emitted.ts\"; import \"./folder\"; import \"./folder/index.mts\"",
+        "helper.js": "export const value = 1",
+        "helper.vibe": "export const value = 2",
+        "emitted.ts": "export const value = 3",
+        "emitted.vibe": "export const value = 4",
+        "folder/index.mts": "export const value = 5",
+        "folder/index.vibe": "export const value = 6"
+      })
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const file = join(root, "flow.vibe")
+      const snapshot = yield* ModuleClosure.snapshot(fs, path, file, yield* fs.readFile(file))
+      const module = snapshot.modules.get(file)!
+      const has = (candidate: string) => snapshot.modules.has(candidate)
+      expect(module.links.map((link) => link.target)).toEqual([
+        join(root, "helper.vibe"),
+        join(root, "helper.js"),
+        join(root, "emitted.vibe"),
+        join(root, "emitted.ts"),
+        join(root, "folder/index.vibe"),
+        join(root, "folder/index.mts")
+      ])
+      expect(ModuleClosure.linked(path, file, module, has)).toBe(true)
+      expect(ModuleClosure.linked(path, file, {
+        ...module,
+        links: module.links.map((link, index) => index === 0 ? { ...link, target: join(root, "helper.js") } : link)
+      }, has)).toBe(false)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("pins transitive VibeLang imports from TypeScript helpers", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.vibe": "import \"./helper.ts\"",
+        "helper.ts": "export * from \"./leaf\"; export * from \"./folder\"",
+        "leaf.vibe": "export const value = 1",
+        "folder/index.vibe": "export const other = 2"
+      })
+      expect((yield* walk(root, "flow.vibe")).map((entry) => entry.path)).toEqual([
+        "folder/index.vibe",
+        "helper.ts",
+        "leaf.vibe"
+      ])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("retains existing JavaScript and module-index choices before TypeScript's VibeLang fallback", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": "import \"./helper\"; import \"./folder\"",
+        "flow.vibe": "import \"./helper\"; import \"./folder\"",
+        "helper.js": "export const value = 1",
+        "helper.vibe": "export const value = 2",
+        "folder/index.mts": "export const value = 3",
+        "folder/index.vibe": "export const value = 4"
+      })
+      const memo = ModuleClosure.cache()
+      expect((yield* walk(root, "flow.ts", memo)).map((entry) => entry.path)).toEqual(["folder/index.mts", "helper.js"])
+      expect((yield* walk(root, "flow.vibe", memo)).map((entry) => entry.path)).toEqual([
+        "folder/index.vibe",
+        "helper.vibe"
+      ])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("keeps each source language's resolution when scans share a directory and cache", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": "import \"./both.js\"; import \"./extensionless\"; import \"./folder\"",
+        "flow.vibe": "import \"./both.js\"; import \"./extensionless\"; import \"./folder\"",
+        "both.ts": "export const value = 1",
+        "both.vibe": "export const value = 2",
+        "extensionless.ts": "export const value = 3",
+        "extensionless.vibe": "export const value = 4",
+        "folder/index.ts": "export const value = 5",
+        "folder/index.vibe": "export const value = 6"
+      })
+      const memo = ModuleClosure.cache()
+      expect((yield* walk(root, "flow.ts", memo)).map((entry) => entry.path)).toEqual([
+        "both.ts",
+        "extensionless.ts",
+        "folder/index.ts"
+      ])
+      expect((yield* walk(root, "flow.vibe", memo)).map((entry) => entry.path)).toEqual([
+        "both.vibe",
+        "extensionless.ts",
+        "folder/index.ts"
+      ])
+      expect((yield* walk(root, "flow.ts", memo)).map((entry) => entry.path)).toEqual([
+        "both.ts",
+        "extensionless.ts",
+        "folder/index.ts"
+      ])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
   it.effect("tries the exact path, then the extensions, then a directory index", () =>
     Effect.gen(function*() {
       const root = yield* tree({
