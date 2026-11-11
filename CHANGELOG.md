@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3393 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3398 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
@@ -429,6 +429,11 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **ui:** scan Markdown link delimiters in linear time ([de495d4969](https://github.com/smithersai/smithers/commit/de495d4969b901968b2b460078d81afb0abc4b73))
+- **mvp:** invalidate Alchemy Worker caches after rollback ([acdca7df16](https://github.com/smithersai/smithers/commit/acdca7df167fee5befa20dcc86b80f2b709e02e3))
+- **mvp:** derive complete deploy installs and check prerequisites before publication ([e6ce2f8b37](https://github.com/smithersai/smithers/commit/e6ce2f8b3771b3c9a7f56127accc6bbef6ab0d93))
+- **cli:** preserve esbuild's optional Yarn PnP probe ([d4f93be516](https://github.com/smithersai/smithers/commit/d4f93be516e2dfebf0c0996617f6b11eb006f731))
+- **vibelang:** keep broker test state across connection eviction ([e8732428fe](https://github.com/smithersai/smithers/commit/e8732428fe8d2f1727d604d3ac774da2821d6ffd))
 - **smithers:** the runner's process watcher follows children of a seen process that left the agent's tree ([24d33f97a1](https://github.com/smithersai/smithers/commit/24d33f97a19a6fd4b2312224c4b65594c5cdfa53))
 - **cli:** terminal-mode cancellation stops the command's descendants before returning 130 ([8fd6cd96af](https://github.com/smithersai/smithers/commit/8fd6cd96afa996696ff75d81c3476821aad61355))
 - **cli:** detached admission verification stops at cancellation and its deadline ([5f9778c669](https://github.com/smithersai/smithers/commit/5f9778c669884832e5f547c99ee93bdc910afcde))
