@@ -252,7 +252,8 @@ export const make = (
                       _tag: "Insert",
                       delivery: "steer",
                       admittedAt: 0,
-                      message
+                      message,
+                      outsideChange: true
                     })
                   ))
                 })

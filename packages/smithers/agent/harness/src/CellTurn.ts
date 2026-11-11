@@ -1595,6 +1595,13 @@ const liveCellEcho = 8192
 const deadCellEcho = 1024
 
 /**
+ * What the model reads when steering held its cell: the cell did not run, so
+ * none of its calls, edits or bindings exist.
+ */
+const heldCell =
+  "This cell did not run: new messages arrived while you wrote it. Read them below, then emit the cell again if it still applies."
+
+/**
  * Appends one observation turn to a context window, bounding the echo.
  *
  * The assistant message is the model's own reply, and putting it back verbatim
@@ -3321,9 +3328,16 @@ const evaluate = (
           boundary: `steering-before-call:${cell.digest}:${invocation.ordinal}`
         },
         success: Schema.Boolean,
-        execute: steering.read().pipe(Effect.map((queue) => queue.items.some((item) => item.delivery === "steer")))
+        execute: steering.read().pipe(
+          Effect.map((queue) =>
+            queue.items.some((item) =>
+              item._tag === "Insert" && item.delivery === "steer" && item.outsideChange === true
+            )
+          )
+        )
       })
-      // A change during a running call holds all subsequent dispatches. The
+      // An outside change during a running call holds all subsequent
+      // dispatches; a person's message or a seat change waits for the close. The
       // cell may finish, then its existing close drain inserts the note. No
       // notification is inserted into an executing cell or promoted twice.
       return pending.pipe(
@@ -3872,27 +3886,33 @@ const frame = (
       })
     )
 
-    // A committed outside change can arrive while the model is producing this
-    // cell. Probe only after it settles; never interrupt a model turn. Journal
-    // the probe as well as the drain, so replay cannot execute a discarded cell
-    // merely because the live notification queue has since been consumed.
+    // A person's message or a committed outside change can arrive while the
+    // model is producing this cell. Probe only after it settles; never
+    // interrupt a model turn. Journal the probe as well as the drain, so replay
+    // cannot execute a discarded cell merely because the live notification
+    // queue has since been consumed.
     const pendingBeforeTool = yield* engine.record({
       name: "steering-before-tool",
       identity: { session: state.session, frame: state.frame, boundary: `steering-before-tool:${cell.digest}` },
       success: Schema.Boolean,
-      execute: steering.read().pipe(Effect.map((queue) => queue.items.some((item) => item.delivery === "steer")))
+      // A message the model has not read holds the cell. A seat or thinking
+      // change alone does not: it applies after the turn closes.
+      execute: steering.read().pipe(
+        Effect.map((queue) => queue.items.some((item) => item._tag === "Insert" && item.delivery === "steer"))
+      )
     })
     if (pendingBeforeTool) {
-      if (!Frame.hasNextFrame(state)) {
-        return yield* new HarnessError({
-          code: "engine_failed",
-          message: "Outside changes require another model turn before tools can run"
-        })
+      // The held cell needs one model frame to read what arrived. On the final
+      // frame the run grants it, as an answered park does; replay derives the
+      // same extension.
+      const held = settling(`before-tool:${cell.digest}`, "", {}, { mutated: false, checks: [] })
+      const beforeTool = Frame.hasNextFrame(state) ? held : {
+        ...held,
+        state: advance(state, { maxFrames: state.frame + 2 })
       }
-      const beforeTool = settling(`before-tool:${cell.digest}`, "", {}, { mutated: false, checks: [] })
       const drained = yield* drain(beforeTool, false)
       if (carries(drained)) {
-        const step = yield* resumed(beforeTool, drained, {}, "", deadCellEcho)
+        const step = yield* resumed(beforeTool, drained, {}, heldCell, deadCellEcho)
         return yield* finish(beforeTool, step)
       }
     }

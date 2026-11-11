@@ -20970,7 +20970,8 @@ they are never acknowledged without a frame available to consume them.
 `Steering.Queue` is an immutable FIFO of `Steering.Item`s: transcript inserts
 (`SteerInsert` for the next boundary, `QueueInsert` for when the run would
 otherwise go idle), and `SeatChange` and `ThinkingChange` (applied only after
-the current turn closes).
+the current turn closes). A `SteerInsert` with `outsideChange: true` is a
+committed outside change.
 `Steering.empty`, `enqueue`, and `drainAtClose(queue, cutoff)` operate on it
 without mutation. `Steering.Drain` is
 what one boundary promoted; `Steering.DrainRecord` and `drainRecord` project
@@ -20985,6 +20986,13 @@ export interface Source {
   readonly drain: (input: BoundaryInput) => Effect.Effect<Drain, HarnessError>
 }
 ```
+
+`read` reports what is pending without promoting it. `CellTurn` reads it twice
+a frame. After the model returns, a pending `SteerInsert` holds the proposed
+cell: the next frame opens with a note that the cell did not run, then what
+the drain delivered, and on the final frame the run is granted one more frame
+to read it. While a cell runs, a pending outside change refuses the cell's
+later calls. A pending seat or thinking change holds nothing.
 
 A drain is idempotent in its boundary string: a second drain at one boundary
 promotes nothing and hands back exactly what the first promoted, with
@@ -21026,7 +21034,8 @@ export const layerForExecution: () => Layer.Layer<
 ```
 
 `make` captures the journal-backed queue as the harness steering source for
-one run lineage: its `read` reports an empty queue and its `drain` delegates
+one run lineage: its `read` reports the pending committed outside changes, each
+a `SteerInsert` marked `outsideChange: true`, and its `drain` delegates
 to the notification queue's own boundary-aware drain, mapping failures into
 `HarnessError`. `layer` provides it. A delivered message reads
 `[notification <id> from <actor> at <lineage> turn <n>]` and then its words; a

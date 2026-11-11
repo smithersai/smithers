@@ -230,6 +230,10 @@ const stubEngine = (
 const valueless = (): Cell.CallResult =>
   Object.assign(Cell.CallResult.new({ outcome: "success", value: null }), { value: undefined as never })
 
+/** What the model reads after steering held its cell. */
+const held =
+  "This cell did not run: new messages arrived while you wrote it. Read them below, then emit the cell again if it still applies."
+
 const messagesOf = (model: ScriptedModel.Fixture, index: number): string =>
   JSON.stringify(model.recorder.requests[index]?.messages ?? [])
 
@@ -1293,6 +1297,95 @@ describe("CellTurn steering boundaries", () => {
       "gpt-4o",
       "gpt-4o"
     ])
+    expect(resolvedText(events)).toBe("done")
+  })
+
+  it("tells the model a cell held by a person's message did not run", async () => {
+    const queue = steeringQueue()
+    queue.steer("Use the release branch.")
+    const { engine, model, failure } = await run({
+      steering: queue.layer,
+      script: [emits(`await ctx.call("fs/list", { path: "held" }); ctx.done("held")`), emits(`ctx.done("fresh")`)]
+    })
+
+    expect(failure).toBeUndefined()
+    expect(engine.recorder.calls).toEqual([])
+    const after = conversation(model, 1)
+    const notice = after.findIndex((message) =>
+      message.role === "user" && message.content.some((part) => part.type === "text" && part.text === held)
+    )
+    expect(notice).toBeGreaterThan(0)
+    expect(after[notice - 1]?.role).toBe("assistant")
+    expect(after[notice + 1]).toEqual(ModelRequest.Message.user("Use the release branch."))
+    // No user turn without words: a provider drops empty text parts.
+    expect(
+      after.filter((message) =>
+        message.role === "user" && !message.content.some((part) => part.type === "text" && part.text !== "")
+      )
+    ).toEqual([])
+  })
+
+  it("runs the proposed cell and all its calls when only a seat or thinking change is pending", async () => {
+    let pending = true
+    const changes: ReadonlyArray<Steering.SeatChange | Steering.ThinkingChange> = [
+      { _tag: "SeatChange", delivery: "steer", admittedAt: 1, seat: "anthropic:test-model" },
+      { _tag: "ThinkingChange", delivery: "steer", admittedAt: 2, thinking: "high" }
+    ]
+    const steering = Steering.layer({
+      read: () => Effect.sync(() => ({ items: pending ? changes : [] })),
+      drain: () =>
+        Effect.sync(() => {
+          const seatChanges = pending ? changes : []
+          pending = false
+          return { ...nothing, seatChanges }
+        })
+    })
+    const { engine, events, failure } = await run({
+      steering,
+      calls: [{ _tag: "Success", value: [] }, { _tag: "Success", value: [] }],
+      script: [
+        emits(
+          `await ctx.call("fs/list", { path: "first" }); await ctx.call("fs/list", { path: "second" }); console.log("kept")`
+        ),
+        emits(`ctx.done("ran")`)
+      ]
+    })
+
+    // A seat or thinking change applies after the turn closes: it neither
+    // discards the cell nor refuses its calls.
+    expect(failure).toBeUndefined()
+    expect(engine.recorder.calls.map((call) => call.input)).toEqual([{ path: "first" }, { path: "second" }])
+    expect(resolvedText(events)).toBe("ran")
+  })
+
+  it("lets a running cell finish its calls when a person steers during it", async () => {
+    const queue = steeringQueue()
+    const model = ScriptedModel.make([
+      emits(
+        `await ctx.call("fs/list", { path: "first" }); await ctx.call("fs/list", { path: "second" }); console.log("kept")`
+      ),
+      emits(`ctx.done("done")`)
+    ])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Success", value: [] }, { _tag: "Success", value: [] }])
+    let steered = false
+    const { events, failure } = await collect({ state: state(), flows: [lister] }, {
+      engine: engine.layer,
+      steering: queue.layer,
+      observer: (event) =>
+        event._tag === "cell-call-settled" && !steered
+          ? Effect.sync(() => {
+            steered = true
+            queue.steer("Also list the docs.")
+          })
+          : Effect.void
+    })
+
+    // A person's message waits for the cell to close; only an outside change
+    // refuses the calls that follow it.
+    expect(failure).toBeUndefined()
+    expect(engine.recorder.calls.map((call) => call.input)).toEqual([{ path: "first" }, { path: "second" }])
+    expect(messagesOf(model, 1)).not.toContain("Outside changes are pending")
+    expect(conversation(model, 1).at(-1)).toEqual(ModelRequest.Message.user("Also list the docs."))
     expect(resolvedText(events)).toBe("done")
   })
 })
@@ -2806,27 +2899,30 @@ describe("CellTurn recorded observations", () => {
     expect(of(events, "steering-drained").map((event) => event.messages)).toEqual([[], []])
   })
 
-  it("retains steering before a proposed park when no model frame remains", async () => {
+  it("grants one frame when steering holds a proposed park on the final frame", async () => {
     const queue = steeringQueue()
     queue.steer("finish up")
-    const model = ScriptedModel.make([emits(`ctx.park("waiting-input", "which branch?")`)])
+    const model = ScriptedModel.make([
+      emits(`ctx.park("waiting-input", "which branch?")`),
+      emits(`ctx.done("finished")`)
+    ])
     const engine = ScriptedEngine.make(model.model, [])
     const { events, failure } = await collect(
       { state: state({ maxFrames: 1, approvalChannel: true }), flows: [lister] },
       { engine: engine.layer, steering: queue.layer }
     )
 
-    // Pending steering discards the proposed cell before it can execute its park.
-    // With no next model frame, the run fails without consuming the instruction.
-    expect(failure).toMatchObject({
-      code: "engine_failed",
-      message: "Outside changes require another model turn before tools can run"
-    })
+    // Pending steering holds the proposed cell before it can execute its park.
+    // The final frame gets one more model frame to read the instruction, as an
+    // answered park does, instead of failing the run.
+    expect(failure).toBeUndefined()
     expect(of(events, "suspended")).toHaveLength(0)
     expect(engine.recorder.calls).toHaveLength(0)
-    expect(of(events, "steering-drained")).toHaveLength(0)
-    expect(queue.pending()).toEqual([ModelRequest.Message.user("finish up")])
-    expect(of(events, "resolved")).toHaveLength(0)
+    expect(queue.pending()).toEqual([])
+    expect(model.recorder.requests).toHaveLength(2)
+    expect(observationsOf(model, 1)).toContain(held)
+    expect(observationsOf(model, 1)).toContain("finish up")
+    expect(resolvedText(events)).toBe("finished")
   })
 
   it("re-issues a call whose original attempt parked, so a later grant can answer it", async () => {

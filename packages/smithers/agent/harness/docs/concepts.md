@@ -209,11 +209,16 @@ A parked question remains answerable on the final frame. Its drain reads queued
 answers on resume; an accepted answer grants one frame to process it when the
 original frame budget is exhausted. Replay restores that delivery and extension.
 
-Pending steering detected after the model returns holds the proposed cell until
-another model frame consumes the instruction. If no frame remains, the run fails
-with `engine_failed` and leaves the instruction pending, including when the
+A person's message or an outside change pending after the model returns holds
+the proposed cell until another model frame consumes it. That frame opens with
+a note that the cell did not run, then the delivered messages. On the final
+frame the hold grants one frame, as an answered park does, including when the
 proposed cell would have parked. If the drain finds nothing left to deliver,
-the proposed cell can execute.
+the proposed cell can execute. A seat or thinking change alone holds nothing:
+it applies after the turn closes.
+
+An outside change that arrives while a cell runs refuses the cell's later
+calls. A person's message that arrives then waits for the cell to close.
 
 Enforced by `Notifications` and `Steering`.
 

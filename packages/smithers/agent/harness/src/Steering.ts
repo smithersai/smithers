@@ -34,6 +34,13 @@ export interface SteerInsert {
   readonly delivery: "steer"
   readonly admittedAt: number
   readonly message: ModelRequest.Message
+  /**
+   * Marks a committed outside change: files changed under the run. A pending
+   * outside change refuses the later calls of a running cell, which would
+   * otherwise act on stale reads. A person's message never does; it waits for
+   * the cell to close.
+   */
+  readonly outsideChange?: true
 }
 
 /**
