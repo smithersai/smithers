@@ -1,0 +1,94 @@
+/**
+ * Sequential escalation pattern.
+ *
+ * A ladder tries strategies in order and stops at the first rung whose result
+ * is good enough. Two deciders answer "good enough": the shared `accept` flow,
+ * and a per-rung `escalateIf` that overrides it. A `fallback` runs only after
+ * every rung escalated, which is where a human approval flow belongs.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import {
+  accepted,
+  defaultEscalate,
+  type Exhausted,
+  type Reached,
+  type RuntimeOptions,
+  type RuntimeRung,
+  type Settled
+} from "./internal/EscalationMake.ts"
+
+export * from "./internal/EscalationMake.ts"
+
+/**
+ * Executes an escalation ladder and stops at the first rung that does not
+ * escalate.
+ *
+ * Every outcome carries `exhausted`: `false` on a rung that settled and on a
+ * fallback result, `true` on the last rung's result when every rung escalated.
+ *
+ * This is the operational form of the same decision {@link make} declares as a
+ * `Node.branch` per rung: it stops at the first settled rung instead of
+ * carrying every rung the ladder declares. Fiber interruption propagates
+ * normally.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = never>(
+  input: I,
+  options: RuntimeOptions<I, A, E, R, E2, R2, F, E3, R3>
+): Settled<A, F>!(E | E2 | E3 | PatternError)!(R | R2 | R3) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the array, a rung record, or the option object in between must
+  // not reach it.
+  const rungs = options.rungs.map(operational)
+  const accept = options.accept
+  const fallback = options.fallback
+  return effect {
+    if (rungs.length === 0) {
+      throw new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" })
+    }
+    let last: A | undefined
+    let level = 0
+    for (const rung of rungs) {
+      const result = try rung.run(input)
+      last = result
+      if (!(try escalates(rung, accept, result, level))) {
+        const settled: Reached<A> = { level, result, exhausted: false }
+        return settled
+      }
+      level = level + 1
+    }
+    if (fallback !== undefined) {
+      const settled: Reached<F> = { level: rungs.length, result: try fallback(input), exhausted: false }
+      return settled
+    }
+    const spent: Exhausted<A> = { level: rungs.length - 1, result: last as A, accepted: false, exhausted: true }
+    return spent
+  }
+}
+
+effect function escalates<I, A, E, R, E2, R2>(
+  rung: RuntimeRung<I, A, E, R, E2, R2>,
+  accept: ((result: A) => unknown!E2!R2) | undefined,
+  result: A,
+  level: number
+): boolean!E2!R2 {
+  if (rung.escalateIf !== undefined) return try rung.escalateIf(result, level)
+  // The readers run in `sync` and `map`: a getter or proxy that throws while
+  // they read a result is a defect, as it was inside the generator.
+  if (accept !== undefined) return try map(accept(result), (decision) => !accepted(decision))
+  return try sync(() => defaultEscalate(result))
+}
+
+const operational = <I, A, E, R, E2, R2>(
+  rung: ((input: I) => A!E!R) | RuntimeRung<I, A, E, R, E2, R2>
+): RuntimeRung<I, A, E, R, E2, R2> =>
+  typeof rung === "function" ? { run: rung } : { run: rung.run, escalateIf: rung.escalateIf }

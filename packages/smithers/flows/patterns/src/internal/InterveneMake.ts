@@ -1,9 +1,7 @@
 /**
- * Intervene pattern: read a target, propose a change, apply it behind an
- * optional approval, and report what happened.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Intervene`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Intervene.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -11,17 +9,17 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Approval from "./internal/Approval.ts"
-import * as Compose from "./internal/Compose.ts"
-import * as Decorate from "./internal/Decorate.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import * as Pattern from "./Pattern.ts"
-import { PatternError } from "./PatternError.ts"
+import * as Pattern from "../Pattern.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Approval from "./Approval.ts"
+import * as Compose from "./Compose.ts"
+import * as Decorate from "./Decorate.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 
@@ -94,8 +92,6 @@ export interface RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2,
     }) => Effect.Effect<unknown, E5, R5>)
     | undefined
 }
-
-const decide = Schema.decodeUnknownEffect(Pattern.Approved)
 
 /**
  * The declared form of an intervention.
@@ -189,37 +185,5 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
       [stages.read, stages.propose, apply, stages.report, options.approval]
     ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
-  })
-}
-
-/**
- * Runs an intervention.
- *
- * A dry run reports the proposal and never calls `apply`. Otherwise the
- * approval decision, when one is configured, must decode as the literal
- * `"approved"`; a denial fails on the typed schema-error channel and `apply`
- * never runs.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5 = never, R5 = never>(
-  input: I,
-  options: RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5, R5>
-): Effect.Effect<Report, E | E2 | E3 | E4 | E5 | Schema.SchemaError, R | R2 | R3 | R4 | R5> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const { apply, approval, dryRun, propose, read, report } = options
-  return Effect.gen(function*() {
-    const context = yield* read({ phase: "read", input })
-    const proposal = yield* propose({ phase: "propose", input, context })
-    if (dryRun) {
-      return yield* report({ phase: "report", input, proposal, applied: undefined, dryRun: true })
-    }
-    if (approval !== undefined) {
-      yield* decide(yield* approval({ input, proposal }))
-    }
-    const applied = yield* apply({ phase: "apply", input, proposal })
-    return yield* report({ phase: "report", input, proposal, applied, dryRun: false })
   })
 }

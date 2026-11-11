@@ -1,14 +1,7 @@
 /**
- * Sequential escalation pattern.
- *
- * A ladder tries strategies in order and stops at the first rung whose result
- * is good enough. Two deciders answer "good enough": the shared `accept` flow,
- * and a per-rung `escalateIf` that overrides it. A `fallback` runs only after
- * every rung escalated, which is where a human approval flow belongs.
- *
- * @see https://smithers.sh/docs/reference/api/patterns
- * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Escalation`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Escalation.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -16,14 +9,14 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * One declared rung and the flow that decides whether it escalates.
@@ -168,11 +161,6 @@ export const defaultEscalate = (result: unknown): boolean => {
 const declared = <R>(rung: Member<R> | Rung<R>): Rung<R> =>
   "flow" in rung ? { flow: rung.flow, escalateIf: rung.escalateIf } : { flow: rung }
 
-const operational = <I, A, E, R, E2, R2>(
-  rung: ((input: I) => Effect.Effect<A, E, R>) | RuntimeRung<I, A, E, R, E2, R2>
-): RuntimeRung<I, A, E, R, E2, R2> =>
-  typeof rung === "function" ? { run: rung } : { run: rung.run, escalateIf: rung.escalateIf }
-
 /**
  * The declared form of an escalation ladder.
  *
@@ -270,67 +258,5 @@ export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
       [...rungs.flatMap((rung) => [rung.flow, rung.escalateIf]), accept, fallback]
     ) as typeof Schema.Unknown,
     body: Node.capture({ rungs: rungs.length, fallback: fallback !== undefined }, body)
-  })
-}
-
-const escalates = <I, A, E, R, E2, R2>(
-  rung: RuntimeRung<I, A, E, R, E2, R2>,
-  accept: ((result: A) => Effect.Effect<unknown, E2, R2>) | undefined,
-  result: A,
-  level: number
-): Effect.Effect<boolean, E2, R2> => {
-  if (rung.escalateIf !== undefined) return rung.escalateIf(result, level)
-  if (accept !== undefined) return Effect.map(accept(result), (decision) => !accepted(decision))
-  return Effect.succeed(defaultEscalate(result))
-}
-
-/**
- * Executes an escalation ladder and stops at the first rung that does not
- * escalate.
- *
- * Every outcome carries `exhausted`: `false` on a rung that settled and on a
- * fallback result, `true` on the last rung's result when every rung escalated.
- *
- * This is the operational form of the same decision {@link make} declares as a
- * `Node.branch` per rung: it stops at the first settled rung instead of
- * carrying every rung the ladder declares. Fiber interruption propagates
- * normally.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = never>(
-  input: I,
-  options: RuntimeOptions<I, A, E, R, E2, R2, F, E3, R3>
-): Effect.Effect<Settled<A, F>, E | E2 | E3 | PatternError, R | R2 | R3> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the array, a rung record, or the option object in between must
-  // not reach it.
-  const rungs = options.rungs.map(operational)
-  const accept = options.accept
-  const fallback = options.fallback
-  if (rungs.length === 0) {
-    return Effect.fail(
-      new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" })
-    )
-  }
-  return Effect.gen(function*() {
-    let last: A | undefined
-    let level = 0
-    for (const rung of rungs) {
-      const result = yield* rung.run(input)
-      last = result
-      if (!(yield* escalates(rung, accept, result, level))) {
-        const settled: Reached<A> = { level, result, exhausted: false }
-        return settled
-      }
-      level = level + 1
-    }
-    if (fallback !== undefined) {
-      const settled: Reached<F> = { level: rungs.length, result: yield* fallback(input), exhausted: false }
-      return settled
-    }
-    const spent: Exhausted<A> = { level: rungs.length - 1, result: last as A, accepted: false, exhausted: true }
-    return spent
   })
 }

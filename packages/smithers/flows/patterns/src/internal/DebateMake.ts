@@ -1,7 +1,7 @@
 /**
- * A bounded, alternating deliberation pattern.
- *
- * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ * The declaration side of `Debate`: its types and `make`, which throws a
+ * `PatternError` for a declaration it cannot build. `Debate.vibe`
+ * re-exports all of it beside `run`, the pattern's Effect form.
  *
  * @since 0.1.0
  */
@@ -9,14 +9,14 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
-import * as Failure from "./internal/Failure.ts"
-import type { Member } from "./internal/Member.ts"
-import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { PatternError } from "../PatternError.ts"
+import * as Compose from "./Compose.ts"
+import * as Failure from "./Failure.ts"
+import type { Member } from "./Member.ts"
+import { call as callMember } from "./Member.ts"
+import { OpaqueInput } from "./Payload.ts"
 
 /**
  * One immutable contribution to a debate transcript.
@@ -164,40 +164,5 @@ export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
       [participants.proponent, participants.opponent, participants.judge]
     ) as typeof Schema.Unknown,
     body: Node.capture({ rounds }, body)
-  })
-}
-
-/**
- * Executes a fixed-round debate and supplies the real accumulated transcript
- * to each participant and the judge.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>(
-  input: I,
-  options: RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>
-): Effect.Effect<Judge, E | E2 | E3 | PatternError, R | R2 | R3> => {
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
-  const rounds = options.rounds
-  if (!Number.isSafeInteger(rounds) || rounds < 1) {
-    return Effect.fail(
-      new PatternError({
-        code: "invalid_decorator",
-        message: `Debate rounds must be a positive safe integer, received ${rounds}`
-      })
-    )
-  }
-  return Effect.gen(function*() {
-    const transcript: Array<RuntimeTurn<Proponent, Opponent>> = []
-    const snapshot = (): ReadonlyArray<RuntimeTurn<Proponent, Opponent>> => Object.freeze([...transcript])
-    for (let round = 1; round <= rounds; round++) {
-      const proponent = yield* participants.proponent({ input, transcript: snapshot(), round })
-      const opponent = yield* participants.opponent({ input, transcript: snapshot(), proponent, round })
-      transcript.push(Object.freeze({ proponent, opponent }))
-    }
-    return yield* participants.judge({ input, transcript: snapshot() })
   })
 }

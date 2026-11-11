@@ -52,7 +52,7 @@ const securityReview = Smithers.SecurityReview({
         "Runbook.run with onDeny \"skip\" or \"fail\" treating a thrown or undefined approval result as approval, or a risky/critical step called without an approval call.",
         "Intervene with dryRun true still calling apply, or make and run disagreeing on whether apply is reachable."
       ],
-      paths: ["src/Intervene.ts", "src/Runbook.ts", "src/Pattern.ts"]
+      paths: ["src/Intervene.vibe", "src/internal/InterveneMake.ts", "src/Runbook.ts", "src/Pattern.ts"]
     },
     {
       id: "accepted-decision-strict",
@@ -69,7 +69,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Compose.ts",
         "src/ReviewLoop.ts",
         "src/DelegationChain.ts",
-        "src/Escalation.ts",
+        "src/Escalation.vibe",
+        "src/internal/EscalationMake.ts",
         "src/Supervisor.ts",
         "src/ScanFixVerify.ts",
         "src/DriftDetector.vibe"
@@ -87,7 +88,8 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/Decorate.ts",
         "src/internal/Compose.ts",
-        "src/Intervene.ts",
+        "src/Intervene.vibe",
+        "src/internal/InterveneMake.ts",
         "src/Runbook.ts"
       ]
     },

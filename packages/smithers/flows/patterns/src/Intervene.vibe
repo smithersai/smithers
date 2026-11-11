@@ -1,0 +1,48 @@
+/**
+ * Intervene pattern: read a target, propose a change, apply it behind an
+ * optional approval, and report what happened.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import type { RuntimeOptions } from "./internal/InterveneMake.ts"
+import * as Pattern from "./Pattern.ts"
+
+export * from "./internal/InterveneMake.ts"
+
+const decide = Schema.decodeUnknownEffect(Pattern.Approved)
+
+/**
+ * Runs an intervention.
+ *
+ * A dry run reports the proposal and never calls `apply`. Otherwise the
+ * approval decision, when one is configured, must decode as the literal
+ * `"approved"`; a denial fails on the typed schema-error channel and `apply`
+ * never runs.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5 = never, R5 = never>(
+  input: I,
+  options: RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5, R5>
+): Report!(E | E2 | E3 | E4 | E5 | Schema.SchemaError)!(R | R2 | R3 | R4 | R5) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the option object in between must not reach it.
+  const { apply, approval, dryRun, propose, read, report } = options
+  return effect {
+    const context = try read({ phase: "read", input })
+    const proposal = try propose({ phase: "propose", input, context })
+    if (dryRun) {
+      return try report({ phase: "report", input, proposal, applied: undefined, dryRun: true })
+    }
+    if (approval !== undefined) {
+      try decide(try approval({ input, proposal }))
+    }
+    const applied = try apply({ phase: "apply", input, proposal })
+    return try report({ phase: "report", input, proposal, applied, dryRun: false })
+  }
+}

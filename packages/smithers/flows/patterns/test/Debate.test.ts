@@ -4,7 +4,7 @@ import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as Debate from "../src/Debate.ts"
+import * as Debate from "../src/Debate.vibe"
 import { PatternError } from "../src/PatternError.ts"
 import { callsTo } from "./Graphs.ts"
 

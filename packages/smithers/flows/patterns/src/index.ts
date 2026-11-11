@@ -22,7 +22,7 @@ export * as Pattern from "./Pattern.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Debate from "./Debate.ts"
+export * as Debate from "./Debate.vibe"
 
 /**
  * @category patterns
@@ -34,7 +34,7 @@ export * as Panel from "./Panel.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Escalation from "./Escalation.ts"
+export * as Escalation from "./Escalation.vibe"
 
 /**
  * @category patterns
@@ -100,7 +100,7 @@ export * as DriftDetector from "./DriftDetector.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Intervene from "./Intervene.ts"
+export * as Intervene from "./Intervene.vibe"
 
 /**
  * @category patterns

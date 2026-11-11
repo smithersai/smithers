@@ -1,0 +1,45 @@
+/**
+ * A bounded, alternating deliberation pattern.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import { PatternError } from "./PatternError.ts"
+import type { RuntimeOptions, RuntimeTurn } from "./internal/DebateMake.ts"
+
+export * from "./internal/DebateMake.ts"
+
+/**
+ * Executes a fixed-round debate and supplies the real accumulated transcript
+ * to each participant and the judge.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>(
+  input: I,
+  options: RuntimeOptions<I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>
+): Judge!(E | E2 | E3 | PatternError)!(R | R2 | R3) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the option object in between must not reach it.
+  const participants = { proponent: options.proponent, opponent: options.opponent, judge: options.judge }
+  const rounds = options.rounds
+  return effect {
+    if (!Number.isSafeInteger(rounds) || rounds < 1) {
+      throw new PatternError({
+        code: "invalid_decorator",
+        message: `Debate rounds must be a positive safe integer, received ${rounds}`
+      })
+    }
+    const transcript: Array<RuntimeTurn<Proponent, Opponent>> = []
+    const snapshot = (): ReadonlyArray<RuntimeTurn<Proponent, Opponent>> => Object.freeze([...transcript])
+    for (let round = 1; round <= rounds; round++) {
+      const proponent = try participants.proponent({ input, transcript: snapshot(), round })
+      const opponent = try participants.opponent({ input, transcript: snapshot(), proponent, round })
+      transcript.push(Object.freeze({ proponent, opponent }))
+    }
+    return try participants.judge({ input, transcript: snapshot() })
+  }
+}
