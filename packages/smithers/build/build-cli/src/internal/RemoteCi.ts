@@ -13,7 +13,7 @@
  * second loss reports each of the part's roots failed with the reason.
  *
  * The coordinator reaches machines only through `Sandbox.Provider`;
- * {@link providerOf} is the one place a declaration's tag picks a provider.
+ * {@link providers} is the one place a declaration's tag picks a provider.
  *
  * @since 1.0.0
  */
@@ -22,9 +22,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import * as CommandSandbox from "@smthrs/sandbox/CommandSandbox"
+import * as HttpSandbox from "@smthrs/sandbox/HttpSandbox"
 import type * as Sandbox from "@smthrs/sandbox/Sandbox"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Effect from "effect/Effect"
+import { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
@@ -247,21 +249,59 @@ const RemotePart = Flow.make("smthrs/ci/remote-part", {
 })
 
 /**
- * Builds the provider that reaches one declared machine, its sessions working
- * in `workdir`. This is the only place a remote's tag picks a provider.
+ * How many machines a remote runs one part each on: one per argv prefix, or
+ * the count an HTTP remote declares.
  *
  * @category providers
  * @since 1.0.0
  */
-export const providerOf = (
+export const machineCount = (remote: WorkspaceDeclaration.RemoteDeclaration): number =>
+  remote._tag === "RemoteCommand" ? remote.machines.length : remote.machines
+
+/**
+ * Builds how one remote's machines are reached: given a machine and its
+ * session's working directory, the provider for it. This is the only place a
+ * remote's tag picks a provider.
+ *
+ * An HTTP remote's token is read here, once, from `environment` (or the
+ * secret's fallback); a remote whose token is unset is refused before any
+ * machine is contacted.
+ *
+ * @category providers
+ * @since 1.0.0
+ */
+export const providers = (
   remote: WorkspaceDeclaration.RemoteDeclaration,
-  machine: number,
-  workdir: string
-): Effect.Effect<Sandbox.Provider, never, ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner
-    return CommandSandbox.make({ spawner, prefix: remote.machines[machine - 1]!, workdir, name: `machine ${machine}` })
-  })
+  environment: Readonly<Record<string, string | undefined>>
+): (machine: number, workdir: string) => Effect.Effect<Sandbox.Provider, never, ChildProcessSpawner | HttpClient> => {
+  if (remote._tag === "RemoteCommand") {
+    return (machine, workdir) =>
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        return CommandSandbox.make({
+          spawner,
+          prefix: remote.machines[machine - 1]!,
+          workdir,
+          name: `machine ${machine}`
+        })
+      })
+  }
+  const token = environment[remote.token.env] || remote.token.fallback
+  if (token === undefined) {
+    throw new Error(`the remote's token is not set: export ${remote.token.env}`)
+  }
+  // The service names each machine's working directory; every path a part uses is absolute.
+  return () =>
+    Effect.gen(function*() {
+      const client = yield* HttpClient
+      return HttpSandbox.make({
+        url: remote.url,
+        token,
+        client,
+        ...(remote.limits === undefined ? {} : { limits: remote.limits })
+      })
+    })
+}
 
 /**
  * What {@link run} needs: the declaration, the packed tree, the parts, the

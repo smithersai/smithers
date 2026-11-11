@@ -42,6 +42,40 @@ A run has one part per machine. `S.Remote.Command` refuses an unknown option,
 an empty `machines`, a relative `workdir`, and an empty `setup` command or
 `cli` word.
 
+## Machines behind an HTTP service
+
+`S.Remote.Http` reaches machines that a service starts on demand, such as a
+Worker holding Cloudflare containers. The service answers the protocol of
+`@smthrs/sandbox`'s `HttpSandbox.serve`; see
+[Reach sandboxes behind an HTTP service](../../../../flows/sandbox/docs/guides/reach-sandboxes-behind-an-http-service.md).
+
+```ts
+remotes: S.Remotes({
+  cloudflare: S.Remote.Http({
+    url: "https://machines.example.com",
+    token: S.Secret("SMITHERS_MACHINES_TOKEN"),
+    machines: 16,
+    limits: { cpus: 4, memoryMib: 12288 },
+    workdir: "/workspace/ci",
+    setup: ["pnpm install --frozen-lockfile"]
+  })
+})
+```
+
+| Option     | Required | Meaning                                                                                                                                |
+| ---------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`      | yes      | The service's base URL. `https:`, or `http:` only to `localhost`, `127.0.0.1` or `[::1]`, because every request carries the token.     |
+| `token`    | yes      | An `S.Secret` naming the variable that holds the service's bearer token. Only the coordinator reads it; no machine receives it.        |
+| `machines` | yes      | How many machines one run starts, one part each, from 1 to 1024. Each part asks the service for a fresh machine and destroys it after. |
+| `limits`   | no       | `cpus`, `memoryMib` and `timeoutSecs` each machine is asked for; the service picks a machine that holds them.                          |
+| `workdir`  | yes      | An absolute directory on each machine, as for `S.Remote.Command`.                                                                      |
+| `setup`    | no       | As for `S.Remote.Command`.                                                                                                             |
+| `cli`      | no       | As for `S.Remote.Command`.                                                                                                             |
+
+`ci --remote` refuses an HTTP remote whose token variable is unset or empty
+(and whose secret declares no fallback) before it packs the tree or contacts
+the service. `--plan` needs no token.
+
 ## Run it
 
 ```sh

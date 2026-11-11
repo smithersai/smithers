@@ -10,6 +10,7 @@ import * as Input from "../src/Input.ts"
 import * as LocalRepository from "../src/LocalRepository.ts"
 import * as Nix from "../src/Nix.ts"
 import * as RustToolchain from "../src/RustToolchain.ts"
+import * as Secret from "../src/Secret.ts"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
 
 const cache = WorkspaceDeclaration.Cache({ directory: ".flows" })
@@ -307,6 +308,69 @@ describe("Remote declarations", () => {
     ]
   ])("rejects an invalid command remote %j", (value, message) => {
     const error = thrown(() => WorkspaceDeclaration.Remote.Command(value as never))
+    expect(error).toBeInstanceOf(TypeError)
+    expect(error.message).toBe(message)
+  })
+})
+
+describe("HTTP remote declarations", () => {
+  const token = Secret.Secret("SMITHERS_MACHINES_TOKEN")
+  const minimal = { url: "https://machines.example.com", token, machines: 3, workdir: "/workspace/ci" }
+
+  it("keeps an HTTP remote as inert frozen data, with the default CLI, no setup and no limits", () => {
+    const remote = WorkspaceDeclaration.Remote.Http(minimal)
+
+    expect(remote).toEqual({ _tag: "RemoteHttp", ...minimal, setup: [], cli: ["npx", "--no", "smthrs"] })
+    expect(Object.hasOwn(remote, "limits")).toBe(false)
+    expect(Object.isFrozen(remote)).toBe(true)
+    expect(WorkspaceDeclaration.isRemoteDeclaration(remote)).toBe(true)
+  })
+
+  it("copies the limits, setup and CLI, and takes loopback http for a service on this machine", () => {
+    const limits = { cpus: 0.5, memoryMib: 4096, timeoutSecs: 1200 }
+    const remote = WorkspaceDeclaration.Remote.Http({
+      ...minimal,
+      url: "http://127.0.0.1:8787",
+      machines: WorkspaceDeclaration.maximumRemoteMachines,
+      limits,
+      setup: ["pnpm install --frozen-lockfile"],
+      cli: ["node", "cli.js"]
+    })
+
+    expect(remote).toMatchObject({ url: "http://127.0.0.1:8787", machines: 1024, limits, cli: ["node", "cli.js"] })
+    expect(remote.limits).not.toBe(limits)
+    expect(Object.isFrozen(remote.limits)).toBe(true)
+    expect(WorkspaceDeclaration.Remote.Http({ ...minimal, url: "http://localhost:1/" }).url).toBe("http://localhost:1/")
+    expect(WorkspaceDeclaration.Remote.Http({ ...minimal, url: "http://[::1]:1" }).url).toBe("http://[::1]:1")
+  })
+
+  const url = "Remote.Http url must be an https: URL, or an http: URL to this machine's loopback address"
+  const machines = "Remote.Http machines must be a whole number from 1 to 1024"
+  const limits =
+    "Remote.Http limits takes cpus, memoryMib and timeoutSecs, each positive, memoryMib and timeoutSecs whole"
+  it.each([
+    [null, "Remote.Http options must be an object"],
+    [{ ...minimal, hosts: 2 }, "Remote.Http received unknown option \"hosts\""],
+    [{ ...minimal, url: undefined }, url],
+    [{ ...minimal, url: "not a url" }, url],
+    [{ ...minimal, url: "http://machines.example.com" }, url],
+    [{ ...minimal, url: "ftp://127.0.0.1" }, url],
+    [{ ...minimal, token: "SMITHERS_MACHINES_TOKEN" }, "Remote.Http token must be an S.Secret declaration"],
+    [{ ...minimal, machines: 0 }, machines],
+    [{ ...minimal, machines: 1025 }, machines],
+    [{ ...minimal, machines: 1.5 }, machines],
+    [{ ...minimal, limits: null }, limits],
+    [{ ...minimal, limits: [] }, limits],
+    [{ ...minimal, limits: { gpus: 1 } }, limits],
+    [{ ...minimal, limits: { cpus: 0 } }, limits],
+    [{ ...minimal, limits: { cpus: Number.POSITIVE_INFINITY } }, limits],
+    [{ ...minimal, limits: { memoryMib: 1.5 } }, limits],
+    [{ ...minimal, limits: { timeoutSecs: "60" } }, limits],
+    [{ ...minimal, workdir: "relative" }, "Remote.Http workdir must be an absolute guest path"],
+    [{ ...minimal, setup: [""] }, "Remote.Http setup must be an array of non-empty shell commands"],
+    [{ ...minimal, cli: [] }, "Remote.Http cli must be a non-empty array of non-empty words"]
+  ])("rejects an invalid HTTP remote %j", (value, message) => {
+    const error = thrown(() => WorkspaceDeclaration.Remote.Http(value as never))
     expect(error).toBeInstanceOf(TypeError)
     expect(error.message).toBe(message)
   })

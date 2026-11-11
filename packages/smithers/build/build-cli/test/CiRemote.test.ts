@@ -3,14 +3,19 @@
  * of a run on two machines that are this host in two fresh directories, ships
  * the tree, runs `ci` on each, and merges the results files.
  */
+import * as HttpSandbox from "@smthrs/sandbox/HttpSandbox"
+import { Effect } from "effect"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
+import * as NodeHttp from "node:http"
+import type { AddressInfo } from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import type * as Reporter from "../src/Reporter.ts"
+import { directoryMachines } from "./helpers/DirectoryMachines.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const temporaryDirectories: Array<string> = []
@@ -81,14 +86,15 @@ const serve = async (
   root: string,
   args: ReadonlyArray<string>,
   signal?: AbortSignal,
-  cache: ReadonlyArray<string> = ["--no-cache"]
+  cache: ReadonlyArray<string> = ["--no-cache"],
+  environment: Readonly<Record<string, string>> = {}
 ) => {
   let stderr = ""
   let stdout = ""
   const terminal = (sink: (text: string) => void): Reporter.Terminal => ({ write: sink, isTTY: false, columns: 100 })
   let exitCode = 0
   await makeCli({
-    environment: { ...process.env, SMITHERS_AUDIENCE: "agent", NO_COLOR: "1", CI: undefined },
+    environment: { ...process.env, SMITHERS_AUDIENCE: "agent", NO_COLOR: "1", CI: undefined, ...environment },
     signal,
     stdout: terminal((text) => {
       stdout += text
@@ -146,6 +152,38 @@ const wrapper = async (body: (log: string) => string): Promise<{ readonly script
   const log = NodePath.join(directory, "calls")
   await Fs.writeFile(script, `echo call >> ${JSON.stringify(log)}\n${body(JSON.stringify(log))}\n`)
   return { script, log }
+}
+
+/**
+ * A loopback HTTP service answering `HttpSandbox.serve` over sticky directory
+ * machines under `machines`; counts the requests it answered.
+ */
+const machineService = async (token: string) => {
+  const machines = await temporary("smthrs-ci-remote-machines-")
+  const handler = HttpSandbox.serve({ provider: await directoryMachines(machines), token })
+  let requests = 0
+  const server = NodeHttp.createServer((incoming, outgoing) => {
+    requests += 1
+    void (async () => {
+      const chunks: Array<Buffer> = []
+      for await (const chunk of incoming) chunks.push(chunk as Buffer)
+      const request = new Request(`http://127.0.0.1${incoming.url}`, {
+        method: incoming.method!,
+        headers: incoming.headers as Record<string, string>,
+        ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) })
+      })
+      const response = await Effect.runPromise(handler(request))
+      outgoing.writeHead(response.status, Object.fromEntries(response.headers))
+      outgoing.end(Buffer.from(await response.arrayBuffer()))
+    })()
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  return {
+    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    machines,
+    requests: () => requests,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 }
 
 const calls = async (log: string): Promise<number> =>
@@ -370,6 +408,48 @@ exec node ${JSON.stringify(main)} "$@"`
     expect(failed.exitCode).toBe(1)
     expect(await calls(never.log)).toBe(2)
     expect(failed.stderr).toContain("//:c  failed  0ms  machine 1 was lost: `ci` exited 3 and wrote no results file")
+  }, 300_000)
+
+  it("runs the parts on machines an HTTP service holds, and refuses an unset token before contacting it", async () => {
+    const service = await machineService("machines-token")
+    try {
+      const { guest, root } = await fixture(
+        `web: S.Remote.Http({ url: ${
+          JSON.stringify(service.url)
+        }, token: S.Secret("SMITHERS_TEST_MACHINES_TOKEN"), machines: 2, workdir, cli })`
+      )
+      const refused = await serve(root, ["ci", "//...", "--remote", "web"])
+      expect(refused.exitCode).toBe(1)
+      expect(refused.stderr + refused.stdout).toContain(
+        "the remote's token is not set: export SMITHERS_TEST_MACHINES_TOKEN"
+      )
+      expect(service.requests()).toBe(0)
+
+      const file = NodePath.join(root, "out", "remote.json")
+      const served = await serve(
+        root,
+        ["ci", "//...", "--remote", "web", "--results-file", file, "--verbose"],
+        undefined,
+        ["--no-cache"],
+        { SMITHERS_TEST_MACHINES_TOKEN: "machines-token" }
+      )
+      expect(served.exitCode, served.stderr + served.stdout).toBe(0)
+      expect(Object.keys(ranOn(served.stderr)).sort(), served.stderr).toEqual(["1", "2"])
+      const merged = await results(file)
+      expect(merged.ok).toBe(true)
+      expect(merged.results.map((row) => [row.label, row.status])).toEqual([
+        ["//:shared", "ran"],
+        ["//:a", "ran"],
+        ["//:b", "ran"],
+        ["//:c", "ran"],
+        ["//:d", "ran"]
+      ])
+      // Every part's directory is removed, and the service destroyed every machine it started.
+      expect(await Fs.readdir(guest)).toEqual([])
+      expect(await Fs.readdir(service.machines)).toEqual([])
+    } finally {
+      await service.close()
+    }
   }, 300_000)
 
   it("closes every session when the run is interrupted", async () => {

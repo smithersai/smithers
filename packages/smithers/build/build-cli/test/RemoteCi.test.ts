@@ -3,8 +3,14 @@
  * machine unpacks with its own `tar`, quoting, and a part's run against a
  * real machine (this host), with faults injected through its provider.
  */
+import * as HttpSandbox from "@smthrs/sandbox/HttpSandbox"
 import type * as Sandbox from "@smthrs/sandbox/Sandbox"
-import { Effect } from "effect"
+import type { ResourceLimits } from "@smthrs/sandbox/Sandbox"
+import { Effect, Layer } from "effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as NodeChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -12,6 +18,7 @@ import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { layerNonInteractiveNodeServices } from "../src/engine.ts"
 import * as RemoteCi from "../src/internal/RemoteCi.ts"
+import { directoryMachines } from "./helpers/DirectoryMachines.ts"
 
 const temporaryDirectories: Array<string> = []
 afterAll(async () => {
@@ -211,14 +218,14 @@ describe("run", () => {
         flags: [],
         output: (line) => lines.push(line),
         provider: (machine, workdir) =>
-          Effect.map(RemoteCi.providerOf(options.remote, machine, workdir), (provider) => ({
+          Effect.map(RemoteCi.providers(options.remote, {})(machine, workdir), (provider) => ({
             acquire: (session: string) =>
               Effect.map(provider.acquire(session), (held) => {
                 acquired += 1
                 return options.fault === undefined ? held : options.fault(held)
               })
           }))
-      }).pipe(Effect.provide(layerNonInteractiveNodeServices))
+      }).pipe(Effect.provide(Layer.mergeAll(layerNonInteractiveNodeServices, FetchHttpClient.layer)))
     )
     return { outcome, lines, acquired: () => acquired }
   }
@@ -284,5 +291,101 @@ describe("run", () => {
     expect(await ran.outcome).toEqual([
       RemoteCi.failedRoots(["//:a"], "machine 1 was lost: the tree could not be unpacked (tar exited 3)")
     ])
+  })
+})
+
+describe("HTTP remotes", () => {
+  const secret = { _tag: "Secret" as const, env: "SMITHERS_MACHINES_TOKEN" }
+  const http = (
+    workdir: string,
+    cli: ReadonlyArray<string>,
+    token: typeof secret & { fallback?: string } = secret
+  ) => ({
+    _tag: "RemoteHttp" as const,
+    url: "http://machines.test",
+    token,
+    machines: 3,
+    limits: { cpus: 2, memoryMib: 4096 },
+    workdir,
+    setup: [],
+    cli
+  })
+
+  /** A CLI stand-in that writes a results file reporting `//:a` ran, where `ci` would. */
+  const reporting = async (): Promise<ReadonlyArray<string>> => {
+    const script = NodePath.join(await temporary(), "cli.sh")
+    const results = JSON.stringify({ results: [row("//:a", "ran", 7)] })
+    await Fs.writeFile(script, `cat > "$4" <<'JSON'\n${results}\nJSON\n`)
+    return ["sh", script]
+  }
+
+  /**
+   * Runs one part through `HttpSandbox.serve` over sticky directory machines,
+   * the network an in-process client; records each request's bearer token and
+   * the limits each session asked for.
+   */
+  const serveAndRun = (remote: ReturnType<typeof http>, environment: Readonly<Record<string, string>>) =>
+    Effect.gen(function*() {
+      const machines = yield* Effect.promise(async () => directoryMachines(await temporary()))
+      const asked: Array<ResourceLimits | undefined> = []
+      const tokens = new Set<string | null>()
+      const handler = HttpSandbox.serve({
+        provider: (limits) => {
+          asked.push(limits)
+          return machines
+        },
+        token: "service-token"
+      })
+      const client = HttpClient.make((request) =>
+        Effect.gen(function*() {
+          const web = yield* Effect.orDie(HttpClientRequest.toWeb(request))
+          tokens.add(web.headers.get("authorization"))
+          return HttpClientResponse.fromWeb(request, yield* handler(web))
+        })
+      )
+      const rows = yield* RemoteCi.run({
+        remote,
+        runId: "run",
+        tree: RemoteCi.pack([{ path: "README.md", mode: 0o100644, mtimeMs: 0, content: new Uint8Array() }]),
+        parts: [{ machine: 1, roots: ["//:a"] }],
+        flags: [],
+        output: () => undefined,
+        provider: RemoteCi.providers(remote, environment)
+      }).pipe(Effect.provideService(HttpClient.HttpClient, client))
+      return { rows, asked, tokens }
+    }).pipe(Effect.provide(layerNonInteractiveNodeServices))
+
+  it("counts one machine per argv prefix, or the machines an HTTP remote declares", async () => {
+    expect(RemoteCi.machineCount(http("/w", ["true"]))).toBe(3)
+    expect(RemoteCi.machineCount({ _tag: "RemoteCommand", machines: [[], []], workdir: "/w", setup: [], cli: [] }))
+      .toBe(2)
+  })
+
+  it("runs a part on a machine the service holds, with the token from the environment and the declared limits", async () => {
+    const workdir = await temporary()
+    const ran = await Effect.runPromise(
+      serveAndRun(http(workdir, await reporting()), { SMITHERS_MACHINES_TOKEN: "service-token" })
+    )
+    expect(ran.rows).toEqual([[row("//:a", "ran", 7)]])
+    expect(ran.tokens).toEqual(new Set(["Bearer service-token"]))
+    expect(ran.asked.length).toBeGreaterThan(0)
+    expect(new Set(ran.asked.map((limits) => JSON.stringify(limits)))).toEqual(
+      new Set([JSON.stringify({ cpus: 2, memoryMib: 4096 })])
+    )
+    expect(await Fs.readdir(workdir)).toEqual([])
+  })
+
+  it("reads the secret's fallback when the environment leaves the token unset or empty", async () => {
+    const workdir = await temporary()
+    const remote = http(workdir, await reporting(), { ...secret, fallback: "service-token" })
+    const ran = await Effect.runPromise(serveAndRun(remote, { SMITHERS_MACHINES_TOKEN: "" }))
+    expect(ran.rows).toEqual([[row("//:a", "ran", 7)]])
+    expect(ran.tokens).toEqual(new Set(["Bearer service-token"]))
+  })
+
+  it("refuses a remote whose token is unset before any machine is contacted", () => {
+    expect(() => RemoteCi.providers(http("/w", ["true"]), {})).toThrow(
+      "the remote's token is not set: export SMITHERS_MACHINES_TOKEN"
+    )
   })
 })

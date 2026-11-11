@@ -50,6 +50,11 @@ remotes: S.Remotes({
 })
 ```
 
+`S.Remote.Http({ url, token, machines, limits?, workdir, setup?, cli? })`
+reaches machines an HTTP service starts on demand, such as a Worker holding
+Cloudflare containers: `machines` is how many one run starts, and `token` is an
+`S.Secret` only the coordinator reads.
+
 See
 [Run CI on other machines](../../build-cli/docs/guides/run-ci-on-other-machines.md).
 

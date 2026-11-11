@@ -18,6 +18,7 @@ import * as Target from "@smthrs/targets/Target"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import { Context, Effect, Layer } from "effect"
 import { identity } from "effect/Function"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
 import type { FileHandle } from "node:fs/promises"
@@ -1014,7 +1015,7 @@ const runRemote = async (
   config: RuntimeConfig,
   reporter: Reporter.Reporter
 ): Promise<CiPlan | Executor.Summary> => {
-  const parts = Shards.split(whole.roots, measured, remote.declaration.machines.length)
+  const parts = Shards.split(whole.roots, measured, RemoteCi.machineCount(remote.declaration))
     .map((roots, position) => ({ machine: position + 1, roots }))
   if (flags.plan) {
     return {
@@ -1025,6 +1026,8 @@ const runRemote = async (
       remote: { name: remote.name, machines: parts }
     }
   }
+  // An unset token is refused here, before the tree is packed or any machine contacted.
+  const provider = RemoteCi.providers(remote.declaration, environmentOf(config))
   const started = Date.now()
   const cacheDirectory = cacheDirectoryOf(index, flags)
   // The listing every declared glob agrees with: .gitignore applied, host state and the cache never shipped.
@@ -1054,8 +1057,8 @@ const runRemote = async (
         ...(flags.failFast === true ? ["--fail-fast"] : [])
       ],
       output: reporter.note,
-      provider: (machine, workdir) => RemoteCi.providerOf(remote.declaration, machine, workdir)
-    }).pipe(Effect.provide(layerNonInteractiveNodeServices)),
+      provider
+    }).pipe(Effect.provide(Layer.mergeAll(layerNonInteractiveNodeServices, FetchHttpClient.layer))),
     { signal: config.signal }
   )
   const summary = RemoteCi.merge(whole.targets, rows, { pattern, jobs, durationMs: Date.now() - started })

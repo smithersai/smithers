@@ -340,24 +340,27 @@ deploy starts a container and can take a minute.
 
 ### Point a host at it
 
-A host reaches the service with `HttpSandbox.make` from `@smthrs/sandbox`,
-given the Worker's URL, the token, and an Effect `HttpClient`; `limits` choose
-the instance type:
+A workspace runs CI on the service by declaring it as an `S.Remote.Http`
+remote; `limits` choose the instance type:
 
 ```ts
-import { HttpSandbox } from "@smthrs/sandbox"
-
-const provider = HttpSandbox.make({
-  url: sandboxUrl,
-  token: sandboxToken,
-  client,
-  limits: { cpus: 4, memoryMib: 12288 }
+remotes: S.Remotes({
+  cloudflare: S.Remote.Http({
+    url: "https://<sandboxUrl>",
+    token: S.Secret("SMITHERS_SANDBOX_TOKEN"),
+    machines: 16,
+    limits: { cpus: 4, memoryMib: 12288 },
+    workdir: "/workspace/ci",
+    setup: ["pnpm install --frozen-lockfile"]
+  })
 })
 ```
 
-`smthrs ci --remote` runs a shard on a remote declared in the workspace's
-`S.Remotes`; a remote backed by this service names the same URL and token, and
-`ci --remote <name>` then runs each shard in a `standard-4` container.
+`smthrs ci //... --remote cloudflare` then runs each part in a fresh
+`standard-4` container and destroys it after. See
+[Run CI on other machines](../build-cli/docs/guides/run-ci-on-other-machines.md).
+Any other program reaches the service with `HttpSandbox.make` from
+`@smthrs/sandbox`, given the URL, the token and an Effect `HttpClient`.
 
 ## Protocol
 

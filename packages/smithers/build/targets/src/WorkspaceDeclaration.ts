@@ -26,6 +26,7 @@ import * as Reference from "./Reference.ts"
 import * as RemoteCache from "./RemoteCache.ts"
 import * as Runtime from "./Runtime.ts"
 import * as RustToolchain from "./RustToolchain.ts"
+import * as Secret from "./Secret.ts"
 import * as Target from "./Target.ts"
 import type * as Toolchain from "./Toolchain.ts"
 
@@ -434,6 +435,27 @@ export const Sandboxes = (sandboxes: Readonly<Record<string, SandboxDeclaration>
 }
 
 /**
+ * Schema for the ceilings an HTTP remote asks each machine for, as
+ * `@smthrs/sandbox`'s `ResourceLimits`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const RemoteLimits = Schema.Struct({
+  cpus: Schema.optionalKey(Schema.Finite),
+  memoryMib: Schema.optionalKey(Schema.Int),
+  timeoutSecs: Schema.optionalKey(Schema.Int)
+})
+
+/**
+ * The ceilings an HTTP remote asks each machine for.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RemoteLimits = typeof RemoteLimits.Type
+
+/**
  * Schema for one remote declaration: the machines `smthrs ci --remote <name>`
  * places the parts of a run on.
  *
@@ -441,12 +463,26 @@ export const Sandboxes = (sandboxes: Readonly<Record<string, SandboxDeclaration>
  * `@smthrs/sandbox`'s `CommandSandbox` takes. `machines` holds one prefix per
  * machine, and a run has as many parts as there are machines.
  *
+ * `RemoteHttp` reaches machines through an HTTP service that `@smthrs/sandbox`'s
+ * `HttpSandbox.serve` answers, such as a Worker holding Cloudflare containers.
+ * `machines` is how many the service starts for one run, one part each; the
+ * bearer token is a declared secret, read on the coordinator only.
+ *
  * @category schemas
  * @since 1.0.0
  */
 export const RemoteDeclaration = Schema.Union([
   Schema.TaggedStruct("RemoteCommand", {
     machines: Schema.Array(Schema.Array(Schema.String)),
+    workdir: Schema.NonEmptyString,
+    setup: Schema.Array(Schema.String),
+    cli: Schema.Array(Schema.String)
+  }),
+  Schema.TaggedStruct("RemoteHttp", {
+    url: Schema.NonEmptyString,
+    token: Secret.Declaration,
+    machines: Schema.Int,
+    limits: Schema.optionalKey(RemoteLimits),
     workdir: Schema.NonEmptyString,
     setup: Schema.Array(Schema.String),
     cli: Schema.Array(Schema.String)
@@ -460,6 +496,22 @@ export const RemoteDeclaration = Schema.Union([
  * @since 1.0.0
  */
 export type RemoteDeclaration = typeof RemoteDeclaration.Type
+
+/**
+ * A remote whose machines are reached through argv prefixes.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RemoteCommand = Extract<RemoteDeclaration, { readonly _tag: "RemoteCommand" }>
+
+/**
+ * A remote whose machines an HTTP service holds.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RemoteHttp = Extract<RemoteDeclaration, { readonly _tag: "RemoteHttp" }>
 
 /**
  * Checks whether a value is a remote declaration.
@@ -490,6 +542,38 @@ export interface RemoteCommandOptions {
 }
 
 /**
+ * Options accepted by `S.Remote.Http`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RemoteHttpOptions {
+  /** The service's base URL: `https:`, or `http:` only to this machine's loopback address. */
+  readonly url: string
+  /** The declared secret holding the service's bearer token, such as `S.Secret("SMITHERS_MACHINES_TOKEN")`. */
+  readonly token: Secret.Secret
+  /** How many machines one run starts, one part each, from 1 to {@link maximumRemoteMachines}. */
+  readonly machines: number
+  /** The ceilings each machine is asked for; the service picks a machine that holds them. */
+  readonly limits?: RemoteLimits | undefined
+  /** The absolute guest directory each run takes a fresh subdirectory of, one per part. */
+  readonly workdir: string
+  /** Shell commands run in order in the shipped tree before the targets, such as the dependency install. */
+  readonly setup?: ReadonlyArray<string> | undefined
+  /** The words that start the CLI on the machine. Default {@link defaultRemoteCli}. */
+  readonly cli?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * The most machines one remote may start for a run, as `ci --shard` allows
+ * at most this many parts.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumRemoteMachines = 1024
+
+/**
  * The words that start the CLI on a machine when a remote declares none: the
  * workspace's own installed `smthrs`, which `setup` installs.
  *
@@ -499,6 +583,65 @@ export interface RemoteCommandOptions {
 export const defaultRemoteCli: ReadonlyArray<string> = Object.freeze(["npx", "--no", "smthrs"])
 
 const remoteCommandOptions: ReadonlySet<string> = new Set(["machines", "workdir", "setup", "cli"])
+const remoteHttpOptions: ReadonlySet<string> = new Set([
+  "url",
+  "token",
+  "machines",
+  "limits",
+  "workdir",
+  "setup",
+  "cli"
+])
+const remoteLimitKeys: ReadonlySet<string> = new Set(["cpus", "memoryMib", "timeoutSecs"])
+
+/** Whether a URL may carry a bearer token: TLS, or plain HTTP that never leaves this machine. */
+const isTokenSafeUrl = (url: URL): boolean =>
+  url.protocol === "https:" ||
+  (url.protocol === "http:" &&
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"))
+
+/** The validated ceilings, or undefined when one is not a positive number (whole for memory and time). */
+const remoteLimits = (value: unknown): RemoteLimits | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  const entries = Object.entries(value)
+  const valid = entries.every(([key, ceiling]) =>
+    remoteLimitKeys.has(key) && typeof ceiling === "number" && Number.isFinite(ceiling) && ceiling > 0 &&
+    (key === "cpus" || Number.isInteger(ceiling))
+  )
+  return valid ? Object.freeze(Object.fromEntries(entries)) : undefined
+}
+
+/** The guest-side options both remotes share, validated: the workdir, the setup commands and the CLI words. */
+const guestOptions = (
+  constructor: string,
+  options: { readonly workdir: unknown; readonly setup?: unknown; readonly cli?: unknown }
+) => {
+  const { cli, setup, workdir } = options
+  if (typeof workdir !== "string" || !workdir.startsWith("/") || workdir.includes("\0")) {
+    throw new TypeError(`${constructor} workdir must be an absolute guest path`)
+  }
+  if (setup !== undefined && (!isTextArray(setup) || setup.includes(""))) {
+    throw new TypeError(`${constructor} setup must be an array of non-empty shell commands`)
+  }
+  if (cli !== undefined && (!isTextArray(cli) || cli.length === 0 || cli.includes(""))) {
+    throw new TypeError(`${constructor} cli must be a non-empty array of non-empty words`)
+  }
+  return {
+    workdir,
+    setup: Object.freeze([...(setup ?? [])]),
+    cli: cli === undefined ? defaultRemoteCli : Object.freeze([...cli])
+  }
+}
+
+/** Refuses an options value that is not an object or names an option the constructor does not take. */
+const refuseUnknownOptions = (constructor: string, options: unknown, known: ReadonlySet<string>): void => {
+  if (typeof options !== "object" || options === null) {
+    throw new TypeError(`${constructor} options must be an object`)
+  }
+  for (const key of Object.getOwnPropertyNames(options)) {
+    if (!known.has(key)) throw new TypeError(`${constructor} received unknown option ${JSON.stringify(key)}`)
+  }
+}
 
 /** Whether a value is an array of strings with no NUL, which no argv or shell text can carry. */
 const isTextArray = (value: unknown): value is ReadonlyArray<string> =>
@@ -512,34 +655,43 @@ const isTextArray = (value: unknown): value is ReadonlyArray<string> =>
  */
 export const Remote = Object.freeze({
   /** Machines reached through an argv prefix each, as `@smthrs/sandbox`'s `CommandSandbox` reaches them. */
-  Command: (options: RemoteCommandOptions): RemoteDeclaration => {
-    if (typeof options !== "object" || options === null) {
-      throw new TypeError("Remote.Command options must be an object")
-    }
-    for (const key of Object.getOwnPropertyNames(options)) {
-      if (!remoteCommandOptions.has(key)) {
-        throw new TypeError(`Remote.Command received unknown option ${JSON.stringify(key)}`)
-      }
-    }
-    const { cli, machines, setup, workdir } = options
+  Command: (options: RemoteCommandOptions): RemoteCommand => {
+    refuseUnknownOptions("Remote.Command", options, remoteCommandOptions)
+    const { machines } = options
     if (!Array.isArray(machines) || machines.length === 0 || !machines.every(isTextArray)) {
       throw new TypeError("Remote.Command machines must be a non-empty array of argv prefixes, one per machine")
-    }
-    if (typeof workdir !== "string" || !workdir.startsWith("/") || workdir.includes("\0")) {
-      throw new TypeError("Remote.Command workdir must be an absolute guest path")
-    }
-    if (setup !== undefined && (!isTextArray(setup) || setup.includes(""))) {
-      throw new TypeError("Remote.Command setup must be an array of non-empty shell commands")
-    }
-    if (cli !== undefined && (!isTextArray(cli) || cli.length === 0 || cli.includes(""))) {
-      throw new TypeError("Remote.Command cli must be a non-empty array of non-empty words")
     }
     return Object.freeze({
       _tag: "RemoteCommand",
       machines: Object.freeze(machines.map((prefix) => Object.freeze([...prefix]))),
-      workdir,
-      setup: Object.freeze([...(setup ?? [])]),
-      cli: cli === undefined ? defaultRemoteCli : Object.freeze([...cli])
+      ...guestOptions("Remote.Command", options)
+    })
+  },
+  /** Machines an HTTP service holds and starts on demand, as `@smthrs/sandbox`'s `HttpSandbox` reaches them. */
+  Http: (options: RemoteHttpOptions): RemoteHttp => {
+    refuseUnknownOptions("Remote.Http", options, remoteHttpOptions)
+    const { limits, machines, token, url } = options
+    const parsed = typeof url === "string" && URL.canParse(url) ? new URL(url) : undefined
+    if (parsed === undefined || !isTokenSafeUrl(parsed)) {
+      throw new TypeError("Remote.Http url must be an https: URL, or an http: URL to this machine's loopback address")
+    }
+    if (!Secret.isSecret(token)) throw new TypeError("Remote.Http token must be an S.Secret declaration")
+    if (!Number.isInteger(machines) || machines < 1 || machines > maximumRemoteMachines) {
+      throw new TypeError(`Remote.Http machines must be a whole number from 1 to ${maximumRemoteMachines}`)
+    }
+    const ceilings = limits === undefined ? undefined : remoteLimits(limits)
+    if (limits !== undefined && ceilings === undefined) {
+      throw new TypeError(
+        "Remote.Http limits takes cpus, memoryMib and timeoutSecs, each positive, memoryMib and timeoutSecs whole"
+      )
+    }
+    return Object.freeze({
+      _tag: "RemoteHttp",
+      url,
+      token,
+      machines,
+      ...(ceilings === undefined ? {} : { limits: ceilings }),
+      ...guestOptions("Remote.Http", options)
     })
   }
 })

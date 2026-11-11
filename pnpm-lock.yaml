@@ -3462,6 +3462,9 @@ importers:
       '@rsbuild/core':
         specifier: 2.2.3
         version: 2.2.3(core-js@3.40.0)
+      '@smthrs/kernel':
+        specifier: 1.0.0-rc.17
+        version: link:../../flows/kernel
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
