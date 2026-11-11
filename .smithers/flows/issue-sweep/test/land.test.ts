@@ -98,7 +98,10 @@ test("readChecks: a targets_failed refusal is red with the targets the known-red
   const stdout = JSON.stringify({ code: "targets_failed", message: "2 of 3 targets failed" })
   assert.deepEqual(readChecks({ code: 1, stdout, stderr }), {
     _tag: "Red",
-    labels: ["//.smithers/flows:test", "//packages/smithers/flows/patterns:lib"]
+    failures: [
+      { label: "//.smithers/flows:test", digest: undefined },
+      { label: "//packages/smithers/flows/patterns:lib", digest: "sha256:5b86" }
+    ]
   })
 })
 
@@ -127,10 +130,19 @@ test("readChecks: a failure it cannot attribute, or a refusal to plan, means the
   assert.equal(readChecks({ code: 0, stdout: JSON.stringify({ ok: false }), stderr: "" })._tag, "Broken")
 })
 
-test("blocking keeps only the reds main does not share", () => {
-  assert.deepEqual(blocking(["//a:test", "//b:test"], ["//b:test", "//c:test"]), ["//a:test"])
-  assert.deepEqual(blocking(["//a:test"], ["//a:test"]), [])
-  assert.deepEqual(blocking([], ["//a:test"]), [])
+test("blocking keeps only the failures main does not share", () => {
+  const a = { label: "//a:test", digest: "sha256:a" }, b = { label: "//b:test", digest: "sha256:b" }
+  assert.deepEqual(blocking([a, b], [b, { label: "//c:test", digest: "sha256:c" }]), ["//a:test"])
+  assert.deepEqual(blocking([a], [a]), [])
+  assert.deepEqual(blocking([], [a]), [])
+})
+
+test("blocking: a target already red on main that now fails differently blocks", () => {
+  const onMain = [{ label: "//a:test", digest: "sha256:failure-A" }]
+  assert.deepEqual(blocking([{ label: "//a:test", digest: "sha256:failure-B" }], onMain), ["//a:test"])
+  // A failure without a digest proves nothing about matching main's.
+  assert.deepEqual(blocking([{ label: "//a:test" }], onMain), ["//a:test"])
+  assert.deepEqual(blocking([{ label: "//a:test" }], [{ label: "//a:test" }]), ["//a:test"])
 })
 
 test("isDocsSource picks package docs that docs:sync generates from, never the generated mirrors", () => {

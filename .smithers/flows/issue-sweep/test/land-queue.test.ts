@@ -7,11 +7,11 @@
 import { Effect } from "effect"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { type Checked, type Checks, LandFailed, makeBaselines, makeLander } from "../land.ts"
+import { blocking, type Checked, type Checks, LandFailed, makeBaselines, makeLander } from "../land.ts"
 
 import { type RetryServices, withRetryRuntime } from "./retry-runtime.ts"
 
@@ -208,15 +208,23 @@ test("re-landing a change main already contains answers its commit without check
   assert.deepEqual(tested, ["//a:test"])
 })
 
-test("a red label main also fails does not block; a new red does", { timeout: 60_000 }, async (t) => {
+test("a failure main also shows does not block; a new red, or a different failure, does", {
+  timeout: 60_000
+}, async (t) => {
   const { change } = fixture(t)
   const mine = change("mine", "a/mine.txt")
-  const { checks } = fakeChecks(() => Effect.succeed({ _tag: "Red", labels: ["//a:test"] } as Checked))
-  const excused = makeLander({ checks: { ...checks, redOnMain: (labels) => Effect.succeed(labels) } })
+  const failing = { label: "//a:test", digest: "sha256:failure-B" }
+  const { checks } = fakeChecks(() => Effect.succeed({ _tag: "Red", failures: [failing] } as Checked))
+  const excused = makeLander({ checks: { ...checks, redOnMain: () => Effect.succeed([failing]) } })
   const blocked = makeLander({ checks })
+  const different = makeLander({
+    checks: { ...checks, redOnMain: () => Effect.succeed([{ label: "//a:test", digest: "sha256:failure-A" }]) }
+  })
 
   const failure = await run(Effect.flip(blocked(mine.workspace, mine.id)))
   assert.match(failure.message, /checks red for .*: \/\/a:test/)
+  const changed = await run(Effect.flip(different(mine.workspace, mine.id)))
+  assert.match(changed.message, /checks red for .*: \/\/a:test/)
   assert.match(await run(excused(mine.workspace, mine.id)), /^[0-9a-f]{40}$/)
 })
 
@@ -230,7 +238,9 @@ test("the baseline cache measures a (commit, label) once, across concurrent asks
       measured.push(...labels.map((label) => `${commit} ${label}`))
       yield* Effect.sleep("50 millis")
       const red = labels.filter((label) => label === "//l2:test")
-      return red.length === 0 ? green : { _tag: "Red", labels: red } as Checked
+      return red.length === 0
+        ? green
+        : { _tag: "Red", failures: red.map((label) => ({ label, digest: `sha256:${commit}` })) } as Checked
     })
   const redOn = makeBaselines({ file, measure })
 
@@ -239,16 +249,36 @@ test("the baseline cache measures a (commit, label) once, across concurrent asks
     redOn("c1", ["//l2:test", "//l3:test"])
   ], { concurrency: "unbounded" }))
 
-  assert.deepEqual(first, ["//l2:test"])
-  assert.deepEqual(second, ["//l2:test"])
+  assert.deepEqual(first, [{ label: "//l2:test", digest: "sha256:c1" }])
+  assert.deepEqual(second, [{ label: "//l2:test", digest: "sha256:c1" }])
   assert.deepEqual(measured.sort(), ["c1 //l1:test", "c1 //l2:test", "c1 //l3:test"])
 
   // A restarted host reads the file; another commit is measured afresh.
   const restarted = makeBaselines({ file, measure })
-  assert.deepEqual(await run(restarted("c1", ["//l3:test", "//l2:test"])), ["//l2:test"])
+  assert.deepEqual(await run(restarted("c1", ["//l3:test", "//l2:test"])), [{
+    label: "//l2:test",
+    digest: "sha256:c1"
+  }])
   assert.equal(measured.length, 3)
-  assert.deepEqual(await run(restarted("c2", ["//l2:test"])), ["//l2:test"])
+  assert.deepEqual(await run(restarted("c2", ["//l2:test"])), [{ label: "//l2:test", digest: "sha256:c2" }])
   assert.equal(measured.length, 4)
+})
+
+test("a baseline red without a digest, such as an older file's, matches no failure", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "issue-sweep-baseline-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const file = join(root, "baseline.json")
+  writeFileSync(file, JSON.stringify({ c1: { "//a:test": true, "//b:test": false } }))
+  let runs = 0
+  const redOn = makeBaselines({
+    file,
+    measure: () => Effect.sync(() => (runs += 1, { _tag: "Red", failures: [{ label: "//c:test" }] } as Checked))
+  })
+  const unknown = await run(redOn("c1", ["//a:test", "//b:test", "//c:test"]))
+  assert.deepEqual(unknown, [{ label: "//a:test", digest: undefined }, { label: "//c:test", digest: undefined }])
+  assert.equal(runs, 1)
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).c1, { "//a:test": true, "//b:test": false, "//c:test": true })
+  assert.deepEqual(blocking([{ label: "//a:test", digest: "sha256:x" }], unknown), ["//a:test"])
 })
 
 test("a baseline that could not run blocks its askers and is not remembered", async () => {

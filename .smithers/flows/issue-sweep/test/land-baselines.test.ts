@@ -55,14 +55,15 @@ test("baseline caches genuine red and green labels separately for each main comm
       measurements.push([commit, requested])
       return Effect.succeed<Checked>(
         commit === "old-main"
-          ? { _tag: "Red", labels: [labels[0]!] }
+          ? { _tag: "Red", failures: [{ label: labels[0]!, digest: "sha256:a" }] }
           : { _tag: "Green" }
       )
     }
   })
-  assert.deepEqual(await Effect.runPromise(baseline("old-main", labels)), [labels[0]])
+  const red = { label: labels[0]!, digest: "sha256:a" }
+  assert.deepEqual(await Effect.runPromise(baseline("old-main", labels)), [red])
   assert.deepEqual(await Effect.runPromise(baseline("old-main", [labels[1]!])), [])
-  assert.deepEqual(await Effect.runPromise(baseline("old-main", [labels[0]!, labels[0]!])), [labels[0], labels[0]])
+  assert.deepEqual(await Effect.runPromise(baseline("old-main", [labels[0]!, labels[0]!])), [red, red])
   assert.equal(measurements.length, 1)
   assert.deepEqual(await Effect.runPromise(baseline("new-main", labels)), [])
   assert.deepEqual(await Effect.runPromise(baseline("new-main", labels)), [])

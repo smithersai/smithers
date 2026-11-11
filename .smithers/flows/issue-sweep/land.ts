@@ -102,15 +102,26 @@ export const testTargets = (
     .sort()
 }
 
+/**
+ * One target's failure: its label and, when the CLI reported one, the
+ * digest of its diagnostic. Two failures are the same only when both match.
+ */
+export interface Failure {
+  readonly label: string
+  readonly digest?: string | undefined
+}
+
 /** What one `smthrs test` run decided. */
 export type Checked =
   | { readonly _tag: "Green" }
-  | { readonly _tag: "Red"; readonly labels: ReadonlyArray<string> }
+  | { readonly _tag: "Red"; readonly failures: ReadonlyArray<Failure> }
   | { readonly _tag: "Broken"; readonly message: string }
 
 // `smthrs test --known-red` names each failure the list does not excuse:
 // "newly red, no matching failure in .github/ci-known-red.json: //pkg:test".
 const newlyRed = /^newly red\b[^:]*: (\/\/\S+)\s*$/
+// It also prints each failure's identity: "observed failure: //pkg:test sha256:...".
+const observed = /^observed failure: (\/\/\S+) (\S+)\s*$/
 
 const Refusal = Schema.fromJsonString(Schema.Struct({ code: Schema.String, message: Schema.String }))
 const Report = Schema.fromJsonString(Schema.Struct({ ok: Schema.Boolean }))
@@ -118,7 +129,7 @@ const Report = Schema.fromJsonString(Schema.Struct({ ok: Schema.Boolean }))
 /**
  * Reads one `smthrs test --format json --known-red ...` run. A run that
  * reported `ok` is green. A `targets_failed` refusal is red, listing the
- * targets the known-red list does not excuse. Anything else, such as a
+ * targets the known-red list does not excuse with their failure digests. Anything else, such as a
  * workspace that could not be planned, means the checks never ran.
  */
 export const readChecks = (exited: Exited): Checked => {
@@ -135,11 +146,21 @@ export const readChecks = (exited: Exited): Checked => {
   if (exited.code === 0 && Option.isSome(report) && report.value.ok) return { _tag: "Green" }
   const refusal = Schema.decodeUnknownOption(Refusal)(exited.stdout)
   if (Option.isSome(refusal) && refusal.value.code === "targets_failed") {
-    const labels = exited.stderr.split("\n").flatMap((line) => {
-      const match = newlyRed.exec(line.trim())
+    const lines = exited.stderr.split("\n").map((line) => line.trim())
+    const labels = lines.flatMap((line) => {
+      const match = newlyRed.exec(line)
       return match === null ? [] : [match[1]!]
     })
-    if (labels.length > 0) return { _tag: "Red", labels: [...new Set(labels)].sort() }
+    const digests = new Map(lines.flatMap((line) => {
+      const match = observed.exec(line)
+      return match === null ? [] : [[match[1]!, match[2]!] as const]
+    }))
+    if (labels.length > 0) {
+      return {
+        _tag: "Red",
+        failures: [...new Set(labels)].sort().map((label) => ({ label, digest: digests.get(label) }))
+      }
+    }
     return { _tag: "Broken", message: refusal.value.message }
   }
   return {
@@ -151,13 +172,21 @@ export const readChecks = (exited: Exited): Checked => {
 }
 
 /**
- * The failures that block a landing: the targets red on the change that are
- * not also red on `main` itself. A target red on both was red before the
- * agent touched anything.
+ * The labels whose failures block a landing: the failures on the change that
+ * `main` itself does not show. A target that fails on both with the same
+ * digest was red before the agent touched anything; a different digest, or
+ * one the CLI did not report, is a new failure.
  */
-export const blocking = (onChange: ReadonlyArray<string>, onMain: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const preexisting = new Set(onMain)
-  return onChange.filter((label) => !preexisting.has(label))
+export const blocking = (
+  onChange: ReadonlyArray<Failure>,
+  onMain: ReadonlyArray<Failure>
+): ReadonlyArray<string> => {
+  const preexisting = new Set(
+    onMain.flatMap((failure) => failure.digest === undefined ? [] : [`${failure.label} ${failure.digest}`])
+  )
+  return onChange
+    .filter((failure) => failure.digest === undefined || !preexisting.has(`${failure.label} ${failure.digest}`))
+    .map((failure) => failure.label)
 }
 
 /**
@@ -369,8 +398,12 @@ const measureOnMain = (revision: string, labels: ReadonlyArray<string>) =>
 // How many main commits the baseline file remembers.
 const rememberedCommits = 64
 
+// What the baseline file keeps per (commit, label): `false` for green, the
+// failure digest for red, `true` for red without one.
+type Measured = boolean | string
+
 /**
- * The labels red on a `main` commit, measured once per (commit, label).
+ * The failures on a `main` commit, measured once per (commit, label).
  *
  * Asking for labels already measured on `commit`, or being measured for
  * another caller, waits for that answer instead of running them again. A
@@ -383,7 +416,7 @@ export const makeBaselines = <R>(options: {
   readonly file?: string | undefined
   readonly measure: (commit: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed, R>
 }) => {
-  const read = (): Record<string, Record<string, boolean>> => {
+  const read = (): Record<string, Record<string, Measured>> => {
     if (options.file === undefined) return {}
     try {
       const parsed: unknown = JSON.parse(readFileSync(options.file, "utf8"))
@@ -394,7 +427,9 @@ export const makeBaselines = <R>(options: {
             ? [[
               commit,
               Object.fromEntries(
-                Object.entries(labels).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
+                Object.entries(labels).filter((entry): entry is [string, Measured] =>
+                  typeof entry[1] === "boolean" || typeof entry[1] === "string"
+                )
               )
             ]]
             : []
@@ -405,20 +440,20 @@ export const makeBaselines = <R>(options: {
     }
   }
   const saved = read()
-  const known = new Map<string, Map<string, Deferred.Deferred<boolean, LandFailed>>>()
+  const known = new Map<string, Map<string, Deferred.Deferred<Measured, LandFailed>>>()
   for (const [commit, labels] of Object.entries(saved)) {
     known.set(
       commit,
       new Map(
         Object.entries(labels).map(([label, red]) => {
-          const answer = Deferred.makeUnsafe<boolean, LandFailed>()
+          const answer = Deferred.makeUnsafe<Measured, LandFailed>()
           Deferred.doneUnsafe(answer, Effect.succeed(red))
           return [label, answer]
         })
       )
     )
   }
-  const save = (commit: string, answers: Record<string, boolean>) => {
+  const save = (commit: string, answers: Record<string, Measured>) => {
     if (options.file === undefined) return
     const next = { ...saved[commit], ...answers }
     delete saved[commit]
@@ -431,12 +466,12 @@ export const makeBaselines = <R>(options: {
       // The file only saves work after a restart; memory still holds the answer.
     }
   }
-  return (commit: string, labels: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<string>, LandFailed, R> =>
+  return (commit: string, labels: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<Failure>, LandFailed, R> =>
     Effect.suspend(() => {
-      const answers = known.get(commit) ?? new Map<string, Deferred.Deferred<boolean, LandFailed>>()
+      const answers = known.get(commit) ?? new Map<string, Deferred.Deferred<Measured, LandFailed>>()
       known.set(commit, answers)
       const missing = [...new Set(labels)].filter((label) => !answers.has(label))
-      const mine = new Map(missing.map((label) => [label, Deferred.makeUnsafe<boolean, LandFailed>()]))
+      const mine = new Map(missing.map((label) => [label, Deferred.makeUnsafe<Measured, LandFailed>()]))
       for (const [label, answer] of mine) answers.set(label, answer)
       const asked = labels.map((label) => [label, answers.get(label)!] as const)
       const measure = missing.length === 0
@@ -463,11 +498,14 @@ export const makeBaselines = <R>(options: {
                 }
                 return
               }
-              const red = new Set(checked._tag === "Red" ? checked.labels : [])
-              for (const [label, answer] of mine) {
-                Deferred.doneUnsafe(answer, Effect.succeed(red.has(label)))
-              }
-              save(commit, Object.fromEntries(missing.map((l) => [l, red.has(l)])))
+              const red = new Map(
+                (checked._tag === "Red" ? checked.failures : []).map((
+                  failure
+                ) => [failure.label, failure.digest ?? true])
+              )
+              const measured = missing.map((label) => [label, red.get(label) ?? false] as const)
+              for (const [label, answer] of measured) Deferred.doneUnsafe(mine.get(label)!, Effect.succeed(answer))
+              save(commit, Object.fromEntries(measured))
               for (const old of [...known.keys()].slice(0, -rememberedCommits)) known.delete(old)
             })
           ),
@@ -480,13 +518,16 @@ export const makeBaselines = <R>(options: {
             asked,
             ([label, answer]) => Effect.map(Deferred.await(answer), (red) => [label, red] as const)
           ),
-          (pairs) => pairs.filter(([, red]) => red).map(([label]) => label)
+          (pairs) =>
+            pairs.flatMap(([label, red]): ReadonlyArray<Failure> =>
+              red === false ? [] : [{ label, digest: red === true ? undefined : red }]
+            )
         )
       )
     })
 }
 
-/** The labels among `labels` that are red on `main` at `revision`, measured once per commit and label. */
+/** The failures of `labels` on `main` at `revision`, measured once per commit and label. */
 const redOnMain = makeBaselines({
   file: `${workspaces}/baseline.json`,
   measure: measureOnMain
@@ -521,8 +562,7 @@ const syncDocs = (workspace: string, change: string, files: ReadonlyArray<string
 /**
  * What a landing runs besides jj: the seam tests replace. `prepare` installs
  * dependencies and syncs docs, `index` lists the targets, `test` runs labels,
- * and `redOnMain` answers which of `labels` are already red on `main` at a
- * commit.
+ * and `redOnMain` answers how `labels` already fail on `main` at a commit.
  */
 type RetryServices =
   | FlowRuntime.FlowInstance
@@ -540,7 +580,7 @@ export interface Checks<R = never> {
   readonly redOnMain: (
     labels: ReadonlyArray<string>,
     revision: string
-  ) => Effect.Effect<ReadonlyArray<string>, LandFailed, R>
+  ) => Effect.Effect<ReadonlyArray<Failure>, LandFailed, R>
 }
 
 /** The checks a live landing runs, sandboxed, in the change's workspace. */
@@ -689,7 +729,8 @@ export const makeLander = <R>(options: {
                   return yield* fail(`checks did not run for ${change}: ${checked.message}`)
                 }
                 if (checked._tag === "Red") {
-                  const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
+                  const red = checked.failures.map((failure) => failure.label)
+                  const blockers = blocking(checked.failures, yield* checks.redOnMain(red, main))
                   if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
                 }
               }
