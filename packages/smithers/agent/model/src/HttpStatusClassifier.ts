@@ -69,7 +69,9 @@ export const classifyHttpStatus = (
   // possible cybersecurity risk": a refusal of the content, in other words.
   if (
     (named || status === undefined || status < 500) &&
-    /content[-_\s]?policy|content[-_\s]?filter|safety|cyber[-_\s]?(security|policy)|content was flagged/.test(normalized)
+    /content[-_\s]?policy|content[-_\s]?filter|safety|cyber[-_\s]?(security|policy)|content was flagged/.test(
+      normalized
+    )
   ) return "content_policy"
   // Quota and overflow must precede their generic invalid-request envelopes.
   if ((named || status === undefined || status < 500) && isContextOverflow(code, message)) return "context_overflow"

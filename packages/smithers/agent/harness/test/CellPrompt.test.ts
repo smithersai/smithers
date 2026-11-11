@@ -351,7 +351,9 @@ describe("cellPrompt", () => {
   })
 
   it("teaches the archaeology that does pay, reading history backwards, either way", () => {
-    for (const environment of [sectionOf("cell-environment"), sectionOf("cell-environment", {}, { noLaterCommits: true })]) {
+    for (
+      const environment of [sectionOf("cell-environment"), sectionOf("cell-environment", {}, { noLaterCommits: true })]
+    ) {
       expect(environment).toContain("says what an assertion was written for")
       expect(environment).toContain("git log <tag>..HEAD -- <paths>")
     }

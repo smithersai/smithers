@@ -198,7 +198,9 @@ describe("SchemaSignature.render", () => {
     // A union inside a record or an object belongs to that type, not to the array.
     expect(of({ type: "object", additionalProperties: { anyOf: [{ type: "string" }, { type: "integer" }] } }))
       .toBe("Record<string, string | integer>[]")
-    expect(of({ type: "object", properties: { a: { enum: ["x", "y"] } }, required: ["a"], additionalProperties: false }))
+    expect(
+      of({ type: "object", properties: { a: { enum: ["x", "y"] } }, required: ["a"], additionalProperties: false })
+    )
       .toBe(["{", "  a: \"x\" | \"y\"", "}[]"].join("\n"))
     expect(SchemaSignature.render(document({ type: "array" }))).toBe("unknown[]")
   })
@@ -229,7 +231,10 @@ describe("SchemaSignature.render", () => {
     const definitions = { Path: { type: "string", description: "A path in the workspace" } }
     const property = (reference: Record<string, unknown>) =>
       SchemaSignature.render(
-        document({ type: "object", properties: { at: reference }, required: ["at"], additionalProperties: false }, definitions)
+        document(
+          { type: "object", properties: { at: reference }, required: ["at"], additionalProperties: false },
+          definitions
+        )
       )
     expect(property({ $ref: "#/$defs/Path" })).toBe(["{", "  at: string // A path in the workspace", "}"].join("\n"))
     expect(property({ $ref: "#/$defs/Path", description: "Where to write" }))

@@ -55,48 +55,51 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
   success: ReviewResult,
   error: ReviewFailure,
   // Captured, so a caller that runs the rounds as a child execution keys the call by this body's identity.
-  body: Node.capture({ narrate: NarrateChanges.name, render: RenderWalkthrough.name }, ({ changes, input, review, target }) => {
-    const narrating = input.narrate && changes.files.length > 0
-    const story = narrating
-      ? NarrateChanges.call({
-        timeout: input.timeout,
-        seat: input.narrateSeat,
-        files: changes.files,
-        comments: review.comments,
-        background: input.background,
-        mode: target.mode,
-        ref: target.ref
-      }).pipe(
-        Node.map((value) => ({ value, failure: "" })),
-        Node.catch({
-          onFailure: (error) =>
-            Node.succeed(error).pipe(
-              Node.map((failure) => ({ value: null, failure: failure.message }))
-            )
-        })
-      )
-      : Node.succeed({ value: null, failure: "" })
-    return story.pipe(
-      Node.bindPlanned((narrated) =>
-        RenderWalkthrough.call({
-          input,
+  body: Node.capture(
+    { narrate: NarrateChanges.name, render: RenderWalkthrough.name },
+    ({ changes, input, review, target }) => {
+      const narrating = input.narrate && changes.files.length > 0
+      const story = narrating
+        ? NarrateChanges.call({
+          timeout: input.timeout,
+          seat: input.narrateSeat,
+          files: changes.files,
+          comments: review.comments,
+          background: input.background,
+          mode: target.mode,
+          ref: target.ref
+        }).pipe(
+          Node.map((value) => ({ value, failure: "" })),
+          Node.catch({
+            onFailure: (error) =>
+              Node.succeed(error).pipe(
+                Node.map((failure) => ({ value: null, failure: failure.message }))
+              )
+          })
+        )
+        : Node.succeed({ value: null, failure: "" })
+      return story.pipe(
+        Node.bindPlanned((narrated) =>
+          RenderWalkthrough.call({
+            input,
+            target,
+            changes,
+            review,
+            story: narrated.value,
+            narrateFailure: narrated.failure
+          })
+        ),
+        Node.map((rendered) => ({
           target,
-          changes,
-          review,
-          story: narrated.value,
-          narrateFailure: narrated.failure
-        })
-      ),
-      Node.map((rendered) => ({
-        target,
-        review: rendered.review,
-        verdict: reviewVerdict(review),
-        walkthrough: rendered.walkthrough,
-        story: rendered.story,
-        ui: rendered.ui
-      }))
-    )
-  })
+          review: rendered.review,
+          verdict: reviewVerdict(review),
+          walkthrough: rendered.walkthrough,
+          story: rendered.story,
+          ui: rendered.ui
+        }))
+      )
+    }
+  )
 })
 
 /**
