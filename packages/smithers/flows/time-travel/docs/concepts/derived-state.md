@@ -152,12 +152,14 @@ Anchors are keyed by lineage, not by run. A record that carries a pointer
 forward means "the same pointer as my lineage's previous anchor", never "the
 pointer whoever wrote last named".
 
-The refresh a fork or rewind runs before it reads anchors is best effort. The
-anchor table is a cache of facts the journal already holds, so a journal that
-cannot project must not turn a fork into a failure. What happens instead is
-stated in each verb's answer: a fork with no anchor at the frame reports a
-warning naming the workspace it could not restore, and a rewind restores no
-pointer rather than a wrong one.
+The refresh a fork or rewind runs before it reads anchors must succeed. A verb
+reads the nearest anchor at or below its frame, so a refresh that stopped
+short would leave an older anchor in reach: a rewind would restore the
+workspace from that older change while keeping the journal through the frame,
+and a fork would pin its lane there. A refresh past the history cap fails the
+verb with `limit_exceeded`, a failed journal read or anchor write with
+`unknown`, and a corrupt snapshot or plan record with `invalid`, all before
+anything durable.
 
 ## Where to go next
 

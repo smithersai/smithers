@@ -9,6 +9,7 @@
  * user has to remember to make.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import * as Jj from "@smthrs/jj"
 import { Journal } from "@smthrs/journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
@@ -455,11 +456,11 @@ describe("TimeTravel wiring", () => {
     { timeout: 30_000 }
   )
 
-  it.effect("logs and continues when the frame-anchor projection cannot run", () =>
+  it.effect("refuses a fork when the frame-anchor projection cannot run", () =>
     Effect.gen(function*() {
-      // The anchor table is a cache of journal facts, so a journal that cannot be
-      // paged for anchoring must not turn a verb into a failure of its own. The
-      // fork still reaches its suffix read, and THAT is what fails here.
+      // A journal that cannot be paged for anchoring leaves whatever anchors
+      // the table already holds in reach, so the verb refuses with the
+      // projector's error rather than restoring from them.
       const store = MemoryTimeTravelStore.make()
       const failure = yield* (
         Effect.flip(
@@ -483,10 +484,49 @@ describe("TimeTravel wiring", () => {
               )
             )
           )
-        ) as unknown as Effect.Effect<{ readonly message: string }>
+        ) as unknown as Effect.Effect<{ readonly code: string; readonly message: string }>
       )
 
-      expect(failure.message).toBe("could not read fork suffix for run")
+      expect(failure).toMatchObject({ code: "unknown", message: "could not read run for anchoring" })
+      expect(store.state().forkIntents).toEqual([])
+    }))
+
+  it.effect("refuses a rewind or fork whose anchor refresh stops short of the frame", () =>
+    Effect.gen(function*() {
+      // Regression for #4862. The table holds an anchor at seq 0; the journal
+      // names a newer pointer at seq 4. A refresh capped at two entries cannot
+      // reach seq 4, so the nearest anchor at or below the frame is the old
+      // one. Swallowing the cap used to restore the workspace from "old" while
+      // keeping the journal through seq 4, and to pin a fork lane there.
+      const snapshotRecord: MemoryTimeTravelStore.JournalRecord = {
+        runId: "run",
+        seq: 4,
+        eventId: "event-4",
+        lineageId,
+        payload: { eventType: EventTypes.snapshotIdentified, payload: { snapshotId: "new" }, meta: { lineageId } }
+      }
+      const store = MemoryTimeTravelStore.make({
+        records: [record(0, 10), record(1, 20), record(2, 30), record(3, 40), snapshotRecord, record(5, 50)],
+        snapshots: [{ runId: "run", frame: { lineageId, seq: 0 }, changeId: "old" }]
+      })
+      const workspaces: Array<string> = []
+      const position = { runId: "run", frame: { lineageId, seq: 4 } }
+
+      const failures = yield* run(
+        store,
+        (timeTravel) =>
+          Effect.all([
+            Effect.flip(timeTravel.rewind(position, { maxHistoryEntries: 2 })),
+            Effect.flip(timeTravel.fork(position, { maxHistoryEntries: 2 }))
+          ]),
+        workspaces
+      )
+
+      expect(failures.map((failure) => failure.code)).toEqual(["limit_exceeded", "limit_exceeded"])
+      expect(store.state().records.map((entry) => entry.seq)).toEqual([0, 1, 2, 3, 4, 5])
+      expect(store.state().audits).toEqual([])
+      expect(workspaces).toEqual([])
+      expect(store.state().forkIntents).toEqual([])
     }))
 
   it.effect("maps every member of a contributed handler onto the internal registry", () =>

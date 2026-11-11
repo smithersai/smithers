@@ -76,9 +76,10 @@ export interface ForkOptions {
   /**
    * Brings the parent's frame anchors up to date, run AFTER the live-parent
    * refusal and before the assessment reads them. A fork of a live parent is
-   * refused without reading its journal at all.
+   * refused without reading its journal at all, and a refresh that fails
+   * refuses the fork before anything durable.
    */
-  readonly refreshAnchors?: Effect.Effect<void, never, Journal.Journal | TimeTravelStore> | undefined
+  readonly refreshAnchors?: Effect.Effect<void, TimeTravelError, Journal.Journal | TimeTravelStore> | undefined
   /**
    * Fault injection between the fork's durable steps, the seam the crash
    * suite uses to kill a real process after the workspace exists and before

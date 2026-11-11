@@ -597,22 +597,15 @@ export const makeWith = (
      * verb's frame, so the read is the unanchored entries at or below the frame
      * and nothing else; `maxEntries` caps it like every other read.
      *
-     * BEST EFFORT on purpose. The anchor table is a cache of facts the journal
-     * already holds, so a journal that cannot project — a composition wired
-     * without the projection channel, a partial test double — must not turn a
-     * fork or a rewind into a failure. What it does instead is leave the anchors
-     * as they were, and the verbs already say what that costs: a fork with no
-     * anchor at the frame reports a warning naming the workspace it could not
-     * restore, and a rewind restores no pointer rather than a wrong one.
+     * A failed refresh FAILS THE VERB. The verbs read the nearest anchor at or
+     * below the frame, so a refresh that stopped short leaves an older anchor
+     * in reach: a rewind would restore the workspace from that older change
+     * while keeping the journal through the frame, and a fork would pin its
+     * lane there with no warning. A cap, a journal read, a store write, or a
+     * corrupt record refuses with the projector's own error instead.
      */
     const refreshAnchors = (runId: string, upTo: number, maxEntries: number) =>
-      SnapshotProjector.project(runId, { upTo, maxEntries }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("time-travel: could not refresh frame anchors", cause).pipe(
-            Effect.annotateLogs({ runId })
-          )
-        )
-      )
+      SnapshotProjector.project(runId, { upTo, maxEntries }).pipe(Effect.asVoid)
 
     const replay = replayWith(historyLimit)
     const rederive = <S>(position: Position, projection: Projection<S>, options?: ReplayOptions) =>

@@ -139,7 +139,8 @@ table is optional for truncation.
   keeps only the effect-boundary records of the suffix it assesses.
 - The anchor refresh a fork or rewind runs first reads only the entries above
   the run's anchored high-water mark and at or below the frame, under the same
-  cap, and writes each page's anchors in one store write. A run whose anchors
+  cap, and writes each page's anchors in one store write. A refresh that fails,
+  past the cap or otherwise, fails the verb before it claims anything. A run whose anchors
   are current reads one page and writes nothing. A rewind revalidates the tail
   under its claim from one page at the expected tail, never a second scan.
 - A fork that reserved its id and died before committing leaves its jj lane

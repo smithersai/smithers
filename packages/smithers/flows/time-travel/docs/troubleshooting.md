@@ -219,16 +219,12 @@ that journals snapshots.
 
 ## Warnings in the log
 
-Three log lines come from this package's own recovery paths:
+Two log lines come from this package's own recovery paths:
 
 - `time-travel: startup recovery closed an audit as failed` is logged at error
   level with the audit id, code, and reason. A rewind a crash interrupted could
   not be finished, and the audit is now closed terminally. Read the audit's
   `detail` for the phase it reached.
-- `time-travel: could not refresh frame anchors` means the anchor projection
-  could not run, so the anchors were left as they were. The verbs already say
-  what that costs: a fork reports the lane-default warning, and a rewind
-  restores no pointer rather than a wrong one.
 - `time-travel: could not forget an abandoned fork workspace` names a lane left
   behind by a fork that reserved an id and never committed. The reserved
   ordinal is never handed out again. A failed lane removal or completion write
