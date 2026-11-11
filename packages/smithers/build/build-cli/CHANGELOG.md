@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `affected` no longer selects audited confined native process targets or their
+  Filegroup dependencies for unrelated package siblings. Unconfined and
+  incomplete contracts remain conservative, including readable output mounts,
+  custom workspace lockfiles and symbolic-link inputs. Confined tools no longer receive
+  blanket read access to undeclared files in their declaring package.
+
 - An interrupted bundler resolve or build still reports a scratch tree it
   could not remove (#3839). Effect 4.0.4 removes a typed failure from an
   interrupted fiber's cause once the unwind passes a recovery handler, so the

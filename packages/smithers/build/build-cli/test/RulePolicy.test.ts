@@ -21,13 +21,13 @@ describe("rule policy rows", () => {
     ["Cargo.Fetch", { writes: true }],
     ["Cargo.Test", { writes: true, cache: "read" }],
     ["Cargo.Fmt", { check: true, cache: "read" }],
-    ["Cargo.AppSet", {}],
-    ["Alias", {}],
-    ["Filegroup", {}],
-    ["Go.Packages", {}],
+    ["Cargo.AppSet", { reads: "declared" }],
+    ["Alias", { reads: "declared" }],
+    ["Filegroup", { reads: "declared" }],
+    ["Go.Packages", { reads: "declared" }],
     ["ImportClosure", {}],
     ["Install", {}],
-    ["Suite", {}]
+    ["Suite", { reads: "declared" }]
   ])("states %s explicitly instead of defaulting", (rule, policy) => {
     expect(RulePolicy.of(rule)).toEqual(policy)
   })

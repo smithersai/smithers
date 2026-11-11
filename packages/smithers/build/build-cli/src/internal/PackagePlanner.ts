@@ -1828,7 +1828,7 @@ const visit = async (
   for (const record of secretRecords) {
     if (Secret.isHttpCredential(record)) secrets.push(record)
   }
-  let sandbox = declaredSandbox
+  const sandbox = RulePolicy.sandbox(rule, declaredSandbox)
 
   const overlayResolution = await OverlayExec.resolve({
     root: context.root,
@@ -1950,18 +1950,9 @@ const visit = async (
     }
     argv = resolved
     if (rule === "Shell.Build") {
-      const declaredOut = attrMember(attrs, "outDirs")
-      if (Array.isArray(declaredOut)) {
-        for (const dir of declaredOut) {
-          if (typeof dir === "string") outDirs.push(Input.resolvePath(packagePath, dir))
-        }
-      }
-      const declaredFiles = attrMember(attrs, "outFiles")
-      if (Array.isArray(declaredFiles)) {
-        for (const file of declaredFiles) {
-          if (typeof file === "string") outFiles.push(Input.resolvePath(packagePath, file))
-        }
-      }
+      const outputs = RulePolicy.buildOutputs(attrs, packagePath)
+      outDirs.push(...outputs.outDirs)
+      outFiles.push(...outputs.outFiles)
     }
   }
 
@@ -2172,21 +2163,18 @@ const visit = async (
     if (rule === "Docker.Push" && planned.commands !== undefined) {
       selection = { family: "container", rule, lane: { kind: "docker-push", commands: planned.commands } }
     }
-    if (sandbox === undefined) sandbox = "none"
     if (planned.refusal !== undefined) noteRefusal(planned.refusal)
   }
 
   if (rule === "Anvil.Fork") {
     const resolved = await AnvilExec.resolveAnvil(context.hostProbes)
     toolchain.push(resolved.identity)
-    sandbox = { network: true }
     if (!resolved.ok) noteRefusal(resolved.refusal)
   }
 
   if (rule === "Docker.Serve" || rule === "Docker.Service") {
     const resolved = await DockerExec.resolveDocker(context.environment, context.hostProbes)
     toolchain.push(resolved.identity)
-    sandbox = "none"
     if (!resolved.ok) noteRefusal(resolved.refusal)
   }
 
@@ -2365,7 +2353,6 @@ const visit = async (
       selection = native.value
       outFiles.push(...native.value.outFiles ?? [])
       writeSet.push(...native.value.writeSet ?? [])
-      if (native.value.sandbox !== undefined) sandbox = native.value.sandbox
     }
   }
 
@@ -2615,7 +2602,6 @@ const visit = async (
         // declared outputs; `.git` is the tool's bookkeeping.
         writeSet.push(".git")
         externalReads.push(...submodulePlan.sources)
-        sandbox = { network: true }
         selection = { family: "repository", rule, lane: { kind: "submodules", plan: submodulePlan } }
         break
       }
@@ -2718,7 +2704,6 @@ const visit = async (
         }
         outDirs.push(output)
         argv = [context.managerBinary, "dlx", "pacote@21.0.0", "extract", manifest.name, output]
-        sandbox = { network: true }
         selection = { family: "repository", rule, lane: { kind: "published", manifestPath } }
         break
       }

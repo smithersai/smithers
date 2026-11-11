@@ -109,3 +109,40 @@ There is no second rule-dispatch loop in `Executor` to extract.
 The remaining convergence work is between native family execution and that
 declaration-body adapter. Their different input contracts still justify an
 explicit boundary while each native family earns its own equivalence evidence.
+
+## Affected read contracts
+
+The internal `RulePolicy` table owns both intrinsic sandbox overrides and
+which execution routes can omit package membership during affected selection.
+The planner and selector call the same declaration-only policy resolver.
+The planner and selector also share native build-output resolution. The selector
+matches the literal readable directory grants from outputs, output-file parents,
+the execution cache and dependency directories; these yield `sandbox-input`
+causes, including for paths outside the declaring package. It uses the same
+package-manager file and dependency-directory helpers as execution.
+
+Symbolic-link file inputs may have a different spelling from their referent.
+They retain an `indirect-input` any-change fallback, including matching file
+links in globs. The bounded scan never descends through directory links and surveys nested
+packages conservatively because explicitly entered repositories can admit them.
+Unreadable or over-budget scans remain conservative.
+
+An unknown rule retains package selection. Adding a native rule does not
+implicitly promise confined reads.
+
+| Rule family                                                          | Read contract and selection                                                                                                                                                                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Shell.Build`, `Shell.Test`, `Shell.Run`                             | Their runner dispatches through `spawnConsumer` and `spawnNode`, which pass `sandboxRequest` to the exec boundary. Omit package membership only with an explicit enforcing workspace mechanism and confinement in every kind. |
+| `Filegroup`                                                          | Planning expands declared inputs; execution only caches a filegroup verdict. Nested files arrive through declared dependencies. Omit package membership.                                                                      |
+| `Cargo.AppSet`                                                       | `appSetCrates` expands its declared manifest globs and reads those manifests. Execution is a value verdict. Omit package membership.                                                                                          |
+| `Go.Packages`                                                        | Execution returns a value verdict; its selectors are declarations, not executable commands. Omit package membership.                                                                                                          |
+| `Suite`                                                              | Execution examines the recorded statuses of declared members. Omit package membership.                                                                                                                                        |
+| `Alias`                                                              | Execution examines the recorded status of the declared aliased target. Omit package membership.                                                                                                                               |
+| `Materialize`, `Clean`, `Install`                                    | Materialization verifies existing output trees; cleaning mutates output paths; installation reads and writes dependency state through the install service. Keep package membership.                                           |
+| `Generate`, ownership projections, `Github.CiGen`, `Copy`, `Literal` | Check modes inspect existing destinations, beyond declared source inputs. Keep package membership.                                                                                                                            |
+| `ImportClosure`, native language rules, bundlers                     | Planning or host execution discovers imports, compiler inputs, manifests, configuration or graph data. Exec confinement alone does not describe those reads. Keep package membership.                                         |
+| Other native rules and custom bodies                                 | Host-side operations, services, generated-output checks and declaration bodies lack a declaration-only complete read contract. Keep package membership.                                                                       |
+
+The uncacheable, ambient-input and empty-declaration fallbacks still apply to
+every row. This is a selection refinement over complete contracts, not a way to
+make an incomplete contract cacheable.

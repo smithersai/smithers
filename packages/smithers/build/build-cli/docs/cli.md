@@ -653,6 +653,28 @@ uncacheable target and its dependents, because only a cache key declares
 complete inputs.
 
 `--list` adds `reasonDetails` beside each target's changed-path `reasons`.
+Native `Shell.Build`, `Shell.Test`, and `Shell.Run` omit the `package`
+cause when every kind retains confinement and the workspace explicitly declares
+a default sandbox mechanism other than `S.Sandbox.None()`. A missing host
+mechanism fails the target closed, without changing selection. An absent
+workspace mechanism or `sandbox: "none"` keeps the package cause.
+`Filegroup`, `Cargo.AppSet`, `Go.Packages`, `Suite`, and `Alias` also
+omit it because their own reads are declared files or dependency results.
+Output directories and output-file parents remain readable mounts, as do the
+execution cache and dependency directories. A change under one of these literal
+paths selects the target with a `sandbox-input` cause and `readPath`, including
+cross-package mounts. Workspace package-manager files select globally regardless
+of their filenames. Symbolic-link source inputs retain an any-change
+`indirect-input` fallback: the link's referent can change a key without matching
+its declared spelling. An incomplete or unreadable bounded link scan also keeps
+this conservative fallback.
+External dependency installation links keep their manifest and lockfile
+identities; pointing outside the workspace does not add an any-change cause.
+
+Other rules retain package selection, including generated-output checks,
+services that run unconfined, host-side implementations, and dynamic input discovery.
+`PACKAGE.ts` changes still select globally.
+
 Each detail names the file and selection mechanism; target-local causes also
 name the culprit's label and rule and a shortest `dependencyPath` from the
 selected root to that culprit. Ambient inputs include their declaration, such

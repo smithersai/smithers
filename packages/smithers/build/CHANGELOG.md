@@ -8,6 +8,11 @@
   a directory that is not above its own, such as a compiler test reading a
   sibling install, can now run inside the sandbox and publish to the shared
   cache. A directory with no manifest or no lockfile is refused.
+- `affected` no longer selects audited confined native process targets or their
+  Filegroup dependencies for unrelated package siblings. Unconfined and
+  incomplete contracts remain conservative, including readable output mounts,
+  custom workspace lockfiles and symbolic-link inputs. Confined tools no longer
+  receive blanket read access to undeclared files in their declaring package.
 - Runtime version requirements compare numeric prerelease identifiers exactly,
   including values beyond JavaScript's safe integer range. Adjacent large
   identifiers no longer admit an older runtime through rounding.

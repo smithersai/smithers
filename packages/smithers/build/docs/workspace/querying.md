@@ -173,6 +173,42 @@ piping into `jq`:
 smithers-build query //... --json | jq -r '.targets[].label'
 ```
 
+## Changed targets
+
+`smthrs affected ci //... --files pkg/source.ts --list` selects targets and
+explains each cause without executing tools. Declared files and globs, including
+exclusions, select their consumers and propagate through dependencies.
+
+A confined native `Shell.Build`, `Shell.Test`, or `Shell.Run` does not acquire
+a `package` cause merely because a changed file is in the same package.
+Its resolved policy must keep confinement and the workspace must explicitly
+declare a default mechanism other than `S.Sandbox.None()`. An unavailable
+mechanism fails execution closed; the selection does not depend on the host.
+A target with `sandbox: "none"`, an absent mechanism, or any unconfined verb
+keeps package selection.
+
+`Filegroup`, `Cargo.AppSet`, `Go.Packages`, `Suite`, and `Alias` read
+declared files or dependency results rather than arbitrary package siblings.
+They also omit the package cause. Output directories and output-file parents remain readable mounts, as do the
+execution cache and dependency directories. A change under one of these literal
+paths selects the target with a `sandbox-input` cause and `readPath`, including
+cross-package mounts. Workspace package-manager files select globally regardless
+of their filenames. Symbolic-link source inputs retain an any-change
+`indirect-input` fallback: the link's referent can change a key without matching
+its declared spelling. An incomplete or unreadable bounded link scan also keeps
+this conservative fallback.
+External dependency installation links keep their manifest and lockfile
+identities; pointing outside the workspace does not add an any-change cause.
+
+Other rule families retain conservative
+selection, including rules that discover additional inputs or inspect generated
+outputs outside their declared input list.
+
+`PACKAGE.ts` edits, global and unknown paths, ambient inputs, uncacheable
+targets, empty declarations, and reverse dependency propagation keep their
+existing conservative behavior. A path excluded by every declaration still
+belongs to its package for unknown-path detection.
+
 ## Next
 
 - [Labels](../concepts/labels.md)

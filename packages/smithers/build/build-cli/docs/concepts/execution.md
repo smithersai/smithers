@@ -214,7 +214,10 @@ limitation. Use `{ network: true }` only when full network access is intended.
 
 Inside the workspace, each mechanism limits reads to the admitted read set
 and writes to the admitted write set. The read set includes keyed inputs
-plus the paths a rule discovers for itself:
+plus the paths a rule discovers for itself. Merely declaring a target in a
+package does not grant read access to every sibling: declared files admit the
+directory traversal they require, without exposing undeclared file contents.
+The admitted paths include:
 
 - the target's expanded declared inputs, the declared outputs of every
   transitive dependency, and a `Filegroup` dependency's files;

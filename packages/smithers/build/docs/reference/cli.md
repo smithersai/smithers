@@ -149,6 +149,10 @@ The first argument is `build`, `test`, `lint`, `docs`, `review`, `run`, or
 `--head` selects a committed comparison endpoint. Without `--head`, the
 working tree and untracked files are included. Repeatable `--files` bypasses
 Git discovery. `--list` reports roots and reasons without executing them.
+Audited confined native process rules and declarative value rules omit package
+membership causes; see [changed targets](../workspace/querying.md#changed-targets).
+Unconfined targets retain package selection and incomplete cache contracts retain
+the any-change fallback.
 
 Failure code: `affected_failed`.
 

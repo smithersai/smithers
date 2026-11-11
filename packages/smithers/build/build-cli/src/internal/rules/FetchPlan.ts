@@ -8,12 +8,13 @@ import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import * as Diagnostic from "../../Diagnostic.ts"
 import type * as Rule from "../RuleContract.ts"
+import * as RulePolicy from "../RulePolicy.ts"
 
 /** The intrinsic network policy of the existing Fetch backend.
  * @category policies
  * @since 1.0.0
  */
-export const sandbox = { network: true } as const
+export const sandbox = RulePolicy.networkSandbox
 
 /** Reduces schema-validated attrs without reading remote bytes or the filesystem.
  * Output validation is repeated at the actual package boundary.

@@ -268,9 +268,8 @@ export const sandboxRequest = (
   // with a tmpfs; seatbelt denies undeclared data reads), so without this the
   // gate judges a tree the candidate is missing from and stays red forever.
   for (const path of candidateReads) reads.add(path)
-  // Tools run from their declaring package and may inspect the directory
-  // itself while opening explicitly declared children (Corepack and rm do).
-  if (node.packagePath !== "") reads.add(node.packagePath)
+  // Ancestors of declared files are traversable without granting their
+  // siblings. Granting packagePath here would expose every undeclared input.
   for (const input of node.declaredInputs) {
     for (const file of input.files) reads.add(file.path)
   }

@@ -6,9 +6,12 @@ import * as Input from "@smthrs/targets/Input"
 import * as Target from "@smthrs/targets/Target"
 import * as Data from "effect/Data"
 import { Minimatch } from "minimatch"
+import * as Fs from "node:fs"
 import * as Path from "node:path"
 import * as ContainedProcess from "./internal/ContainedProcess.ts"
 import { inputPackage } from "./internal/InputPackage.ts"
+import { managerFilesOf, nodeModulesDirectories } from "./internal/PackagePlanner.ts"
+import { contains } from "./internal/Path.ts"
 import * as RulePolicy from "./internal/RulePolicy.ts"
 import type { PackageIndex } from "./PackageIndex.ts"
 import { productionSourceRoots } from "./Planner.ts"
@@ -112,6 +115,8 @@ interface ReasonDetail {
     | "unknown-input"
     | "ambient-input"
     | "uncacheable"
+    | "sandbox-input"
+    | "indirect-input"
     | "package"
     | "declared-input"
     | "empty"
@@ -119,6 +124,7 @@ interface ReasonDetail {
   readonly rule?: string
   readonly input?: Input.Declared
   readonly dependencyPath?: ReadonlyArray<string>
+  readonly readPath?: string
 }
 
 const compileInput = (
@@ -159,7 +165,7 @@ export const select = (
   index: PackageIndex,
   patterns: ReadonlyArray<string>,
   paths: ReadonlyArray<string>,
-  options: { readonly explain?: boolean } = {}
+  options: { readonly explain?: boolean; readonly cacheDirectory?: string } = {}
 ) => {
   const normalized = [
     ...new Set(paths.map((path) => {
@@ -199,11 +205,108 @@ export const select = (
     }
     return compiled
   }
+  const cacheDirectory = options.cacheDirectory ?? index.workspace?.cache.directory ?? ".flows"
+  let realRoot = index.root
+  let rootPresent = true
+  try {
+    realRoot = Fs.realpathSync(index.root)
+  } catch (cause) {
+    const code = (cause as NodeJS.ErrnoException).code
+    rootPresent = code !== "ENOENT" && code !== "ENOTDIR"
+  }
+  const links = new Map<string, ReadonlyArray<string> | undefined>()
+  const indirectFiles = new Map<string, boolean>()
+  const indirectFile = (path: string): boolean => {
+    if (!rootPresent) return false
+    const known = indirectFiles.get(path)
+    if (known !== undefined) return known
+    const absolute = Path.resolve(realRoot, path)
+    let indirect = false
+    try {
+      const resolved = Fs.realpathSync(absolute)
+      indirect = resolved !== absolute && contains(realRoot, resolved)
+    } catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code
+      // A dangling link may become readable when its referent is created.
+      for (
+        let current = absolute;
+        current !== realRoot && current !== Path.dirname(current);
+        current = Path.dirname(current)
+      ) {
+        try {
+          if (Fs.lstatSync(current).isSymbolicLink()) {
+            indirect = true
+            break
+          }
+        } catch { /* An absent ancestor grants no additional authority. */ }
+      }
+      if (code !== "ENOENT" && code !== "ENOTDIR") indirect = true
+    }
+    indirectFiles.set(path, indirect)
+    return indirect
+  }
+  const globLinks = (directory: string): ReadonlyArray<string> | undefined => {
+    if (links.has(directory)) return links.get(directory)
+    const found: Array<string> = []
+    const pending = [directory]
+    let entries = 0
+    let listed = false
+    try {
+      for (const current of pending) {
+        const children = Fs.readdirSync(Path.resolve(index.root, current), { withFileTypes: true })
+        listed = true
+        for (const item of children) {
+          if (++entries > 100_000) {
+            links.set(directory, undefined)
+            return undefined
+          }
+          if (item.name === "node_modules" || item.name === ".git") continue
+          const path = Path.posix.join(current, item.name)
+          if (path === cacheDirectory || path.startsWith(cacheDirectory + "/")) continue
+          if (item.isSymbolicLink()) found.push(path)
+          // This is a conservative alias survey, not an input expansion.
+          // Entered repositories can make nested packages readable.
+          else if (item.isDirectory()) pending.push(path)
+        }
+      }
+    } catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code
+      if (listed || code !== "ENOENT" && code !== "ENOTDIR") {
+        links.set(directory, undefined)
+        return undefined
+      }
+    }
+    links.set(directory, found)
+    return found
+  }
+  const indirectInput = (input: Input.Declared, packagePath: string): boolean => {
+    if (!rootPresent) return false
+    if (input._tag === "File") return indirectFile(Input.resolvePath(packagePath, input.path))
+    if (input._tag === "NodeModules") {
+      const paths = Input.nodeModulesPaths(packagePath, input)
+      return [paths.tree, paths.manifest, ...paths.lockfiles].some(indirectFile)
+    }
+    if (input._tag !== "Glob") return false
+    const pattern = glob(Input.resolvePath(packagePath, input.pattern))
+    // Use the matcher's parsed alternatives, including literal patterns,
+    // braces and extglobs. A fully literal pattern names a file, not a dir.
+    return pattern.set.some((alternative) => {
+      const segments: Array<string> = []
+      for (const part of alternative) {
+        if (typeof part !== "string") break
+        segments.push(part)
+      }
+      if (segments.length === alternative.length) segments.pop()
+      const found = globLinks(segments.join("/"))
+      return found === undefined || found.some(compileInput(input, packagePath, glob))
+    })
+  }
   const entries = new Map<Target.AnyTarget, {
     readonly metadata: Target.Metadata
     readonly packagePath: string
     readonly ambient: boolean
     readonly ownsPath: (path: string) => boolean
+    readonly declaredPath: (path: string) => boolean
   }>()
   const entry = (target: Target.AnyTarget) => {
     let value = entries.get(target)
@@ -217,6 +320,7 @@ export const select = (
       metadata,
       packagePath,
       ambient: metadata.inputs.some(ambientInput),
+      declaredPath: (path) => inputs.some((input) => input(path)),
       ownsPath: (path) => {
         let result = matches.get(path)
         if (result === undefined) {
@@ -235,8 +339,11 @@ export const select = (
     Path.relative(index.root, source.directory).replaceAll("\\", "/")
   )
     .filter((path) => path !== ".." && !path.startsWith("../") && !Path.isAbsolute(path))
+  const workspaceInputs = index.workspace === undefined ? [] : managerFilesOf(index.workspace)
+  const indirectWorkspace = workspaceInputs.some(indirectFile)
   const global = normalized.filter((path) =>
-    globalPath(path) || implementationRoots.some((directory) => path === directory || path.startsWith(`${directory}/`))
+    globalPath(path) || workspaceInputs.includes(path) || indirectWorkspace ||
+    implementationRoots.some((directory) => path === directory || path.startsWith(`${directory}/`))
   )
   // An unowned file may be an ambient input; conservatively invalidate the graph.
   const ownership = normalized.length === 0 ? [] : rows.map((row) => entry(row.target))
@@ -269,16 +376,50 @@ export const select = (
       const metadata = value.metadata
       const views = metadata.kinds.map((kind) => metadata.forKind(kind))
       const viewInputs = views.flatMap((view) => view.inputs)
+      const readsPackage = RulePolicy.readsPackage(
+        metadata.target,
+        [metadata.attrs, ...views.map((view) => view.attrs)],
+        index.workspace?.sandboxes
+      )
+      const sandboxDirectories = RulePolicy.sandboxReadDirectories(
+        metadata.target,
+        [metadata.attrs, ...views.map((view) => view.attrs)],
+        value.packagePath,
+        cacheDirectory,
+        [
+          ...nodeModulesDirectories([".", value.packagePath]),
+          ...[...metadata.inputs, ...viewInputs].flatMap((input) =>
+            input._tag === "NodeModules"
+              ? [Input.nodeModulesPaths(inputPackage(metadata, value.packagePath), input).tree]
+              : []
+          )
+        ]
+      )
+      const sandboxInputs = sandboxDirectories.map((directory) => ({
+        readPath: directory,
+        matches: (path: string) =>
+          directory === "." || directory === "" || path === directory || path.startsWith(directory + "/")
+      }))
+      const indirectDirectories = sandboxDirectories.filter(indirectFile)
+      const indirect = [...metadata.inputs, ...viewInputs].filter((input) =>
+        indirectInput(input, inputPackage(metadata, value.packagePath))
+      )
       // An uncacheable target makes no promise that its inputs are complete: it may import
       // undeclared packages or read files it never declared. Only running it is sound.
       const uncacheable = RulePolicy.of(metadata.target).cache === undefined &&
         (!metadata.cacheable || views.some((view) => !view.cacheable))
-      const everyChange = value.ambient || viewInputs.some(ambientInput) || uncacheable
+      const everyChange = indirect.length > 0 || indirectDirectories.length > 0 || value.ambient ||
+        viewInputs.some(ambientInput) || uncacheable
       const inputs = viewInputs
         .map((input) => compileInput(input, inputPackage(metadata, value.packagePath), glob))
-      direct.set(target, (path) =>
-        everyChange || value.ownsPath(path) || inputs.some((input) => input(path)) ||
-        metadata.inputs.length === 0 && metadata.dependencies.length === 0)
+      direct.set(
+        target,
+        (path) =>
+          everyChange || value.declaredPath(path) || sandboxInputs.some((input) => input.matches(path)) ||
+          readsPackage && value.packagePath !== "" && path.startsWith(`${value.packagePath}/`) ||
+          inputs.some((input) => input(path)) ||
+          metadata.inputs.length === 0 && metadata.dependencies.length === 0
+      )
       if (options.explain) {
         const declarations = [...new Set([...metadata.inputs, ...viewInputs])]
         const declared = declarations.map((input) => ({
@@ -292,8 +433,13 @@ export const select = (
             if (ambientInput(input)) causes.push({ ...source, kind: "ambient-input", input })
             else if (matches(file)) causes.push({ ...source, kind: "declared-input", input })
           }
+          for (const { readPath, matches } of sandboxInputs) {
+            if (matches(file)) causes.push({ ...source, kind: "sandbox-input", readPath })
+          }
+          for (const input of indirect) causes.push({ ...source, kind: "indirect-input", input })
+          for (const readPath of indirectDirectories) causes.push({ ...source, kind: "indirect-input", readPath })
           if (uncacheable) causes.push({ ...source, kind: "uncacheable" })
-          if (value.packagePath !== "" && file.startsWith(`${value.packagePath}/`)) {
+          if (readsPackage && value.packagePath !== "" && file.startsWith(`${value.packagePath}/`)) {
             causes.push({ ...source, kind: "package" })
           }
           if (metadata.inputs.length === 0 && metadata.dependencies.length === 0) {
