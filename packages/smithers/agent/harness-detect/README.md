@@ -28,6 +28,8 @@ Path formatting and `PATH` separators follow `host.platform`.
   `.COM;.EXE;.BAT;.CMD`), so `claude.cmd` is found and the POSIX shim beside it
   is not. A relative `PATH` entry (`.`, `node_modules/.bin`) is skipped, so a
   cloned repository in the cwd cannot plant a binary for detection to probe.
+  An empty or relative `home` contributes no candidate dirs or nvm listing;
+  Windows homes must include a drive or a complete UNC share.
 - **The version.** `<binary> --version`, delegated to the host, parsed with
   `parseVersionLine` — `"2.1.247 (Claude Code)"` is `2.1.247` and
   `"crush version v0.1.11"` is `0.1.11`. The result has escape sequences and
@@ -38,7 +40,9 @@ Path formatting and `PATH` separators follow `host.platform`.
   `email` claim (decoded, never verified, never returned), the OpenCode
   `auth.json` providers, and so on, with the vendor's API-key environment
   variable as the last signal. The status is one of `signed-in`, `api-key`,
-  `binary-only`, `unavailable`.
+  `binary-only`, `unavailable`. When `home` is not absolute, no credential
+  files are consulted; binaries from absolute search dirs and API-key
+  environment variables still work.
 - **The model flag.** `harnessModelSpec(id)` gives the binary and the flag
   that precedes a model id, and `harnessModels(id)` adds the verified
   suggestions and the argv that lists models. Every entry is read off the
@@ -77,7 +81,7 @@ import { homedir } from "node:os"
 
 const host: HarnessHost = {
   env: process.env,
-  home: process.env.HOME ?? homedir(),
+  home: process.env.HOME || homedir(),
   platform: process.platform,
   listDir: (dir) => {
     try {

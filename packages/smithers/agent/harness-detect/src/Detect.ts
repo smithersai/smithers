@@ -8,6 +8,7 @@ import type { Harness } from "@smthrs/rpc/LocalApp"
 import { DETECTORS } from "./Detectors.ts"
 import { findBinary } from "./HarnessHost.ts"
 import type { HarnessHost } from "./HarnessHost.ts"
+import { isAbsoluteHostPath } from "./internal/Read.ts"
 import { parseVersionLine } from "./Probe.ts"
 
 /**
@@ -18,18 +19,20 @@ import { parseVersionLine } from "./Probe.ts"
  * parallel, so a caller waits for the slowest CLI once rather than for the
  * sum of them.
  * Returned versions are parsed, stripped of controls and bounded even when
- * the host supplies raw probe output.
+ * the host supplies raw probe output. A relative home disables credential file
+ * reads; installed binaries and environment API-key signals still work.
  *
  * @category detection
  * @since 0.1.0
  */
 export const detectHarnessesWith = async (host: HarnessHost): Promise<Array<Harness>> => {
+  const signalHost = isAbsoluteHostPath(host, host.home) ? host : { ...host, isFile: () => false, readText: () => null }
   const found = DETECTORS.map((detector) => ({ detector, binary: findBinary(detector.binary, host) }))
   const versions = await Promise.all(
     found.map(({ binary }) => (binary === null ? Promise.resolve(null) : host.version(binary)))
   )
   return found.map(({ binary, detector }, index) => {
-    const signal = binary === null ? null : detector.signal(host)
+    const signal = binary === null ? null : detector.signal(signalHost)
     return {
       id: detector.id,
       displayName: detector.displayName,

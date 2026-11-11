@@ -21,6 +21,17 @@ export const hostPath = (
   host.platform === undefined ? NodePath : host.platform === "win32" ? NodePath.win32 : NodePath.posix
 
 /**
+ * Whether a path is independent of the current directory and, on Windows,
+ * the current drive. Windows paths require a drive or a complete UNC share.
+ *
+ * @category internal
+ * @since 0.1.0
+ */
+export const isAbsoluteHostPath = (host: { readonly platform?: string | undefined }, path: string): boolean =>
+  hostPath(host).isAbsolute(path)
+  && (host.platform !== "win32" || /^[A-Za-z]:[/\\]|^[/\\]{2}[^/\\]+[/\\][^/\\]+/.test(path))
+
+/**
  * A JSON object at `path`, or null when the file is missing, unreadable, or not an object.
  *
  * @category internal

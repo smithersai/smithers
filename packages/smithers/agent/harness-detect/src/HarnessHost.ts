@@ -12,7 +12,7 @@
 // Type-only: the ids are read as `typeof HARNESS_IDS`, so the built JS
 // carries no runtime import of the contract package.
 import type { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
-import { hostPath } from "./internal/Read.ts"
+import { hostPath, isAbsoluteHostPath } from "./internal/Read.ts"
 
 /**
  * One coding-agent CLI the contract knows about.
@@ -54,7 +54,7 @@ export interface HarnessHost {
  * A Finder launch inherits the launchd PATH, which holds none of the places a
  * developer's CLIs actually live, so the candidate dirs are searched first.
  * `~/.opencode/bin` is where the opencode installer puts its binary; the rest
- * follow the contract.
+ * follow the contract. A relative home contributes no candidate dirs or nvm listing.
  * Path formatting follows `host.platform` when supplied; callers omitting it
  * retain the native path convention.
  *
@@ -65,20 +65,19 @@ export const harnessCandidateDirs = (
   host: Pick<HarnessHost, "home" | "listDir"> & Partial<Pick<HarnessHost, "platform">>
 ): ReadonlyArray<string> => {
   const { join } = hostPath(host)
+  const hasHome = isAbsoluteHostPath(host, host.home)
   const nvmRoot = join(host.home, ".nvm", "versions", "node")
-  const nvm = [...host.listDir(nvmRoot)]
+  const nvm = [...(hasHome ? host.listDir(nvmRoot) : [])]
     .map((entry) => ({ entry, version: NODE_DIR.exec(entry) }))
     .filter((row): row is { entry: string; version: RegExpExecArray } => row.version !== null)
     .sort((left, right) => compareSemver(right.version, left.version))
     .map((row) => join(nvmRoot, row.entry, "bin"))
   return [
-    join(host.home, ".local", "bin"),
-    join(host.home, ".bun", "bin"),
+    ...(hasHome ? [join(host.home, ".local", "bin"), join(host.home, ".bun", "bin")] : []),
     // Homebrew and the POSIX local prefix do not exist on Windows.
     ...(host.platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"]),
     ...nvm,
-    join(host.home, ".cargo", "bin"),
-    join(host.home, ".opencode", "bin")
+    ...(hasHome ? [join(host.home, ".cargo", "bin"), join(host.home, ".opencode", "bin")] : [])
   ]
 }
 
@@ -112,7 +111,7 @@ const compareSemver = (left: RegExpExecArray, right: RegExpExecArray): number =>
  */
 export const findBinary = (name: string, host: HarnessHost): string | null => {
   if (name === "" || name === "." || name === ".." || /[/\\]/.test(name) || name.includes("\0")) return null
-  const { delimiter, isAbsolute, join } = hostPath(host)
+  const { delimiter, join } = hostPath(host)
   const windows = host.platform === "win32"
   // Windows environment names are case-insensitive, so a copied env may
   // spell them `Path` or `PathExt`.
@@ -121,10 +120,7 @@ export const findBinary = (name: string, host: HarnessHost): string | null => {
       ? Object.entries(host.env).find(([candidate, value]) => value !== undefined && candidate.toUpperCase() === key)
         ?.[1]
       : undefined)
-  // A single leading slash on Windows is rooted on the current drive, not fully qualified.
-  const fromPath = (variable("PATH") ?? "").split(delimiter).filter((dir) =>
-    isAbsolute(dir) && (!windows || /^[A-Za-z]:[/\\]|^[/\\]{2}[^/\\]+[/\\][^/\\]+/.test(dir))
-  )
+  const fromPath = (variable("PATH") ?? "").split(delimiter).filter((dir) => isAbsoluteHostPath(host, dir))
   // A Windows command is a file with an executable extension: npm installs
   // `claude.cmd`, native installers `codex.exe`. A bare `claude` beside them
   // is a POSIX shell shim Windows cannot launch.

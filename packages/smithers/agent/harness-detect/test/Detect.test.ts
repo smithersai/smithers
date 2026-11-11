@@ -80,6 +80,105 @@ describe("version output at the detection boundary", () => {
 })
 
 describe("the candidate dirs", () => {
+  const invalidHomes = [
+    ...["darwin", "linux"].flatMap((platform) => ["", ".", "..", "relative/home"].map((home) => ({ platform, home }))),
+    ...["", ".", "..", "relative\\home", "C:relative", "\\rooted", "/rooted", "\\\\server", "//server"].map((home) => ({
+      platform: "win32",
+      home
+    }))
+  ]
+
+  test.each(invalidHomes)(
+    "ignores candidate dirs from an invalid home $home on $platform",
+    async ({ platform, home }) => {
+      const { join } = platform === "win32" ? win32 : posix
+      const binary = platform === "win32" ? "claude.exe" : "claude"
+      const listed: Array<string> = []
+      const h = {
+        ...host({
+          platform,
+          home,
+          env: { PATH: "" },
+          binaries: [".local", ".bun", ".cargo", ".opencode"].map((dir) => join(home, dir, "bin", binary))
+            .concat(join(home, ".nvm", "versions", "node", "v26.0.0", "bin", binary))
+        }),
+        listDir: (dir: string) => {
+          listed.push(dir)
+          return ["v26.0.0"]
+        }
+      }
+      expect(harnessCandidateDirs(h)).toEqual(platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"])
+      expect(findBinary("claude", h)).toBeNull()
+      const rows = await detectHarnessesWith(h)
+      expect(rows.every((row) => row.binary === null && row.status === "unavailable" && row.account === null)).toBe(
+        true
+      )
+      expect(h.probed).toEqual([])
+      expect(listed).toEqual([])
+    }
+  )
+
+  test.each(invalidHomes)(
+    "skips credential reads with an invalid home $home on $platform",
+    async ({ platform, home }) => {
+      const { join, sep } = platform === "win32" ? win32 : posix
+      const bin = platform === "win32" ? "D:\\tools" : "/usr/bin"
+      const reads: Array<string> = []
+      const names = DETECTORS.map((detector) => detector.binary + (platform === "win32" ? ".exe" : ""))
+      const binaries = new Set(names.map((name) => join(bin, name)))
+      const h = {
+        ...host({ platform, home, env: { PATH: bin, PATHEXT: ".EXE" } }),
+        isFile: (path: string) => {
+          if (binaries.has(path)) return true
+          if (names.some((name) => path.endsWith(sep + name))) return false
+          reads.push(path)
+          // Credential markers would report a signed-in account if consulted.
+          return true
+        },
+        readText: (path: string) => {
+          reads.push(path)
+          return JSON.stringify({ oauthAccount: { emailAddress: "planted@example.test" }, token: "fixture" })
+        }
+      }
+      const rows = await detectHarnessesWith(h)
+      expect(rows.every((row) => row.binary !== null && row.status === "binary-only" && row.account === null)).toBe(
+        true
+      )
+      expect(reads).toEqual([])
+      expect(h.probed).toEqual(names.map((name) => join(bin, name)))
+      const keyed = await detectHarnessesWith({
+        ...h,
+        env: { PATH: bin, PATHEXT: ".EXE", ANTHROPIC_API_KEY: "fixture" }
+      })
+      expect(keyed.find((row) => row.id === "claude")).toMatchObject({
+        status: "api-key",
+        account: { label: "ANTHROPIC_API_KEY" }
+      })
+      expect(reads).toEqual([])
+    }
+  )
+
+  test("a qualified Windows UNC home supports binary and credential discovery", async () => {
+    const home = "\\\\server\\share\\user"
+    const binary = win32.join(home, ".local", "bin", "claude.exe")
+    const h = host({
+      platform: "win32",
+      home,
+      env: { PATH: "" },
+      binaries: [binary],
+      files: {
+        [win32.join(home, ".claude.json")]: JSON.stringify({ oauthAccount: { emailAddress: "user@example.test" } })
+      }
+    })
+    expect(harnessCandidateDirs(h)).toContain(win32.dirname(binary))
+    expect(findBinary("claude", h)).toBe(binary)
+    expect((await detectHarnessesWith(h))[0]).toMatchObject({
+      binary,
+      status: "signed-in",
+      account: { email: "user@example.test" }
+    })
+    expect(h.probed).toEqual([binary])
+  })
   test.each(["darwin", "win32"].flatMap((platform) => [0, 1, 2].map((component) => ({ platform, component }))))(
     "orders nvm component $component exactly beyond Number precision and range on $platform",
     ({ platform, component }) => {
@@ -133,7 +232,7 @@ describe("the candidate dirs", () => {
 
   test.each(["darwin", "win32"])("rejects malformed nvm directory entries on %s", (platform) => {
     const h: HarnessHost = {
-      ...host({ platform }),
+      ...host({ platform, home: platform === "win32" ? "C:\\Users\\u" : HOME }),
       // An injected host can supply malformed entries; no real filesystem or process is needed.
       listDir: () => [
         "v24.1.0",
