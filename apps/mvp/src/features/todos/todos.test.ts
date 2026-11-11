@@ -798,6 +798,145 @@ describe("slash commands", () => {
   }, WITHIN)
 })
 
+/** The device's real SQLite persistence, with only TODO draft commits held or rejected. */
+const draftStorage = (device: ReturnType<typeof nodeDevice>, rejects: boolean) => {
+  const entered = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
+  const host = {
+    ...device,
+    persistence: {
+      ...device.persistence,
+      coordinator: () => {
+        const real = device.persistence.coordinator!()
+        const apply = real.requestApplyLocalMutations!.bind(real)
+        real.requestApplyLocalMutations = (collectionId, ...args) => Effect.runPromise(Effect.gen(function* () {
+          if (collectionId === "todo-drafts") {
+            yield* Deferred.succeed(entered, undefined)
+            yield* Deferred.await(release)
+            if (rejects) return yield* Effect.fail(new Error("quota"))
+          }
+          return yield* Effect.promise(() => apply(collectionId, ...args))
+        }))
+        return real
+      },
+    },
+  }
+  return { host, entered, release }
+}
+
+for (const flow of ["todo/draft", "todo/issue"] as const) {
+  for (const rejects of [false, true]) {
+    test(`${flow} waits for the device's ${rejects ? "refused" : "accepted"} draft receipt`, async () => {
+      const opened = await open({ answers: false })
+      const device = nodeDevice({ agent: opened.api })
+      const storage = draftStorage(device, rejects)
+      const tab = await another(opened.api, { host: storage.host, answers: false })
+      const dispatch = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+      let completed = false
+      const running = tab.runtime.runPromise(dispatch.dispatch(flow, {
+        repo: TEST_REPOSITORY, prompt: "Keep this prompt", title: "Keep this draft",
+        ...(flow === "todo/issue" ? { issue: 7 } : {}),
+      }, { door: "button" })).then((result) => { completed = true; return result })
+      let id: string | undefined
+      try {
+        await Effect.runPromise(Deferred.await(storage.entered))
+        id = tab.store.drafts.tanstack.toArray[0]?.id
+        expect(id).toBeDefined()
+        expect(device.stored("todo-drafts")).toBe(0)
+        // Read through the real runtime after the storage boundary was reached.
+        await tab.runtime.runPromise(tab.store.drafts.toArray)
+        expect(completed).toBe(false)
+      } finally { Effect.runSync(Deferred.succeed(storage.release, undefined)) }
+      const result = await running
+      expect(result).toEqual(rejects
+        ? { _tag: "Failed", error: new TodoStepRefused({ reason: "not_kept" }) }
+        : { _tag: "Done", value: { draftId: id, status: "drafted", path: stackPath(OWNER, NAME) } })
+      expect(device.stored("todo-drafts")).toBe(rejects ? 0 : 1)
+      await tab.runtime.dispose()
+      runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+      const restored = await another(opened.api, { host: device, answers: false })
+      expect(restored.store.drafts.tanstack.toArray).toEqual(rejects ? [] : [expect.objectContaining({ id, prompt: "Keep this prompt" })])
+    }, WITHIN)
+  }
+}
+
+for (const flow of ["todo/draft", "todo/issue"] as const) {
+  test(`${flow} cannot complete when the tab unloads before draft persistence`, async () => {
+    const opened = await open({ answers: false })
+    const device = nodeDevice({ agent: opened.api })
+    const storage = draftStorage(device, true)
+    const tab = await another(opened.api, { host: storage.host, answers: false })
+    const dispatch = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    const running = tab.runtime.runPromiseExit(dispatch.dispatch(flow, {
+      repo: TEST_REPOSITORY, prompt: "Interrupted draft", title: "Interrupted",
+      ...(flow === "todo/issue" ? { issue: 7 } : {}),
+    }, { door: "button" }))
+    try {
+      await Effect.runPromise(Deferred.await(storage.entered))
+      expect(device.stored("todo-drafts")).toBe(0)
+      // Unload interrupts this tab's reply before the pending write rejects.
+      const unloading = tab.runtime.dispose()
+      Effect.runSync(Deferred.succeed(storage.release, undefined))
+      await unloading
+      runtimes.splice(runtimes.indexOf(tab.runtime), 1)
+    } finally { Effect.runSync(Deferred.succeed(storage.release, undefined)) }
+    const result = await running
+    expect(Exit.isSuccess(result) && result.value._tag === "Done").toBe(false)
+    const restored = await another(opened.api, { host: device, answers: false })
+    expect(restored.store.drafts.tanstack.toArray).toEqual([])
+    const retry = await restored.runtime.runPromise(Effect.flatMap(FlowDispatch, (flows) => flows.dispatch(flow, {
+      repo: TEST_REPOSITORY, prompt: "Recovered draft", title: "Recovered",
+      ...(flow === "todo/issue" ? { issue: 7 } : {}),
+    }, { door: "button" })))
+    expect(retry._tag).toBe("Done")
+    expect(device.stored("todo-drafts")).toBe(1)
+  }, WITHIN)
+}
+
+test("a draft cannot be acknowledged without device persistence", async () => {
+  const runtime = openTestApp({ answers: false })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+    const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
+      Layer.provide(Layer.succeed(Persistence.Persistence, { persistence: Option.none(), registry: deviceRegistry })),
+    ))
+    const store = Context.get(built, TodosStore)
+    expect(yield* store.keepDraft({
+      id: crypto.randomUUID(), repo: TEST_REPOSITORY, repoId: REPO_ID, title: "T", prompt: "P",
+      acceptance: [], answerId: null, createdAt: 1,
+    })).toEqual({ kept: false })
+    expect(yield* store.drafts.toArray).toEqual([])
+  })))
+}, WITHIN)
+
+for (const rejects of [false, true]) {
+  test(`a repeated draft waits for its pending ${rejects ? "refused" : "accepted"} write`, async () => {
+    const opened = await open({ answers: false })
+    const device = nodeDevice()
+    const storage = draftStorage(device, rejects)
+    const tab = await another(opened.api, { host: storage.host, answers: false })
+    const draft: Draft = {
+      id: crypto.randomUUID(), repo: TEST_REPOSITORY, repoId: REPO_ID, title: "T", prompt: "P",
+      acceptance: [], answerId: null, createdAt: 1,
+    }
+    let completed = 0
+    const keep = () => tab.runtime.runPromise(tab.store.keepDraft(draft)).then((value) => { completed++; return value })
+    const first = keep()
+    let repeated: ReturnType<typeof keep> | undefined
+    try {
+      await Effect.runPromise(Deferred.await(storage.entered))
+      repeated = keep()
+      await tab.runtime.runPromise(tab.store.drafts.toArray)
+      expect(completed).toBe(0)
+      expect(device.stored("todo-drafts")).toBe(0)
+    } finally { Effect.runSync(Deferred.succeed(storage.release, undefined)) }
+    expect(await first).toEqual({ kept: !rejects })
+    expect(await repeated).toEqual({ kept: !rejects })
+    expect(tab.store.drafts.tanstack.size).toBe(rejects ? 0 : 1)
+  }, WITHIN)
+}
+
 describe("the device", () => {
   test("a stack opened twice at once opens once; a stack no route opened has no rows", async () => {
     const tab = await open({ answers: false })

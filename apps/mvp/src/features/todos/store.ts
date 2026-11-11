@@ -242,13 +242,19 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
   yield* repos.registerCache(["todos", "todo-requests"], (id) =>
     Effect.andThen(stackOf(id), Effect.suspend(() => Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true }))))
 
-  /** Keeps `draft` on the device once: a draft the device has already is kept. Answers whether the device has it. */
+  /** Keeps `draft` once, acknowledging only device storage, including outstanding writes of an existing draft. */
   const keepDraft = (draft: Draft) =>
     Effect.gen(function* () {
-      if (Option.isSome(yield* drafts.get(draft.id))) return { kept: true }
-      const inserted = yield* drafts.insert(draft).pipe(Effect.result)
-      return { kept: inserted._tag === "Success" }
-    })
+      if (Option.isNone(persistence.persistence)) return { kept: false }
+      if (Option.isSome(yield* drafts.get(draft.id))) {
+        const pending = yield* drafts.pendingWrites(draft.id)
+        yield* Effect.forEach(pending, (write) => write.persisted, { discard: true })
+        return { kept: Option.isSome(yield* drafts.get(draft.id)) }
+      }
+      const inserted = yield* drafts.insert(draft)
+      yield* inserted.persisted
+      return { kept: true }
+    }).pipe(Effect.orElseSucceed(() => ({ kept: false })))
 
   /**
    * Puts `op` in the device's outbox once: a change it holds or the route took already is queued. This tab takes the

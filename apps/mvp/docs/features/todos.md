@@ -91,6 +91,8 @@ A shape request whose `repo` names no repository reads no repository's rows; on 
 
 Drafts and changes are steps (`src/features/todos/steps.ts`) that ask, over the engine's todos channel, the tab that started the request (`TabTodos`, `src/flows/askingTab.ts`) to keep the draft or queue the change. `todo/inspect` is a durable read step through ChatApi, scoped to the run's credential and the repository's Member policy ([decision 0093](../decisions/0093-agent-reads-shared-todo-status.md)). It returns no title, prompt or person fields. Only an authorized missing TODO returns `todo_not_found`; repository access failures remain errors. The status read has one 10-second deadline and does not retry inside the step, so an unavailable answer can return promptly without claiming the TODO is absent. The device's `run/list` cannot establish a Cloud TODO's status. `todo/issue` fails `issue_not_found` when the device doesn't have the issue. The draft's and the change's ids are UUIDv5s of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A draft without a title takes the prompt's first line.
 
+`todo/draft` and `todo/issue` answer `drafted` only after the device accepts the draft's storage receipt. Repeating the same draft waits for any outstanding writes before acknowledging it. Failed or unavailable device storage returns `not_kept`; an optimistic card alone cannot complete the flow or its toast. A tab that closes before storage accepts the draft cannot report it kept.
+
 ## The browser
 
 `src/features/todos/`, framework-free logic beside React views ([state.md](../state.md#todos-2026-10-20)).
