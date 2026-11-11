@@ -31,6 +31,7 @@ import * as Executor from "./Executor.ts"
 import * as GitHooks from "./GitHooks.ts"
 import * as GraphOutput from "./GraphOutput.ts"
 import * as ApprovalBridge from "./internal/ApprovalBridge.ts"
+import * as Shards from "./internal/Shards.ts"
 import { requireRecorded } from "./internal/UnrecordedGates.ts"
 import * as KnownRed from "./KnownRed.ts"
 import * as Label from "./Label.ts"
@@ -107,6 +108,15 @@ const lifecycleOptions = executionOptions.extend({
   )
 })
 
+const ciOptions = lifecycleOptions.extend({
+  shard: z.string().optional().describe(
+    "Run one part of the selection, as <index>/<count>; parts are balanced by the durations --timings measured"
+  ),
+  timings: z.array(z.string()).optional().describe(
+    "A --results-file of an earlier run whose durations weigh the --shard split; repeatable, later files win"
+  )
+})
+
 /** The flags outward and agent targets take: the commit message override, the sweep, and payload inputs. */
 const invocationOptions = {
   message: z.string().optional().describe("Commit message for a Git.Commit target; wins over the declared message"),
@@ -166,6 +176,12 @@ export interface ExecutionFlags extends WorkspaceFlags {
   readonly cache: boolean
   readonly failFast?: boolean | undefined
   readonly knownRed?: string | undefined
+}
+
+/** The flags `ci` adds: which part of the selection this machine runs. */
+interface CiFlags extends ExecutionFlags {
+  readonly shard?: string | undefined
+  readonly timings?: ReadonlyArray<string> | undefined
 }
 
 /**
@@ -824,10 +840,23 @@ const ciKinds = ["lint", "build", "test", "docs"] as const
 /** Plans every CI-safe verb over the patterns' union and executes the merged graph. */
 const runCi = async (
   patterns: ReadonlyArray<string>,
-  flags: ExecutionFlags,
+  flags: CiFlags,
   config: RuntimeConfig,
   reporter: Reporter.Reporter
 ): Promise<CiPlan | Executor.Summary> => {
+  // The split is refused before any declaration loads: a mistyped part must not cost a plan.
+  if (flags.shard === undefined && flags.timings !== undefined) throw new Error("--timings needs --shard")
+  const shard = flags.shard === undefined ? undefined : Shards.parse(flags.shard)
+  const measured = new Map<string, number>()
+  for (const path of flags.timings ?? []) {
+    let content: string
+    try {
+      content = await NodeFs.readFile(NodePath.resolve(flags.workspace, path), "utf8")
+    } catch (cause) {
+      throw new Error(`${path}: cannot read the timings (${Diagnostic.describe(cause)})`)
+    }
+    Shards.measure(path, content, measured)
+  }
   const index = await openPackageIndex(flags, config)
   const pattern = patterns.join(" ")
   {
@@ -887,7 +916,7 @@ const runCi = async (
       // Only a recorded unsupported-verb refusal removes an input from every plan.
       throw refusals.find((refusal) => refusal.pattern === unsupported)!
     }
-    const merged = Executor.mergePlans(packagePlans.map(({ kind, plan }) => ({
+    const whole = Executor.mergePlans(packagePlans.map(({ kind, plan }) => ({
       verb: kind,
       pattern,
       roots: plan.roots,
@@ -895,6 +924,7 @@ const runCi = async (
       edges: plan.workList.flatMap((node) => node.dependencies.map((from) => ({ from, to: node.label }))),
       warnings: []
     })))
+    const merged = shard === undefined ? whole : Shards.select(whole, shard, measured)
     if (flags.plan) return { verb: "ci", pattern, ...merged, targets: merged.targets.map(plannedTarget) }
     // Services and key-only dependencies are planned but never scheduled.
     // Keep them available to consumers when merging the runnable CI graph.
@@ -1917,7 +1947,7 @@ const makeCommands = (config: RuntimeConfig) =>
         "Execute build, test, lint, and documentation targets; wildcards omit exclusive tiers unless --include-exclusive is set",
       mcp: { annotations: { readOnlyHint: false } },
       args: patternsArgument,
-      options: lifecycleOptions,
+      options: ciOptions,
       alias: executionAlias,
       run: (context) =>
         executeCommand(
