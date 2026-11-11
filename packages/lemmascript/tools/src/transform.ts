@@ -2519,7 +2519,7 @@ function findReassignedNames(stmts: TStmt[], names: Set<string>): Set<string> {
  * variable appears directly as a record spread field value, it's wrapped in
  * Some() to preserve the field's Optional type.
  */
-function replaceVar(e: Expr, name: string, replacement: Expr, narrowing?: boolean): Expr {
+export function replaceVar(e: Expr, name: string, replacement: Expr, narrowing?: boolean): Expr {
   const rec = (expr: Expr) => replaceVar(expr, name, replacement, narrowing);
   return mapExpr(e, x => {
     if (x.kind === "var" && x.name === name) return replacement;

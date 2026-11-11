@@ -388,6 +388,17 @@ class CheckedProofAdditions(unittest.TestCase):
         for invalid in [source.replace('reveal replayStep();', 'assert valid;'), source.replace('reveal replayStep();', 'reveal replayStep();\n  assert valid;')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/history/replayDecision.vibe')
 
+    def test_a_lemma_lsc_fills_with_contract_calls_takes_steps_after_them(self):
+        from proof_additions import add_proof_steps, LEMMA_STEPS
+        signature, steps = LEMMA_STEPS['src/core/sandboxDecision.vibe'][0]
+        body = '  if end == 0 {\n  } else {\n    var x := f(end);\n    g_ensures(end - 1);\n  }\n'
+        source = signature + '\n  requires 0 <= end\n  ensures valid\n  decreases end\n{\n' + body + '}\n'
+        result = add_proof_steps(source, 'src/core/sandboxDecision.vibe')
+        self.assertEqual(result.replace(steps, '', 1), source)
+        self.assertLess(result.index('g_ensures(end - 1);'), result.index(steps))
+        for invalid in [source.replace('g_ensures(end - 1);', 'assert valid;'), source.replace('    var x := f(end);\n', '    var x := f(end);\n    assume false;\n')]:
+            with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/sandboxDecision.vibe')
+
 class MutationModuleFilter(unittest.TestCase):
     def run_mutations(self, *args):
         with tempfile.TemporaryDirectory() as out:

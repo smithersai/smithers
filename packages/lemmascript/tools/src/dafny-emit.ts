@@ -7,7 +7,7 @@ import { anyExpr, exactIntegerLiteral, usesName, usesNameInDecl, usesNameInStmts
 import type { Ty } from "./typedir.js";
 import { parseTsType } from "./types.js";
 import { freshName, freshNameWhere, userNames } from "./names.js";
-import { renameFreeVar } from "./transform.js";
+import { renameFreeVar, replaceVar } from "./transform.js";
 import { DEFAULT_OPTIONS, resolveOptions, type LscOptions } from "./config.js";
 import { isRegexTestName, regexPreamble } from "./regex.js";
 
@@ -802,12 +802,79 @@ function emitExpr(e: Expr): string {
   }
 }
 
+// A pure function's contract lives on its companion lemma, which nothing calls, so a caller knew only the function's
+// body. Every call such a function receives where it is always evaluated (not under `&&`, `||`, `==>`, a branch, a
+// quantifier or a lambda) is now preceded by a call to its lemma, with the same arguments and preconditions: the
+// caller reasons from the contract, as it does for a method (`tests/contract-callers.test.ts`, fixture
+// `contract-callers.ts`).
+let _ensuresLemmas = new Set<string>();
+// The def whose function body is being emitted: its own lemma names the function, so calling it there is a cycle.
+let _bodyOf: string | null = null;
+const SHORT_CIRCUIT = new Set(["&&", "||", "∧", "∨", "==>", "→"]);
+
+function contractCalls(e: Expr, out: Array<Expr & { kind: "app" }> = []): Array<Expr & { kind: "app" }> {
+  switch (e.kind) {
+    case "app":
+      for (const a of e.args) contractCalls(a, out);
+      if (e.ctorOf === undefined && _ensuresLemmas.has(e.fn) && e.fn !== _bodyOf) out.push(e);
+      break;
+    case "binop":
+      contractCalls(e.left, out);
+      if (!SHORT_CIRCUIT.has(e.op)) contractCalls(e.right, out);
+      break;
+    case "unop": case "toNat": case "toReal": contractCalls(e.expr, out); break;
+    case "field": contractCalls(e.obj, out); break;
+    case "index": contractCalls(e.arr, out); contractCalls(e.idx, out); break;
+    case "if": contractCalls(e.cond, out); break;
+    case "methodCall": contractCalls(e.obj, out); for (const a of e.args) contractCalls(a, out); break;
+    case "arrayLiteral": case "tupleLiteral": for (const a of e.elems) contractCalls(a, out); break;
+    case "record": if (e.spread) contractCalls(e.spread, out); for (const f of e.fields) contractCalls(f.value, out); break;
+    default: break;
+  }
+  return out;
+}
+
+/** The lemma calls that give `e`'s contract calls their contracts, one per line at `pad`. */
+function contractLemmaCalls(e: Expr, pad: string): string[] {
+  return contractCalls(e).map(c => `${pad}${escapeGeneratedName(`${c.fn}${ENSURES_LEMMA_SUFFIX}`)}(${c.args.map(emitExpr).join(", ")});`);
+}
+
+/**
+ * A companion lemma's body: the def body's branches as statements, each call's lemma called in place. A let's value is
+ * substituted rather than declared: a local `var` in the lemma cost Dafny the proof of `landedSha_ensures`, which the
+ * same call with its value inline keeps.
+ */
+function contractLemmaBody(e: Expr, indent: number, seen: ReadonlySet<string> = new Set()): string[] {
+  const pad = "  ".repeat(indent);
+  const known = new Set(seen);
+  // Each lemma call once on a path: a substituted value repeats its calls in the conditions and branches after it.
+  const fresh = (x: Expr) => contractLemmaCalls(x, pad).filter(line => {
+    if (known.has(line.trim())) return false;
+    known.add(line.trim());
+    return true;
+  });
+  switch (e.kind) {
+    case "let": {
+      const calls = fresh(e.value);
+      return [...calls, ...contractLemmaBody(replaceVar(e.body, e.name, e.value), indent, known)];
+    }
+    case "if": {
+      const calls = fresh(e.cond);
+      const then = contractLemmaBody(e.then, indent + 1, known), otherwise = contractLemmaBody(e.else, indent + 1, known);
+      if (then.length === 0 && otherwise.length === 0) return calls;
+      return [...calls, `${pad}if ${emitExpr(e.cond)} {`, ...then, `${pad}} else {`, ...otherwise, `${pad}}`];
+    }
+    case "match": return fresh(e.scrutinee);
+    default: return fresh(e);
+  }
+}
+
 /** Emit a pure expression with indentation for if/match/let. */
 function emitPureExpr(e: Expr, indent: number): string {
   const pad = "  ".repeat(indent);
   switch (e.kind) {
     case "if":
-      return `${pad}if ${emitExpr(e.cond)} then\n${emitPureExpr(e.then, indent + 1)}\n${pad}else\n${emitPureExpr(e.else, indent + 1)}`;
+      return [...contractLemmaCalls(e.cond, pad), `${pad}if ${emitExpr(e.cond)} then\n${emitPureExpr(e.then, indent + 1)}\n${pad}else\n${emitPureExpr(e.else, indent + 1)}`].join("\n");
     case "match": {
       const scrut = emitScrutinee(e.scrutinee);
       const lines = [`${pad}match ${scrut} {`];
@@ -819,9 +886,9 @@ function emitPureExpr(e: Expr, indent: number): string {
       return lines.join("\n");
     }
     case "let":
-      return `${pad}var ${escapeName(e.name)} := ${emitExpr(e.value)};\n${emitPureExpr(e.body, indent)}`;
+      return [...contractLemmaCalls(e.value, pad), `${pad}var ${escapeName(e.name)} := ${emitExpr(e.value)};`, emitPureExpr(e.body, indent)].join("\n");
     default:
-      return `${pad}${emitExpr(e)}`;
+      return [...contractLemmaCalls(e, pad), `${pad}${emitExpr(e)}`].join("\n");
   }
 }
 
@@ -1081,6 +1148,15 @@ function emitStmts(stmts: Stmt[], indent: number): string {
 
 function emitStmt(s: Stmt, indent: number): string {
   const pad = "  ".repeat(indent);
+  if (s.kind === "let" || s.kind === "assign" || s.kind === "return" || s.kind === "bind" || s.kind === "let-bind") {
+    const calls = contractLemmaCalls(s.value, pad);
+    if (calls.length > 0) return [...calls, emitStmtOnly(s, indent)].join("\n");
+  }
+  return emitStmtOnly(s, indent);
+}
+
+function emitStmtOnly(s: Stmt, indent: number): string {
+  const pad = "  ".repeat(indent);
   switch (s.kind) {
     case "let":
       // Record literal assigned to map type → emit as map[k := v, ...]
@@ -1226,7 +1302,8 @@ function emitDecl(d: Decl): string {
       if (contractOnFunction) for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
       if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
       lines.push(`{`);
-      lines.push(emitPureExpr(d.body, 1));
+      _bodyOf = d.name;
+      try { lines.push(emitPureExpr(d.body, 1)); } finally { _bodyOf = null; }
       lines.push(`}`);
       // Companion lemma for ensures (proof target for LLM)
       if (d.ensures.length > 0 && !contractOnFunction) {
@@ -1236,8 +1313,10 @@ function emitDecl(d: Decl): string {
         lines.push(`lemma ${escapeGeneratedName(`${d.name}${ENSURES_LEMMA_SUFFIX}`)}${lemmaTP}(${paramList(d.params)})`);
         for (const r of d.requires) lines.push(`  requires ${emitExpr(r)}`);
         for (const e of d.ensures) lines.push(`  ensures ${emitExpr(e)}`);
+        if (d.decreases) lines.push(`  decreases ${emitExpr(d.decreases)}`);
         lines.push(`{`);
         lines.push(...revealLines([...(d.opaque ? [d.name] : []), ...(d.reveals ?? [])]));
+        lines.push(...contractLemmaBody(d.body, 1));
         lines.push(`}`);
       }
       return lines.join("\n");
@@ -2073,6 +2152,9 @@ export function emitDafnyFile(file: Module, tsFileName?: string, options: LscOpt
   _neededPreambles.clear();
   _havocedTypeNames.clear();
   collectHavocedTypeNames(file.decls, _havocedTypeNames);
+  _ensuresLemmas = new Set(file.decls.flatMap(d => d.kind === "namespace" ? d.decls : [d])
+    .filter((d): d is Decl & { kind: "def" } => d.kind === "def" && d.ensures.length > 0 && !(d.opaque === true && d.decreases === null))
+    .map(d => d.name));
 
   // Track successfully emitted pure defs — method wrappers are only
   // skipped when the corresponding pure def was actually emitted.

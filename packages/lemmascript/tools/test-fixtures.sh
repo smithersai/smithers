@@ -131,7 +131,7 @@ expect_proof_failure() {
 expect_proof_failure \
   "a wrong twin verified (spread-required-into-optional)" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spread-required-into-optional-wrong.ts"
-for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index string-case flat-map spec-array-spread generic-optional-spread generic-return-interface generic-union-match declared-return-record index-signature-field local-record nonnullable-record computed-record-alias tagged-match-expression tagged-match-method literal-union-identity record-widening; do
+for name in union-to-string string-union-subset generic-bound-array message-union sort-membership filter-index string-case flat-map spec-array-spread generic-optional-spread generic-return-interface generic-union-match declared-return-record index-signature-field local-record nonnullable-record computed-record-alias tagged-match-expression tagged-match-method literal-union-identity record-widening contract-callers; do
   cp "tools/fixtures/$name.ts" "tools/fixtures/$name-wrong.ts" "$fixture_dir/"
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
   expect_proof_failure \

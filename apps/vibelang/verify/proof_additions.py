@@ -1,15 +1,17 @@
 """Checked Dafny proof steps, inserted into fresh empty lemmas.
 
 Never saved generated artifacts: insertion only, so every generated declaration, precondition, postcondition and
-body stays byte-identical. A lemma lsc fills only with `reveal f();` lines (`//@ opaque`, `//@ reveal`) counts as empty;
-its steps go after those lines. Recursive helpers lower as spec-callable Dafny functions whose postconditions live on
+body stays byte-identical. A lemma lsc fills only with `reveal f();` lines (`//@ opaque`, `//@ reveal`) and its own
+contract statements (each callee's `f_ensures(...)` call with the body's lets and branches around it, 0018 third-lane
+batch 25) counts as empty; its steps go after those lines. Recursive helpers lower as spec-callable Dafny functions whose postconditions live on
 fresh empty `_ensures` lemmas; the inductive steps below are how the backend discharges them (pendingCount
 precedent). Sandbox runtime traversals stay iterative; exact guard clauses use quantified source positions rather than
 calling loop-backed methods inside expressions (the documented method-spec tool boundary).
 """
 import re
 
-REVEALS_ONLY = re.compile(r'(?:  reveal [A-Za-z_][A-Za-z0-9_]*\(\);\n)*')
+REVEALS_ONLY = re.compile(r'(?:  reveal [A-Za-z_][A-Za-z0-9_]*\(\);\n)*'
+                          r"(?:[ \t]+(?:[A-Za-z_][A-Za-z0-9_']*_ensures\([^\n]*\);|var [^\n]* := [^\n]*;|if [^\n]* \{|\} else \{|\})\n)*")
 
 PENDING_COUNT_STEPS = '  if end > 0 {\n    pendingCount_ensures(pending, clientId, end - 1);\n  }\n'
 
@@ -376,7 +378,7 @@ def insertion_names(source):
 
 def add_proof_steps(generated, source):
     for signature, steps in LEMMA_STEPS.get(source, []):
-        pattern = r'^' + re.escape(signature) + r'\n(?:[ \t]+(?:requires|ensures)[^\n]*\n)*\{\n(?P<body>.*?)^\}'
+        pattern = r'^' + re.escape(signature) + r'\n(?:[ \t]+(?:requires|ensures|decreases)[^\n]*\n)*\{\n(?P<body>.*?)^\}'
         matches = list(re.finditer(pattern, generated, re.MULTILINE | re.DOTALL))
         # lsc writes only `reveal f();` lines for `//@ opaque` and `//@ reveal`; steps go after them.
         if len(matches) != 1 or not REVEALS_ONLY.fullmatch(matches[0].group('body')):
