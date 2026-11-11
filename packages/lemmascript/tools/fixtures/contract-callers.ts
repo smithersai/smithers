@@ -33,3 +33,24 @@ export function trailingZeros(xs: ReadonlyArray<number>): number {
   }
   return count
 }
+
+/** Pure calls inside a method condition must keep their guarded index reads. */
+//@ verify
+//@ ensures \result == (n == 57)
+export function nine(n: number): boolean { return n === 57 }
+
+//@ verify
+//@ ensures \result == (text.length > 0 && nine(text.charCodeAt(0)))
+export function guardedIndex(text: string): boolean {
+  let found = false
+  if (text.length > 0 && nine(text.charCodeAt(0))) found = true
+  return found
+}
+
+//@ verify
+//@ ensures \result == (text.length == 0 || nine(text.charCodeAt(0)))
+export function guardedOr(text: string): boolean {
+  let found = false
+  if (text.length === 0 || nine(text.charCodeAt(0))) found = true
+  return found
+}

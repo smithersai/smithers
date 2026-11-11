@@ -8,7 +8,7 @@ import { narrowModule } from "../src/narrow.ts";
 import { transformModuleDafny } from "../src/transform.ts";
 import { emitDafnyFile } from "../src/dafny-emit.ts";
 import { resolveOptions } from "../src/config.ts";
-import { lastNonzero, trailingZeros } from "../fixtures/contract-callers.ts";
+import { guardedIndex, guardedOr, lastNonzero, trailingZeros } from "../fixtures/contract-callers.ts";
 
 function emit(text: string): string {
   const project = new Project({ compilerOptions: { strict: true,
@@ -71,4 +71,47 @@ export function branch(n: number): number { return n > 0 ? positive(n) : 1 }
   const branch = callers.slice(callers.indexOf("function branch"));
   assert.doesNotMatch(branch.slice(0, branch.indexOf("if ")), /positive_ensures/);
   assert.match(branch, /if \(n > 0\) then\n\s*positive_ensures\(n\);\n\s*positive\(n\)/);
+});
+
+test("a companion lemma guards contracts on short-circuit operands", () => {
+  const output = emit(`
+//@ verify
+//@ requires 0 < n
+//@ ensures \\result == n
+export function positive(n: number): number { return n }
+//@ verify
+//@ ensures \\result == (n > 0 && positive(n) > 0)
+export function conjunction(n: number): boolean { return n > 0 && positive(n) > 0 }
+//@ verify
+//@ ensures \\result == (n <= 0 || positive(n) > 0)
+export function disjunction(n: number): boolean { return n <= 0 || positive(n) > 0 }
+`);
+  const and = output.slice(output.indexOf("lemma conjunction_ensures"), output.indexOf("function disjunction"));
+  assert.match(and, /if \(n > 0\) \{\s*positive_ensures\(n\);\s*\}/);
+  const or = output.slice(output.indexOf("lemma disjunction_ensures"));
+  assert.match(or, /if !\(\(n <= 0\)\) \{\s*positive_ensures\(n\);\s*\}/);
+});
+
+test("guarded calls keep the empty and nonempty runtime cases", () => {
+  assert.deepEqual(["", "9", "8"].map(guardedIndex), [false, true, false]);
+  assert.deepEqual(["", "9", "8"].map(guardedOr), [true, true, false]);
+});
+
+test("a pure call in a method condition stays under its index guard", () => {
+  const output = emit(`
+//@ verify
+//@ ensures \\result == (n == 57)
+export function nine(n: number): boolean { return n === 57 }
+//@ verify
+//@ ensures \\result == (text.length > 0 && nine(text.charCodeAt(0)))
+export function guardedIndex(text: string): boolean {
+  let found = false
+  if (text.length > 0 && nine(text.charCodeAt(0))) found = true
+  return found
+}
+`);
+  const method = output.slice(output.indexOf("method guardedIndex"));
+  assert.match(method, /if \(\|text\| > 0\) \{/);
+  const body = method.slice(method.indexOf("{") + 1);
+  assert.doesNotMatch(body.slice(0, body.indexOf("if ")), /nine\(/);
 });

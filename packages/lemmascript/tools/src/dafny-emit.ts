@@ -865,6 +865,15 @@ function contractLemmaBody(e: Expr, indent: number, seen: ReadonlySet<string> = 
       return [...calls, `${pad}if ${emitExpr(e.cond)} {`, ...then, `${pad}} else {`, ...otherwise, `${pad}}`];
     }
     case "match": return fresh(e.scrutinee);
+    case "binop": {
+      // `a && b`, `a ==> b` and `a || b` evaluate `b` only when `a` holds (fails): its calls' lemmas go under that guard.
+      if (!SHORT_CIRCUIT.has(e.op)) return fresh(e);
+      const calls = fresh(e.left);
+      const right = contractLemmaBody(e.right, indent + 1, known);
+      if (right.length === 0) return calls;
+      const guard = mapOp(e.op) === "||" ? `!(${emitExpr(e.left)})` : emitExpr(e.left);
+      return [...calls, `${pad}if ${guard} {`, ...right, `${pad}}`];
+    }
     default: return fresh(e);
   }
 }
