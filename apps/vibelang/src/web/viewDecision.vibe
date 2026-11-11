@@ -1,3 +1,4 @@
+//@ safe-slice
 // Pure presentation choices shared by the view and the screen update.
 
 //@ verify
@@ -172,4 +173,134 @@ export function sandboxPaneView(pane: string, running: boolean, busy: boolean, p
     error: operation === "stop" ? "Couldn't stop the sandbox" : operation === "command" ? "Command failed" : operation === "start" ? "Couldn't start a sandbox" : "Couldn't load the sandbox",
     retry: operation === "stop" ? "stop" : operation === "start" ? "start" : "none",
   }
+}
+
+/** The chat page's document title. */
+//@ verify
+//@ ensures \result == (surface == "splash" ? "VibeLang" : "VibeLang · Chat")
+export function documentTitle(surface: string): string {
+  return surface === "splash" ? "VibeLang" : "VibeLang · Chat"
+}
+
+/** What fills the page under the header: open issues win, then the splash, else the chat. */
+//@ verify
+//@ ensures \result == (issuesOpen ? "issues" : surface == "splash" ? "splash" : "chat")
+export function mainSurface(issuesOpen: boolean, surface: string): "issues" | "splash" | "chat" {
+  return issuesOpen ? "issues" : surface === "splash" ? "splash" : "chat"
+}
+
+/** The wiki holds the pane slot while a wiki page is open, loading or failed. */
+//@ verify
+//@ ensures \result == (pane.startsWith("/wiki/") || wikiStatus == "loading" || wikiStatus == "error")
+export function showsWiki(pane: string, wikiStatus: string): boolean {
+  return pane.startsWith("/wiki/") || wikiStatus === "loading" || wikiStatus === "error"
+}
+
+/** Where the chat's panes go: a maximized docs or wiki pane and a maximized Actions pane cover the chat; otherwise
+ * the wiki or docs pane sits inline (the wiki before the entry it follows, if any), the empty media only in an empty
+ * conversation without the wiki, the Actions pane inline unless maximized, and the chat is inert under any cover or
+ * a tour. */
+export interface ChatLayout {
+  readonly paneOver: boolean
+  readonly actionsOver: boolean
+  readonly inert: boolean
+  readonly wikiFirst: boolean
+  readonly docsInline: boolean
+  readonly empty: boolean
+  readonly actionsInline: boolean
+}
+//@ verify
+//@ ensures \result.paneOver == (surface == "chat" && (pane != "" || wiki) && docs == "max")
+//@ ensures \result.actionsOver == (surface == "chat" && actionsOpen && actionsMax)
+//@ ensures \result.inert == (tour || docs == "max" || actionsMax)
+//@ ensures \result.wikiFirst == (wiki && !wikiAfter && docs != "max")
+//@ ensures \result.docsInline == (pane != "" && !wiki && docs != "max")
+//@ ensures \result.empty == (entries == 0 && pending == 0 && !wiki)
+//@ ensures \result.actionsInline == !actionsMax
+export function chatLayout(surface: string, pane: string, wiki: boolean, docs: string, actionsOpen: boolean, actionsMax: boolean, tour: boolean, wikiAfter: boolean, entries: number, pending: number): ChatLayout {
+  return {
+    paneOver: surface === "chat" && (pane !== "" || wiki) && docs === "max",
+    actionsOver: surface === "chat" && actionsOpen && actionsMax,
+    inert: tour || docs === "max" || actionsMax,
+    wikiFirst: wiki && !wikiAfter && docs !== "max",
+    docsInline: pane !== "" && !wiki && docs !== "max",
+    empty: entries === 0 && pending === 0 && !wiki,
+    actionsInline: !actionsMax,
+  }
+}
+
+/** The wiki follows an entry only when it was opened after that entry. */
+//@ verify
+//@ ensures \result == (wiki && after == entry && docs != "max")
+export function wikiAfterEntry(wiki: boolean, after: string, entry: string, docs: string): boolean {
+  return wiki && after === entry && docs !== "max"
+}
+
+/** Latest shows when the reader paused following a conversation that has entries. */
+//@ verify
+//@ ensures \result == (!following && conversation && entries > 0)
+export function latestShown(following: boolean, conversation: boolean, entries: number): boolean {
+  return !following && conversation && entries > 0
+}
+
+/** What the tour's live region says: the step while touring, that it ended after a tour, else nothing. */
+//@ verify
+//@ ensures \result == (tour ? "step" : toured ? "ended" : "none")
+export function tourAnnouncement(tour: boolean, toured: boolean): "step" | "ended" | "none" {
+  return tour ? "step" : toured ? "ended" : "none"
+}
+
+/** A tour progress mark: steps before the current one are done. */
+//@ verify
+//@ ensures index + 1 < step ==> \result == "done"
+//@ ensures index + 1 == step ==> \result == "current"
+//@ ensures index + 1 > step ==> \result == ""
+export function progressClass(index: number, step: number): string {
+  return index + 1 < step ? "done" : index + 1 === step ? "current" : ""
+}
+
+/** The docs pane's address without its `https://`. */
+//@ verify
+//@ ensures page.startsWith("https://") ==> \result == page.slice(8)
+//@ ensures !page.startsWith("https://") ==> \result == page
+export function docsAddress(page: string): string {
+  return page.startsWith("https://") ? page.slice(8) : page
+}
+
+/** Text that is a positive decimal integer with no leading zero. */
+//@ verify
+//@ ensures \result == (text.length > 0 && 49 <= text.charCodeAt(0) && text.charCodeAt(0) <= 57 && forall(i, 1 <= i && i < text.length ==> 48 <= text.charCodeAt(i) && text.charCodeAt(i) <= 57))
+export function positiveDecimal(text: string): boolean {
+  if (text.length === 0) return false
+  if (text.charCodeAt(0) < 49 || text.charCodeAt(0) > 57) return false
+  let i = 1
+  while (i < text.length) {
+    //@ invariant 1 <= i && i <= text.length
+    //@ invariant forall(j, 1 <= j && j < i ==> 48 <= text.charCodeAt(j) && text.charCodeAt(j) <= 57)
+    //@ decreases text.length - i
+    if (text.charCodeAt(i) < 48 || text.charCodeAt(i) > 57) return false
+    i++
+  }
+  return true
+}
+
+/** Names on the wire stay neutral; this tab's own posts carry its session and a serial. */
+//@ verify
+//@ ensures \result == (clientId.startsWith(session + "-") && clientId.length > session.length + 1 && 49 <= clientId.charCodeAt(session.length + 1) && clientId.charCodeAt(session.length + 1) <= 57 && forall(i, session.length + 2 <= i && i < clientId.length ==> 48 <= clientId.charCodeAt(i) && clientId.charCodeAt(i) <= 57))
+export function ownPost(clientId: string, session: string): boolean {
+  if (!clientId.startsWith(session + "-")) return false
+  const serial = positiveDecimal(clientId.slice(session.length + 1))
+  return serial
+}
+
+/** The prompt's keys: arrows move through an open slash menu; the send key sends. */
+//@ verify
+//@ ensures key == "ArrowDown" && menu ==> \result == "down"
+//@ ensures !(key == "ArrowDown" && menu) && key == "ArrowUp" && menu ==> \result == "up"
+//@ ensures !((key == "ArrowDown" || key == "ArrowUp") && menu) && sendKey(key, shift) ==> \result == "send"
+//@ ensures !((key == "ArrowDown" || key == "ArrowUp") && menu) && !sendKey(key, shift) ==> \result == "none"
+export function promptKey(key: string, shift: boolean, menu: boolean): "down" | "up" | "send" | "none" {
+  if (key === "ArrowDown" && menu) return "down"
+  if (key === "ArrowUp" && menu) return "up"
+  return sendKey(key, shift) ? "send" : "none"
 }

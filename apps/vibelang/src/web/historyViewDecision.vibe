@@ -1,0 +1,179 @@
+// What the mythical history's page shows (historyView.vibe): the document title, which body, the list's toolbar and
+// groups, each commit's row and page, the timeline, the note form and the Plan work dialog. Role checks arrive as
+// booleans from the proved role thresholds (historyApp `allowed`).
+
+/** A name that is blank shows its fallback instead. */
+//@ verify
+//@ ensures text.trim() == "" ==> \result == fallback
+//@ ensures text.trim() != "" ==> \result == text
+export function orFallback(text: string, fallback: string): string {
+  return text.trim() === "" ? fallback : text
+}
+
+/** A commit link's accessible name: its trimmed title, else its trimmed id, else "Change". Never blank. */
+//@ verify
+//@ ensures title.trim() != "" ==> \result == title.trim()
+//@ ensures title.trim() == "" && id.trim() != "" ==> \result == id.trim()
+//@ ensures title.trim() == "" && id.trim() == "" ==> \result == "Change"
+export function commitLabel(title: string, id: string): string {
+  return title.trim() !== "" ? title.trim() : id.trim() !== "" ? id.trim() : "Change"
+}
+
+/** The document title names the shown commit, else the epic, else the page. */
+//@ verify
+//@ ensures hasCommit ==> \result == commitTitle + " · History"
+//@ ensures !hasCommit && hasEpic ==> \result == epicTitle + " · History"
+//@ ensures !hasCommit && !hasEpic ==> \result == "History · VibeLang"
+export function historyTitle(hasCommit: boolean, commitTitle: string, hasEpic: boolean, epicTitle: string): string {
+  return hasCommit ? commitTitle + " · History" : hasEpic ? epicTitle + " · History" : "History · VibeLang"
+}
+
+/** Which body the page shows: loading and failure first, an empty history, a read commit, a commit hash still being
+ * read (loading, or its failure once the read failed), the hash's epic, else the list. */
+//@ verify
+//@ ensures \result == (status == "loading" ? "loading" : status == "failed" ? "failed" : epics == 0 ? "empty" : commit ? "commit" : commitHash && !answered ? (readFailed ? "commit-failed" : "loading") : epic ? "epic" : "list")
+export function historyBody(status: string, epics: number, commit: boolean, commitHash: boolean, answered: boolean, epic: boolean, readFailed: boolean): "loading" | "failed" | "empty" | "commit" | "commit-failed" | "epic" | "list" {
+  if (status === "loading") return "loading"
+  if (status === "failed") return "failed"
+  if (epics === 0) return "empty"
+  if (commit) return "commit"
+  if (commitHash && !answered) return readFailed ? "commit-failed" : "loading"
+  return epic ? "epic" : "list"
+}
+
+/** The list: a filter with text shows matches, and only once they answer that filter; the folded-through badge needs a
+ * main; the Planned group needs planned work. */
+export interface HistoryList {
+  readonly filtering: boolean
+  readonly matchesShown: boolean
+  readonly folded: boolean
+  readonly planned: boolean
+}
+//@ verify
+//@ ensures \result.filtering == (filter.trim() != "")
+//@ ensures \result.matchesShown == (matchesQuery == clipped)
+//@ ensures \result.folded == (main.trim() != "")
+//@ ensures \result.planned == (plannedCount > 0)
+export function historyList(filter: string, matchesQuery: string, clipped: string, main: string, plannedCount: number): HistoryList {
+  return { filtering: filter.trim() !== "", matchesShown: matchesQuery === clipped, folded: main.trim() !== "", planned: plannedCount > 0 }
+}
+
+/** Show more while an epic has commits not yet read. */
+//@ verify
+//@ ensures \result == (read < total)
+export function showMore(read: number, total: number): boolean {
+  return read < total
+}
+
+/** Enter and Space toggle an epic card. */
+//@ verify
+//@ ensures \result == (key == "Enter" || key == " ")
+export function toggleKey(key: string): boolean {
+  return key === "Enter" || key === " "
+}
+
+/** A commit row: its state badge unless landed, a note mark when noted, a fold count when it folds commits. */
+export interface CommitRow { readonly planned: boolean; readonly noted: boolean; readonly folds: boolean }
+//@ verify
+//@ ensures \result.planned == (state != "landed")
+//@ ensures \result.noted == (notes != 0)
+//@ ensures \result.folds == (folds != 0)
+export function commitRow(state: string, notes: number, folds: number): CommitRow {
+  return { planned: state !== "landed", noted: notes !== 0, folds: folds !== 0 }
+}
+
+/** A commit page's controls: a maintainer may insert before any commit and amend a landed one; the timeline shows
+ * unless the commit landed with no task; task and lane show when set. */
+export interface CommitControls {
+  readonly insert: boolean
+  readonly amend: boolean
+  readonly timeline: boolean
+  readonly task: boolean
+  readonly lane: boolean
+}
+//@ verify
+//@ ensures \result.insert == maintainer
+//@ ensures \result.amend == (maintainer && state == "landed")
+//@ ensures \result.timeline == !(state == "landed" && task == "")
+//@ ensures \result.task == (task != "")
+//@ ensures \result.lane == (lane != "")
+export function commitControls(maintainer: boolean, state: string, task: string, lane: string): CommitControls {
+  return { insert: maintainer, amend: maintainer && state === "landed", timeline: !(state === "landed" && task === ""), task: task !== "", lane: lane !== "" }
+}
+
+/** Where a state sits on the stack's timeline; -1 for none. */
+//@ verify
+//@ ensures state == "planned" ==> \result == 0
+//@ ensures state == "working" ==> \result == 1
+//@ ensures state == "approved" ==> \result == 2
+//@ ensures state == "landed" ==> \result == 3
+//@ ensures state != "planned" && state != "working" && state != "approved" && state != "landed" ==> \result == -1
+export function timelineAt(state: string): number {
+  if (state === "planned") return 0
+  if (state === "working") return 1
+  if (state === "approved") return 2
+  return state === "landed" ? 3 : -1
+}
+
+/** A timeline step before the commit's state is done, at it is running, after it is still to come. */
+//@ verify
+//@ ensures index < at ==> \result == "ok"
+//@ ensures index == at ==> \result == "run"
+//@ ensures index > at ==> \result == "muted"
+export function stepStatus(index: number, at: number): "ok" | "run" | "muted" {
+  return index < at ? "ok" : index === at ? "run" : "muted"
+}
+
+//@ verify
+//@ ensures status == "ok" ==> \result == "✓"
+//@ ensures status == "run" ==> \result == "●"
+//@ ensures status != "ok" && status != "run" ==> \result == ""
+export function stepMarker(status: string): string {
+  return status === "ok" ? "✓" : status === "run" ? "●" : ""
+}
+
+/** Timeline actions: a contributor starts a planned commit once a lane is typed; a maintainer approves a working one;
+ * neither while busy. */
+export interface TimelineActions { readonly start: boolean; readonly startDisabled: boolean; readonly approve: boolean }
+//@ verify
+//@ ensures \result.start == (state == "planned" && contributor)
+//@ ensures \result.startDisabled == (busy || lane.trim() == "")
+//@ ensures \result.approve == (state == "working" && maintainer)
+export function timelineActions(state: string, contributor: boolean, maintainer: boolean, busy: boolean, lane: string): TimelineActions {
+  return { start: state === "planned" && contributor, startDisabled: busy || lane.trim() === "", approve: state === "working" && maintainer }
+}
+
+/** The note form's section choice; anything unknown is Tried. */
+//@ verify
+//@ ensures value == "evidence" ==> \result == "evidence"
+//@ ensures value == "superseded" ==> \result == "superseded"
+//@ ensures value != "evidence" && value != "superseded" ==> \result == "tried"
+export function noteSection(value: string): "tried" | "evidence" | "superseded" {
+  return value === "evidence" ? "evidence" : value === "superseded" ? "superseded" : "tried"
+}
+
+/** A text action is disabled while busy or blank. */
+//@ verify
+//@ ensures \result == (busy || text.trim() == "")
+export function blankOrBusy(busy: boolean, text: string): boolean {
+  return busy || text.trim() === ""
+}
+
+/** The Plan work dialog: Amend names itself; only a new commit asks for a title; only an appended one chooses an epic,
+ * and a new epic asks for its name; an insert names the commit it goes before. */
+export interface PlanDialog {
+  readonly title: string
+  readonly titleField: boolean
+  readonly epicField: boolean
+  readonly newEpicField: boolean
+  readonly targetLabel: string
+}
+//@ verify
+//@ ensures \result.title == (how == "amend" ? "Amend" : "Plan work")
+//@ ensures \result.titleField == (how != "amend")
+//@ ensures \result.epicField == (how == "append")
+//@ ensures \result.newEpicField == (how == "append" && newEpic)
+//@ ensures \result.targetLabel == (how == "insert" ? "Before" : "Commit")
+export function planDialog(how: string, newEpic: boolean): PlanDialog {
+  return { title: how === "amend" ? "Amend" : "Plan work", titleField: how !== "amend", epicField: how === "append", newEpicField: how === "append" && newEpic, targetLabel: how === "insert" ? "Before" : "Commit" }
+}

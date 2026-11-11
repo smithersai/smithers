@@ -35,7 +35,6 @@ export const initialIssues: IssuesUi = {
   status: "loading", busy: false, data: { seq: 0, items: [] }, title: "", summary: "", example: "", prior: "",
   comment: "", parent: "", assignee: "VibeLang agent", step: 1, error: "", serial: 0,
 }
-/** Typed text that is not a whole issue number names no parent; the server's tree check refuses it as a typed reason. */
 /** An issue number typed or sent as text; text that is not a whole non-negative number names no issue (0). */
 function issueNumber(text: string): number {
   const number = Number(text.trim())

@@ -42,3 +42,279 @@ export function issueSerial(serial: number): string {
 export function issueKey(prefix: string, serial: number): string {
   return prefix === "" ? issueSerial(serial) : prefix + "-" + issueSerial(serial)
 }
+
+/** An issue's state icon: done when its task is done, it closed or its VIP was accepted; its kind by task, VIP and
+ * state, in that order. */
+export interface IssueIcon { readonly done: boolean; readonly kind: "running" | "queued" | "merged" | "in_review" | "open" | "" }
+//@ verify
+//@ ensures \result.done == (task == "Done" || state == "closed" || vip == "Accepted")
+//@ ensures \result.kind == (task == "Running" ? "running" : task == "Queued" ? "queued" : task == "Done" || vip == "Accepted" ? "merged" : vip == "In review" ? "in_review" : state == "open" ? "open" : "")
+export function issueIcon(task: string, state: string, vip: string): IssueIcon {
+  const kind = task === "Running" ? "running" : task === "Queued" ? "queued" : task === "Done" || vip === "Accepted" ? "merged" : vip === "In review" ? "in_review" : state === "open" ? "open" : ""
+  return { done: task === "Done" || state === "closed" || vip === "Accepted", kind }
+}
+
+//@ verify
+//@ ensures vip == "In review" ==> \result == "warning"
+//@ ensures vip == "Accepted" ==> \result == "success"
+//@ ensures vip != "In review" && vip != "Accepted" ==> \result == "destructive"
+export function vipBadge(vip: string): "warning" | "success" | "destructive" {
+  return vip === "In review" ? "warning" : vip === "Accepted" ? "success" : "destructive"
+}
+
+/** Labels the app uses for itself (`vibelang:`) are not shown. */
+//@ verify
+//@ ensures \result == !label.startsWith("vibelang:")
+export function labelShown(label: string): boolean {
+  return !label.startsWith("vibelang:")
+}
+
+/** Text that is one or more ASCII digits. */
+//@ verify
+//@ ensures \result == (text.length > 0 && forall(i, 0 <= i && i < text.length ==> 48 <= text.charCodeAt(i) && text.charCodeAt(i) <= 57))
+export function digits(text: string): boolean {
+  if (text.length === 0) return false
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant forall(j, 0 <= j && j < i ==> 48 <= text.charCodeAt(j) && text.charCodeAt(j) <= 57)
+    //@ decreases text.length - i
+    if (text.charCodeAt(i) < 48 || text.charCodeAt(i) > 57) return false
+    i++
+  }
+  return true
+}
+
+/** A compact age in days or weeks (`3d`, `1w`): digits, then `d` or `w`. */
+//@ verify
+//@ ensures \result == (age.length >= 2 && forall(i, 0 <= i && i < age.length - 1 ==> 48 <= age.charCodeAt(i) && age.charCodeAt(i) <= 57) && (age.endsWith("d") || age.endsWith("w")))
+export function compactAge(age: string): boolean {
+  if (age.length < 2) return false
+  if (!(age.endsWith("d") || age.endsWith("w"))) return false
+  const count = digits(age.slice(0, age.length - 1))
+  return count
+}
+
+/** When something happened: absolute dates, a blank age and "just now" read as given; otherwise "… ago", with a
+ * compact age spelled out in long form ("1 day", "3 weeks"). */
+//@ verify
+//@ ensures (age == "" || absolute || age == "just now") ==> \result == age
+//@ ensures !(age == "" || absolute || age == "just now") && !(long && age.length >= 2 && forall(i, 0 <= i && i < age.length - 1 ==> 48 <= age.charCodeAt(i) && age.charCodeAt(i) <= 57) && (age.endsWith("d") || age.endsWith("w"))) ==> \result == age + " ago"
+//@ ensures !(age == "" || absolute || age == "just now") && long && age.length >= 2 && forall(i, 0 <= i && i < age.length - 1 ==> 48 <= age.charCodeAt(i) && age.charCodeAt(i) <= 57) && (age.endsWith("d") || age.endsWith("w")) ==> \result == age.slice(0, age.length - 1) + (age.endsWith("d") ? " day" : " week") + (age.slice(0, age.length - 1) == "1" ? "" : "s") + " ago"
+export function ageText(absolute: boolean, age: string, long: boolean): string {
+  if (age === "" || absolute || age === "just now") return age
+  if (!long) return age + " ago"
+  const compact = compactAge(age)
+  if (!compact) return age + " ago"
+  const count = age.slice(0, age.length - 1)
+  return count + (age.endsWith("d") ? " day" : " week") + (count === "1" ? "" : "s") + " ago"
+}
+
+//@ verify
+//@ ensures \result == (count == 1 ? "child" : "children")
+export function childrenWord(count: number): string {
+  return count === 1 ? "child" : "children"
+}
+
+/** An issue link's text: the full form, or a blank title, reads `#n title`, trimmed; otherwise the title. */
+//@ verify
+//@ ensures (full || title.trim() == "") ==> \result == ("#" + number + " " + title).trim()
+//@ ensures !(full || title.trim() == "") ==> \result == title
+export function issueLinkText(full: boolean, number: string, title: string): string {
+  return full || title.trim() === "" ? ("#" + number + " " + title).trim() : title
+}
+
+//@ verify
+//@ ensures \result == (kind == "All" || kind == "Issues" ? "Issues" : kind)
+export function issuesTitle(kind: string): string {
+  return kind === "All" || kind === "Issues" ? "Issues" : kind
+}
+
+/** Which screen the issues pane shows; the VIP and new-issue forms share one. */
+//@ verify
+//@ ensures \result == (screen == "specification" ? "specification" : screen == "roles" ? "roles" : screen == "detail" ? "detail" : screen == "vip" || screen == "new" ? "form" : "list")
+export function issuesScreen(screen: string): "specification" | "roles" | "detail" | "form" | "list" {
+  return screen === "specification" ? "specification" : screen === "roles" ? "roles" : screen === "detail" ? "detail" : screen === "vip" || screen === "new" ? "form" : "list"
+}
+
+/** The GitHub connection control: Connect for a signed-in person not connected, Disconnect once connected. Unknown
+ * connection counts as connected but offers neither. */
+//@ verify
+//@ ensures \result == (role != "viewer" && connection == "no" ? "connect" : connection == "yes" ? "disconnect" : "none")
+export function connectionControl(role: string, connection: "yes" | "no" | "unknown"): "connect" | "disconnect" | "none" {
+  return role !== "viewer" && connection === "no" ? "connect" : connection === "yes" ? "disconnect" : "none"
+}
+
+/** A failure's Retry: a kept request retries when still permitted; with none kept, a comments failure reads again. */
+//@ verify
+//@ ensures hasRetry ==> \result == (permitted ? "retry" : "none")
+//@ ensures !hasRetry ==> \result == (error == "Couldn't load comments. Retry." ? "read" : "none")
+export function retryAction(hasRetry: boolean, permitted: boolean, error: string): "retry" | "read" | "none" {
+  if (hasRetry) return permitted ? "retry" : "none"
+  return error === "Couldn't load comments. Retry." ? "read" : "none"
+}
+
+/** Which issues a kind lists: tasks, VIPs, plain issues or all. */
+//@ verify
+//@ ensures \result == (kind == "Tasks" ? task != "" : kind == "VIPs" ? vip != "" : kind == "Issues" ? task == "" && vip == "" : true)
+export function kindIncludes(kind: string, task: string, vip: string): boolean {
+  return kind === "Tasks" ? task !== "" : kind === "VIPs" ? vip !== "" : kind === "Issues" ? task === "" && vip === "" : true
+}
+
+/** Arrow keys move through the four kinds, wrapping; any other key does nothing (-1). */
+//@ verify
+//@ requires 0 <= index && index < 4
+//@ ensures key == "ArrowRight" ==> \result == (index + 1) % 4
+//@ ensures key == "ArrowLeft" ==> \result == (index + 3) % 4
+//@ ensures key != "ArrowRight" && key != "ArrowLeft" ==> \result == -1
+//@ ensures \result == -1 || (0 <= \result && \result < 4)
+export function kindKey(index: number, key: string): number {
+  return key === "ArrowRight" || key === "ArrowLeft" ? (index + (key === "ArrowRight" ? 1 : 3)) % 4 : -1
+}
+
+/** j and k move the focus down and up the list, never past its ends; other keys do nothing (-1). */
+//@ verify
+//@ requires 0 <= index && index < count
+//@ ensures key == "j" ==> \result == Math.min(count - 1, index + 1)
+//@ ensures key == "k" ==> \result == Math.max(0, index - 1)
+//@ ensures key != "j" && key != "k" ==> \result == -1
+//@ ensures \result == -1 || (0 <= \result && \result < count)
+export function rowFocus(index: number, count: number, key: string): number {
+  return key === "j" || key === "k" ? Math.max(0, Math.min(count - 1, index + (key === "j" ? 1 : -1))) : -1
+}
+
+/** The list body: loading, the failure, the empty state or the rows. */
+//@ verify
+//@ ensures \result == (status == "loading" ? "loading" : status == "error" ? "error" : rows == 0 ? "empty" : "rows")
+export function listBody(status: string, rows: number): "loading" | "error" | "empty" | "rows" {
+  return status === "loading" ? "loading" : status === "error" ? "error" : rows === 0 ? "empty" : "rows"
+}
+
+//@ verify
+//@ ensures \result == (query != "" ? "No matches" : kind == "Tasks" ? "No tasks committed" : kind == "VIPs" ? "No VIPs in review" : "No " + state + " issues")
+export function emptyTitle(query: string, kind: string, state: string): string {
+  return query !== "" ? "No matches" : kind === "Tasks" ? "No tasks committed" : kind === "VIPs" ? "No VIPs in review" : "No " + state + " issues"
+}
+
+/** A list row's verb: absolute dates and open issues say when they opened; relative closed ones when they closed. */
+//@ verify
+//@ ensures \result == (absolute || state == "open" ? "opened" : "closed")
+export function openedWord(absolute: boolean, state: string): string {
+  return absolute || state === "open" ? "opened" : "closed"
+}
+
+/** An issue page's actions, each needing GitHub connected and its permission: Split and Link; Commit or Uncommit for an
+ * issue that is not a VIP and is open or already a task; Accept and Decline for a VIP in review. */
+export interface DetailActions {
+  readonly connect: boolean
+  readonly split: boolean
+  readonly commit: "none" | "commit" | "uncommit"
+  readonly review: boolean
+  readonly comment: boolean
+}
+//@ verify
+//@ ensures \result.connect == (role != "viewer" && !connected)
+//@ ensures \result.split == (connected && maySplit)
+//@ ensures \result.commit == (connected && mayCommit && vip == "" && (state == "open" || task != "") ? (task == "" ? "commit" : "uncommit") : "none")
+//@ ensures \result.review == (connected && mayAccept && vip == "In review")
+//@ ensures \result.comment == (connected && mayComment)
+export function detailActions(role: string, connected: boolean, maySplit: boolean, mayCommit: boolean, mayAccept: boolean, mayComment: boolean, vip: string, state: string, task: string): DetailActions {
+  return {
+    connect: role !== "viewer" && !connected,
+    split: connected && maySplit,
+    commit: connected && mayCommit && vip === "" && (state === "open" || task !== "") ? (task === "" ? "commit" : "uncommit") : "none",
+    review: connected && mayAccept && vip === "In review",
+    comment: connected && mayComment,
+  }
+}
+
+/** An event's mark by what happened. */
+//@ verify
+//@ ensures text.startsWith("added ") ==> \result == "+"
+//@ ensures !text.startsWith("added ") && text.startsWith("accepted ") ==> \result == "✓"
+//@ ensures !text.startsWith("added ") && !text.startsWith("accepted ") && text.startsWith("proposed ") ==> \result == "◦"
+//@ ensures !text.startsWith("added ") && !text.startsWith("accepted ") && !text.startsWith("proposed ") ==> \result == "↳"
+export function eventIcon(text: string): string {
+  return text.startsWith("added ") ? "+" : text.startsWith("accepted ") ? "✓" : text.startsWith("proposed ") ? "◦" : "↳"
+}
+
+/** Command-Enter or Control-Enter sends a comment. */
+//@ verify
+//@ ensures \result == (key == "Enter" && (meta || control))
+export function commentKey(key: string, meta: boolean, control: boolean): boolean {
+  return key === "Enter" && (meta || control)
+}
+
+/** The issue form: a new issue is one step; a VIP has four (title and summary, example, prior art, review). */
+export interface IssueForm {
+  readonly fields: "title" | "example" | "prior" | "review"
+  readonly submit: "new" | "continue" | "propose"
+  readonly label: string
+  readonly draft: boolean
+  readonly back: boolean
+}
+//@ verify
+//@ ensures \result.fields == (!vip || step == 1 ? "title" : step == 2 ? "example" : step == 3 ? "prior" : "review")
+//@ ensures \result.submit == (vip ? (step < 4 ? "continue" : "propose") : "new")
+//@ ensures \result.label == (vip ? (step < 4 ? "Continue" : "Submit VIP") : "New issue")
+//@ ensures \result.draft == (vip && step == 1)
+//@ ensures \result.back == (vip && step > 1)
+export function issueForm(vip: boolean, step: number): IssueForm {
+  return {
+    fields: !vip || step === 1 ? "title" : step === 2 ? "example" : step === 3 ? "prior" : "review",
+    submit: vip ? (step < 4 ? "continue" : "propose") : "new",
+    label: vip ? (step < 4 ? "Continue" : "Submit VIP") : "New issue",
+    draft: vip && step === 1,
+    back: vip && step > 1,
+  }
+}
+
+/** A VIP step is done once the form is past it. */
+//@ verify
+//@ ensures \result == (index + 1 < step)
+export function stepDone(index: number, step: number): boolean {
+  return index + 1 < step
+}
+
+/** The dialog's title and submit label for committing, splitting or linking the selected issue. */
+//@ verify
+//@ ensures dialog == "commit" ==> \result == "Commit #" + selected + " as a task"
+//@ ensures dialog == "split" ==> \result == "Split #" + selected
+//@ ensures dialog != "commit" && dialog != "split" ==> \result == "Link #" + selected
+export function dialogTitle(dialog: string, selected: string): string {
+  return dialog === "commit" ? "Commit #" + selected + " as a task" : dialog === "split" ? "Split #" + selected : "Link #" + selected
+}
+
+//@ verify
+//@ ensures \result == (dialog == "commit" ? "Commit" : dialog == "split" ? "Split" : "Link")
+export function dialogSubmit(dialog: string): string {
+  return dialog === "commit" ? "Commit" : dialog === "split" ? "Split" : "Link"
+}
+
+/** An assignee shows its label, else its login. */
+//@ verify
+//@ ensures \result == (label.trim() == "" ? login : label)
+export function assigneeName(label: string, login: string): string {
+  return label.trim() === "" ? login : label
+}
+
+/** A specification review cell: blank text shows its fallback; a zero revision shows a dash. */
+//@ verify
+//@ ensures \result == (text == "" ? fallback : text)
+export function cellText(text: string, fallback: string): string {
+  return text === "" ? fallback : text
+}
+
+/** Save revision needs new, non-blank text and an idle screen. */
+//@ verify
+//@ ensures \result == (busy || text.trim() == "" || text == current)
+export function revisionDisabled(busy: boolean, text: string, current: string): boolean {
+  return busy || text.trim() === "" || text === current
+}
+
+/** A specification history event's kind. */
+//@ verify
+//@ ensures \result == (event == "reset" ? "Reset" : event == "revision" ? "Revision" : "")
+export function specEventName(event: string): string {
+  return event === "reset" ? "Reset" : event === "revision" ? "Revision" : ""
+}

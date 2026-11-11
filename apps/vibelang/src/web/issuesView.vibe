@@ -6,6 +6,9 @@ import { issuePermission, may, specificationAccepted, type IssueRecord, type Iss
 import type { Message } from "./main.vibe"
 import type { IssuesUi } from "./issues.vibe"
 import { blocks, inline as codeParts } from "./markdown.vibe"
+import * as V from "./issuesViewDecision.vibe"
+import { wikiErrorAction } from "./wikiViewDecision.vibe"
+import { roleName } from "./accountViewDecision.vibe"
 
 type H = HtmlBuilder<Message>
 type Send = (action: string, value?: string) => Message
@@ -13,8 +16,7 @@ function button(h: H, send: Send, text: string, action: string, primary = false)
   return h.button([h.Class(`sui-button sui-button-sm${primary ? " sui-button-solid" : ""}`), h.Type("button"), h.OnClick(send(action))], [text])
 }
 function icon(h: H, i: IssueRecord): Html {
-  const done = i.task === "Done" || i.state === "closed" || i.vip === "Accepted"
-  const kind = i.task === "Running" ? "running" : i.task === "Queued" ? "queued" : i.task === "Done" || i.vip === "Accepted" ? "merged" : i.vip === "In review" ? "in_review" : i.state === "open" ? "open" : ""
+  const { done, kind } = V.issueIcon(i.task, i.state, i.vip)
   return h.svg([h.Class("sui-state-icon"), h.Width("16"), h.Height("16"), h.DataAttribute("kind", kind), ...(kind === "running" ? [h.DataAttribute("live", "")] : []), h.ViewBox("0 0 16 16"), h.AriaHidden(true)], [
     h.circle([h.Cx("8"), h.Cy("8"), h.R("6.75"), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1.5"), ...(kind === "queued" ? [h.StrokeDasharray("2.6 2.4")] : [])], []),
     ...(done ? [h.path([h.D("M5.3 8.3l1.8 1.8 3.6-3.8"), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1.5"), h.StrokeLinecap("round"), h.StrokeLinejoin("round")], [])] : kind === "running" ? [h.path([h.D("M8 1.25A6.75 6.75 0 0 1 8 14.75Z"), h.Fill("currentColor")], [])] : kind === "queued" ? [] : [h.circle([h.Cx("8"), h.Cy("8"), h.R("2.5"), h.Fill("currentColor")], [])]),
@@ -27,16 +29,13 @@ function commentIcon(h: H): Html {
 function badges(h: H, i: IssueRecord, labels = true): ReadonlyArray<Html> {
   return [
     ...(i.task === "" ? [] : [h.span([h.Class("sui-badge sui-badge-default")], [`Task · ${i.task}`])]),
-    ...(i.vip === "" ? [] : [h.span([h.Class(`sui-badge sui-badge-${i.vip === "In review" ? "warning" : i.vip === "Accepted" ? "success" : "destructive"}`)], [`VIP · ${i.vip}`])]),
-    ...(labels ? i.labels : []).filter((l) => !l.startsWith("vibelang:")).map((l) => h.span([h.Class("sui-badge sui-badge-secondary")], [l])),
+    ...(i.vip === "" ? [] : [h.span([h.Class(`sui-badge sui-badge-${V.vipBadge(i.vip)}`)], [`VIP · ${i.vip}`])]),
+    ...(labels ? i.labels : []).filter((l) => V.labelShown(l)).map((l) => h.span([h.Class("sui-badge sui-badge-secondary")], [l])),
   ]
 }
 
 function when(absolute: boolean, age: string, long = false): string {
-  if (age === "" || absolute || age === "just now") return age
-  const parts = long ? /^([0-9]+)(d|w)$/.exec(age) : null
-  const readable = parts === null ? age : `${parts[1]} ${parts[2] === "d" ? "day" : "week"}${parts[1] === "1" ? "" : "s"}`
-  return `${readable} ago`
+  return V.ageText(absolute, age, long)
 }
 function references(ui: IssuesUi, h: H, send: Send, text: string) {
   return text.split(/(#[1-9][0-9]*)/).map(part => {
@@ -54,12 +53,12 @@ function eventText(ui: IssuesUi, h: H, send: Send, text: string) {
   return label === null ? references(ui, h, send, text) : [`${label[1]} the `, h.span([h.Class("sui-badge sui-badge-secondary")], [label[2]!]), " label"]
 }
 function avatar(h: H, name: string): Html {
-  return h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(name === "VibeLang agent")), h.Title(name)], [name.slice(0, 1).toUpperCase()])
+  return h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(isAgent(name))), h.Title(name)], [name.slice(0, 1).toUpperCase()])
 }
 export function issueChatCard(h: H, issue: IssueRecord, items: ReadonlyArray<IssueRecord>, label: string, absolute: boolean, open: (number: number) => Message): Html {
   const children = items.filter(child => child.parent === issue.number)
   return h.div([h.Class("sui-card ix-chat-card")], [
-    h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], [issue.title]), h.span([h.Class("sui-card-action")], [h.span([h.Class(`sui-badge sui-badge-${children.length === 0 && issue.state === "open" ? "success" : "secondary"}`)], [children.length === 0 ? issue.state === "open" ? "Open" : "Closed" : `#${issue.number} · ${children.length} ${children.length === 1 ? "child" : "children"}`])])]),
+    h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], [issue.title]), h.span([h.Class("sui-card-action")], [h.span([h.Class(`sui-badge sui-badge-${children.length === 0 && issue.state === "open" ? "success" : "secondary"}`)], [children.length === 0 ? issue.state === "open" ? "Open" : "Closed" : `#${issue.number} · ${children.length} ${V.childrenWord(children.length)}`])])]),
     h.div([h.Class("sui-card-content")], children.length === 0 ? [h.div([h.Class("sui-card-description")], [`#${issue.number} · opened ${when(absolute, issue.age)}${issue.labels.length === 0 ? "" : ` · ${issue.labels.join(", ")}`}`])] : children.map(child => h.div([h.Class("ix-mini")], [icon(h, child), h.a([h.Href(`#issue-${child.number}`), h.OnClick(open(child.number), { defaultAction: "Prevent" })], [`#${child.number} ${child.title}`]), h.span([h.Class("ix-tree-meta")], badges(h, child, false))]))),
     // The label is the agent's link text; a blank one would leave the button without a name.
     h.div([h.Class("sui-card-footer")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm"), h.OnClick(open(issue.number))], [label.trim() === "" ? `Open #${issue.number}` : label])]),
@@ -67,7 +66,7 @@ export function issueChatCard(h: H, issue: IssueRecord, items: ReadonlyArray<Iss
 }
 
 function issueLink(h: H, send: Send, i: IssueRecord, full = true): Html {
-  return h.a([h.Id(`ix-issue-${i.number}`), h.Href(`#issue-${i.number}`), h.Class(full ? "sui-button-link" : "sui-issues-link sui-issues-title"), h.OnClick(send("select", String(i.number)), { defaultAction: "Prevent" })], [full || i.title.trim() === "" ? `#${i.number} ${i.title}`.trim() : i.title])
+  return h.a([h.Id(`ix-issue-${i.number}`), h.Href(`#issue-${i.number}`), h.Class(full ? "sui-button-link" : "sui-issues-link sui-issues-title"), h.OnClick(send("select", String(i.number)), { defaultAction: "Prevent" })], [V.issueLinkText(full, String(i.number), i.title)])
 }
 function header(h: H, send: Send, name: string, back = "‹ Chat", actions: ReadonlyArray<Html> = []): Html {
   return h.header([h.Class("sui-page-header")], [h.div([h.Class("sui-page-header-inner")], [
@@ -84,21 +83,33 @@ export function staleMark<M>(h: HtmlBuilder<M>, stale: number | undefined): Read
   const title = Number.isNaN(at.getTime()) ? [] : [h.Title(`As of ${at.toISOString().slice(0, 16).replace("T", " ")} UTC`)]
   return [h.span([h.Class("sui-badge sui-badge-outline vl-stale"), ...title], ["Stale"])]
 }
-function titleOf(ui: IssuesUi): string { return ui.kind === "All" || ui.kind === "Issues" ? "Issues" : ui.kind }
+function titleOf(ui: IssuesUi): string { return V.issuesTitle(ui.kind) }
 export function issuesView(ui: IssuesUi, h: H, send: Send): Html {
   return h.section([h.Class("ix-surface"), h.AriaLabel("Issues pane"), h.Style({ viewTransitionName: "issues" })], [
-    ...(ui.screen === "specification" ? specificationView(ui, h, send) : ui.screen === "roles" ? rolesView(h, send) : ui.screen === "detail" ? detail(ui, h, send) : ui.screen === "vip" || ui.screen === "new" ? form(ui, h, send) : list(ui, h, send)),
+    ...screenOf(ui, h, send),
     dialog(ui, h, send),
   ])
 }
+function screenOf(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
+  const screen = V.issuesScreen(ui.screen)
+  return screen === "specification" ? specificationView(ui, h, send) : screen === "roles" ? rolesView(h, send) : screen === "detail" ? detail(ui, h, send) : screen === "form" ? form(ui, h, send) : list(ui, h, send)
+}
 function connected(ui: IssuesUi): boolean { return ui.data.connected !== false }
+function connection(ui: IssuesUi): "yes" | "no" | "unknown" { return ui.data.connected === true ? "yes" : ui.data.connected === false ? "no" : "unknown" }
+function isAgent(name: string): boolean { return name === "VibeLang agent" }
+/** A failure's Retry (retryAction): the kept request when still permitted, else a comments read. */
+function retryButton(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
+  const action = V.retryAction(ui.retry !== undefined, ui.retry !== undefined && issuePermission(ui.role, ui.retry.op), ui.error)
+  return action === "retry" ? [button(h, send, "Retry", "retry", true)] : action === "read" ? [button(h, send, "Retry", "read")] : []
+}
 function connect(h: H, ui: IssuesUi): Html { return h.form([h.Method("post"), h.Action(ui.connection)], [h.button([h.Class("sui-button sui-button-sm"), h.Type("submit")], ["Connect GitHub"])]) }
 function disconnect(h: H): Html { return h.form([h.Method("post"), h.Action("/api/auth/disconnect")], [h.button([h.Class("sui-button sui-button-sm"), h.Type("submit")], ["Disconnect"])]) }
 /** The one action a failure offers: connecting, forking, or installing the App on the fork. */
 function failureAction(h: H, ui: IssuesUi): ReadonlyArray<Html> {
-  if (ui.error === "Connect GitHub.") return [connect(h, ui)]
-  if (ui.error === "Fork on GitHub.") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("https://github.com/smithersai/vibelang/fork")], ["Fork"])]
-  if (ui.error === "Install Smithers on your fork.") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("/api/auth/install")], ["Install"])]
+  const action = wikiErrorAction(ui.error)
+  if (action === "connect") return [connect(h, ui)]
+  if (action === "fork") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("https://github.com/smithersai/vibelang/fork")], ["Fork"])]
+  if (action === "install") return [h.a([h.Class("sui-button sui-button-sm"), h.Href("/api/auth/install")], ["Install"])]
   return []
 }
 function rolesView(h: H, send: Send): ReadonlyArray<Html> {
@@ -112,7 +123,7 @@ function rolesView(h: H, send: Send): ReadonlyArray<Html> {
   ]
   return [header(h, send, "Roles"), h.div([h.Class("sui-page-body"), h.DataAttribute("width", "narrow")], [
     h.div([h.Class("sui-table-container"), h.DataAttribute("variant", "card")], [h.table([h.Class("sui-table ix-roles")], [
-      h.thead([], [h.tr([], [h.th([], ["Action"]), ...roles.map(role => h.th([], [role.slice(0, 1).toUpperCase() + role.slice(1)]))])]),
+      h.thead([], [h.tr([], [h.th([], ["Action"]), ...roles.map(role => h.th([], [roleName(role)]))])]),
       h.tbody([], rows.map(row => h.tr([], [h.td([], [row.label]), ...roles.map(role => {
         const allowed = row.op === "roles" ? may(role, "roles") : issuePermission(role, row.op)
         return h.td([h.Class(allowed ? "ix-yes" : "ix-no")], [allowed ? "✓" : "—"])
@@ -122,21 +133,22 @@ function rolesView(h: H, send: Send): ReadonlyArray<Html> {
   ])]
 }
 function list(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
-  const filtered = ui.data.items.filter((i) => ui.kind === "Tasks" ? i.task !== "" : ui.kind === "VIPs" ? i.vip !== "" : ui.kind === "Issues" ? i.task === "" && i.vip === "" : true)
+  const filtered = ui.data.items.filter((i) => V.kindIncludes(ui.kind, i.task, i.vip))
   const rows = filtered.filter((i) => i.state === ui.state && `${i.title} #${i.number} ${i.labels.join(" ")}`.toLowerCase().includes(ui.query.toLowerCase()))
   const propose = ui.kind === "VIPs"
   const action = propose ? "Propose a VIP" : "New issue"
-  const connection = ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : ui.data.connected === true ? [disconnect(h)] : []
+  const control = V.connectionControl(ui.role, connection(ui))
+  const connectionControls = control === "connect" ? [connect(h, ui)] : control === "disconnect" ? [disconnect(h)] : []
   const controls = connected(ui) && issuePermission(ui.role, propose ? "propose" : "new") ? [h.button([h.Class("sui-button sui-button-sm sui-button-default"), h.Type("button"), h.OnClick(send(propose ? "vip-form" : "new-form"))], [action])] : []
-  return [header(h, send, titleOf(ui), "‹ Chat", [...staleMark(h, ui.data.stale), button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
+  return [header(h, send, titleOf(ui), "‹ Chat", [...staleMark(h, ui.data.stale), button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connectionControls, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...retryButton(ui, h, send)])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
     h.div([h.Class("sui-issues-header")], [
       h.div([h.Class("sui-issues-filters")], (["open", "closed"] as const).map((state) => h.a([h.Class("sui-issues-filter"), h.Href(`#${state}`), ...(state === ui.state ? [h.AriaCurrent("page")] : []), h.OnClick(send("state", state), { defaultAction: "Prevent" })], [state === "open" ? "◉ Open " : "✓ Closed ", h.span([h.Class("sui-issues-filter-count")], [String(filtered.filter((i) => i.state === state).length)])]))),
-      h.div([h.Class("sui-segmented"), h.DataAttribute("size", "sm"), h.Role("radiogroup"), h.AriaLabel("Kind")], (["All", "Issues", "Tasks", "VIPs"] as const).map((kind, index, kinds) => h.button([h.Id(`ix-kind-${kind}`), h.Class("sui-segmented-item"), h.Type("button"), h.Role("radio"), h.AriaChecked(ui.kind === kind), h.Tabindex(ui.kind === kind ? 0 : -1), h.OnClick(send("kind", kind)), h.OnKeyDownPreventDefault((key) => key === "ArrowRight" || key === "ArrowLeft" ? Option.some(send("kind-key", kinds[(index + (key === "ArrowRight" ? 1 : 3)) % 4]!)) : Option.none())], [kind]))),
+      h.div([h.Class("sui-segmented"), h.DataAttribute("size", "sm"), h.Role("radiogroup"), h.AriaLabel("Kind")], (["All", "Issues", "Tasks", "VIPs"] as const).map((kind, index, kinds) => h.button([h.Id(`ix-kind-${kind}`), h.Class("sui-segmented-item"), h.Type("button"), h.Role("radio"), h.AriaChecked(ui.kind === kind), h.Tabindex(ui.kind === kind ? 0 : -1), h.OnClick(send("kind", kind)), h.OnKeyDownPreventDefault((key) => V.kindKey(index, key) < 0 ? Option.none() : Option.some(send("kind-key", kinds[V.kindKey(index, key)]!)))], [kind]))),
       h.div([h.Class("sui-issues-actions")], [h.input([h.Class("sui-input"), h.Type("search"), h.Placeholder("Search"), h.AriaLabel("Search issues"), h.Value(ui.query), h.OnInput((value) => send("query", value)), h.Style({ width: "180px" })])]),
     ]),
-    ...(ui.status === "loading" ? [h.div([h.Class("sui-issues-loading"), h.Role("status"), h.AriaLabel("Loading issues")], [1, 2, 3, 4, 5].map(() => h.span([h.Class("sui-skeleton sui-issues-skeleton")], [])))] : ui.status === "error" ? [h.div([h.Class("ix-error"), h.Role("alert")], [h.div([h.Class("sui-alert sui-alert-destructive")], ["Couldn't load issues"]), button(h, send, "Retry", "read")])] : rows.length === 0 ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [ui.query !== "" ? "No matches" : ui.kind === "Tasks" ? "No tasks committed" : ui.kind === "VIPs" ? "No VIPs in review" : `No ${ui.state} issues`]), h.div([h.Class("sui-empty-action")], controls)])] : [h.ul([h.Class("sui-issues-list"), h.AriaLabel(titleOf(ui))], rows.map((i, index) => h.li([h.Class("sui-issues-row"), h.Key(String(i.number)), h.OnKeyDownPreventDefault((key) => key === "j" || key === "k" ? Option.some(send("focus", `ix-issue-${rows[Math.max(0, Math.min(rows.length - 1, index + (key === "j" ? 1 : -1)))]!.number}`)) : Option.none())], [
+    ...(V.listBody(ui.status, rows.length) === "loading" ? [h.div([h.Class("sui-issues-loading"), h.Role("status"), h.AriaLabel("Loading issues")], [1, 2, 3, 4, 5].map(() => h.span([h.Class("sui-skeleton sui-issues-skeleton")], [])))] : V.listBody(ui.status, rows.length) === "error" ? [h.div([h.Class("ix-error"), h.Role("alert")], [h.div([h.Class("sui-alert sui-alert-destructive")], ["Couldn't load issues"]), button(h, send, "Retry", "read")])] : V.listBody(ui.status, rows.length) === "empty" ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [V.emptyTitle(ui.query, ui.kind, ui.state)]), h.div([h.Class("sui-empty-action")], controls)])] : [h.ul([h.Class("sui-issues-list"), h.AriaLabel(titleOf(ui))], rows.map((i, index) => h.li([h.Class("sui-issues-row"), h.Key(String(i.number)), h.OnKeyDownPreventDefault((key) => V.rowFocus(index, rows.length, key) < 0 ? Option.none() : Option.some(send("focus", `ix-issue-${rows[V.rowFocus(index, rows.length, key)]!.number}`)))], [
       h.div([h.Class("sui-issues-state")], [icon(h, i)]),
-      h.div([h.Class("sui-issues-main")], [h.div([h.Class("sui-issues-title-line")], [issueLink(h, send, i, false), ...badges(h, i)]), h.div([h.Class("sui-issues-meta")], [`#${i.number} · ${ui.data.absoluteDates || i.state === "open" ? "opened" : "closed"} ${when(ui.data.absoluteDates === true, i.age)} by ${i.author}${i.parent === 0 ? "" : ` · child of #${i.parent}`}${ui.data.items.some((c) => c.parent === i.number) ? ` · ${ui.data.items.filter((c) => c.parent === i.number).length} ${ui.data.items.filter((c) => c.parent === i.number).length === 1 ? "child" : "children"}` : ""}${i.assignee === "" ? "" : ` · → ${i.assignee}`}`])]),
+      h.div([h.Class("sui-issues-main")], [h.div([h.Class("sui-issues-title-line")], [issueLink(h, send, i, false), ...badges(h, i)]), h.div([h.Class("sui-issues-meta")], [`#${i.number} · ${V.openedWord(ui.data.absoluteDates === true, i.state)} ${when(ui.data.absoluteDates === true, i.age)} by ${i.author}${i.parent === 0 ? "" : ` · child of #${i.parent}`}${ui.data.items.some((c) => c.parent === i.number) ? ` · ${ui.data.items.filter((c) => c.parent === i.number).length} ${V.childrenWord(ui.data.items.filter((c) => c.parent === i.number).length)}` : ""}${i.assignee === "" ? "" : ` · → ${i.assignee}`}`])]),
       h.span([h.Class("sui-issues-comments"), h.AriaLabel(`${i.comments} comments`)], i.comments === 0 ? [] : [commentIcon(h), String(i.comments)]),
     ])))]),
   ])])]
@@ -146,11 +158,12 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   if (i === undefined) return [header(h, send, "Issue", "‹ Issues"), h.div([h.Class("sui-empty")], ["Issue unavailable"])]
   const parent = ui.data.items.find((p) => p.number === i.parent)
   const children = ui.data.items.filter((c) => c.parent === i.number)
+  const allowed = V.detailActions(ui.role, connected(ui), issuePermission(ui.role, "split"), issuePermission(ui.role, "commit"), issuePermission(ui.role, "accept"), issuePermission(ui.role, "comment"), i.vip, i.state, i.task)
   const actions = [
-    ...(ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : []),
-    ...(connected(ui) && issuePermission(ui.role, "split") ? [button(h, send, "Split", "split-dialog"), button(h, send, "Link", "link-dialog")] : []),
-    ...(connected(ui) && issuePermission(ui.role, "commit") && i.vip === "" && (i.state === "open" || i.task !== "") ? [h.button([h.Id("ix-commit"), h.Type("button"), h.Class(`sui-button sui-button-sm${i.task === "" ? " sui-button-default" : ""}`), h.OnClick(send(i.task === "" ? "commit-dialog" : "uncommit")), h.Disabled(ui.busy)], [i.task === "" ? "Commit" : "Uncommit"])] : []),
-    ...(connected(ui) && issuePermission(ui.role, "accept") && i.vip === "In review" ? [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-destructive"), h.OnClick(send("decline"))], ["Decline"]), button(h, send, "Accept", "accept", true)] : []),
+    ...(allowed.connect ? [connect(h, ui)] : []),
+    ...(allowed.split ? [button(h, send, "Split", "split-dialog"), button(h, send, "Link", "link-dialog")] : []),
+    ...(allowed.commit === "none" ? [] : [h.button([h.Id("ix-commit"), h.Type("button"), h.Class(`sui-button sui-button-sm${allowed.commit === "commit" ? " sui-button-default" : ""}`), h.OnClick(send(allowed.commit === "commit" ? "commit-dialog" : "uncommit")), h.Disabled(ui.busy)], [allowed.commit === "commit" ? "Commit" : "Uncommit"])]),
+    ...(allowed.review ? [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-destructive"), h.OnClick(send("decline"))], ["Decline"]), button(h, send, "Accept", "accept", true)] : []),
   ]
   const aside = (name: string, content: ReadonlyArray<Html>) => h.div([h.Class("ix-aside-section")], [h.span([h.Class("sui-label")], [name]), ...content])
   return [header(h, send, `#${i.number}`, "‹ Issues", staleMark(h, ui.data.stale)), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-item-conv"), h.DataAttribute("aside", "")], [
@@ -158,7 +171,7 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
     h.div([h.Class("sui-item-conv-main")], [
       h.div([h.Class("sui-item-conv-post")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, i.author), h.span([h.Class("sui-item-conv-author")], [i.author]), h.span([], [when(ui.data.absoluteDates === true, i.age, true)])]), ...issueBody(ui, h, send, i.body)]),
       ...(i.vip !== "" || (parent === undefined && children.length === 0) ? [] : [
-      h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.div([h.Class("sui-card-title")], ["Tree"]), h.span([h.Class("sui-card-action sui-badge sui-badge-secondary")], [`${children.length} ${children.length === 1 ? "child" : "children"}`])]), h.div([h.Class("sui-card-content ix-tree")], [
+      h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.div([h.Class("sui-card-title")], ["Tree"]), h.span([h.Class("sui-card-action sui-badge sui-badge-secondary")], [`${children.length} ${V.childrenWord(children.length)}`])]), h.div([h.Class("sui-card-content ix-tree")], [
         ...(parent === undefined ? [] : [h.div([h.Class("ix-tree-parent")], ["Part of ", issueLink(h, send, parent)])]),
         h.ul([h.Class("ix-tree-list")], children.map((child) => h.li([h.Class("ix-tree-row")], [icon(h, child), issueLink(h, send, child), h.span([h.Class("ix-tree-meta")], [...badges(h, child, false), ...(child.assignee === "" ? [] : [avatar(h, child.assignee)])])]))),
       ])])
@@ -167,12 +180,12 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
         h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Proposal"]), h.span([h.Class("sui-badge sui-badge-outline")], [i.vip])]),
         h.div([h.Class("sui-card-content")], [h.span([h.Class("sui-label")], ["Maintainer · person"]), ...(i.approvedBy === undefined ? [] : [h.div([], [i.approvedBy, " · ", h.time([h.Datetime(i.approvedAt ?? "")], [i.approvedAt ?? ""])])])]),
       ])]),
-      h.ol([h.Class("sui-item-conv-events")], i.notes.filter(n => n.event).map(n => h.li([h.Class("sui-item-conv-event")], [h.span([h.Class("sui-item-conv-event-icon")], [n.text.startsWith("added ") ? "+" : n.text.startsWith("accepted ") ? "✓" : n.text.startsWith("proposed ") ? "◦" : "↳"]), h.span([h.Class("sui-item-conv-event-text")], [h.b([], [n.author]), " ", ...eventText(ui, h, send, n.text), ...(n.age === "" ? [] : [` · ${n.age}`])])]))),
-      h.ol([h.Class("sui-item-conv-comments")], i.notes.filter(n => !n.event).map(n => h.li([h.Class("sui-item-conv-comment")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, n.author), h.span([h.Class("sui-item-conv-author")], [n.author]), ...(n.author === "VibeLang agent" ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["agent"])] : []), ...(n.age === "" ? [] : [h.span([], [when(ui.data.absoluteDates === true, n.age, true)])])]), ...issueBody(ui, h, send, n.text)]))),
-      ...(connected(ui) && issuePermission(ui.role, "comment") ? [h.div([h.Class("sui-item-conv-composer")], [h.textarea([h.Class("sui-textarea"), h.AriaLabel("Comment"), h.Disabled(ui.busy || ui.retry !== undefined), h.Placeholder("Comment"), h.Value(ui.comment), h.OnInput((value) => send("comment-text", value)), h.OnKeyDownPreventDefault((key, mods) => key === "Enter" && (mods.metaKey || mods.ctrlKey) ? Option.some(send("comment")) : Option.none())]), h.div([h.Class("sui-item-conv-composer-actions")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-default"), h.OnClick(send("comment"))], ["Comment"])])])] : []),
-      ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
+      h.ol([h.Class("sui-item-conv-events")], i.notes.filter(n => n.event).map(n => h.li([h.Class("sui-item-conv-event")], [h.span([h.Class("sui-item-conv-event-icon")], [V.eventIcon(n.text)]), h.span([h.Class("sui-item-conv-event-text")], [h.b([], [n.author]), " ", ...eventText(ui, h, send, n.text), ...(n.age === "" ? [] : [` · ${n.age}`])])]))),
+      h.ol([h.Class("sui-item-conv-comments")], i.notes.filter(n => !n.event).map(n => h.li([h.Class("sui-item-conv-comment")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, n.author), h.span([h.Class("sui-item-conv-author")], [n.author]), ...(isAgent(n.author) ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["agent"])] : []), ...(n.age === "" ? [] : [h.span([], [when(ui.data.absoluteDates === true, n.age, true)])])]), ...issueBody(ui, h, send, n.text)]))),
+      ...(allowed.comment ? [h.div([h.Class("sui-item-conv-composer")], [h.textarea([h.Class("sui-textarea"), h.AriaLabel("Comment"), h.Disabled(ui.busy || ui.retry !== undefined), h.Placeholder("Comment"), h.Value(ui.comment), h.OnInput((value) => send("comment-text", value)), h.OnKeyDownPreventDefault((key, mods) => V.commentKey(key, mods.metaKey, mods.ctrlKey) ? Option.some(send("comment")) : Option.none())]), h.div([h.Class("sui-item-conv-composer-actions")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-default"), h.OnClick(send("comment"))], ["Comment"])])])] : []),
+      ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...retryButton(ui, h, send)])]),
     ]),
-    h.aside([h.Class("sui-item-conv-aside")], [aside("Assignees", [i.assignee === "" ? h.span([h.Class("ix-aside-muted")], ["No one"]) : h.span([h.Class("ix-aside-row")], [avatar(h, i.assignee), i.assignee])]), ...(i.task === "" ? [] : [aside("Task", [h.span([h.Class("ix-aside-row")], [icon(h, i), i.task])])]), aside("Labels", i.labels.map((l) => h.span([h.Class("sui-badge sui-badge-secondary")], [l]))), ...(parent === undefined ? [] : [aside("Parent", [issueLink(h, send, parent)])]), ...(i.vip === "" ? [] : [aside("Proposer", [h.span([], [i.author])]), ...(ui.data.reviewers === undefined || ui.data.reviewers.length === 0 ? [] : [aside("Reviewer", [h.span([], [ui.data.reviewers.join(", ")])])]), ...children.filter((c) => c.task !== "").map((c) => aside("Task", [issueLink(h, send, c)])), aside("VIP", [h.a([h.Href(i.review), h.Class("sui-button-link")], ["Review change"]), h.a([h.Href(i.review + "/files"), h.Class("sui-item-aside-link")], [i.path.trim() === "" ? "Files" : i.path])])])]),
+    h.aside([h.Class("sui-item-conv-aside")], [aside("Assignees", [i.assignee === "" ? h.span([h.Class("ix-aside-muted")], ["No one"]) : h.span([h.Class("ix-aside-row")], [avatar(h, i.assignee), i.assignee])]), ...(i.task === "" ? [] : [aside("Task", [h.span([h.Class("ix-aside-row")], [icon(h, i), i.task])])]), aside("Labels", i.labels.map((l) => h.span([h.Class("sui-badge sui-badge-secondary")], [l]))), ...(parent === undefined ? [] : [aside("Parent", [issueLink(h, send, parent)])]), ...(i.vip === "" ? [] : [aside("Proposer", [h.span([], [i.author])]), ...(ui.data.reviewers === undefined || ui.data.reviewers.length === 0 ? [] : [aside("Reviewer", [h.span([], [ui.data.reviewers.join(", ")])])]), ...children.filter((c) => c.task !== "").map((c) => aside("Task", [issueLink(h, send, c)])), aside("VIP", [h.a([h.Href(i.review), h.Class("sui-button-link")], ["Review change"]), h.a([h.Href(i.review + "/files"), h.Class("sui-item-aside-link")], [V.assigneeName(i.path, "Files")])])])]),
   ])])]
 }
 function field(h: H, send: Send, label: string, action: string, value: string, placeholder = "", code = false, advance = false, locked = false): Html {
@@ -180,11 +193,12 @@ function field(h: H, send: Send, label: string, action: string, value: string, p
 }
 function form(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const vip = ui.screen === "vip"
+  const shape = V.issueForm(vip, ui.step)
   const names = ["Summary", "Example", "Prior art", "Review"]
   return [header(h, send, vip ? "Propose a VIP" : "New issue", vip ? "‹ VIPs" : "‹ Issues"), h.div([h.Class("sui-page-body"), h.DataAttribute("width", "narrow")], [
-    ...(vip ? [h.ol([h.Class("ix-steps"), h.AriaLabel("VIP steps")], names.map((name, idx) => h.li([h.DataAttribute("done", String(idx + 1 < ui.step)), ...(idx + 1 === ui.step ? [h.AriaCurrent("step")] : [])], [h.span([h.Class("ix-n")], [idx + 1 < ui.step ? "✓" : String(idx + 1)]), name])))] : []),
-    h.form([h.Class("sui-issue-form"), h.OnSubmit(send(vip ? ui.step < 4 ? "continue" : "propose" : "new"))], [
-    ...(!vip || ui.step === 1 ? [field(h, send, "Title", "title", ui.title, vip ? "One language feature" : "Title", false, vip, ui.busy || ui.retry !== undefined), field(h, send, "Summary", "summary", ui.summary, "", false, false, ui.busy || ui.retry !== undefined)] : ui.step === 2 ? [field(h, send, "Example", "example", ui.example, "", true, false, ui.busy || ui.retry !== undefined)] : ui.step === 3 ? [field(h, send, "Prior art", "prior", ui.prior, "One per line", false, false, ui.busy || ui.retry !== undefined)] : [h.div([h.Class("sui-card")], [
+    ...(vip ? [h.ol([h.Class("ix-steps"), h.AriaLabel("VIP steps")], names.map((name, idx) => h.li([h.DataAttribute("done", String(V.stepDone(idx, ui.step))), ...(idx + 1 === ui.step ? [h.AriaCurrent("step")] : [])], [h.span([h.Class("ix-n")], [V.stepDone(idx, ui.step) ? "✓" : String(idx + 1)]), name])))] : []),
+    h.form([h.Class("sui-issue-form"), h.OnSubmit(send(shape.submit))], [
+    ...(shape.fields === "title" ? [field(h, send, "Title", "title", ui.title, vip ? "One language feature" : "Title", false, vip, ui.busy || ui.retry !== undefined), field(h, send, "Summary", "summary", ui.summary, "", false, false, ui.busy || ui.retry !== undefined)] : shape.fields === "example" ? [field(h, send, "Example", "example", ui.example, "", true, false, ui.busy || ui.retry !== undefined)] : shape.fields === "prior" ? [field(h, send, "Prior art", "prior", ui.prior, "One per line", false, false, ui.busy || ui.retry !== undefined)] : [h.div([h.Class("sui-card")], [
       h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], [ui.title]), h.span([h.Class("sui-card-action")], [h.span([h.Class("sui-badge sui-badge-outline")], ["VIP"])])]),
       h.div([h.Class("sui-card-content")], [
         h.div([], [h.span([h.Class("sui-label")], ["Summary"]), h.p([h.Style({ margin: "4px 0 0", fontSize: "13px" })], [ui.summary])]),
@@ -192,18 +206,18 @@ function form(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
         h.div([], [h.span([h.Class("sui-label")], ["Prior art"]), h.p([h.Style({ margin: "4px 0 0", fontSize: "13px", whiteSpace: "pre-line" })], [ui.prior])]),
       ]),
     ])]),
-    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
-    h.div([h.Class("sui-issue-form-actions")], [...(vip && ui.step === 1 ? [button(h, send, "Draft with agent", "draft")] : []), ...(vip && ui.step > 1 ? [button(h, send, "Back", "back")] : []), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(vip ? ui.step < 4 ? "continue" : "propose" : "new"))], [vip ? ui.step < 4 ? "Continue" : "Submit VIP" : "New issue"])]),
+    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...retryButton(ui, h, send)])]),
+    h.div([h.Class("sui-issue-form-actions")], [...(shape.draft ? [button(h, send, "Draft with agent", "draft")] : []), ...(shape.back ? [button(h, send, "Back", "back")] : []), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(shape.submit))], [shape.label])]),
   ])])]
 }
 function dialog(ui: IssuesUi, h: H, send: Send): Html {
   if (ui.dialog === "") return h.dialog([h.Id("ix-dialog"), h.Class("sui-dialog-content ix-dialog"), h.DataAttribute("state", "closed")], [])
-  const name = ui.dialog === "commit" ? `Commit #${ui.selected} as a task` : ui.dialog === "split" ? `Split #${ui.selected}` : `Link #${ui.selected}`
+  const name = V.dialogTitle(ui.dialog, String(ui.selected))
   return h.dialog([h.Id("ix-dialog"), h.Class("sui-dialog-content ix-dialog"), h.AriaLabel(name), h.AriaModal(true), h.DataAttribute("state", "open"), h.OnCancelPreventDefault(send("cancel"))], [
     h.div([h.Class("sui-dialog-header")], [h.h2([h.Class("sui-dialog-title")], [name])]),
-    ...(ui.dialog === "commit" ? [h.div([h.Class("sui-field")], [h.span([h.Class("sui-label")], ["Assignee"]), h.div([h.Class("ix-pick"), h.Role("radiogroup"), h.AriaLabel("Assignee"), h.OnKeyDownPreventDefault((key) => key === "Enter" ? Option.some(send("commit")) : Option.none())], (ui.data.assignees ?? ["VibeLang agent", "Will", "Maya"].map((name) => ({ login: name, label: name }))).map((choice) => ({ ...choice, display: choice.label.trim() === "" ? choice.login : choice.label })).filter((choice) => choice.display.trim() !== "").map((choice) => h.label([], [h.input([h.Type("radio"), h.AriaLabel(choice.display), h.Disabled(ui.busy || ui.retry !== undefined), h.Name("assignee"), h.Checked(ui.assignee === choice.login), h.Value(choice.login), h.OnClick(send("assignee", choice.login))]), h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(choice.display === "VibeLang agent"))], [choice.display.slice(0, 1)]), choice.display])))])] : ui.dialog === "split" ? [field(h, send, "Title", "title", ui.title), field(h, send, "Summary", "summary", ui.summary, "", false, false, ui.busy || ui.retry !== undefined)] : [field(h, send, "Parent", "parent", ui.parent)]),
-    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
-    h.div([h.Class("sui-dialog-footer")], [button(h, send, "Cancel", "cancel"), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(ui.dialog))], [ui.dialog === "commit" ? "Commit" : ui.dialog === "split" ? "Split" : "Link"])]),
+    ...(ui.dialog === "commit" ? [h.div([h.Class("sui-field")], [h.span([h.Class("sui-label")], ["Assignee"]), h.div([h.Class("ix-pick"), h.Role("radiogroup"), h.AriaLabel("Assignee"), h.OnKeyDownPreventDefault((key) => key === "Enter" ? Option.some(send("commit")) : Option.none())], (ui.data.assignees ?? ["VibeLang agent", "Will", "Maya"].map((name) => ({ login: name, label: name }))).map((choice) => ({ ...choice, display: V.assigneeName(choice.label, choice.login) })).filter((choice) => choice.display.trim() !== "").map((choice) => h.label([], [h.input([h.Type("radio"), h.AriaLabel(choice.display), h.Disabled(ui.busy || ui.retry !== undefined), h.Name("assignee"), h.Checked(ui.assignee === choice.login), h.Value(choice.login), h.OnClick(send("assignee", choice.login))]), h.span([h.Class("ix-avatar"), h.DataAttribute("agent", String(isAgent(choice.display)))], [choice.display.slice(0, 1)]), choice.display])))])] : ui.dialog === "split" ? [field(h, send, "Title", "title", ui.title), field(h, send, "Summary", "summary", ui.summary, "", false, false, ui.busy || ui.retry !== undefined)] : [field(h, send, "Parent", "parent", ui.parent)]),
+    ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...failureAction(h, ui), ...retryButton(ui, h, send)])]),
+    h.div([h.Class("sui-dialog-footer")], [button(h, send, "Cancel", "cancel"), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(ui.dialog))], [V.dialogSubmit(ui.dialog)])]),
   ])
 }
 
@@ -219,15 +233,15 @@ function specificationView(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> 
         h.thead([], [h.tr([], ["Reviewer", "Verdict", "Grade", "Rev", ""].map(label => h.th([], [label])))]),
         h.tbody([], reviewers.map(({ id, name }) => {
           const review = spec[id]
-          return h.tr([], [h.td([], [name]), h.td([], review.link === "" ? [review.verdict || "—"] : [h.a([h.Href(review.link)], [review.verdict || "Review"])]), h.td([], [review.grade || "—"]), h.td([], [review.revision === 0 ? "—" : String(review.revision)]), h.td([], issuePermission(ui.role, "spec-review") ? [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(ui.busy), h.AriaLabel("Request review"), h.OnClick(send("spec-review", id))], ["Review"])] : [])])
+          return h.tr([], [h.td([], [name]), h.td([], review.link === "" ? [V.cellText(review.verdict, "—")] : [h.a([h.Href(review.link)], [V.cellText(review.verdict, "Review")])]), h.td([], [V.cellText(review.grade, "—")]), h.td([], [review.revision === 0 ? "—" : String(review.revision)]), h.td([], issuePermission(ui.role, "spec-review") ? [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(ui.busy), h.AriaLabel("Request review"), h.OnClick(send("spec-review", id))], ["Review"])] : [])])
         })),
       ])]),
       h.div([h.Class("sui-card-content")], [
-        ...(issuePermission(ui.role, "spec-revise") ? [h.textarea([h.Class("sui-textarea vl-code"), h.Rows(8), h.AriaLabel("Specification text"), h.Value(ui.summary), h.Disabled(ui.busy), h.OnInput(v => send("summary", v))]), h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(ui.busy || ui.summary.trim() === "" || ui.summary === spec.text), h.OnClick(send("spec-revise"))], ["Save revision"])] : [h.pre([h.Class("vl-code"), h.Style({ whiteSpace: "pre-wrap" })], [spec.text])]),
+        ...(issuePermission(ui.role, "spec-revise") ? [h.textarea([h.Class("sui-textarea vl-code"), h.Rows(8), h.AriaLabel("Specification text"), h.Value(ui.summary), h.Disabled(ui.busy), h.OnInput(v => send("summary", v))]), h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(V.revisionDisabled(ui.busy, ui.summary, spec.text)), h.OnClick(send("spec-revise"))], ["Save revision"])] : [h.pre([h.Class("vl-code"), h.Style({ whiteSpace: "pre-wrap" })], [spec.text])]),
         ...(ui.error === "" ? [] : [h.div([h.Role("alert")], [ui.error, ...(ui.retry === undefined ? [] : [button(h, send, "Retry", "retry")])])]),
       ]),
     ]),
     ...(accepted ? [h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Self-consistency"])]), h.div([h.Class("sui-card-content")], verificationSuites.map(suite => h.a([h.Class("sui-badge sui-badge-outline"), h.Href(suite.href)], [`${suite.label} · ${suite.state}`])))])] : []),
-    h.details([], [h.summary([], ["History"]), h.ol([h.Class("sui-item-conv-events")], history.map((event, index) => h.li([h.Id(`spec-review-${index + 1}`), h.Class("sui-item-conv-event")], [h.details([], [h.summary([], [`r${event.revision} · ${event.event === "reset" ? "Reset" : event.event === "revision" ? "Revision" : `${reviewers.find(r => r.id === event.reviewer)?.name ?? event.reviewer} · ${event.verdict} · ${event.grade}`} · ${event.at}`]), ...(event.review === undefined ? [] : [h.p([], [event.review])])])])))]),
+    h.details([], [h.summary([], ["History"]), h.ol([h.Class("sui-item-conv-events")], history.map((event, index) => h.li([h.Id(`spec-review-${index + 1}`), h.Class("sui-item-conv-event")], [h.details([], [h.summary([], [`r${event.revision} · ${V.specEventName(event.event) !== "" ? V.specEventName(event.event) : `${reviewers.find(r => r.id === event.reviewer)?.name ?? event.reviewer} · ${event.verdict} · ${event.grade}`} · ${event.at}`]), ...(event.review === undefined ? [] : [h.p([], [event.review])])])])))]),
   ])]
 }

@@ -41,7 +41,7 @@ brick                                   state         proof
 - **Proofs strong enough to catch real bugs (0018, lane vl-proof-strengthen): landed.** `decide` is tied to the role policy for every grant and action; the day's budget reserves each call's ceiling under its lock (twenty concurrent admissions no longer pass the limit); unreported usage is charged its ceiling; runs, walkthroughs and the meter step are framed; the harness no longer counts a callee's precondition or trusts an unmarked import. Each physical provider call, reissues included, reserves and settles its own ceiling. Still open: the daily bound is charges ≤ limit + `over` (a provider overrunning its own ceiling), and restated policy tables prove no further property.
 
 - **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames, the tour spotlight box, the PageUp distance and the viewport's active, scrollable and touch steps are proved; 99 new mutations rejected. Remaining rows name host or tool boundaries.
-- **Proofs of the web views (0018, lane vl-proveall2): in progress.** Actions, Sandboxes, account and wiki panes, the issues screen routing and the page entry are proved; issues, history and chat views and the Markdown renderer are next.
+- **Proofs of the web views (0018, lane vl-proveall2): done.** Every choice the web views draw is proved in decision modules (Actions, Sandboxes, account, wiki, issues, history and chat views, Markdown escaping); 142 mutations rejected. Regexps, Unicode casing and Html construction remain named boundaries.
 
 - **Proofs of update's helpers and last inline arms (0018, lane vl-proveall4): in progress.** Wiki editor (opening, Cancel, submit, save, starting source), People list, failed media and Chat arms proved, 34 mutations rejected; the arms named in batch 33 call proved decisions; translation helpers checked by property tests, with formal translation still unproved; one product defect fixed.
 
@@ -93,7 +93,7 @@ brick                                   state         proof
 - **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
   `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`
   reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
-  reply interrupted by a reload no longer blocks its conversation. Unrecordable engine steps now return a typed unavailable failure while their durable runs remain recoverable; caller cancellation stays interruption. Every `worker/`, surfaces, history and actions file is at 100% except `src/history/tools.vibe:93`, which waits on VL-37's compiler change; seven dead arms are deleted (0016, "Worker, surfaces, history and actions gaps").
+  reply interrupted by a reload no longer blocks its conversation. Unrecordable engine steps now return a typed unavailable failure while their durable runs remain recoverable; caller cancellation stays interruption. Other files below 100% remain.
 
 - **Unit coverage, third lane (0016, lane vl-coverage3): partial.** Surfaces, history and actions: 17 files missing
   103 items down to 2 files missing 2 branches, each named in 0016 with its reason (an exhaustive `match`'s

@@ -1,0 +1,81 @@
+// The Markdown renderer's decisions (markdown.vibe): each tag's class, HTML escaping and inline code pieces. Parsing
+// itself uses regular expressions, a tool boundary (verify/bugs/regexp.ts).
+
+/** Smithers' Markdown and table class for a tag; code inside `pre` keeps the plain code class. */
+//@ verify
+//@ ensures (tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6") ==> \result == "sui-md-heading sui-md-" + tag
+//@ ensures tag == "a" ==> \result == "sui-md-link"
+//@ ensures tag == "table" ==> \result == "sui-table sui-md-table"
+//@ ensures (tag == "ul" || tag == "ol") ==> \result == "sui-md-list"
+//@ ensures tag == "code" && !inPre ==> \result == "sui-md-inline-code"
+//@ ensures tag == "code" && inPre ==> \result == "sui-md-code"
+//@ ensures tag != "h1" && tag != "h2" && tag != "h3" && tag != "h4" && tag != "h5" && tag != "h6" && tag != "a" && tag != "table" && tag != "ul" && tag != "ol" && tag != "code" ==> \result == "sui-md-" + tag
+export function markdownClass(tag: string, inPre: boolean): string {
+  if (tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4" || tag === "h5" || tag === "h6") return "sui-md-heading sui-md-" + tag
+  if (tag === "a") return "sui-md-link"
+  if (tag === "table") return "sui-table sui-md-table"
+  if (tag === "ul" || tag === "ol") return "sui-md-list"
+  if (tag === "code" && !inPre) return "sui-md-inline-code"
+  return "sui-md-" + tag
+}
+
+/** One code unit of text as HTML: `&`, `<`, `>` and `"` become entities; every other unit is itself. */
+//@ verify
+//@ requires text.length == 1 && text.charCodeAt(0) == unit
+//@ ensures unit == 38 ==> \result == "&amp;"
+//@ ensures unit == 60 ==> \result == "&lt;"
+//@ ensures unit == 62 ==> \result == "&gt;"
+//@ ensures unit == 34 ==> \result == "&quot;"
+//@ ensures unit != 38 && unit != 60 && unit != 62 && unit != 34 ==> \result == text
+//@ ensures forall(j, 0 <= j && j < \result.length ==> \result.charCodeAt(j) != 60 && \result.charCodeAt(j) != 62 && \result.charCodeAt(j) != 34)
+export function escapedUnit(unit: number, text: string): string {
+  return unit === 38 ? "&amp;" : unit === 60 ? "&lt;" : unit === 62 ? "&gt;" : unit === 34 ? "&quot;" : text
+}
+
+/** Text as HTML text or an attribute value: the result never holds `<`, `>` or `"`, so text can't open a tag or
+ * close an attribute. */
+//@ verify
+//@ ensures forall(j, 0 <= j && j < \result.length ==> \result.charCodeAt(j) != 60 && \result.charCodeAt(j) != 62 && \result.charCodeAt(j) != 34)
+export function escapeHtml(text: string): string {
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    //@ invariant 0 <= i && i <= text.length
+    //@ invariant forall(j, 0 <= j && j < out.length ==> out.charCodeAt(j) != 60 && out.charCodeAt(j) != 62 && out.charCodeAt(j) != 34)
+    //@ decreases text.length - i
+    out = out + escapedUnit(text.charCodeAt(i), text.slice(i, i + 1))
+    i++
+  }
+  return out
+}
+
+export interface InlinePiece { readonly code: boolean; readonly text: string }
+
+/**
+ * A paragraph's text split at backticks: even pieces are text, odd ones inline code; no piece is empty. Every
+ * nonempty part appears with its parity. A piece's parity is checked by its part, not proved: Dafny cannot carry
+ * that exists-in-forall to the result without a witness statement (verify/bugs/forall-exists-witness.dfy).
+ */
+//@ verify
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].text != "")
+//@ ensures \result.length <= text.split("`").length
+//@ ensures forall(i, 0 <= i && i < \result.length ==> text.split("`").includes(\result[i].text))
+//@ ensures forall(j, 0 <= j && j < text.split("`").length && text.split("`")[j] != "" ==> exists(i, 0 <= i && i < \result.length && \result[i].text == text.split("`")[j] && \result[i].code == (j % 2 == 1)))
+export function inlinePieces(text: string): ReadonlyArray<InlinePiece> {
+  const parts = text.split("`")
+  let pieces: InlinePiece[] = []
+  for (let j = 0; j < parts.length; j++) {
+    //@ invariant 0 <= j && j <= parts.length
+    //@ invariant pieces.length <= j
+    //@ invariant forall(i, 0 <= i && i < pieces.length ==> pieces[i].text != "")
+    //@ invariant forall(i, 0 <= i && i < pieces.length ==> parts.includes(pieces[i].text))
+    //@ invariant forall(k, 0 <= k && k < j && parts[k] != "" ==> exists(i, 0 <= i && i < pieces.length && pieces[i].text == parts[k] && pieces[i].code == (k % 2 == 1)))
+    if (parts[j]! !== "") {
+      const prev = pieces
+      pieces = [...prev, { code: j % 2 === 1, text: parts[j]! }]
+      //@ assert forall(i, 0 <= i && i < prev.length ==> pieces[i] == prev[i])
+      //@ assert pieces[prev.length].text == parts[j] && pieces[prev.length].code == (j % 2 == 1)
+    }
+  }
+  return pieces
+}

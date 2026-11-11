@@ -1,8 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as A from "../src/web/accountViewDecision.vibe"
+import * as Hv from "../src/web/historyViewDecision.vibe"
 import * as I from "../src/web/issuesViewDecision.vibe"
+import * as Md from "../src/web/markdownDecision.vibe"
 import { historyMode, historyPath } from "../src/web/startupDecision.vibe"
 import { minutesTone, sandboxPaneView } from "../src/web/viewDecision.vibe"
+import * as Cv from "../src/web/viewDecision.vibe"
 import * as W from "../src/web/wikiViewDecision.vibe"
 
 describe("Sandboxes pane decisions", () => {
@@ -123,5 +126,190 @@ describe("page entry decisions", () => {
     expect(historyMode(true, "live")).toBe("mock")
     expect(historyMode(false, "mock")).toBe("mock")
     expect(historyMode(false, "")).toBe("mock")
+  })
+})
+
+describe("Markdown renderer decisions", () => {
+  it("classes each tag", () => {
+    expect(Md.markdownClass("h2", false)).toBe("sui-md-heading sui-md-h2")
+    expect(Md.markdownClass("a", false)).toBe("sui-md-link")
+    expect(Md.markdownClass("table", false)).toBe("sui-table sui-md-table")
+    expect(Md.markdownClass("ol", false)).toBe("sui-md-list")
+    expect(Md.markdownClass("code", false)).toBe("sui-md-inline-code")
+    expect(Md.markdownClass("code", true)).toBe("sui-md-code")
+    expect(Md.markdownClass("blockquote", false)).toBe("sui-md-blockquote")
+    expect(Md.markdownClass("h7", false)).toBe("sui-md-h7")
+  })
+  it("escapes HTML exactly as the replace chain did", () => {
+    const chain = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    for (const text of ["", "plain", "<script>alert(\"x\")</script>", "a & b &amp; c", "😀<é>\"'", "&lt;"]) expect(Md.escapeHtml(text)).toBe(chain(text))
+  })
+  it("splits inline code and drops empty pieces", () => {
+    expect(Md.inlinePieces("a `b` c")).toEqual([{ code: false, text: "a " }, { code: true, text: "b" }, { code: false, text: " c" }])
+    expect(Md.inlinePieces("``x")).toEqual([{ code: false, text: "x" }])
+    expect(Md.inlinePieces("")).toEqual([])
+    expect(Md.inlinePieces("a `b` a `b`")).toEqual([{ code: false, text: "a " }, { code: true, text: "b" }, { code: false, text: " a " }, { code: true, text: "b" }])
+    expect(Md.inlinePieces("`x")).toEqual([{ code: true, text: "x" }])
+  })
+})
+
+describe("history page decisions", () => {
+  it("names blanks and commits", () => {
+    expect(Hv.orFallback(" ", "Epic")).toBe("Epic")
+    expect(Hv.orFallback("Tours", "Epic")).toBe("Tours")
+    expect(Hv.commitLabel("  Fix  ", "m1")).toBe("Fix")
+    expect(Hv.commitLabel(" ", " m1 ")).toBe("m1")
+    expect(Hv.commitLabel("", "")).toBe("Change")
+    expect(Hv.historyTitle(true, "Fix", true, "Tours")).toBe("Fix · History")
+    expect(Hv.historyTitle(false, "", true, "Tours")).toBe("Tours · History")
+    expect(Hv.historyTitle(false, "", false, "")).toBe("History · VibeLang")
+  })
+  it("chooses the body", () => {
+    expect(Hv.historyBody("loading", 3, true, true, true, true, false)).toBe("loading")
+    expect(Hv.historyBody("failed", 3, true, true, true, true, false)).toBe("failed")
+    expect(Hv.historyBody("ready", 0, true, true, true, true, false)).toBe("empty")
+    expect(Hv.historyBody("ready", 3, true, true, true, true, true)).toBe("commit")
+    expect(Hv.historyBody("ready", 3, false, true, false, true, false)).toBe("loading")
+    expect(Hv.historyBody("ready", 3, false, true, false, true, true)).toBe("commit-failed")
+    expect(Hv.historyBody("ready", 3, false, true, true, true, true)).toBe("epic")
+    expect(Hv.historyBody("ready", 3, false, false, false, false, false)).toBe("list")
+  })
+  it("decides the list, rows and commit controls", () => {
+    expect(Hv.historyList(" a ", "a", "a", "abc", 2)).toEqual({ filtering: true, matchesShown: true, folded: true, planned: true })
+    expect(Hv.historyList("", "", "x", " ", 0)).toEqual({ filtering: false, matchesShown: false, folded: false, planned: false })
+    expect([Hv.showMore(3, 4), Hv.showMore(4, 4)]).toEqual([true, false])
+    expect(["Enter", " ", "Tab"].map(Hv.toggleKey)).toEqual([true, true, false])
+    expect(Hv.commitRow("landed", 0, 2)).toEqual({ planned: false, noted: false, folds: true })
+    expect(Hv.commitRow("working", 1, 0)).toEqual({ planned: true, noted: true, folds: false })
+    expect(Hv.commitControls(true, "landed", "", "")).toEqual({ insert: true, amend: true, timeline: false, task: false, lane: false })
+    expect(Hv.commitControls(true, "working", "", "l1")).toEqual({ insert: true, amend: false, timeline: true, task: false, lane: true })
+    expect(Hv.commitControls(false, "landed", "t", "")).toEqual({ insert: false, amend: false, timeline: true, task: true, lane: false })
+  })
+  it("marks the timeline and its actions", () => {
+    expect(["planned", "working", "approved", "landed", "x"].map(Hv.timelineAt)).toEqual([0, 1, 2, 3, -1])
+    expect([0, 1, 2, 3].map((index) => Hv.stepStatus(index, 1))).toEqual(["ok", "run", "muted", "muted"])
+    expect(["ok", "run", "muted"].map(Hv.stepMarker)).toEqual(["✓", "●", ""])
+    expect(Hv.timelineActions("planned", true, false, false, " ")).toEqual({ start: true, startDisabled: true, approve: false })
+    expect(Hv.timelineActions("working", false, true, false, "l1")).toEqual({ start: false, startDisabled: false, approve: true })
+    expect(["evidence", "superseded", "x"].map(Hv.noteSection)).toEqual(["evidence", "superseded", "tried"])
+    expect([Hv.blankOrBusy(false, " "), Hv.blankOrBusy(true, "x"), Hv.blankOrBusy(false, "x")]).toEqual([true, true, false])
+  })
+  it("shapes the Plan work dialog", () => {
+    expect(Hv.planDialog("append", true)).toEqual({ title: "Plan work", titleField: true, epicField: true, newEpicField: true, targetLabel: "Commit" })
+    expect(Hv.planDialog("insert", true)).toEqual({ title: "Plan work", titleField: true, epicField: false, newEpicField: false, targetLabel: "Before" })
+    expect(Hv.planDialog("amend", false)).toEqual({ title: "Amend", titleField: false, epicField: false, newEpicField: false, targetLabel: "Commit" })
+  })
+})
+
+describe("chat page decisions", () => {
+  it("titles the page and chooses its surface", () => {
+    expect(Cv.documentTitle("splash")).toBe("VibeLang")
+    expect(Cv.documentTitle("chat")).toBe("VibeLang · Chat")
+    expect(Cv.mainSurface(true, "splash")).toBe("issues")
+    expect(Cv.mainSurface(false, "splash")).toBe("splash")
+    expect(Cv.mainSurface(false, "chat")).toBe("chat")
+    expect([Cv.showsWiki("/wiki/index", "ready"), Cv.showsWiki("", "loading"), Cv.showsWiki("", "error"), Cv.showsWiki("https://vibelang.sh", "ready")]).toEqual([true, true, true, false])
+  })
+  it("lays out the chat's panes", () => {
+    expect(Cv.chatLayout("chat", "https://vibelang.sh", false, "max", true, true, false, false, 2, 0)).toEqual({ paneOver: true, actionsOver: true, inert: true, wikiFirst: false, docsInline: false, empty: false, actionsInline: false })
+    expect(Cv.chatLayout("chat", "", true, "pane", false, false, false, false, 0, 0)).toEqual({ paneOver: false, actionsOver: false, inert: false, wikiFirst: true, docsInline: false, empty: false, actionsInline: true })
+    expect(Cv.chatLayout("chat", "", false, "pane", false, false, true, true, 0, 0)).toMatchObject({ inert: true, wikiFirst: false, empty: true })
+    expect(Cv.chatLayout("splash", "x", false, "max", true, true, false, false, 0, 1)).toMatchObject({ paneOver: false, actionsOver: false, docsInline: false, empty: false })
+    expect(Cv.wikiAfterEntry(true, "e1", "e1", "pane")).toBe(true)
+    expect(Cv.wikiAfterEntry(true, "e1", "e2", "pane")).toBe(false)
+    expect(Cv.wikiAfterEntry(true, "e1", "e1", "max")).toBe(false)
+    expect([Cv.latestShown(false, true, 1), Cv.latestShown(true, true, 1), Cv.latestShown(false, true, 0)]).toEqual([true, false, false])
+  })
+  it("announces and marks the tour", () => {
+    expect([Cv.tourAnnouncement(true, true), Cv.tourAnnouncement(false, true), Cv.tourAnnouncement(false, false)]).toEqual(["step", "ended", "none"])
+    expect([0, 1, 2].map((index) => Cv.progressClass(index, 2))).toEqual(["done", "current", ""])
+    expect(Cv.docsAddress("https://vibelang.sh/docs")).toBe("vibelang.sh/docs")
+    expect(Cv.docsAddress("/local")).toBe("/local")
+  })
+  it("recognizes this tab's own posts exactly as the regexp did", () => {
+    const regexp = (clientId: string, session: string) => clientId.startsWith(`${session}-`) && /^[1-9]\d*$/.test(clientId.slice(session.length + 1))
+    for (const [id, session] of [["s-1", "s"], ["s-10", "s"], ["s-01", "s"], ["s-", "s"], ["s-1a", "s"], ["t-1", "s"], ["s-١", "s"], ["ab-cd-7", "ab-cd"]]) {
+      expect(Cv.ownPost(id!, session!)).toBe(regexp(id!, session!))
+    }
+    expect(["1", "907", "0", "", "1 ", "x"].map(Cv.positiveDecimal)).toEqual([true, true, false, false, false, false])
+  })
+  it("routes the prompt's keys", () => {
+    expect(Cv.promptKey("ArrowDown", false, true)).toBe("down")
+    expect(Cv.promptKey("ArrowUp", false, true)).toBe("up")
+    expect(Cv.promptKey("ArrowDown", false, false)).toBe("none")
+    expect(Cv.promptKey("Enter", false, true)).toBe("send")
+    expect(Cv.promptKey("Enter", true, false)).toBe("none")
+  })
+})
+
+describe("issues view decisions", () => {
+  it("chooses the state icon and badges", () => {
+    expect(I.issueIcon("Running", "open", "")).toEqual({ done: false, kind: "running" })
+    expect(I.issueIcon("Done", "open", "")).toEqual({ done: true, kind: "merged" })
+    expect(I.issueIcon("", "closed", "")).toEqual({ done: true, kind: "" })
+    expect(I.issueIcon("", "open", "In review")).toEqual({ done: false, kind: "in_review" })
+    expect(I.issueIcon("Queued", "open", "Accepted")).toEqual({ done: true, kind: "queued" })
+    expect(["In review", "Accepted", "Declined"].map(I.vipBadge)).toEqual(["warning", "success", "destructive"])
+    expect([I.labelShown("bug"), I.labelShown("vibelang:task")]).toEqual([true, false])
+  })
+  it("spells ages exactly as the regexp did", () => {
+    const regexp = (absolute: boolean, age: string, long = false) => {
+      if (age === "" || absolute || age === "just now") return age
+      const parts = long ? /^([0-9]+)(d|w)$/.exec(age) : null
+      const readable = parts === null ? age : `${parts[1]} ${parts[2] === "d" ? "day" : "week"}${parts[1] === "1" ? "" : "s"}`
+      return `${readable} ago`
+    }
+    for (const age of ["", "just now", "1d", "3d", "1w", "12w", "d", "3h", "x1d", "01d", "2026-11-11"]) {
+      for (const absolute of [false, true]) for (const long of [false, true]) expect(I.ageText(absolute, age, long)).toBe(regexp(absolute, age, long))
+    }
+  })
+  it("words links, titles, screens and the connection", () => {
+    expect(I.childrenWord(1)).toBe("child")
+    expect(I.childrenWord(2)).toBe("children")
+    expect(I.issueLinkText(true, "7", "Fix")).toBe("#7 Fix")
+    expect(I.issueLinkText(false, "7", " ")).toBe("#7")
+    expect(I.issueLinkText(false, "7", "Fix")).toBe("Fix")
+    expect(["All", "Issues", "Tasks", "VIPs"].map(I.issuesTitle)).toEqual(["Issues", "Issues", "Tasks", "VIPs"])
+    expect(["specification", "roles", "detail", "vip", "new", "list"].map(I.issuesScreen)).toEqual(["specification", "roles", "detail", "form", "form", "list"])
+    expect(I.connectionControl("community", "no")).toBe("connect")
+    expect(I.connectionControl("viewer", "no")).toBe("none")
+    expect(I.connectionControl("community", "yes")).toBe("disconnect")
+    expect(I.connectionControl("community", "unknown")).toBe("none")
+  })
+  it("routes Retry, filters kinds and moves the focus", () => {
+    expect(I.retryAction(true, true, "x")).toBe("retry")
+    expect(I.retryAction(true, false, "Couldn't load comments. Retry.")).toBe("none")
+    expect(I.retryAction(false, false, "Couldn't load comments. Retry.")).toBe("read")
+    expect(I.retryAction(false, true, "x")).toBe("none")
+    expect([I.kindIncludes("Tasks", "Queued", ""), I.kindIncludes("VIPs", "", ""), I.kindIncludes("Issues", "", ""), I.kindIncludes("Issues", "", "In review"), I.kindIncludes("All", "x", "y")]).toEqual([true, false, true, false, true])
+    expect([I.kindKey(3, "ArrowRight"), I.kindKey(0, "ArrowLeft"), I.kindKey(1, "Tab")]).toEqual([0, 3, -1])
+    expect([I.rowFocus(0, 3, "k"), I.rowFocus(2, 3, "j"), I.rowFocus(1, 3, "j"), I.rowFocus(1, 3, "x")]).toEqual([0, 2, 2, -1])
+    expect([I.listBody("loading", 3), I.listBody("error", 3), I.listBody("ready", 0), I.listBody("ready", 2)]).toEqual(["loading", "error", "empty", "rows"])
+    expect([I.emptyTitle("q", "Tasks", "open"), I.emptyTitle("", "Tasks", "open"), I.emptyTitle("", "VIPs", "open"), I.emptyTitle("", "All", "closed")]).toEqual(["No matches", "No tasks committed", "No VIPs in review", "No closed issues"])
+    expect([I.openedWord(true, "closed"), I.openedWord(false, "open"), I.openedWord(false, "closed")]).toEqual(["opened", "opened", "closed"])
+  })
+  it("gates an issue page's actions", () => {
+    expect(I.detailActions("contributor", true, true, true, false, true, "", "open", "")).toEqual({ connect: false, split: true, commit: "commit", review: false, comment: true })
+    expect(I.detailActions("contributor", true, true, true, false, true, "", "closed", "Done").commit).toBe("uncommit")
+    expect(I.detailActions("contributor", true, true, true, false, true, "", "closed", "").commit).toBe("none")
+    expect(I.detailActions("maintainer", true, true, true, true, true, "In review", "open", "")).toMatchObject({ commit: "none", review: true })
+    expect(I.detailActions("community", false, true, true, true, true, "", "open", "")).toEqual({ connect: true, split: false, commit: "none", review: false, comment: false })
+    expect(["added x", "accepted y", "proposed z", "linked"].map(I.eventIcon)).toEqual(["+", "✓", "◦", "↳"])
+    expect([I.commentKey("Enter", true, false), I.commentKey("Enter", false, true), I.commentKey("Enter", false, false)]).toEqual([true, true, false])
+  })
+  it("shapes the form, the dialog and the specification", () => {
+    expect(I.issueForm(false, 3)).toEqual({ fields: "title", submit: "new", label: "New issue", draft: false, back: false })
+    expect(I.issueForm(true, 1)).toEqual({ fields: "title", submit: "continue", label: "Continue", draft: true, back: false })
+    expect(I.issueForm(true, 3)).toMatchObject({ fields: "prior", back: true })
+    expect(I.issueForm(true, 4)).toMatchObject({ fields: "review", submit: "propose", label: "Submit VIP" })
+    expect([I.stepDone(0, 2), I.stepDone(1, 2)]).toEqual([true, false])
+    expect(I.dialogTitle("commit", "7")).toBe("Commit #7 as a task")
+    expect(I.dialogTitle("split", "7")).toBe("Split #7")
+    expect(I.dialogTitle("link", "7")).toBe("Link #7")
+    expect(["commit", "split", "link"].map(I.dialogSubmit)).toEqual(["Commit", "Split", "Link"])
+    expect([I.assigneeName(" ", "will"), I.assigneeName("Will", "will")]).toEqual(["will", "Will"])
+    expect([I.cellText("", "—"), I.cellText("pass", "—")]).toEqual(["—", "pass"])
+    expect([I.revisionDisabled(false, "new", "old"), I.revisionDisabled(false, " ", "old"), I.revisionDisabled(false, "old", "old"), I.revisionDisabled(true, "new", "old")]).toEqual([false, true, true, true])
+    expect(["reset", "revision", "review"].map(I.specEventName)).toEqual(["Reset", "Revision", ""])
   })
 })

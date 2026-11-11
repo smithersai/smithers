@@ -154,9 +154,9 @@ def verify(item):
     elif ts.stem in POSTCONDITIONS:
      line=postcondition_line(text,target,POSTCONDITIONS[ts.stem])
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
-   # Every assertion in the full conversation and decide relations, and in the conversation replay that imports their
+   # Every assertion in Markdown composition, the full conversation and decide relations, and the replay importing their
    # contracts, is checked, without a symbol/position filter.
-   isolate = not is_mutation and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe'}
+   isolate = not is_mutation and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe',APP/'src/web/markdownDecision.vibe'}
    if isolate: flags.append('--isolate-assertions')
    # The isolated relations' wall limit only stops a hung solver; each obligation keeps its own solver limit.
    limit=time_limit(ts.stem,is_mutation,proof_source)

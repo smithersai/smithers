@@ -1,4 +1,5 @@
-import { failureOf, postFailure, statusLabel, sendKey, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
+import { failureOf, postFailure, statusLabel, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
+import * as V from "./viewDecision.vibe"
 export { failureOf } from "./viewDecision.vibe"
 import { issuesView, issueChatCard } from "./issuesView.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
@@ -27,15 +28,18 @@ export const INSTALL = "npm create vibelang@latest my-app"
 
 
 export function view(model: Model, h: H): Document {
+  const layout = chatLayoutOf(model)
+  const surface = V.mainSurface(model.issues?.open === true, model.surface)
+  const announce = V.tourAnnouncement(model.tour, !!model.toured)
   return {
-    title: model.surface === "splash" ? "VibeLang" : "VibeLang · Chat",
+    title: V.documentTitle(model.surface),
     body: h.div(
       [h.Class("vl-app"), h.DataAttribute("surface", model.surface), h.DataAttribute("mode", model.mode), h.DataAttribute("tour", model.tour ? "on" : "off")],
       [
         top(model, h),
-        model.issues?.open ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : model.surface === "splash" ? splash(model, h) : chat(model, h),
-        ...(model.surface === "chat" && (model.client.conversation.pane !== "" || showsWiki(model)) && model.docs === "max" ? [paneView(model, h)] : []),
-        ...(model.surface === "chat" && actionsOf(model).open && actionsOf(model).maximized ? [actionsPane(model, h)] : []),
+        surface === "issues" ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : surface === "splash" ? splash(model, h) : chat(model, h),
+        ...(layout.paneOver ? [paneView(model, h)] : []),
+        ...(layout.actionsOver ? [actionsPane(model, h)] : []),
         palette(model, h),
         ...accountOverlays(model, h),
         ...(model.tour ? control(model, h) : []),
@@ -43,7 +47,7 @@ export function view(model: Model, h: H): Document {
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
             h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
           ]),
-          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? `Agent controlling. Escape to stop. Step ${model.theatre.step} of 10: ${walkthroughStop(model.theatre.step).subtitle.split(/\s+/).slice(0, 6).join(" ")}` : model.toured ? "Tour ended. You have control." : ""]),
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [announce === "step" ? `Agent controlling. Escape to stop. Step ${model.theatre.step} of 10: ${walkthroughStop(model.theatre.step).subtitle.split(/\s+/).slice(0, 6).join(" ")}` : announce === "ended" ? "Tour ended. You have control." : ""]),
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
         ]),
       ],
@@ -141,7 +145,7 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
     h.div([h.Class("vl-glow"), h.AriaHidden(true)], []),
     h.div([h.Class("vl-theatre-block"), h.AriaHidden(true)], []),
     h.div([h.Class("vl-theatre-spotlight"), h.AriaHidden(true), h.Style({ left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })], []),
-    h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(index + 1 < step ? "done" : index + 1 === step ? "current" : ""), h.Style({ animationPlayState: model.theatre.paused ? "paused" : "running" })], []))),
+    h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(V.progressClass(index, step)), h.Style({ animationPlayState: model.theatre.paused ? "paused" : "running" })], []))),
     h.section([h.Class("vl-theatre-bar"), h.AriaLabel("Walkthrough"), h.DataAttribute("step", String(step)), h.DataAttribute("paused", String(model.theatre.paused))], [
       h.div([h.Class("vl-theatre-meta")], [`${step} of 10`]),
       h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [walkthroughStop(step).subtitle]),
@@ -161,7 +165,11 @@ function control(model: Model, h: H): ReadonlyArray<Html> {
 
 /** Docs and wiki occupy the same pane slot; maximizing moves it clear of the inactive transcript. */
 function showsWiki(model: Model): boolean {
-  return model.client.conversation.pane.startsWith("/wiki/") || model.wikiStatus === "loading" || model.wikiStatus === "error"
+  return V.showsWiki(model.client.conversation.pane, model.wikiStatus ?? "")
+}
+function chatLayoutOf(model: Model): V.ChatLayout {
+  const { conversation, pending } = model.client
+  return V.chatLayout(model.surface, conversation.pane, showsWiki(model), model.docs ?? "", actionsOf(model).open, actionsOf(model).maximized, model.tour, model.wikiAfter !== undefined && model.wikiAfter !== "", conversation.entries.length, pending.length)
 }
 function paneView(model: Model, h: H): Html {
   return showsWiki(model) ? wikiPane(model, h) : docsPane(model, h)
@@ -175,7 +183,7 @@ function docsPane(model: Model, h: H): Html {
     [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized)), h.DataAttribute("driving", String(model.tour))],
     [
       h.div([h.Class("vl-docs-bar")], [
-        h.span([h.Class("vl-docs-page")], [page.replace(/^https:\/\//, "")]),
+        h.span([h.Class("vl-docs-page")], [V.docsAddress(page)]),
         ...(model.tour ? [] : [h.button(
           [h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel(maximized ? "Minimize the docs" : "Maximize the docs"), h.OnClick(Message.ClickedDocs())],
           [paneIcon(h, maximized ? MINIMIZE : MAXIMIZE)],
@@ -193,7 +201,8 @@ function docsPane(model: Model, h: H): Html {
 
 function chat(model: Model, h: H): Html {
   const { conversation, pending } = model.client
-  return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max" || actionsOf(model).maximized)], [
+  const layout = chatLayoutOf(model)
+  return h.main([h.Class("vl-chat"), h.Inert(layout.inert)], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
       ...tourNarration(model, h),
@@ -201,15 +210,15 @@ function chat(model: Model, h: H): Html {
       ...peoplePane(model, h),
       ...accountNotice(model, h),
       h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => i.state === "open").length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
-      ...(showsWiki(model) && !model.wikiAfter && model.docs !== "max" ? [wikiPane(model, h)] : []),
-      ...(conversation.pane !== "" && !showsWiki(model) && model.docs !== "max" ? [docsPane(model, h)] : []),
-      ...(conversation.entries.length === 0 && pending.length === 0 && !showsWiki(model) ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
+      ...(layout.wikiFirst ? [wikiPane(model, h)] : []),
+      ...(layout.docsInline ? [docsPane(model, h)] : []),
+      ...(layout.empty ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
       }))] : []),
-      ...(actionsOf(model).maximized ? [] : [actionsPane(model, h)]),
+      ...(!layout.actionsInline ? [] : [actionsPane(model, h)]),
       ...actionCards(model, h),
       ...conversation.entries.flatMap(entry => [
-        ...(showsWiki(model) && model.wikiAfter === entry.id && model.docs !== "max" ? [wikiPane(model, h)] : []),
+        ...(V.wikiAfterEntry(showsWiki(model), model.wikiAfter ?? "", entry.id, model.docs ?? "") ? [wikiPane(model, h)] : []),
         entryView(entry, model, h),
       ]),
       ...pending.map((post) => pendingView(post, h)),
@@ -222,7 +231,7 @@ function chat(model: Model, h: H): Html {
         : []),
       h.div([h.Id("vl-newest"), h.AriaHidden(true)], []),
     ]),
-    ...(!model.following && hasConversation(model) && model.client.conversation.entries.length > 0 ? [h.button([h.Class("sui-msg-scroller-jump vl-latest"), h.Type("button"), h.AriaLabel("Latest"), h.OnClick(Message.ClickedLatest())], ["↓"])] : []),
+    ...(V.latestShown(model.following, hasConversation(model), model.client.conversation.entries.length) ? [h.button([h.Class("sui-msg-scroller-jump vl-latest"), h.Type("button"), h.AriaLabel("Latest"), h.OnClick(Message.ClickedLatest())], ["↓"])] : []),
     composer(model, h),
   ])
 }
@@ -269,8 +278,7 @@ function pendingView(post: Pending, h: H): Html {
 
 /** Names on the wire remain neutral; only this tab calls its own posts You. */
 function ownPost(clientId: string, session: string): boolean {
-  const prefix = `${session}-`
-  return clientId.startsWith(prefix) && /^[1-9]\d*$/.test(clientId.slice(prefix.length))
+  return V.ownPost(clientId, session)
 }
 
 
@@ -284,11 +292,10 @@ function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): H
     h.AriaLabel("Message"),
     h.Value(model.draft),
     h.OnInput((value) => Message.UpdatedDraft({ value })),
-    h.OnKeyDownPreventDefault((key, modifiers) =>
-      key === "ArrowDown" && completions(model).length > 0 ? Option.some(Message.MovedSlash({ delta: 1 })) :
-      key === "ArrowUp" && completions(model).length > 0 ? Option.some(Message.MovedSlash({ delta: -1 })) :
-      sendKey(key, modifiers.shiftKey) ? Option.some(Message.SubmittedDraft()) : Option.none()
-    ),
+    h.OnKeyDownPreventDefault((key, modifiers) => {
+      const action = V.promptKey(key, modifiers.shiftKey, completions(model).length > 0)
+      return action === "down" ? Option.some(Message.MovedSlash({ delta: 1 })) : action === "up" ? Option.some(Message.MovedSlash({ delta: -1 })) : action === "send" ? Option.some(Message.SubmittedDraft()) : Option.none()
+    }),
   ])
 }
 

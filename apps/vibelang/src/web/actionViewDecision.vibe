@@ -133,6 +133,7 @@ export interface ActionPane {
   readonly bar: string
   readonly primary: "none" | "cancel" | "rerun" | "run"
   readonly body: "loading" | "error" | "trace" | "list"
+  readonly notice: boolean
   readonly input: "none" | "text" | "json"
   readonly layout: "grid" | "runs" | "entries"
 }
@@ -141,7 +142,9 @@ export interface ActionPane {
 //@ ensures \result.bar == (hasRun ? actionTitle(runFlow) + " #" + runId : selected ? selectedTitle : "Actions")
 //@ ensures !(permitted || (hasRun && runFlow == "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState) && canPost)) ==> \result.primary == "none"
 //@ ensures (permitted || (hasRun && runFlow == "vibelang/Reply" && runId.endsWith("-reply") && liveRun(runState) && canPost)) ==> \result.primary == (hasRun && liveRun(runState) ? "cancel" : hasRun ? "rerun" : "run")
-//@ ensures \result.body == (loading ? "loading" : error != "" ? "error" : hasRun ? "trace" : "list")
+//@ ensures \result.body == (loading ? "loading" : error == "Couldn't load runs" ? "error" : hasRun ? "trace" : "list")
+//@ ensures \result.notice == (!loading && error != "" && error != "Couldn't load runs")
+//@ ensures \result.notice ==> (\result.body == "trace" || \result.body == "list")
 //@ ensures \result.input == (selected && permitted && (input == "text" || input == "json") ? (input == "json" ? "json" : "text") : "none")
 //@ ensures \result.layout == (maximized ? "grid" : selected ? "runs" : "entries")
 export function actionPane(hasRun: boolean, runFlow: string, runId: string, runState: string, selected: boolean, selectedTitle: string, permitted: boolean, canPost: boolean, loading: boolean, error: string, input: string, maximized: boolean): ActionPane {
@@ -150,7 +153,8 @@ export function actionPane(hasRun: boolean, runFlow: string, runId: string, runS
     back: hasRun ? actionTitle(runFlow) : selected ? "Actions" : "",
     bar: hasRun ? actionTitle(runFlow) + " #" + runId : selected ? selectedTitle : "Actions",
     primary: !(permitted || cancellingReply) ? "none" : hasRun && liveRun(runState) ? "cancel" : hasRun ? "rerun" : "run",
-    body: loading ? "loading" : error !== "" ? "error" : hasRun ? "trace" : "list",
+    body: loading ? "loading" : error === "Couldn't load runs" ? "error" : hasRun ? "trace" : "list",
+    notice: !loading && error !== "" && error !== "Couldn't load runs",
     input: selected && permitted && (input === "text" || input === "json") ? (input === "json" ? "json" : "text") : "none",
     layout: maximized ? "grid" : selected ? "runs" : "entries",
   }

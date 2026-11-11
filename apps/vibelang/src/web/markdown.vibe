@@ -1,6 +1,7 @@
 // The little Markdown the agent writes: paragraphs, fenced code blocks and inline code. Text becomes text nodes, never
 // HTML, so a reply can't inject markup.
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { escapeHtml, inlinePieces, markdownClass } from "./markdownDecision.vibe"
 
 /** One block of a reply: prose, or a fenced code block with its language. */
 export type Block =
@@ -42,7 +43,7 @@ export function blocks(text: string): ReadonlyArray<Block> {
 
 /** A paragraph's text split at backticks: even pieces are text, odd ones inline code. */
 export function inline(text: string): ReadonlyArray<{ readonly code: boolean; readonly text: string }> {
-  return text.split("`").map((piece, index) => ({ code: index % 2 === 1, text: piece })).filter((piece) => piece.text !== "")
+  return inlinePieces(text)
 }
 
 /** A safe HTML tree: Markdown never supplies a tag or an HTML attribute. */
@@ -149,12 +150,7 @@ export function compile(text: string): ReadonlyArray<MarkdownNode> {
 
 /** Smithers' actual Markdown/table classes, shared by live chat and the build-time wiki. */
 function classOf(tag: MarkdownNode["tag"], inPre = false): string {
-  if (/^h[1-6]$/.test(tag)) return `sui-md-heading sui-md-${tag}`
-  if (tag === "a") return "sui-md-link"
-  if (tag === "table") return "sui-table sui-md-table"
-  if (tag === "ul" || tag === "ol") return "sui-md-list"
-  if (tag === "code" && !inPre) return "sui-md-inline-code"
-  return `sui-md-${tag}`
+  return markdownClass(tag, inPre)
 }
 
 /** The reply as Foldkit nodes, using the same compiler as the build-time wiki renderer. */
@@ -166,9 +162,7 @@ export function render<Message>(h: HtmlBuilder<Message>, text: string): Readonly
   return compile(text).map(item => draw(item) as Html)
 }
 
-function escape(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-}
+const escape = escapeHtml
 
 /** Build-time HTML. Link resolution receives the file containing the link, so relative wiki links remain stable. */
 export function toHtml(text: string, resolve: (href: string) => string): string {

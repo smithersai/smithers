@@ -5,6 +5,7 @@
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { historyBadge, historyRefusal } from "../history/flowMachine.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
+import * as V from "./historyViewDecision.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
 import { clipQuery } from "../history/pageDecision.vibe"
@@ -22,7 +23,7 @@ export function view(model: HistoryModel, h: H): Document {
   const commit = shown?.commit ?? undefined
   const epic = model.outline.epics.find((each) => each.id === model.hash)
   return {
-    title: commit !== undefined ? `${commit.title} · History` : epic !== undefined ? `${epic.title} · History` : "History · VibeLang",
+    title: V.historyTitle(commit !== undefined, commit?.title ?? "", epic !== undefined, epic?.title ?? ""),
     body: h.div([h.Class("vl-app"), h.DataAttribute("surface", "history"), h.DataAttribute("mode", model.mode), h.DataAttribute("role", model.role)], [
       top(model, h),
       h.section([h.Class("vl-docs mh-pane"), h.DataAttribute("maximized", "true"), h.AriaLabel("History")], [
@@ -44,20 +45,21 @@ export function view(model: HistoryModel, h: H): Document {
 const COMMIT_HASH = /^m\d+$/
 
 function body(model: HistoryModel, shown: CommitPage | undefined, epic: EpicCount | undefined, h: H): ReadonlyArray<Html> {
-  if (model.status === "loading") return loading(h)
-  if (model.status === "failed") {
+  const which = V.historyBody(model.status, model.outline.epics.length, shown?.commit != null, COMMIT_HASH.test(model.hash), shown !== undefined, epic !== undefined, model.error !== "")
+  if (which === "loading") return loading(h)
+  if (which === "failed") {
     return [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [
       h.div([h.Class("sui-alert-title")], ["Couldn't load the history."]),
       h.div([], [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.ClickedRetry())], ["Retry"])]),
     ])]
   }
-  if (model.outline.epics.length === 0) {
+  if (which === "empty") {
     return [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], ["No mythical history yet."])])]
   }
-  if (shown?.commit != null) return commitPage(model, shown.commit, shown, h)
+  if (which === "commit" && shown?.commit != null) return commitPage(model, shown.commit, shown, h)
   // A commit read that failed says so, with the way back, instead of a skeleton that never fills.
-  if (COMMIT_HASH.test(model.hash) && shown === undefined) return model.error === "" ? loading(h) : [crumbs(h, [["History", ""]], model.hash), ...failure(model, h)]
-  if (epic !== undefined) return epicPage(model, epic, h)
+  if (which === "commit-failed") return [crumbs(h, [["History", ""]], model.hash), ...failure(model, h)]
+  if (which === "epic" && epic !== undefined) return epicPage(model, epic, h)
   return list(model, h)
 }
 
@@ -90,7 +92,7 @@ function crumbs(h: H, trail: ReadonlyArray<readonly [string, string]>, current: 
     h.ol([h.Class("sui-breadcrumbs-list")], [
       ...trail.map(([label, hash]) =>
         h.li([h.Class("sui-breadcrumbs-item")], [
-          h.a([h.Class("sui-breadcrumbs-link"), h.Href(`#${hash}`)], [label.trim() === "" ? "Epic" : label]),
+          h.a([h.Class("sui-breadcrumbs-link"), h.Href(`#${hash}`)], [V.orFallback(label, "Epic")]),
           h.span([h.Class("sui-breadcrumbs-separator"), h.AriaHidden(true)], ["/"]),
         ])
       ),
@@ -104,11 +106,11 @@ function crumbs(h: H, trail: ReadonlyArray<readonly [string, string]>, current: 
 function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
   const { outline } = model
   const work = outline.open
-  const filtering = model.filter.trim() !== ""
+  const shown = V.historyList(model.filter, model.matches.query, clipQuery(model.filter, MAX_QUERY), outline.main, work.length)
   return [
     h.div([h.Class("mh-toolbar")], [
       crumbs(h, [["vibelang", ""]], "History"),
-      ...(outline.main.trim() === "" ? [] : [h.span([h.Class("sui-badge sui-badge-secondary mh-mono"), h.Title("Folded through")], [
+      ...(!shown.folded ? [] : [h.span([h.Class("sui-badge sui-badge-secondary mh-mono"), h.Title("Folded through")], [
         h.a([h.Href(`${REPOSITORY_URL}/commit/${outline.main}`)], [outline.main]),
       ])]),
       ...(model.exported === "" ? [] : [h.span([h.Class("sui-badge sui-badge-success mh-mono"), h.Title("Exported")], [`mythical ${model.exported.slice(0, 7)}`])]),
@@ -129,13 +131,13 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
       ]),
     ]),
     ...failure(model, h),
-    filtering
+    shown.filtering
       ? h.ul(
-        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(model.matches.query !== clipQuery(model.filter, MAX_QUERY))],
-        model.matches.query === clipQuery(model.filter, MAX_QUERY) ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
+        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(!shown.matchesShown)],
+        shown.matchesShown ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
       )
       : h.div([h.Class("mh-epics")], [
-        ...(work.length === 0 ? [] : [
+        ...(!shown.planned ? [] : [
           h.div([h.Class("sui-compact-group"), h.DataAttribute("open", "true")], [
             h.div([h.Class("sui-compact-group-trigger")], [`Planned · ${work.length}`]),
             h.div([h.Class("sui-compact-group-content")], [
@@ -154,7 +156,7 @@ function commitList(model: HistoryModel, epic: EpicCount, h: H): ReadonlyArray<H
   if (page === undefined) return [h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title), h.AriaBusy(true)], [])]
   return [
     h.ul([h.Class("mh-commits"), h.AriaLabel(epic.title)], page.commits.map((commit) => row(model, commit, h, false))),
-    ...(page.commits.length < page.total
+    ...(V.showMore(page.commits.length, page.total)
       ? [h.button([h.Class("sui-button sui-button-sm mh-more"), h.Type("button"), h.OnClick(HistoryMessage.ClickedMore({ id: epic.id }))], ["Show more"])]
       : []),
   ]
@@ -167,7 +169,7 @@ function epicCard(model: HistoryModel, epic: EpicCount, h: H): Html {
     h.div(
       [
         h.Class("sui-collapsible-header"), h.Role("button"), h.Tabindex(0), h.AriaExpanded(open), h.OnClick(toggle),
-        h.OnKeyDown((key) => key === "Enter" || key === " " ? toggle : HistoryMessage.Settled()),
+        h.OnKeyDown((key) => V.toggleKey(key) ? toggle : HistoryMessage.Settled()),
       ],
       [
         h.div([h.Class("sui-collapsible-heading")], [
@@ -189,14 +191,15 @@ function epicCard(model: HistoryModel, epic: EpicCount, h: H): Html {
 /** A commit's row: its state when not landed, its title, a note mark, how many real commits it folds, its id. */
 function row(model: HistoryModel, commit: Head, h: H, withEpic: boolean): Html {
   const epic = model.outline.epics.find((each) => each.id === commit.epic)?.title ?? ""
+  const shown = V.commitRow(commit.state, commit.notes, commit.folds)
   return h.li([], [
-    h.a([h.Class("mh-commit"), h.AriaLabel(commit.title.trim() || commit.id.trim() || "Change"), h.Href(`#${commit.id}`), h.DataAttribute("planned", commit.state === "landed" ? "false" : "true")], [
-      ...(commit.state === "landed" ? [] : [h.span([h.Class(`sui-badge ${badgeOf(commit.state)} mh-plane`)], [commit.state])]),
+    h.a([h.Class("mh-commit"), h.AriaLabel(V.commitLabel(commit.title, commit.id)), h.Href(`#${commit.id}`), h.DataAttribute("planned", shown.planned ? "true" : "false")], [
+      ...(!shown.planned ? [] : [h.span([h.Class(`sui-badge ${badgeOf(commit.state)} mh-plane`)], [commit.state])]),
       h.span([h.Class("mh-commit-msg")], [commit.title]),
       h.span([h.Class("mh-commit-meta")], [
         ...(withEpic ? [h.span([], [epic])] : []),
-        ...(commit.notes === 0 ? [] : [h.span([h.Class("mh-note-dot"), h.Title("note"), h.AriaLabel("note")], ["◈"])]),
-        ...(commit.folds === 0 ? [] : [h.span([h.Class("mh-foldcount")], [`folds ${commit.folds}`])]),
+        ...(!shown.noted ? [] : [h.span([h.Class("mh-note-dot"), h.Title("note"), h.AriaLabel("note")], ["◈"])]),
+        ...(!shown.folds ? [] : [h.span([h.Class("mh-foldcount")], [`folds ${commit.folds}`])]),
         h.span([h.Class("mh-mono")], [commit.id]),
       ]),
     ]),
@@ -238,6 +241,7 @@ function epicPage(model: HistoryModel, epic: EpicCount, h: H): ReadonlyArray<Htm
 function commitPage(model: HistoryModel, commit: Commit, page: CommitPage, h: H): ReadonlyArray<Html> {
   const epic = model.outline.epics.find((each) => each.id === commit.epic)
   const real = page.real
+  const controls = V.commitControls(allowed(model.role, "maintainer"), commit.state, commit.task, commit.lane)
   const section = (label: string, items: ReadonlyArray<Html>) =>
     h.div([], [
       h.div([h.Class("sui-label")], [label]),
@@ -254,30 +258,23 @@ function commitPage(model: HistoryModel, commit: Commit, page: CommitPage, h: H)
       h.div([h.Class("mh-meta")], [
         h.span([h.Class(`sui-badge ${badgeOf(commit.state)}`)], [commit.state]),
         h.span([h.Class("sui-commit-hash")], [commit.id]),
-        ...(commit.task === "" ? [] : [h.span([], [commit.task])]),
-        ...(commit.lane === "" ? [] : [h.span([h.Class("mh-mono")], [commit.lane])]),
+        ...(!controls.task ? [] : [h.span([], [commit.task])]),
+        ...(!controls.lane ? [] : [h.span([h.Class("mh-mono")], [commit.lane])]),
         h.span([h.Class("mh-toolbar-end")], [
-          ...(allowed(model.role, "maintainer") && commit.state !== "landed"
-            ? [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "insert", target: commit.id }))], ["Insert before…"])]
-            : []),
-          ...(allowed(model.role, "maintainer") && commit.state === "landed"
-            ? [
-              h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "insert", target: commit.id }))], ["Insert before…"]),
-              h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "amend", target: commit.id }))], ["Amend…"]),
-            ]
-            : []),
+          ...(!controls.insert ? [] : [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "insert", target: commit.id }))], ["Insert before…"])]),
+          ...(!controls.amend ? [] : [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.OnClick(HistoryMessage.OpenedPlan({ how: "amend", target: commit.id }))], ["Amend…"])]),
         ]),
       ]),
     ]),
     ...failure(model, h),
-    ...(commit.state === "landed" && commit.task === "" ? [] : [timeline(model, commit, h)]),
+    ...(!controls.timeline ? [] : [timeline(model, commit, h)]),
     h.div([h.Class("sui-card")], [
       h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Note"])]),
       h.div([h.Class("sui-card-content mh-note-sections")], [
         section("Tried", notes("tried")),
         section("Evidence", notes("evidence")),
         section("Folded", real.map((each) =>
-          h.li([], [h.a([h.Href(`${REPOSITORY_URL}/commit/${each.sha}`)], [each.sha.trim() === "" ? "Commit" : each.sha]), ` “${each.title}”`])
+          h.li([], [h.a([h.Href(`${REPOSITORY_URL}/commit/${each.sha}`)], [V.orFallback(each.sha, "Commit")]), ` “${each.title}”`])
         )),
         section("Superseded", notes("superseded")),
         ...(allowed(model.role, "contributor") ? [noteForm(model, commit, h)] : []),
@@ -291,25 +288,26 @@ function commitPage(model: HistoryModel, commit: Commit, page: CommitPage, h: H)
 
 /** A commit's life on the stack: planned, worked in a lane, approved by a person, landed on main. */
 function timeline(model: HistoryModel, commit: Commit, h: H): Html {
-  const order = ["planned", "working", "approved", "landed"]
-  const at = order.indexOf(commit.state)
+  const at = V.timelineAt(commit.state)
+  const shown = V.commitControls(allowed(model.role, "maintainer"), commit.state, commit.task, commit.lane)
+  const actions = V.timelineActions(commit.state, allowed(model.role, "contributor"), allowed(model.role, "maintainer"), model.busy, model.lane)
   const step = (index: number, title: ReadonlyArray<Html | string>, action: ReadonlyArray<Html>) =>
-    h.li([h.Class("sui-activity-item"), h.DataAttribute("status-class", index < at ? "ok" : index === at ? "run" : "muted")], [
-      h.span([h.Class("sui-activity-marker"), h.AriaHidden(true)], [index < at ? "✓" : index === at ? "●" : ""]),
+    h.li([h.Class("sui-activity-item"), h.DataAttribute("status-class", V.stepStatus(index, at))], [
+      h.span([h.Class("sui-activity-marker"), h.AriaHidden(true)], [V.stepMarker(V.stepStatus(index, at))]),
       h.div([h.Class("sui-activity-body")], [h.div([h.Class("sui-activity-title")], title), ...(action.length === 0 ? [] : [h.div([h.Class("mh-step-action")], action)])]),
     ])
-  const startForm = commit.state === "planned" && allowed(model.role, "contributor")
+  const startForm = actions.start
     ? [h.form([h.Class("mh-inline"), h.OnSubmit(HistoryMessage.ClickedStart({ id: commit.id }))], [
       h.input([h.Class("sui-input"), h.Id("mh-lane"), h.Placeholder("Lane"), h.AriaLabel("Lane"), h.Value(model.lane), h.OnInput((value) => HistoryMessage.UpdatedLane({ value }))]),
-      h.button([h.Class("sui-button sui-button-sm"), h.Type("submit"), h.Disabled(model.busy || model.lane.trim() === "")], ["Start"]),
+      h.button([h.Class("sui-button sui-button-sm"), h.Type("submit"), h.Disabled(actions.startDisabled)], ["Start"]),
     ])]
     : []
-  const approve = commit.state === "working" && allowed(model.role, "maintainer")
+  const approve = actions.approve
     ? [h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(model.busy), h.OnClick(HistoryMessage.ClickedApprove({ id: commit.id }))], ["Approve"])]
     : []
   return h.ul([h.Class("sui-activity-timeline"), h.AriaLabel("Progress")], [
-    step(0, ["Planned", ...(commit.task === "" ? [] : [` · ${commit.task}`])], startForm),
-    step(1, ["Working", ...(commit.lane === "" ? [] : [" · ", h.code([h.Class("sui-md-inline-code")], [commit.lane])])], approve),
+    step(0, ["Planned", ...(!shown.task ? [] : [` · ${commit.task}`])], startForm),
+    step(1, ["Working", ...(!shown.lane ? [] : [" · ", h.code([h.Class("sui-md-inline-code")], [commit.lane])])], approve),
     step(2, ["Approved"], []),
     step(3, ["Landed on main"], []),
   ])
@@ -317,13 +315,13 @@ function timeline(model: HistoryModel, commit: Commit, h: H): Html {
 
 function noteForm(model: HistoryModel, commit: Commit, h: H): Html {
   return h.form([h.Class("mh-inline"), h.OnSubmit(HistoryMessage.SubmittedNote({ id: commit.id }))], [
-    h.select([h.Class("sui-input mh-section"), h.AriaLabel("Section"), h.OnChange((value) => HistoryMessage.UpdatedNoteSection({ value: value === "evidence" ? "evidence" : value === "superseded" ? "superseded" : "tried" }))], [
+    h.select([h.Class("sui-input mh-section"), h.AriaLabel("Section"), h.OnChange((value) => HistoryMessage.UpdatedNoteSection({ value: V.noteSection(value) }))], [
       h.option([h.Value("tried"), h.Selected(model.noteSection === "tried")], ["Tried"]),
       h.option([h.Value("evidence"), h.Selected(model.noteSection === "evidence")], ["Evidence"]),
       h.option([h.Value("superseded"), h.Selected(model.noteSection === "superseded")], ["Superseded"]),
     ]),
     h.input([h.Class("sui-input"), h.Id("mh-note"), h.Placeholder("Note"), h.AriaLabel("Note"), h.Value(model.noteText), h.OnInput((value) => HistoryMessage.UpdatedNote({ value }))]),
-    h.button([h.Class("sui-button sui-button-sm"), h.Type("submit"), h.Disabled(model.busy || model.noteText.trim() === "")], ["Add note"]),
+    h.button([h.Class("sui-button sui-button-sm"), h.Type("submit"), h.Disabled(V.blankOrBusy(model.busy, model.noteText))], ["Add note"]),
   ])
 }
 
@@ -331,29 +329,30 @@ function noteForm(model: HistoryModel, commit: Commit, h: H): Html {
 
 function plan(model: HistoryModel, h: H): Html {
   const { form } = model
-  const title = form.how === "amend" ? "Amend" : "Plan work"
+  const dialog = V.planDialog(form.how, form.epic === NEW_EPIC)
+  const title = dialog.title
   const shown = shownCommit(model)?.commit
   const target = shown?.id === form.target ? shown : undefined
   return h.dialog([h.Id(PLAN_ID), h.Class("sui-dialog-content mh-dialog"), h.AriaLabel(title), h.AriaModal(true), h.DataAttribute("state", model.dialog ? "open" : "closed"), h.OnCancelPreventDefault(HistoryMessage.ClosedPlan())], [
     h.form([h.OnSubmit(HistoryMessage.SubmittedPlan())], [
       h.button([h.Class("sui-dialog-close"), h.Type("button"), h.AriaLabel("Close"), h.OnClick(HistoryMessage.ClosedPlan())], ["×"]),
       h.div([h.Class("sui-dialog-header")], [h.span([h.Class("sui-dialog-title")], [title])]),
-      ...(form.how === "amend" ? [] : [
+      ...(!dialog.titleField ? [] : [
         h.div([h.Class("sui-field")], [
           h.label([h.Class("sui-label"), h.For("mh-plan-title")], ["Commit"]),
           h.input([h.Class("sui-input"), h.Id("mh-plan-title"), h.Value(form.title), h.OnInput((value) => HistoryMessage.UpdatedForm({ field: "title", value }))]),
         ]),
       ]),
-      ...(form.how === "append"
+      ...(dialog.epicField
         ? [
           h.div([h.Class("sui-field")], [
             h.label([h.Class("sui-label"), h.For("mh-plan-epic")], ["Epic"]),
             h.select([h.Class("sui-input"), h.Id("mh-plan-epic"), h.OnChange((value) => HistoryMessage.UpdatedForm({ field: "epic", value }))], [
-              ...model.outline.epics.map((epic) => h.option([h.Value(epic.id), h.Selected(form.epic === epic.id)], [epic.title.trim() === "" ? "Epic" : epic.title])),
+              ...model.outline.epics.map((epic) => h.option([h.Value(epic.id), h.Selected(form.epic === epic.id)], [V.orFallback(epic.title, "Epic")])),
               h.option([h.Value(NEW_EPIC), h.Selected(form.epic === NEW_EPIC)], ["New epic…"]),
             ]),
           ]),
-          ...(form.epic === NEW_EPIC
+          ...(dialog.newEpicField
             ? [h.div([h.Class("sui-field")], [
               h.label([h.Class("sui-label"), h.For("mh-plan-new-epic")], ["New epic"]),
               h.input([h.Class("sui-input"), h.Id("mh-plan-new-epic"), h.Value(form.newEpic), h.OnInput((value) => HistoryMessage.UpdatedForm({ field: "newEpic", value }))]),
@@ -361,7 +360,7 @@ function plan(model: HistoryModel, h: H): Html {
             : []),
         ]
         : [h.div([h.Class("sui-field")], [
-          h.span([h.Class("sui-label")], [form.how === "insert" ? "Before" : "Commit"]),
+          h.span([h.Class("sui-label")], [dialog.targetLabel]),
           h.span([h.Class("mh-mono")], [target === undefined ? form.target : `${target.id} ${target.title}`]),
         ])]),
       h.div([h.Class("sui-field")], [

@@ -66,13 +66,13 @@ export function actionsPane(model: Model, h: H): Html {
     ]),
     h.div([h.Class("vl-act-body")], pane.body === "loading" ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : pane.body === "error" ? [
       h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], ["Couldn't load runs", h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.RetriedActions())], ["Retry"])]),
-    ] : pane.body === "trace" && run ? [trace(h, run, state.now, state.step)] : [
+    ] : [...(pane.notice ? [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [state.error])] : []), ...(pane.body === "trace" && run ? [trace(h, run, state.now, state.step)] : [
       ...(pane.input === "none" ? [] : [h.textarea([h.Class("sui-input"), h.AriaLabel("Action input"), h.Placeholder(pane.input === "json" ? "{}" : "Message"), h.Value(state.input), h.OnInput((value) => Message.UpdatedActionInput({ value }))])]),
       pane.layout === "grid" ? h.div([h.Class("vl-act-grid")], [
         h.div([h.Class("vl-act-side")], state.entries.map((entry) => actionRow(h, entry, model))),
         selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], []),
       ]) : pane.layout === "runs" && selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], state.entries.map((entry) => actionRow(h, entry, model))),
-    ]),
+    ])]),
   ])
 }
 export function actionCards(model: Model, h: H): ReadonlyArray<Html> {
