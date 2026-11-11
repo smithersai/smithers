@@ -128,6 +128,17 @@ const banned = [
   { pattern: /\bmakeDispatcher\b/, name: "NodeHttpClient.makeDispatcher" }
 ]
 
+/** The name of a member an object literal, class or interface defines: a declaration, not a read. */
+const declaresMember = (node) =>
+  (ts.isPropertyAssignment(node.parent)
+    || ts.isMethodDeclaration(node.parent)
+    || ts.isPropertyDeclaration(node.parent)
+    || ts.isPropertySignature(node.parent)
+    || ts.isMethodSignature(node.parent)
+    || ts.isGetAccessorDeclaration(node.parent)
+    || ts.isSetAccessorDeclaration(node.parent))
+  && node.parent.name === node
+
 /** A string whose whole text is the name: a property key held in a variable. */
 const exact = (pattern) => new RegExp(`^${pattern.source.replaceAll("\\b", "")}$`)
 
@@ -147,6 +158,11 @@ const scriptKind = (path) =>
  * prose like a comment. The raw-text pre-check also passes any file holding a
  * `\u` escape, so an escaped identifier reaches the parser.
  *
+ * A name that declares a member is not a use: Effect's `Scheduler` interface
+ * has its own `makeDispatcher`, and an object literal, class or interface that
+ * defines it reads nothing from `@effect/platform-node`. Reading the name,
+ * destructuring it or passing it on still fails.
+ *
  * Known limit: the check reads single literals, not constant folding, so a key
  * assembled at runtime, `NodeHttpClient["layer" + "Undici"]` or a template with
  * a substitution, passes. Review catches that spelling; this gate does not.
@@ -156,7 +172,7 @@ export const bannedUses = (path, content) => {
   const file = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, scriptKind(path))
   const found = []
   const visit = (node) => {
-    const named = ts.isIdentifier(node)
+    const named = (ts.isIdentifier(node) && !declaresMember(node))
       || (ts.isStringLiteralLike(node) && ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node)
     const key = ts.isStringLiteralLike(node) && !named
     if (named || key) {
@@ -249,6 +265,21 @@ describe("the egress gate's own reading", () => {
     assert.deepEqual(bannedUses("a.ts", "Layer.provide(NodeHttpClient.layer\\u0055ndici)\n"), ["1 NodeHttpClient.layerUndici"])
     const vibe = "const HttpLive = Layer.effect(Http) {\n  return NodeHttpClient.layerUndici\n}\n"
     assert.deepEqual(bannedUses("a.vibe", vibe), ["2 NodeHttpClient.layerUndici"])
+  })
+
+  it("passes a member that only shares the name, and still fails a read, a destructure or a pass-through", () => {
+    // Effect's Scheduler shape, as packages/fuzz/src/internal/fuzz/simulation.ts implements it.
+    const scheduler = "const s: Scheduler.Scheduler = {\n  executionMode: \"sync\",\n  makeDispatcher: () => ({ scheduleTask, flush })\n}\n"
+    assert.deepEqual(bannedUses("a.ts", scheduler), [])
+    assert.deepEqual(bannedUses("a.ts", "class S implements Scheduler {\n  makeDispatcher() { return d }\n  get layerUndici() { return 1 }\n}\n"), [])
+    assert.deepEqual(bannedUses("a.ts", "interface S { makeDispatcher(): D; layerUndici: L }\n"), [])
+    assert.deepEqual(bannedUses("a.ts", "const { makeDispatcher } = NodeHttpClient\n"), ["1 NodeHttpClient.makeDispatcher"])
+    assert.deepEqual(bannedUses("a.ts", "const x = { makeDispatcher }\n"), ["1 NodeHttpClient.makeDispatcher"])
+    assert.deepEqual(bannedUses("a.ts", "const x = { layer: layerUndici }\n"), ["1 NodeHttpClient.layerUndici"])
+    assert.deepEqual(
+      bannedUses("a.ts", "const x = { makeDispatcher: NodeHttpClient.makeDispatcher }\n"),
+      ["1 NodeHttpClient.makeDispatcher"]
+    )
   })
 
   it("reads a symlinked source file and a symlinked directory, and survives a link loop", () => {

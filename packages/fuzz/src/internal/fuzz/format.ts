@@ -103,8 +103,7 @@ export function decodeEntry(source: string): Entry {
   if (lines[0] !== header && lines[0] !== legacyHeader) throw new Error(`expected "${header}" on the first line`)
   const legacy = lines[0] === legacyHeader
   const fields = new Map<string, string>()
-  for (let index = 1; index < lines.length; index++) {
-    const line = lines[index]
+  for (const line of lines.slice(1)) {
     if (line === "" || line.startsWith("#")) continue
     const space = line.indexOf(" ")
     const name = space === -1 ? line : line.slice(0, space)

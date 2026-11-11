@@ -63,7 +63,7 @@ describe("FuzzSimulation", () => {
           interleavings.add(log.join(", "))
         }
         assert.strictEqual(interleavings.size, 1)
-        assert.deepStrictEqual([...interleavings][0].split(", ").slice(0, 2), ["A reads 100", "B reads 100"])
+        assert.deepStrictEqual([...interleavings][0]!.split(", ").slice(0, 2), ["A reads 100", "B reads 100"])
 
         // The schedule shrinks toward cooperative scheduling: most words are zero.
         const schedule = Format.decodeReplay(finding.replay!).input.schedule

@@ -2031,6 +2031,125 @@
       "development": null,
       "published": null,
       "reason": "Closed implementation paths for the public entrypoint added in c0b1b3651d05."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./RunnerJobs",
+      "development": "./src/RunnerJobs.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/RunnerJobs.d.ts",
+          "default": "./dist/esm/RunnerJobs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunnerJobs.d.ts",
+          "default": "./dist/cjs/RunnerJobs.js"
+        }
+      },
+      "reason": "A local runner job store for a flow host in another process on the runner machine: smthrs runner serve owns the store, and the flow host drives ExternalAgent steps through request files (8dcf56b79aeb)."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./QuickJSWorkerd",
+      "development": "./src/QuickJSWorkerd.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/QuickJSWorkerd.d.ts",
+          "default": "./dist/esm/QuickJSWorkerd.js"
+        },
+        "require": {
+          "types": "./dist/cjs/QuickJSWorkerd.d.ts",
+          "default": "./dist/cjs/QuickJSWorkerd.js"
+        }
+      },
+      "reason": "The QuickJS build for Cloudflare workerd, which refuses to compile WebAssembly from bytes: the Worker bundler uploads the separate-file .wasm as a CompiledWasm module. A subpath of its own so no browser or Node bundle meets the .wasm import (2dbaaf8edacf)."
+    },
+    {
+      "name": "@smthrs/triggers",
+      "subpath": "./On",
+      "development": "./src/On.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/On.d.ts",
+          "default": "./dist/esm/On.js"
+        },
+        "require": {
+          "types": "./dist/cjs/On.d.ts",
+          "default": "./dist/cjs/On.js"
+        }
+      },
+      "reason": "Ruling FLOW-10 declaration surface: the events FACTORY.ts binds repository flows to (push, pullRequest, manual, cron), as plain data the factory projection writes into factory.json (afdfa891f567)."
+    },
+    {
+      "name": "@smthrs/canonical",
+      "subpath": "./sortCollections",
+      "development": "./src/sortCollections.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/sortCollections.d.ts",
+          "default": "./dist/esm/sortCollections.js"
+        },
+        "require": {
+          "types": "./dist/cjs/sortCollections.d.ts",
+          "default": "./dist/cjs/sortCollections.js"
+        }
+      },
+      "reason": "Orders every Set and Map entry by a stable rank at every depth, so equal collections encode to equal bytes before Canonical and SHA-256 derive a durable identity (VIP-44 row 1, f4b973ab2789)."
+    },
+    {
+      "name": "@smthrs/jj",
+      "subpath": "./Repository",
+      "development": "./src/Repository.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Repository.d.ts",
+          "default": "./dist/esm/Repository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Repository.d.ts",
+          "default": "./dist/cjs/Repository.js"
+        }
+      },
+      "reason": "A git repository objects and refs as a host capability beside Jj: content-addressed blob, tree and commit writes and atomic multi-ref compare-and-swap, answered by a hosting adapter or the memory adapter (4833b8c0d8bd)."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./HttpSandbox",
+      "development": "./src/HttpSandbox/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/HttpSandbox/index.d.ts",
+          "default": "./dist/esm/HttpSandbox/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpSandbox/index.d.ts",
+          "default": "./dist/cjs/HttpSandbox/index.js"
+        }
+      },
+      "reason": "HttpSandbox.serve mounts a retained Sandbox.Provider as a web-standard Request/Response handler, and HttpSandbox.make is the provider a host reaches it with by URL, token and HttpClient (40da8070201b)."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./HttpSandbox/*",
+      "development": null,
+      "published": null,
+      "reason": "Closed implementation paths for the public entrypoint added in 40da8070201b."
+    },
+    {
+      "name": "@smthrs/testing",
+      "subpath": "./HttpRecording",
+      "development": "./src/HttpRecording.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/HttpRecording.d.ts",
+          "default": "./dist/esm/HttpRecording.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpRecording.d.ts",
+          "default": "./dist/cjs/HttpRecording.js"
+        }
+      },
+      "reason": "Records, replays or passes through an HttpClient so a test pins provider traffic it owns end to end without a live network (9a22e2b64b15)."
     }
   ],
   "removed": [
@@ -2121,11 +2240,6 @@
     },
     {
       "name": "@smthrs/integrations",
-      "subpath": "./telegram",
-      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
-    },
-    {
-      "name": "@smthrs/integrations",
       "subpath": "./telegram/Actions",
       "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
     },
@@ -2152,16 +2266,6 @@
     {
       "name": "@smthrs/integrations",
       "subpath": "./telegram/Markdown",
-      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
-    },
-    {
-      "name": "@smthrs/integrations",
-      "subpath": "./telegram/Payload",
-      "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
-    },
-    {
-      "name": "@smthrs/integrations",
-      "subpath": "./telegram/Source",
       "reason": "Non-GitHub adapters are deferred from the MVP. Historical reviewed contract is retained for restoration. #3389."
     },
     {

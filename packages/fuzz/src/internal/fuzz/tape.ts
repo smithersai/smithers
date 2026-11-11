@@ -56,7 +56,7 @@ export function makeTapeRandom(
   const nextUint32 = () => {
     const position = cursor++
     if (cursor > used.max) used.max = cursor
-    return position < words.length ? words[position] : filler(key, position)
+    return position < words.length ? words[position]! : filler(key, position)
   }
   return {
     nextUint32,
@@ -77,7 +77,7 @@ export function makeTapeRandom(
 /** @internal */
 export function materialize(words: ReadonlyArray<number>, key: number, length: number): Array<number> {
   const out = new Array<number>(length)
-  for (let index = 0; index < length; index++) out[index] = index < words.length ? words[index] : filler(key, index)
+  for (let index = 0; index < length; index++) out[index] = index < words.length ? words[index]! : filler(key, index)
   return out
 }
 
@@ -122,7 +122,7 @@ export function makeRng(seed: string | number): Rng {
 export function encodeWords(words: ReadonlyArray<number>): string {
   const bytes = new Uint8Array(words.length * 4)
   const view = new DataView(bytes.buffer)
-  for (let index = 0; index < words.length; index++) view.setUint32(index * 4, words[index], true)
+  for (let index = 0; index < words.length; index++) view.setUint32(index * 4, words[index]!, true)
   return Base64Url.encode(bytes)
 }
 

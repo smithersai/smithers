@@ -88,7 +88,7 @@ describe("Fuzz Fable regressions", () => {
         yield* Fuzz.runTarget(second, { seed: 1, executions: 2_000 }).pipe(stored(store))
         const failures = (yield* store.load("retain")).filter((entry) => entry.kind === "Failure")
         assert.strictEqual(failures.length, 2)
-        assert.isTrue(failures.some((entry) => entry.key === old[0].key && entry.text === old[0].text))
+        assert.isTrue(failures.some((entry) => entry.key === old[0]!.key && entry.text === old[0]!.text))
         {
           const regressed = Fuzz.target(values ? Arbitrary.Constant(0) : tapes, (n) => n !== 1, options)
           const replayed = yield* Fuzz.runTarget(regressed, { executions: 0 }).pipe(stored(store))
@@ -127,7 +127,7 @@ describe("Fuzz Fable regressions", () => {
       assert.include(Fuzz.formatReport(report)!, "cannot encode this value")
       const failures = (yield* store.load("unencodable")).filter((entry) => entry.kind === "Failure")
       assert.strictEqual(failures.length, 1)
-      assert.isUndefined(Format.decodeEntry(failures[0].text).codec)
+      assert.isUndefined(Format.decodeEntry(failures[0]!.text).codec)
       const replayed = yield* Fuzz.runTarget(target, { executions: 0 }).pipe(stored(store))
       assert.strictEqual(replayed._tag === "Falsified" && replayed.findings[0].saved, "Tape")
     }))

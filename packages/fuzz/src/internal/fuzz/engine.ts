@@ -282,7 +282,7 @@ const evaluate = <A, E, R>(
   const scheduleTape: Fuzz.ScheduleTape = {
     next: () => {
       const position = scheduleRead++
-      return position < input.schedule.length ? input.schedule[position] : Tape.filler(input.scheduleKey, position)
+      return position < input.schedule.length ? input.schedule[position]! : Tape.filler(input.scheduleKey, position)
     }
   }
   const exit = Effect.exit(Effect.suspend(() => {
@@ -583,7 +583,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
     entries.push({ input, length })
     for (const pair of pairs) {
       const owner = owners.get(pair)
-      if (owner === undefined || entries[owner].length > length) owners.set(pair, index)
+      if (owner === undefined || entries[owner]!.length > length) owners.set(pair, index)
     }
     return true
   }
@@ -734,7 +734,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
       const tape = Array.from(lane ? schedule : words)
       const at = rng.below(tape.length + 1)
       const length = 1 + rng.below(Math.min(16, tape.length + 1))
-      const other = entries[rng.below(entries.length)].input
+      const other = entries[rng.below(entries.length)]!.input
       switch (rng.below(tape.length === 0 ? 1 : 14)) {
         case 0:
           tape.splice(at, 0, ...Array.from({ length }, rng.next))
@@ -743,16 +743,16 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
           tape[at] = rng.next()
           break
         case 2:
-          tape[at] = [0, 1, 0x7fffffff, 0x80000000, 0xffffffff][rng.below(5)]
+          tape[at] = [0, 1, 0x7fffffff, 0x80000000, 0xffffffff][rng.below(5)]!
           break
         case 3:
-          tape[at] = (tape[at] + 1 + rng.below(16)) >>> 0
+          tape[at] = (tape[at]! + 1 + rng.below(16)) >>> 0
           break
         case 4:
-          tape[at] = (tape[at] - 1 - rng.below(16)) >>> 0
+          tape[at] = (tape[at]! - 1 - rng.below(16)) >>> 0
           break
         case 5:
-          tape[at] = (tape[at] ^ 1 << rng.below(32)) >>> 0
+          tape[at] = (tape[at]! ^ 1 << rng.below(32)) >>> 0
           break
         case 6:
           tape.fill(0, at, at + length)
@@ -792,7 +792,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
   const choose = (): Format.Input => {
     if (pending.length > 0) return pending.shift()!
     if (entries.length === 0 || executions <= 32 || rng.below(8) === 0) return fresh()
-    if (rng.below(4) === 0) return mutate(entries[rng.below(entries.length)].input)
+    if (rng.below(4) === 0) return mutate(entries[rng.below(entries.length)]!.input)
     const energy = new Map<number, number>()
     let total = 0
     for (const champion of champions.values()) {
@@ -816,7 +816,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
       pick -= rarity
       if (pick < 0) break
     }
-    return mutate(entries[chosen].input)
+    return mutate(entries[chosen]!.input)
   }
 
   let stoppedBy: Fuzz.Stats["stoppedBy"]

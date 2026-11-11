@@ -504,7 +504,7 @@ describe("Fuzz", () => {
       run: (self, schedule) =>
         Effect.map(self, (exit) => {
           const words = Array.from({ length: 8 }, schedule.next)
-          return words[5] % 7 === 1 ? { _tag: "Limited" } : words[3] % 64 === 1 ? { _tag: "Deadlock" } : {
+          return words[5]! % 7 === 1 ? { _tag: "Limited" } : words[3]! % 64 === 1 ? { _tag: "Deadlock" } : {
             _tag: "Completed",
             exit
           }
@@ -552,8 +552,8 @@ describe("Fuzz", () => {
           Format.decodeEntry(entry.text)
         )
         assert.strictEqual(failures.length, 1)
-        assert.isTrue(failures[0].path.length > 0)
-        assert.strictEqual(failures[0].value, "500")
+        assert.isTrue(failures[0]!.path.length > 0)
+        assert.strictEqual(failures[0]!.value, "500")
         assert.strictEqual(finding.saved, "Value")
         assert.isTrue(saves.some((entry) => entry.kind === "Input"))
       }))
@@ -576,7 +576,7 @@ describe("Fuzz", () => {
               assert.strictEqual(first.saved, values ? "Value" : "Tape")
               const entries = (yield* store.load(target.id)).filter((entry) => entry.kind === "Failure")
               assert.strictEqual(entries.length, 1)
-              assert.strictEqual(Format.decodeEntry(entries[0].text).signature, signature)
+              assert.strictEqual(Format.decodeEntry(entries[0]!.text).signature, signature)
               const replayed = firstFinding(yield* Fuzz.runTarget(target, { replay: first.replay }))
               assert.deepStrictEqual([replayed.signature, replayed.input], [signature, first.input])
               const saved = yield* Fuzz.runTarget(target, { executions: 0 }).pipe(withStore(store))
@@ -616,7 +616,7 @@ describe("Fuzz", () => {
         assert.strictEqual(finding.saved, "Value")
         const entries = (yield* store.load(target.id)).filter((entry) => entry.kind === "Failure")
         assert.strictEqual(entries.length, 1)
-        const entry = Format.decodeEntry(entries[0].text)
+        const entry = Format.decodeEntry(entries[0]!.text)
         assert.deepStrictEqual([entry.codec, entry.value], ["wrapped-number", '{"n":500}'])
         const bumped = Fuzz.target(Int, (n) => n < 500, { ...options, revision: "2" })
         const replayed = yield* Fuzz.runTarget(bumped, { executions: 0 }).pipe(withStore(store))

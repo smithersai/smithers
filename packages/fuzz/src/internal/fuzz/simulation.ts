@@ -63,7 +63,7 @@ export class World {
         this.fibers.add(fiber)
         const word = this.schedule.next()
         const index = word === 0 ? 0 : 1 + Math.floor(word / 0x100000000 * (this.quanta.length - 1))
-        this.slices.set(fiber, this.quanta[index])
+        this.slices.set(fiber, this.quanta[index]!)
       }
       return fiber.currentOpCount >= this.slices.get(fiber)!
     },
@@ -97,7 +97,7 @@ export class World {
           wake: () => resume(Effect.void)
         }
         let index = this.timers.length
-        while (index > 0 && this.timers[index - 1].deadline > timer.deadline) index--
+        while (index > 0 && this.timers[index - 1]!.deadline > timer.deadline) index--
         this.timers.splice(index, 0, timer)
         // An interrupted sleep withdraws its timer. A woken timer has already left the list.
         return Effect.sync(() => {
@@ -108,7 +108,7 @@ export class World {
 
   enqueue(task: () => void, priority: number): void {
     let index = 0
-    while (index < this.buckets.length && this.buckets[index][0] < priority) index++
+    while (index < this.buckets.length && this.buckets[index]![0] < priority) index++
     const bucket = this.buckets[index]
     if (bucket !== undefined && bucket[0] === priority) bucket[1].push(task)
     else this.buckets.splice(index, 0, [priority, [task]])
@@ -141,7 +141,7 @@ export class World {
       const first = this.timers[0]
       if (first === undefined) return "Deadlock"
       this.now = first.deadline
-      while (this.timers.length > 0 && this.timers[0].deadline === this.now) {
+      while (this.timers.length > 0 && this.timers[0]!.deadline === this.now) {
         if (this.steps >= this.limit) return "Limited"
         this.steps++
         this.timers.shift()!.wake()

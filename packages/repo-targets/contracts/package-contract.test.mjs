@@ -47,6 +47,29 @@ const releaseLine = (entries) => {
   }
 }
 
+/** npm's `overrides`, a nested `parent: { child: version }` flattened to pnpm's `parent>child` key. */
+const npmOverrides = (overrides, parent) =>
+  Object.fromEntries(Object.entries(overrides).flatMap(([name, value]) => {
+    const key = parent === undefined ? name : `${parent}>${name}`
+    return typeof value === "object" ? Object.entries(npmOverrides(value, key)) : [[key, value]]
+  }))
+
+/**
+ * The `overrides:` block of `pnpm-workspace.yaml` as a name-to-version map.
+ * Comment and blank lines are skipped; every other line must be one pin.
+ */
+const pnpmOverrides = (planner) => {
+  const block = planner.match(/^overrides:\n((?:[ \t]+.*\n|\n)*)/m)?.[1]
+  assert.ok(block, "pnpm-workspace.yaml has no overrides block")
+  return Object.fromEntries(
+    block.split("\n").map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#")).map((line) => {
+      const match = line.match(/^['"]?([^'"\s]+)['"]?: ['"]?([^'"\s]+)['"]?$/)
+      assert.ok(match, `unexpected override: ${line}`)
+      return [match[1], match[2]]
+    })
+  )
+}
+
 /** Executables own their runtime; libraries make the host supply the singleton. */
 const effectRuntimeOwners = new Set(["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"])
 
@@ -259,40 +282,68 @@ describe("the workspace package contract", () => {
     }
   })
 
-  it("keeps overrides out of published packages and pins only the Effect train and Bun types", () => {
+  it("keeps overrides out of published packages and pins only the reviewed trains in both planners", () => {
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
     for (const [where, manifest] of manifests.map((entry) => [entry.path, entry.manifest])) {
       assert.equal(manifest.overrides, undefined, `${where} must not use npm overrides`)
       assert.equal(manifest.pnpm?.overrides, undefined, `${where} must not use pnpm overrides`)
     }
-    // 6c82383c pinned Bun types as well as the Effect family, in both planners.
-    const expected = { "@types/bun": "1.4.4", ...Object.fromEntries([
-      "effect",
-      "@effect/opentelemetry",
-      "@effect/platform-bun",
-      "@effect/platform-node",
-      "@effect/platform-node-shared",
-      "@effect/sql-d1",
-      "@effect/sql-sqlite-bun",
-      "@effect/sql-sqlite-do",
-      "@effect/sql-sqlite-node",
-      "@effect/vitest"
-    ].map((name) => [name, effectVersion])) }
-    assert.deepEqual(rootManifest.overrides, expected)
+    // Each row is a reviewed pin: 6c82383c pinned Bun types beside the Effect
+    // family; one VibeLang toolchain and one Alchemy beta per install; one
+    // happy-dom under Vitest 5.0.0, so @effect/vitest and a package's CLI share
+    // one peer runtime.
+    const vibelangVersion = rootManifest.devDependencies.vibelang
+    const expected = {
+      "@types/bun": "1.4.4",
+      ...Object.fromEntries([
+        "effect",
+        "@effect/opentelemetry",
+        "@effect/platform-bun",
+        "@effect/platform-node",
+        "@effect/platform-node-shared",
+        "@effect/sql-d1",
+        "@effect/sql-pg",
+        "@effect/sql-sqlite-bun",
+        "@effect/sql-sqlite-do",
+        "@effect/sql-sqlite-node",
+        "@effect/vitest"
+      ].map((name) => [name, effectVersion])),
+      ...Object.fromEntries(["vibelang", "vibelang-runtime", "vibelang-vite", "vibelang-unplugin"]
+        .map((name) => [name, vibelangVersion])),
+      ...Object.fromEntries(["alchemy", "@alchemy.run/node-utils", "@alchemy.run/frontend-frameworks"]
+        .map((name) => [name, "2.0.0-beta.85"])),
+      "vitest@5.0.0>happy-dom": "20.13.2"
+    }
+    assert.deepEqual(npmOverrides(rootManifest.overrides), expected)
     assert.equal(rootManifest.pnpm?.overrides, undefined)
     // Workspace locking also covers private tooling. Consumer certification
     // installs the unchanged tarballs without these overrides.
     const planner = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8")
-    const block = planner.match(/^overrides:\n((?:[ \t]+.*\n|\n)*)/m)?.[1]
-    assert.ok(block, "pnpm must use the same exact Effect family as npm and Bun")
-    const actual = Object.fromEntries(
-      block.trim().split("\n").map((line) => {
-        const match = line.trim().match(/^['"]?([^'"\s]+)['"]?: ['"]?([^'"\s]+)['"]?$/)
-        assert.ok(match, `unexpected override: ${line}`)
-        return [match[1], match[2]]
-      })
+    assert.deepEqual(pnpmOverrides(planner), expected, "pnpm must pin the same versions as npm and Bun")
+  })
+
+  it("reads both planners' overrides in one spelling, past pnpm's comments", () => {
+    assert.deepEqual(
+      npmOverrides({ effect: "4.1.1", "vitest@5.0.0": { "happy-dom": "20.13.2" } }),
+      { effect: "4.1.1", "vitest@5.0.0>happy-dom": "20.13.2" }
     )
-    assert.deepEqual(actual, expected)
+    const planner = [
+      "packages:",
+      "  - packages/*",
+      "overrides:",
+      "  # Why the pin exists.",
+      "  \"vitest@5.0.0>happy-dom\": \"20.13.2\"",
+      "",
+      "  effect: '4.1.1'",
+      "",
+      "# The next block.",
+      "patchedDependencies:",
+      "  a: b",
+      ""
+    ].join("\n")
+    assert.deepEqual(pnpmOverrides(planner), { "vitest@5.0.0>happy-dom": "20.13.2", effect: "4.1.1" })
+    assert.throws(() => pnpmOverrides("overrides:\n  effect 4.1.1\n"), /unexpected override: effect 4\.1\.1/)
+    assert.throws(() => pnpmOverrides("packages: []\n"), /no overrides block/)
   })
 
   it("keeps Effect as a ranged peer of every library and the tested release in every executable", () => {
