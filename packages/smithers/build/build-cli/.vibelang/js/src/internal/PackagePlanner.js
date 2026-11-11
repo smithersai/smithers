@@ -38,7 +38,7 @@ import * as Label from "../Label.js";
 import * as NixExec from "../NixExec.js";
 import * as OverlayExec from "../OverlayExec.js";
 import * as OwnersResolution from "../Owners.js";
-import { CrossPackageGlobReviewInvalid, DeclaredInputCrossesPackage, DeclaredInputMissing } from "../PackageError.js";
+import { CrossPackageGlobReviewInvalid, DeclaredInputCrossesPackage, DeclaredInputMissing, PackageError } from "../PackageError.js";
 import * as PackageTree from "../PackageTree.js";
 import * as Planner from "../Planner.js";
 import * as RepoResolution from "../RepoResolution.js";
@@ -1018,6 +1018,30 @@ const treeInputFiles = async (context, packagePath, declaration) => {
         });
         return [{ path, digest }];
     }
+    if (declaration._tag === "NodeModules") {
+        // The install's identity is its manifest and every lockfile beside it.
+        // The installed files are not hashed, and an install with no identity is
+        // refused here: granting its tree would be an unkeyed read.
+        const paths = Input.nodeModulesPaths(packagePath, declaration);
+        const rows = [];
+        for (const path of [paths.manifest, ...paths.lockfiles]) {
+            const digest = await Input.digestFile(NodePath.join(context.root, path), {
+                workspaceRoot: context.root,
+                signal: context.signal
+            });
+            if (digest !== undefined)
+                rows.push({ path, digest });
+        }
+        const where = paths.directory === "" ? "the workspace root" : paths.directory;
+        if (!rows.some((row) => row.path === paths.manifest)) {
+            throw new PackageError("install_identity_missing", `S.nodeModules(${JSON.stringify(declaration.path)}): ${where} has no package.json`, { path: paths.manifest });
+        }
+        if (rows.length === 1) {
+            throw new PackageError("install_identity_missing", `S.nodeModules(${JSON.stringify(declaration.path)}): ${where} has no lockfile ` +
+                `(${Input.nodeModulesLockfiles.join(", ")}), so its install has no identity to key`, { path: paths.directory === "" ? "." : paths.directory });
+        }
+        return rows;
+    }
     const matches = declaration._tag === "Glob"
         ? await Input.expandGlob(context.root, packagePath, declaration, {
             cacheDirectory: context.cacheDirectory,
@@ -1505,6 +1529,29 @@ const visit = async (context, target, options) => {
     const writeSet = [];
     const readSet = [];
     const externalReads = [];
+    // A declared install opens its `node_modules` to the confined tool. The
+    // manifest and lockfiles expanded above are the key; the tree is the grant.
+    // A tree provisioned as a link to a shared install resolves outside the
+    // workspace, which the confinement admits only as an explicit external read.
+    for (const expanded of declaredInputs) {
+        if (expanded.declaration._tag !== "NodeModules")
+            continue;
+        const { tree } = Input.nodeModulesPaths(inputPackage(metadata, packagePath), expanded.declaration);
+        readSet.push(tree);
+        const absolute = NodePath.join(context.root, ...tree.split("/"));
+        let real;
+        try {
+            real = NodeFs.realpathSync(absolute);
+        }
+        catch {
+            real = undefined;
+        }
+        // Only an installed tree earns the grant: a link to any other host
+        // directory stays closed, and the confinement then refuses the target.
+        if (real !== undefined && !Path.contains(context.root, real) && NodePath.basename(real) === "node_modules" &&
+            !externalReads.includes(real))
+            externalReads.push(real);
+    }
     const outDirs = [];
     const outFiles = [];
     const members = [];
