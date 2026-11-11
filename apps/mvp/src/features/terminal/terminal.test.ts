@@ -781,7 +781,8 @@ describe("the panel", () => {
       await tab.settle(theirs, "open")
       await until(() => expect(tab.panel()?.phase).toBe("connecting"))
       expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "connecting" })
-      expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }])
+      // The tabs are their own live query over the rows: they follow the open row, not the panel's phase.
+      await until(() => expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }]))
       await tab.actions.show(branchId, ended)
       expect(tab.panel()).toMatchObject({ terminalId: ended, phase: "ended" })
       await tab.actions.show(branchId, failed)
