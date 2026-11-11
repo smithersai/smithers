@@ -118,11 +118,14 @@ export const watch = (root: number): Tree => {
     const entries = read()
     if (entries === undefined) return
     observed++
+    // The root keeps the identity it had when first seen: a process that later took its pid is not the root.
     const rootEntry = entries.get(root)
-    if (rootEntry !== undefined) seen.set(root, rootEntry.started)
-    // The whole tree every time: a process seen before may have started children since, at any depth.
-    const visited = new Set([root])
-    let frontier = [root]
+    if (rootEntry !== undefined && !seen.has(root)) seen.set(root, rootEntry.started)
+    // The whole tree every time, from every process seen that still runs as itself: one seen before may have
+    // started children since, at any depth, even after its parent exited and it left the root's tree.
+    const roots = [...seen].filter(([pid, started]) => entries.get(pid)?.started === started).map(([pid]) => pid)
+    const visited = new Set(roots)
+    let frontier = roots
     while (frontier.length > 0) {
       const parents = new Set(frontier)
       frontier = []

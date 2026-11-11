@@ -315,6 +315,63 @@ describe("smthrs runner serve", () => {
     expect(Tree.cpuOf("x-1:00")).toBe(0)
   })
 
+  test("the watched tree keeps a seen process's later children after its parent exits and it leaves the root's tree", async () => {
+    // One script in three roles: the root starts a helper, the helper starts a tool, and the tool starts a leaf
+    // once told to. Each records its pid as `orphan-<role>` so the suite's cleanup kills whatever is left.
+    const script = join(root, "tree.mjs")
+    writeFileSync(
+      script,
+      `
+      import { spawn } from "node:child_process";
+      import { existsSync, writeFileSync } from "node:fs";
+      import { join } from "node:path";
+      const [role, dir] = process.argv.slice(2);
+      const start = (next) => spawn(process.execPath, [process.argv[1], next, dir], { stdio: "ignore" });
+      writeFileSync(join(dir, "orphan-" + role), String(process.pid));
+      if (role === "root") start("helper");
+      if (role === "helper") start("tool");
+      if (role === "tool") {
+        const wait = setInterval(() => {
+          if (existsSync(join(dir, "go"))) {
+            clearInterval(wait);
+            start("leaf");
+          }
+        }, 20);
+      }
+      setInterval(() => {}, 1000);
+    `
+    )
+    const pidOf = (role: string) => Number(readFileSync(join(agentState, `orphan-${role}`), "utf8"))
+    const parentOf = (pid: number) =>
+      Number(execFileSync("/bin/ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }).trim())
+    const top = spawn(process.execPath, [script, "root", agentState], { stdio: "ignore", detached: true })
+    children.push(top)
+    await until(() => existsSync(join(agentState, "orphan-tool")))
+    const tree = Tree.watch(top.pid!)
+    await Effect.runPromise(tree.observe)
+    expect((await Effect.runPromise(tree.stats)).seen).toBe(3)
+    const helper = pidOf("helper")
+    const tool = pidOf("tool")
+    process.kill(helper, "SIGKILL")
+    await until(() => parentOf(tool) !== helper)
+    writeFileSync(join(agentState, "go"), "")
+    await until(() => existsSync(join(agentState, "orphan-leaf")))
+    const leaf = pidOf("leaf")
+    await Effect.runPromise(tree.observe)
+    expect((await Effect.runPromise(tree.stats)).seen).toBe(4)
+    expect(await Effect.runPromise(Tree.stop(tree, { graceMs: 2000, settleMs: 2000 }))).toBe(true)
+    // A process its new parent hasn't reaped yet still answers signal 0: only a live, non-zombie one counts.
+    const running = (pid: number) => {
+      try {
+        return !execFileSync("/bin/ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).trim().startsWith("Z")
+      } catch {
+        return false
+      }
+    }
+    expect(running(tool)).toBe(false)
+    expect(running(leaf)).toBe(false)
+  })
+
   test("a cancel stops the agent's whole tree, a detached command included, and settles Cancelled", async () => {
     configure()
     const row = host.enqueue(Host.task({ base: mirror.base, prompt: "run `sleep 60` detached" }))
