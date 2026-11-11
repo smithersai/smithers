@@ -4,6 +4,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
@@ -138,6 +139,9 @@ describe("DeferredPersistence", () => {
         { _id: "Exit", _tag: "Other" },
         { _id: "Exit", _tag: "Failure", cause: null },
         { _id: "Exit", _tag: "Failure", cause: {} },
+        { _id: "Exit", _tag: "Failure", cause: { reasons: "invalid" } },
+        { _id: "Exit", _tag: "Failure", cause: { reasons: [null] } },
+        { _id: "Exit", _tag: "Failure", cause: { reasons: [{ _tag: "Unknown" }] } },
         { _id: "Exit", _tag: "Failure", cause: { failures: [null] } },
         { _id: "Exit", _tag: "Failure", cause: { failures: [{ _tag: "Unknown" }] } }
       ]
@@ -179,6 +183,38 @@ describe("DeferredPersistence", () => {
         _tag: "Interrupt",
         fiberId: 7
       })
+    }))
+
+  it.effect("restores both current and legacy failure arrays without losing a reason", () =>
+    Effect.gen(function*() {
+      const state = DurableEngineState.makeMemory()
+      const original = Exit.failCause(Cause.fromReasons([
+        Cause.makeFailReason("typed refusal"),
+        Cause.makeDieReason("defect"),
+        Cause.makeInterruptReason(7),
+        Cause.makeInterruptReason()
+      ]))
+      const encoded = JSON.parse(JSON.stringify(original))
+      for (const field of ["reasons", "failures"] as const) {
+        const wire = { ...encoded, cause: { _id: "Cause", [field]: encoded.cause.reasons } }
+        const completed = yield* state.completeDeferred({
+          flowName: TestFlow._tag,
+          executionId: `cause-${field}`,
+          deferredName: "answer",
+          exit: wire,
+          completedAtMs: 0
+        })
+        expect(storedRow(completed).exit).toEqual(original)
+        expect(
+          Option.getOrThrow(
+            yield* state.deferred({
+              flowName: TestFlow._tag,
+              executionId: `cause-${field}`,
+              deferredName: "answer"
+            })
+          ).exit
+        ).toEqual(original)
+      }
     }))
 
   it.effect("keeps the first duplicate or divergent completion", () =>
