@@ -12,6 +12,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -156,7 +157,12 @@ export const make = <R = never>(options: MakeOptions<R>): DebateFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor(
+      [PatternError],
+      [participants.proponent, participants.opponent, participants.judge]
+    ) as typeof Schema.Unknown,
     body: Node.capture({ rounds }, body)
   })
 }

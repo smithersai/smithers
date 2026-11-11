@@ -19,6 +19,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -262,11 +263,12 @@ export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    // `@smthrs/core` carried its error type as a phantom parameter and
-    // declared no error schema. `@smthrs/flow` needs a real one, because the
-    // engine encodes a typed failure through it, and a ladder fails with
-    // whatever the rung it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor(
+      [PatternError],
+      [...rungs.flatMap((rung) => [rung.flow, rung.escalateIf]), accept, fallback]
+    ) as typeof Schema.Unknown,
     body: Node.capture({ rungs: rungs.length, fallback: fallback !== undefined }, body)
   })
 }

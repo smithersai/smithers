@@ -20,6 +20,7 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -228,7 +229,9 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     // no error schema. `@smthrs/flow` needs a real one, because the engine
     // encodes a typed failure through it, and this pattern fails with whatever
     // the stage it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], [stages.scan, stages.fix, stages.verify]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

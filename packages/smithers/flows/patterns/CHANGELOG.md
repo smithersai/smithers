@@ -19,6 +19,19 @@
 
 ### Fixed
 
+- A declared `Saga`, `Sidecar`, `Supervisor`, `ReviewLoop`, `Panel`,
+  `Recursion`, `ScanFixVerify`, `Debate`, `CheckSuite`, `Escalation`,
+  `DriftDetector`, `MapReduce`, `Kanban`, `MergeQueue` or `Optimizer` on a
+  durable engine now fails with the tagged error a member failed with, or with
+  its own `PatternError`, instead of dying with `UnencodableResult`: each
+  declares the union of `PatternError` and its members' error schemas. A member
+  error a declared pattern catches and reports (a saga's `Compensated.failure`
+  and `compensation_failed` cause, a quarantined sidecar shadow, a supervisor's
+  `Failed` outcome, check suite `errors`, kanban `failed` rows, merge queue
+  `quarantined` rows) is now the data the member's error schema encodes it to,
+  so the run settles instead of dying
+  ([#4707](https://github.com/smithersai/smithers/issues/4707)).
+
 - `Loop.ralph` rejects bounds above the existing branch-construction ceiling before planning, including the extra arms a stall breaker needs. ([#4103](https://github.com/smithersai/smithers/issues/4103)).
 
 - A `TryCatchFinally` finalizer that fails after the protected body was interrupted now raises a defect `PatternError { code: "finalizer_failed" }`. `effect@4.0.4` discards a typed failure from an interrupted cause when a caller recovers, so the cleanup failure left no record. ([#3839](https://github.com/smithersai/smithers/issues/3839)).

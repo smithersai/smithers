@@ -15,6 +15,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -331,6 +332,11 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
   const maxTasks = options.maxTasks
   const concurrency = options.concurrency
   const names = workers.map(([name]) => name)
+  // A `Failed` outcome is handed to the review and to finalize and may be in
+  // the value the supervision settles with, so it carries its error as data.
+  const wire = Failure.wire(workers.map(([, worker]) => worker))
+  const recorded = (outcome: Outcome<unknown>): Outcome<unknown> =>
+    outcome._tag === "Failed" ? { ...outcome, error: wire(outcome.error) } : outcome
   const stall = Stalling.resolve("Supervisor", options.stall)
   if (stall instanceof PatternError) throw stall
   const captures = stall === undefined
@@ -440,7 +446,7 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
               for (const outcomes of state.batched) {
                 for (const id of Object.keys(outcomes)) {
                   if (state.pending === null || state.pending.includes(id)) {
-                    merged.set(id, outcomes[id] as Outcome<unknown>)
+                    merged.set(id, recorded(outcomes[id] as Outcome<unknown>))
                   }
                 }
               }
@@ -540,7 +546,12 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
     // no error schema. `@smthrs/flow` needs a real one, because the engine
     // encodes a typed failure through it, and a supervision fails with whatever
     // the boss or worker it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor(
+      [PatternError],
+      [boss.plan, ...workers.map(([, worker]) => worker), boss.review, boss.finalize]
+    ) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

@@ -258,7 +258,17 @@ describe("Saga", () => {
               ? Result.succeed({ _tag: "Completed", values: { one: "done", two: "done" } })
               : onFailure === "fail" || onFailure === "compensate-and-fail"
               ? Result.fail(nestedFailure)
-              : Result.succeed({ _tag: "Compensated", failure: nestedFailure })
+              // A settled outcome carries the failure as the data its schema
+              // encodes, not as the class instance the step failed with.
+              : Result.succeed({
+                _tag: "Compensated",
+                failure: {
+                  _tag: "flows/patterns/PatternError",
+                  code: "compensation_failed",
+                  message: "An action may itself fail with a PatternError",
+                  cause: { failure: "nested", residue: [] }
+                }
+              })
           )
         }
       }))

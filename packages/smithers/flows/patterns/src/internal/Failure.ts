@@ -19,6 +19,7 @@
  * @private
  */
 
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 const catchAll = (schema: Schema.Top): boolean => ["Unknown", "Any", "Never"].includes(schema.ast._tag)
@@ -55,4 +56,22 @@ export const schemaFor = (own: ReadonlyArray<Schema.Top>, members: ReadonlyArray
     }
   }
   return Schema.Union([...candidates.filter(tagged), ...candidates.filter((schema) => !tagged(schema)), Schema.Unknown])
+}
+
+/**
+ * How a recovery arm turns a member error it caught into data.
+ *
+ * A caught error that a pattern puts into the value it settles with, or into
+ * its own error's `cause`, crosses the durable wire through `Schema.Unknown`,
+ * which encodes JSON data only. So the arm encodes the error first, through
+ * the error schema of the member that raised it: a tagged error becomes the
+ * plain record its schema encodes it to, and plain data stays as it is. An
+ * error no member schema encodes is handed back unchanged.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const wire = (members: ReadonlyArray<unknown>): (error: unknown) => unknown => {
+  const encode = Schema.encodeUnknownOption(Schema.toCodecJson(schemaFor([], members) as Schema.Codec<unknown>))
+  return (error) => Option.getOrElse(encode(error), () => error)
 }

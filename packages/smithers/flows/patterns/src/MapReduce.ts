@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Bounded from "./Bounded.ts"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { PatternError } from "./PatternError.ts"
@@ -166,7 +167,9 @@ export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: Payload,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], [stages.map, stages.reduce]) as typeof Schema.Unknown,
     body: Node.capture({ concurrency, onEmpty }, body)
   })
 }

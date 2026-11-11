@@ -19,6 +19,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -119,6 +120,10 @@ export interface Completed<A> {
 
 /**
  * The settled outcome of a saga that unwound cleanly under `compensate`.
+ *
+ * {@link run} reports the failure the step failed with. {@link make} reports
+ * it as the data that step's error schema encodes it to, because a settled
+ * value crosses the durable journal as data.
  *
  * @category models
  * @since 0.1.0
@@ -222,7 +227,10 @@ const declarationRefusal = <R>(steps: ReadonlyArray<Step<R>>): PatternError | un
  * value only when every compensation succeeds; under `fail` no arm is declared
  * at all. Failed compensations are collected without stopping earlier undos.
  * Both compensation policies fail with `compensation_failed`, preserving the
- * original failure and the residue sorted by step id.
+ * original failure and the residue sorted by step id. A failure the saga
+ * reports, in a `Compensated` outcome or in that error's `cause`, is the data
+ * the step's error schema encodes it to; a failure it re-raises is the error
+ * itself.
  *
  * A step whose action or compensation is not a flow is refused here, because
  * the declaration cannot be built out of anything else.
@@ -245,11 +253,15 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
   const refusal = stepsRefusal(steps) ?? declarationRefusal(steps)
   if (refusal !== undefined) throw refusal
   const policy = options.onFailure ?? "compensate"
+  const members = steps.flatMap((step) => [step.action, step.compensation])
+  // A failure the saga reports rather than re-raises leaves as data: inside a
+  // `Compensated` value, or inside the `cause` of `compensation_failed`.
+  const wire = Failure.wire(members)
   const { name, description } = Compose.label(
     "saga",
     { steps: steps.map((step) => step.id), onFailure: policy },
     options,
-    steps.flatMap((step) => [step.action, step.compensation])
+    members
   )
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const visit = (index: number, completed: Readonly<Record<string, unknown>>): Node.Node<unknown, unknown, R> => {
@@ -307,12 +319,18 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
           Node.map(
             Node.succeed(error as Unwind),
             Node.capture({ residue: true }, (unwind: Unwind) => {
-              if (unwind.residue.length === 0) return unwind
-              const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id))
+              if (unwind.residue.length === 0) {
+                // `compensate-and-fail` re-raises the failure itself, which
+                // the saga's error schema encodes.
+                return policy === "compensate" ? { failure: wire(unwind.failure), residue: [] } : unwind
+              }
+              const residue = [...unwind.residue]
+                .sort((left, right) => left.id.localeCompare(right.id))
+                .map((entry) => ({ id: entry.id, error: wire(entry.error) }))
               return new PatternError({
                 code: "compensation_failed",
                 message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(", ")}`,
-                cause: { failure: unwind.failure, residue }
+                cause: { failure: wire(unwind.failure), residue }
               })
             })
           ),
@@ -337,7 +355,9 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
     // no error schema. `@smthrs/flow` needs a real one, because the engine
     // encodes a typed failure through it, and a saga fails with whatever the
     // step it called failed with.
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], members) as typeof Schema.Unknown,
     body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, body)
   })
 }

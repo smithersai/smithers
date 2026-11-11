@@ -14,6 +14,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member as Callable } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -313,6 +314,9 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
   )
   // Each landing settles to a tagged outcome, so the final fold can tell a
   // landed member from a quarantined one whatever the member returned.
+  // The result is what the flow settles with, so a quarantined member
+  // carries its error as data.
+  const wire = Failure.wire(queue.map((entry) => entry.member.flow))
   const settled = (values: unknown): Result<unknown, unknown> => {
     const outcomes = values as Readonly<Record<string, Outcome>>
     const landed: Array<Landed<unknown>> = []
@@ -320,7 +324,7 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
     for (const entry of queue) {
       const outcome = outcomes[entry.id]!
       if (outcome._tag === "Landed") landed.push({ id: entry.id, output: outcome.output })
-      else quarantined.push({ id: entry.id, error: outcome.error })
+      else quarantined.push({ id: entry.id, error: wire(outcome.error) })
     }
     return { landed, quarantined, order: captures.members }
   }
@@ -401,7 +405,9 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], queue.map((entry) => entry.member.flow)) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

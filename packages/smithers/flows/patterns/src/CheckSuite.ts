@@ -18,6 +18,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
+import * as Failure from "./internal/Failure.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
@@ -197,6 +198,11 @@ export const verdict = (results: ReadonlyArray<CheckResult>, strategy: Strategy)
 
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
+// A tolerated failure is reported in the verdict the suite settles with, so
+// the row carries its error as data.
+const reported = (wire: (error: unknown) => unknown) => (result: CheckResult): CheckResult =>
+  Object.hasOwn(result, "error") ? { ...result, error: wire(result.error) } : result
+
 /**
  * Joins check calls in batches of `concurrency` and maps the joined record to
  * a verdict with `decide`. `entries` pairs each call with the key its row is
@@ -310,19 +316,22 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
     options,
     declared.map(([, check]) => check)
   )
+  const report = reported(Failure.wire(declared.map(([, check]) => check)))
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
     joined(
       declared.map(([id, check]) => [id, callMember(check, { check: id, input })]),
       concurrency,
       continueOnFail,
       captures,
-      (values) => verdict(rows(values, ids, continueOnFail), strategy)
+      (values) => verdict(rows(values, ids, continueOnFail).map(report), strategy)
     )
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], declared.map(([, check]) => check)) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }
@@ -522,6 +531,7 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
   const { name, description } = Compose.label("checkSuiteDiscovered", { strategy, concurrency, onEmpty }, options, [
     check
   ])
+  const report = reported(Failure.wire([check]))
   const body = (payload: { readonly checks: unknown; readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const ids = discoveredIds(payload.checks)
     // A declared failure, not a throw: a body that throws is reported as an
@@ -536,7 +546,7 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
       { ...captures, checks: ids },
       (values) =>
         verdict(
-          rows(values, keys, continueOnFail).map((result, index) => ({ ...result, id: ids[index]! })),
+          rows(values, keys, continueOnFail).map((result, index) => report({ ...result, id: ids[index]! })),
           strategy
         )
     )
@@ -545,7 +555,9 @@ export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): Di
     ...(description === undefined ? {} : { description }),
     payload: DiscoveredPayload,
     success: Schema.Unknown,
-    error: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the pattern's
+    // own `PatternError`, and whatever a member it called failed with.
+    error: Failure.schemaFor([PatternError], [check]) as typeof Schema.Unknown,
     body: Node.capture(captures, body)
   })
 }

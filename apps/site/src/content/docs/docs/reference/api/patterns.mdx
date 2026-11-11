@@ -135,11 +135,22 @@ to read to repair a plan. All three carry a `code` from a stable literal
 schema, a `message`, and an optional `cause`. Causes can preserve member
 errors and results that contain caller input; patterns do not redact them.
 
+A declared pattern's error schema is the union of `PatternError` and the error
+schema each member declares, so a durable engine journals a member's tagged
+error and the pattern fails with that error. A declared pattern that catches a
+member error and reports it instead carries it as the data the member's error
+schema encodes it to: a tagged error class becomes a plain record with its
+`_tag`. That covers a saga's `Compensated.failure` and the `failure` and
+`residue` of `compensation_failed`, a quarantined sidecar shadow's `error`, a
+supervisor's `Failed` outcome, a check suite's `errors`, a kanban board's
+`failed` rows, and a merge queue's `quarantined` rows. `run` reports the
+original values.
+
 ### `PatternError`
 
 `PatternError` carries a `code` from `PatternErrorCode`, a message, and an
 optional `cause` with the reported error or errors.
-Member errors retain their original values, including any input they hold.
+Member errors keep every field, including any input they hold.
 
 | Code                  | Raised when                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
