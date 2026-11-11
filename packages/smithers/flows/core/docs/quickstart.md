@@ -8,7 +8,9 @@ sidebar:
 This quickstart builds one plan end to end. Nothing executes: you declare two
 signatures, compose them, and read back the topology and the dependency
 references a durable engine keys its steps on. Everything runs in one process
-with no engine, no model, and no file system.
+with no engine, no model, and no file system. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps in a
+`.vibe` file.
 
 ## Prerequisites
 
@@ -151,6 +153,62 @@ const layer = Fetch.toLayer(({ url }) => Effect.succeed(`body of ${url}`))
 `Fetch.call({ url })` plans the same way `Review.call` does. What changes is
 where the work comes from: a flow body composes nodes, and an action is code a
 host supplies through a layer.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the declarations and the
+plan read the same, because planning runs no Effect: `Flow.make`, `Node.all`,
+`Node.bindPlanned` and `Graph.build` are plain calls in a `.vibe` file. What
+changes is the host side. The action's implementation is an `effect` arrow, so
+a handler that loads, retries or fails writes `try` and `throw` instead of
+`Effect.gen` and `Effect.fail`.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Graph, Node } from "@smthrs/core"
+import { Action, Flow } from "@smthrs/flow"
+
+/** Two signatures: a name, a payload schema, a success schema, and a body that returns a node. */
+export const Review = Flow.make("review", {
+  payload: Schema.Struct({ path: Schema.String }),
+  success: Schema.Struct({ approved: Schema.Boolean, notes: Schema.String }),
+  body: ({ path }) => Node.succeed({ approved: true, notes: `reviewed ${path}` })
+})
+
+export const Report = Flow.make("report", {
+  payload: Schema.Struct({ notes: Schema.String }),
+  success: Schema.Struct({ published: Schema.Boolean, notes: Schema.String }),
+  body: ({ notes }) => Node.succeed({ published: true, notes })
+})
+
+/** Two independent reviews as one join, then a report that reads one member of it. */
+export const plan = Node.all({
+  api: Review.call({ path: "src/api.ts" }),
+  cli: Review.call({ path: "src/cli.ts" })
+}).pipe(
+  Node.bindPlanned((reviews) => Report.call({ notes: reviews.api.notes }))
+)
+
+/** Planning walks the declaration once; nothing executes. */
+export const graph = Graph.build(plan)
+
+export const nodeLines = (): ReadonlyArray<string> => Graph.nodes(graph).map((node) => `${node.id} (${node.kind})`)
+
+export const edgeLines = (): ReadonlyArray<string> =>
+  Graph.edges(graph).map((edge) => `${edge.from} -> ${edge.to} [${edge.reason}]`)
+
+/** An action is work a host implements; its layer handler is an `effect` function. */
+export const Fetch = Action.make("fetch", {
+  payload: Schema.Struct({ url: Schema.String }),
+  success: Schema.String,
+  capabilities: ["net"],
+  tier: "irreversible"
+})
+
+export const FetchLive = Fetch.toLayer(effect ({ url }) => `body of ${url}`)
+```
 
 ## What just happened
 

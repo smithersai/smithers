@@ -1,0 +1,39 @@
+import { expect, it } from "@effect/vitest"
+import { Graph } from "@smthrs/core"
+import { edgeLines, Fetch, FetchLive, graph, nodeLines } from "../examples/quickstart.vibe"
+
+it("plans eight structural nodes in dependency order", () => {
+  expect(nodeLines()).toEqual([
+    "root.andThen.all.api.flow (Succeed)",
+    "root.andThen.all.api (FlowCall)",
+    "root.andThen.all.cli.flow (Succeed)",
+    "root.andThen.all.cli (FlowCall)",
+    "root.andThen (All)",
+    "root.then.flow (Succeed)",
+    "root.then (FlowCall)",
+    "root (AndThen)"
+  ])
+})
+
+it("records value edges and one continuation edge for the bind", () => {
+  expect(edgeLines()).toEqual([
+    "root.andThen.all.api.flow -> root.andThen.all.api [value]",
+    "root.andThen.all.api -> root.andThen [value]",
+    "root.andThen.all.cli.flow -> root.andThen.all.cli [value]",
+    "root.andThen.all.cli -> root.andThen [value]",
+    "root.andThen -> root [value]",
+    "root.andThen -> root.then [continuation]",
+    "root.then.flow -> root.then [value]",
+    "root.then -> root [value]"
+  ])
+})
+
+it("records no diagnostics", () => {
+  expect(Graph.diagnostics(graph)).toHaveLength(0)
+})
+
+it("plans an action call like a flow call and builds its host layer", () => {
+  const planned = Graph.build(Fetch.call({ url: "https://example.com" }))
+  expect(Graph.nodes(planned).map((node) => `${node.id} (${node.kind})`)).toEqual(["root (ActionCall)"])
+  expect(Layer.isLayer(FetchLive)).toBe(true)
+})

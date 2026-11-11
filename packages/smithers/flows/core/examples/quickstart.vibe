@@ -1,0 +1,41 @@
+import { Graph, Node } from "@smthrs/core"
+import { Action, Flow } from "@smthrs/flow"
+
+/** Two signatures: a name, a payload schema, a success schema, and a body that returns a node. */
+export const Review = Flow.make("review", {
+  payload: Schema.Struct({ path: Schema.String }),
+  success: Schema.Struct({ approved: Schema.Boolean, notes: Schema.String }),
+  body: ({ path }) => Node.succeed({ approved: true, notes: `reviewed ${path}` })
+})
+
+export const Report = Flow.make("report", {
+  payload: Schema.Struct({ notes: Schema.String }),
+  success: Schema.Struct({ published: Schema.Boolean, notes: Schema.String }),
+  body: ({ notes }) => Node.succeed({ published: true, notes })
+})
+
+/** Two independent reviews as one join, then a report that reads one member of it. */
+export const plan = Node.all({
+  api: Review.call({ path: "src/api.ts" }),
+  cli: Review.call({ path: "src/cli.ts" })
+}).pipe(
+  Node.bindPlanned((reviews) => Report.call({ notes: reviews.api.notes }))
+)
+
+/** Planning walks the declaration once; nothing executes. */
+export const graph = Graph.build(plan)
+
+export const nodeLines = (): ReadonlyArray<string> => Graph.nodes(graph).map((node) => `${node.id} (${node.kind})`)
+
+export const edgeLines = (): ReadonlyArray<string> =>
+  Graph.edges(graph).map((edge) => `${edge.from} -> ${edge.to} [${edge.reason}]`)
+
+/** An action is work a host implements; its layer handler is an `effect` function. */
+export const Fetch = Action.make("fetch", {
+  payload: Schema.Struct({ url: Schema.String }),
+  success: Schema.String,
+  capabilities: ["net"],
+  tier: "irreversible"
+})
+
+export const FetchLive = Fetch.toLayer(effect ({ url }) => `body of ${url}`)
