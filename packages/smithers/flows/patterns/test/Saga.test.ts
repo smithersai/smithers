@@ -4,7 +4,9 @@ import * as Node from "@smthrs/plan/Node"
 import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Logger from "effect/Logger"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
@@ -552,6 +554,42 @@ describe("Saga", () => {
       yield* Fiber.interrupt(fiber)
 
       expect(trace).toEqual(["do-one", "undo-one"])
+    }))
+
+  // On interruption `run` cannot return the typed `compensation_failed`
+  // refusal, so it logs the failed undos instead of dropping them.
+  it.effect("logs the step ids of failed compensations when the forward chain is interrupted", () =>
+    Effect.gen(function*() {
+      const trace: Array<string> = []
+      const logs: Array<{ readonly logLevel: string; readonly message: unknown }> = []
+      const logger = Logger.make((entry) => {
+        logs.push({ logLevel: entry.logLevel, message: entry.message })
+      })
+      const fiber = yield* Effect.forkChild(
+        Saga.run("order", {
+          steps: [
+            scripted(trace, "one", { compensationFails: true }),
+            scripted(trace, "two", { compensationDies: true }),
+            {
+              id: "three",
+              action: () => Effect.never,
+              compensation: () => Effect.sync(() => trace.push("undo-three"))
+            }
+          ],
+          onFailure: "compensate"
+        }).pipe(Effect.provide(Logger.layer([logger]))),
+        { startImmediately: true }
+      )
+      yield* Effect.yieldNow
+      const exit = yield* Fiber.interrupt(fiber).pipe(Effect.andThen(Fiber.await(fiber)))
+
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+      expect(trace).toEqual(["do-one", "do-two", "undo-two", "undo-one"])
+      const errors = logs.filter((entry) => entry.logLevel === "Error")
+      expect(errors).toHaveLength(1)
+      const text = JSON.stringify(errors[0]!.message)
+      expect(text).toContain("Saga compensation failed on interruption for: one, two")
+      expect(text).not.toContain("exploded")
     }))
 
   // `run` refuses with a TYPED failure, not a defect: `PatternError` is in the

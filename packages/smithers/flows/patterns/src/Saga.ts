@@ -355,7 +355,9 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
  * runs on interruption as well as on failure. A compensation that fails does
  * not stop the ones behind it; every failing step id is collected and the run
  * fails `PatternError { code: "compensation_failed" }` naming them, because
- * state left dirty outranks the failure that started the unwind.
+ * state left dirty outranks the failure that started the unwind. An
+ * interrupted run cannot return that failure, so it logs the failing step ids
+ * at error level and annotates the current span with them instead.
  *
  * A compensation that DIES counts as a failed compensation, not as a defect
  * the run raises: the undo did not happen, so the step belongs in the residue
@@ -383,7 +385,18 @@ export const run = <I, A, E, R, E2, R2>(
     const refusal = stepsRefusal(steps)
     if (refusal !== undefined) return Effect.fail(refusal)
     const residue: Array<{ readonly id: string; readonly error: unknown }> = []
+    // An interrupted saga never reaches `settle`, so the failed undos would be
+    // lost. Registered first, this finalizer runs after every compensation and
+    // reports them; it logs step ids only, never values or errors.
+    const reportInterrupted = (exit: Exit.Exit<unknown, unknown>) => {
+      if (residue.length === 0 || !Exit.hasInterrupts(exit)) return Effect.void
+      const ids = residue.map((entry) => entry.id).sort((left, right) => left.localeCompare(right))
+      return Effect.annotateCurrentSpan("saga.compensation_failed", ids).pipe(
+        Effect.andThen(Effect.logError(`Saga compensation failed on interruption for: ${ids.join(", ")}`))
+      )
+    }
     const forward = Effect.gen(function*() {
+      if (policy !== "fail") yield* Effect.addFinalizer(reportInterrupted)
       const completed = new Map<string, A>()
       for (const step of steps) {
         const value = yield* step.action({

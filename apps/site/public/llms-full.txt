@@ -31862,7 +31862,9 @@ original failure under `compensate-and-fail`. Step values are nested under
 
 `Saga.run(input, { steps, onFailure })` registers one scope finalizer per
 completed step, so the unwind is LIFO and runs on interruption as well as on
-failure. A compensation that dies or whose callback throws before returning an
+failure. An interrupted run cannot fail with
+`compensation_failed`, so it logs the failed step ids at error level and adds
+them to the current span as `saga.compensation_failed`. A compensation that dies or whose callback throws before returning an
 effect is recorded as a failed compensation rather
 than raised as a defect, so the residue still names it and the finalizers
 behind it still run. See
