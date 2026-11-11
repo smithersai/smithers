@@ -1,0 +1,41 @@
+import { Model, ModelEvent, ModelRequest, Pricing } from "@smthrs/model"
+
+/** The request every step sends: one user message, no tools. */
+export const request = ModelRequest.ModelRequest.make({
+  modelId: "claude-sonnet-4-5",
+  system: [],
+  messages: [ModelRequest.Message.user("Say hello.")],
+  tools: [],
+  params: ModelRequest.GenerationParams.make()
+})
+
+/** A stub `Model` that streams one scripted reply, so the first run needs no credential. */
+export const stub = Model.layer({
+  stream: () =>
+    Stream.make(
+      { type: "text-start", id: "text-0" } as const,
+      { type: "text-delta", id: "text-0", text: "Hello" } as const,
+      { type: "text-end", id: "text-0" } as const,
+      { type: "usage", inputTokens: 1_000, outputTokens: 200 } as const,
+      { type: "settle", stopReason: "stop" } as const
+    )
+})
+
+/**
+ * Streams the request through whichever `Model` is provided and folds the
+ * events. The package's functions are TypeScript that declares no `@throws`,
+ * so effect code calls them through `Effect.try`.
+ */
+export effect function ask() {
+  const model = try Model.Model
+  const events = try Stream.runCollect(model.stream(request))
+  return try Effect.try(() => ModelEvent.settledMessage(events))
+}
+
+/** Reads the folded message: its text, its stop reason, and what the usage cost. */
+export effect function replyText() {
+  const { message, usage } = try ask()
+  const text = message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+  const cost = try Effect.try(() => Pricing.cost(usage, request.modelId))
+  return { text, stopReason: message.stopReason, cost }
+}

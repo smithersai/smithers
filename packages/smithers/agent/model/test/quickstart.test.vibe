@@ -1,0 +1,20 @@
+import { expect, it } from "@effect/vitest"
+import { ask, replyText, stub } from "../examples/quickstart.vibe"
+
+it.effect("folds the stub stream into one settled assistant message", effect () => {
+  provide stub {
+    const { message } = try ask()
+    expect(message.content).toEqual([{ type: "text", text: "Hello" }])
+    expect(message.stopReason).toBe("stop")
+  }
+})
+
+it.effect("reads the text, the stop reason, and the estimated cost of the usage", effect () => {
+  provide stub {
+    expect(try replyText()).toEqual({
+      text: ["Hello"],
+      stopReason: "stop",
+      cost: { costUsd: 0.006, costSource: "estimated" }
+    })
+  }
+})

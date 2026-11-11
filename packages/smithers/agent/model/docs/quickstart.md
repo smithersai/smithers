@@ -7,7 +7,9 @@ sidebar:
 
 This quickstart takes you from an empty file to a folded assistant message:
 first against a stub model that runs anywhere, then against a real provider
-route. You need Node.js 22.19.0 or later.
+route. You need Node.js 22.19.0 or later. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the stub-model steps as
+Effect code.
 
 ## 1. Get the package
 
@@ -133,6 +135,61 @@ A `stopReason` of `"stop"` means the turn completed. `"aborted"` means the
 stream ended without a `settle` event; the fold still returns the partial
 content so the transcript stays resumable. [Read the stream](./guides/read-the-stream.md)
 covers every event and stop reason.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the program is an
+`effect` function: `try` reads the `Model` service and collects its stream,
+and the caller supplies `stub` with a `provide` block where the TypeScript
+pipes `Effect.provide`. Provide `Route.layer(route)` from step 3 instead and
+the same function calls a real provider.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { Model, ModelEvent, ModelRequest, Pricing } from "@smthrs/model"
+
+/** The request every step sends: one user message, no tools. */
+export const request = ModelRequest.ModelRequest.make({
+  modelId: "claude-sonnet-4-5",
+  system: [],
+  messages: [ModelRequest.Message.user("Say hello.")],
+  tools: [],
+  params: ModelRequest.GenerationParams.make()
+})
+
+/** A stub `Model` that streams one scripted reply, so the first run needs no credential. */
+export const stub = Model.layer({
+  stream: () =>
+    Stream.make(
+      { type: "text-start", id: "text-0" } as const,
+      { type: "text-delta", id: "text-0", text: "Hello" } as const,
+      { type: "text-end", id: "text-0" } as const,
+      { type: "usage", inputTokens: 1_000, outputTokens: 200 } as const,
+      { type: "settle", stopReason: "stop" } as const
+    )
+})
+
+/**
+ * Streams the request through whichever `Model` is provided and folds the
+ * events. The package's functions are TypeScript that declares no `@throws`,
+ * so effect code calls them through `Effect.try`.
+ */
+export effect function ask() {
+  const model = try Model.Model
+  const events = try Stream.runCollect(model.stream(request))
+  return try Effect.try(() => ModelEvent.settledMessage(events))
+}
+
+/** Reads the folded message: its text, its stop reason, and what the usage cost. */
+export effect function replyText() {
+  const { message, usage } = try ask()
+  const text = message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+  const cost = try Effect.try(() => Pricing.cost(usage, request.modelId))
+  return { text, stopReason: message.stopReason, cost }
+}
+```
 
 ## Where to go next
 

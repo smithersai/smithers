@@ -12,7 +12,12 @@ const cwd = "packages/smithers/agent/model"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   cwd
 })
 
