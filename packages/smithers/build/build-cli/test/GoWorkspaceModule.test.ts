@@ -315,6 +315,31 @@ export const Package = S.Package({ targets: {
     // inside the module rather than "no modules specified" from the root.
     const download = await ran(root, ["build", "//:download"])
     expect(download.text).toContain("go: no module dependencies to download")
+    expect(download.exitCode, download.text).toBe(0)
+  }, 240_000)
+})
+
+describe.runIf(launcher !== undefined && canConfine)("Go.ModDownload of a module with nothing to fetch", () => {
+  const targets =
+    `const modules = S.Go.ModDownload({ mod: S.file("go.mod"), sum: S.file("go.sum"), outDirs: [".gomodcache"], sandbox: {} })
+export const Package = S.Package({ targets: {
+  modules,
+  binary: S.Go.Binary({ pkg: "./", out: "bin/probe", offline: true, data: [modules], sandbox: {} })
+} })`
+
+  it("succeeds with an empty module cache, restores it, and feeds an offline build", async () => {
+    const root = await module(targets)
+    const first = await ran(root, ["build", "//:modules"])
+    expect(first.exitCode, first.text).toBe(0)
+    expect(first.text).toContain("//:modules  ran")
+    expect(await Fs.readdir(NodePath.join(root, ".gomodcache"))).toEqual([])
+    await Fs.rm(NodePath.join(root, ".gomodcache"), { recursive: true })
+    const again = await ran(root, ["build", "//:modules"])
+    expect(again.exitCode, again.text).toBe(0)
+    expect(again.text).toContain("//:modules  hit")
+    expect((await Fs.stat(NodePath.join(root, ".gomodcache"))).isDirectory()).toBe(true)
+    const binary = await ran(root, ["build", "//:binary"])
+    expect(binary.exitCode, binary.text).toBe(0)
   }, 240_000)
 })
 

@@ -767,12 +767,14 @@ export const executeEffect = (
                 throw cause
               })
             )
-            // Confinement prepares exact directory mounts. Without an explicit
-            // empty-output declaration, an empty mount is not a produced output.
+            // Confinement prepares exact directory mounts. Unless the planner
+            // admitted it as empty, an empty mount is not a produced output.
             if (
               stat === undefined ||
               (node.outDirs.includes(path) &&
-                (!stat.isDirectory() || (yield* joined(() => Fs.readdir(absolute))).length === 0)) ||
+                (!stat.isDirectory() ||
+                  (!(node.emptyOutDirs ?? []).includes(path) &&
+                    (yield* joined(() => Fs.readdir(absolute))).length === 0))) ||
               (node.outFiles.includes(path) && !stat.isFile())
             ) missing.push(path)
           }

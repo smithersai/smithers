@@ -1830,6 +1830,7 @@ const visit = async (
   }
   const outDirs: Array<string> = []
   const outFiles: Array<string> = []
+  const emptyOutDirs: Array<string> = []
   const members: Array<string> = []
   let aliasOf: string | undefined
   let materializeOf: string | undefined
@@ -2137,6 +2138,7 @@ const visit = async (
         if (moduleCache !== undefined && !NodePath.isAbsolute(moduleCache)) absoluteEnv.push("GOMODCACHE")
         outDirs.push(...plannedGo.outDirs)
         outFiles.push(...(plannedGo.outFiles ?? []))
+        emptyOutDirs.push(...(plannedGo.emptyOutDirs ?? []))
         writeSet.push(...plannedGo.writeSet)
         // `go` resolves its own module and package graph from import paths, so
         // the confinement has to admit the files the closure named or the
@@ -3299,6 +3301,7 @@ const visit = async (
     ...(dependencyInstallations.size === 0 ? {} : { dependencyInstallations: [...dependencyInstallations] }),
     outDirs,
     outFiles,
+    ...(emptyOutDirs.length === 0 ? {} : { emptyOutDirs }),
     overlays,
     emit,
     stdoutPath,

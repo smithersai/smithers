@@ -234,6 +234,8 @@ export interface SharedFields extends Planner.PlannedTarget {
   readonly dependencyInstallations?: ReadonlyArray<string>
   readonly outDirs: ReadonlyArray<string>
   readonly outFiles: ReadonlyArray<string>
+  /** Declared output directories a successful run may leave empty, such as a requirement-free module cache. */
+  readonly emptyOutDirs?: ReadonlyArray<string>
   /** Consumer-scoped source substitutions applied only in a scratch workspace. */
   readonly overlays: ReadonlyArray<OverlayExec.Replacement>
   readonly emit:

@@ -151,6 +151,10 @@ A target's declared `outDir` trees and `outFile` files are captured into
 
 `Go.ModDownload` captures its output directory through a temporary tar archive
 under `<cache-dir>/tmp`. Capture removes the archive on success and failure.
+A run that leaves a declared output directory empty fails because it produced
+nothing, with one exception: a `Go.ModDownload` whose `go.mod` has no `require`
+directive has nothing to fetch, so its empty module cache is its result. It is
+captured, restored on a hit, and read by offline consumers like any other.
 Markdown code-block checks remove their per-key scratch tree after each run;
 cache hits reuse the result without recreating that tree.
 

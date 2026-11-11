@@ -75,6 +75,13 @@ export interface Planned {
    * admits" and "what the key covers" one answer rather than two.
    */
   readonly readSet: ReadonlyArray<string>
+  /**
+   * The declared output directories the rule may leave empty. A
+   * `Go.ModDownload` of a module whose `go.mod` requires nothing writes no
+   * module cache entries, and that empty cache is its whole result. Any other
+   * empty output directory stays a run that produced nothing.
+   */
+  readonly emptyOutDirs?: ReadonlyArray<string>
   readonly closureIdentity?: unknown
   /**
    * The workspace-relative directory `go` runs in: the declared module's,
@@ -626,6 +633,16 @@ const fetchedModuleCache = (context: Context, attrs: Record<string, unknown>): s
   return undefined
 }
 
+/**
+ * Whether the `go.mod` that `go` reads has no `require` directive, so
+ * `go mod download` has nothing to write. `go.mod` is key material, so the
+ * empty cache this admits is keyed too. An unreadable `go.mod` admits nothing.
+ */
+const requiresNothing = async (context: Context): Promise<boolean> => {
+  const text = await Fs.readFile(NodePath.join(moduleDirectory(context), "go.mod"), "utf8").catch(() => undefined)
+  return text !== undefined && !/^\s*require\b/m.test(text.replace(/\/\/.*$/gm, ""))
+}
+
 /** The last `-mod` mode one `GOFLAGS` value declares, which is the one `go` applies. */
 const moduleMode = (flags: string): string | undefined => [...flags.matchAll(/(?:^|\s)--?mod=(\S*)/g)].at(-1)?.[1]
 
@@ -712,6 +729,7 @@ export const planRule = async (
       argv: [goPath, "mod", "download"],
       env: { ...env, GOMODCACHE: outDirs[0] ?? ".gomodcache" },
       outDirs,
+      ...((await requiresNothing(context)) ? { emptyOutDirs: outDirs } : {}),
       writeSet: [],
       readSet: authority
     }

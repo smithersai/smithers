@@ -167,6 +167,31 @@ describe("Go planning contracts", () => {
     expect(changes).toEqual(writeSet.length === 0 ? [] : ["generated.go", "//shared/generated.go"])
   })
 
+  it.each([
+    ["requires nothing", "", [".gomodcache"]],
+    ["only mentions a requirement in a comment", "// require example.org/dependency v1.0.0\n", [".gomodcache"]],
+    ["requires a module", "\nrequire example.org/dependency v1.0.0\n", undefined],
+    ["requires a block of modules", "\nrequire (\n\texample.org/dependency v1.0.0\n)\n", undefined],
+    ["is missing", undefined, undefined]
+  ])("admits an empty module cache only when go.mod %s", async (_, requirements, expected) => {
+    const root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "go-download-contract-"))
+    try {
+      if (requirements !== undefined) {
+        await Fs.writeFile(NodePath.join(root, "go.mod"), `module example.org/probe\n\ngo 1.21\n${requirements}`)
+      }
+      const planned = await GoExec.planRule(
+        "Go.ModDownload",
+        { outDirs: [".gomodcache"] },
+        { ...context, root, packagePath: "" },
+        "/selected/bin/go"
+      )
+      expect(planned.outDirs).toEqual([".gomodcache"])
+      expect(planned.emptyOutDirs).toEqual(expected)
+    } finally {
+      await Fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("uses the declared module fetch cache only for an offline plan", async () => {
     const download = S.Go.ModDownload({
       mod: S.file("//go.mod"),
