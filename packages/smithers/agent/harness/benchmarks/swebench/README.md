@@ -326,10 +326,14 @@ no policy that refuses one without it. Such a call runs model-authored shell on
 this host, with the docker socket in reach, from input that is untrusted
 repository text.
 
-`run-instance.sh` refuses to start an agent unless the lane sets
-`SWB_FLOWS_HOST_SHELL=allowed`, and stamps the value into `timings/<id>.json`
-as `hostShell`. `lib/fullbench-instance.sh` carries it into the ledger row
-beside `testbedNetwork`. `SWB_SKIP_AGENT=1` runs no agent and needs no value.
+With Docker, `run-instance.sh` refuses to start an agent unless the lane sets
+`SWB_FLOWS_HOST_SHELL=allowed`; an operator-supplied `sealed` is refused.
+It stamps `allowed` into `timings/<id>.json` as `hostShell`.
+On Smithers Cloud (`SWB_TRANSPORT=plue`), the runner sets
+`SMITHERS_BASH_CONTAINER` to the workspace and derives `hostShell: sealed`
+internally; no host-shell opt-in is needed.
+`lib/fullbench-instance.sh` carries the condition into the ledger row beside
+`testbedNetwork`. `SWB_SKIP_AGENT=1` runs no agent and needs no value.
 
 ```sh
 SWB_FLOWS_HOST_SHELL=allowed ./run-instance.sh django__django-16612

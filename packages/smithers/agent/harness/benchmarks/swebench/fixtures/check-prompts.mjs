@@ -261,17 +261,35 @@ try {
   // every such call runs on the host with docker-daemon reach. The rig cannot
   // confine it; it can refuse to start an agent until the lane says so, and
   // stamp that condition beside `testbedNetwork` so no report assumes it away.
-  const runInstance = (hostShell) => {
-    const env = { ...process.env, SWB_DATASET: dataset }
+  const runInstance = (hostShell, transport = "docker", skipAgent = "0") => {
+    // Invalid memory is a side-effect-free stop immediately after admission.
+    const env = {
+      ...process.env,
+      SWB_DATASET: dataset,
+      SWB_TRANSPORT: transport,
+      SWB_MEMORY: "admission-stop",
+      SWB_SKIP_AGENT: skipAgent
+    }
     delete env.SWB_FLOWS_HOST_SHELL
-    delete env.SWB_SKIP_AGENT
+    delete env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
     if (hostShell !== undefined) env.SWB_FLOWS_HOST_SHELL = hostShell
     return spawnSync("bash", [join(root, "run-instance.sh"), instance.instance_id], { env, encoding: "utf8" })
   }
-  for (const hostShell of [undefined, "", "confined", "yes"]) {
+  for (const hostShell of [undefined, "", "sealed", "confined", "yes", "ALLOWED"]) {
     const refused = runInstance(hostShell)
     assert.equal(refused.status, 2, `run-instance.sh refuses SWB_FLOWS_HOST_SHELL=${JSON.stringify(hostShell)}`)
     assert.match(refused.stdout, /SWB_FLOWS_HOST_SHELL must be 'allowed'/u)
+  }
+  const allowed = runInstance("allowed")
+  assert.equal(allowed.status, 2)
+  assert.match(allowed.stdout, /SWB_MEMORY must be unset or 'repo'/u, "Docker accepts the explicit host-shell opt-in")
+  for (const hostShell of [undefined, "", "sealed", "allowed", "confined"]) {
+    const cloud = runInstance(hostShell, "plue")
+    assert.equal(cloud.status, 2)
+    assert.match(cloud.stdout, /SWB_MEMORY must be unset or 'repo'/u, "Cloud needs no operator host-shell claim")
+    const capture = runInstance(hostShell, "docker", "1")
+    assert.equal(capture.status, 2)
+    assert.match(capture.stdout, /SWB_MEMORY must be unset or 'repo'/u, "capture without an agent needs no opt-in")
   }
   // The codex arm defaults to `sealed` and refuses any condition it does not
   // know; `on` needs SWB_CODEX_UNCONFINED=allowed (`check-codex-lanes.mjs`).

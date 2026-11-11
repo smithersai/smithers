@@ -70,8 +70,7 @@ esac
 # offers no host file flow. That is stamped as `sealed` and needs no opt-in.
 TRANSPORT="$("$S/lib/transport.sh")" || exit 2
 HOST_SHELL="${SWB_FLOWS_HOST_SHELL:-}"
-if [ "$TRANSPORT" = "plue" ]; then HOST_SHELL=sealed; fi
-if [ "${SWB_SKIP_AGENT:-0}" != "1" ] && [ "$HOST_SHELL" != "allowed" ] && [ "$HOST_SHELL" != "sealed" ]; then
+if [ "$TRANSPORT" = "docker" ] && [ "${SWB_SKIP_AGENT:-0}" != "1" ] && [ "$HOST_SHELL" != "allowed" ]; then
   echo "[$INSTANCE] SWB_FLOWS_HOST_SHELL must be 'allowed', got '$HOST_SHELL': the flows bash flow runs container-less calls on this host unconfined"
   exit 2
 fi
@@ -321,6 +320,11 @@ if [ "${SWB_SKIP_AGENT:-0}" = "1" ]; then
   echo "[$RUN_ID] SWB_SKIP_AGENT=1 — no agent, capture proof only"
   RUN_STATUS=0
 else
+  # Derive the sealed condition only when binding the agent to its workspace.
+  if [ "$TRANSPORT" = "plue" ]; then
+    export SMITHERS_BASH_CONTAINER="$WS"
+    HOST_SHELL=sealed
+  fi
   echo "[$RUN_ID] agent start ($SEAT via $OPENAI_AUTH, ${BUDGET}s)"
   START=$(date +%s)
   set +e
@@ -345,7 +349,6 @@ else
     # workspace instead, and the prompt states the test command.
     if [ "$TRANSPORT" = "plue" ]; then
       unset SMITHERS_TEST_COMMAND SMITHERS_TEST_CONTAINER SMITHERS_TEST_CWD
-      export SMITHERS_BASH_CONTAINER="$WS"
     else
       export SMITHERS_TEST_COMMAND="$TEST_CMD"
       export SMITHERS_TEST_CONTAINER="$CONTAINER"
@@ -379,7 +382,7 @@ else
   # than one because a report that could only print the request would be
   # printing a claim; the ledger row and every scoreboard downstream carry the
   # observation. `hostShell` is the condition the agent's host-side shell ran
-  # under; `allowed` is the only value an agent run can have today. `memory`
+  # under: `allowed` for Docker, `sealed` for the workspace-bound Cloud run. `memory`
   # is the condition declared above; a report that pools a memory-on run with
   # the independent-instance score reads it. Whether the supervisor delivered
   # is the run's own `discipline-armed.judged`.
