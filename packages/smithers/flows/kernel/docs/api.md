@@ -1114,6 +1114,7 @@ interface Spawned {
   readonly pid: number
   readonly pgid: number | null
   readonly commandDigest: string
+  readonly startedAtMs?: number | undefined
 }
 
 const ProcessRecord: Schema.Struct<{
@@ -1123,6 +1124,7 @@ const ProcessRecord: Schema.Struct<{
   ownerPid: Schema.Int
   startedAtMs: Schema.Int
   commandDigest: Schema.String
+  incarnation: Schema.optional<Schema.String>
 }>
 type ProcessRecord = typeof ProcessRecord.Type
 ```
@@ -1130,7 +1132,14 @@ type ProcessRecord = typeof ProcessRecord.Type
 `commandDigest` is the executable alone, as `CommandLine.executable` renders
 it. Arguments carry credentials and these records are permanent, so the ledger
 never writes one down; a reader that acts on a record matches it by pid and
-process group.
+start time.
+
+`startedAtMs` is the clock reading taken immediately before the spawn.
+`ContainedSpawner` supplies it, so a lifecycle that waits for its supervisor to
+come up does not move the instant a reaper compares with the operating system's
+start time. A caller that omits it gets the time of the `record` call.
+`incarnation` is a nonce drawn once per process; every ledger in that process
+stamps it, and records written before the field existed carry none.
 
 ### ProcessLedger.Service and ProcessLedger.ProcessLedger
 
@@ -1150,7 +1159,9 @@ class ProcessLedger extends Context.Service<ProcessLedger, Service>()("@smthrs/k
 Every write carries the journal's failure to its caller: a swallowed write
 leaves a child no incarnation of the host can discover. `live` is this
 incarnation's unreleased records; `orphans` replays the host run and returns
-the records whose owner pid is not this incarnation's.
+the records whose `ownerPid` or `incarnation` differs from this ledger's. The
+nonce is what lets a successor that was given the pid of the host that died
+inherit that host's records.
 
 ### ProcessLedger.Options
 

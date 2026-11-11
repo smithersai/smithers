@@ -33,6 +33,7 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Random from "effect/Random"
 import * as Schema from "effect/Schema"
 
 /**
@@ -110,8 +111,14 @@ export const hostRunId = (hostId: string): JournalEvent.RunId => `flows.host:${h
  * `CommandLine.executable` renders it. Arguments carry credentials
  * (`curl -u user:password`, `mysql -phunter2`) and these records are permanent
  * journal entries, so the ledger never writes an argument down. A reader that
- * has to act on a record matches it by pid and process group; the program name
+ * has to act on a record matches it by pid and start time; the program name
  * is there to make the row legible.
+ *
+ * `startedAtMs` is the clock reading taken immediately before the spawn. A
+ * reaper proves a stored pid still names this process by comparing it with the
+ * operating system's start time, so it must not include whatever startup the
+ * spawner waited for after the process existed. When it is absent the ledger
+ * reads the clock when it records the spawn.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -120,6 +127,7 @@ export interface Spawned {
   readonly pid: number
   readonly pgid: number | null
   readonly commandDigest: string
+  readonly startedAtMs?: number | undefined
 }
 
 /**
@@ -134,12 +142,19 @@ export const ProcessRecord = Schema.Struct({
   hostId: Schema.String,
   ownerPid: Schema.Int,
   startedAtMs: Schema.Int,
-  commandDigest: Schema.String
+  commandDigest: Schema.String,
+  incarnation: Schema.optional(Schema.String)
 })
 
 /**
  * One process a host started, with the identity of the incarnation that
  * started it.
+ *
+ * `incarnation` names the process that wrote the record, and it is what tells
+ * this incarnation's records from an abandoned one's: a successor can be given
+ * the same pid as the host that died. Records written before the field existed
+ * carry none and always belong to an earlier incarnation. `ownerPid` stays for
+ * the reaper, which asks whether that process is still running.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -231,8 +246,11 @@ export class ProcessLedger extends Context.Service<ProcessLedger, Service>()("@s
  * Ledger configuration.
  *
  * `hostId` is the durable identity two incarnations share; `ownerPid` is the
- * process id of THIS incarnation, which is how a replay tells its own live
- * processes from an abandoned one's.
+ * process id of THIS incarnation. A replay treats a record as its own only when
+ * the record carries both this `ownerPid` and this process's incarnation nonce,
+ * so a successor that was given the dead host's pid still inherits that host's
+ * records, and two ledgers built in one process never report each other's live
+ * processes as orphans.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -360,19 +378,39 @@ const memorySink: Sink = {
   replay: Effect.succeed([])
 }
 
-const makeWith = (options: Options, sink: Sink): Service => {
+// The registry key also works when the ledger crosses the ESM/CJS projections.
+const incarnationKey = Symbol.for("@smthrs/kernel/ProcessLedger/incarnation/v1")
+
+/**
+ * The nonce that names this process's incarnation, drawn on first use.
+ *
+ * It only has to differ between the incarnations of one `hostId`, and every
+ * ledger in the process has to agree on it.
+ */
+const processIncarnation: Effect.Effect<string> = Effect.suspend(() => {
+  const realm = globalThis as { [incarnationKey]?: string }
+  const drawn = realm[incarnationKey]
+  if (drawn !== undefined) return Effect.succeed(drawn)
+  return Effect.map(
+    Effect.all([Random.nextInt, Random.nextInt]),
+    (parts) => (realm[incarnationKey] ??= parts.map((part) => part.toString(36)).join("."))
+  )
+})
+
+const makeWith = (options: Options, sink: Sink, incarnation: string): Service => {
   const live = new Map<string, ProcessRecord>()
   return ProcessLedger.of({
     record: (spawned) =>
       Effect.gen(function*() {
-        const startedAtMs = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+        const startedAtMs = spawned.startedAtMs ?? (yield* Effect.clockWith((clock) => clock.currentTimeMillis))
         const record: ProcessRecord = {
           pid: spawned.pid,
           pgid: spawned.pgid,
           hostId: options.hostId,
           ownerPid: options.ownerPid,
           startedAtMs,
-          commandDigest: spawned.commandDigest
+          commandDigest: spawned.commandDigest,
+          incarnation
         }
         live.set(identity(record), record)
         // A failed append tells the caller the spawn was not recorded, and the
@@ -391,7 +429,11 @@ const makeWith = (options: Options, sink: Sink): Service => {
     reaped: (record) => sink.append(ReapedEventType, record),
     skipped: (record, reason) => sink.append(SkippedEventType, record, { reason }),
     live: Effect.sync(() => [...live.values()]),
-    orphans: Effect.map(sink.replay, (records) => records.filter((record) => record.ownerPid !== options.ownerPid))
+    orphans: Effect.map(
+      sink.replay,
+      (records) =>
+        records.filter((record) => record.ownerPid !== options.ownerPid || record.incarnation !== incarnation)
+    )
   })
 }
 
@@ -402,7 +444,10 @@ const makeWith = (options: Options, sink: Sink): Service => {
  * @since 1.0.0-rc.0
  */
 export const make = (options: Options): Effect.Effect<Service, never, JournalModule.Journal> =>
-  Effect.map(JournalModule.Journal, (journal) => makeWith(options, journalSink(options, journal)))
+  Effect.gen(function*() {
+    const journal = yield* JournalModule.Journal
+    return makeWith(options, journalSink(options, journal), yield* processIncarnation)
+  })
 
 /**
  * Builds a ledger that records nothing durably.
@@ -414,7 +459,8 @@ export const make = (options: Options): Effect.Effect<Service, never, JournalMod
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const makeMemory = (options: Options): Effect.Effect<Service> => Effect.sync(() => makeWith(options, memorySink))
+export const makeMemory = (options: Options): Effect.Effect<Service> =>
+  Effect.map(processIncarnation, (incarnation) => makeWith(options, memorySink, incarnation))
 
 /**
  * Provides a journal-backed ledger.

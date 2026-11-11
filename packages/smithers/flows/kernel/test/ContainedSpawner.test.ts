@@ -25,6 +25,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import { TestClock } from "effect/testing"
 import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"
 import { GrantStore } from "../src/GrantStore.ts"
@@ -113,6 +114,30 @@ describe("ContainedSpawner", () => {
         expect(yield* ledger.live).toHaveLength(verified ? 0 : 1)
       }))
   }
+
+  it.effect("records the instant before the spawn, not after a slow lifecycle startup", () =>
+    Effect.gen(function*() {
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "slow", ownerPid: 1 })
+      const spawnedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+      const lifecycle: ContainedSpawner.Lifecycle = (command, spawn) =>
+        Effect.gen(function*() {
+          const handle = yield* spawn(command)
+          // The supervisor exists now and takes five seconds to report ready.
+          yield* TestClock.adjust("5 seconds")
+          return { handle, activate: Effect.void, settled: Effect.succeed(false) }
+        })
+      yield* Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        yield* spawner.spawn(ChildProcess.make("agent"))
+      }).pipe(
+        Effect.provide(ContainedSpawner.layer({}, lifecycle)),
+        Effect.provide(hostSpawner([])),
+        Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+        Effect.scoped
+      )
+      expect(yield* Effect.clockWith((clock) => clock.currentTimeMillis)).toBe(spawnedAt + 5_000)
+      expect((yield* ledger.live).map((row) => row.startedAtMs)).toEqual([spawnedAt])
+    }))
 
   for (const allowed of [true, false]) {
     it.effect(`authorizes the original command and records its prepared identity before activation (${allowed})`, () =>

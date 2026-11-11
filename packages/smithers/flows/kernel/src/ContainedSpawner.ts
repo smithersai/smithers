@@ -219,6 +219,10 @@ export const layer = (
                       })
                     )
                     const contained = withContainment(command, options) as ChildProcess.StandardCommand
+                    // Read before the spawn: a lifecycle waits for its process to come
+                    // up before returning, and a reaper compares this instant with the
+                    // operating system's start time.
+                    const startedAtMs = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
                     const watched = lifecycle === undefined ? undefined : yield* lifecycle(contained, spawner.spawn)
                     const handle = watched?.handle ?? (yield* spawner.spawn(contained))
                     slot.settled = watched?.settled ?? slot.settled
@@ -226,7 +230,8 @@ export const layer = (
                     slot.current = yield* ledger.record({
                       pid,
                       pgid: groupOf(command, pid, options?.platform),
-                      commandDigest: CommandLine.executable(command)
+                      commandDigest: CommandLine.executable(command),
+                      startedAtMs
                     }).pipe(
                       // A spawn whose record did not commit is precisely the child this
                       // module exists to make discoverable, so it is not started: the

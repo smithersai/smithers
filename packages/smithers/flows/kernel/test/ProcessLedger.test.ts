@@ -113,6 +113,75 @@ describe("ProcessLedger", () => {
       })
     ))
 
+  it.effect("stores the spawn instant the spawner supplies instead of the time it records", () =>
+    run(
+      Effect.gen(function*() {
+        const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 4242 })
+        const spawnedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+        // A supervisor that took five seconds to come up is recorded afterwards.
+        yield* TestClock.adjust("5 seconds")
+        const spawned = yield* ledger.record({ pid: 91, pgid: 91, commandDigest: "sleep 60", startedAtMs: spawnedAt })
+
+        expect(spawned.startedAtMs).toBe(spawnedAt)
+        const journal = yield* Journal
+        const page = yield* journal.entries({ runId: ProcessLedger.hostRunId("host-a"), limit: 16 })
+        expect(page.entries[0]?.payload).toMatchObject({ pid: 91, startedAtMs: spawnedAt })
+      })
+    ))
+
+  it.effect("reports a dead incarnation's processes to a successor that was given the same pid", () =>
+    run(
+      Effect.gen(function*() {
+        // A container restart hands the next host the same low pid.
+        const journal = yield* Journal
+        yield* journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: ProcessLedger.hostRunId("host-a"),
+            sourceId: ProcessLedger.sourceId as JournalEvent.SourceId,
+            eventType: ProcessLedger.SpawnedEventType,
+            payload: { ...record(11, 1), incarnation: "dead" }
+          })
+        )
+        const successor = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 1 })
+        const own = yield* successor.record({ pid: 12, pgid: 12, commandDigest: "sleep 60" })
+
+        expect(own.incarnation).toBeTypeOf("string")
+        expect(own.incarnation).not.toBe("dead")
+        expect((yield* successor.orphans).map((row) => row.pid)).toEqual([11])
+      })
+    ))
+
+  it.effect("shares one incarnation between the ledgers of one process", () =>
+    run(
+      Effect.gen(function*() {
+        const runtime = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 1 })
+        const live = yield* runtime.record({ pid: 11, pgid: 11, commandDigest: "sleep 60" })
+        const control = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 1 })
+        const memory = yield* ProcessLedger.makeMemory({ hostId: "host-a", ownerPid: 1 })
+
+        // A second ledger in the same process must not reap the first one's children.
+        expect(yield* control.orphans).toEqual([])
+        const other = yield* memory.record({ pid: 12, pgid: 12, commandDigest: "true" })
+        expect(other.incarnation).toBe(live.incarnation)
+      })
+    ))
+
+  it.effect("reports a record written before incarnations were stamped as an orphan", () =>
+    Effect.gen(function*() {
+      const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 1 }).pipe(
+        Effect.provide(
+          JournalModule.layerNoop({
+            entries: () =>
+              Effect.succeed({
+                entries: [entry({ seq: 0, eventType: "flows.host.process-spawned.v1", payload: record(21, 1) })],
+                hasMore: false
+              })
+          })
+        )
+      )
+      expect(yield* ledger.orphans).toEqual([record(21, 1)])
+    }))
+
   it.effect("keeps a reused pid live when an older process is released again", () =>
     Effect.gen(function*() {
       const ledger = yield* ProcessLedger.makeMemory({ hostId: "host-a", ownerPid: 100 })

@@ -59,8 +59,11 @@ ProcessLedger.layerMemory({ hostId, ownerPid })
 
 The durable half is only as good as the journal underneath it, so the choice
 belongs to the program that knows which it has. `hostId` names the run the
-records live on (`flows.host:<hostId>`), and `ownerPid` is what distinguishes
-this incarnation's processes from the orphans a previous one left.
+records live on (`flows.host:<hostId>`), and `ownerPid` is the pid the reaper
+probes to learn whether a record's owner is still running. Each record also
+carries a nonce drawn once per process; `ownerPid` and that nonce together
+distinguish this incarnation's processes from the orphans a previous one left,
+even when the successor was given the same pid.
 
 On Node, `@smthrs/platform-node`'s `NodeHost.layerContained` and
 `layerContainedAt` compose the spawner, bind `Jj` through it so a stray `jj`

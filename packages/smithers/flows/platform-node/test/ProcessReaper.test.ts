@@ -85,6 +85,54 @@ describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone
   )
 })
 
+describe("ProcessReaper.reap owner liveness", () => {
+  it("reaps a record whose dead owner had the pid this host now has", async () => {
+    const record: ProcessLedger.ProcessRecord = {
+      pid: 900011,
+      pgid: 900011,
+      hostId: "same-pid",
+      ownerPid: 900012,
+      startedAtMs: 10_000,
+      commandDigest: "agent",
+      incarnation: "dead"
+    }
+    const probed: Array<number> = []
+    const killed: Array<number> = []
+    const ledger: ProcessLedger.Service = {
+      record: () => Effect.die("unused"),
+      release: () => Effect.void,
+      reaped: () => Effect.void,
+      skipped: () => Effect.die("unused"),
+      live: Effect.succeed([]),
+      orphans: Effect.succeed([record])
+    }
+    const outcomes = await Effect.runPromise(
+      ProcessReaper.reap({
+        // The successor was given the dead incarnation's pid.
+        ownerPid: record.ownerPid,
+        system: {
+          ...ProcessReaper.posixSystem,
+          bootedAtMs: () => 0,
+          ownGroup: () => 900013,
+          isAlive: (pid) => {
+            probed.push(pid)
+            return pid === record.ownerPid ? "alive" : "dead"
+          },
+          startedAtMs: () => ({ _tag: "started", startedAtMs: record.startedAtMs }),
+          killTree: (row) => {
+            killed.push(row.pid)
+            return "signalled"
+          }
+        }
+      }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, ledger))
+    )
+
+    expect(outcomes).toEqual([{ record, killed: true }])
+    expect(probed).toEqual([])
+    expect(killed).toEqual([record.pid])
+  })
+})
+
 describe("ProcessReaper.groupVacant", () => {
   it.skipIf(process.platform === "win32")(
     "answers true only after the kernel reports the group has no process",

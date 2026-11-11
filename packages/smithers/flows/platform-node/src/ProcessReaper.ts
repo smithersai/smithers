@@ -15,7 +15,8 @@
  *   ({@link ProcessLedger.Service.orphans} already filters that);
  * - its owner is gone. A pid that exists but belongs to another user counts as
  *   alive, exactly as {@link HostLiveness} counts it, so only `ESRCH` reads as
- *   dead and every other answer keeps the record;
+ *   dead and every other answer keeps the record. An owner with THIS host's pid
+ *   is a dead incarnation that held the same number, and is not probed;
  * - it names a target the platform can actually signal. On POSIX that is a
  *   process group the child leads itself, so `pgid` has to be a safe integer
  *   above 1 and equal to `pid`; on Windows it is a pid, so `pgid` has to be
@@ -812,7 +813,10 @@ const refuse = (
   // not made rather than made and passed, so the record is kept instead of
   // signalled on a guard that did not run.
   if (record.pgid !== null && ownGroup === null) return "own-group-unknown"
-  if (system.isAlive(record.ownerPid) !== "dead") return "owner-alive"
+  // The ledger hands over only records another incarnation wrote, so a record
+  // whose owner has THIS host's pid names an incarnation that is gone; probing
+  // it would find this host running and keep the record forever.
+  if (record.ownerPid !== ownerPid && system.isAlive(record.ownerPid) !== "dead") return "owner-alive"
   return refuseOnIdentity(system, record, bootMs)
 }
 
