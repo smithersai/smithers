@@ -10,6 +10,7 @@
  */
 
 export * as Driver from "./Driver.ts"
+export * as FileInbox from "./FileInbox.ts"
 export * from "./Kernel.ts"
 export * as QueueFlow from "./QueueFlow.ts"
 export * as QueueSchema from "./Schema.ts"

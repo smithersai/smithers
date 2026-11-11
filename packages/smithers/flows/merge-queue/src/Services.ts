@@ -48,8 +48,9 @@ export class TargetDiverged extends Schema.TaggedError<TargetDiverged>()("@smthr
 }) {}
 
 /**
- * One entry of the inbox: a change handed in, a change taken back, or the
- * request to finish once every change has ended.
+ * One entry of the inbox: a change handed in, a change taken back, the
+ * request to finish once every change has ended, or an entry the inbox could
+ * not read, which the queue passes over.
  *
  * @category models
  * @since 0.1.0
@@ -57,6 +58,7 @@ export class TargetDiverged extends Schema.TaggedError<TargetDiverged>()("@smthr
 export type Letter =
   | { readonly _tag: "event"; readonly event: Extract<Event, { readonly _tag: "enqueue" | "withdraw" }> }
   | { readonly _tag: "close" }
+  | { readonly _tag: "skip" }
 
 /**
  * Where people and agents hand changes to the queue. The inbox is an ordered
