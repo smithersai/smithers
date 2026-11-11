@@ -50,15 +50,20 @@ const replay = (name: string) => {
   return events
 }
 
-const replayData = (data: ReadonlyArray<string>, finalize = false): ReadonlyArray<Events.ModelEvent> => {
-  let state = OpenAIResponses.protocol.stream.initial(streamRequest)
+const replayData = (
+  data: ReadonlyArray<string>,
+  finalize = false,
+  protocol: typeof OpenAIResponses.protocol | typeof OpenAIResponses.chatgptProtocol = OpenAIResponses.protocol
+): ReadonlyArray<Events.ModelEvent> => {
+  let state = protocol.stream.initial(streamRequest)
   const events: Array<Events.ModelEvent> = []
   for (const datum of data) {
-    const [next, emitted] = step(state, datum)
+    const event = Schema.decodeUnknownSync(protocol.stream.event)(datum)
+    const [next, emitted] = Effect.runSync(protocol.stream.step(state, event))
     state = next
     events.push(...emitted)
   }
-  if (finalize) events.push(...(OpenAIResponses.protocol.stream.onHalt?.(state) ?? []))
+  if (finalize) events.push(...(protocol.stream.onHalt?.(state) ?? []))
   return events
 }
 
@@ -317,18 +322,48 @@ describe("OpenAIResponses", () => {
     })
   })
 
-  it("opens one reasoning part per id no matter how many deltas arrive", () => {
+  it("opens and ends one reasoning part per id no matter how many deltas and done events arrive", () => {
     expect(replayData([
       "{\"type\":\"response.reasoning_summary.delta\",\"item_id\":\"rs_1\",\"delta\":\"one\"}",
       "{\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_1\",\"delta\":\" two\"}",
       "{\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_1\"}",
       "{\"type\":\"response.reasoning_summary.done\",\"item_id\":\"rs_1\"}"
-    ])).toEqual([
+    ], true)).toEqual([
       { type: "thinking-start", id: "rs_1", signature: "rs_1" },
       { type: "thinking-delta", id: "rs_1", text: "one" },
       { type: "thinking-delta", id: "rs_1", text: " two" },
-      { type: "thinking-end", id: "rs_1" },
       { type: "thinking-end", id: "rs_1" }
+    ])
+  })
+
+  // #4744: the Responses API sends one done event per summary part, and the
+  // part closed at the first one while the second part's deltas kept coming.
+  it.each(
+    [
+      ["protocol", OpenAIResponses.protocol, { signature: "rs_1" }],
+      ["chatgptProtocol", OpenAIResponses.chatgptProtocol, {}]
+    ] as const
+  )("ends a multi-part reasoning summary once, after its last part, on %s", (_, protocol, signature) => {
+    const events = replayData(
+      [
+        "{\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_1\",\"summary_index\":0,\"delta\":\"part one\"}",
+        "{\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_1\",\"summary_index\":0}",
+        "{\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"rs_1\",\"summary_index\":1,\"delta\":\"part two\"}",
+        "{\"type\":\"response.reasoning_summary_text.done\",\"item_id\":\"rs_1\",\"summary_index\":1}",
+        "{\"type\":\"response.output_item.done\",\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\"}}",
+        "{\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\"}}"
+      ],
+      false,
+      protocol
+    )
+    expect(events.filter((event) => event.type.startsWith("thinking"))).toEqual([
+      { type: "thinking-start", id: "rs_1", ...signature },
+      { type: "thinking-delta", id: "rs_1", text: "part one" },
+      { type: "thinking-delta", id: "rs_1", text: "\n\npart two" },
+      { type: "thinking-end", id: "rs_1" }
+    ])
+    expect(Events.settledMessage(events).message.content).toMatchObject([
+      { type: "thinking", text: "part one\n\npart two" }
     ])
   })
 

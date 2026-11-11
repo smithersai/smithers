@@ -29478,8 +29478,8 @@ The retry ladder: by default one call makes at most three attempts (the first
 plus two retries), starting at 500 ms, doubling, jittered, capped at 10 s per wait and
 60 s in total. Only a retryable error is retried. A `Retry-After` or
 `retry-after-ms` header replaces the computed wait and is slept in full, so no
-retry reaches the provider early; a provider wait larger than the whole 60 s budget is not
-slept at all, and the error surfaces immediately with its `retryAfterMillis`,
+retry reaches the provider early; a provider wait that would end past the 60 s budget,
+counted from the first attempt, is not slept at all, and the error surfaces immediately with its `retryAfterMillis`,
 `resetAtEpochMillis`, and `resetSource` so the caller can park durably
 instead of holding the process.
 

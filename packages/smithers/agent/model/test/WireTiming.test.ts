@@ -253,6 +253,8 @@ describe("wire timing on the settle event", () => {
       "tool-call-delta",
       "tool-call-delta",
       "tool-call-end",
+      // The reasoning part the stream left open closes with the response.
+      "thinking-end",
       "usage",
       "settle"
     ])

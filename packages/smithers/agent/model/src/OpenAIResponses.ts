@@ -181,6 +181,7 @@ export interface State {
   readonly toolNames: Readonly<Record<string, string>>
   readonly textIds: ReadonlySet<string>
   readonly thinkingIds: ReadonlySet<string>
+  readonly thinkingBreaks: ReadonlySet<string>
   readonly completedToolIds: ReadonlySet<string>
   readonly itemIds: ReadonlyArray<string>
   readonly responseId: string | undefined
@@ -522,6 +523,25 @@ const completeTool = (
 const rememberItem = (state: State, itemId: string): State =>
   state.itemIds.includes(itemId) ? state : { ...state, itemIds: [...state.itemIds, itemId] }
 
+// A reasoning item streams one summary part after another, each with its own
+// done event, into a single thinking part. The part ends once, when its item
+// is done, or when the response ends or halts without saying so.
+const endThinking = (
+  state: State,
+  ids: ReadonlyArray<string>
+): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } => {
+  const open = ids.filter((id) => state.thinkingIds.has(id))
+  if (open.length === 0) return { state, events: [] }
+  return {
+    state: {
+      ...state,
+      thinkingIds: new Set([...state.thinkingIds].filter((id) => !open.includes(id))),
+      thinkingBreaks: new Set([...state.thinkingBreaks].filter((id) => !open.includes(id)))
+    },
+    events: open.map((id) => ModelEvent.ModelEvent.ThinkingEnd({ type: "thinking-end", id }))
+  }
+}
+
 /**
  * How a stream's reasoning items are carried into the next request.
  *
@@ -641,8 +661,14 @@ const stepEvent = (
   ) {
     const reasoning = continuation === "stored" ? rememberItem(current, itemId) : current
     const fresh = !reasoning.thinkingIds.has(itemId)
+    // A summary part after a finished one is a new paragraph of the same part.
+    const separator = reasoning.thinkingBreaks.has(itemId) ? "\n\n" : ""
     return {
-      state: { ...reasoning, thinkingIds: new Set([...reasoning.thinkingIds, itemId]) },
+      state: {
+        ...reasoning,
+        thinkingIds: new Set([...reasoning.thinkingIds, itemId]),
+        thinkingBreaks: new Set([...reasoning.thinkingBreaks].filter((id) => id !== itemId))
+      },
       events: [
         ...(fresh
           ? [
@@ -656,7 +682,7 @@ const stepEvent = (
             })
           ]
           : []),
-        ModelEvent.ModelEvent.ThinkingDelta({ type: "thinking-delta", id: itemId, text: delta })
+        ModelEvent.ModelEvent.ThinkingDelta({ type: "thinking-delta", id: itemId, text: separator + delta })
       ]
     }
   }
@@ -666,10 +692,10 @@ const stepEvent = (
   ) {
     const reasoning = continuation === "stored" ? rememberItem(current, itemId) : current
     return {
-      state: reasoning,
-      events: reasoning.thinkingIds.has(itemId)
-        ? [ModelEvent.ModelEvent.ThinkingEnd({ type: "thinking-end", id: itemId })]
-        : []
+      state: reasoning.thinkingIds.has(itemId)
+        ? { ...reasoning, thinkingBreaks: new Set([...reasoning.thinkingBreaks, itemId]) }
+        : reasoning,
+      events: []
     }
   }
   if (type === "response.output_item.added") {
@@ -724,9 +750,10 @@ const stepEvent = (
   }
   if (type === "response.function_call_arguments.done" || type === "response.output_item.done") {
     if (type === "response.output_item.done" && item?.type === "reasoning") {
-      return continuation === "stored"
-        ? { state: rememberItem(current, itemId), events: [] }
-        : encryptedReasoning(current, itemId, item)
+      const ended = endThinking(current, [itemId])
+      if (continuation === "stored") return { state: rememberItem(ended.state, itemId), events: ended.events }
+      const encrypted = encryptedReasoning(ended.state, itemId, item)
+      return { state: encrypted.state, events: [...ended.events, ...encrypted.events] }
     }
     if (type === "response.output_item.done" && item?.type !== "function_call") {
       return { state: current, events: [] }
@@ -740,11 +767,12 @@ const stepEvent = (
     // or filtered turn bills its tokens and names its id exactly like a
     // completed one.
     const response = record(value.response)
-    const events: Array<ModelEvent.ModelEvent> = []
+    const thinking = endThinking(current, [...current.thinkingIds])
+    const events: Array<ModelEvent.ModelEvent> = [...thinking.events]
     const eventUsage = usage(response?.usage)
     if (eventUsage !== undefined) events.push(ModelEvent.ModelEvent.Usage(eventUsage))
     const identified = {
-      ...current,
+      ...thinking.state,
       responseId: string(response?.id) ?? current.responseId
     }
     // The tier that served the call, read from the terminal Response object
@@ -813,14 +841,16 @@ const stepWith = (continuation: Continuation) =>
 
 const step = stepWith("stored")
 
-const finalize = (state: State): ReadonlyArray<ModelEvent.ModelEvent> =>
-  ToolStream.flushAborted(state.tools).completed.map((call) =>
+const finalize = (state: State): ReadonlyArray<ModelEvent.ModelEvent> => [
+  ...endThinking(state, [...state.thinkingIds]).events,
+  ...ToolStream.flushAborted(state.tools).completed.map((call) =>
     ModelEvent.ModelEvent.ToolCallEnd({
       type: "tool-call-end",
       id: call.callId,
       arguments: call.arguments
     })
   )
+]
 
 const classifyError = (status: number, body: string): ModelError => {
   const decoded = decodeErrorBody(body)
@@ -866,6 +896,7 @@ export const protocol: Protocol.Protocol<
       toolNames: {},
       textIds: new Set(),
       thinkingIds: new Set(),
+      thinkingBreaks: new Set(),
       completedToolIds: new Set(),
       itemIds: [],
       responseId: undefined,
@@ -909,6 +940,7 @@ export const chatgptProtocol: Protocol.Protocol<
       toolNames: {},
       textIds: new Set(),
       thinkingIds: new Set(),
+      thinkingBreaks: new Set(),
       completedToolIds: new Set(),
       itemIds: [],
       responseId: undefined,

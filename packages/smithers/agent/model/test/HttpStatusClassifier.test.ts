@@ -245,6 +245,21 @@ describe("opaque safety prose", () => {
     expect(classifyHttpStatus(503, "content_filter", "Blocked for safety", "provider"))
       .toBe("content_policy")
   })
+
+  // #4744: sign-in and overflow words on an opaque 5xx page are the gateway's
+  // prose, not a verdict on the call.
+  it("keeps an opaque 5xx retryable when its page mentions sign-in or token words", () => {
+    expect(classifyHttpStatus(
+      502,
+      undefined,
+      "<html>502 Bad Gateway: upstream authentication service timed out</html>",
+      "opaque"
+    )).toBe("provider_internal")
+    expect(classifyHttpStatus(500, undefined, "too many tokens in bucket, try later", "opaque"))
+      .toBe("provider_internal")
+    expect(classifyHttpStatus(500, "context_length_exceeded", "too many tokens", "provider"))
+      .toBe("context_overflow")
+  })
 })
 
 // #4726: a 400 quotes the request back. A tool or parameter whose name holds a

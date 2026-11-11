@@ -7,8 +7,9 @@
  * 500 ms exponential base, a 10 s cap on that computed delay, and a 60 s total
  * retry budget. `Retry-After` replaces the computed delay without jitter and
  * is slept in full, so no retry reaches the provider before it said it would
- * accept one. A provider wait beyond the total budget is surfaced to the
- * caller intact instead of being slept inside the executor.
+ * accept one. A provider wait that would end past the total budget, counted
+ * from the first attempt, is surfaced to the caller intact instead of being
+ * slept inside the executor.
  *
  * @since 0.1.0
  */
@@ -787,30 +788,37 @@ const retriesOr = (count: number | undefined, fallback: number): number =>
 const retryFailures = <A, R>(
   effect: Effect.Effect<A, RequestError, R>,
   times: number
-): Effect.Effect<A, RequestError, R> => {
-  const schedule = Schedule.exponential(Duration.millis(BASE_DELAY_MS)).pipe(
-    Schedule.jittered,
-    // The cap bounds the computed backoff only. A provider's own Retry-After
-    // is slept in full: retrying before it spends quota on a certain refusal,
-    // and the `while` below already surfaces one beyond the total budget.
-    Schedule.modifyDelay(({ duration, input }) =>
-      Effect.succeed(
-        Duration.millis(
-          input instanceof ModelError && input.retryAfterMillis !== undefined
-            ? input.retryAfterMillis
-            : Math.min(Duration.toMillis(duration), MAX_DELAY_MS)
+): Effect.Effect<A, RequestError, R> =>
+  Effect.flatMap(Clock.currentTimeMillis, (startedAt) => {
+    const schedule = Schedule.exponential(Duration.millis(BASE_DELAY_MS)).pipe(
+      Schedule.jittered,
+      // The cap bounds the computed backoff only. A provider's own Retry-After
+      // is slept in full: retrying before it spends quota on a certain refusal,
+      // and the `while` below already surfaces one that would end past the total budget.
+      Schedule.modifyDelay(({ duration, input }) =>
+        Effect.succeed(
+          Duration.millis(
+            input instanceof ModelError && input.retryAfterMillis !== undefined
+              ? input.retryAfterMillis
+              : Math.min(Duration.toMillis(duration), MAX_DELAY_MS)
+          )
         )
-      )
-    ),
-    Schedule.upTo({ times, duration: Duration.millis(MAX_RETRY_DURATION_MS) })
-  )
-  return Effect.retry(effect, {
-    schedule,
-    while: (error): boolean =>
-      error instanceof ModelError && error.retryable &&
-      (error.retryAfterMillis === undefined || error.retryAfterMillis <= MAX_RETRY_DURATION_MS)
+      ),
+      Schedule.upTo({ times, duration: Duration.millis(MAX_RETRY_DURATION_MS) })
+    )
+    return Effect.retry(effect, {
+      schedule,
+      // `Schedule.upTo` checks its duration before the wait it then sleeps, so a
+      // provider wait is measured against the budget left, not the whole budget:
+      // two 45 s waits would otherwise hold one call for 90 s.
+      while: (error): boolean | Effect.Effect<boolean> => {
+        if (!(error instanceof ModelError) || !error.retryable) return false
+        const wait = error.retryAfterMillis
+        return wait === undefined ||
+          Effect.map(Clock.currentTimeMillis, (now) => now - startedAt + wait <= MAX_RETRY_DURATION_MS)
+      }
+    })
   })
-}
 
 /**
  * Protocol-specific classification for a failed HTTP response.

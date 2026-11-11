@@ -323,6 +323,80 @@ describe("RequestExecutor", () => {
     }
   })
 
+  it("surfaces a second Retry-After that would end past the total retry budget", async () => {
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const limited = {
+      status: 429,
+      body: JSON.stringify({ error: { message: "rate limited" } }),
+      headers: { "retry-after": "45" }
+    }
+    const layer = executorLayer([limited, limited, { status: 200, body: "unexpected" }], requests)
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(NOW)
+          const executor = yield* RequestExecutor.RequestExecutor
+          const fiber = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
+          yield* Effect.yieldNow
+          yield* TestClock.adjust(45_000)
+          yield* Effect.yieldNow
+          return {
+            settled: fiber.pollUnsafe(),
+            now: yield* Clock.currentTimeMillis
+          }
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(result.now).toBe(NOW + 45_000)
+    expect(requests).toHaveLength(2)
+    expect(result.settled !== undefined && Exit.isSuccess(result.settled)).toBe(true)
+    if (result.settled !== undefined && Exit.isSuccess(result.settled)) {
+      expect(expectModelError(result.settled.value)).toMatchObject({
+        code: "rate_limited",
+        retryAfterMillis: 45_000,
+        resetAtEpochMillis: NOW + 90_000
+      })
+    }
+  })
+
+  it("sleeps every Retry-After that ends inside the total retry budget", async () => {
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const limited = {
+      status: 429,
+      body: JSON.stringify({ error: { message: "rate limited" } }),
+      headers: { "retry-after": "30" }
+    }
+    const layer = executorLayer([limited, limited, { status: 200, body: "ok" }], requests)
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.RequestExecutor
+          const fiber = yield* execute(executor, request()).pipe(Effect.forkChild)
+          yield* Effect.yieldNow
+          yield* TestClock.adjust(30_000)
+          yield* Effect.yieldNow
+          expect(requests).toHaveLength(2)
+          yield* TestClock.adjust(30_000)
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(result.status).toBe(200)
+    expect(requests).toHaveLength(3)
+  })
+
   it("does not spend transport retries on a distant ChatGPT usage reset", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer([{

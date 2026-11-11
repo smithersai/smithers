@@ -15,8 +15,9 @@ import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./Mode
  * request or an agent's own report.
  *
  * Only provider fields establish named quota/rate limits; opaque bodies
- * follow the HTTP status for those classes. Likewise, content-policy words
- * in an opaque 5xx page do not override its transient server status. Other
+ * follow the HTTP status for those classes. Likewise, sign-in, content-policy
+ * and overflow words in an opaque 5xx page do not override its transient
+ * server status. Other
  * classifications retain their vocabulary checks for gateway verdicts.
  *
  * @category models
@@ -69,7 +70,7 @@ export const classifyHttpStatus = (
     /content[-_\s]?policy|content[-_\s]?filter|safety/.test(normalized)
   ) return "content_policy"
   // Quota and overflow must precede their generic invalid-request envelopes.
-  if (isContextOverflow(code, message)) return "context_overflow"
+  if ((named || status === undefined || status < 500) && isContextOverflow(code, message)) return "context_overflow"
   if (
     (status !== undefined && requestStatuses.has(status)) ||
     /invalid[-_\s]?request/.test(normalized)
