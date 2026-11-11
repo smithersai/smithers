@@ -224,8 +224,16 @@ const shellsProtectedArgument = (stage: ChildProcess.StandardCommand): boolean =
  * @since 1.0.0-rc.16
  */
 export const ambientEnvironment = (
-  host: { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } } = globalThis
+  host: { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } } = globalThisHost()
 ): Readonly<Record<string, string | undefined>> => host.process?.env ?? {}
+
+/**
+ * `globalThis` as an ambient host. A package compiled without Node's types
+ * (`"types": []`, as the browser views are) types `globalThis` without
+ * `process`, so the weak host type rejects it as a default (TS2559).
+ */
+const globalThisHost = (): { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } } =>
+  globalThis as { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } }
 
 const environmentNames = (command: ChildProcess.StandardCommand): ReadonlyArray<string> | undefined => {
   const environment = command.options.env
