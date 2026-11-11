@@ -462,7 +462,9 @@ const retryDelay = Effect.fnUntraced(function*(
   const decision = yield* RetryPolicy.decideEffect(retry.policy, {
     attempt,
     error: error.value,
-    elapsedMs: now - startMs
+    // A wall clock stepped back past the start reads as no time spent, not as
+    // a negative elapsed time every policy gives up on.
+    elapsedMs: Math.max(0, now - startMs)
   })
   if (decision._tag === "RetryAfter") return Option.some(decision.delayMs)
   // Giving up keeps the final business failure, so typed recovery still runs.

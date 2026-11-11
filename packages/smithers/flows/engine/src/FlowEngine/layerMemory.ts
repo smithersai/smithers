@@ -83,6 +83,12 @@ interface ExecutionState {
    * into the recorded cancellation instead of dying on it.
    */
   bodyFiber: Fiber.Fiber<unknown, unknown> | undefined
+  /**
+   * The deferreds the current round read without a result: the waits it can
+   * park on. A clock the run arms but never awaits, such as its deadline, is
+   * not among them.
+   */
+  readonly awaited: Set<string>
 }
 
 /** One action dispatch by key and attempt, and its settlement once it has one. */
@@ -542,6 +548,7 @@ const resumeUnlocked = Effect.fnUntraced(function*(
   const instance = makeInstance(previous.flow, previous.executionId, previous.lineageDeadline)
   instance.interrupted = previous.interrupted
   state.instance = instance
+  state.awaited.clear()
   memory.missedWakes.delete(executionId)
   state.fiber = yield* drive(memory, state, entry, instance)
 })
@@ -684,7 +691,8 @@ const install = Effect.fnUntraced(function*(
     instance,
     rootExecutionId,
     fiber: undefined,
-    bodyFiber: undefined
+    bodyFiber: undefined,
+    awaited: new Set()
   }
   // All asynchronous payload rebuilding now belongs to the driver, inside
   // `Flow.intoResult`.
@@ -772,18 +780,21 @@ const resumeAuthorized = (memory: Memory, flow: Flow.Any, executionId: string) =
     return Effect.andThen(authorize(flow, state, executionId), resume(memory, executionId))
   })
 
-/** Whether a `DurableClock` timer this engine scheduled for `executionId` is still waiting to fire. */
-const hasPendingClock = (memory: Memory, executionId: string): boolean => {
-  for (const [key] of memory.clocks) {
-    if ((JSON.parse(key) as ReadonlyArray<string>)[1] === executionId) return true
+/** Whether the parked round awaits a `DurableClock` timer this engine holds for it, still waiting to fire. */
+const awaitsPendingClock = (memory: Memory, state: ExecutionState): boolean => {
+  const { executionId, flow } = state.instance
+  for (const deferredName of state.awaited) {
+    if (FiberMap.hasUnsafe(memory.clocks, deferredId(flow._tag, executionId, deferredName))) return true
   }
   return false
 }
 
 /**
  * A follower's elapsed poll (`{ poll: true }`). As the durable engine does, it
- * re-drives a parked run only when a wake may be due: it leaves a run to the
- * timer this engine holds for it, which re-drives the run when it fires. A
+ * re-drives a parked run only when a wake may be due: it leaves a round that
+ * awaits a timer this engine holds to that timer, which re-drives the run when
+ * it fires. A timer the run armed without awaiting it, such as its deadline,
+ * leaves the poll to re-drive the run. A
  * completion that landed while a round was live re-drives the run when that
  * round settles. Re-driving it earlier replays the round only to park it
  * again, once per poll.
@@ -792,7 +803,7 @@ const pollResume = (memory: Memory, flow: Flow.Any, executionId: string) =>
   Effect.suspend(() => {
     const state = executionOf(memory, flow, executionId)
     const waitsOnItsTimer = state !== undefined && settledSuspended(state) && !state.instance.interrupted &&
-      hasPendingClock(memory, executionId)
+      awaitsPendingClock(memory, state)
     return waitsOnItsTimer ? authorize(flow, state, executionId) : resumeAuthorized(memory, flow, executionId)
   })
 
@@ -947,9 +958,11 @@ const deferredId = (flowName: string, executionId: string, deferredName: string)
 // Untraced because deferred polling is a flow scheduler hot path.
 const deferredResult = Effect.fnUntraced(function*(memory: Memory, deferred: DurableDeferred.Any) {
   const instance = yield* FlowRuntime.FlowInstance
-  return Option.fromNullishOr(
+  const result = Option.fromNullishOr(
     memory.deferredResults.get(deferredId(instance.flow._tag, instance.executionId, deferred.name))
   )
+  if (Option.isNone(result)) memory.executions.get(instance.executionId)?.awaited.add(deferred.name)
+  return result
 })
 
 const deferredConflict = (execution: ExecutionState, options: DeferredDone) => {
@@ -1012,7 +1025,9 @@ const scheduleClock = (memory: Memory, flow: Flow.Any, options: Parameters<Encod
     exit: Exit.void
   }).pipe(
     Effect.delay(options.clock.duration),
-    FiberMap.run(memory.clocks, JSON.stringify([flow._tag, options.executionId, options.clock.name]), {
+    // Keyed like the deferred it completes, so a parked round's awaited
+    // deferred names the timer that wakes it.
+    FiberMap.run(memory.clocks, deferredId(flow._tag, options.executionId, options.clock.deferred.name), {
       onlyIfMissing: true
     }),
     Effect.asVoid

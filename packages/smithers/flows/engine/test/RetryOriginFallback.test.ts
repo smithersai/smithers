@@ -241,3 +241,45 @@ describe("retry origin fallback when the durable hook yields none", () => {
       })
   )
 })
+
+// Issue #4677: the retry budget's elapsed time is read from the wall clock at
+// every decision, and a clock stepped back past the sequence's start reads as
+// a negative elapsed time.
+describe("a wall clock stepped back between attempts", () => {
+  effect("retries under a policy that never gives up instead of settling exhausted", () => {
+    const attempts: Array<number> = []
+    const action = Action.make({
+      name: "RetryOriginFallback/clock-steps-back",
+      success: Schema.Number,
+      error: Schema.String,
+      retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1 }),
+      execute: Effect.die("scripted driver dispatches instead")
+    })
+    const engine = scriptedEngine({
+      actionExecute: (input) =>
+        Effect.gen(function*() {
+          attempts.push(input.attempt)
+          if (input.attempt > 1) return new Flow.Complete({ exit: Exit.succeed(7) })
+          yield* TestClock.setTime(0)
+          return new Flow.Complete({ exit: Exit.fail("transient") })
+        })
+    })
+    return Effect.gen(function*() {
+      yield* TestClock.setTime(1_000)
+      const fiber = yield* engine.actionExecute(action, 1).pipe(
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* TestClock.adjust("1 millis")
+      const result = yield* Fiber.join(fiber)
+      expect(attempts).toEqual([1, 2])
+      expect(result).toEqual(new Flow.Complete({ exit: Exit.succeed(7) }))
+    }).pipe(
+      Effect.provideService(
+        FlowRuntime.FlowInstance,
+        FlowEngine.makeInstance(flow, "retry-clock-steps-back-run")
+      ),
+      Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(engine)),
+      Effect.provide(TestClock.layer())
+    )
+  })
+})

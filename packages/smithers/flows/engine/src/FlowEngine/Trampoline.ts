@@ -246,7 +246,9 @@ const handOff = Effect.fnUntraced(function*(follower: Follower, handoff: Flow.Ha
  */
 const pollDelay = Effect.fnUntraced(function*(follower: Follower, attempt: number, startMs: number) {
   const policy = follower.suspendedRetryPolicy
-  const elapsedMs = (yield* Clock.currentTimeMillis) - startMs
+  // A wall clock stepped back past the start reads as no time spent, not as
+  // a negative elapsed time every policy gives up on.
+  const elapsedMs = Math.max(0, (yield* Clock.currentTimeMillis) - startMs)
   const delay = yield* RetryPolicy.nextDelayEffect(policy, attempt, { elapsedMs })
   if (Option.isSome(delay)) return delay.value
   // The give-up is the wall clock's only when dropping `elapsedMs` would have

@@ -232,6 +232,33 @@ describe("a followed lineage's give-up", () => {
       const next = yield* roundId("follow-give-up", 1)
       expect(resumes).toEqual([[next, { poll: true }], [next, { poll: true }]])
     }).pipe(Effect.scoped))
+
+  // Issue #4677: a wall clock stepped back past the follow's start reads as a
+  // negative elapsed time, which a policy without a bound must not give up on.
+  it.effect("keeps polling under a policy that never gives up when the wall clock steps back", () =>
+    Effect.gen(function*() {
+      let dispatched = 0
+      const engine = scriptedEngine({
+        execute: (() =>
+          Effect.gen(function*() {
+            dispatched++
+            if (dispatched > 1) return complete(7)
+            yield* TestClock.setTime(0)
+            return new Flow.Suspended({})
+          })) as never
+      })
+      yield* engine.register(Counter, () => Effect.succeed(0))
+      yield* TestClock.setTime(10_000)
+      const running = yield* Effect.forkChild(withCrypto(engine.execute(Counter, {
+        executionId: "follow-clock-steps-back",
+        payload: { n: 0 },
+        suspendedRetryPolicy: RetryPolicy.defaultRetryPolicy
+      })))
+      yield* advanceUntilDone(running, 200, 5)
+
+      expect(yield* Fiber.join(running)).toBe(7)
+      expect(dispatched).toBe(2)
+    }).pipe(Effect.scoped))
 })
 
 describe("a lineage its parent awaits", () => {

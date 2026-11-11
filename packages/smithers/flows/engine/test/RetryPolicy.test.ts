@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Clock, Effect, Exit, Fiber, Layer, Option, Random, Schema } from "effect"
+import { Clock, type Duration, Effect, Exit, Fiber, Layer, Option, Random, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Scope from "effect/Scope"
@@ -126,24 +126,27 @@ describe("a failure's own Retry-After", () => {
 })
 
 describe("flow suspension policy", () => {
-  it.effect("preserves the policy through annotations and forwards it to execution", () => {
+  // A flow whose action parks with `Flow.suspend` on its first attempt and
+  // succeeds on its second, run on the memory engine under a 17ms policy.
+  const suspendsOnce = (name: string, deadline?: Duration.Input) => {
     const policy = RetryPolicy.make({ initialMs: 17, factor: 1, maxMs: 17 })
-    const suspendedActionDeclaration = Action.make("RetryPolicy/suspended/action", {
+    const suspendedActionDeclaration = Action.make(`${name}/action`, {
       payload: {},
       success: Schema.Void
     })
-    const suspended = Flow.make("RetryPolicy/suspended", {
+    const suspended = Flow.make(name, {
       payload: {},
       success: Schema.Void,
       suspendedRetryPolicy: policy,
+      deadline,
       body: (payload) => suspendedActionDeclaration.call(payload)
     }).annotate(Flow.CaptureDefects, true)
-    let attempts = 0
+    const counter = { attempts: 0 }
     const layer = Layer.mergeAll(
       suspendedActionDeclaration.toLayer(() =>
         Effect.gen(function*() {
-          attempts++
-          if (attempts === 1) {
+          counter.attempts++
+          if (counter.attempts === 1) {
             const instance = yield* FlowRuntime.FlowInstance
             return yield* Flow.suspend(instance)
           }
@@ -154,26 +157,37 @@ describe("flow suspension policy", () => {
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory)
     )
-
-    expect(suspended.suspendedRetryPolicy).toBe(policy)
     // The declaration's policy is what the engine schedules the resume with:
     // the suspended round is still waiting one millisecond before the 17ms
     // delay and runs its second attempt on the millisecond that reaches it.
-    return withCrypto(
+    const run = withCrypto(
       Effect.gen(function*() {
         const fiber = yield* suspended.execute({}, { executionId: "suspended-policy" }).pipe(Effect.forkChild)
         yield* Effect.yieldNow
         yield* TestClock.adjust(16)
-        expect(attempts).toBe(1)
+        expect(counter.attempts).toBe(1)
         yield* TestClock.adjust(1)
+        for (let turn = 0; turn < 200 && fiber.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+        expect(counter.attempts).toBe(2)
         yield* Fiber.join(fiber)
-        expect(attempts).toBe(2)
       }).pipe(
         Effect.provide(layer),
         Effect.provide(TestClock.layer())
       )
     )
+    return { policy, suspended, run }
+  }
+
+  it.effect("preserves the policy through annotations and forwards it to execution", () => {
+    const { policy, run, suspended } = suspendsOnce("RetryPolicy/suspended")
+    expect(suspended.suspendedRetryPolicy).toBe(policy)
+    return run
   })
+
+  // Issue #4677: the deadline arms a durable clock for the whole run, which
+  // the run is not parked on, so the follower's poll still re-drives it.
+  it.effect("re-drives a parked run on its policy when the flow declares a deadline", () =>
+    suspendsOnce("RetryPolicy/suspended-with-deadline", "1 hour").run)
 })
 
 // -----------------------------------------------------------------------------
