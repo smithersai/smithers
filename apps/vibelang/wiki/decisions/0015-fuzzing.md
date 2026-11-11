@@ -1083,3 +1083,11 @@ only writes), the read-queue deadline, the `github/` migration, and the broker's
 Missing key at model.exported"), so `pnpm fuzz:coverage` stopped before its report. The value now carries `exported:
 ""`, the model's initial value, and replays as a regression again. A schema change to a fuzzed model migrates that
 model's saved values in the same commit.
+
+`mock/factory-edges` walks, every execution, the mock Factory's room states the scripted targets reach only by chance:
+a journal retained mid-reply (the reply fails in words, the next post is answered) or with an unanswered post, tour
+controls outside the protocol (Unavailable) or with no tour (Refused, nothing written), every control once the
+walkthrough has driven its first step (a control before it is refused `not-replying`, as `decide` specifies), a post
+behind a running tour, a tour asked for right after a post (the reply's start is contended and hands over), and a
+closed Factory (Unavailable). Alone it reaches `MockFactory.vibe` 97-102, 297, 357-358, 402-411 and 481-485; about one
+second per execution.
