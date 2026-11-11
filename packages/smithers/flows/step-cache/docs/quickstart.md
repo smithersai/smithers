@@ -114,6 +114,12 @@ The bound is a read policy, never a deletion. The row is still on disk, so the
 next caller declaring a longer bound still reads it. Removing rows is
 `sweepExpired`, covered in [expire cached results](./guides/expire-cached-results.md).
 
+`put` never replaces that expired head, so a caller that recomputes the result
+must first `evict(digest, { ifRecordedBy })` the head the bounded read refused,
+naming its `recordedRunId` and `recordedEventSeq`. Otherwise every later bounded
+lookup misses again. See
+[refresh a key the bound refused](./guides/expire-cached-results.md#refresh-a-key-the-bound-refused).
+
 ## Evict only what you named
 
 An eviction is a judgement about one row: this host observed this result to be

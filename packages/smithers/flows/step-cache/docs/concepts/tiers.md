@@ -21,6 +21,15 @@ local `recordedBy` ledger row exists but `maxAgeMs` refuses it, the lookup
 returns a miss without consulting the shared tier. An absent exact record
 still permits fallback.
 
+A local head that `maxAgeMs` refuses is refreshed rather than kept. When the
+shared tier answers with an entry inside the bound, the composition evicts the
+expired local head under its own provenance fence and then writes the shared
+entry back, so the next bounded lookup is local. Without that, the write-back
+would lose to the expired head on every lookup, and each loss with a different
+result would count a local `Conflict`.
+An expired exact `recordedBy` record found at that point is never replaced; it
+stops the lookup with a miss, as above.
+
 The write-back can lose: a sibling run on this machine may record its own row
 under the digest while the lookup was inside the shared tier. The composition
 then re-reads the local tier and serves the durable local row, because that is

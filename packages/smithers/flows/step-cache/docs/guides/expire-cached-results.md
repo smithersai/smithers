@@ -33,10 +33,47 @@ Three properties of the bound matter:
   cannot be fresh for the ledger read and stale for the head read of the same
   call. Tests drive it with `TestClock`.
 - It is a read policy, never a deletion. The row stays on disk, so a second
-  caller declaring a longer bound still reads it.
+  caller declaring a longer bound still reads it. The one exception is a
+  two-tier refresh, described below.
 
 A bound that is not a non-negative safe integer fails with `invalid_cache`
 rather than reading as a miss.
+
+## Refresh a key the bound refused
+
+`put` never replaces a head. After a bounded miss, recording the recomputed
+result under the same key answers `ExistingSame` or `Conflict` against the
+expired head, and every later bounded lookup misses again. Evict the refused
+head under its own provenance fence first, then record:
+
+```ts
+import * as Clock from "effect/Clock"
+import * as Option from "effect/Option"
+
+const refresh = (entry: CacheStore.CacheEntry, maxAgeMs: number) =>
+  Effect.gen(function*() {
+    const cache = yield* CacheStore.CacheStore
+    const head = yield* cache.get(entry.keyDigest)
+    const floorMs = (yield* Clock.currentTimeMillis) - maxAgeMs
+    if (Option.isSome(head) && head.value.createdAtMs < floorMs) {
+      yield* cache.evict(entry.keyDigest, {
+        ifRecordedBy: { runId: head.value.recordedRunId, eventSeq: head.value.recordedEventSeq }
+      })
+    }
+    return yield* cache.put(entry)
+  })
+```
+
+Check the head's age before evicting it: another process may have recorded a
+fresh head since your bounded miss, and that row must stay. The fence makes the
+eviction a compare-and-swap, so a head recorded between this read and the
+delete is never dropped either. The refused head's ledger row stays, so a
+replay of the event that recorded it still reads its own bytes.
+
+`CombinedCacheStore` does this itself. When a bounded lookup refuses the local
+head and the shared tier answers with an entry inside the bound, the
+composition evicts the expired local head under its fence and writes the shared
+entry back in its place, so the next lookup is local.
 
 ## Reclaim what nothing will read
 

@@ -8,7 +8,9 @@
  * disk cache, fall back to the remote cache only on a miss, and write what the
  * remote returned back into the disk cache so the next lookup is local. An
  * exact local provenance record refused by age stops the lookup with a miss;
- * it never falls through to the shared head.
+ * it never falls through to the shared head. A local head refused by age is
+ * replaced by the shared entry that answered, so an expired key is refreshed
+ * instead of missing locally forever.
  *
  * **Publication order is the caller's job, not this store's.** A cache entry
  * must never be observable in the shared tier while an artifact it references
@@ -26,6 +28,7 @@
  * @since 0.1.0
  */
 
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
@@ -87,6 +90,31 @@ export const make = (options: Options): CacheStore.Service => {
         recorded.value.recordedEventSeq === recordedBy.eventSeq
     })
 
+  // A local head the age bound refused would make every write-back lose to it:
+  // the SQL tier never replaces a head, so the key would miss locally forever
+  // and pay a remote round trip and a false `Conflict` on every lookup. The
+  // expired head is evicted under its own provenance fence, a compare-and-swap,
+  // so a fresher row a sibling recorded since this read is never dropped.
+  // Answers whether the lookup must stop with a miss instead: an exact record
+  // that appeared during the remote lookup and is already expired is never
+  // refreshed over. With a fence, one read answers the exact ledger row when it
+  // exists and the head otherwise.
+  const refreshExpiredHead = (keyDigest: string, selector: CacheStore.GetOptions, maxAgeMs: number) =>
+    Effect.gen(function*() {
+      const { recordedBy } = selector
+      const found = yield* local.get(keyDigest, recordedBy === undefined ? undefined : { recordedBy })
+      if (Option.isNone(found)) return false
+      const row = found.value
+      if (row.createdAtMs >= (yield* Clock.currentTimeMillis) - maxAgeMs) return false
+      if (
+        recordedBy !== undefined &&
+        row.recordedRunId === recordedBy.runId &&
+        row.recordedEventSeq === recordedBy.eventSeq
+      ) return true
+      yield* local.evict(keyDigest, { ifRecordedBy: { runId: row.recordedRunId, eventSeq: row.recordedEventSeq } })
+      return false
+    })
+
   const get: CacheStore.Service["get"] = Effect.fn("CombinedCacheStore.get")((keyDigest, options) =>
     Effect.gen(function*() {
       yield* CacheAdmission.validateKey(keyDigest)
@@ -116,6 +144,9 @@ export const make = (options: Options): CacheStore.Service => {
         )
       )
       if (Option.isNone(shared)) return shared
+      if (maxAgeMs !== undefined && (yield* refreshExpiredHead(keyDigest, selector, maxAgeMs))) {
+        return Option.none()
+      }
       // Write-back, exactly as `downloadActionResultFromRemote` does: the
       // shared entry becomes a local row so this machine's next lookup — and
       // every sibling run on it — is a local hit. Its original provenance must

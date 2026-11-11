@@ -75,7 +75,9 @@ export type GetOptions = {
    *
    * The bound is a read policy, never a deletion. An expired row stays on
    * disk until {@link Service.sweepExpired} removes it, so a second caller
-   * declaring a longer bound still reads it.
+   * declaring a longer bound still reads it. `put` never replaces that head:
+   * a caller re-recording a key the bound refused evicts the head under its
+   * provenance fence first.
    */
   readonly maxAgeMs?: number
 }

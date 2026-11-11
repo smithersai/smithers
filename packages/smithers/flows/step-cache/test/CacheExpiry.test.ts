@@ -93,6 +93,29 @@ describe("age-bounded reads", () => {
       expect(Option.isSome(fallback)).toBe(true)
     })))
 
+  it.effect("records a fresh result after evicting the head the bound refused", () =>
+    withStore(Effect.gen(function*() {
+      const cache = yield* CacheStore
+      yield* cache.put(entry("refresh", 0))
+      yield* TestClock.adjust("10 seconds")
+      expect(Option.isNone(yield* cache.get("refresh", { maxAgeMs: 1000 }))).toBe(true)
+      // `put` never replaces a head: re-recording over the refused one is
+      // answered by the old row and the key would miss forever.
+      const recomputed = { ...entry("refresh", 10_000), result: { output: "recomputed" }, recordedEventSeq: 4 }
+      expect(yield* cache.put(recomputed)).toEqual({ _tag: "Conflict" })
+      expect(Option.isNone(yield* cache.get("refresh", { maxAgeMs: 1000 }))).toBe(true)
+      // Evicting under the refused head's provenance fence clears the way.
+      const head = Option.getOrThrow(yield* cache.get("refresh"))
+      expect(
+        yield* cache.evict("refresh", {
+          ifRecordedBy: { runId: head.recordedRunId, eventSeq: head.recordedEventSeq }
+        })
+      ).toBe(true)
+      expect(yield* cache.put({ ...recomputed, recordedEventSeq: 5 })).toEqual({ _tag: "Inserted" })
+      expect(Option.getOrThrow(yield* cache.get("refresh", { maxAgeMs: 1000 })).result)
+        .toEqual({ output: "recomputed" })
+    })))
+
   it.effect("refuses a bound no row could satisfy", () =>
     withStore(Effect.gen(function*() {
       const cache = yield* CacheStore

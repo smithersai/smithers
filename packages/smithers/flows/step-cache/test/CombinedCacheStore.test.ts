@@ -451,6 +451,7 @@ describe("lookup selector detachment", () => {
         expect(local.getOptions).toEqual([
           expected,
           { recordedBy: expected.recordedBy },
+          { recordedBy: expected.recordedBy },
           expected,
           { recordedBy: expected.recordedBy }
         ])
@@ -512,6 +513,78 @@ describe("age-bounded SQL composition", () => {
         expect(remote.calls).toEqual(["get"])
       }))
   )
+
+  it.effect.each([
+    { result: "different", fenced: true },
+    { result: "same", fenced: false }
+  ] as const)(
+    "refreshes a local head the bound refused with the shared entry: %j",
+    ({ fenced, result }) =>
+      withSqlStore(Effect.gen(function*() {
+        const local = yield* CacheStore.CacheStore
+        const stale = { ...expired, recordedRunId: "old-run" }
+        yield* local.put(stale)
+        yield* TestClock.adjust("5 seconds")
+        const shared = result === "same" ? { ...fresh, result: stale.result } : fresh
+        const remote = tier()
+        remote.rows.set(entry.keyDigest, shared)
+        const combined = CombinedCacheStore.make({ local, remote: remote.store })
+        const conflicts = yield* count(CacheStoreMetrics.put.Conflict)
+        const selector = fenced ? options : { maxAgeMs: options.maxAgeMs }
+
+        expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, selector))).toEqual(shared)
+        // The shared entry is now the local head, so the next bounded lookup
+        // is local and the refresh counted no conflict.
+        expect(Option.getOrThrow(yield* local.get(entry.keyDigest, selector))).toEqual(shared)
+        expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, selector))).toEqual(shared)
+        expect(remote.calls).toEqual(["get"])
+        expect(yield* count(CacheStoreMetrics.put.Conflict)).toBe(conflicts)
+        // The refused head's ledger row survives for its own replay.
+        expect(Option.getOrThrow(yield* local.get(entry.keyDigest, {
+          recordedBy: { runId: stale.recordedRunId, eventSeq: stale.recordedEventSeq }
+        }))).toEqual(stale)
+      }))
+  )
+
+  it.effect("writes a bounded shared hit back when the local tier holds no head", () =>
+    withSqlStore(Effect.gen(function*() {
+      const local = yield* CacheStore.CacheStore
+      yield* TestClock.adjust("5 seconds")
+      const remote = tier()
+      remote.rows.set(entry.keyDigest, fresh)
+      const combined = CombinedCacheStore.make({ local, remote: remote.store })
+      expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, { maxAgeMs: 1000 }))).toEqual(fresh)
+      expect(Option.getOrThrow(yield* local.get(entry.keyDigest))).toEqual(fresh)
+    })))
+
+  it.effect("keeps a fresh head a sibling recorded during the remote lookup", () =>
+    withSqlStore(Effect.gen(function*() {
+      const local = yield* CacheStore.CacheStore
+      yield* TestClock.adjust("5 seconds")
+      const sibling = { ...fresh, result: "sibling", recordedRunId: "sibling-run" }
+      const combined = CombinedCacheStore.make({
+        local,
+        remote: CacheStore.makeNoop({
+          get: () => local.put(sibling).pipe(Effect.as(Option.some(fresh)))
+        })
+      })
+      expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, { maxAgeMs: 1000 }))).toEqual(sibling)
+      expect(Option.getOrThrow(yield* local.get(entry.keyDigest))).toEqual(sibling)
+    })))
+
+  it.effect("preserves an expired exact row recorded during the write-back", () =>
+    withSqlStore(Effect.gen(function*() {
+      const sqlLocal = yield* CacheStore.CacheStore
+      yield* TestClock.adjust("5 seconds")
+      const remote = tier()
+      remote.rows.set(entry.keyDigest, fresh)
+      const combined = CombinedCacheStore.make({
+        local: { ...sqlLocal, put: (candidate) => sqlLocal.put(expired).pipe(Effect.andThen(sqlLocal.put(candidate))) },
+        remote: remote.store
+      })
+      expect(yield* combined.get(entry.keyDigest, options)).toEqual(Option.none())
+      expect(Option.getOrThrow(yield* sqlLocal.get(entry.keyDigest, { recordedBy }))).toEqual(expired)
+    })))
 
   it.effect("preserves an expired exact row recorded during the remote lookup", () =>
     withSqlStore(Effect.gen(function*() {
@@ -651,8 +724,8 @@ describe("selector detachment", () => {
       const combined = CombinedCacheStore.make({ local: local.store, remote })
       expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, caller))).toEqual(fresh)
       const expected = { maxAgeMs: 1000, recordedBy }
-      expect(local.calls).toEqual(["get", "get", "put", "get", "get"])
-      expect(local.getOptions).toEqual([expected, { recordedBy }, expected, { recordedBy }])
+      expect(local.calls).toEqual(["get", "get", "get", "put", "get", "get"])
+      expect(local.getOptions).toEqual([expected, { recordedBy }, { recordedBy }, expected, { recordedBy }])
     }))
 
   it.effect("refuses a malformed selector before either tier is read", () =>
@@ -798,9 +871,13 @@ describe("write-back races", () => {
         yield* remote.store.put(remoteEntry)
         const combined = CombinedCacheStore.make({ local: local.store, remote: remote.store })
         expect(Option.getOrThrow(yield* combined.get(entry.keyDigest, options))).toEqual(remoteEntry)
-        expect(local.getOptions).toEqual([options, { recordedBy: options.recordedBy }, options, {
-          recordedBy: options.recordedBy
-        }])
+        expect(local.getOptions).toEqual([
+          options,
+          { recordedBy: options.recordedBy },
+          { recordedBy: options.recordedBy },
+          options,
+          { recordedBy: options.recordedBy }
+        ])
         expect(remote.getOptions).toEqual([options])
       })
   )

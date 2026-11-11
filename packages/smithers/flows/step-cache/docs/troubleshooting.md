@@ -269,8 +269,10 @@ Work through these in order.
    genuine miss. See
    [content addressing](/docs/concepts/content-addressing/).
 2. **An age bound refused it.** A lookup carrying `maxAgeMs` answers a miss for
-   a row older than the bound, and leaves the row on disk. See
-   [expire cached results](./guides/expire-cached-results.md).
+   a row older than the bound, and leaves the row on disk. A `put` after that
+   miss does not replace the expired head; evict it under its provenance fence
+   first. See
+   [refresh a key the bound refused](./guides/expire-cached-results.md#refresh-a-key-the-bound-refused).
 3. **The head was evicted or swept.** Both remove the reusable copy. The ledger
    row survives, which is why a fenced replay still reads its own bytes while
    an ordinary lookup misses.
