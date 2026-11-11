@@ -20,6 +20,10 @@
 
 ### Fixed
 
+- `grep` skips and counts NUL-bearing UTF-16 files on every host and rejects
+  them when named as the root. Bare CR boundaries now match the same way in
+  native and in-process searches, including `^` and `$` anchors.
+
 - A `bash` call past its time limit fails with `timeout` and carries what the
   command printed before it was stopped as `output` (`StdError.PartialOutput`):
   both streams cut on the same terms as a finished command's, their

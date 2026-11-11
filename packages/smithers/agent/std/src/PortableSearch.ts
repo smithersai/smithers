@@ -86,13 +86,20 @@ const grep = (
           lineNumber++
           let matches = false
           if (input.maxCount === undefined || count < input.maxCount) {
-            const evaluation = regex.test(text)
-            let step = evaluation.next()
-            while (!step.done) {
-              yield* Effect.yieldNow
-              step = evaluation.next()
+            // rg's CRLF mode treats bare CR as a regex boundary too.
+            // Keep LF line numbers and previews, but match each CR segment.
+            for (const segment of text.split("\r")) {
+              const evaluation = regex.test(segment)
+              let step = evaluation.next()
+              while (!step.done) {
+                yield* Effect.yieldNow
+                step = evaluation.next()
+              }
+              if (step.value) {
+                matches = true
+                break
+              }
             }
-            matches = step.value
           }
           if (matches) count++
           if (remaining <= 0) return

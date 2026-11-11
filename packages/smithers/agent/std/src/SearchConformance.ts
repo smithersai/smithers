@@ -17,7 +17,7 @@
  * `PortableSearch` is the obvious one, because it needs no external binary.
  *
  * The generator deliberately stays inside the ground both peers claim to
- * share: no symlinks, no unreadable directories, no CRLF, no NUL bytes, no
+ * share: no symlinks, no unreadable directories, no NUL bytes, no
  * filename a shell would have to quote. Those are the cases the hand-written
  * table pins one by one, with an expected value that says which behaviour is
  * intended. A generator cannot say that; it can only say the two disagree.
@@ -100,7 +100,7 @@ const directories = ["", "one", "one/two", "three", "three/four/five"] as const
 
 // Lines drawn from a vocabulary that mixes the needle, near misses, regex
 // metacharacters that must survive `fixedStrings`, and definition headers the
-// `symbols` option reads.
+// `symbols` option reads. CR segments also exercise regex boundaries.
 const lines = [
   "needle",
   "a needle in the line",
@@ -113,10 +113,28 @@ const lines = [
   "    needle = value",
   "function widen(value) {",
   "",
-  "trailing needle"
+  "trailing needle",
+  "a\rneedle after bare cr",
+  "needle\rneedle",
+  "needle\r",
+  "\r"
 ] as const
 
-const patterns = ["needle", "Needle", "needle?", "a+b", "[z]", "^needle$", "widen", "no match at all"] as const
+const patterns = [
+  "needle",
+  "Needle",
+  "needle?",
+  "a+b",
+  "[z]",
+  "^needle$",
+  "widen",
+  "no match at all",
+  "^needle",
+  "a$",
+  "^$",
+  "a.needle",
+  "a[^x]needle"
+] as const
 
 const globPatterns = ["**/*.ts", "*.ts", "**/*", "one/**/*.ts", "**/*.{ts,js}", "**/alpha*"] as const
 

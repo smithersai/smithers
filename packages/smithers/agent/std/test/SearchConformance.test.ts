@@ -57,6 +57,9 @@ beforeAll(() => {
   file("src/.gitignore", "nested/ignored.ts\n")
   file("src/nested/ignored.ts", "needle ignored\n")
   file("edge/crlf.txt", "foo\r\nbar\r\n")
+  file("edge/bare-cr.txt", "a\rneedle after bare cr\nneedle\rneedle\r\ntrailing\r\r\nend\r")
+  file("edge/utf16/le.txt", Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("needle\n", "utf16le")]))
+  file("edge/utf16/be.txt", Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from("needle\n", "utf16le").swap16()]))
   file("edge/unicode.txt", "é\n😀\n")
   file("edge/invalid-utf8.txt", new Uint8Array([110, 101, 101, 100, 108, 101, 32, 0xff, 10]))
   file("edge/binary/binary.bin", "needle before\n\0needle after\n")
@@ -247,6 +250,77 @@ for (const [peer, implementation] of peers) {
       expect(invalidUtf8.matches).toEqual([
         { file: join(root, "edge/invalid-utf8.txt"), line: 1, text: "needle �", before: [], after: [] }
       ])
+    })
+
+    it.each(
+      [
+        ["^needle", [1, 2]],
+        ["a$", [1]],
+        ["^needle$", [2]],
+        ["^$", [3, 4]],
+        ["end$", [4]],
+        ["a.needle", []],
+        ["a[^x]needle", []],
+        ["trailing.$", []]
+      ] as const
+    )("uses CR boundaries for %s while reporting LF-numbered lines", async (pattern, lines) => {
+      const searchRoot = join(root, "edge/bare-cr.txt")
+      const result = await grep({ pattern, root: searchRoot })
+      const contents = ["a\rneedle after bare cr", "needle\rneedle", "trailing\r", "end\r"]
+      expect(result).toEqual({
+        matches: lines.map((line) => ({
+          file: searchRoot,
+          line,
+          text: contents[line - 1],
+          before: [],
+          after: []
+        })),
+        files: [],
+        filesSearched: 1,
+        skippedBinary: 0,
+        truncated: false
+      })
+    })
+
+    it("counts a CR-separated line once and retains its LF context", async () => {
+      const searchRoot = join(root, "edge/bare-cr.txt")
+      const result = await grep({ pattern: "^needle", root: searchRoot, maxCount: 1, context: 1 })
+      expect(result).toEqual({
+        matches: [{
+          file: searchRoot,
+          line: 1,
+          text: "a\rneedle after bare cr",
+          before: [],
+          after: [{ line: 2, text: "needle\rneedle" }]
+        }],
+        files: [],
+        filesSearched: 1,
+        skippedBinary: 0,
+        truncated: false
+      })
+      const files = await grep({ pattern: "^needle$", root: searchRoot, filesWithMatches: true })
+      expect(files).toEqual({
+        matches: [],
+        files: [searchRoot],
+        filesSearched: 1,
+        skippedBinary: 0,
+        truncated: false
+      })
+    })
+
+    it.each([false, true])("skips raw UTF-16 NUL bytes with filesWithMatches=%s", async (filesWithMatches) => {
+      const result = await grep({ pattern: "needle", root: join(root, "edge/utf16"), filesWithMatches })
+      expect(result).toEqual({ matches: [], files: [], filesSearched: 2, skippedBinary: 2, truncated: false })
+    })
+
+    it.each(["le", "be"])("rejects an explicit UTF-16 %s root even when the pattern is absent", async (encoding) => {
+      for (const pattern of ["needle", "absent"]) {
+        const result = await Effect.runPromise(Effect.exit(Effect.provide(
+          Grep.run({ pattern, root: join(root, "edge/utf16", encoding + ".txt") }),
+          implementation
+        )))
+        expect(failure(result)?.code).toBe("binary_file")
+      }
     })
 
     it("normalizes CRLF match and context previews without retaining carriage returns", async () => {
@@ -713,7 +787,7 @@ it("the native peer keeps what rg produced when it only skipped what it could no
 // invisible until a person thought of it. This is the other half of std-20 —
 // a generated tree and a generated batch of calls, run through both peers,
 // asserting they answered byte for byte alike. The generator stays inside the
-// ground both peers claim to share (no symlinks, no CRLF, no unreadable
+// ground both peers claim to share (no symlinks, no unreadable
 // directories, no NUL bytes), because outside it a difference is a documented
 // choice rather than a drift.
 //
@@ -732,6 +806,15 @@ describe("Search conformance (generated)", () => {
 
   afterAll(() => {
     rmSync(generatedRoot, { recursive: true, force: true })
+  })
+
+  it("generates CR and CRLF text with anchor and cross-boundary probes", () => {
+    const plan = SearchConformance.plan({ seed: 1, root: generatedRoot })
+    expect(plan.files.some(({ content }) => /\r[^\n]/.test(content))).toBe(true)
+    expect(plan.files.some(({ content }) => content.includes("\r\n"))).toBe(true)
+    expect(plan.grep.some(({ pattern, fixedStrings }) => !fixedStrings && pattern.includes("^"))).toBe(true)
+    expect(plan.grep.some(({ pattern, fixedStrings }) => !fixedStrings && pattern.includes("$"))).toBe(true)
+    expect(plan.grep.some(({ pattern, fixedStrings }) => !fixedStrings && pattern === "a.needle")).toBe(true)
   })
 
   it.each(seeds)("answers every generated call alike on both peers (seed %i)", async (seed) => {

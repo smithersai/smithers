@@ -269,6 +269,8 @@ const grep = (
     const binaryArgs: Array<string> = [
       "--files-with-matches",
       "--text",
+      // BOM detection must not transcode away the raw NUL bytes.
+      "--encoding=none",
       "--null",
       ...ignoreFlags(input.noIgnore),
       "--no-messages",

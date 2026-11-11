@@ -120,10 +120,12 @@ one that refuses where the other answers has diverged.
 ## What the generator will not tell you
 
 The generator deliberately stays inside the ground both peers claim to share: no
-symlinks, no unreadable directories, no CRLF, no NUL bytes, no filename a shell
+symlinks, no unreadable directories, no NUL bytes, no filename a shell
 would have to quote. Those cases have an intended behavior rather than merely an
 agreed one, and a generator can only say that two peers disagree, never which is
-right. Pin them with hand-written cases alongside the conformance run.
+right. Pin them with hand-written cases alongside the conformance run, including raw
+UTF-16 bytes with a BOM. Generated text includes bare CR and CRLF boundaries
+and probes them with anchors and patterns that would cross a bare CR.
 
 The kit earns its place on the cases nobody thought to write down. A literal `?`
 matched `fo` in one shipped peer and `foo?` in the other for as long as nobody

@@ -66,9 +66,11 @@ meaning. A pattern is rejected with `invalid_pattern` when it:
 `fixedStrings: true` skips the grammar entirely except for the ASCII and length
 checks, because a literal is escaped rather than compiled.
 
-Inside the shared compiler, `.` matches any character except a newline and `$`
-anchors at the end of the whole input, which is what makes a line-oriented
-search behave the same in both peers.
+Both peers use ripgrep's `--crlf` matching rules: `^` and `$` anchor at
+LF, CRLF, and bare CR boundaries, and matches cannot cross those boundaries.
+Reported line numbers and context count LF-delimited lines, so a line containing
+a bare CR still produces at most one hit. Previews strip the CR before an LF
+and retain bare CR characters.
 
 Portable grep evaluates this grammar with a Thompson state machine. Matching
 work is linear in line length times the bounded state count, including nested
@@ -134,8 +136,10 @@ directory the process may not list. One unreadable entry never fails the call,
 which is what `rg --no-messages` does with the same tree. Only the root the
 caller named can fail the walk.
 
-Files with a NUL byte are skipped and counted in `skippedBinary`. Invalid UTF-8
-in a searched file is replacement-decoded rather than refused.
+Files with a raw NUL byte are skipped and counted in `skippedBinary`, including
+UTF-16 files whose BOM would otherwise let ripgrep transcode them. Naming such a
+file as the root fails with `binary_file`, even if the pattern is absent.
+Invalid UTF-8 in a searched file is replacement-decoded rather than refused.
 
 ## Two properties that belong to the contract, not to a peer
 
