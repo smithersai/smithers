@@ -661,7 +661,7 @@ must settle the credit failure, one request and the configured ceiling charge. T
 handles a native revoked Proxy and other malformed inputs without propagating its getter exception. Three
 unwarmed complete corpora; initialization/serving/assertions included, no inference/WAN latency claim.
 
-`fault-coverage-draft-spend` is separately named and **counts only**. BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables
+`fault-coverage-draft-spend` and `fault-coverage-vip-draft-spend` are separately named and **counts only**. The VIP workload repeats the unreachable model-call charge for a VIP draft (`worker/VipDraft.vibe`): `budget`, one model request, one vip/unreachable warning, zero charges and the call's retained reservation. BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables
 one wiki draft whose real Budget admits but whose injected Spend cannot record its model call's charge
 (`model/<id>`; the run's own release reaches the real budget). The call meter's ledger retries must exhaust within
 the four-minute test deadline. Check one model request, two admissions (the run's and the call's), multiple

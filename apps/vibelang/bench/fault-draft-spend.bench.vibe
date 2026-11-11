@@ -6,6 +6,8 @@ import { WikiWriter } from "../src/core/WikiWriter.vibe"
 import { ChatModel, Spend } from "../worker/Reply.vibe"
 import * as Budget from "../worker/Budget.vibe"
 import { wikiAgentLayer, wikiWriter, WIKI_CEILING } from "../worker/WikiDraft.vibe"
+import { VipWriter } from "../src/core/VipWriter.vibe"
+import { agentLayer as vipAgentLayer, writer as vipWriter, VIP_CEILING } from "../worker/VipDraft.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { ledgerOver } from "../worker/ObjectStorage.vibe"
 import { objectStorage } from "../test/support/objectStorage.ts"
@@ -64,4 +66,49 @@ it.skipIf(!enabled)("fault coverage: exhausted draft charging reports one failur
     }
   }))
   await runPromise(artifact("fault-coverage-draft-spend", "Counts-only Node fault coverage. One real wiki draft runs on the durable memory engine with the deterministic local HTTP/SSE model, actual Budget admission and a faulty Spend service whose model-call settlement (`model/<id>`) remains unreachable. Let the call meter's ledger retries exhaust. Require one model request, two admissions (the run's and the call's), multiple failed settlement attempts, exact terminal budget refusal, one fixed wiki/unreachable warning, zero charged tokens and the original reservation retained. Setup and all assertions execute; no timing measurement is recorded.", ["BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables this separately named fault set. Real policy waits, bounded by a four-minute test deadline. Node KV/memory engine, deterministic local model, no actual provider spending, request interception, real eviction or billing. Counts only; durations are never quoted."], counts))
+})
+
+it.skipIf(!enabled)("fault coverage: a VIP draft whose model call cannot be charged fails as budget, counted once", { timeout: 240_000 }, async () => {
+  const counts = await runPromise(scoped(effect {
+    const ledger = ledgerOver(try Effect.try(() => objectStorage()))
+    const budget = try Budget.make(ledger, 10_000_000)
+    const attempts = try Ref.make(0)
+    const seen = try Ref.make<ReadonlyArray<ReadonlyArray<string>>>([])
+    const logger = Logger.layer([Logger.make(options => {
+      if (String(options.message) !== "vibelang.draft.spend") return
+      const labels = options.fiber.getRef(References.CurrentLogAnnotations)
+      runSync(Ref.update(seen, values => [...values, [String(labels.draft), String(labels.outcome)]]))
+    })], { mergeWithExisting: true })
+    // Only the model call's charge (`model/<id>`) is unreachable; the run's own release and settlement reach the budget.
+    const faulty: Spend.Shape = {
+      admit: (_day, reply, ceiling) => budget.admit(reply, ceiling),
+      spend: effect (_day, reply, used, reported, ceiling) => {
+        if (!reply.startsWith("model/")) return try budget.spend(reply, used, reported, ceiling)
+        try Ref.update(attempts, value => value + 1)
+        throw new Unreachable({ what: "budget" })
+      },
+    }
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ title: "Tuple patterns", summary: "Match tuples.", example: "case (a, b) -> a", prior: "ML" }))], prompt: 3, completion: 4 }])
+    const layer = vipWriter.pipe(Layer.provide(vipAgentLayer), Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })), Layer.provide(Layer.succeed(Spend, faulty)))
+    provide logger {
+      const result = try within(layer, effect {
+        const outcome = try Effect.result((try VipWriter).draft({ op: "draft", key: "d1", number: 0, parent: 0, title: "Tuple patterns", text: "Match on tuples.", example: "case (a, b) -> a", prior: "ML", assignee: "" }))
+        return outcome._tag === "Failure" ? outcome.failure.reason : "unexpected-success"
+      })
+      const charged = try Ref.get(attempts)
+      const calls = try scripted.calls
+      const logs = try Ref.get(seen)
+      const spent = (try ledger.read(Budget.SPENT)) ?? 0
+      const reserved = try ledger.read(Budget.RESERVED)
+      try Effect.try(() => {
+        expect(result).toBe("budget")
+        expect(charged).toBeGreaterThan(1)
+        expect(calls).toBe(1)
+        expect(logs).toEqual([["vip", "unreachable"]])
+        expect([spent, reserved]).toEqual([0, VIP_CEILING])
+      })
+      return { failed: 1, attempts: charged, modelCalls: calls, warnings: logs.length, spent, reserved }
+    }
+  }))
+  await runPromise(artifact("fault-coverage-vip-draft-spend", "Counts-only Node fault coverage. One real VIP draft on the durable memory engine with the deterministic local HTTP/SSE model, actual Budget admission and a faulty Spend service whose model-call settlement (`model/<id>`) remains unreachable. Require the `budget` refusal, multiple failed charge attempts, one model request, one fixed vip/unreachable warning, zero charged tokens and the call's reservation retained. Setup and all assertions execute; no timing measurement is recorded.", ["BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables this separately named fault set. Node object-storage KV, memory flow engine, scripted local model; no workerd RPC, real provider or network failure."], counts))
 })

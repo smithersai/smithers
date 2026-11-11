@@ -4056,7 +4056,8 @@ engine and deterministic HTTP/SSE model; three unwarmed full corpora include set
 inference/WAN. `fault-coverage-draft-spend` is an opt-in **counts-only** set (BENCH_FAULTS=1, or coverage mode): one
 real draft whose model-call charge (`model/<id>`) stays unreachable exhausts the call meter's ledger retries,
 bounded at four minutes. It checks requests, the run's and the call's admissions, attempts, the `budget` refusal,
-warning and ledger state. It retains and publishes no duration.
+warning and ledger state. `fault-coverage-vip-draft-spend` does the same for a VIP draft. Neither retains or
+publishes a duration.
 
 `wiki-draft-budget-deadline` (nyc-01, 2026-11-11 13:57 UTC, at `e678785d` plus the writer fix): 918.76 ms, one sample.
 It was 120,036.62 ms while the writer's own two-minute settlement policy did the retrying. Since `a2de30ee` each
