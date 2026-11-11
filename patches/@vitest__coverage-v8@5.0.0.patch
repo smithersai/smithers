@@ -1,7 +1,8 @@
 diff --git a/dist/index.js b/dist/index.js
+index 1a4f7dcf0c89e6f5de8b7a27d2faacb7ffbbd3e8..e1568f6e041bf07b64e5d095cfd0a612e2b3b2fb 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -43,8 +43,11 @@
+@@ -43,8 +43,11 @@ const mod = {
  		const result = [];
  		// Reduce amount of data sent over rpc by doing some early result filtering
  		for (const entry of coverage.result) {
@@ -15,10 +16,59 @@ diff --git a/dist/index.js b/dist/index.js
  				result.push(entry);
  			}
  		}
+@@ -56,20 +59,38 @@ const mod = {
+ 				await rm(path);
+ 				return content;
+ 			}));
++			// A child's script is remapped against the file's own text (or Vite's transform of it). A loader such as
++			// `node --import=vibelang/register` runs other code under the same URL, and merging its offsets into a
++			// worker's script of that URL corrupts both. Keep a child's script only when Node ran the file as written:
++			// its top-level range spans exactly the file's length.
++			const fileLengths = new Map();
++			const fileLength = async (url) => {
++				let path;
++				try { path = fileURLToPath(url); } catch { return -1; }
++				if (!fileLengths.has(path)) fileLengths.set(path, await readFile(path, "utf8").then((text) => text.length, () => -1));
++				return fileLengths.get(path);
++			};
++			let loaderScripts = 0;
+ 			for (const content of contents) {
+ 				const json = JSON.parse(content);
+ 				for (const entry of json.result) {
+ 					if (filterResult(entry)) {
++						const scriptLength = Math.max(0, ...entry.functions.map((fn) => fn.ranges[0]?.endOffset ?? 0));
++						if (scriptLength !== await fileLength(entry.url)) {
++							loaderScripts++;
++							continue;
++						}
+ 						entry.startOffset = 0;
+ 						entry.isExtendedContext = true;
+ 						result.push(entry);
+ 					}
+ 				}
+ 			}
++			if (loaderScripts > 0) result.loaderScripts = loaderScripts;
+ 		}
+ 		const coverageFilesDirectory = options?.coverageFilesDirectory;
+ 		assert(coverageFilesDirectory, "coverageFilesDirectory is required");
+-		return await writeCoverageFile(coverageFilesDirectory, { result });
++		return await writeCoverageFile(coverageFilesDirectory, { result, loaderScripts: result.loaderScripts ?? 0 });
+ 	},
+ 	async stopCoverage({ isolate }) {
+ 		if (isolate === false) {
 diff --git a/dist/provider.js b/dist/provider.js
+index 07ecd376670f3d648d0745632862debc22cba049..091d7ac1bf3e943ee4b136d25d5aa7a1ab95b624 100644
 --- a/dist/provider.js
 +++ b/dist/provider.js
-@@ -158,7 +158,7 @@
+@@ -50,6 +50,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
+ 		const autoAttachSubprocess = this.options.autoAttachSubprocess;
+ 		await this.readCoverageFiles({
+ 			onFileRead(coverage) {
++				if (coverage.loaderScripts) debug("Dropped %d child-process scripts a module loader rewrote", coverage.loaderScripts);
+ 				for (const script of coverage.result) {
+ 					const previous = mergedScripts.get(script.url);
+ 					const merged = mergeScriptCovs(previous ? [previous, script] : [script]);
+@@ -158,7 +159,7 @@ class V8CoverageProvider extends BaseCoverageProvider {
  			this.ctx.logger.error(`Failed to parse ${filename}. Excluding it from coverage.\n`, error);
  			return {};
  		}
@@ -27,7 +77,7 @@ diff --git a/dist/provider.js b/dist/provider.js
  			code: result.code,
  			sourceMap: result.map,
  			ast,
-@@ -215,6 +215,39 @@
+@@ -215,6 +216,39 @@ class V8CoverageProvider extends BaseCoverageProvider {
  				}
  			}
  		});

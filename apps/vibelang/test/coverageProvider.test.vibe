@@ -27,6 +27,62 @@ const javascriptSource = `export async function answer(flag, value) {
 }
 `
 
+// `pnpm wiki:build` and other `node --import=vibelang/register` children inherit NODE_V8_COVERAGE and dump hits for
+// the same source URL a worker imported through Vite. The loader's code is not Vite's: merging its offsets into the
+// worker's script lost the worker's hits (wikiLinks.vibe 14 in the benchmark gate, decision 0017).
+it.live("keeps a worker's hits when a native-loader child runs the same source", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-provider-native-" })
+    const root = try path.fromFileUrl(new URL("../", import.meta.url))
+    try fs.symlink(path.join(root, "node_modules"), path.join(directory, "node_modules"))
+    try fs.writeFileString(path.join(directory, "package.json"), '{"type":"module"}')
+    try fs.writeFileString(path.join(directory, "fixture.vibe"), effectSource)
+    try fs.writeFileString(path.join(directory, "child.vibe"), `import { answer } from "./fixture.vibe"
+await runPromise(effect {
+  const different = try answer(true, 9)
+  try Console.log(try sync(() => JSON.stringify([different])))
+})\n`)
+    const config = {
+      compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", lib: ["ES2022", "DOM"],
+        strict: true, skipLibCheck: true, rewriteRelativeImportExtensions: true, noEmit: true },
+      include: ["fixture.vibe", "child.vibe"],
+    }
+    try fs.writeFileString(path.join(directory, "tsconfig.json"), try sync(() => JSON.stringify(config)))
+    const child = try sync(() => JSON.stringify(["--import=vibelang/register", path.join(directory, "child.vibe")]))
+    try fs.writeFileString(path.join(directory, "check.test.js"), `import { expect, test } from "vitest"
+import { execFileSync } from "node:child_process"
+import { Effect } from "effect"
+import { answer } from "./fixture.vibe"
+test("runs one arm here and another in a native-loader child", async () => {
+  expect(await Effect.runPromise(answer(false, 7))).toBe(7)
+  expect(execFileSync(process.execPath, ${child}, { encoding: "utf8", cwd: ${try sync(() => JSON.stringify(directory))} }).trim()).toBe("[9]")
+})\n`)
+    try fs.writeFileString(path.join(directory, "vite.config.mjs"), `import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+export default defineConfig({ root: ${try sync(() => JSON.stringify(directory))}, plugins: [vibelang()], test: {
+  include: ["check.test.js"], maxWorkers: 1,
+  coverage: { provider: "v8", autoAttachSubprocess: true, include: ["fixture.vibe"], reporter: ["json"], reportsDirectory: "coverage" }
+} })\n`)
+    const result = try run(try node(), [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", path.join(directory, "vite.config.mjs"), "--coverage"])
+    try Effect.try(() => {
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+      expect(result.stdout + result.stderr).toContain("1 passed")
+    })
+    const rawText = try fs.readFileString(path.join(directory, "coverage/coverage-final.json"))
+    const raw = try Effect.try(() => JSON.parse(rawText))
+    const file = path.join(directory, "fixture.vibe")
+    try Effect.try(() => {
+      const hits = (line: number) => Object.entries(raw[file].statementMap).filter(([, loc]: [string, any]) => loc.start.line === line).map(([id]) => raw[file].s[id])
+      // The worker returned 7 from line 6. Line 8 (`return 9`) ran in neither process.
+      expect(hits(6).length).toBeGreaterThan(0)
+      expect(Math.max(...hits(6))).toBeGreaterThan(0)
+      expect(hits(8)).toEqual([0])
+    })
+  }
+}), 60_000)
+
 for (const format of ["vibe", "js"] as const) {
   for (const omission of ["none", "function", "branch"] as const) {
     const unused = omission === "function"
