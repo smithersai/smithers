@@ -25,23 +25,21 @@ const fixture = () => {
   return directory
 }
 /** A fabricated access token: only its expiry is ever read. */
-const access = (account: string) =>
-  `eyJhbGciOiJub25lIn0.${
-    Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, account })).toString("base64url")
-  }.signature`
+const access = (account: string, expiresAt = Math.floor(Date.now() / 1000) + 3600) =>
+  `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({ exp: expiresAt, account })).toString("base64url")}.signature`
 /** One signed-in Codex login directory: the `auth.json` that `codex login` writes. */
-const login = (accounts: string, account: string) => {
+const login = (accounts: string, account: string, token = access(account)) => {
   const directory = join(accounts, account)
   mkdirSync(directory)
   writeFileSync(
     join(directory, "auth.json"),
     JSON.stringify({
       auth_mode: "chatgpt",
-      tokens: { access_token: access(account), refresh_token: `refresh-${account}`, account_id: `id-${account}` }
+      tokens: { access_token: token, refresh_token: `refresh-${account}`, account_id: `id-${account}` }
     }),
     { mode: 0o600 }
   )
-  return directory
+  return token
 }
 const chatgpt = "https://chatgpt.com/backend-api/codex/responses"
 // A pooled deployment serving both subscription routes: a pinned seat names one
@@ -189,8 +187,13 @@ describe("native account-pinned seat resolution", () => {
 
   it("signs each pinned Codex seat with its selected login", async () => {
     const accounts = fixture()
-    login(accounts, "codex-3")
-    login(accounts, "codex-4")
+    // Deliberately differ from freshly generated credentials, so comparing to
+    // a new token fails deterministically even within the same second.
+    const expiresAt = Math.floor(Date.now() / 1000) + 7200
+    const tokens: Record<string, string> = {
+      "codex-3": login(accounts, "codex-3", access("codex-3", expiresAt)),
+      "codex-4": login(accounts, "codex-4", access("codex-4", expiresAt + 1))
+    }
     const signed: Array<Readonly<Record<string, string | undefined>>> = []
     const recording = RequestExecutor.RequestExecutor.of({
       execute: (request) => {
@@ -230,7 +233,7 @@ describe("native account-pinned seat resolution", () => {
     }
     expect(signed).toEqual(["codex-3", "codex-4", "codex-3"].map((account) => ({
       url: chatgpt,
-      authorization: `Bearer ${access(account)}`,
+      authorization: `Bearer ${tokens[account]}`,
       account: `id-${account}`
     })))
     expect(JSON.stringify(signed)).not.toContain("ambient")

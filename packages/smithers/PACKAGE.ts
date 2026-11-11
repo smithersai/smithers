@@ -14,6 +14,12 @@ const importRules = ImportRules({
   rules: [
     {
       kind: "forbidCalls",
+      files: ["test/LegacyOperatorCommands.test.ts"],
+      callees: ["vi.mock", "vi.doMock", "vi.hoisted", "vi.spyOn", "jest.mock"],
+      because: "TEST-2: operator commands exercise real migration, suggestion and agent registration implementations."
+    },
+    {
+      kind: "forbidCalls",
       files: ["src/Cli.ts"],
       callees: ["Effect.runPromise", "Effect.runPromiseExit"],
       because: "Command Effects use ControlBridge.run so host services and cancellation cross the command boundary."

@@ -74,11 +74,20 @@ export const isValidName = (name: string): boolean => nameProblem(name) === unde
 export const isRepository = (root: string, exists: (path: string) => boolean = existsSync): boolean =>
   exists(join(root, ".git")) || exists(join(root, ".jj"))
 
-/** Whether an existing ignore file already covers `.flows/`. */
-const alreadyIgnored = (contents: string): boolean =>
-  contents.split("\n").map((line) => line.trim()).some((line) =>
-    line === ".flows" || line === ".flows/" || line === "/.flows" || line === "/.flows/"
-  )
+/**
+ * A canonical exclusion must follow every negation. Preserve leading spaces:
+ * they name a different path. Treat any later negation conservatively rather
+ * than guessing whether its glob can re-include run state.
+ */
+const alreadyIgnored = (contents: string): boolean => {
+  let ignored = false
+  for (const raw of contents.split(/\r?\n/)) {
+    const line = raw.replace(/ +$/, "")
+    if (line.startsWith("!")) ignored = false
+    else if (line === ".flows" || line === ".flows/" || line === "/.flows" || line === "/.flows/") ignored = true
+  }
+  return ignored
+}
 
 /**
  * Adds `.flows/` to the repository ignore file, once.

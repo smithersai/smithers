@@ -36,8 +36,10 @@ smthrs init hello
 `init` creates workspace declarations, a package manifest when absent, and
 `.smithers/flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
 `flow.vibe`, `flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
-It adds `.flows/` to `.gitignore` in a repository; execution databases are acquired by runtime
-commands, not by generating a flow.
+It adds `.flows/` to `.gitignore` in a repository. An indented pattern does not
+cover `.flows/`. If no canonical exclusion follows the last negation, `init`
+appends a final `.flows/` exclusion to protect run state. Execution databases are
+acquired by runtime commands, not by generating a flow.
 
 Use `smthrs init hello --vibe` to create `flow.vibe` instead. The generated
 VibeLang entry keeps its prompt inline and uses the same model seat and durable graph declaration

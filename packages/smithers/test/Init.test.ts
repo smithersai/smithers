@@ -73,12 +73,49 @@ describe("the ignore rule", () => {
   })
 
   it("respects a rule that already covers the path, in any of its spellings", () => {
-    for (const rule of [".flows", ".flows/", "/.flows", "/.flows/", "  .flows/  "]) {
+    for (const rule of [".flows", ".flows/", "/.flows", "/.flows/", ".flows/  ", "/.flows  "]) {
       const root = directory(".git")
       writeFileSync(join(root, ".gitignore"), `${rule}\n`, "utf8")
 
       expect(Init.ensureIgnored(root)).toBe("unchanged")
     }
+  })
+
+  it.each([
+    "  .flows/  \n",
+    ".flows/\\ \n",
+    ".flows/\n!.flows/\n",
+    "/.flows/\n!/**\n",
+    ".flows/\n!.flows/run.json\n",
+    ".flows/\n!.*\n",
+    ".flows/\n!\n"
+  ])("keeps durable state untracked after repairing %j", (contents) => {
+    const root = directory()
+    const jj = (...args: Array<string>) => {
+      const result = spawnSync("jj", args, { cwd: root, encoding: "utf8" })
+      expect(result.status, result.stderr).toBe(0)
+      return result.stdout
+    }
+    jj("git", "init", "--no-colocate")
+    writeFileSync(join(root, ".gitignore"), contents)
+    expect(Init.ensureIgnored(root)).toBe("updated")
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(
+      `${contents}# Smithers run state\n.flows/\n`
+    )
+    expect(Init.ensureIgnored(root)).toBe("unchanged")
+    mkdirSync(join(root, ".flows", "nested"), { recursive: true })
+    writeFileSync(join(root, ".flows", "run.json"), "private run input")
+    writeFileSync(join(root, ".flows", "nested", "journal.json"), "private run output")
+    writeFileSync(join(root, "source.ts"), "export {}")
+    expect(jj("file", "list").trim().split("\n")).toEqual([".gitignore", "source.ts"])
+  })
+
+  it("respects a final canonical rule after earlier negations and CRLF comments", () => {
+    const root = directory(".jj")
+    const contents = "!.flows/\r\n/.flows/\r\n# keep private\r\n"
+    writeFileSync(join(root, ".gitignore"), contents)
+    expect(Init.ensureIgnored(root)).toBe("unchanged")
+    expect(readFileSync(join(root, ".gitignore"), "utf8")).toBe(contents)
   })
 
   it("recognizes a jj-only repository", () => {
