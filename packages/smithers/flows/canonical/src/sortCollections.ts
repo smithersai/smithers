@@ -9,6 +9,8 @@
  * @since 1.0.0
  */
 
+import { rethrowUnlessMissingSlot } from "./internal/slotFailure.ts"
+
 /**
  * Objects whose state lives in internal slots. Copying one through its
  * prototype would lose the slot, and none of them can hold a collection, so
@@ -172,6 +174,17 @@ interface Shape {
 
 /** The rank of a slotted leaf, or the shape of an object that holds values. */
 const shapeOf = (object: object): string | Shape => {
+  let primitive = ""
+  try {
+    if (object instanceof Number) primitive = leafRank(Number.prototype.valueOf.call(object))!
+    else if (object instanceof String) primitive = leafRank(String.prototype.valueOf.call(object))!
+    else if (object instanceof Boolean) primitive = leafRank(Boolean.prototype.valueOf.call(object))!
+    else if (object instanceof BigInt) primitive = leafRank(BigInt.prototype.valueOf.call(object))!
+  } catch (cause) {
+    // A wrapper prototype or proxy need not have the primitive slot. Its
+    // own data still ranks normally; engine resource failures still escape.
+    rethrowUnlessMissingSlot(cause)
+  }
   if (object instanceof Date) return `d${object.getTime()}`
   if (object instanceof RegExp) return `r${JSON.stringify(object.source)}${JSON.stringify(object.flags)}`
   if (typeof URL === "function" && object instanceof URL) return `l${JSON.stringify(object.href)}`
@@ -182,7 +195,7 @@ const shapeOf = (object: object): string | Shape => {
   if (object instanceof ArrayBuffer) return `a[${new Uint8Array(object).join(",")}]`
   const texts: Array<string> = []
   const children: Array<object> = []
-  let text = `o${JSON.stringify(constructorName(Object.getPrototypeOf(object)))}`
+  let text = `o${JSON.stringify(constructorName(Object.getPrototypeOf(object)))}${primitive}`
   const add = (value: unknown): void => {
     const leaf = leafRank(value)
     if (leaf === undefined) {

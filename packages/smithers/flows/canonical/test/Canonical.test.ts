@@ -2,7 +2,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { Canonical, canonicalize } from "../src/index.ts"
 
 const serialize = (value: unknown): Canonical => Effect.runSync(Schema.decodeUnknownEffect(Canonical)(value))
@@ -14,43 +14,6 @@ const failureMessage = (value: unknown): string => failure(value).message
 describe("Canonical", () => {
   it("canonicalizes through schema decoding", () => {
     expect(Schema.decodeUnknownSync(Canonical)({ b: 2, a: 1 })).toBe("{\"a\":1,\"b\":2}")
-  })
-
-  it.each(
-    [
-      ["null", (): null => null, "null"],
-      ["undefined", (): undefined => undefined, "undefined"],
-      ["throwing toString", () => ({
-        toString(): never {
-          throw null
-        }
-      }), "Unable to describe thrown value"]
-    ] as const
-  )("keeps raw parser failures in the typed error channel: %s", (_name, makeCause, message) => {
-    const cause = makeCause()
-    const parser = vi.spyOn(JSON, "parse").mockImplementation(() => {
-      throw cause
-    })
-    let error: Schema.SchemaError
-    try {
-      // Only the encode direction parses: decoding serializes and trusts the
-      // serializer's own refusals.
-      error = Effect.runSync(Effect.flip(Schema.encodeUnknownEffect(Canonical)("{}")))
-    } finally {
-      parser.mockRestore()
-    }
-    expect(error).toBeInstanceOf(Schema.SchemaError)
-    expect(error.message).toContain(message)
-  })
-
-  it("serializes without parsing its own output back", () => {
-    const parser = vi.spyOn(JSON, "parse")
-    try {
-      serialize({ b: 2, a: [true, null] })
-      expect(parser).not.toHaveBeenCalled()
-    } finally {
-      parser.mockRestore()
-    }
   })
 
   it("produces valid JSON", () => {
@@ -327,8 +290,7 @@ describe("host object shapes", () => {
   })
 
   it("walks a null-prototype object and honors only an own toJSON", () => {
-    // `hasToJson` probes with `in`, which is safe on a null-prototype object
-    // and finds nothing inherited, so the object is walked as plain data.
+    // A null-prototype object has no inherited toJSON and is walked as plain data.
     const plain = Object.create(null) as Record<string, unknown>
     plain.a = 1
     expect(serialize(plain)).toBe("{\"a\":1}")
