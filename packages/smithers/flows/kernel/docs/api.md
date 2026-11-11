@@ -874,12 +874,15 @@ capability answers rather than vanishing.
 ### ChildProcessSpawner.ambientEnvironment
 
 ```ts
-const ambientEnvironment: () => Readonly<Record<string, string | undefined>>
+const ambientEnvironment: (
+  host?: { readonly process?: { readonly env?: Readonly<Record<string, string | undefined>> } }
+) => Readonly<Record<string, string | undefined>>
 ```
 
 The environment this process holds, which a child built with
 `ChildProcessEnvironment.make` inherits its bootstrap names from. It is `{}` on
 a host with no process environment, such as a browser or a Cloudflare Worker.
+The optional host object defaults to `globalThis`.
 Library code that builds a child's environment, or names a host directory a
 child uses, reads it here rather than from the `process` global, so it still
 imports and runs on every host.
@@ -918,6 +921,15 @@ and so does a stage that passes a protected argument through a shell
 hidden value as code. Pass secrets in `env` instead.
 A command with no `cwd`, or a relative one, runs in `Workspace.root`, never the
 process's own directory, and the check sees that resolved directory.
+
+### ChildProcessSpawner.layerWith
+
+`layerWith(options: ChildProcessSpawner.Options)` applies the same permission
+and confinement checks as `layer`. Supply `{ platform: "win32" }` when the
+underlying spawner runs on Windows: an absent search path becomes an explicit
+empty `PATH`, preventing the host from restoring its own search path. Every
+pipeline stage uses that platform. Omit `platform` to use the current host's
+platform, as `layer` does.
 
 ## ProcessConfinement
 
@@ -973,17 +985,20 @@ provide system reads needed to launch programs and mask credential paths.
 
 Least-authority construction for a child process's replacement environment.
 
-| Export                  | Type                                             | Meaning                                                                                                                                            |
-| ----------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inheritedNames`        | `ReadonlyArray<string>`                          | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.                                                       |
-| `credentialNamePattern` | `RegExp`                                         | The credential-name rule shared with `@smthrs/model/Auth`, including complete or separator-delimited `token`, `key`, `key_id`, and `pat` suffixes. |
-| `isCredentialName`      | `(name: string) => boolean`                      | Tests one name against that rule.                                                                                                                  |
-| `isInheritedName`       | `(name: string) => boolean`                      | Tests one name against `inheritedNames` and the `LC_*` prefix, case-insensitively.                                                                 |
-| `make`                  | `(ambient, declared?) => Record<string, string>` | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations.                                                    |
+| Export                  | Type                                                       | Meaning                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inheritedNames`        | `ReadonlyArray<string>`                                    | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.                                                       |
+| `credentialNamePattern` | `RegExp`                                                   | The credential-name rule shared with `@smthrs/model/Auth`, including complete or separator-delimited `token`, `key`, `key_id`, and `pat` suffixes. |
+| `isCredentialName`      | `(name: string) => boolean`                                | Tests one name against that rule.                                                                                                                  |
+| `isInheritedName`       | `(name: string, names?: ReadonlyArray<string>) => boolean` | Tests one name against the supplied uppercase names (default `inheritedNames`) and the `LC_*` prefix, case-insensitively.                          |
+| `make`                  | `(ambient, declared?, names?) => Record<string, string>`   | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations.                                                    |
 
 `make` returns a null-prototype record suitable for `CommandOptions.env` with
 `extendEnv: false`. An explicitly declared name is applied last, even when it
 looks sensitive; an `undefined` declaration removes an inherited name.
+The optional third argument supplies uppercase bootstrap names instead of
+`inheritedNames`. Credential-shaped ambient names remain withheld even when
+that list includes them; locale names remain admitted by the `LC_` prefix.
 
 ## ContainedSpawner
 

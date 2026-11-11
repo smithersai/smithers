@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import * as ChildProcessEnvironment from "../src/ChildProcessEnvironment.ts"
 
 describe("ChildProcessEnvironment", () => {
@@ -78,15 +78,18 @@ describe("ChildProcessEnvironment", () => {
     "MASTER_KEY",
     "GITHUB_PAT"
   ])("withholds ambient %s even if the bootstrap allowlist admits it", (name) => {
-    // Simulate a future inheritedNames expansion at its private Set lookup.
-    const inherited = vi.spyOn(Set.prototype, "has").mockReturnValue(true)
-    let environment: Record<string, string>
-    try {
-      environment = ChildProcessEnvironment.make({ [name]: "ambient-secret" })
-    } finally {
-      inherited.mockRestore()
-    }
-    expect(environment).toEqual({})
+    const environment = ChildProcessEnvironment.make({ [name]: "ambient-secret", TOOL_HOME: "tools" }, {}, [
+      name,
+      "TOOL_HOME"
+    ])
+    expect(ChildProcessEnvironment.isInheritedName(name, [name])).toBe(true)
+    expect(environment).toEqual({ TOOL_HOME: "tools" })
+  })
+
+  it("uses a supplied bootstrap list without changing the default list", () => {
+    expect(ChildProcessEnvironment.make({ PATH: "/bin", tool_home: "tools", LC_MESSAGES: "C" }, {}, ["TOOL_HOME"]))
+      .toEqual({ tool_home: "tools", LC_MESSAGES: "C" })
+    expect(ChildProcessEnvironment.make({ TOOL_HOME: "tools", PATH: "/bin" })).toEqual({ PATH: "/bin" })
   })
 
   it("inherits lowercase bootstrap and locale names", () => {

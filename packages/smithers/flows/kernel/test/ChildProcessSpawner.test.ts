@@ -75,33 +75,40 @@ const hostSpawner = (options: {
   )
 
 describe("ChildProcessSpawner", () => {
-  itEffect("keeps an absent Windows search path empty instead of inheriting the host path", () => {
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-    const observed: ChildProcess.Command[] = []
-    return Effect.acquireUseRelease(
-      Effect.sync(() => Object.defineProperty(process, "platform", { ...platform, value: "win32" })),
-      () =>
-        Effect.gen(function*() {
-          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-          yield* spawner.string(ChildProcess.make("tool", [], { extendEnv: false }))
-          yield* spawner.string(ChildProcess.make("tool", [], { env: { PATH: undefined } }))
-          yield* spawner.string(ChildProcess.make("tool", [], { env: { path: "declared" }, extendEnv: false }))
-          expect(observed.map((command) =>
-            command._tag === "StandardCommand"
-              ? Object.entries(command.options.env ?? {}).filter(([name]) => name.toUpperCase() === "PATH")
-              : []
-          )).toEqual([[["PATH", ""]], [["PATH", ""]], [["path", "declared"]]])
-        }),
-      () => Effect.sync(() => Object.defineProperty(process, "platform", platform))
-    ).pipe(
-      Effect.provide(guarded),
-      Effect.provideService(
-        HostChildProcessSpawner,
-        hostSpawner({ stdout: "out", onSpawn: (command) => observed.push(command) })
-      ),
-      Effect.provideService(GrantStore, scriptedStore(new Set(["proc:spawn:tool", "proc:spawn:env path -- tool"]), []))
-    )
-  })
+  for (const platform of ["win32", "linux"]) {
+    itEffect(`uses the configured ${platform} search-path policy for every stage`, () => {
+      const observed: ChildProcess.Command[] = []
+      const configured = ChildProcessSpawner.layerWith({ platform }).pipe(
+        Layer.provide([Workspace.layer("/workspace"), Path.layer, ProcessConfinement.layerNoop])
+      )
+      return Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+        yield* spawner.string(ChildProcess.make("tool", [], { extendEnv: false }))
+        yield* spawner.string(ChildProcess.make("tool", [], { env: { PATH: undefined } }))
+        yield* spawner.string(ChildProcess.make("tool", [], { env: { path: "declared" }, extendEnv: false }))
+        yield* spawner.string(ChildProcess.pipeTo(
+          ChildProcess.make("tool", [], { extendEnv: false }),
+          ChildProcess.make("tool", [], { extendEnv: false })
+        ))
+        const paths = (command: ChildProcess.Command): unknown =>
+          command._tag === "StandardCommand"
+            ? Object.entries(command.options.env ?? {}).filter(([name]) => name.toUpperCase() === "PATH")
+            : [paths(command.left), paths(command.right)]
+        const absent = platform === "win32" ? [["PATH", ""]] : []
+        expect(observed.map(paths)).toEqual([absent, absent, [["path", "declared"]], [absent, absent]])
+      }).pipe(
+        Effect.provide(configured),
+        Effect.provideService(
+          HostChildProcessSpawner,
+          hostSpawner({ stdout: "out", onSpawn: (command) => observed.push(command) })
+        ),
+        Effect.provideService(
+          GrantStore,
+          scriptedStore(new Set(["proc:spawn:tool", "proc:spawn:env path -- tool"]), [])
+        )
+      )
+    })
+  }
 
   for (const length of [4096, 4097]) {
     itEffect(`keeps a ${length}-unit command resource in the typed channel`, () => {
@@ -926,16 +933,16 @@ it.effect("missing confinement refuses approved commands without spawning", () =
   })))
 
 describe("ChildProcessSpawner.ambientEnvironment", () => {
-  it("reads this process's environment, and an empty one on a host without a process global", () => {
+  it("reads this process's environment by default", () => {
     expect(ChildProcessSpawner.ambientEnvironment()).toBe(process.env)
-    const host = Object.getOwnPropertyDescriptor(globalThis, "process")!
-    Object.defineProperty(globalThis, "process", { configurable: true, value: undefined })
-    let browser: Readonly<Record<string, string | undefined>>
-    try {
-      browser = ChildProcessSpawner.ambientEnvironment()
-    } finally {
-      Object.defineProperty(globalThis, "process", host)
-    }
-    expect(browser).toEqual({})
+  })
+
+  it("reads a supplied host's environment", () => {
+    const env = { PATH: "/bin" }
+    expect(ChildProcessSpawner.ambientEnvironment({ process: { env } })).toBe(env)
+  })
+
+  it.each([{}, { process: {} }])("returns an empty environment for a host without one: %o", (host) => {
+    expect(ChildProcessSpawner.ambientEnvironment(host)).toEqual({})
   })
 })

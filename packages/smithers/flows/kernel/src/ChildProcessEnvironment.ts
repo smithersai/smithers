@@ -48,19 +48,18 @@ export const inheritedNames: ReadonlyArray<string> = Object.freeze([
   "SHELL"
 ])
 
-const inherited = new Set(inheritedNames)
-
 /**
  * Reports whether a variable belongs to the bootstrap set {@link make}
  * inherits: one of {@link inheritedNames} or a locale `LC_` category,
- * compared case-insensitively.
+ * compared case-insensitively. A host may supply an alternative bootstrap
+ * list of uppercase names.
  *
  * @category predicates
  * @since 1.0.0-rc.1
  */
-export const isInheritedName = (name: string): boolean => {
+export const isInheritedName = (name: string, names: ReadonlyArray<string> = inheritedNames): boolean => {
   const canonical = name.toUpperCase()
-  return inherited.has(canonical) || canonical.startsWith("LC_")
+  return names.includes(canonical) || canonical.startsWith("LC_")
 }
 
 const remove = (environment: Record<string, string | Redacted.Redacted<string>>, name: string): void => {
@@ -72,7 +71,8 @@ const remove = (environment: Record<string, string | Redacted.Redacted<string>>,
 
 /**
  * Selects the bootstrap allowlist from an ambient environment and overlays
- * caller-declared names.
+ * caller-declared names. The optional third argument supplies an alternative
+ * bootstrap list of uppercase names, defaulting to {@link inheritedNames}.
  *
  * Sensitive-looking ambient names are withheld even if a future bootstrap
  * list grows to include one. A caller declaration is applied last because it
@@ -86,11 +86,12 @@ const remove = (environment: Record<string, string | Redacted.Redacted<string>>,
  */
 export const make = <A extends string | Redacted.Redacted<string> = string>(
   ambient: Readonly<Record<string, string | undefined>>,
-  declared: Readonly<Record<string, A | undefined>> = {}
+  declared: Readonly<Record<string, A | undefined>> = {},
+  names: ReadonlyArray<string> = inheritedNames
 ): Record<string, string | A> => {
   const environment = Object.create(null) as Record<string, string | A>
   for (const [name, value] of Object.entries(ambient)) {
-    if (value !== undefined && isInheritedName(name) && !isCredentialName(name)) environment[name] = value
+    if (value !== undefined && isInheritedName(name, names) && !isCredentialName(name)) environment[name] = value
   }
   for (const [name, value] of Object.entries(declared)) {
     remove(environment, name)
