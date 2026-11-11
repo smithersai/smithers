@@ -9,6 +9,7 @@ import * as FlowControl from "../src/flow-control.ts"
 import { FlowError } from "../src/flows.ts"
 import { FlowRuns } from "../src/flows.ts"
 import * as Host from "../src/host.ts"
+import type * as Session from "../src/session.ts"
 
 const root = join(import.meta.dir, "fixtures", "flows-project")
 /** A launch key, as `FlowRuns` saves one for each attempt. */
@@ -416,6 +417,103 @@ export default Flow.make("pipeline", {
     ))
 })
 `
+
+const held = `
+import { Action, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Schema } from "effect"
+const Hold = Action.make("held/Hold", { payload: {}, success: Schema.String })
+export const layer = Hold.toLayer(() => Effect.never)
+export default Flow.make("held", {
+  description: "Held until cancelled",
+  capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  payload: {},
+  success: Schema.String,
+  body: Node.capture({ hold: Hold.name }, () => Hold.call({}))
+})
+`
+
+for (const next of ["admit", "stop", "stop-after-admit"] as const) {
+  it(`preserves a failed stop through a full pool and ${next}`, async () => {
+    const directory = project("tui-queued-stop-", { held })
+    const local = FlowControl.make({ cwd: directory, environment: {}, approvals: host.approvals! })
+    try {
+      const runId = await local.start(await local.plan("held", {}, key()))
+      const records: Array<Session.Record> = []
+      const runs = new FlowRuns({
+        port: local,
+        persist: (record) => records.push(record),
+        restored: [{
+          id: "stopped",
+          flow: "held",
+          by: "user",
+          input: {},
+          requested: "{}",
+          startedAt: 1,
+          status: "failed",
+          runId,
+          stopRequested: true,
+          message: "The stop was not sent; press x again."
+        }]
+      })
+      let stoppedAtAdmission = false
+      let statusAfterStop: string | undefined
+      const unsubscribe = runs.subscribe(() => {
+        if (next === "stop-after-admit" && !stoppedAtAdmission && runs.get("stopped")?.status === "requested") {
+          stoppedAtAdmission = true
+          runs.cancel("stopped")
+          statusAfterStop = runs.get("stopped")?.status
+        }
+      })
+      const wait = async (until: () => boolean) => {
+        const deadline = Date.now() + 30_000
+        while (!until() && Date.now() < deadline) await Bun.sleep(5)
+        expect(until()).toBe(true)
+      }
+      try {
+        for (const id of ["a", "b", "c"]) runs.request({ id, flow: "held", input: {}, by: "user" })
+        await wait(() => ["a", "b", "c"].every((id) => runs.get(id)?.status === "running"))
+        expect(runs.retry("stopped")).toEqual({ id: "stopped", status: "queued" })
+        expect(runs.get("stopped")).toMatchObject({ runId, stopRequested: true, attempt: 2 })
+        expect(records.at(-1)).toMatchObject({
+          type: "flow",
+          run: { id: "stopped", status: "queued", runId, stopRequested: true }
+        })
+        // Retrying a queued stop twice must neither launch work nor send the stop early.
+        expect(() => runs.retry("stopped")).toThrow("Only a failed, stopped, or parked run can be retried")
+        expect((await local.events(runId)).some((event) => event.kind === "control.run.cancel-requested")).toBe(false)
+        if (next === "stop") runs.cancel("stopped")
+        else runs.cancel("a")
+        await wait(() => runs.get("stopped")?.status === "cancelled")
+        if (next === "stop-after-admit") {
+          expect(stoppedAtAdmission).toBe(true)
+          expect(statusAfterStop).toBe("requested")
+        }
+        expect(runs.get("stopped")?.runId).toBe(runId)
+        const kinds = (await local.events(runId)).map((event) => event.kind)
+        expect(kinds).toContain("control.run.cancel-requested")
+        expect(kinds).not.toContain("control.run.resume")
+        expect(await local.watch(runId, () => {}).done).toEqual({ kind: "cancelled" })
+        if (next === "stop") {
+          // Freeing a seat afterwards must not admit the stopped queue entry.
+          runs.cancel("a")
+          await wait(() => runs.get("a")?.status === "cancelled")
+        }
+        expect((await local.runs!()).map((run) => run.runId).sort()).toEqual(
+          [runId, ...["a", "b", "c"].map((id) => runs.get(id)!.runId!)].sort()
+        )
+      } finally {
+        unsubscribe()
+        await runs.dispose()
+      }
+    } finally {
+      for (const run of await local.runs!()) await local.cancel(run.runId)
+      await local.dispose()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 120_000)
+}
 
 it("shows a module flow's steps as the run's rows, from its engine journal", async () => {
   const directory = project("tui-steps-", { pipeline })

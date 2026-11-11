@@ -616,7 +616,14 @@ export class FlowRuns {
     return { id, status: "requested" }
   }
   private async prepare(id: string, attempt: number) {
-    if (this.runs.get(id)?.resumeRequested) return this.track(this.resumeExisting(id, attempt))
+    const queued = this.runs.get(id)
+    if (queued?.runId !== undefined && queued.stopRequested) {
+      if (this.update(id, attempt, { resumeRequested: undefined }, "launch") === undefined) return
+      this.follow(id, attempt, queued.runId)
+      await this.stop(id, queued.runId)
+      return
+    }
+    if (queued?.resumeRequested) return this.track(this.resumeExisting(id, attempt))
     const port = this.options.port!
     try {
       const listed = await this.discover()
@@ -787,7 +794,7 @@ export class FlowRuns {
       this.launching.get(id)!.abort()
       return
     }
-    if (run.status === "queued" && run.resumeRequested && run.runId !== undefined) {
+    if (run.status === "queued" && (run.resumeRequested || run.stopRequested) && run.runId !== undefined) {
       this.runs.dequeue(id)
       this.runs.put({ ...run, status: "parked", stopRequested: true, resumeRequested: undefined })
       this.follow(id, this.attempts.get(id)!, run.runId)
@@ -796,7 +803,8 @@ export class FlowRuns {
     }
     if (
       run.runId !== undefined &&
-      (run.status === "running" || run.status === "waiting" || run.status === "parked" || run.resumeRequested)
+      (run.status === "running" || run.status === "waiting" || run.status === "parked" || run.resumeRequested ||
+        run.stopRequested)
     ) {
       // The watch settles the status; a refused cancel keeps it running.
       this.runs.put({ ...run, stopRequested: true })
@@ -835,7 +843,8 @@ export class FlowRuns {
     this.watches.get(id)?.close()
     this.watches.delete(id)
     if (this.runs.full()) {
-      const next = resume ? rest : { ...rest, runId: undefined, stopRequested: undefined }
+      const stopping = run.runId !== undefined && run.stopRequested && run.status === "failed"
+      const next = resume || stopping ? rest : { ...rest, runId: undefined, stopRequested: undefined }
       this.runs.move({ ...next, message: undefined }, run.status === "parked" ? "wake" : "retry")
       this.runs.enqueue(id, undefined)
       return { id, status: "queued" }
