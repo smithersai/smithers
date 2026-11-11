@@ -1,5 +1,4 @@
 // The ledger's integer transitions, called inside Budget's storage lock.
-export interface Charge { readonly spent: number; readonly added: number; readonly write: boolean }
 
 /** What admission leaves in the ledger: whether the call may start, the day's open reservations, and this call's hold. */
 export interface Reservation { readonly admitted: boolean; readonly reserved: number; readonly held: number }
@@ -46,19 +45,6 @@ export function settle(spent: number, reserved: number, over: number, held: numb
   const added = usable ? used : ceiling
   const beyond = added > held ? added - held : 0
   return { spent: spent + added, reserved: reserved - held, over: over + beyond, added, write: true }
-}
-
-/** A replay adds nothing; a new reply's entire nonnegative charge is added exactly once. */
-//@ verify
-//@ requires 0 <= spent && 0 <= used && spent + used <= 9007199254740991
-//@ ensures \result.write == !recorded
-//@ ensures \result.spent >= 0 && \result.added >= 0
-//@ ensures \result.spent == spent + \result.added
-//@ ensures recorded ==> \result.spent == spent && \result.added == 0
-//@ ensures !recorded ==> \result.spent == spent + used && \result.added == used
-export function charge(spent: number, used: number, recorded: boolean): Charge {
-  if (recorded) return { spent, added: 0, write: false }
-  return { spent: spent + used, added: used, write: true }
 }
 
 /** The integer arithmetic domain a new ledger charge must stay inside. */

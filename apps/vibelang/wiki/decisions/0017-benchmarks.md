@@ -640,7 +640,8 @@ code over the Node KV adapter, three unwarmed journeys each. No provider, real c
 claim; the actual Worker companion uses the same named reservation/settlement API over real local RPC.
 
 After main's reservation change, `worker/budgetDecision.vibe`'s legacy `charge` function (lines 59–62 at c5bbf81b)
-has no src/worker callers. It remains counted; no direct invocation was added merely to credit this unused helper.
+had no src/worker callers. No direct invocation was added merely to credit this unused helper; lane vl-coverage2
+deleted it on 2026-11-10 (decision 0016, "Dead budget charge").
 It is an additional retained legacy/proof boundary, separate from the already named browser/Node source-map lines.
 
 

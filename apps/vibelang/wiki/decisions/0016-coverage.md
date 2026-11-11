@@ -2207,3 +2207,11 @@ HistoryActions, WikiDraft, VipDraft and SpecificationReviewers.
 Combined: 550/550 lines, 207/207 functions, 693/693 statements,
 359/359 branches. Production code was unchanged by these tests.
 The writer controls above also pass under main's reserved-ceiling policy.
+
+## Dead budget charge (lane vl-coverage2, 2026-11-10)
+
+`worker/budgetDecision.vibe` kept `charge`, the per-reply charge from before main's reservation change (`c5bbf81b`).
+No source, test, benchmark or fuzz target imports it, and no mutation case names it: `worker/Budget.vibe` settles
+through `reserve`, `settle` and `canCharge`. Its two lines and three branches were the file's whole gap, and the
+benchmark lane had recorded it as unused (0017). Deleted with its `Charge` type instead of covered; the function
+inventory in 0018 is regenerated, and the module's remaining proofs pass.
