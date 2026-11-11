@@ -228,6 +228,31 @@ export const find = (options: {
 }
 
 /**
+ * The remembered failures that no passing check has answered yet.
+ *
+ * A failure is answered when the run's check ledger holds a passing newest
+ * reading of the same call, or of a broader one, under the flow that failed:
+ * the relation `find` pairs a failure with a pass by. A failure the run fixed
+ * and re-checked therefore leaves this set, and a checkpointed baseline that
+ * failed by design leaves it as soon as the live check it was taken against
+ * passes. The check ledger keeps only live readings and only the newest one per
+ * call, so a call that failed again after its pass counts again.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.17
+ */
+export const unanswered = (
+  ledger: Ledger,
+  checks: ReadonlyArray<NarrowedCheck.Check>
+): Ledger =>
+  ledger.filter((failed) =>
+    !checks.some((check) =>
+      check.passing && check.flow === failed.flow &&
+      (check.signature === failed.signature || NarrowedCheck.narrows(failed.terms, check.terms))
+    )
+  )
+
+/**
  * States that the run holds both halves of its own evidence.
  *
  * It quotes both readings and says what they establish, then names the two

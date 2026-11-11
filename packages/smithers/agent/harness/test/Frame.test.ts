@@ -13,6 +13,7 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as Frame from "../src/internal/frame.ts"
+import * as Supervision from "../src/internal/supervision.ts"
 import * as NarrowedCheck from "../src/NarrowedCheck.ts"
 import * as Sufficiency from "../src/Sufficiency.ts"
 
@@ -179,6 +180,82 @@ describe("account", () => {
     expect(probed.facts.checkpointIds).toEqual(["cp-0-1", "cp-1-1"])
     expect(probed.probeNotice).toContain("- bash (unknown_test): no such test")
     expect(account({ calls: [call()] }).probeNotice).toBeUndefined()
+  })
+})
+
+describe("a reading at ctx.base", () => {
+  const baseline = call({
+    at: "base",
+    signature: "pytest tests@base",
+    value: { exitCode: 1 },
+    failing: true,
+    passing: false
+  })
+
+  it("is stamped with the opening tree's epoch, in whichever frame it is taken", () => {
+    // Frame A edited (mutations 0 -> 1). Frame B writes nothing, takes the
+    // baseline at ctx.base, which fails, and reruns the check live, which
+    // passes. The baseline read the opening tree, so it is a *before*.
+    const judged = state({ mutations: 1 })
+    const accounting = account({ state: judged, calls: [baseline, call()] })
+
+    expect(accounting.facts.failures.map((failure) => failure.epoch)).toEqual([0])
+    expect(Frame.discipline(judged, accounting, undefined).events.map((event) => event._tag)).toEqual([
+      "sufficiency-observed"
+    ])
+  })
+})
+
+describe("the supervisor's failuresUnanswered signal", () => {
+  const unanswered = (frames: ReadonlyArray<ReadonlyArray<Frame.ObservedCall>>) => {
+    let current = state()
+    let facts = account({ state: current }).facts
+    for (const calls of frames) {
+      facts = account({ state: current, calls }).facts
+      current = state({ ...facts })
+    }
+    return Supervision.signals(current, facts, "", 0).failuresUnanswered
+  }
+  const edit = call({ flow: "edit", signature: "edit a.py", subject: "edit a.py", mutates: true, passing: false })
+  const failing = call({ value: { exitCode: 1 }, failing: true, passing: false })
+  const baseline = call({
+    at: "base",
+    signature: "pytest tests@base",
+    value: { exitCode: 1 },
+    failing: true,
+    passing: false
+  })
+
+  it("counts a failing check the run has not seen pass", () => {
+    expect(unanswered([[failing]])).toBe(1)
+    expect(unanswered([[failing], [edit, failing]])).toBe(1)
+  })
+
+  it("drops a failure once the same check passes", () => {
+    expect(unanswered([[failing], [edit, call()]])).toBe(0)
+  })
+
+  it("drops a failure once a broader check passes", () => {
+    const narrow = call({
+      signature: "pytest tests -k one",
+      subject: "pytest tests -k one",
+      input: { command: "pytest tests -k one" },
+      value: { exitCode: 1 },
+      failing: true,
+      passing: false
+    })
+    expect(unanswered([[narrow], [edit, call()]])).toBe(0)
+  })
+
+  it("drops a failing baseline at ctx.base once the live check passes", () => {
+    // Contract rule 9: edit, baseline at ctx.base exits 1, live rerun exits 0.
+    expect(unanswered([[edit, baseline, call()]])).toBe(0)
+    expect(unanswered([[edit], [baseline, call()]])).toBe(0)
+    expect(unanswered([[edit, baseline, failing]])).toBe(1)
+  })
+
+  it("counts a failure again when its check fails after the pass", () => {
+    expect(unanswered([[failing], [edit, call()], [edit, failing]])).toBe(1)
   })
 })
 

@@ -18,6 +18,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Clock, Effect, Option, type Schema } from "effect"
 import * as AgentEvent from "../AgentEvent.ts"
 import * as CallLedger from "../CallLedger.ts"
+import { baseCheckpoint } from "../Cell.ts"
 import type { State } from "../CellTurn.ts"
 import * as CompletionClaim from "../CompletionClaim.ts"
 import type * as ContextWindow from "../ContextWindow.ts"
@@ -337,9 +338,13 @@ export const account = (options: {
   const standingAt = calls.map((call) => call.mutates)
   const lastStandingWrite = standingAt.lastIndexOf(true)
   const unattributedMutation = mutated && lastStandingWrite === -1
-  const readings = (checkpointed: boolean) =>
+  // Which tree a reading names: the live one, the one the run opened on, or
+  // one a cell pinned with `ctx.checkpoint()`.
+  const treeOf = (call: ObservedCall) => call.at === undefined ? "live" : call.at === baseCheckpoint ? "base" : "minted"
+  const readings = (tree: "live" | "base" | "minted") =>
     calls.flatMap((call, index) => {
-      if (!call.ok || call.mutates || (call.at !== undefined) !== checkpointed) return []
+      if (!call.ok || call.mutates || treeOf(call) !== tree) return []
+      const checkpointed = tree !== "live"
       const recorded = NarrowedCheck.check({
         flow: call.flow,
         signature: call.subject,
@@ -369,7 +374,7 @@ export const account = (options: {
       })
       return recorded === undefined ? [] : [recorded]
     })
-  const frameChecks = readings(false)
+  const frameChecks = readings("live")
 
   return {
     mutated,
@@ -428,14 +433,18 @@ export const account = (options: {
       // ledger a checkpointed reading belongs in: its whole question is an
       // ordering — this failed, then something changed, then that passed — and
       // a pinned tree answers the first half honestly from a frame that also
-      // did the changing. The two are stamped at different epochs: a pinned
-      // reading read a tree from before this frame's change, and a stable live
+      // did the changing. Each is stamped with the epoch of the tree it read.
+      // A reading at `ctx.base` read the tree the run opened on, so it is epoch
+      // 0 in whichever frame it was taken. A reading at a minted checkpoint
+      // keeps the epoch this frame opened at, because nothing records the
+      // epoch a checkpoint was minted at. A stable live
       // reading settled after this frame's last write, so it read the tree
       // this frame closed on and belongs to the epoch the frame closes at.
-      failures: Sufficiency.remember(
-        Sufficiency.remember(state.failures, { frame: readings(true), epoch: state.mutations }),
+      failures: [
+        { frame: readings("base"), epoch: 0 },
+        { frame: readings("minted"), epoch: state.mutations },
         { frame: frameChecks, epoch: state.mutations + (mutated ? 1 : 0) }
-      ),
+      ].reduce(Sufficiency.remember, state.failures),
       mutations: state.mutations + (mutated ? 1 : 0),
       remoteMutations: state.remoteMutations + remoteWrites,
       // The tree the run was handed, fixed the first time a frame measured one

@@ -42,6 +42,7 @@ import * as EngineLike from "../EngineLike.ts"
 import * as Judgement from "../Judgement.ts"
 import * as Monitor from "../Monitor.ts"
 import * as Relevance from "../Relevance.ts"
+import * as Sufficiency from "../Sufficiency.ts"
 import * as Supervisor from "../Supervisor.ts"
 import * as UnmovedTree from "../UnmovedTree.ts"
 import * as compactionMarks from "./compactionMarks.ts"
@@ -224,7 +225,7 @@ export const signals = (
   paths,
   checksRun: facts.checks.length,
   checksFailing: facts.checks.filter((check) => check.failing).length,
-  failuresUnanswered: facts.failures.length,
+  failuresUnanswered: Sufficiency.unanswered(facts.failures, facts.checks).length,
   callsFailed: facts.callLedger.filter((entry) => !entry.ok).length,
   callsSettled: facts.callLedger.length,
   narrowingDemands: state.narrowingDemands,
