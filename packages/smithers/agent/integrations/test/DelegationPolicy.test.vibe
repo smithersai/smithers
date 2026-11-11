@@ -78,7 +78,8 @@ describe("DelegationPolicy.readTarget", () => {
   ]) check(`admits %s`.replace("%s", path), () => expect(read(path)).toBe(true))
   for (const path of [
     "/user", "/repos/ada", "/repos/smithersai/secret", "/repos/eve/smithers", "/repos/ada/private", "/repos/smithersai/vibelang/../secret",
-    "/repos/smithersai/vibelang/%2e%2e/secret", "https://api.github.com/repos/smithersai/vibelang", "/repos/smithersai/vibelangevil", "/repos/smithersai/vibelang/keys",
+    "/repos/smithersai/vibelang/%2e%2e/secret", "/repos/smithersai/vibelang/contents/.\t./.\t./.\t./.\t./user/emails",
+    "/repos/smithersai/vibelang/contents/.\n./.\n./.\n./.\n./user", "/repos/smithersai/vibelang/contents/.\r./.\r./secret", "/repos/smithersai/vibelang/contents/a\x7f", "https://api.github.com/repos/smithersai/vibelang", "/repos/smithersai/vibelangevil", "/repos/smithersai/vibelang/keys",
   ]) check(`refuses %s`.replace("%s", path), () => expect(read(path)).toBe(false))
 })
 
@@ -117,7 +118,7 @@ describe("DelegationPolicy.validGrant", () => {
   })
   check("refuses empty, slash-less, unsafe or absolute prefixes and malformed repositories", () => {
     const bad: ReadonlyArray<Partial<Policy.Grant>> = [
-      { paths: [] }, { paths: [""] }, { paths: ["docs"] }, { paths: ["/docs/"] }, { paths: ["docs/../x/"] }, { paths: [".github/"] }, { paths: ["docs\\x/"] }, { paths: ["docs/%2e/"] }, { paths: ["docs//"] },
+      { paths: [] }, { paths: [""] }, { paths: ["docs"] }, { paths: ["/docs/"] }, { paths: ["docs/../x/"] }, { paths: [".github/"] }, { paths: ["docs\\x/"] }, { paths: ["docs/%2e/"] }, { paths: ["docs/.\t./"] }, { paths: ["docs//"] },
       { branchPrefix: "" }, { branchPrefix: "vibelang" }, { branchPrefix: "/" }, { branchPrefix: "a/../" },
       { labelPrefix: "" },
       { repository: "vibelang" }, { repository: "a/b/c" }, { repository: "/b" }, { repositoryId: 0 }, { repositoryId: 1.5 },

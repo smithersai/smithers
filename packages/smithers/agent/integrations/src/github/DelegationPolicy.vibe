@@ -27,8 +27,10 @@ export function grantOf(grants: ReadonlyArray<Grant>, repository: string): Grant
   return grants.find((grant) => same(grant.repository, repository))
 }
 
+// The URL parser drops tab, LF and CR before it resolves dot segments, so `.<tab>.` would reach GitHub as `..`.
+const control = (char: string) => char < " " || char === "\x7f"
 function safePath(path: string): boolean {
-  if (path.includes("\\") || path.includes("%")) return false
+  if (path.includes("\\") || path.includes("%") || [...path].some(control)) return false
   return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment.toLowerCase() !== ".github")
 }
 /** A folder prefix: relative, safe segments, ending in `/`. Anything else matches nothing, so a typo grants nothing. */

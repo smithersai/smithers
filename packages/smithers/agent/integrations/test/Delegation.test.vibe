@@ -167,9 +167,11 @@ it.effect("reads only allowed GET paths", () => effect {
   const f = try fixture()
   const allowed = try f.call("read", { path: "/repos/smithersai/vibelang" }, "")
   const denied = try f.call("read", { path: "/user" }, "")
+  // The URL parser drops a tab before resolving dot segments: `.\t.` must not walk out to `/user/emails`.
+  const walked = try f.call("read", { path: "/repos/smithersai/vibelang/contents/.\t./.\t./.\t./.\t./user/emails" }, "")
   // GitHub's 404 on a read is an answer, not an outage: the site's helpers read it as none.
   const absent = try f.call("read", { path: "/repos/smithersai/vibelang/git/ref/heads/none" }, "")
-  try Effect.try(() => { expect(allowed).toMatchObject({ id: 11 }); expect(denied).toBe("forbidden"); expect(absent).toBe("missing") })
+  try Effect.try(() => { expect(allowed).toMatchObject({ id: 11 }); expect(denied).toBe("forbidden"); expect(walked).toBe("forbidden"); expect(absent).toBe("missing") })
 })
 it.effect("limits writes per delegation per hour", () => effect {
   const f = try fixture()
