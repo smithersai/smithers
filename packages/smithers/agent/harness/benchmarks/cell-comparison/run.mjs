@@ -3,12 +3,12 @@ import { Flow, FlowRuntime } from '@smthrs/flow'
 import { Node } from '@smthrs/plan'
 import { NodeHost, NodeRuntime } from '@smthrs/platform-node'
 import { Auth, Model, ModelError, OpenAIChatGPT, Pricing, RequestExecutor, Route } from '@smthrs/model'
-import { Config, Effect, FileSystem, Layer, ManagedRuntime, Redacted, Result, Schema } from 'effect'
+import { Cause, Clock, Config, Effect, FileSystem, Layer, ManagedRuntime, Redacted, Result, Schema } from 'effect'
 import * as FetchHttpClient from 'effect/http/FetchHttpClient'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
-import { measure, prompts, tools } from './measure.mjs'
+import { harnessFailure, measure, prompts, tools } from './measure.mjs'
 import { analyze, render } from './analysis.mjs'
 
 const directory = fileURLToPath(new URL('.', import.meta.url))
@@ -78,7 +78,9 @@ try {
   for (const [index, task] of tasks.entries()) {
     for (const arm of index % 2 ? ['tool','cell'] : ['cell','tool']) {
       const executionId = `cell-comparison/${manifest.taskHash}/${index}/${arm}/${manifest.createdAt}`
-      const row = await runtime.runPromise(flow.execute({ task: task.id, arm }, { executionId }))
+      // A failed execution is an attempted run, recorded; the campaign goes on.
+      const row = await runtime.runPromise(Effect.flatMap(Clock.currentTimeMillis, start => flow.execute({ task: task.id, arm }, { executionId }).pipe(
+        Effect.catchCause(cause => Effect.map(Clock.currentTimeMillis, end => harnessFailure(task, arm, { ...manifest, executionId }, start, end, Cause.squash(cause)))))))
       await write(`${task.id}-${arm}.json`, row)
       rows.push(row)
       console.log(`${rows.length}/${tasks.length*2} ${task.id} ${arm}: ${row.outcome} (${row.turns.length} turns)`)

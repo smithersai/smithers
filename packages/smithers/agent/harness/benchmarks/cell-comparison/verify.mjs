@@ -16,8 +16,12 @@ await Effect.runPromise(Effect.gen(function*() {
   const sha = text => createHash('sha256').update(text).digest('hex')
   if (!manifest.probe && manifest.tasks.length < 50) throw new Error('Campaign requires at least fifty fixed tasks')
   if (sha(yield* fs.readFileString(`${root}tasks.json`)) !== manifest.taskHash) throw new Error('Task corpus changed')
+  // Probes predate archiving every measured source; theirs are reported unverified, never skipped silently.
+  const unarchived = []
   for (const [name, hash] of Object.entries(manifest.sourceHashes)) {
-    if (sha(gunzipSync(yield* fs.readFile(`${out}/sources/${name}.gz`)).toString('utf8')) !== hash) throw new Error(`Source changed: ${name}`)
+    const file = `${out}/sources/${name}.gz`
+    if (manifest.probe && !(yield* fs.exists(file))) { unarchived.push(name); continue }
+    if (sha(gunzipSync(yield* fs.readFile(file)).toString('utf8')) !== hash) throw new Error(`Source changed: ${name}`)
   }
   const rows = []
   for (const [index, task] of manifest.tasks.entries()) for (const arm of index % 2 ? ['tool','cell'] : ['cell','tool']) {
@@ -36,5 +40,5 @@ await Effect.runPromise(Effect.gen(function*() {
   if (Object.keys(hashes).length !== rows.length) throw new Error('Receipt roster changed')
   if (JSON.stringify(analyze(manifest,rows)) !== JSON.stringify(JSON.parse(yield* read('summary.json')))) throw new Error('Summary differs from observations')
   if (render(manifest,rows) !== (yield* read('report.html'))) throw new Error('Report differs from observations')
-  console.log(`VERIFIED ${manifest.tasks.length} matched tasks, ${rows.length} raw receipts, corpus/source hashes, summary and self-contained report`)
+  console.log(`VERIFIED ${manifest.tasks.length} matched tasks, ${rows.length} raw receipts, corpus/source hashes, summary and self-contained report${unarchived.length ? `; probe sources not archived, so unverified: ${unarchived.join(', ')}` : ''}`)
 }).pipe(Effect.provide(NodeHost.layer)))

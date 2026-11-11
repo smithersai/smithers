@@ -299,7 +299,7 @@ def check_plue_shim() -> None:
         env = agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt", shim=shim, codex_home=Path("/h/codex-2"))
         assert env["PATH"].startswith(str(shim) + os.pathsep) and env["CODEX_HOME"] == "/h/codex-2"
         assert "CODEX_HOME" not in agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt")
-    for name in ("SeatExhausted", "ModelRouteError", "NoSeatLeft", "ContainerUnreachable"):
+    for name in ("SeatExhausted", "ModelRouteError", "NoSeatLeft", "ContainerUnreachable", "PoolStateUnreadable"):
         assert issubclass(getattr(accounts, name), Exception), name
 
 
@@ -845,6 +845,32 @@ def check_accounts() -> None:
 
         pool = accounts.Pool(found, home / "pool.json", wait_sec=3600, clock=lambda: now[0], sleep=sleep, rediscover=rediscover)
         assert pool.lease("t11").label == "codex-4", "a login added during the pause serves the next lease"
+
+        # An update replaces the state file whole: a reader holding the old
+        # file still reads the old state, and no temporary is left beside it.
+        state = home / "pool.json"
+        with state.open() as before:
+            held = json.loads(state.read_text())
+            pool.disable("codex-3", "limit")
+            assert json.load(before) == held, "the state is replaced, not rewritten in place"
+        assert "codex-3" in pool.disabled() and sorted(p.name for p in home.glob("pool.json*")) == ["pool.json"]
+        # A torn state file is refused, never read as an empty rotation that
+        # would lease the disabled codex-2 again.
+        state.write_text('{"disabled": {"codex-2": {"reason"')
+        for read in (lambda: pool.lease("t12"), pool.disabled, pool.paused):
+            try:
+                read()
+            except accounts.PoolStateUnreadable as error:
+                assert str(state) in str(error), error
+            else:
+                raise AssertionError("a torn pool.json is refused")
+        state.write_text("[]")
+        try:
+            pool.disabled()
+        except accounts.PoolStateUnreadable:
+            pass
+        else:
+            raise AssertionError("a pool.json that is not an object is refused")
 
     assert accounts.mentions_usage_limit("ERROR: You've hit your usage limit. Try again at 4pm")
     assert accounts.mentions_usage_limit('{"type":"usage_limit_reached"}')

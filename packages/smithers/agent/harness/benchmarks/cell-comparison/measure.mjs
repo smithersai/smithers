@@ -28,6 +28,13 @@ export function errorReceipt(error) {
 export function failureOutcome(error) {
   return (error.code === 'invalid_request' && /not supported|not found/i.test(error.message)) || ['authentication', 'permission_denied', 'quota_exceeded', 'rate_limited', 'model_not_found'].includes(error.code) || [401,402,403,404,429].includes(error.httpStatus) ? 'access_failure' : 'model_failure'
 }
+// The receipt fields every row starts with, in receipt key order.
+const rowHead = (task, arm, config, start) => ({ task: task.id, seed: task.seed, family: task.family, arm, taskHash: config.taskHash, model: config.model, cohort: config.cohort, maxTurns: config.maxTurns, executionId: config.executionId, startedAt: new Date(start).toISOString() })
+// A task/arm whose measurement failed outside its arm (engine, journal, sandbox
+// startup) is still an attempted run, with no model turns.
+export function harnessFailure(task, arm, config, start, end, error) {
+  return { ...rowHead(task, arm, config, start), elapsedMs: end - start, outcome: 'harness_failure', turns: [], calls: [], error: errorReceipt(error) }
+}
 export const readRecords = (task, arm, ordinal) => Action.make({
   name: 'cell-comparison/records', tier: 'sealed', success: Schema.Json,
   idempotencyKey: `${task.id}/${arm}/records/${ordinal}`, retryPolicy: once,
@@ -37,7 +44,7 @@ export function measure(task, arm, config) {
   return Effect.scoped(Effect.gen(function*() {
     const start = yield* Clock.currentTimeMillis
     const model = yield* Model.Model
-    const row = { task: task.id, seed: task.seed, family: task.family, arm, taskHash: config.taskHash, model: config.model, cohort: config.cohort, maxTurns: config.maxTurns, executionId: config.executionId, startedAt: new Date(start).toISOString(), elapsedMs: 0, outcome: 'turn_limit', turns: [], calls: [] }
+    const row = { ...rowHead(task, arm, config, start), elapsedMs: 0, outcome: 'turn_limit', turns: [], calls: [] }
     const messages = [ModelRequest.Message.user(task.instruction)]
     const realm = arm === 'cell' ? yield* Effect.flatMap(QuickJSSandbox.make, s => s.openRealm({ flows: { records: new Cell.FlowProjection({ name: 'records', description: 'Read task input: {records, owners}. Input: {}.', capabilities: [], tier: 'sealed', placement: Option.none(), input: Option.none() }) } })) : null
     let ordinal = 0
@@ -90,21 +97,29 @@ export function measure(task, arm, config) {
         const calls = folded.message.content.filter(p => p.type === 'tool-call')
         const results = []
         let submitted = false
-        for (const call of calls) {
-          let value
-          try {
-            const input = JSON.parse(call.arguments)
-            if (call.name === 'records' && canonical(input) === '{}') value = yield* read()
-            else if (call.name === 'submit' && input !== null && typeof input === 'object' && Object.keys(input).length === 1 && input.answer !== null && typeof input.answer === 'object' && !Array.isArray(input.answer)) {
-              row.output = input.answer
-              value = yield* Action.make({ name: 'cell-comparison/submit', tier: 'sealed', success: Schema.Json, idempotencyKey: `${task.id}/${arm}/submit/${ordinal++}`, retryPolicy: once, execute: Effect.succeed(input.answer) })
-              row.calls.push({ name: 'submit', input, value })
-              row.outcome = canonical(row.output) === canonical(task.expected) ? 'correct' : 'wrong'
-              submitted = true
-            } else value = { error: 'Use records({}) or submit({answer: object}).' }
-          } catch (error) { value = { error: 'Invalid tool arguments: JSON required.' } }
-          results.push(ModelRequest.ToolResultPart.make({ toolCallId: call.id, content: JSON.stringify(value) }))
-          if (submitted) break
+        // A failed records or submit action is the tool arm's failure, as a failed realm frame is the cell arm's.
+        const executed = yield* Effect.gen(function*() {
+          for (const call of calls) {
+            let value
+            try {
+              const input = JSON.parse(call.arguments)
+              if (call.name === 'records' && canonical(input) === '{}') value = yield* read()
+              else if (call.name === 'submit' && input !== null && typeof input === 'object' && Object.keys(input).length === 1 && input.answer !== null && typeof input.answer === 'object' && !Array.isArray(input.answer)) {
+                row.output = input.answer
+                value = yield* Action.make({ name: 'cell-comparison/submit', tier: 'sealed', success: Schema.Json, idempotencyKey: `${task.id}/${arm}/submit/${ordinal++}`, retryPolicy: once, execute: Effect.succeed(input.answer) })
+                row.calls.push({ name: 'submit', input, value })
+                row.outcome = canonical(row.output) === canonical(task.expected) ? 'correct' : 'wrong'
+                submitted = true
+              } else value = { error: 'Use records({}) or submit({answer: object}).' }
+            } catch (error) { value = { error: 'Invalid tool arguments: JSON required.' } }
+            results.push(ModelRequest.ToolResultPart.make({ toolCallId: call.id, content: JSON.stringify(value) }))
+            if (submitted) break
+          }
+        }).pipe(Effect.exit)
+        if (Exit.isFailure(executed)) {
+          receipt.toolError = errorReceipt(Cause.squash(executed.cause))
+          row.outcome = 'tool_failure'
+          break
         }
         if (submitted) break
         messages.push(results.length ? ModelRequest.Message.tool(results) : ModelRequest.Message.user('Use the records and submit tools to solve the task.'))

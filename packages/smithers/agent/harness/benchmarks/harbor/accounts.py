@@ -22,6 +22,10 @@ The rotation state is one JSON file shared by every runner process on the host
 (`SMITHERS_CODEX_POOL_STATE`, default `~/.smithers/accounts/pool.json`),
 updated under an exclusive `flock`, so two Harbor jobs (one per arm) draw from
 the same wheel. New `codex-*` directories are picked up on the next lease.
+Each update writes a temporary file beside it and renames it over the state,
+so a runner killed mid-write leaves the previous state whole. A state file that
+exists but cannot be read raises `PoolStateUnreadable`: reading it as empty
+would put every disabled account back in the rotation.
 """
 
 from __future__ import annotations
@@ -114,6 +118,12 @@ class ContainerUnreachable(Exception):
 
 class NoSeatLeft(Exception):
     """Every account is out of rotation and the pause wait ran out."""
+
+
+class PoolStateUnreadable(Exception):
+    """The rotation state file exists but is not readable JSON. Its disabled
+    accounts are unknown, so no account is leased until an operator repairs or
+    removes the file."""
 
 
 def discover(home: Path | None = None, accounts_dir: Path | None = None) -> list[Account]:
@@ -233,12 +243,26 @@ class Pool:
 
     def _load(self) -> dict:
         try:
-            return json.loads(self.state_path.read_text())
-        except (OSError, ValueError):
+            text = self.state_path.read_text()
+        except FileNotFoundError:
             return {}
+        except OSError as error:
+            raise PoolStateUnreadable(f"{self.state_path}: {error}") from error
+        try:
+            state = json.loads(text)
+        except ValueError as error:
+            raise PoolStateUnreadable(f"{self.state_path}: not JSON ({error}); repair or remove it") from error
+        if not isinstance(state, dict):
+            raise PoolStateUnreadable(f"{self.state_path}: not a JSON object; repair or remove it")
+        return state
 
     def _save(self, state: dict) -> None:
-        self.state_path.write_text(json.dumps(state, indent=2))
+        temporary = self.state_path.with_name(f"{self.state_path.name}.{os.getpid()}.tmp")
+        with open(temporary, "w") as file:
+            file.write(json.dumps(state, indent=2))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, self.state_path)
 
     def _locked(self):
         self.state_path.parent.mkdir(parents=True, exist_ok=True)

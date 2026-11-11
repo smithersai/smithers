@@ -4,12 +4,13 @@ import { FlowEngine } from '@smthrs/engine'
 import { Flow, FlowRuntime } from '@smthrs/flow'
 import { Node } from '@smthrs/plan'
 import { NodeHost } from '@smthrs/platform-node'
-import { Model, ModelError, Route } from '@smthrs/model'
+import { Model, ModelError, ModelEvent, Route } from '@smthrs/model'
 import { Cell } from '@smthrs/harness'
 import * as QuickJSSandbox from '@smthrs/harness/QuickJSSandbox'
 import { Effect, Layer, Redacted, Result, Schema, Stream } from 'effect'
 import { readFileSync } from 'node:fs'
-import { canonical, errorReceipt, failureOutcome, measure, readRecords } from './measure.mjs'
+import { canonical, errorReceipt, failureOutcome, harnessFailure, measure, readRecords } from './measure.mjs'
+import { analyze } from './analysis.mjs'
 
 const tasks = JSON.parse(readFileSync(new URL('./tasks.json', import.meta.url))).tasks
 const route = Result.getOrThrow(Route.openai({ apiKey: Redacted.make('not-used-by-faulty-service') }))
@@ -65,4 +66,28 @@ test('canonical objects preserve array ordering; error classification distinguis
   assert.equal(failureOutcome({code:'other',httpStatus:403}), 'access_failure')
   assert.deepEqual(errorReceipt('broken'), { code:'harness',message:'broken' })
   assert.deepEqual(errorReceipt({code:'authentication',message:'denied',httpStatus:401}), {code:'authentication',message:'denied',httpStatus:401})
+})
+test('a failed records action is the arm\'s own failure: cell_failure in the cell arm, tool_failure in the tool arm', async () => {
+  const E = ModelEvent.ModelEvent
+  const replies = {
+    cell: [E.TextStart({ type: 'text-start', id: '0' }), E.TextDelta({ type: 'text-delta', id: '0', text: 'const d = await ctx.call("records", {}); ctx.done({})' }), E.TextEnd({ type: 'text-end', id: '0' }), E.Settle({ type: 'settle', stopReason: 'stop' })],
+    tool: [E.ToolCallStart({ type: 'tool-call-start', id: 'c', name: 'records' }), E.ToolCallEnd({ type: 'tool-call-end', id: 'c', arguments: '{}' }), E.Settle({ type: 'settle', stopReason: 'tool-calls' })]
+  }
+  // A BigInt is not JSON, so the recorded records action fails to journal its value.
+  const broken = { ...tasks[0], data: { records: [1n] } }
+  for (const arm of ['cell','tool']) {
+    const row = await drive(measure(broken, arm, { taskHash: 'fixed', model: 'fault-injection', cohort: 'test', maxTurns: 6, route, executionId: 'fault-test' }).pipe(Effect.provideService(Model.Model, { stream: () => Stream.fromIterable(replies[arm]) })))
+    assert.equal(row.outcome, `${arm}_failure`)
+    assert.equal(row.turns.length, 1)
+    assert.match((arm === 'cell' ? row.turns[0].cellError : row.turns[0].toolError).message, /JSON/)
+  }
+})
+test('a harness failure row is an attempted run excluded from paired task quality', () => {
+  const manifest = { tasks: [tasks[0].id], maxTurns: 6, taskHash: 'fixed', model: 'm', cohort: 'c' }
+  const config = { ...manifest, executionId: 'e' }
+  const failed = harnessFailure(tasks[0], 'tool', config, 1000, 1250, new Error('journal closed'))
+  assert.deepEqual([failed.outcome, failed.elapsedMs, failed.startedAt, failed.error], ['harness_failure', 250, new Date(1000).toISOString(), { code: 'harness', message: 'journal closed' }])
+  const correct = { ...harnessFailure(tasks[0], 'cell', config, 1000, 1100, 'unused'), outcome: 'correct' }
+  const summary = analyze(manifest, [correct, failed])
+  assert.deepEqual([summary.tool.attempts, summary.tool.answered, summary.tool.failures.harness_failure, summary.completedPairs], [1, 0, 1, 0])
 })

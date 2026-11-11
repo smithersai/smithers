@@ -28,7 +28,7 @@ adapter's own logic and is the only thing here CI runs.
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool                                             |
 | `seal.py`                 | The denied-connect probe and verdict behind the stock arm's `sealed`                                              |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim                                             |
-| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED      |
+| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / host-calls-unread / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
 | `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
 | `verify.sh`               | Offline checks for the adapter, containment, ownership, resources and health                                      |
@@ -226,6 +226,9 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
+  Each update replaces `pool.json` by rename, so a killed runner leaves the
+  previous state whole. A `pool.json` that is not a JSON object raises
+  `PoolStateUnreadable` instead of re-admitting every disabled account.
 - The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
   answer) are scored as the verifier says. So is `call_timeout`: the
   harness's per-call ceiling (`modelCallMs`, 1,800 s at `xhigh` and `max`)
