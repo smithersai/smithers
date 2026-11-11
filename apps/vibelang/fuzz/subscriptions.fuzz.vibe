@@ -10,7 +10,7 @@ const WINDOW = "40 millis"
 const READY = "5 seconds"
 
 const DomEvent = Schema.Struct({
-  kind: Schema.Literals(["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "resize", "orientationchange"]),
+  kind: Schema.Literals(["keydown", "wheel", "touchstart", "touchmove", "touchend", "touchcancel", "scroll", "click-wiki", "click-draft", "click-outside", "popstate", "popstate-elsewhere", "resize", "orientationchange"]),
   key: Schema.Literals(["k", "K", "Escape", " ", "Tab", "ArrowLeft", "ArrowRight", "PageUp", "Home", "ArrowUp", "a"]),
   meta: Schema.Boolean,
   control: Schema.Boolean,
@@ -53,23 +53,34 @@ function fire(document: Document, window: Window, links: ReturnType<typeof page>
     case "click-wiki": links.wiki.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
     case "click-draft": links.draft.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
     case "click-outside": document.dispatchEvent(new dom.MouseEvent("click", { ...keys, button: event.button })); return
+    case "popstate-elsewhere": window.history.replaceState(null, "", "/elsewhere"); window.dispatchEvent(new dom.Event("popstate")); return
     case "popstate":
     case "resize":
     case "orientationchange": window.dispatchEvent(new dom.Event(event.kind)); return
   }
 }
 
-const Input = Schema.Struct({ model: Model, backend: Backend, role: Role, events: Schema.Array(DomEvent).check(Schema.isMaxLength(12)) })
+/**
+ * The page the subscriptions read: the document itself (as the app passes it), a document with no window (its
+ * `defaultView` is null, so window events fall back to the key target), or none.
+ */
+const Page = Schema.Literals(["document", "windowless", "none"])
+const Input = Schema.Struct({ model: Model, backend: Backend, role: Role, events: Schema.Array(DomEvent).check(Schema.isMaxLength(12)), page: Schema.optionalKey(Page) })
+
+function pageOf(document: Document, page: typeof Page.Type | undefined): Document | undefined {
+  return page === "none" ? undefined : page === "windowless" ? document.implementation.createHTMLDocument("windowless") : document
+}
 
 /**
  * Every subscription attaches before the events fire: the keyboard subscription, forked after all of them, must answer
  * Escape with PressedEscape first. Whatever any subscription then emits is a declared Message that leaves a valid Model.
  */
-it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, backend: kind, role, events }) => Effect.provide(effect {
+it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, backend: kind, role, events, page: shown }) => Effect.provide(effect {
   const document = try (try Experimental.Document.Document).current
   const window = try (try Experimental.Window.Window).current
   const links = try acquireRelease(Effect.orDie(Effect.try(() => page(document))), (links) => sync(links.dispose))
-  const all = subscriptions(document, document) as unknown as Record<string, Entry>
+  try Effect.try(() => window.history.replaceState(null, "", "/"))
+  const all = (try Effect.try(() => subscriptions(document, pageOf(document, shown)))) as unknown as Record<string, Entry>
   const done = try Deferred.make<void>()
   const seen = new Map<string, Array<Message>>()
   const collect = (name: string, entry: Entry) => effect {
@@ -101,6 +112,8 @@ it.live("web/subscriptions", () => run("web/subscriptions", Input, ({ model, bac
     for (const message of seen.get(name)!) {
       if (!Schema.is(Message)(message)) throw new Finding({ report: `${name}: emitted an undeclared Message` })
       if (!Schema.is(Model)(update(model, message).model)) throw new Finding({ report: `${name}: ${message._tag} left an invalid Model` })
+      // Back and forward follow the wiki only: an address outside it and the home page is never a wiki location.
+      if (message._tag === "WikiLocationChanged" && !(message.page.startsWith("/wiki/") || message.page === "/" || message.page.startsWith("/#"))) throw new Finding({ report: `${name}: followed ${message.page}` })
     }
   }
   return true

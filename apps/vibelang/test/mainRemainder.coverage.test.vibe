@@ -6,7 +6,7 @@ import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import type { IssueRecord as IssueRecordSchema, IssueRequest } from "../src/core/issueSchemas.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
-import { accountOf, init, Message, type Model, update } from "../src/web/main.vibe"
+import { accountOf, init, Message, Model, update } from "../src/web/main.vibe"
 
 const home = init({ session: "u", mode: "mock", name: "Guest" }).model
 const chat: Model = { ...home, surface: "chat" }
@@ -79,6 +79,12 @@ describe("an issues answer", () => {
     const newest = update(open({ retry: retrying, busy: true }), loaded({ seq: 1, items: [issue(2), issue(5)] }, { created: true, ...settling })).model.issues
     expect(named).toMatchObject({ screen: "detail", selected: 2, busy: false })
     expect(newest).toMatchObject({ screen: "detail", selected: 5 })
+  })
+  it("a created answer that names no issue and lists none selects no issue", () => {
+    // The schema allows it; Math.max of no numbers is -Infinity, which no later request may carry.
+    const model = update(open({ retry: retrying, busy: true }), loaded({ seq: 1, items: [] }, { created: true, ...settling })).model
+    expect(model.issues?.selected).toBe(0)
+    expect(Schema.is(Model)(model)).toBe(true)
   })
   it("an answer to another write changes nothing it owns", () => {
     const dialog = open({ retry: retrying, busy: true, error: "e", comment: "c", dialog: "split" })

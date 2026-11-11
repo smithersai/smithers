@@ -1,0 +1,329 @@
+// src/web/main.vibe's arms that only a particular backend answer, page or message order reaches: Commands answered by
+// a missing, failing, reversed or role-less service; update over the tour, sandbox and actions states those answers
+// leave; and the DOM Commands over a real happy-dom page. Each scenario is chosen, not drawn from a large union, so a
+// short budget runs every one (0015, fifteenth session).
+import { it } from "@effect/vitest"
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
+import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
+import { IssueFailure, IssueRequest } from "../src/core/issueSchemas.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { actionsOf } from "../src/web/actionModel.vibe"
+import {
+  accountOf, ActOnIssue, Flags, GrantRole, init, LoadIssues, LoadPeople, Message, Model, OpenWikiEditor, RefreshIssueProjection, RevealWiki,
+  SandboxAction, SignInAccount, SignOutAccount, StartTourCommand, subscriptions, update, WikiLocation,
+} from "../src/web/main.vibe"
+import { backend, backendChanged, Role } from "./web-backends.vibe"
+import { TOUR_ID, tourStop } from "./web-tab.vibe"
+import { run, stepped, Finding, Int, REPLAY_FLOOR, Text } from "./run.vibe"
+
+const fault = (reason: string) => fail(new Unavailable({ reason }))
+const refuse = (refusal: string) => fail(new Refused({ refusal }))
+
+/** The mock backend with each failing member answering the other typed failure than `faulty` does. */
+function reversed(role: typeof Role.Type) {
+  return backendChanged(role, () => ({ tour: () => fault("fault"), sandbox: () => refuse("busy"), startSandbox: () => fault("fault"), stopSandbox: () => refuse("busy"), sandboxCommand: () => fault("fault") }))
+}
+/** The mock seen as live, its issue writes failing without being unwritten: the resume address stays. */
+function liveKept(role: typeof Role.Type) {
+  return backendChanged(role, (factory) => ({ mode: "live", issues: Object.assign(Object.create(factory.issues!), { act: () => fail(new IssueFailure({ reason: "unavailable" })) }) }))
+}
+/** The mock whose wiki holds the person's draft of another page. */
+function otherDraft(role: typeof Role.Type) {
+  return backendChanged(role, (factory) => ({ wiki: Object.assign(Object.create(factory.wiki!), { read: (page: string) => map(factory.wiki!.read(page), (snapshot) => ({ ...snapshot, draft: { page: `${page}-other`, text: "# Other" } })) }) }))
+}
+
+/** The page's address, as the Commands read and write it. */
+effect function location() {
+  const window = try (try Experimental.Window.Window).current
+  return window.location.pathname + window.location.search + window.location.hash
+}
+effect function goTo(url: string) {
+  const window = try (try Experimental.Window.Window).current
+  try Effect.try(() => window.history.replaceState(null, "", url))
+}
+
+/** A real issue number from the backend's own records, or 0 when it has none. */
+effect function issueNumber(pick: number) {
+  const loaded = try answer(() => LoadIssues({}))
+  const items = loaded._tag === "IssuesLoaded" ? loaded.data.items : []
+  return items[pick % Math.max(1, items.length)]?.number ?? 0
+}
+
+type AnyCommand = { readonly name: string; readonly effect: Effect.Effect<unknown, unknown, Factory | Actions> }
+
+/** Builds a Command and runs it once: it must answer one of the program's Messages. */
+effect function answer(make: () => AnyCommand) {
+  const command = try Effect.try(make)
+  const result = try exit(timeout(command.effect, "5 seconds"))
+  if (result._tag === "Failure") throw new Finding({ report: `${command.name}: ${Cause.pretty(result.cause)}` })
+  if (!Schema.is(Message)(result.value)) throw new Finding({ report: `${command.name}: answered with an undeclared Message` })
+  return result.value as Message
+}
+
+const SCENARIOS = [
+  "load-bare", "load-faulty", "load-roleless", "load-resumed", "act-live-kept", "act-live", "act-bare", "refresh-bare", "refresh-faulty", "grant",
+  "sign-out-bare", "sign-out-faulty", "tour-unreachable", "tour-refused", "sandbox-poll-refused", "sandbox-start-unreachable", "editor-other-draft", "roles-bare", "roles-faulty", "roles-closing", "follow-lost", "sign-in-live",
+] as const
+
+type Entries = Record<string, { readonly dependenciesToStream: (dependencies: unknown, read: () => unknown) => Stream.Stream<Message, never, Factory | Actions> }>
+
+/** One subscription's stream for `dependencies`, as the runtime starts it over this page. */
+effect function subscription(name: string, dependencies: unknown) {
+  const document = try (try Experimental.Document.Document).current
+  const entry = (subscriptions(document, document) as unknown as Entries)[name]!
+  return entry.dependenciesToStream(dependencies, () => dependencies)
+}
+const CommandArms = Schema.Struct({ role: Role, number: Int, key: Schema.Literals(["k-1", "k-2", "resume-k"]), recovery: Schema.Literals(["r-1", "s-9"]), text: Text })
+
+/**
+ * Each scenario runs one Command against the backend it names and checks its answer: a missing or failing issues service
+ * answers IssuesFailed (or IssueDialogFocused for a refresh); a role-less answer takes the mock's default role; a live
+ * write that completes leaves the address at `/?issues=1`, and one kept unwritten leaves the resume address with its
+ * recovery; a resumed load of a completed write does the same; a maintainer's grant to a member answers GrantedRole;
+ * signing out without accounts answers the viewer; signing in live goes to the sign-in route; an unreachable tour
+ * names its reason and a refused one its refusal; a refused sandbox read names its refusal; another page's draft
+ * never fills the editor; a role stream without an accounts service sends nothing, and a failing or ended one sends
+ * FailedRoles once; a lost action follow follows again after two seconds and delivers the run.
+ */
+effect function commandHolds(scenario: typeof SCENARIOS[number], input: typeof CommandArms.Type) {
+  const role = input.role
+  try goTo("/")
+  switch (scenario) {
+    case "load-bare": case "load-faulty": case "load-roleless": {
+      const layer = scenario === "load-bare" ? backend("bare", role) : scenario === "load-faulty" ? backend("faulty", role) : backend("roleless", role)
+      const got = try Effect.provide(answer(() => LoadIssues({})), layer)
+      if (scenario === "load-roleless") return got._tag === "IssuesLoaded" && got.role === "maintainer"
+      return got._tag === "IssuesFailed" && got.reason === "unavailable"
+    }
+    case "load-resumed": {
+      // A reload resumes a write by its key. The live server answers with that write's saved state (the mock keeps
+      // none, so this backend answers as the server does): a completed write returns the address to the issues list.
+      const status = input.key === "k-1" ? "completed" as const : input.key === "k-2" ? "running" as const : "failed" as const
+      const resumed = backendChanged("maintainer", (factory) => ({
+        mode: "live",
+        issues: Object.assign(Object.create(factory.issues!), {
+          act: (request: typeof IssueRequest.Type) => request.resumeKey === undefined ? factory.issues!.act(request) : map(factory.issues!.read(), (state) => ({
+            ...state, saved: { request: { ...request, op: "comment" as const, key: request.resumeKey! }, status, unwritten: false, selected: input.number },
+          })),
+        }),
+      }))
+      try goTo(`/?issues=1&resume-op=comment&resume-key=${input.key}`)
+      const got = try Effect.provide(answer(() => LoadIssues({ resumeOp: "comment", resumeKey: input.key, ...(input.recovery === "r-1" ? { resumeRecovery: input.recovery } : {}) })), resumed)
+      if (got._tag !== "IssuesLoaded" || got.data.saved?.status !== status) return false
+      return (status === "completed") === ((try location()) === "/?issues=1")
+    }
+    case "act-live-kept": case "act-live": {
+      const layer = scenario === "act-live-kept" ? liveKept("maintainer") : backendChanged("maintainer", () => ({ mode: "live" }))
+      const got = try Effect.provide(effect {
+        const request = { op: "comment" as const, number: try issueNumber(input.number), parent: 0, title: "", text: "Looks right.", assignee: "", example: "", prior: "", key: input.key, recovery: input.recovery }
+        return try answer(() => ActOnIssue({ request }))
+      }, layer)
+      const at = try location()
+      if (scenario === "act-live") return got._tag === "IssuesLoaded" && at === "/?issues=1"
+      return got._tag === "IssuesFailed" && at === `/?issues=1&resume-op=comment&resume-key=${input.key}&resume-recovery=${input.recovery}`
+    }
+    case "act-bare": {
+      const request = { op: "comment" as const, number: 1, parent: 0, title: "", text: "x", assignee: "", example: "", prior: "", key: input.key }
+      const got = try Effect.provide(answer(() => ActOnIssue({ request })), backend("bare", role))
+      return got._tag === "IssuesFailed" && got.reason === "unavailable"
+    }
+    case "refresh-bare": case "refresh-faulty": {
+      const got = try Effect.provide(answer(() => RefreshIssueProjection({})), backend(scenario === "refresh-bare" ? "bare" : "faulty", role))
+      return got._tag === "IssueDialogFocused"
+    }
+    case "grant": {
+      provide backend("mock", "maintainer") {
+        const people = try answer(() => LoadPeople({}))
+        if (people._tag !== "LoadedPeople") return false
+        const member = people.members[input.number % Math.max(1, people.members.length)]
+        if (member === undefined) return true
+        const got = try answer(() => GrantRole({ id: member.id, role: role === "viewer" ? "community" : role }))
+        return got._tag === "GrantedRole"
+      }
+    }
+    case "sign-out-bare": case "sign-out-faulty": {
+      const got = try Effect.provide(answer(() => SignOutAccount({})), backend(scenario === "sign-out-bare" ? "bare" : "faulty", role))
+      return scenario === "sign-out-bare" ? got._tag === "AccountLoaded" && got.identity.id === "" && got.identity.role === "viewer" : got._tag === "AccountFailed"
+    }
+    case "sign-in-live": {
+      // Live sign-in leaves the page for the server's sign-in route; the mock signs in without leaving.
+      const got = try Effect.provide(answer(() => SignInAccount({ mock: false })), backend("live", role))
+      return got._tag === "FocusedPrompt" && (try location()) === "/api/auth/sign-in"
+    }
+    case "tour-unreachable": case "tour-refused": {
+      const got = try Effect.provide(answer(() => StartTourCommand({ conversation: "fuzz-tour" })), scenario === "tour-unreachable" ? reversed(role) : backend("faulty", role))
+      return got._tag === "FailedTour" && got.reason === (scenario === "tour-unreachable" ? "fault" : "busy")
+    }
+    case "sandbox-poll-refused": {
+      provide reversed(role) {
+        const got = try Stream.runHead(try subscription("sandbox", { conversation: "fuzz-sandbox", request: input.number, active: true, live: false, finished: 0 }))
+        return Option.isSome(got) && got.value._tag === "FailedSandbox" && got.value.reason === "busy" && got.value.request === input.number
+      }
+    }
+    case "sandbox-start-unreachable": {
+      const got = try Effect.provide(answer(() => SandboxAction({ conversation: "fuzz-sandbox", operationId: "op-1", request: input.number, kind: "start", generation: 0, command: "" })), reversed(role))
+      return got._tag === "FailedSandbox" && got.reason === "fault"
+    }
+    case "roles-bare": case "roles-faulty": case "roles-closing": {
+      // A signed-in person's role stream: none without an accounts service; a failing or ended stream says so once.
+      const layer = backend(scenario === "roles-bare" ? "bare" : scenario === "roles-faulty" ? "faulty" : "closing", role)
+      const got = try Effect.provide(effect { return Array.from(try Stream.runCollect(try subscription("roles", { person: `p${input.number}`, epoch: 0, from: input.number }))) }, layer)
+      return scenario === "roles-bare" ? got.length === 0 : got.length === 1 && got[0]!._tag === "FailedRoles"
+    }
+    case "follow-lost": {
+      // The first follow of a running action is lost; two seconds later it follows again and the run's state arrives.
+      // A maintainer starts the run; the mock refuses to start one for a role below it.
+      provide backend("mock", "maintainer") {
+        const actions = try Actions
+        const id = try actions.start("vibelang/Post", { text: "q" }, "button")
+        let follows = 0
+        const flaky = Object.assign(Object.create(actions) as Actions.Shape, { follow: (run: string) => follows++ === 0 ? Stream.fail(new ActionFailure({ code: "fault" })) : actions.follow(run) })
+        const services = Layer.merge(Layer.succeed(Actions, flaky), Layer.succeed(Factory, try Factory))
+        const stream = try subscription("actionRuns", { ids: [id] })
+        // Virtual time: the retry's two seconds pass in 250 ms steps.
+        const got = try stepped(Effect.provide(Stream.runHead(stream), services), 5)
+        return follows === 2 && Option.isSome(got) && got.value._tag === "ChangedAction" && got.value.run.id === id
+      }
+    }
+    case "editor-other-draft": {
+      const page = pages[input.number % pages.length]!.id
+      const got = try Effect.provide(answer(() => OpenWikiEditor({ page, request: input.number })), otherDraft(role))
+      return got._tag === "BeganWikiEdit" && got.draft === ""
+    }
+  }
+}
+
+/**
+ * Every scenario runs in every execution, so no arm depends on what a short budget happens to draw. One execution runs
+ * 26 Commands and takes about a second under coverage, hence the floor.
+ */
+it.live("web/command-arms", () => run("web/command-arms", CommandArms, (input) => Effect.provide(effect {
+  for (const scenario of SCENARIOS) if (!(try commandHolds(scenario, input))) throw new Finding({ report: `${scenario} does not hold` })
+  return true
+}, Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)), undefined, { minimum: REPLAY_FLOOR }))
+
+const UPDATES = ["sandbox-busy", "retry-run", "people-max", "tour-repeat", "tour-sought-end-fails", "draft-outside-build"] as const
+const UpdateArms = Schema.Struct({ flags: Flags, step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), seek: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })), overlay: Schema.Boolean, text: Text })
+
+function names(result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }): ReadonlyArray<string> {
+  return (result.commands ?? []).map((command) => command.name)
+}
+
+/**
+ * update over the states those answers leave: "/sandbox" while a sandbox action is in flight closes the palette and
+ * starts nothing; Run on screen retries the shown run; a wiki pane opening over maximized people shrinks them to the
+ * pane; a tour event already applied changes nothing; an end that never reached the agent while a sought stop shows
+ * presents that stop at its own target; a draft review for a page outside the build opens no editor, even when the
+ * repository's overlay holds the page.
+ */
+function updateHolds(scenario: typeof UPDATES[number], input: typeof UpdateArms.Type): boolean {
+  const base: Model = { ...init(input.flags).model, mode: "mock", surface: "chat" }
+  const valid = (model: Model) => Schema.is(Model)(model)
+  switch (scenario) {
+    case "sandbox-busy": {
+      const next = update({ ...base, sandboxBusy: true, draft: "/sandbox" }, Message.SubmittedDraft())
+      return valid(next.model) && !names(next).includes("SandboxAction") && names(next).includes("ClosePalette")
+    }
+    case "retry-run": {
+      const command = { name: "vibelang/Post", title: "Post", detail: "Post", command: "/post", runnable: true, least: "viewer" as const, input: "text" as const }
+      const model: Model = { ...base, actions: { ...actionsOf(base), open: true, selected: command.name, run: "run-1", input: input.text, commands: [command], entries: [command] } }
+      const next = update(model, Message.ClickedRunAction())
+      const runs = (next.commands ?? []).filter((entry) => entry.name === "RunAction")
+      return valid(next.model) && runs.length === 1 && (runs[0]!.args as { retry?: string }).retry === "run-1"
+    }
+    case "people-max": {
+      const account = accountOf(base)
+      const model: Model = { ...base, account: { ...account, people: "max" } }
+      const seq = model.client.conversation.seq
+      const next = update(model, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: seq + 1, id: "", url: `/wiki/${pages[input.step % pages.length]!.id}` } }))
+      return valid(next.model) && accountOf(next.model).people === "pane" && names(next).includes("WikiLocation")
+    }
+    case "tour-repeat": {
+      let model = base
+      for (const message of tourStop(model, input.step)) model = update(model, message).model
+      const seq = model.tourClient?.conversation.seq ?? 0
+      const again = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", seq, id: TOUR_ID, step: input.step, target: WALKTHROUGH[input.step - 1]!.target, at: 1, duration: 1 } }))
+      // An active tour re-measures its stage after any message; nothing else happens.
+      return JSON.stringify(again.model) === JSON.stringify(model) && names(again).every((name) => name === "MeasureTheatre")
+    }
+    case "tour-sought-end-fails": {
+      let model = base
+      for (const message of tourStop(model, input.step)) model = update(model, message).model
+      const seq = model.tourClient?.conversation.seq ?? 0
+      model = update(model, Message.ReceivedTourEvent({ event: { type: "TourSought", seq: seq + 1, id: TOUR_ID, at: 2, step: input.seek } })).model
+      const state = model.tourClient?.conversation.walkthrough
+      const next = update(model, Message.FailedEndTour())
+      if (!valid(next.model)) return false
+      // Only a sought stop leaves the walkthrough without a target; then the stop's own target shows.
+      if (state === undefined || state.target !== "") return true
+      const presents = (next.commands ?? []).filter((entry) => entry.name === "PresentTour")
+      return next.model.theatre.target === WALKTHROUGH[state.step - 1]!.target && presents.length === 1 && (presents[0]!.args as { step?: number }).step === state.step
+    }
+    case "draft-outside-build": {
+      const page = "not-in-this-build"
+      const account = accountOf(base)
+      const model: Model = { ...base, account: { ...account, identity: { ...account.identity, id: "p1", role: "maintainer" } }, ...(input.overlay ? { wikiPages: [{ id: page, source: `# ${input.text}`, revision: "r1" }] } : {}) }
+      const next = update(model, Message.ClickedWikiDraft({ page }))
+      if (!valid(next.model)) return false
+      // Only a page the build holds is editable, even when the repository's overlay has the page.
+      return next.model.wikiEdit === undefined && names(next).every((name) => name === "MeasureTheatre")
+    }
+  }
+}
+
+it.live("web/update-arms", () => run("web/update-arms", UpdateArms, (input) => effect {
+  for (const scenario of UPDATES) if (!updateHolds(scenario, input)) throw new Finding({ report: `${scenario} does not hold` })
+  return true
+}))
+
+const DomArms = Schema.Struct({
+  command: Schema.Literals(["reveal", "location"]),
+  maximized: Schema.Literals(["false", "true", "absent"]),
+  content: Schema.Boolean,
+  page: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 63 })),
+  hash: Schema.Literals(["", "intro", "missing"]),
+  here: Schema.Boolean,
+})
+
+/**
+ * RevealWiki and WikiLocation over a happy-dom page holding the wiki pane: the inline pane (data-maximized "false") is
+ * scrolled into view and a maximized or absent one is not; WikiLocation pushes the address unless the page is already
+ * there, keeps the query, then scrolls to the heading the hash names, or else the content to its top.
+ */
+it.live("web/dom-commands", () => run("web/dom-commands", DomArms, (input) => Effect.provide(effect {
+  const document = try (try Experimental.Document.Document).current
+  const window = try (try Experimental.Window.Window).current
+  const scrolled: Array<string> = []
+  const made = try acquireRelease(Effect.try(() => {
+    const pane = document.createElement("section")
+    pane.id = "vl-wiki"
+    if (input.maximized !== "absent") pane.setAttribute("data-maximized", input.maximized)
+    const content = document.createElement("div")
+    if (input.content) content.className = "vl-wiki-content"
+    content.scrollTop = 40
+    const heading = document.createElement("h2")
+    heading.id = "intro"
+    content.append(heading)
+    pane.append(content)
+    document.body.append(pane)
+    pane.scrollIntoView = () => { scrolled.push("pane") }
+    heading.scrollIntoView = () => { scrolled.push("heading") }
+    return { pane, content }
+  }), (made) => sync(() => made.pane.remove()))
+  const page = `/wiki/${pages[input.page % pages.length]!.id}`
+  const url = input.hash === "" ? page : `${page}#${input.hash}`
+  try goTo(input.here ? `${url}` : "/?q=1")
+  const before = try location()
+  const got = try answer(() => (input.command === "reveal" ? RevealWiki({}) : WikiLocation({ url })) as AnyCommand)
+  if (got._tag !== "FocusedPrompt") return false
+  const paneShown = input.maximized === "false"
+  if (input.command === "reveal") return (scrolled.includes("pane") === paneShown) && !scrolled.includes("heading") && (try location()) === before
+  const after = try location()
+  const search = input.here ? "" : "?q=1"
+  if (after !== (input.here ? url : `${page}${search}${input.hash === "" ? "" : `#${input.hash}`}`)) return false
+  if (scrolled.includes("pane") !== paneShown) return false
+  if (scrolled.includes("heading") !== (input.hash === "intro")) return false
+  return input.hash !== "" || !input.content || made.content.scrollTop === 0
+}, Layer.mergeAll(backend("mock", "viewer"), ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer))))

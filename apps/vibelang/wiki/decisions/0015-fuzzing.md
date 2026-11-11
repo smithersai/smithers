@@ -1000,6 +1000,37 @@ The pane alone is compared: any Message also lets `update` re-measure the splash
 executions; every keyboard handler arm in `issuesView.vibe` runs. Mutations: ArrowLeft stepping forward is
 falsified in 7 executions; Enter on the assignees sending `cancel` in 8.
 
+### `src/web/main.vibe`: the 36 open arms
+
+The full run at seed 20261136 left 36 of `main.vibe`'s 817 branch arms open. Each is now reached by a scenario or an
+injected service, or deleted:
+
+| Arms (lines on `ff5994bf`) | Reached by | Oracle |
+| --- | --- | --- |
+| role dialog closed by an account load or a role event (336, 373) | `web/role-events`: `dialog` signs in a maintainer with people shown; `switch` loads another member's account | the dialog's person is forgotten; a non-maintainer choosing a role opens nothing |
+| issue dialog closed by the pane or by a role change (391, 591) | `web/pane-messages`: `dialog` step (account, issue, dialog, action) | an issue dialog the Model closes is closed by exactly one `CloseIssueDialog`; none closes one it keeps |
+| actions epoch on the slash menu (499) | `web/pane-messages`: `account` and `draft` steps | `LoadActions` carries the Model's epoch |
+| tour plans and launches (567, 730, 769, 802, 833) | `web/update-arms`: people maximized under a wiki pane, a repeated tour event, a sought stop whose end fails, `/sandbox` while busy, Run on a shown run | people shrink to the pane; a repeat changes nothing; the sought stop shows at its own target; nothing starts; Run retries the shown run |
+| Command bodies (917, 968, 1236, 1392, 1414, 1422, 1438, 1465, 1467, 1468, 1475, 1477, 1523, 1525) | `web/command-arms`: each Command against the backend it needs: `bare`, `faulty`, `roleless`, a `reversed` mock (each failing member answers the other typed failure), a live mock whose writes fail kept, a live server answering a resumed write's saved state, another page's draft | the failure Message and reason; the address after a live write, a kept write (with its recovery) and a resumed completed write; the default role; the viewer after signing out without accounts; the sign-in route |
+| roles stream without accounts (1259) | `web/command-arms`: `roles-bare`, `roles-faulty`, `roles-closing` | nothing without an accounts service; one `FailedRoles` for a failing or ended stream |
+| DOM Commands (1058, 1075, 1082, 1083, 1085) | `web/dom-commands`: RevealWiki and WikiLocation over a happy-dom page holding the pane | the inline pane alone scrolls into view; the address is pushed unless already there, keeping the query; the hash's heading, else the content's top |
+| window events with no window (1142, 1293, 1294) and back to a page outside the wiki (1145) | `web/subscriptions`: the page is the document, a document without a window, or none; `popstate-elsewhere` | the Model stays valid; back and forward follow wiki addresses only |
+
+`web/command-arms` runs all 26 scenarios in every execution, so no arm depends on what a short budget draws, and
+declares `REPLAY_FLOOR` (about a second per execution under coverage). `web/update-arms` runs its six likewise.
+`fe285395` (another lane, the same day) added a retry to a lost action-run follow; `follow-lost` loses the first follow
+and checks, in virtual time, that the run arrives after two seconds.
+
+One arm was dead and is deleted: `knownWikiSource`'s `pages.find(...)?.source ?? ""`. An editor opens only on a page
+`wikiEditable` admits, and `editable` is proved to hold only for ids of the build's index, which `scripts/wiki.vibe`
+writes from the same tree as `pages`; `update-arms` checks that a draft review for a page outside the build opens no
+editor even when the repository's overlay holds it.
+
+| Finding | Target, seed | Kind | Fix | Regression |
+| --- | --- | --- | --- | --- |
+| An issue write answered `created` with no `selected` and no items set `selected` to `Math.max()` of nothing, `-Infinity`; the next request's `number` left the schema | `web/pane-messages`, 20261156 | product | `newestIssue`: the highest listed number, or 0 (no issue) | `test/mainRemainder.coverage.test.vibe` "a created answer that names no issue and lists none selects no issue": red (`-Infinity`), green after; saved value `e8f3efd8f9cb7485` |
+| `act-live` assumed issue 1 exists; `follow-lost` started a run as a community member; `draft-outside-build` ignored the tour's `MeasureTheatre` | `web/command-arms`, `web/update-arms` | target | pick a listed issue; start as a maintainer; allow only `MeasureTheatre` | the targets pass at 20261150 to 20261157 |
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,

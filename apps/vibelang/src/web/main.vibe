@@ -400,7 +400,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       }
       const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
       const assignee = data.assignees === undefined ? ui.assignee : IssueDecision.issueAssigneeAfter(data.assignees.some((a) => a.login === ui.assignee), ui.assignee, data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "")
-      const step = IssueDecision.issueLoaded(issueScreen(ui), settled, created, data.draft !== undefined, data.draft?.title ?? "", data.draft?.summary ?? "", data.draft?.example ?? "", data.draft?.prior ?? "", assignee, data.selected ?? Math.max(...data.items.map((i) => i.number)))
+      const step = IssueDecision.issueLoaded(issueScreen(ui), settled, created, data.draft !== undefined, data.draft?.title ?? "", data.draft?.summary ?? "", data.draft?.example ?? "", data.draft?.prior ?? "", assignee, data.selected ?? newestIssue(data.items))
       return { model: { ...model, issues: { ...ui, ...step.state, data: IssueDecision.issueDataApplies(data.draft !== undefined, data.seq, ui.data.seq) ? data : ui.data, role, retry: step.clearRetry ? undefined : ui.retry } }, commands: step.closeDialog ? [CloseIssueDialog({})] : [] }
     },
     IssuesFailed: ({ reason, op, key, unwritten }) => {
@@ -936,9 +936,12 @@ export const EndTourCommand = Command.define("EndTour", {
   },
 })
 
-/** The editor's starting source: the repository-observed overlay, else the build's embedded copy. */
+/**
+ * The editor's starting source: the repository-observed overlay, else the build's embedded copy. An editor opens only on
+ * a page `wikiEditable` admits, which is proved to be one of the build's pages (`editable`), so the copy exists.
+ */
 function knownWikiSource(model: Model, page: string): string {
-  return WikiEditorDecision.knownSource(model.wikiPages ?? [], page, pages.find((entry) => entry.id === page)?.source ?? "")
+  return WikiEditorDecision.knownSource(model.wikiPages ?? [], page, pages.find((entry) => entry.id === page)!.source)
 }
 
 /** Minimal failure text; the request and its flow carry the detail. */
@@ -1460,6 +1463,11 @@ export const FocusAccountMenu = Command.define("FocusAccountMenu", { args: { ope
   return try message(() => Message.FocusedPrompt())
 } })
 
+
+/** The highest issue number an answer lists, or 0 (no issue) when it lists none; `Math.max()` of nothing is -Infinity. */
+function newestIssue(items: ReadonlyArray<{ readonly number: number }>): number {
+  return items.reduce((newest, item) => Math.max(newest, item.number), 0)
+}
 
 export const LoadIssues = Command.define("LoadIssues", {
   args: { resumeRecovery: Schema.optionalKey(Schema.String), resumeOp: Schema.optionalKey(Schema.String), resumeKey: Schema.optionalKey(Schema.String) }, messages: [Message.IssuesLoaded, Message.IssuesFailed],

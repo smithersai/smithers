@@ -6,6 +6,7 @@ import { it } from "@effect/vitest"
 import { Factory } from "../src/core/Factory.vibe"
 import { mockFactoryFor } from "../src/core/MockFactory.vibe"
 import { accountOf, Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { actionsOf } from "../src/web/actionModel.vibe"
 import { run, Int, Text } from "./run.vibe"
 
 const ROLE = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
@@ -14,7 +15,7 @@ const Step = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("open-card"), number: Int }),
   Schema.Struct({ kind: Schema.Literal("clicked-issues") }),
   Schema.Struct({ kind: Schema.Literal("projection"), seq: Int, role: Schema.optionalKey(ROLE), items: Int }),
-  Schema.Struct({ kind: Schema.Literal("issue-ui"), action: Schema.Literals(["select", "retry", "close", "new-form", "vip-form", "title", "new", "comment", "back", "list", "unknown"]), value: Schema.Union([Schema.Literals(["1", "2", "45", ""]), Text]) }),
+  Schema.Struct({ kind: Schema.Literal("issue-ui"), action: Schema.Literals(["select", "retry", "close", "new-form", "vip-form", "title", "new", "comment", "back", "list", "unknown", "commit-dialog", "split-dialog", "link-dialog", "cancel", "commit", "uncommit", "assignee"]), value: Schema.Union([Schema.Literals(["1", "2", "45", ""]), Text]) }),
   Schema.Struct({ kind: Schema.Literal("loaded"), seq: Int, items: Int, created: Schema.Boolean, role: ROLE, op: Schema.optionalKey(OP), key: Schema.optionalKey(Schema.Literals(["k", "s-1"])), draft: Schema.Boolean, saved: Schema.optionalKey(Schema.Literals(["running", "failed", "completed"])), agent: Schema.Boolean, selected: Schema.optionalKey(Int) }),
   Schema.Struct({ kind: Schema.Literal("failed"), reason: Schema.Literals(["connect", "fork", "install", "unavailable", "conflict", "busy"]), unwritten: Schema.optionalKey(Schema.Boolean), op: Schema.optionalKey(OP), key: Schema.optionalKey(Schema.Literals(["k", "s-1"])) }),
   Schema.Struct({ kind: Schema.Literal("details"), seq: Int, number: Int, failed: Schema.Boolean }),
@@ -25,6 +26,12 @@ const Step = Schema.Union([
   // A schema-valid editor installed directly, as a decoded Model can hold it: with or without the request and serial
   // that opening an editor records, so update's fallbacks for a Model it did not build run too.
   Schema.Struct({ kind: Schema.Literal("restore-editor"), page: Schema.Literals(["index", "rulings"]), busy: Schema.Boolean, error: Schema.Literals(["", "That page changed."]), submitting: Schema.Boolean, stale: Schema.optionalKey(Int), recorded: Schema.Boolean, role: ROLE }),
+  // Another account loads (a sign-in or a switch): the person and role change under an open pane.
+  Schema.Struct({ kind: Schema.Literal("account"), person: Int, role: ROLE }),
+  // A person with a role opens a dialog on an issue and then acts in it: three messages that random steps rarely line up.
+  Schema.Struct({ kind: Schema.Literal("dialog"), number: Int, role: ROLE, open: Schema.Literals(["commit-dialog", "split-dialog", "link-dialog"]), then: Schema.Literals(["cancel", "commit", "split", "link", "list", "assignee"]) }),
+  // The composer's text; a slash opens the actions menu, which loads the actions once.
+  Schema.Struct({ kind: Schema.Literal("draft"), value: Schema.Union([Schema.Literals(["/", "/v", ""]), Text]) }),
   Schema.Struct({ kind: Schema.Literal("actions"), reply: Schema.Literals(["open", "loaded", "failed", "retry"]), epoch: Schema.optionalKey(Int) }),
 ])
 type Step = typeof Step.Type
@@ -46,10 +53,26 @@ function restored(model: Model, step: Restore): Model {
   }
 }
 
-function messageOf(step: Exclude<Step, Restore>, items: ReadonlyArray<Item>): Message {
+type Dialog = Extract<Step, { kind: "dialog" }>
+
+/** A step's messages, in order: one for most steps, the account, the issue, the dialog and its action for `dialog`. */
+function messagesOf(step: Exclude<Step, Restore>, items: ReadonlyArray<Item>): ReadonlyArray<Message> {
+  if (step.kind !== "dialog") return [messageOf(step, items)]
+  const number = items[step.number % Math.max(1, items.length)]?.number ?? 0
+  return [
+    Message.AccountLoaded({ identity: { id: "p1", login: "p1", role: step.role } }),
+    Message.OpenIssueCard({ number }),
+    Message.IssueUi({ action: step.open, value: "" }),
+    Message.IssueUi({ action: step.then, value: step.then === "assignee" ? "maya" : "" }),
+  ]
+}
+
+function messageOf(step: Exclude<Step, Restore | Dialog>, items: ReadonlyArray<Item>): Message {
   const records = (count: number) => items.slice(0, count % (items.length + 1))
   switch (step.kind) {
+    case "draft": return Message.UpdatedDraft({ value: step.value })
     case "open-card": return Message.OpenIssueCard({ number: step.number })
+    case "account": return Message.AccountLoaded({ identity: { id: step.person === 0 ? "" : `p${step.person}`, login: `p${step.person}`, role: step.role } })
     case "clicked-issues": return Message.ClickedIssues()
     case "projection": return Message.IssueProjectionLoaded({ data: { seq: step.seq, items: records(step.items), ...(step.role === undefined ? {} : { role: step.role }) } })
     case "issue-ui": return Message.IssueUi({ action: step.action, value: step.value })
@@ -89,15 +112,33 @@ effect function mockItems() {
 /**
  * Every step leaves a valid Model. A reply for a pane that does not exist, or that an older projection or detail
  * answers, changes nothing: wiki-edit replies without an editor, details without an issues pane, and a projection
- * older than the one shown (IssueDecision.issueProjectionApplies).
+ * older than the one shown (IssueDecision.issueProjectionApplies). An issue dialog the Model closes is closed on the
+ * page by exactly one CloseIssueDialog, and no Command closes one the Model keeps open; actions load for the epoch the
+ * Model holds.
  */
 it.live("web/pane-messages", () => scoped(effect {
   const items = try mockItems()
   try run("web/pane-messages", Schema.Struct({ flags: Flags, steps: Schema.Array(Step).check(Schema.isMaxLength(24)) }), ({ flags, steps }) => {
     let model = init(flags).model
+    /** One message through update: the Model stays valid, dialogs close on the page as in the Model, actions load for its epoch. */
+    const apply = (before: Model, message: Message): Model | undefined => {
+      const next = update(before, message)
+      if (!Schema.is(Model)(next.model)) return undefined
+      const commands = next.commands ?? []
+      const closes = commands.filter(command => command.name === "CloseIssueDialog").length
+      const closed = (before.issues?.dialog ?? "") !== "" && (next.model.issues?.dialog ?? "") === ""
+      if (closes !== (closed ? 1 : 0)) return undefined
+      for (const command of commands) if (command.name === "LoadActions" && (command.args as { epoch?: number }).epoch !== actionsOf(next.model).epoch) return undefined
+      return next.model
+    }
     for (const step of steps) {
       const before = model
-      model = step.kind === "restore-editor" ? restored(before, step) : update(before, messageOf(step, items)).model
+      if (step.kind === "restore-editor") model = restored(before, step)
+      else for (const message of messagesOf(step, items)) {
+        const next = apply(model, message)
+        if (next === undefined) return false
+        model = next
+      }
       if (!Schema.is(Model)(model)) return false
       const unchanged = model === before || JSON.stringify(model) === JSON.stringify(before)
       if (step.kind === "wiki-reply" && before.wikiEdit === undefined && !unchanged) return false

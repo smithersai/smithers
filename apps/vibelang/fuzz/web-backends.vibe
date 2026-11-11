@@ -67,6 +67,12 @@ export function backend(kind: Backend, role: typeof Role.Type) {
   return Layer.provideMerge(MockActions({ actor: "person" }), changed)
 }
 
+/** The real mock backend with some Factory members replaced, as `change` builds them from the mock's own. */
+export function backendChanged(role: typeof Role.Type, change: (factory: Factory.Shape) => Record<string, unknown>) {
+  const changed = Layer.effect(Factory, map(Factory, (factory) => changedFactory(factory, change(factory)))).pipe(Layer.provide(mockFactoryFor(role)))
+  return Layer.provideMerge(MockActions({ actor: "person" }), changed)
+}
+
 /** What the wiki answers in an otherwise working mock: its own pages, or one injected fault. */
 export const WikiFault = Schema.Literals(["none", "read-fails", "missing", "draft", "unwritten", "kept", "stale", "unlisted"])
 

@@ -122,21 +122,36 @@ it.live("web/escape-layers", () => run("web/escape-layers", Layers, ({ session: 
   return false
 }, backendWithWiki(role, wiki))))
 
-const Grant = Schema.Struct({ who: Schema.Literals(["self", "member", "stranger", "nobody"]), role: Role, mode: Schema.Literals(["person", "participation", "bootstrap"]), gap: Schema.Boolean, n: Int })
+const Grant = Schema.Struct({ who: Schema.Literals(["self", "member", "stranger", "nobody", "switch"]), role: Role, mode: Schema.Literals(["person", "participation", "bootstrap"]), gap: Schema.Boolean, n: Int })
 const Grants = Schema.Struct({ session: Int, role: Role, people: Schema.Boolean, dialog: Schema.Boolean, grants: Schema.Array(Grant).check(Schema.isMinLength(1), Schema.isMaxLength(6)) })
 
 /**
  * Role grants arriving on the account stream: the person's own grant changes their role and says so, a listed member's
  * grant is announced while people are shown, a gap resumes the stream, and losing maintainer closes the role dialog.
+ * `dialog` signs in a maintainer with people shown and opens the role dialog, which a random role and pane rarely
+ * reach together. `switch` loads another member's account, which closes the dialog and forgets its person.
  */
 it.live("web/role-events", () => run("web/role-events", Grants, ({ session: id, role, people, dialog, grants }) => Effect.provide(effect {
-  const session = try signedIn(`r${id}`, role)
-  if (people) try session.send(try Effect.try(() => Message.ClickedPeople()))
+  const session = try signedIn(`r${id}`, dialog ? "maintainer" : role)
+  if (people || dialog) try session.send(try Effect.try(() => Message.ClickedPeople()))
   const members = accountOf(session.model()).members
   if (dialog && members.length > 0) try session.send(try Effect.try(() => Message.SelectedRole({ id: members[0]!.id, role: "contributor" })))
+  // Only a maintainer opens the role dialog; anyone else choosing a member's role changes nothing.
+  if (!dialog && members.length > 0) {
+    try session.send(try Effect.try(() => Message.SelectedRole({ id: members[0]!.id, role: "contributor" })))
+    if ((accountOf(session.model()).target !== "") !== (role === "maintainer")) return false
+    if (role === "maintainer") try session.send(try Effect.try(() => Message.CancelledRole()))
+  }
   for (const grant of grants) {
     const before = accountOf(session.model())
     const member = members[grant.n % Math.max(1, members.length)]
+    if (grant.who === "switch") {
+      if (member === undefined) continue
+      try session.send(try Effect.try(() => Message.AccountLoaded({ identity: member })))
+      const switched = accountOf(session.model())
+      if (switched.target !== "" || switched.identity.id !== member.id) return false
+      continue
+    }
     const target = grant.who === "self" ? before.identity.id : grant.who === "member" ? member?.id ?? "" : grant.who === "stranger" ? `stranger-${grant.n}` : ""
     const seq = before.ledger.conversation.seq + (grant.gap ? 2 : 1)
     try session.send(try Effect.try(() => Message.ReceivedRole({ event: { type: "RoleGranted", seq, id: target, by: "fuzz", role: grant.role, mode: grant.mode } })))
