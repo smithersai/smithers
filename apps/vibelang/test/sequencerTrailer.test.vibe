@@ -11,6 +11,11 @@ describe("the trailer a commit of main names", () => {
     expect(trailerOf("docs: a\n\nMythical: m2\n\n\n")).toBe("m2")
   })
 
+  it("reads a trailer paragraph with a folded continuation line, and none whose later line is prose", () => {
+    expect(trailerOf("docs: a\n\nMythical: m5\nCo-Authored-By: Ada\n  <ada@example.com>\n")).toBe("m5")
+    expect(trailerOf("docs: a\n\nMythical: m5\nthen prose\n")).toBe("")
+  })
+
   it("is not read from a squash whose last paragraph names none", () => {
     expect(trailerOf("feat: two\n\n* first\n\nMythical: m4\n\n* second\n\nCo-Authored-By: Ada <ada@example.com>\n")).toBe("")
   })

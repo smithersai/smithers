@@ -1,0 +1,53 @@
+// @vitest-environment node
+// The per-sandbox machine object (worker/machineObject.vibe) driven by its own apply, over SQLite-backed object storage
+// and a container whose commands are local processes (fuzz/machine-box.ts): the running status, a lease it refuses, a
+// command before any lease, a command answered from its receipt, and a command whose generation stops while it runs.
+import { describe, expect, it } from "@effect/vitest"
+import { RuntimeContext } from "alchemy"
+import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
+import { makeBox } from "../fuzz/machine-box.ts"
+import { objectStorage } from "./support/objectStorage.ts"
+
+/** A machine at generation 1, started, over a fresh box. */
+effect function started() {
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const storage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, { raw: { storage }, id: { toString: () => "m" } } as unknown as ObjectState)
+  expect(try machine.apply("start", 1, "start", "")).toEqual({ ok: true, output: "" })
+  return { local, machine }
+}
+
+const provided = <A, E>(body: A!E!(RuntimeContext | Scope.Scope)) => Effect.scoped(Effect.provideService(body, RuntimeContext, {} as never))
+const refused = (reason: string) => ({ ok: false, output: "", reason })
+
+describe("the machine object", () => {
+  it.live("refuses a lease outside one second to six hours, and any command before a lease", () => provided(effect {
+    const { machine } = try started()
+    expect(try machine.apply("status", 0, "", "")).toEqual({ ok: true, output: "running" })
+    expect(try machine.apply("command", 1, "early", "echo early")).toEqual(refused("lease-expired"))
+    expect([try machine.apply("lease", 1, "", "999"), try machine.apply("lease", 1, "", "21600001"), try machine.apply("lease", 1, "", "soon")]).toEqual([refused("lease-duration"), refused("lease-duration"), refused("lease-duration")])
+    expect(try machine.apply("lease", 1, "", "60000")).toEqual({ ok: true, output: "running" })
+  }), 30_000)
+
+  it.live("answers a repeated operation from its receipt without running it again", () => provided(effect {
+    const { local, machine } = try started()
+    try machine.apply("lease", 1, "", "60000")
+    const first = try machine.apply("command", 1, "op-1", "echo once")
+    const again = try machine.apply("command", 1, "op-1", "echo once")
+    const changed = try machine.apply("command", 1, "op-1", "echo twice")
+    expect(first.ok).toBe(true)
+    expect(first.output).toContain("once")
+    expect(again).toEqual(first)
+    expect(changed).toEqual({ ...refused("receipt-conflict"), output: first.output })
+    expect(local.state.executed.filter((script) => script.includes("echo"))).toHaveLength(1)
+  }), 30_000)
+
+  it.live("refuses a command's answer when its generation stopped while it ran", () => provided(effect {
+    const { machine } = try started()
+    try machine.apply("lease", 1, "", "60000")
+    const running = try forkChild(machine.apply("command", 1, "slow", "sleep 1; echo late"))
+    try sleep("300 millis")
+    expect(try machine.apply("stop", 1, "stop", "")).toMatchObject({ ok: true })
+    expect(try Fiber.join(running)).toEqual(refused("not-current"))
+  }), 30_000)
+})

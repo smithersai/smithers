@@ -91,7 +91,7 @@ brick                                   state         proof
 - **Unit coverage, second lane (0016, lane vl-coverage2): partial.** `worker/Http.vibe`, `src/web/backend.vibe`,
   `src/actions/MockActions.vibe`, `src/actions/execution.vibe`, `src/core/conversation.vibe` and `src/core/LiveWiki.vibe`
   reach 100% unit coverage on all four metrics; `src/core/MockFactory.vibe` keeps three race-only or invariant-guarded paths. A mock
-  reply interrupted by a reload no longer blocks its conversation. Unrecordable engine steps now return a typed unavailable failure while their durable runs remain recoverable; caller cancellation stays interruption. Other files below 100% remain.
+  reply interrupted by a reload no longer blocks its conversation. Unrecordable engine steps now return a typed unavailable failure while their durable runs remain recoverable; caller cancellation stays interruption. Every `worker/`, surfaces, history and actions file is at 100% except `src/history/tools.vibe:93`, which waits on VL-37's compiler change; seven dead arms are deleted (0016, "Worker, surfaces, history and actions gaps").
 
 - **Unit coverage, third lane (0016, lane vl-coverage3): partial.** Surfaces, history and actions: 17 files missing
   103 items down to 2 files missing 2 branches, each named in 0016 with its reason (an exhaustive `match`'s

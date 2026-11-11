@@ -30,7 +30,16 @@ describe("authentication configuration fails closed", () => {
     try Effect.try(() => {
       expect(setup?.origin).toBe(valid.VIBELANG_ORIGIN)
       expect(setup?.initialMaintainer).toBe("1")
+      expect(setup?.appSlug).toBeUndefined()
     })
+  })
+
+  it.effect("names the GitHub App to install when its slug is set", () => effect {
+    const setup = try scoped(configured().pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...valid, GITHUB_APP_SLUG: "vibelang-factory", GITHUB_API_URL: "http://127.0.0.1:1" }))),
+    ))
+    try Effect.try(() => expect(setup?.appSlug).toBe("vibelang-factory"))
   })
 
   // 0029: HTTP reaches the broker only through an injected loopback host. Configuration cannot inject one, so a loopback

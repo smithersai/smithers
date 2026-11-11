@@ -31,6 +31,15 @@ export function cookieOf(request: HttpServerRequest.HttpServerRequest): string |
 const AGE = 30 * 24 * 60 * 60 * 1000
 const noStore = { "cache-control": "no-store" }
 
+/** A broker start's record: a Connect press stores the session that pressed it and where to return, together. */
+schema BrokerConnect { readonly person: number }
+schema BrokerClaims { readonly origin: string; readonly nonce: string; readonly challenge: string; readonly expires: number; readonly connect?: BrokerConnect }
+schema SealedVerifier { readonly nonce: string; readonly ciphertext: string }
+schema ConnectPending { readonly claims: BrokerClaims; readonly verifier: SealedVerifier; readonly session: string; readonly returnTo: string }
+schema SignInPending { readonly claims: BrokerClaims; readonly verifier: SealedVerifier }
+/** Decoded in this order: a sign-in's record lacks the Connect fields. */
+const PendingBroker = Schema.Union([ConnectPending, SignInPending])
+
 export interface Setup {
   readonly origin: string
   readonly initialMaintainer: string
@@ -113,7 +122,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const keys = try Core.CookieKeys.make({ primary: setup.signingSecret }, "primary")
   const broker = setup.broker?.secret === undefined ? undefined : (GitHub.Auth.Broker.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret, ...(setup.broker.localDevelopment === undefined ? {} : { localDevelopment: setup.broker.localDevelopment }) }) catch () => undefined)
   const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
-  const delegate = setup.delegate ?? (setup.broker?.secret === undefined ? undefined : (GitHub.Delegation.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) catch () => undefined))
+  const delegate = setup.delegate ?? (setup.broker?.secret === undefined ? undefined : (try GitHub.Delegation.site({ origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret })))
   // Signed-out reads go through smithers.sh's App with the same site key, cached in this object (0031).
   const reads = { client: try publicReads(storage, setup.broker?.secret === undefined ? undefined : { origin: setup.origin, brokerOrigin: setup.broker.origin, secret: setup.broker.secret }) }
   const delegated = <A, E, R>(program: A!E!R) => {
@@ -310,19 +319,19 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const body = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ code: Schema.String, state: Schema.String })))(bodyText) catch () => undefined
       const verified = try keys.verify("broker_site", request.cookies[STATE])
       if (body === undefined || Option.isNone(verified) || body.state !== verified.value.value || !/^[A-Za-z0-9_-]{43}$/.test(body.state)) return json({ error: "sign-in" }, 400)
-      const pending = Schema.decodeUnknownEffect(Schema.Struct({ claims: Schema.Struct({ origin: Schema.String, nonce: Schema.String, challenge: Schema.String, expires: Schema.Number, connect: Schema.optionalKey(Schema.Struct({ person: Schema.Number })) }), verifier: Schema.Struct({ nonce: Schema.String, ciphertext: Schema.String }), session: Schema.optionalKey(Schema.String), returnTo: Schema.optionalKey(Schema.String) }))(try get("broker/" + body.state)) catch () => undefined
+      const pending = Schema.decodeUnknownEffect(PendingBroker)(try get("broker/" + body.state)) catch () => undefined
       if (pending === undefined || pending.claims.origin !== setup.origin || pending.claims.nonce !== body.state || pending.claims.expires <= (try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
       try remove("broker/" + body.state)
       const verifier = Redacted.value(try Effect.orDie(cipher.open(pending.verifier, contextOf(body.state, "pkce"))))
       const signed = try broker.redemption({ claims: pending.claims, verifier }, body.code)
       const person = try Effect.orDie(broker.exchange(signed).pipe(Effect.provideService(HttpClient.HttpClient, http)))
       const id = String(person.id)
-      if (pending.session !== undefined) {
+      if ("session" in pending) {
         // Connect: the browser must still hold the session that pressed it, and the broker confirmed the same person.
         const live = try session(presented(request))
         if (live === undefined || live.key !== pending.session || live.value.id !== id || person.delegation === undefined || person.expires === undefined) return cookie(json({ error: "identity" }, 403), STATE, "", 0)
         try put(connectionKey(id), { person: person.id, delegation: person.delegation, expires: person.expires })
-        return cookie(json({ location: pending.returnTo ?? "/?issues=1" }), STATE, "", 0)
+        return cookie(json({ location: pending.returnTo }), STATE, "", 0)
       }
       const sessionId = try keys.token
       try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })

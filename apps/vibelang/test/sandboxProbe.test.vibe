@@ -49,6 +49,12 @@ effect function asked<A, E>(token: string, owner: string, use: (factory: Factory
     return try use(try Factory)
   }
 }
+/** The Factory client with the probe's token and no owner header at all. */
+effect function unowned<A, E>(use: (factory: Factory.Shape) => A!E) {
+  provide LiveFactory("").pipe(Layer.provide(Layer.effect(HttpClient.HttpClient, Effect.map(HttpClient.HttpClient, (client) => HttpClient.mapRequest(client, HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`)))))) {
+    return try use(try Factory)
+  }
+}
 
 describe("the sandbox probe", () => {
   it.live("runs the real-Container suite: start, write, checkpoint, restore, read, meter, stop and sweep one sandbox", () => provided(effect {
@@ -104,14 +110,15 @@ describe("the sandbox probe", () => {
     }
   }), 60_000)
 
-  it.live("treats a wrong token, an expired owner, one beyond the window and a malformed one as signed out", () => provided(effect {
+  it.live("treats a wrong token, an expired owner, one beyond the window, a malformed one and none as signed out", () => provided(effect {
     try probe()
     const now = Date.now()
     const owners = [[TOKEN, probeOwner(now - 1)], [TOKEN, probeOwner(now + PROBE_WINDOW_MS + 60_000)], [TOKEN, "person-1"], ["wrong", probeOwner(now + 60_000)], ["", probeOwner(now + 60_000)]] as const
     const refusals = try Effect.forEach(owners, ([token, owner]) => asked(token, owner, (factory) => reason(factory.startSandbox(PROBE_CONVERSATION, "op-1"))))
+    const ownerless = try unowned((factory) => reason(factory.startSandbox(PROBE_CONVERSATION, "op-1")))
     const read = try asked("wrong", probeOwner(now + 60_000), (factory) => factory.sandbox(PROBE_CONVERSATION))
     try Effect.try(() => {
-      expect(refusals).toEqual(["forbidden", "forbidden", "forbidden", "forbidden", "forbidden"])
+      expect([...refusals, ownerless]).toEqual(["forbidden", "forbidden", "forbidden", "forbidden", "forbidden", "forbidden"])
       expect([read.status, read.generation, read.allowance]).toEqual(["stopped", 0, 0])
     })
   }), 30_000)
@@ -138,6 +145,18 @@ describe("the sandbox probe", () => {
     })
   }), 30_000)
 
+  it.live("a sweep before the deadline stops what the owner left running", () => provided(effect {
+    const p = try probe()
+    const owner = probeOwner(Date.now() + 60_000)
+    const started = try asked(TOKEN, owner, (factory) => factory.startSandbox(PROBE_CONVERSATION, "left-1"))
+    const swept = try sweep(probeClient(try HttpClient.HttpClient, TOKEN, owner), "")
+    try Effect.try(() => {
+      expect(started.status).toBe("running")
+      expect(swept).toEqual({ running: false, status: 200 })
+      expect((p.machineStorage.kv.get("machine") as { readonly phase: string }).phase).toBe("stopped")
+    })
+  }), 30_000)
+
   it.live("answers the sweep only with the token and a probe owner; any other path is not found", () => provided(effect {
     try probe()
     const client = try HttpClient.HttpClient
@@ -145,13 +164,14 @@ describe("the sandbox probe", () => {
       HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader(OWNER_HEADER, probeOwner(Date.now() + 60_000))),
       HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", "Bearer wrong"), HttpClientRequest.setHeader(OWNER_HEADER, probeOwner(Date.now() + 60_000))),
       HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`), HttpClientRequest.setHeader(OWNER_HEADER, "person-1")),
+      HttpClientRequest.post("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`)),
       HttpClientRequest.get("/api/probe/sweep").pipe(HttpClientRequest.setHeader("authorization", `Bearer ${TOKEN}`)),
       HttpClientRequest.get("/api/health"),
     ], (request) => Effect.map(client.execute(request), (response) => response.status))
     // An owner that never ran a sandbox has nothing running.
     const idle = try sweep(probeClient(client, TOKEN, probeOwner(Date.now() + 60_000)), "")
     try Effect.try(() => {
-      expect(statuses).toEqual([403, 403, 400, 404, 404])
+      expect(statuses).toEqual([403, 403, 400, 400, 404, 404])
       expect(idle).toEqual({ running: false, status: 200 })
     })
   }), 30_000)

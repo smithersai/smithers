@@ -1,0 +1,91 @@
+// The mythical history's proof specifications against the code they specify (0016, "Specification functions"). VibeLang
+// has no specification-only function yet (~/vl/vibelang-bugs/spec-only-function), so each one is runtime code: a
+// drift between a specification and its implementation fails here as well as in `pnpm verify`.
+import { describe, expect, it } from "@effect/vitest"
+import { empty, type Event, type History, type Intent } from "../src/history/mythical.vibe"
+import { totals, sumOf } from "../src/history/pageDecision.vibe"
+import { liveHistoryReplays, recordedHistory, replayedHistory, replayedHistoryPrefix, replayHistory, replayStep } from "../src/history/replayDecision.vibe"
+import { intentsOf, seedOf } from "../src/history/seed.vibe"
+import { batchRevset, knownTitles, referenceList, selectedTitles } from "../src/history/seedInputDecision.vibe"
+
+/** Three landed commits and the intents that seed them. */
+const intents: ReadonlyArray<Intent> = intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+})), []))
+
+/** Records `intents` from `empty`, keeping the journal of accepted events. */
+const journalOf = (from: ReadonlyArray<Intent>) => {
+  let history: History = empty
+  const journal: Array<Event> = []
+  for (const intent of from) {
+    const recorded = recordedHistory(history, intent)
+    if (recorded.decision.ok) journal.push(recorded.decision.event)
+    history = recorded.history
+  }
+  return { history, journal }
+}
+
+describe("replay specifications", () => {
+  it("the fold replays every prefix of a journal to the history the loop replays", () => {
+    const { history, journal } = journalOf(intents)
+    expect(journal.length).toBeGreaterThan(2)
+    expect(replayedHistory(empty, journal, journal.length)).toEqual(history)
+    for (let count = 0; count <= journal.length; count++) {
+      expect(replayedHistory(empty, journal, count)).toEqual(replayHistory(empty, journal.slice(0, count)))
+    }
+    expect(replayedHistory(empty, journal, 0)).toBe(empty)
+  })
+
+  it("a step outside replay's domain leaves the history as it was", () => {
+    const { journal } = journalOf(intents)
+    const event = journal[0]!
+    expect(replayStep(empty, event)).toEqual(replayHistory(empty, [event]))
+    for (const [history, step] of [
+      [{ ...empty, seq: -1 }, event],
+      [{ ...empty, seq: Number.MAX_SAFE_INTEGER + 1 }, event],
+      [empty, { ...event, seq: -1 }],
+      [empty, { ...event, seq: Number.MAX_SAFE_INTEGER + 1 }],
+    ] as const) {
+      expect(replayStep(history, step)).toBe(history)
+    }
+  })
+
+  it("journals that agree on a prefix replay it alike, and recording keeps the live history the journal's replay", () => {
+    const { history, journal } = journalOf(intents.slice(0, -1))
+    const last = intents[intents.length - 1]!
+    const recorded = recordedHistory(history, last)
+    const next = recorded.decision.ok ? [...journal, recorded.decision.event] : journal
+    expect(recorded.decision.ok).toBe(true)
+    expect(replayedHistoryPrefix(empty, journal, next, journal.length)).toBe(true)
+    expect(replayedHistory(empty, next, journal.length)).toEqual(replayedHistory(empty, journal, journal.length))
+    expect(liveHistoryReplays(empty, journal, history, last, next)).toBe(true)
+    expect(recorded.history).toEqual(replayedHistory(empty, next, next.length))
+  })
+})
+
+describe("seed input specifications", () => {
+  const ids = ["a", "b", "a", "c"]
+  it("a batch's revset is its reference list for every interval", () => {
+    for (let start = 0; start <= ids.length; start++) {
+      for (let end = start; end <= ids.length; end++) expect(batchRevset(ids, start, end)).toBe(referenceList(ids, start, end))
+    }
+    expect(referenceList(ids, 1, 3)).toBe("present(b)|present(a)")
+  })
+  it("known titles are the selection in source order and multiplicity", () => {
+    const titles = new Map([["a", "Alpha"], ["c", "Gamma"]])
+    expect(selectedTitles(ids, titles)).toEqual(["Alpha", "Alpha", "Gamma"])
+    expect(knownTitles(ids, titles)).toEqual(selectedTitles(ids, titles))
+    expect(selectedTitles([], titles)).toEqual([])
+  })
+})
+
+describe("page specifications", () => {
+  it("each key's total is the sum over its positions", () => {
+    const keys = ["x", "y", "x", "z"]
+    const amounts = [1, 2, 4, 8]
+    const sums = totals(keys, amounts)
+    for (const key of [...keys, "absent"]) expect(sums.get(key) ?? 0).toBe(sumOf(keys, amounts, key, keys.length))
+    expect(sumOf(keys, amounts, "x", keys.length)).toBe(5)
+    expect(sumOf(keys, amounts, "x", 0)).toBe(0)
+  })
+})

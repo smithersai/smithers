@@ -1,5 +1,5 @@
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
-import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
+import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
@@ -385,10 +385,10 @@ export effect function answer(post: string) {
     when { _tag: "Answered", let text }: replies.finish(reply, text);
     when { _tag: "Failed", let reason }: replies.fail(reply, reason);
   }
-  if (canSettleReply(run)) {
-    try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
-    run = recordReplySettlement(run)
-  }
+  // A composed reply settles once: by the proved contracts above, a run past `canComposeReply` is ready with one start
+  // and one composition and no settlement, which is `canSettleReply`.
+  try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+  run = recordReplySettlement(run)
   try Effect.logInfo("vibelang.reply.order").pipe(Effect.annotateLogs({ startReceipts: run.starts, compositions: run.compositions, settlementReceipts: run.settlements }))
   return null
 }

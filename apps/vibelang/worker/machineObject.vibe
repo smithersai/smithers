@@ -14,7 +14,7 @@ export type Operation = "start" | "stop" | "command" | "lease" | "status"
  * `setup-exit-<code>`, `running-after-destroy`, `not-current`, `receipt-conflict`, `lease-expired`, or a failed
  * operation's error tag (failureReason). The account carries it to the refusal the client sees (decision 0024).
  */
-export interface Answer { readonly ok: boolean; readonly output: string; readonly reason?: string }
+export type Answer = { readonly ok: true; readonly output: string } | { readonly ok: false; readonly output: string; readonly reason: string }
 export interface MachineShape {
   apply(kind: Operation, generation: number, operationId: string, command: string): Answer!!RuntimeContext
 }
@@ -116,7 +116,7 @@ export function machineObject(box: MachineBox, state: ObjectState) {
     return {
       apply: effect (kind: Operation, generation: number, operationId: string, command: string) => {
         // A refusal is logged and metered as `refused` with its reason; a failure, as `failed` with its error's tag.
-        const work = observed(`container-${kind}`, apply(kind, generation, operationId, command), (answer: Answer) => answer.reason ?? "")
+        const work = observed(`container-${kind}`, apply(kind, generation, operationId, command), (answer: Answer) => answer.ok ? "" : answer.reason)
         return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => refused(failureReason(error))
       },
     }

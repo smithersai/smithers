@@ -144,8 +144,9 @@ export effect function world(signIn: boolean, limit: number, agent: Agent) {
     },
   }) as never
   const namespaces = { conversation: namespaceOf("conversation"), accounts: namespaceOf("accounts"), budget: namespaceOf("budget"), history: namespaceOf("history"), actions: namespaceOf("actions") }
-  const fetchOf = (request: HttpServerRequest.HttpServerRequest, props: Record<string, unknown>) =>
-    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history, budgets: namespaces.budget }, signedOutGateway as never, "fuzz-commit", succeed(props))
+  /** `release` null: a deployment built without a commit. */
+  const fetchOf = (request: HttpServerRequest.HttpServerRequest, props: Record<string, unknown>, release: string | null = "fuzz-commit") =>
+    apiFetch({ conversations: namespaces.conversation, accounts: namespaces.accounts, actions: namespaces.actions, histories: namespaces.history, budgets: namespaces.budget }, signedOutGateway as never, release ?? undefined, succeed(props))
       .pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request), Effect.provideService(RuntimeContext, runtime))
   /** The entrypoint an alarm calls back into, as `Cloudflare.toHttpClient` adapts it. */
   const clientOf = (self: { readonly props: Record<string, unknown> }) => HttpClient.make((request) => Effect.orDie(effect {

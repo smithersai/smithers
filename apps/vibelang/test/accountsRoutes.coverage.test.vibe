@@ -1,0 +1,140 @@
+// @vitest-environment node
+// The Accounts Durable Object's routes at their edges, through its own fetch handler over SQLite object storage: the
+// GitHub App install link, Connect GitHub refused to an agent or without a broker, a device agent's principal, an ended
+// smithers.sh connection forgotten on a wiki read, a chat draft the engine can't record, and a broker the site can't
+// trust. GitHub is the in-memory fuzz GitHub behind smithers.sh's real per-person connection host; nothing intercepts.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { pages } from "../src/core/wiki.vibe"
+import * as Accounts from "../worker/Accounts.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { wikiRepository } from "../worker/Wiki.vibe"
+import { fakeClient, seed } from "../fuzz/issues-node-fake.vibe"
+import { delegated as connectionHost, reach } from "../fuzz/delegated.vibe"
+import { faultyStore } from "../fuzz/faulty-store.ts"
+import { ORIGIN, github, setupWith } from "./support/accountsWorld.vibe"
+
+const PAGE = pages[0]!.id
+const SOURCE = "# Page\n\nThe repository text.\n"
+
+/** Each `Set-Cookie` as the browser sends it back. */
+const cookies = (response: globalThis.Response) => response.headers.getSetCookie().map((line) => line.split(";")[0]!).join("; ")
+
+/**
+ * The object over a SQLite store; `setup` overrides the site's configuration, and `delegated` false leaves the delegate
+ * to the configured broker. Will (1) and Ada (7) have GitHub accounts.
+ */
+effect function world(setup: Partial<Accounts.Setup> = {}, delegated = true) {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const store = faultyStore(raw as unknown as Storage)
+  const fake = seed()
+  fake.files[`${wikiRepository.root}/${PAGE}.md`] = SOURCE
+  const site = try connectionHost(fakeClient(fake), reach())
+  const accounts = try Accounts.make("accounts-routes", store.storage, { ...setupWith(github([{ id: 1, login: "will" }, { id: 7, login: "ada" }])), ...(delegated ? { delegate: site.delegate } : {}), ...setup })
+    .pipe(Effect.provideService(HttpClient.HttpClient, site.http))
+  /** One browser request from the site's own origin. */
+  const call = (method: string, path: string, cookie = "", body?: unknown) => effect {
+    const request = try HttpClientRequest.toWeb(HttpClientRequest.make(method as "GET" | "POST")(ORIGIN + path).pipe(
+      HttpClientRequest.setHeaders({ origin: ORIGIN, cookie }),
+      body === undefined ? identity : HttpClientRequest.bodyJsonUnsafe(body),
+    ))
+    const response = try accounts.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)))
+    return HttpServerResponse.toWeb(response)
+  }
+  /** The browser sign-in: the start, then GitHub's return with the person's code. */
+  const signIn = effect (person: number) => {
+    const start = try call("GET", "/api/auth/sign-in")
+    const state = new URL(start.headers.get("location") ?? "").searchParams.get("state") ?? ""
+    return cookies(try call("GET", `${Accounts.CALLBACK}?state=${state}&code=${person}`, cookies(start)))
+  }
+  /** A CLI's device sign-in: a session marked as the person's agent. */
+  const device = effect (person: number) => {
+    const answer = try call("POST", "/api/auth/device", "", { token: `token-${person}` })
+    return ((try promise(() => answer.json())) as { readonly cookie: string }).cookie
+  }
+  /** Ada's smithers.sh connection, as a completed Connect GitHub stores it. */
+  const connect = (id: string) => promise(() => store.storage.put(`delegation/${id}`, { ...site.connection, expires: Number.MAX_SAFE_INTEGER }))
+  const connection = (id: string) => promise(() => store.storage.get(`delegation/${id}`))
+  return { accounts, store, site, call, signIn, device, connect, connection }
+}
+
+const body = (response: globalThis.Response) => promise(() => response.json())
+
+describe("the GitHub App install link", () => {
+  it.live("sends a person to the configured App and answers unavailable without one", () => scoped(effect {
+    const installable = try world({ appSlug: "vibelang app" })
+    const install = try installable.call("GET", "/api/auth/install")
+    expect(install.status).toBe(302)
+    expect(install.headers.get("location")).toBe("https://github.com/apps/vibelang%20app/installations/new")
+    const posted = try installable.call("POST", "/api/auth/install")
+    expect(posted.status).toBe(404)
+    const unset = try (try world()).call("GET", "/api/auth/install")
+    expect([unset.status, try body(unset)]).toEqual([503, { error: "install unavailable" }])
+  }))
+})
+
+describe("Connect GitHub", () => {
+  it.live("refuses a device agent, an unknown wiki page, a signed-out disconnect, and answers unavailable with no broker", () => scoped(effect {
+    const w = try world()
+    const agent = try w.call("POST", "/api/auth/connect", try w.device(7))
+    expect([agent.status, try body(agent)]).toEqual([403, { error: "agent" }])
+    const ada = try w.signIn(7)
+    const unknownPage = try w.call("POST", "/api/auth/connect?wiki-page=no-such-page", ada)
+    expect([unknownPage.status, try body(unknownPage)]).toEqual([400, { error: "request" }])
+    const person = try w.call("POST", "/api/auth/connect", ada)
+    expect([person.status, try body(person)]).toEqual([503, { error: "sign-in unavailable" }])
+    const signedOut = try w.call("POST", "/api/auth/disconnect")
+    expect([signedOut.status, try body(signedOut)]).toEqual([401, { error: "sign-in" }])
+  }))
+
+  it.live("a broker the site can't trust leaves sign-in and Connect unavailable", () => scoped(effect {
+    // A site secret shorter than 32 characters: neither the broker client nor the delegation client accepts it.
+    const w = try world({ broker: { origin: "https://smithers.test", secret: Redacted.make("short") } }, false)
+    const session = try body(try w.call("GET", "/api/auth/session"))
+    const start = try w.call("GET", "/api/auth/sign-in")
+    expect(session).toMatchObject({ available: false })
+    expect(start.status).toBe(503)
+  }))
+})
+
+describe("the principal behind a wiki request", () => {
+  it.live("a device agent reads with the person's role but no connection, and may not save", () => scoped(effect {
+    const w = try world()
+    const agent = try w.device(1)
+    try w.connect("1")
+    const read = try w.call("GET", `/api/wiki?page=${PAGE}`, agent)
+    const page = (try body(read)) as { readonly role: string; readonly pages: ReadonlyArray<{ readonly source: string }> }
+    expect([read.status, page.role, page.pages[0]?.source]).toEqual([200, "maintainer", SOURCE])
+    const save = try w.call("POST", "/api/wiki", agent, { op: "save", page: PAGE, base: SOURCE, text: "# Page\n\nBetter.\n", key: "k1" })
+    expect([save.status, try body(save)]).toEqual([403, { reason: "forbidden" }])
+    expect(try w.connection("1")).toBeDefined()
+  }))
+
+  it.live("an ended smithers.sh connection still reads the public page and is forgotten", () => scoped(effect {
+    const w = try world()
+    const ada = try w.signIn(7)
+    try w.connect("7")
+    try w.site.end()
+    const read = try w.call("GET", `/api/wiki?page=${PAGE}`, ada)
+    const page = (try body(read)) as { readonly pages: ReadonlyArray<{ readonly source: string }> }
+    expect([read.status, page.pages[0]?.source]).toEqual([200, SOURCE])
+    expect(try w.connection("7")).toBeUndefined()
+  }))
+
+  it.live("a connected person whose role can't save is refused before GitHub", () => scoped(effect {
+    const w = try world()
+    const ada = try w.signIn(7)
+    try w.connect("7")
+    const save = try w.call("POST", "/api/wiki", ada, { op: "save", page: PAGE, base: SOURCE, text: "# Page\n\nBetter.\n", key: "k1" })
+    expect([save.status, try body(save)]).toEqual([403, { reason: "forbidden" }])
+  }))
+
+  it.live("a chat draft the engine can't record or open answers unavailable", () => scoped(effect {
+    const w = try world()
+    w.store.fail(/^\s*INSERT INTO flows_attempts/)
+    expect(try w.accounts.draftWiki("1", PAGE, "ask", "k1")).toBe("unavailable")
+    w.store.fail(/^\s*CREATE TABLE IF NOT EXISTS "flows_migrations"/)
+    expect(try w.accounts.draftWiki("1", PAGE, "ask", "k2")).toBe("unavailable")
+  }))
+})

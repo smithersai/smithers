@@ -95,6 +95,21 @@ describe("a person's sandbox account", () => {
     })
   }), 60_000)
 
+  it.live("carries the object's refusal of a bad operation id or a stale generation through the gateway, with no reason", () => provided(effect {
+    const s = try setup()
+    const started = try asked(s.gateway.startSandbox("c-1", "op-1"))
+    const generation = started.ok ? started.success.generation : -1
+    const answers = try Effect.all([
+      asked(s.gateway.startSandbox("c-1", "op 2!")),
+      asked(s.gateway.stopSandbox("c-1", "op-3", generation + 1)),
+    ])
+    try Effect.try(() => {
+      const failures = answers.map((answer) => answer.ok ? answer : answer.failure)
+      expect(failures).toMatchObject([{ _tag: "Refused", refusal: "invalid" }, { _tag: "Refused", refusal: "stale-generation" }])
+      expect(failures.map((failure) => "reason" in failure)).toEqual([false, false])
+    })
+  }), 60_000)
+
   it.live("answers a broken binding or a failing container as unavailable, and an idle account's alarm clears", () => provided(effect {
     const noMachine = try setup({ machineBinding: false })
     const noAccount = try setup({ accountBinding: false })

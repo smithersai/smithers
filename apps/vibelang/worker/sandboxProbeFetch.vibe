@@ -40,7 +40,7 @@ export function admitted(owner: string, now: number) {
 }
 /** A lease never outlives its owner's deadline; machineObject's floor of one second still applies. */
 export function leaseFor(id: string, milliseconds: number, now: number) {
-  const deadline = deadlineOf(id.split("/")[0] ?? "") ?? now
+  const deadline = deadlineOf(id.split("/")[0]!) ?? now
   return Math.max(1000, Math.min(milliseconds, deadline - now))
 }
 

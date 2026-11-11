@@ -71,8 +71,11 @@ function long(count: number): History {
 describe("pages of a history", () => {
   it("keeps rank order when a stored commit's epic is absent", () => {
     const before = long(2)
-    const history: History = { ...before, commits: [{ ...before.commits[1]!, epic: "e9" }, before.commits[0]!] }
-    expect(outlineOf(history).open.map((head) => head.id)).toEqual(["m1", "m2"])
+    // Stored either way round, so the absent epic is on each side of a comparison.
+    const absent = { ...before.commits[1]!, epic: "e9" }
+    for (const commits of [[absent, before.commits[0]!], [before.commits[0]!, absent]]) {
+      expect(outlineOf({ ...before, commits }).open.map((head) => head.id)).toEqual(["m1", "m2"])
+    }
   })
 
   it.effect("put back together are the whole stack, and the outline's counts are the history's", () =>

@@ -263,3 +263,23 @@ it.live("workerd: a slow GitHub exchange in one callback holds no other person's
     expect(released.status).toBe(303)
   })
 }), deadline(120_000))
+
+it.live("workerd: a Connect handoff finished in a browser without the pressing session connects no one", () => scoped(effect {
+  const host = try acquireRelease(serveAuthBroker(), host => promise(() => host.dispose()))
+  provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+    const http = try HttpClient.HttpClient
+    const pressing = (try signIn(host.origin)).session
+    const other = (try signIn(host.origin)).session
+    const refused = try brokerConnect(host.origin, pressing, "", other)
+    const write = try http.execute(HttpClientRequest.post(host.origin + "/api/issues").pipe(
+      HttpClientRequest.setHeader("origin", host.origin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + pressing),
+      HttpClientRequest.bodyJsonUnsafe({ op: "new", key: "after-refusal", number: 0, parent: 0, title: "Refused", text: "", assignee: "", example: "", prior: "" }),
+    ))
+    try Effect.try(() => {
+      expect(refused.answered.status).toBe(303)
+      expect([refused.accepted.status, refused.location]).toEqual([403, { error: "identity" }])
+      expect(refused.accepted.cookies.cookies["vibelang-sign-in"]?.value).toBe("")
+      expect(write.status).toBe(401)
+    })
+  }
+}), deadline(120_000))

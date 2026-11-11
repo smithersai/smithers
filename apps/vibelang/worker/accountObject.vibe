@@ -33,7 +33,7 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
       const answer = try Effect.mapError(Effect.try(() => namespace.getByName(id)), () => new Unavailable({ reason: "container-binding" })).pipe(
         Effect.flatMap((stub) => Effect.provideService(stub.apply(kind, generation, operationId, command), RuntimeContext, runtime)),
       )
-      if (!answer.ok) throw new Unavailable({ reason: `container-${kind}:${answer.reason ?? "unknown"}` })
+      if (!answer.ok) throw new Unavailable({ reason: `container-${kind}:${answer.reason}` })
       return answer.output
     }
     const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), (status) => status === "running"), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }

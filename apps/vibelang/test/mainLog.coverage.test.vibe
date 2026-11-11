@@ -118,6 +118,16 @@ describe("githubMain", () => {
     })
   })
 
+  it.effect("stops at main's first commit when the cursor is not on main, reading no further page", () => effect {
+    // A rewritten main no longer holds the folded commit: its short last page ends the search.
+    const seen: Array<string> = []
+    const reason = try reasonOf(clientWith([{ status: 200, body: json([commit(1, [0]), commit(0, [])]) }], seen), short(9).slice(0, 8))
+    try Effect.try(() => {
+      expect(reason).toBe("main's last folded commit is not within reach")
+      expect(seen).toEqual(["1 "])
+    })
+  })
+
   it.effect("maps a transport failure, a bad status, a non-JSON answer and a wrong shape", () => effect {
     const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
     const transport = try reasonOf(broken, "abcd")

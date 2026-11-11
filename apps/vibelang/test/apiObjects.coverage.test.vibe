@@ -319,6 +319,14 @@ it.live("health identifies the account object used by public issue and wiki read
 }))
 
 
+it.live("health names no commit for a deployment built without one", () => scoped(effect {
+  const w = try world(false, 1000000, "unusable")
+  const request = HttpServerRequest.fromClientRequest(HttpClientRequest.get(`${ORIGIN}/api/health/objects`))
+  const response = HttpServerResponse.toWeb(try w.fetchOf(request, {}, null))
+  const body = try promise(() => response.json()) as { commit: unknown }
+  try Effect.try(() => expect([response.status, body.commit]).toEqual([200, null]))
+}))
+
 it.effect("the health route waits for the actual instance while a cold initializer is still running", () => scoped(effect {
   const w = try world(false, 1000, "unusable")
   const day = new Date(try Clock.currentTimeMillis).toISOString().slice(0, 10)

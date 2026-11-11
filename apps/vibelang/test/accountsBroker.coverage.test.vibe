@@ -281,3 +281,29 @@ describe("the object's request guards", () => {
     expect(try accounts.draftWiki("99", "index", "ask", "k1")).toBe("forbidden")
   }.pipe(Effect.provide(FetchHttpClient.layer)))
 })
+
+describe("a Connect GitHub press through the broker", () => {
+  it.live("records the wiki page or the resumed issue action to return to", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      provide manual {
+        const { origin, storage } = try serve(true)
+        const http = try HttpClient.HttpClient
+        const flow = try handoff(http, origin, "7")
+        const session = value(try http.execute(callback(origin, posted(flow), flow.pending)), Accounts.SESSION)
+        const destinations: Array<readonly [number, string | undefined]> = []
+        for (const query of ["?wiki-page=roadmap", "?resume-op=comment&resume-key=k1", "?resume-op=comment&resume-key=k1&resume-recovery=r1", ""]) {
+          for (const key of (try promise(() => storage.list({ prefix: "broker/" }))).keys()) try promise(() => storage.delete(key))
+          const press = try http.execute(HttpClientRequest.post(origin + "/api/auth/connect" + query).pipe(
+            HttpClientRequest.setHeader("origin", ORIGIN), HttpClientRequest.setHeader("cookie", `${Accounts.SESSION}=${session}`),
+          ))
+          const [record] = Array.from((try promise(() => storage.list({ prefix: "broker/" }))).values()) as ReadonlyArray<{ readonly returnTo?: string }>
+          destinations.push([press.status, record?.returnTo])
+        }
+        try Effect.try(() => expect(destinations).toEqual([
+          [303, "/wiki/roadmap"], [303, "/?issues=1&resume-op=comment&resume-key=k1"],
+          [303, "/?issues=1&resume-op=comment&resume-key=k1&resume-recovery=r1"], [303, "/?issues=1"],
+        ]))
+      }
+    }
+  }), 30_000)
+})

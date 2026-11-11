@@ -11,6 +11,7 @@ import type { IssueRecord } from "../src/core/conversation.vibe"
 import { IssueFailure, type IssueRequest, type IssuesState } from "../src/core/issueSchemas.vibe"
 import { executeIssues, githubHost, publicIssues, serveIssues, IssueAuthority, type Principal } from "../worker/Issues.vibe"
 import { emptySpecification } from "../src/core/specification.vibe"
+import { IssueHost } from "../src/core/issueFlows.vibe"
 import { GitHubDelegate } from "../worker/GitHubDelegate.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { API, fakeClient, forked, repo, seed, type Fake } from "../fuzz/issues-node-fake.vibe"
@@ -454,5 +455,36 @@ describe("issues through smithers.sh's delegation", () => {
     expect(new Set(since).size).toBe(1)
     expect(Date.parse(since[0]!)).toBeGreaterThanOrEqual(before - 300_000)
     expect(Date.parse(since[0]!)).toBeLessThanOrEqual(after)
+  }))
+
+  it.live("the host alone searches for a new issue's marker from five minutes before it asked", () => scoped(effect {
+    const w = try world()
+    const before = try Clock.currentTimeMillis
+    const made = succeeded(try w.perform({ op: "new", title: "Off the engine", text: "b", key: "direct" }))
+    const after = try Clock.currentTimeMillis
+    const since = w.operations.flatMap((operation) => operation.kind === "issue.create" ? [Date.parse(operation.since)] : [])
+    expect(made.items.filter((entry) => entry.title === "Off the engine")).toHaveLength(1)
+    expect(since.length).toBeGreaterThan(0)
+    expect(new Set(since).size).toBe(1)
+    expect(since[0]!).toBeGreaterThanOrEqual(before - 300_000 - 1000)
+    expect(since[0]!).toBeLessThanOrEqual(after - 300_000)
+  }))
+
+  it.live("a read refuses the selected issue GitHub refuses and names a timeline event's deleted actor", () => scoped(effect {
+    const w = try world()
+    addIssue(w.fake, 5, {})
+    // An event GitHub names with no actor.
+    w.fake.timelines = { 5: [{ event: "labeled", label: { name: "bug" }, created_at: "2026-01-04T00:00:00Z" }] }
+    const read = succeeded(try w.perform({ number: 5 }))
+    expect(item(read, 5).notes.filter((note) => note.event).map((note) => note.author)).toEqual(["deleted"])
+    w.fault((request, url) => request.method === "GET" && url.pathname === "/repos/o/r/issues/5" ? json(403, { message: "Forbidden" }) : undefined)
+    expect(failed(try w.perform({ number: 5 }))?.reason).toBe("forbidden")
+  }))
+
+  it.live("a host defect other than the read deadline stays a defect, never an answer", () => scoped(effect {
+    const w = try world()
+    const dying: IssueHost.Shape = { perform: () => Effect.die(new Error("host defect")) }
+    const died = try Effect.exit(w.provided(executeIssues("issues-dying", w.store.storage, { ...blank, key: "dies" }, repo)).pipe(Effect.provideService(IssueHost, dying)))
+    expect(died._tag === "Failure" && Cause.hasDies(died.cause)).toBe(true)
   }))
 })

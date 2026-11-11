@@ -121,7 +121,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       if (number === i.number) {
         const events = try GitHub.IssueChanges.timeline(repo.owner, repo.name, number)
         for (const event of events) {
-          const action = timelineText(event.event ?? "", Boolean(event.label), event.label?.name ?? "", Boolean(event.assignee), event.assignee?.login ?? "")
+          const action = timelineText(event.event, Boolean(event.label), event.label?.name ?? "", Boolean(event.assignee), event.assignee?.login ?? "")
           if (action !== "") notes.push({ age: event.created_at?.slice(0, 10) ?? "", author: event.actor?.login ?? "deleted", text: action, event: true })
         }
         const comments = try GitHub.Issues.listComments(repo.owner, repo.name, number)

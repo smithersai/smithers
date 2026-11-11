@@ -224,6 +224,19 @@ describe("cancelling a run", () => {
     })
   }), 60_000)
 
+  it.live("cancels an action the agent announced in a conversation no action started", () => scoped(effect {
+    const w = try world()
+    const open = try w.object("chat")
+    // The agent's tools announce the run they started (apiObjects' alarm); the conversation holds no action request.
+    try open.sequencer.action({ type: "RequestAction", id: "announced", flow: TOUR, door: "agent", actor: "agent", at: 2 })
+    const answer = try open.host.cancel("announced", "maintainer", w.person.id)
+    const rows = try Runs.read(open.sequencer)
+    try Effect.try(() => {
+      expect(answer).toBeNull()
+      expect(rows.find((run) => run.id === "announced")).toMatchObject({ state: "cancelled", result: "Cancelled" })
+    })
+  }), 60_000)
+
   it.live("reports a history cancellation that fails and leaves the run open", () => scoped(effect {
     const w = try world()
     const open = try w.object("stuck")

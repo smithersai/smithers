@@ -74,8 +74,8 @@ export function trailerOf(message: string): string {
   if (paragraphs.length < 2) return ""
   const paragraph = paragraphs[paragraphs.length - 1]!.split("\n")
   if (!paragraph.every((line, at) => TRAILER.test(line) || (at > 0 && CONTINUATION.test(line)))) return ""
-  const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match) => match !== null)
-  return named === undefined || named === null ? "" : named[1]!
+  const named = paragraph.map((line) => MYTHICAL.exec(line)).find((match): match is RegExpExecArray => match !== null)
+  return named === undefined ? "" : named[1]!
 }
 
 function answered(id: string, decision: Decision): Answer {

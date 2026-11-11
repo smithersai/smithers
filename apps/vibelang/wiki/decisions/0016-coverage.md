@@ -2256,3 +2256,49 @@ body answers 400 without reaching the API (`test/actionsHttp.coverage.test.vibe`
 not run: `split` always yields a first part, so the fallback is gone. Making a forbidden rerun answer 404 fails the new
 case (1 of 10). The file has no uncovered statement, function or branch in the focused run.
 
+
+## Worker, surfaces, history and actions gaps (lane vl-coverage2, 2026-11-10)
+
+Measured first on main `2f002f18` (`pnpm test:coverage`, merged Node and workerd): 15 files in this lane's scope
+(`worker/`, `src/surfaces`, `src/history`, `src/actions`) were below 100% on some measure. Each gap is now a test, a
+deletion of code no production input reaches, or a wait on another lane.
+
+Deleted, because no production input reaches it:
+
+| Where | Why it can't run |
+| --- | --- |
+| `worker/Accounts.vibe`, the Connect callback's `pending.returnTo ?? "/?issues=1"` | Since Connect landed (`0643f98e`), a Connect press stores the pressing session and its destination in one write. The record now decodes as a union whose Connect member requires both. |
+| `worker/Accounts.vibe`, `catch () => undefined` on `GitHub.Delegation.site` | `site` has no expected error: the compiler's EK9204 says only defects pass that catch, and the catch never handles one. |
+| `worker/Budget.vibe`, `spend`'s recorded-but-still-held write and its early return | `admit` refuses a recorded reply, and `spend` writes the record and a zero hold in one write. So a recorded reply holds nothing, and `settle` answers `write: false` for it. |
+| `worker/Reply.vibe`, `if (canSettleReply(run))` | `answer` returns unless `canComposeReply`. The proved contracts of `beginReplyComposition` and `finishReplyComposition` then give phase `ready`, one start, one composition, no settlement and answer `done`: exactly `canSettleReply`. |
+| `src/history/Sequencer.vibe`, `trailerOf`'s `named === null` | `find` with a `!== null` predicate never answers null. The predicate is now a type guard. |
+| `worker/sandboxProbeFetch.vibe`, `leaseFor`'s `split("/")[0] ?? ""` | `split` always yields a first part. |
+| `worker/Issues.vibe`, the timeline read's `event.event ?? ""` | `GitHub.IssueChanges.TimelineEvent` requires `event` (since 2026-11-08): a timeline with an unnamed event fails to decode and the read answers unavailable. |
+| `worker/accountObject.vibe`, `answer.reason ?? "unknown"` on a machine refusal | Every machine refusal goes through `refused(reason)`. The machine's `Answer` is now a union whose refusal member requires `reason`. |
+| `worker/machineObject.vibe`, `result.tool === "run" ? … : ""` | A `run` call always answers a `RunResult`. Fixed upstream: `@smthrs/sandbox`'s `SandboxTools.execute` now answers `ResultOf<C>`, the call's own result type, with a type test. |
+
+Specification functions (`src/history/replayDecision.vibe`, `seedInputDecision.vibe`, `pageDecision.vibe`) are
+tested against the code they specify, as `runningCountPrefix` is above. VibeLang still has no specification-only
+function (`~/vl/vibelang-bugs/spec-only-function`).
+
+New tests:
+
+| Test | Reaches |
+| --- | --- |
+| `test/historySpecifications.coverage.test.vibe` | `replayStep` inside and outside replay's domain, `replayedHistory`, `replayedHistoryPrefix`, `liveHistoryReplays`, `referenceList`, `selectedTitles`, `sumOf` |
+| `test/accountsRoutes.coverage.test.vibe` | the GitHub App install link (with and without an App), Connect refused to a device agent, for an unknown wiki page and without a broker, a signed-out disconnect, a connected person whose role can't save, an untrusted broker secret, a device agent's wiki principal, an ended smithers.sh connection forgotten on a wiki read, a chat draft the engine can't record |
+| `test/accountsBroker.coverage.test.vibe` | a Connect press's wiki and resumed-issue destinations through the real broker |
+| `test/authBroker.workerd.test.vibe` | a Connect handoff finished in a browser without the pressing session: 403, nothing connected |
+| `test/issuesDelegated.coverage.test.vibe` | the host alone searching from five minutes before now, a selected issue GitHub refuses, a timeline event with no actor, a host defect that stays a defect |
+| `test/machineObject.coverage.test.vibe` | the running status, refused leases, a command before any lease, a receipt answer, a generation stopped mid-command |
+| `test/sandboxProbe.test.vibe` | no owner header (signed out; sweep 400), a sweep before the deadline that stops a running sandbox |
+| `test/actionRuns.coverage.test.vibe` | cancelling a run the agent announced in a conversation no action started |
+| `test/apiObjects.coverage.test.vibe` | health for a deployment built without a commit |
+| `test/mainLog.coverage.test.vibe` | a cursor not on main: a short page ends the search |
+| `test/pages.test.vibe` | an absent epic on either side of the stack sort |
+| `test/sequencerTrailer.test.vibe` | a trailer paragraph with a folded continuation line, and one whose later line is prose |
+| `test/accountsConfig.test.vibe` | a configured GitHub App slug and API base |
+| `test/accountObject.coverage.test.vibe` | the object's refusals of a bad operation id and a stale generation, carried through the gateway with no reason |
+
+Waiting: `src/history/tools.vibe:93`, the `epic` arm's presence test for a `from` the type requires
+(`~/vl/vibelang-bugs/coverage-exhaustive-match`; VL-37 approves the compiler change, in flight).

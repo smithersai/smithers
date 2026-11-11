@@ -29,8 +29,11 @@ export effect function brokerSignIn(hostOrigin: string) {
   return { start, accepted, session, github }
 }
 
-/** Press Connect GitHub (with the query the page would add), consent at the broker, and finish at the site. */
-export effect function brokerConnect(hostOrigin: string, session: string, query = "") {
+/**
+ * Press Connect GitHub (with the query the page would add), consent at the broker, and finish at the site; the browser
+ * that finishes holds `handoff`, the session that pressed unless named.
+ */
+export effect function brokerConnect(hostOrigin: string, session: string, query = "", handoff = session) {
   const http = try HttpClient.HttpClient
   const brokerOrigin = brokerOf(hostOrigin)
   const press = try http.execute(HttpClientRequest.post(hostOrigin + "/api/auth/connect" + query).pipe(HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-session=" + session)))
@@ -49,7 +52,7 @@ export effect function brokerConnect(hostOrigin: string, session: string, query 
   ))
   const fragment = new URLSearchParams(new URL(answered.headers.location!).hash.slice(1))
   const accepted = try http.execute(HttpClientRequest.post(hostOrigin + GitHub.Auth.Broker.CALLBACK).pipe(
-    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending + "; vibelang-session=" + session),
+    HttpClientRequest.setHeader("origin", hostOrigin), HttpClientRequest.setHeader("cookie", "vibelang-sign-in=" + pending + "; vibelang-session=" + handoff),
     HttpClientRequest.bodyJsonUnsafe({ code: fragment.get("code"), state: fragment.get("state") }),
   ))
   return { press, page, answered, accepted, location: (try accepted.json) as { readonly location?: string } }
