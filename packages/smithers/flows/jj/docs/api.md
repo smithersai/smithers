@@ -215,9 +215,15 @@ processes. `root(from)` fences its actual directory, preserving its exemption
 from the layer's bound root. The default 120-second deadline bounds acquisition of both fences only.
 Once acquired, execution can outlast the deadline; caller cancellation and
 operation failure release both permits. A caller
-records lock owners as `hostname-pid-random` and reclaims only an owner on the
-same host whose process is dead. Permission-denied probes count as alive;
-foreign-host and legacy owner markers require operator cleanup.
+records lock owners as `hostname-pid-s<start>-random`, where `<start>` is the
+process start time Linux procfs reports, and reclaims only an owner on the same
+host whose process is dead or whose PID now names a process that started at
+another time, such as a restarted container's PID 1. Where procfs is unreadable,
+owners are `hostname-pid-random` and only an exited PID is reclaimed. Before
+creating its lock candidate, a caller removes `.smithers-lock-*` candidates
+whose owners are dead by the same rule, which a waiter killed mid-wait leaves.
+Permission-denied probes count as alive; foreign-host and legacy owner markers
+require operator cleanup.
 
 A store-pointer read failure during configuration inspection is refused
 before jj starts. Its `JjError` retains the original cause and releases both
