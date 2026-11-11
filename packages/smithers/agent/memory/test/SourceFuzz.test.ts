@@ -1,8 +1,10 @@
 import { Effect } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Recall from "../src/Recall.ts"
 import * as Source from "../src/Source.ts"
+import * as TestMemory from "../src/test/TestMemory.ts"
 
 const byteLength = (text: string): number => new TextEncoder().encode(text).byteLength
 
@@ -51,41 +53,50 @@ const fenceLines = (rendered: string): Array<string> => rendered.split("\n").sli
 
 describe("Source byte budget (seeded fuzz)", () => {
   it("never renders past maxBytes, keeps one row per line, and keeps rows as ordered prefixes", async () => {
-    for (let seed = 1; seed <= 300; seed++) {
-      const random = prng(seed)
-      const primerTexts = Array.from({ length: Math.floor(random() * 4) }, () => text(random, 40))
-      const recalled: Recall.Output = Array.from({ length: Math.floor(random() * 4) }, (_, index) => ({
-        bank: `bank${text(random, 3)}x`,
-        key: `key-${index}${text(random, 3)}`,
-        text: text(random, 40),
-        score: 1
-      }))
-      const maxBytes = Math.floor(random() * 400)
-      const store = MemoryStore.MemoryStore.of({
-        searchRows: () =>
-          Effect.succeed(primerTexts.map((primer, index) => ({ kind: "note", id: `p${index}`, text: primer })))
-      } as unknown as MemoryStore.Service)
-      const recall = Recall.layer({ recall: () => Effect.succeed(recalled) })
-      const { rows } = await Effect.runPromise(
-        Source.readRows({ lineageId: "l", iteration: seed, banks: ["primer[bank]"], query: "q", maxBytes }).pipe(
-          Effect.provideService(MemoryStore.MemoryStore, store),
-          Effect.provide(recall)
-        )
-      )
-      const rendered = Source.render(rows)
-      const context = `seed ${seed}, maxBytes ${maxBytes}`
-      expect(byteLength(rendered), context).toBeLessThanOrEqual(maxBytes)
-      if (rows.length > 0) expect(fenceLines(rendered), context).toHaveLength(rows.length)
-      expect(rendered.match(/<flows_memory_context>/g)?.length ?? 0, context).toBeLessThanOrEqual(1)
-      const candidates = [
-        ...primerTexts.map((primer) => primer),
-        ...recalled.map((row) => row.text)
-      ]
-      rows.forEach((row, index) => {
-        expect(candidates[index]!.startsWith(row.text), context).toBe(true)
-        if (index < rows.length - 1) expect(row.text, context).toBe(candidates[index])
-      })
-    }
+    // One SQLite store for every seed; each seed writes to its own bank.
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        for (let seed = 1; seed <= 300; seed++) {
+          const random = prng(seed)
+          const bank = `primer[bank]${seed}`
+          const primerTexts = Array.from({ length: Math.floor(random() * 4) }, () => text(random, 40))
+          const recalled: Recall.Output = Array.from({ length: Math.floor(random() * 4) }, (_, index) => ({
+            bank: `bank${text(random, 3)}x`,
+            key: `key-${index}${text(random, 3)}`,
+            text: text(random, 40),
+            score: 1
+          }))
+          const maxBytes = Math.floor(random() * 400)
+          // The first primer is the newest, so the store returns them in order.
+          for (const [index, primer] of primerTexts.entries()) {
+            yield* TestClock.setTime(seed * 10 - index)
+            yield* store.putNote({ namespace: bank, id: `s${seed}-p${index}`, text: primer, tags: [], provenance: {} })
+          }
+          const { rows } = yield* Source.readRows({
+            lineageId: "l",
+            iteration: seed,
+            banks: [bank],
+            query: "q",
+            maxBytes
+          })
+            .pipe(Effect.provide(Recall.layer({ recall: () => Effect.succeed(recalled) })))
+          // The store's own text is the candidate: SQLite replaces lone surrogates.
+          const stored = yield* store.searchRows({ namespace: bank, status: "accepted" })
+          const rendered = Source.render(rows)
+          const context = `seed ${seed}, maxBytes ${maxBytes}`
+          expect(byteLength(rendered), context).toBeLessThanOrEqual(maxBytes)
+          if (rows.length > 0) expect(fenceLines(rendered), context).toHaveLength(rows.length)
+          expect(rendered.match(/<flows_memory_context>/g)?.length ?? 0, context).toBeLessThanOrEqual(1)
+          expect(stored.map((row) => row.id), context).toEqual(primerTexts.map((_, index) => `s${seed}-p${index}`))
+          const candidates = [...stored.map((row) => row.text), ...recalled.map((row) => row.text)]
+          rows.forEach((row, index) => {
+            expect(candidates[index]!.startsWith(row.text), context).toBe(true)
+            if (index < rows.length - 1) expect(row.text, context).toBe(candidates[index])
+          })
+        }
+      }).pipe(Effect.provide(TestMemory.layer), Effect.provide(TestClock.layer()))
+    )
   })
 })
 
