@@ -27,7 +27,8 @@ const FLOW = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node",
 
 /**
  * The preflight passes exactly when every flow package has its package.json, and otherwise names exactly the missing
- * ones, in order, with the one install command. A package directory without package.json is missing.
+ * ones, in order, with the one install command, and passes once exactly those are installed. A package directory
+ * without package.json is missing.
  */
 it.live("scripts/fuzz-preflight", () => run("scripts/fuzz-preflight", Schema.Struct({ missing: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9 }))).check(Schema.isMaxLength(10)), bare: Schema.Boolean }), (input) => effect {
   provide NodeServices.layer, ExperimentalNodeServices.layer {
@@ -45,9 +46,17 @@ it.live("scripts/fuzz-preflight", () => run("scripts/fuzz-preflight", Schema.Str
     const output = done.stdout + done.stderr
     if (!output.includes(`missing: ${missing.length}`)) return false
     if (missing.length === 0) return done.status === 0 && !output.includes("not installed")
-    return done.status === 1 && output.includes(`(${missing.join(", ")})`) && output.includes(`pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`)
+    if (done.status !== 1 || !output.includes(`(${missing.join(", ")})`) || !output.includes(`pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`)) return false
+    // Installing exactly the named packages makes it pass.
+    for (const name of missing) {
+      const directory = path.join(root, ".smithers/flows/node_modules", name)
+      try fs.makeDirectory(directory, { recursive: true })
+      try fs.writeFileString(path.join(directory, "package.json"), "{}\n")
+    }
+    const fixed = try exec(try node(), [path.join(try path.fromFileUrl(EMITTED), "scripts/fuzz-preflight.js")], { FUZZ_REPOSITORY_ROOT: root })
+    return fixed.status === 0 && (fixed.stdout + fixed.stderr).includes("missing: 0")
   }
-}))
+}, undefined, { minimum: REPLAY_FLOOR }))
 
 const Before = Schema.Literals(["absent", "current", "changed", "short", "longer"])
 
@@ -68,6 +77,10 @@ it.live("scripts/agent-context", () => scoped(effect {
     try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
     try run("scripts/agent-context", Schema.Struct({ before: Before, at: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })) }), ({ before, at }) => effect {
       provide NodeServices.layer, ExperimentalNodeServices.layer {
+        // A missing file is always stale, whatever state the generated one is in next.
+        try fs.remove(target, { force: true })
+        const missing = try exec(try node(), [script, "--check"])
+        if (missing.status !== 1 || !missing.stderr.includes("worker/agentContext.vibe is stale")) return false
         const position = at % canonical.length
         const prior = before === "current" ? canonical
           : before === "changed" ? canonical.slice(0, position) + (canonical[position] === "x" ? "y" : "x") + canonical.slice(position + 1)
@@ -84,7 +97,7 @@ it.live("scripts/agent-context", () => scoped(effect {
         if (written.status !== 0 || (fs.readFileString(target) catch () => undefined) !== canonical) return false
         return (try exec(try node(), [script, "--check"])).status === 0
       }
-    })
+    }, undefined, { minimum: REPLAY_FLOOR })
   }
 }))
 
@@ -212,27 +225,30 @@ const SeedInput = Schema.Struct({
 /** A jj command setting up a fixture repository failed. */
 error FixtureFailed { message: string }
 
-/** A colocated jj repository whose `main@github` holds these commits, oldest first, with their full ids. */
+/**
+ * A colocated jj repository whose `main@github` holds these commits, oldest first, with their full ids. The remote
+ * bookmark is the ref file jj imports, not a fetch: `jj git fetch` needs git >= 2.41, which the cf-compute boxes lack.
+ */
 effect function repositoryOf(directory: string, messages: ReadonlyArray<string>) {
+  const fs = try FileSystem.FileSystem
   const path = try Path.Path
   effect function jj(args: ReadonlyArray<string>) {
     const done = try exec("jj", args)
     if (done.status !== 0) throw new FixtureFailed({ message: `jj ${args[0]} ${args[1] ?? ""} exited ${done.status}: ${done.stderr}` })
     return done.stdout.trim()
   }
-  const remote = path.join(directory, "remote")
   const repository = path.join(directory, "repository")
-  try (try FileSystem.FileSystem).makeDirectory(directory, { recursive: true })
-  try jj(["git", "init", "--colocate", remote])
-  try jj(["-R", remote, "config", "set", "--repo", "user.name", "Fuzz fixture"])
-  try jj(["-R", remote, "config", "set", "--repo", "user.email", "fuzz@example.invalid"])
-  for (const message of messages) try jj(["-R", remote, "commit", "-m", message])
-  const ids = (try jj(["-R", remote, "log", "--no-graph", "--reversed", "-r", "::@- ~ root()", "-T", 'commit_id ++ "\\n"'])).split("\n")
-  try jj(["-R", remote, "bookmark", "set", "main", "-r", "@-"])
+  try fs.makeDirectory(directory, { recursive: true })
   try jj(["git", "init", "--colocate", repository])
-  try jj(["-R", repository, "git", "remote", "add", "github", remote])
-  try jj(["-R", repository, "git", "fetch", "--remote", "github"])
-  return { remote, repository, ids }
+  try jj(["-R", repository, "config", "set", "--repo", "user.name", "Fuzz fixture"])
+  try jj(["-R", repository, "config", "set", "--repo", "user.email", "fuzz@example.invalid"])
+  for (const message of messages) try jj(["-R", repository, "commit", "-m", message])
+  const ids = (try jj(["-R", repository, "log", "--no-graph", "--reversed", "-r", "::@- ~ root()", "-T", 'commit_id ++ "\\n"'])).split("\n")
+  const remote = path.join(repository, ".git/refs/remotes/github")
+  try fs.makeDirectory(remote, { recursive: true })
+  try fs.writeFileString(path.join(remote, "main"), `${ids.at(-1)!}\n`)
+  try jj(["-R", repository, "git", "import"])
+  return { remote: repository, repository, ids }
 }
 
 /**
@@ -250,19 +266,20 @@ it.live("scripts/mythical-seed", () => scoped(effect {
     const cliTarget = path.join(root, "src/history/seed/vibelang.vibe")
     try fs.makeDirectory(path.dirname(cliTarget), { recursive: true })
     try Effect.addFinalizer(() => fs.remove(cliTarget, { force: true }).pipe(Effect.orDie))
-    // jj repositories are the slow part; one per generated main.
+    // jj repositories are the slow part; one per generated main, each attempt in a new directory.
     const repositories = new Map<string, { remote: string; repository: string; ids: ReadonlyArray<string> }>()
     let runs = 0
+    let made = 0
     try run("scripts/mythical-seed", SeedInput, (input) => effect {
       provide NodeServices.layer, ExperimentalNodeServices.layer {
         const messages = input.commits.map((commit, at) => TITLES[commit.title]! + (commit.body ? `\n\nValidation: case ${at}.` : ""))
         const key = JSON.stringify(messages)
-        let made = repositories.get(key)
-        if (made === undefined) {
-          made = try repositoryOf(path.join(scratch, `r${repositories.size}`), messages)
-          repositories.set(key, made)
+        let created = repositories.get(key)
+        if (created === undefined) {
+          created = try repositoryOf(path.join(scratch, `r${made++}`), messages)
+          repositories.set(key, created)
         }
-        const { remote, repository, ids } = made
+        const { remote, repository, ids } = created
         const short = ids.map((id) => id.slice(0, 12))
         const at = runs++
         const queue = path.join(scratch, `queue-${at}.jsonl`)

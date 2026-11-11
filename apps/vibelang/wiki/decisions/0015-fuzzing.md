@@ -860,3 +860,17 @@ Still open (53 arms, seed 20261126 plus `web/pane-messages`): wiki-edit replies 
 plans (555, 561, 575, 585), Command bodies against specific Factory answers (911, 929, 966, 978, 1233, 1418, 1445,
 1447, 1457, 1513, 1514), DOM effects and subscriptions without a document or with specific keys (1055 to 1142, 1281
 to 1286), and the roles stream without accounts (1256).
+
+### Script targets on a box
+
+The first full run with these targets (`pnpm fuzz:coverage`, seed 20261127, 4-vCPU box) falsified
+`scripts/mythical-seed` with `FixtureFailed`: `jj git fetch` needs git >= 2.41 and the cf-compute image has 2.39.5,
+the gap that also fails `test/mythicalSeedProcess.test.vibe` there. The shrink then hid that cause behind "target repo
+already exists", because a failed attempt's directory was reused. The fixture now builds one colocated repository and
+writes `main@github` as the ref file `.git/refs/remotes/github/main` that `jj git import` reads, with no fetch and no
+git CLI; each attempt gets a new directory. On the box all five targets pass (`scripts/mythical-seed` 30 executions)
+and all 8 files reach 100% on every metric.
+
+Every execution of `scripts/agent-context` also checks a missing file, and of `scripts/fuzz-preflight` installs exactly
+the packages it named and checks again, so no arm depends on what a short run happens to draw. Both declare
+`REPLAY_FLOOR`: under coverage on a loaded host they ran 2 executions in 5 s.
