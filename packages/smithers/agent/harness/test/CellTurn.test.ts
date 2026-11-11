@@ -2960,6 +2960,19 @@ describe("CellTurn sufficiency", () => {
     expect(observed[0]).toMatchObject({ flow: "bash", epoch: 0, nextFrame: 2 })
   })
 
+  it("says nothing when a check that failed after the edit passes in a later frame with no change", async () => {
+    // Frame 0 edits and then watches the check fail: that reading is of the
+    // edited tree. Frame 1 changes nothing and the same check passes. Both
+    // readings are of one tree, so there is no before-and-after to report.
+    const { events, model } = await watching(
+      [`${edit}\n${checking("check a.py")}`, checking("check a.py"), `ctx.done("done")`],
+      [mutation, exits(1), exits(0)]
+    )
+
+    expect(of(events, "sufficiency-observed")).toEqual([])
+    expect(JSON.stringify(model.recorder.requests)).not.toContain("Evidence held")
+  })
+
   it("writes the observation once, however many frames the run spends after it", async () => {
     const { events, model } = await watching(
       [

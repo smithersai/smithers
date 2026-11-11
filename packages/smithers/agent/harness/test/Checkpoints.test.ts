@@ -585,8 +585,9 @@ describe("the sympy__sympy-13878 proof loop, replayed with checkpoints", () => {
   it("holds the failing baseline against the frame that fixes it, which recognises the fix", async () => {
     const { events } = await drive({
       cells: [
-        // Frame 0: edit, baseline at ctx.base, re-check — and the check still
-        // fails, exactly as the recorded instance's first attempt did.
+        // Frame 0: edit, baseline at ctx.base, re-check. The live re-check
+        // reports no exit status, so the pinned baseline is the only failure
+        // this frame can remember.
         cell,
         // Frame 1: a second edit and the identical check, which now passes.
         // The check settles after the edit, so it is a reading of the tree the
@@ -599,7 +600,7 @@ describe("the sympy__sympy-13878 proof loop, replayed with checkpoints", () => {
       calls: [
         { _tag: "Success", value: { hunk: "-old\n+new" }, tree: "crv_types.py=first" },
         { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } },
-        { _tag: "Success", value: { exitCode: 1, stdout: "1 failed" } },
+        { _tag: "Success", value: { stdout: "collection error" } },
         { _tag: "Success", value: null, tree: "crv_types.py=second" },
         { _tag: "Success", value: { exitCode: 0, stdout: "1 passed" } }
       ]

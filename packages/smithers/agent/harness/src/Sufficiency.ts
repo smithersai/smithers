@@ -110,13 +110,14 @@ export type Ledger = typeof Ledger.Type
 /**
  * Records one frame's failing checks against the epoch it ran in.
  *
- * A check from a frame that also changed the workspace is dropped rather than
- * recorded. A frame's calls are not ordered against its edits in anything the
- * harness records, so such a check might have failed before the change or after
- * it, and a failure stamped on the wrong side of an edit is exactly the false
- * before-and-after this module must never manufacture. `UnresolvedFailure`
- * refuses the same stamp for the same reason; see `NarrowedCheck` `Check`
- * `stable`.
+ * A check that is not `stable` is dropped rather than recorded: it may have
+ * read a tree from before one of its frame's writes, and a failure stamped on
+ * the wrong side of an edit is exactly the false before-and-after this module
+ * must never manufacture. `UnresolvedFailure` refuses the same stamp for the
+ * same reason; see `NarrowedCheck` `Check` `stable`. The caller stamps each
+ * stable check with the epoch of the tree it read: a live check that settled
+ * after its frame's last write read the tree that frame closed on, so it
+ * carries the epoch after that frame's change, never the one before it.
  *
  * A repeated signature moves to the newest position and restamps, so a check
  * that failed again over a later tree is remembered where it last failed.
@@ -129,7 +130,7 @@ export const remember = (
   options: {
     /** The checks this frame ran. */
     readonly frame: ReadonlyArray<NarrowedCheck.Check>
-    /** Frames that had changed the workspace before this one. */
+    /** Frames that had changed the workspace when these checks read the tree. */
     readonly epoch: number
   }
 ): Ledger => {

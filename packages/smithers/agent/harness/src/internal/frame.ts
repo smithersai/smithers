@@ -428,11 +428,14 @@ export const account = (options: {
       // ledger a checkpointed reading belongs in: its whole question is an
       // ordering — this failed, then something changed, then that passed — and
       // a pinned tree answers the first half honestly from a frame that also
-      // did the changing.
-      failures: Sufficiency.remember(state.failures, {
-        frame: [...readings(true), ...frameChecks],
-        epoch: state.mutations
-      }),
+      // did the changing. The two are stamped at different epochs: a pinned
+      // reading read a tree from before this frame's change, and a stable live
+      // reading settled after this frame's last write, so it read the tree
+      // this frame closed on and belongs to the epoch the frame closes at.
+      failures: Sufficiency.remember(
+        Sufficiency.remember(state.failures, { frame: readings(true), epoch: state.mutations }),
+        { frame: frameChecks, epoch: state.mutations + (mutated ? 1 : 0) }
+      ),
       mutations: state.mutations + (mutated ? 1 : 0),
       remoteMutations: state.remoteMutations + remoteWrites,
       // The tree the run was handed, fixed the first time a frame measured one

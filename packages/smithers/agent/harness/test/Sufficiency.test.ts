@@ -59,10 +59,9 @@ describe("Sufficiency.remember", () => {
     expect(Sufficiency.remember([], { frame: [ran("check a/b.py", { passing: true })], epoch: 0 })).toEqual([])
   })
 
-  it("drops a failure watched in a frame that also changed the workspace", () => {
-    // A frame's calls are not ordered against its edits in anything the harness
-    // records, so this check might have failed before the change or after it —
-    // and a failure stamped on the wrong side of an edit is the false
+  it("drops a failure whose reading may precede one of its frame's writes", () => {
+    // An unstable check might have failed before the frame's change or after
+    // it, and a failure stamped on the wrong side of an edit is the false
     // before-and-after this module exists to never manufacture.
     expect(
       Sufficiency.remember([], { frame: [ran("check a/b.py", { failing: true, stable: false })], epoch: 0 })
