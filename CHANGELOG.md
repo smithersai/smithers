@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3458 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3461 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
@@ -431,6 +431,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **mvp:** keep a pinned Retry's pin when its pinned child can't be read ([7546b75792](https://github.com/smithersai/smithers/commit/7546b757929aa87d2aaa117527758ad1af8fd18b))
+- **mvp:** keep comparison patches out of the HTTP cache ([d6d17cc276](https://github.com/smithersai/smithers/commit/d6d17cc276e70f8710def4346029a1b3d652aa60))
 - **lemmascript:** name a schema value type in a cross-module signature ([e8ffc55b89](https://github.com/smithersai/smithers/commit/e8ffc55b896c0f05cb08104c8ee2fff021db1f44))
 - **lemmascript:** one string-literal union is one type; widen records by optional fields ([3ffdd47d12](https://github.com/smithersai/smithers/commit/3ffdd47d12f9eabc0ec6e243dbdd78576fa7c169))
 - **lemmascript:** lower Message.match in expressions, statement-valued arms and short-circuits ([dca85ebc28](https://github.com/smithersai/smithers/commit/dca85ebc288b340067f81907fe811a0027f99e6e))
@@ -2349,6 +2351,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **mvp:** record the second attempt at the frontier-harness-eval failures ([e56e5fc42d](https://github.com/smithersai/smithers/commit/e56e5fc42d67a40265b50db3a1f376aaac92125c))
 - **lemmascript:** list the re-applied and new patches in the README ([4bfe056489](https://github.com/smithersai/smithers/commit/4bfe05648996644e026be28853b6e5d8c472aedc))
 - **mvp:** record the full frontier-harness-eval run and the review fixes ([4bd5184939](https://github.com/smithersai/smithers/commit/4bd5184939217c9ca76bdc6b2e5e5da645ae5b4e))
 - **vibelang:** record session 19 coverage, action failure fixes and the wiki repository journey ([7d54448c00](https://github.com/smithersai/smithers/commit/7d54448c00c0bf39456bc0cf014e83743ab0cc00))
@@ -2766,7 +2769,7 @@ the release notes at
 
 ### 📦 Other changes
 
-- **style(build):** format the remote CAS batch test ([7c1fd8d6e9](https://github.com/smithersai/smithers/commit/7c1fd8d6e90f311b4b0ef293edd78758ab72d452))
+- **style(build):** format the remote CAS batch test ([bc696900f9](https://github.com/smithersai/smithers/commit/bc696900f9b0c5d6d00198ee78051b2343b5d477))
 - **test(engine):** pin follower wake, decode logs and retry recovery ([49197df985](https://github.com/smithersai/smithers/commit/49197df985ad77bfb3725278c3ef9672ae7aad86))
 - **proof(vibelang):** prove the screen read and written back ([506229caa2](https://github.com/smithersai/smithers/commit/506229caa241a68c1b422ecc5c2a86b58941d610))
 - **proof(vibelang):** prove opening a wiki page over the Model ([d61dcfeafc](https://github.com/smithersai/smithers/commit/d61dcfeafcbb292d1bedda62c6ec7b62faf6b663))
