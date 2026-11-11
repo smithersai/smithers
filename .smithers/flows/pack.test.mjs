@@ -626,7 +626,7 @@ describe("discovery over the project flows directory", () => {
     // Every module declaration under flows/. Each one but `checks/wiki` IS its
     // own `@smthrs/flow` flow: one file, no `flows:` list, and no delegate name
     // registered on a host to join a second declaration to it.
-    const modules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype", "coding/rebase-conflict", "coding/verify", "coding/wiki", "issue-sweep", "issue-sweep/work", "learning", "memory/calibrate", "memory/mine", "notification-policy", "quality", "release", "release-content", "review", "rollout", "todo", "wiki", "wrapped", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
+    const modules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype", "coding/rebase-conflict", "coding/verify", "coding/wiki", "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/calibrate", "memory/mine", "notification-policy", "quality", "release", "release-content", "review", "rollout", "todo", "wiki", "wrapped", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
     // `checks/wiki` still delegates, and its own file says why: the host binds
     // its reviewer policy to a descriptor by the `flows:` list, and the capture
     // action requires that descriptor's delegate to be the flow this host
@@ -643,7 +643,7 @@ describe("discovery over the project flows directory", () => {
     }
     // The runners, schedules and registration steps are the host's to start,
     // never a model's tool.
-    const hiddenModules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding/rebase-conflict", "coding/verify", "review/change", "coding/flow-load", "issue-sweep", "issue-sweep/work", "learning", "memory/mine", "notification-policy", "quality", "rollout", "todo", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
+    const hiddenModules = ["gate", "issues/file-tree", "test/coverage-campaign", "land", "land/lane-gates", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "cerebras-load", "coding/rebase-conflict", "coding/verify", "review/change", "coding/flow-load", "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/mine", "notification-policy", "quality", "rollout", "todo", "docs-sync", "issue-claim", "triage-publish", "release/api-baseline", "release/build-packages", "release/changelog", "release/cut", "release/gates", "release/installer", "release/npm-dedupe", "release/pack", "release/publish", "release/rehearsal", "release/restore", "release/smoke", "release/version"]
     // These named payloads cannot be safely reduced to a static document.
     // Keep this inventory independent of discovery's emitted warning list.
     const unavailablePayloads = [
@@ -652,7 +652,7 @@ describe("discovery over the project flows directory", () => {
       "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign",
       "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype",
       "coding/rebase-conflict", "coding/verify", "coding/wiki",
-      "issue-sweep", "issue-sweep/work", "learning", "memory/calibrate", "memory/mine", "notification-policy",
+      "issue-sweep", "issue-sweep/work", "merge-queue", "learning", "memory/calibrate", "memory/mine", "notification-policy",
       "quality", // Named Request schema retains its module decoder.
       "release-content",
       "release", "review", "todo", "wiki", "wrapped",

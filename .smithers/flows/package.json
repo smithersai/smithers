@@ -24,6 +24,7 @@
     "@smthrs/flows": "workspace:*",
     "@smthrs/gateway": "workspace:*",
     "@smthrs/kernel": "workspace:*",
+    "@smthrs/merge-queue": "workspace:*",
     "@smthrs/migrate": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/patterns": "workspace:*",

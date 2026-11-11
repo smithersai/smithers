@@ -250,6 +250,9 @@ importers:
       '@smthrs/kernel':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/kernel
+      '@smthrs/merge-queue':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/merge-queue
       '@smthrs/migrate':
         specifier: workspace:*
         version: link:../../packages/smithers/migrate

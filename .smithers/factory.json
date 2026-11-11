@@ -1479,6 +1479,23 @@
       "flows": []
     },
     {
+      "id": "merge-queue",
+      "description": "Land changes on a branch only as trees whose every required check passed, rebased on its tip.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/merge-queue/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:jj *",
+        "proc:spawn:sh *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "notification-policy",
       "description": "Decide who is told about a repository notification, among the people who can already read it.",
       "summary": null,

@@ -64,6 +64,31 @@ describe("the inbox as a file", () => {
     expect(FileInbox.letter("{}")).toBeUndefined()
   })
 
+  it("an enqueue line that names a commit registers it before the queue takes the letter", async () => {
+    const path = fresh()
+    const seen: Array<string> = []
+    const layer = Layer.provideMerge(
+      FileInbox.layer({
+        path,
+        poll: "5 millis",
+        register: (id, commit) => Effect.sync(() => void seen.push(`${id}=${commit}`))
+      }),
+      NodeFileSystem.layer
+    )
+    writeFileSync(
+      path,
+      "{\"_tag\":\"enqueue\",\"id\":4,\"priority\":1,\"commit\":\"abc\"}\n{\"_tag\":\"enqueue\",\"id\":5,\"priority\":0}\n"
+    )
+    const letters = await Effect.runPromise(
+      Effect.flatMap(Inbox, (inbox) => inbox.since(0)).pipe(Effect.provide(layer))
+    )
+    expect(letters).toEqual([
+      { _tag: "event", event: { _tag: "enqueue", id: 4, priority: 1 } },
+      { _tag: "event", event: { _tag: "enqueue", id: 5, priority: 0 } }
+    ])
+    expect(seen).toEqual(["4=abc"])
+  })
+
   it("wait returns once a line after the cursor exists", async () => {
     const path = fresh()
     let woke = false

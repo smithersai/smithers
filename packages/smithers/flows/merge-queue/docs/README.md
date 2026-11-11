@@ -144,6 +144,31 @@ QueueFlow.Queue.execute(
 )
 ```
 
+## Running it for a repository
+
+`.smithers/flows/merge-queue/flow.ts` is the host: a file flow that provides
+the four services from the environment and starts the queue.
+
+```sh
+export MQ_REPO=/srv/repo            # the jj repository
+export MQ_STATE=/srv/queue          # inbox, ledger and fix briefs
+export MQ_CHECK_COMMAND='...'       # sh -c "$MQ_CHECK_COMMAND" sh <check> <commit>; exit 0 passes
+export MQ_FIX_COMMAND='...'         # sh -c "$MQ_FIX_COMMAND" sh <brief file> <answer file>
+smthrs flow start merge-queue --data @start.json
+```
+
+`start.json` is `{ "config": {...}, "state": <the empty state>, "cursor": 0,
+"closed": false, "round": 0 }`. Hand a change in by appending one line to
+`$MQ_STATE/inbox.jsonl`:
+
+```json
+{ "_tag": "enqueue", "id": 42, "priority": 0, "commit": "<commit id>" }
+```
+
+`{"_tag":"withdraw","id":42}` takes it back and `{"_tag":"close"}` lets the
+run finish once every change has ended. After a host dies, `smthrs runs resume
+<run id>` continues from the last recorded round.
+
 ## When a change is unmergeable
 
 Two things put a change out of the queue, and both record why:

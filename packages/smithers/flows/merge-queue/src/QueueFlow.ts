@@ -109,8 +109,8 @@ export const maxRounds = 1_000_000_000
  * @category models
  * @since 0.1.0
  */
-export type QueueFlow = Flow.Flow<
-  "@smthrs/merge-queue/Queue",
+export type QueueFlow<Tag extends string = "@smthrs/merge-queue/Queue"> = Flow.Flow<
+  Tag,
   typeof Payload,
   typeof State,
   typeof RoundError,

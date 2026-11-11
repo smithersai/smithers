@@ -28,7 +28,13 @@ const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
  * @since 0.1.0
  */
 export const Line = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("enqueue"), id: Natural, priority: Natural }),
+  Schema.Struct({
+    _tag: Schema.Literal("enqueue"),
+    id: Natural,
+    priority: Natural,
+    /** The commit the change is handed in as. With it, one line both registers and enqueues the change. */
+    commit: Schema.optionalKey(Schema.NonEmptyString)
+  }),
   Schema.Struct({ _tag: Schema.Literal("withdraw"), id: Natural }),
   Schema.Struct({ _tag: Schema.Literal("close") })
 ])
@@ -44,6 +50,12 @@ const decodeLine = Schema.decodeUnknownOption(Schema.fromJsonString(Line))
 export interface Options {
   readonly path: string
   readonly poll: Duration.Input
+  /**
+   * Records the commit an enqueue line names, before the queue takes the
+   * letter. It runs again when a letter is read again, so it must be
+   * idempotent.
+   */
+  readonly register?: ((id: number, commit: string) => Effect.Effect<void, Unavailable>) | undefined
 }
 
 const unavailable = (detail: string) => new Unavailable({ service: "inbox", detail })
@@ -72,7 +84,11 @@ export const lines = (path: string): Effect.Effect<ReadonlyArray<string>, Unavai
 export const letter = (line: string): Letter | undefined => {
   const decoded = decodeLine(line)
   if (decoded._tag === "None") return undefined
-  return decoded.value._tag === "close" ? { _tag: "close" } : { _tag: "event", event: decoded.value }
+  const read = decoded.value
+  if (read._tag === "close") return { _tag: "close" }
+  return read._tag === "withdraw"
+    ? { _tag: "event", event: read }
+    : { _tag: "event", event: { _tag: "enqueue", id: read.id, priority: read.priority } }
 }
 
 /**
@@ -109,7 +125,16 @@ export const layer = (options: Options): Layer.Layer<Inbox, never, FileSystem.Fi
       const read = lines(options.path).pipe(Effect.provideService(FileSystem.FileSystem, fs))
       return Inbox.of({
         since: (cursor) =>
-          Effect.map(read, (all) => all.slice(cursor).map((line): Letter => letter(line) ?? { _tag: "skip" })),
+          Effect.flatMap(read, (all) =>
+            Effect.forEach(all.slice(cursor), (line) =>
+              Effect.gen(function*() {
+                const decoded = decodeLine(line)
+                if (
+                  options.register !== undefined && decoded._tag === "Some" && decoded.value._tag === "enqueue"
+                  && decoded.value.commit !== undefined
+                ) yield* options.register(decoded.value.id, decoded.value.commit)
+                return letter(line) ?? ({ _tag: "skip" } as const)
+              }))),
         wait: (cursor) =>
           read.pipe(
             Effect.orElseSucceed((): ReadonlyArray<string> => []),
