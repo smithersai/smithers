@@ -698,6 +698,18 @@ console.log(kept)`
     expect(of(events, "resolved")).toHaveLength(1)
   })
 
+  it("ends a run that answers in prose frame after frame when the read-only cap is disarmed", async () => {
+    const { events, failure, model } = await run({
+      script: Array.from({ length: 30 }, () => prose("no cell here")),
+      state: state({ maxFrames: 30, revalidations: 0 })
+    })
+
+    expect(model.recorder.requests).toHaveLength(5)
+    expect(of(events, "resolved")).toHaveLength(0)
+    expect(failure).toMatchObject({ code: "model_failed" })
+    expect(String(failure)).toContain("Runaway guard: 5 consecutive frames repeated the same failure: rejected:")
+  })
+
   it("stops at the frame budget instead of continuing forever", async () => {
     const { events, model } = await run({
       script: [
@@ -913,6 +925,21 @@ console.log(kept)`
 
     expect(failure).toMatchObject({ code: "model_failed" })
     expect(of(events, "turn-opened")).toHaveLength(1)
+    // The call began and never settled, so it is on the record as failed.
+    expect(of(events, "model-requested")).toHaveLength(1)
+    expect(of(events, "model-settled")).toEqual([])
+    expect(of(events, "model-failed")).toMatchObject([{ code: "model_failed", purpose: "frame", attempt: 1 }])
+  })
+
+  it("records a compaction summary step that never settles as a failed call", async () => {
+    const { events, failure } = await run({
+      script: [{ events: [ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "partial" })] }],
+      state: compactionState(crowded, 70_000)
+    })
+
+    expect(failure).toMatchObject({ code: "model_failed" })
+    expect(of(events, "model-settled")).toEqual([])
+    expect(of(events, "model-failed")).toMatchObject([{ code: "model_failed", purpose: "compaction" }])
   })
 
   it("stops at the budget even when the last frame produced no usable cell", async () => {
@@ -1029,7 +1056,7 @@ const crowded = ContextWindow.make({
  * suffix a compaction keeps, and a last small one. The first frame writes its
  * state section into the last segment, which is measured again from then on.
  */
-const sized = (total: number): ContextWindow.ContextWindow => {
+const sized = (total: number, lastZone: ContextWindow.SegmentZone = "tail"): ContextWindow.ContextWindow => {
   const count = (value: number) => new Tokens.Count({ value, estimated: true })
   const last = 10
   const recent = 25_000
@@ -1054,7 +1081,7 @@ const sized = (total: number): ContextWindow.ContextWindow => {
       segment("three", each),
       segment("four", each),
       segment("five", recent),
-      segment("six", last)
+      { ...segment("six", last), zone: lastZone }
     ]
   })
 }
@@ -4035,6 +4062,58 @@ describe("CellTurn judged compaction, as its records tell it", () => {
     expect(of(events, "compaction-settled").map(({ causes, frame }) => ({ frame, causes }))).toEqual([
       { frame: 2, causes: ["outdated_context"] }
     ])
+  })
+
+  it("marks the compaction of a run whose opening window has no tail segment", async () => {
+    const judge = marksJudge(
+      () => ({ remove: 0.95, keep: 0.05 }),
+      () => false,
+      (request) => (request.state as { readonly signals: { readonly frame: number } }).signals.frame === 0
+    )
+    const { events, failure } = await run({
+      script: [emits(`console.log("one")`), emits(`console.log("two")`), emits(`ctx.done("done")`)],
+      state: compactionState(sized(240_000, "prefix"), 1_000_000, 3),
+      flows: [],
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+
+    // The first frame's section opened a tail segment of its own, and it has
+    // its facts, so the run stays aligned and the judge marks the prefix.
+    const [settled] = of(events, "compaction-settled")
+    expect(settled).not.toHaveProperty("unaligned")
+    expect(settled?.marks?.length).toBeGreaterThan(0)
+  })
+
+  it("lists the calls from before a compaction in the section after it", async () => {
+    const judge = marksJudge(
+      () => ({ remove: 0.95, keep: 0.05 }),
+      () => false,
+      (request) => (request.state as { readonly signals?: { readonly frame: number } }).signals?.frame === 0
+    )
+    const { events, failure, model } = await run({
+      script: [
+        emits(`await ctx.call("fs/list", { path: "before" })`),
+        emits(`console.log("two")`),
+        emits(`console.log("three")`),
+        emits(`ctx.done("done")`)
+      ],
+      calls: [{ _tag: "Success", value: { exitCode: 0, stdout: "listed" } }],
+      state: compactionState(sized(240_000), 1_000_000, 4),
+      evaluator: judge.layer,
+      judged: true,
+      ...gated()
+    })
+    expect(failure).toBeUndefined()
+    expect(of(events, "compaction-settled").map(({ frame }) => frame)).toEqual([2])
+
+    // The frame that compacted wrote the next frame's section over the whole
+    // ledger, not only the calls it settled itself.
+    const after = stateSection(model.recorder.requests.at(-1))
+    expect(after).toContain("Calls this run has settled (1)")
+    expect(after).toContain("1. fs/list")
   })
 })
 

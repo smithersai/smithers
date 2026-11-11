@@ -2766,14 +2766,17 @@ const summarized = (
       Effect.map((collected) => Array.from(collected)),
       Effect.tapError(failing)
     )
-    ended()
-    const settledAt = yield* Clock.currentTimeMillis
     if (!events.some((event) => event.type === "settle")) {
-      return yield* new HarnessError({
+      // A call that began and never settled, on the record as one.
+      const unsettledStep = new HarnessError({
         code: "model_failed",
         message: "The sealed compaction step ended without a recorded settlement"
       })
+      yield* failing(unsettledStep)
+      return yield* unsettledStep
     }
+    ended()
+    const settledAt = yield* Clock.currentTimeMillis
     const settled = ModelEvent.ModelEvent.settledMessage(events)
     const text = settled.message.content.filter(
       (part): part is ModelRequest.TextPart => part.type === "text"
@@ -3081,9 +3084,7 @@ const compacted = (
     )
     return advance(opened, {
       contextWindow,
-      segmentFacts: factsAfter(state, prefixLength, marks?.map((mark) => mark.mark)),
-      // The sections that listed earlier calls may be among what was replaced.
-      ledgerShown: 0
+      segmentFacts: factsAfter(state, prefixLength, marks?.map((mark) => mark.mark))
     })
   })
 
@@ -3196,15 +3197,18 @@ const seal = (
         Effect.map((collected) => Array.from(collected)),
         Effect.tapError(failing)
       )
-      ended()
-      const settledAt = yield* Clock.currentTimeMillis
-      spent.modelMs += elapsed(startedAt, settledAt)
       if (!events.some((event) => event.type === "settle")) {
-        return yield* new HarnessError({
+        // A call that began and never settled, on the record as one.
+        const unsettledStep = new HarnessError({
           code: "model_failed",
           message: "The sealed model step ended without a recorded settlement"
         })
+        yield* failing(unsettledStep)
+        return yield* unsettledStep
       }
+      ended()
+      const settledAt = yield* Clock.currentTimeMillis
+      spent.modelMs += elapsed(startedAt, settledAt)
       const settled = ModelEvent.ModelEvent.settledMessage(events)
       const sessionId = events.find((event) => event.type === "settle")?.sessionId
       const cost = Pricing.cost(settled.usage, request.modelId, { at: settledAt })
@@ -3566,6 +3570,11 @@ interface Settling {
   readonly printed: string
   /** The state every continuing exit carries; see `Frame.account`. */
   readonly facts: Frame.StateChanges
+  /**
+   * Whether this frame opened on a compaction, which may have replaced the
+   * state sections that listed the run's earlier calls.
+   */
+  readonly compacted: boolean
   /** Whether the frame changed files, and the labels of the checks it ran. */
   readonly written: { readonly mutated: boolean; readonly checks: ReadonlyArray<string> }
   /** Where the frame's time has gone, read when its turn closes. */
@@ -3705,8 +3714,9 @@ const continuing = (
   const next = advance(settling.state, {
     frame: frame + 1,
     interventions: 0,
-    // What this frame's section listed; see `frozen`.
-    ledgerShown: CallLedger.settled(settling.state.callLedger),
+    // What this frame's section listed; see `frozen`. After a compaction it
+    // lists the whole ledger again.
+    ledgerShown: settling.compacted ? 0 : CallLedger.settled(settling.state.callLedger),
     ...settling.facts,
     contextWindow,
     segmentFacts: [
@@ -3811,8 +3821,22 @@ const frame = (
     const sectioned = compactedState.sectioned
       ? Result.succeed(compactedState.contextWindow)
       : frozen(compactedState.contextWindow, compactedState)
+    // A window with no tail gets a transcript segment for the section, written
+    // by the host like the opening transcript, so it gets its entry in
+    // `State.segmentFacts` too.
+    const opening = (window: ContextWindow.ContextWindow): number =>
+      window.segments.filter((segment) => segment.kind === "transcript").length
     const state = sectioned._tag === "Success"
-      ? advance(compactedState, { contextWindow: sectioned.success, sectioned: true })
+      ? advance(compactedState, {
+        contextWindow: sectioned.success,
+        sectioned: true,
+        segmentFacts: [
+          ...compactedState.segmentFacts,
+          ...new Array<compactionMarks.Facts>(
+            opening(sectioned.success) - opening(compactedState.contextWindow)
+          ).fill({ frame: compactedState.frame, person: false, mutated: false, checks: [] })
+        ]
+      })
       : compactedState
 
     yield* emit(
@@ -3848,6 +3872,7 @@ const frame = (
       printed,
       facts,
       written,
+      compacted: compactedState.contextWindow.digest !== input.state.contextWindow.digest,
       spent
     })
 
@@ -3873,9 +3898,14 @@ const frame = (
       if (state.readOnlyCap > 0 && rejectedFrames >= state.readOnlyCap * 2) {
         return yield* readOnlyCapFailure(state.readOnlyCap, rejectedFrames)
       }
+      // The same refusal frame after frame is a repeated failure too, so the
+      // runaway guard ends a run whose cap is disarmed.
+      const failureKey = `rejected:${rejection.code}`
       const rejected = settling(contextWindow.digest, "", {
         truncatedOutputs: TruncatedOutput.retain(state.truncatedOutputs),
-        readOnlyFrames: rejectedFrames
+        readOnlyFrames: rejectedFrames,
+        failureKey,
+        failureFrames: failureKey === state.failureKey ? state.failureFrames + 1 : 1
       }, { mutated: false, checks: [] })
       const step = yield* observe(rejected, rejection.message, {}, deadCellEcho)
       return yield* finish(rejected, step)
