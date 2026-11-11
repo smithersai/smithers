@@ -1,15 +1,28 @@
 import { expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Cli from "../src/cli.ts"
+
+/** Only the CLI's runtime and replay inputs; all writes stay in the preload's temporary root. */
+const childEnv = (fixture?: string, sessions = mkdtempSync(join(tmpdir(), "tui-print-sessions-"))) => ({
+  PATH: process.env.PATH,
+  HOME: process.env.HOME,
+  TMPDIR: process.env.TMPDIR,
+  SMITHERS_TUI_SESSION_DIR: sessions,
+  ...(fixture === undefined ? {} : { SMITHERS_TUI_REPLAY: resolve(import.meta.dir, `fixtures/${fixture}`) })
+})
+
+/** Every session transcript under `root`, relative to it. */
+const transcripts = (root: string): ReadonlyArray<string> =>
+  readdirSync(root, { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".jsonl")).sort()
 
 it("shows help without validating the workspace or starting a model", () => {
   expect(Cli.parse(["--help", "/missing"], "/")).toEqual({ help: true })
   const result = spawnSync("bun", [resolve(import.meta.dir, "../src/main.tsx"), "-h"], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH }
+    env: childEnv()
   })
   expect(result.status).toBe(0)
   expect(result.stdout).toContain("Usage: smithers-tui")
@@ -27,7 +40,10 @@ it("refuses invalid options and ignored extra inputs before changing directory",
     error: "Cannot open directory: /missing-tui-directory-1987"
   })
   expect(Cli.parse([import.meta.filename], "/")).toEqual({ error: `Not a directory: ${import.meta.filename}` })
-  const result = spawnSync("bun", [resolve(import.meta.dir, "../src/main.tsx"), "--unknown"], { encoding: "utf8" })
+  const result = spawnSync("bun", [resolve(import.meta.dir, "../src/main.tsx"), "--unknown"], {
+    encoding: "utf8",
+    env: childEnv()
+  })
   expect(result.status).toBe(1)
   expect(result.stderr).toContain("--help")
   expect(result.stderr).not.toMatch(/\n\s+at /)
@@ -42,14 +58,23 @@ it("resolves a relative workspace and keeps prompt and model flags", () => {
 
 it("refuses redirected interactive streams while print mode still works", () => {
   const app = resolve(import.meta.dir, "../src/main.tsx")
-  const env = { PATH: process.env.PATH, SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/pong.jsonl") }
+  const sessions = mkdtempSync(join(tmpdir(), "tui-print-sessions-"))
+  const env = childEnv("pong.jsonl", sessions)
   const interactive = spawnSync("bun", [app], { encoding: "utf8", env, timeout: 10_000 })
   expect(interactive.error).toBeUndefined()
   expect(interactive.status).toBe(1)
   expect(interactive.stdout).toBe("")
   expect(interactive.stderr).toBe("Interactive mode requires a terminal. Use --print <prompt>.\n")
+  expect(transcripts(sessions)).toEqual([])
   const printed = spawnSync("bun", [app, "--print", "ping"], { encoding: "utf8", env, timeout: 10_000 })
   expect(printed.status, printed.stderr).toBe(0)
+  // The root worker's transcript lands in the session directory the child was given, nowhere else.
+  const written = transcripts(sessions)
+  expect(written).toHaveLength(1)
+  expect(written[0]).toMatch(/\/workers\/[^/]+\.jsonl$/)
+  const [header, prompt] = readFileSync(join(sessions, written[0]!), "utf8").split("\n")
+  expect(JSON.parse(header!)).toMatchObject({ type: "session" })
+  expect(JSON.parse(prompt!)).toMatchObject({ type: "user", text: "ping" })
   expect(printed.stdout.trim()).toBe("pong")
   expect(printed.stderr).toBe("")
   // The test's own bound covers both child bounds under a loaded suite.
@@ -58,12 +83,7 @@ it("refuses redirected interactive streams while print mode still works", () => 
 it("print mode delegates, waits for its children and prints their aggregate", () => {
   const app = resolve(import.meta.dir, "../src/main.tsx")
   // Every worker replays the same cell: delegate a part and wait for it, until depth four is refused.
-  const env = {
-    PATH: process.env.PATH,
-    HOME: process.env.HOME,
-    SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/fan-out.jsonl"),
-    SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-print-sessions-"))
-  }
+  const env = childEnv("fan-out.jsonl")
   const printed = spawnSync("bun", [app, "--print", "Review the range"], { encoding: "utf8", env, timeout: 20_000 })
   expect(printed.status, printed.stderr).toBe(0)
   expect(printed.stdout.split("\n")[0]).toBe("parent of parent of parent of leaf")
@@ -82,7 +102,7 @@ it.each([{ args: ["--help"] }, { args: ["--print", "ping"] }])(
     const result = spawnSync("bun", ["-e", probe], {
       encoding: "utf8",
       timeout: 10_000,
-      env: { PATH: process.env.PATH, SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/pong.jsonl") }
+      env: childEnv("pong.jsonl")
     })
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(args[0] === "--help" ? "Usage: smithers-tui" : "pong")
@@ -95,7 +115,7 @@ it("refuses an invalid budget before starting a model", () => {
   const app = resolve(import.meta.dir, "../src/main.tsx")
   const result = spawnSync("bun", [app, "--budget-tokens", "ten", "--print", "ping"], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/pong.jsonl") },
+    env: childEnv("pong.jsonl"),
     timeout: 10_000
   })
   expect(result.status).toBe(1)
@@ -106,7 +126,7 @@ it("refuses an invalid daily cap before starting a model", () => {
   const app = resolve(import.meta.dir, "../src/main.tsx")
   const result = spawnSync("bun", [app, "--budget-daily-tokens", "ten", "--print", "ping"], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/pong.jsonl") },
+    env: childEnv("pong.jsonl"),
     timeout: 10_000
   })
   expect(result.status).toBe(1)
@@ -117,7 +137,7 @@ it("disables both caps with 0 or none and still answers", () => {
   const app = resolve(import.meta.dir, "../src/main.tsx")
   const result = spawnSync("bun", [app, "--budget-tokens", "none", "--budget-daily-tokens", "0", "--print", "ping"], {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, SMITHERS_TUI_REPLAY: resolve(import.meta.dir, "fixtures/pong.jsonl") },
+    env: childEnv("pong.jsonl"),
     timeout: 10_000
   })
   expect(result.status, result.stderr).toBe(0)
