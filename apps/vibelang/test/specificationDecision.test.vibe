@@ -1,0 +1,33 @@
+import { describe, expect, it } from "@effect/vitest"
+import { reviewAnswerAccepted, scriptedGrade, specificationRefusal } from "../src/core/specificationDecision.vibe"
+
+describe("specification request admission", () => {
+  it("refuses a missing key or a stale revision before anything else", () => {
+    expect(specificationRefusal(true, "", 2, 2, true, false)).toBe("review")
+    expect(specificationRefusal(false, "k", 1, 2, false, false)).toBe("review")
+    expect(specificationRefusal(true, "k", 3, 2, false, true)).toBe("review")
+    expect(specificationRefusal(false, "k", undefined, 0, false, true)).toBe("review")
+  })
+  it("refuses a blank revision or an exhausted counter as invalid", () => {
+    expect(specificationRefusal(true, "k", 2, 2, true, true)).toBe("invalid")
+    expect(specificationRefusal(true, "k", 9007199254740991, 9007199254740991, false, true)).toBe("invalid")
+    expect(specificationRefusal(true, "k", 9007199254740990, 9007199254740990, false, false)).toBe("")
+    expect(specificationRefusal(true, "k", 0, 0, false, false)).toBe("")
+  })
+  it("refuses a review with no reviewer or of no specification yet", () => {
+    expect(specificationRefusal(false, "k", 2, 2, true, false)).toBe("invalid")
+    expect(specificationRefusal(false, "k", 0, 0, false, true)).toBe("invalid")
+    expect(specificationRefusal(false, "k", 2, 2, true, true)).toBe("")
+  })
+  it("counts an answer only for the current revision with a verdict and a link", () => {
+    expect(reviewAnswerAccepted(2, 2, "LGTM", "#r")).toBe(true)
+    expect(reviewAnswerAccepted(1, 2, "LGTM", "#r")).toBe(false)
+    expect(reviewAnswerAccepted(2, 2, "", "#r")).toBe(false)
+    expect(reviewAnswerAccepted(2, 2, "LGTM", "")).toBe(false)
+  })
+  it("gives an unreviewed Opus B+ first, else the accepted grade", () => {
+    expect(scriptedGrade("opus", "", "A-")).toBe("B+")
+    expect(scriptedGrade("opus", "LGTM", "A-")).toBe("A-")
+    expect(scriptedGrade("fable", "", "A-")).toBe("A-")
+  })
+})

@@ -691,7 +691,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-3311 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+3314 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1433,11 +1433,14 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/sequencerDecision.vibe:97` | `settleStep` | pure logic | Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1). |
 | `src/core/sequencerDecision.vibe:106` | `spoken` | pure logic | Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1). |
 | `src/core/sequencerDecision.vibe:113` | `tourSettles` | pure logic | Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1). |
-| `src/core/specification.vibe:16` | `callback@16` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/specification.vibe:26` | `revisedSpecificationState` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/specification.vibe:33` | `performSpecification` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/specification.vibe:17` | `callback@17` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/specification.vibe:27` | `revisedSpecificationState` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/specification.vibe:34` | `performSpecification` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/specification.vibe:57` | `requestedSpecificationReview` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/specification.vibe:59` | `requestedSpecificationReview/callback@59` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/specificationDecision.vibe:13` | `specificationRefusal` | pure logic | Proved specification request refusal precedence (missing key or stale revision is review; then blank text or an exhausted counter, or a review with no reviewer or no specification, is invalid), that a review answer counts only for the current revision with a verdict and a link, and the scripted grade (0018 third-lane batch 20). |
+| `src/core/specificationDecision.vibe:22` | `reviewAnswerAccepted` | pure logic | Proved specification request refusal precedence (missing key or stale revision is review; then blank text or an exhausted counter, or a review with no reviewer or no specification, is invalid), that a review answer counts only for the current revision with a verdict and a link, and the scripted grade (0018 third-lane batch 20). |
+| `src/core/specificationDecision.vibe:29` | `scriptedGrade` | pure logic | Proved specification request refusal precedence (missing key or stale revision is review; then blank text or an exhausted counter, or a review with no reviewer or no specification, is invalid), that a review answer counts only for the current revision with a verdict and a link, and the scripted grade (0018 third-lane batch 20). |
 | `src/core/toolRefusal.vibe:8` | `toolRefusal` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/tourDecision.vibe:13` | `docsUnit` | pure logic | Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2). |
 | `src/core/tourDecision.vibe:24` | `docsPath` | pure logic | Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id (0018 third-lane batch 2). |
@@ -4988,3 +4991,17 @@ does not resolve this separate Schema Model boundary.
 The required two-worker Dafny cap landed independently on main as `1d363cd434ff` while this lane was testing.
 The rebase retains that implementation. Full production verification uses `CHECK_JOBS=1`; mutation checking uses
 `CHECK_JOBS=2`, with one Dafny worker per mutant.
+
+## Third-lane batch 20: specification admission and review answers
+
+`performSpecification` (`src/core/specification.vibe`, run by both issue hosts) refused requests and provider answers
+with inline conditions. Those choices now live in `src/core/specificationDecision.vibe`.
+
+| Function | What its contract states |
+| --- | --- |
+| `specificationRefusal` | A missing key or a stale revision is `review`, before any other check. Then a revision with blank text or at the last safe integer, or a review with no reviewer or of revision 0, is `invalid`; else nothing. |
+| `reviewAnswerAccepted` | An answer counts only for the current revision, with a nonempty verdict and link. |
+| `scriptedGrade` | Opus, not yet reviewed, answers B+ first; every other scripted review gets its accepted grade. |
+
+`test/specificationDecision.test.vibe` failed first against stubs (5 of 5). The refusal now precedes the clock read;
+no refusal path read the clock's value, so behavior is unchanged. 13 mutations.

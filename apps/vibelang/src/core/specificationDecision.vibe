@@ -1,0 +1,31 @@
+// Which specification requests are refused before any work, which review answers count, and the scripted grade
+// (0018, third-lane batch 20). `specification.vibe`'s performSpecification calls these.
+
+/**
+ * Why a specification request is refused before any work, else "". A missing key or a stale or absent revision is
+ * "review"; then a blank revision text or an exhausted revision counter, or a review with no reviewer or of no
+ * specification yet, is "invalid". Nothing is written on a refusal.
+ */
+//@ verify
+//@ ensures (key == "" || requested != current) ==> \result == "review"
+//@ ensures key != "" && requested == current && revise ==> \result == ((blank || current >= 9007199254740991) ? "invalid" : "")
+//@ ensures key != "" && requested == current && !revise ==> \result == ((!hasReviewer || current == 0) ? "invalid" : "")
+export function specificationRefusal(revise: boolean, key: string, requested: number | undefined, current: number, blank: boolean, hasReviewer: boolean): "review" | "invalid" | "" {
+  if (key === "" || requested !== current) return "review"
+  if (revise) return blank || current >= 9007199254740991 ? "invalid" : ""
+  return !hasReviewer || current === 0 ? "invalid" : ""
+}
+
+/** A reviewer's answer counts only for the current revision, with a verdict and a link. */
+//@ verify
+//@ ensures \result == (answered == current && verdict != "" && link != "")
+export function reviewAnswerAccepted(answered: number, current: number, verdict: string, link: string): boolean {
+  return answered === current && verdict !== "" && link !== ""
+}
+
+/** The scripted grade: Opus, not yet reviewed, first answers B+; every other review gets its accepted grade. */
+//@ verify
+//@ ensures \result == ((reviewer == "opus" && previousVerdict == "") ? "B+" : accepted)
+export function scriptedGrade(reviewer: string, previousVerdict: string, accepted: string): string {
+  return reviewer === "opus" && previousVerdict === "" ? "B+" : accepted
+}
