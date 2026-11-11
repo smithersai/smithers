@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { type ChildProcess, spawn } from "node:child_process"
 import { createHmac, randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
@@ -12,6 +12,32 @@ export interface CommandOptions {
 }
 export type RunCommand = (command: string, args: ReadonlyArray<string>, options?: CommandOptions) => Promise<string>
 
+/**
+ * Stops a detached child's whole process group: SIGTERM, then SIGKILL a second
+ * later. `cancel` clears the pending SIGKILL once the child has closed.
+ */
+const groupStopper = (child: ChildProcess) => {
+  let killTimer: ReturnType<typeof setTimeout> | undefined
+  const kill = (signal: NodeJS.Signals) => {
+    try {
+      if (process.platform === "win32") child.kill(signal)
+      else process.kill(-child.pid!, signal)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill(signal)
+    }
+  }
+  return {
+    stop: () => {
+      if (!child.pid) return
+      kill("SIGTERM")
+      killTimer ??= setTimeout(() => kill("SIGKILL"), 1000)
+    },
+    cancel: () => {
+      if (killTimer) clearTimeout(killTimer)
+    }
+  }
+}
+
 /** Argument arrays only; subprocess interruption belongs to the action's scope. */
 export const commandRunner = (root: string): RunCommand => async (command, args, options = {}) =>
   new Promise((accept, reject) => {
@@ -22,20 +48,7 @@ export const commandRunner = (root: string): RunCommand => async (command, args,
       signal: options.signal,
       detached: process.platform !== "win32"
     })
-    let killTimer: ReturnType<typeof setTimeout> | undefined
-    const stop = () => {
-      if (!child.pid) return
-      const kill = (signal: NodeJS.Signals) => {
-        try {
-          if (process.platform === "win32") child.kill(signal)
-          else process.kill(-child.pid!, signal)
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill(signal)
-        }
-      }
-      kill("SIGTERM")
-      killTimer ??= setTimeout(() => kill("SIGKILL"), 1000)
-    }
+    const { stop, cancel } = groupStopper(child)
     options.signal?.addEventListener("abort", stop, { once: true })
     let stdout = ""
     let stderr = ""
@@ -54,7 +67,7 @@ export const commandRunner = (root: string): RunCommand => async (command, args,
       stdout += stdoutDecoder.end()
       stderr = (stderr + stderrDecoder.end()).slice(-32_000)
       options.signal?.removeEventListener("abort", stop)
-      if (!options.signal?.aborted && killTimer) clearTimeout(killTimer)
+      if (!options.signal?.aborted) cancel()
       if (code === 0 && stdout.length <= 16_000_000) accept(stdout)
       else {
         // pnpm can report registry failures on stdout. Preserve both streams
@@ -66,6 +79,32 @@ export const commandRunner = (root: string): RunCommand => async (command, args,
         const err = redact(stderr, secrets).slice(-6000)
         reject(new ReleaseError({ step: command, message: `${command} exited ${code}: ${out}\n${err}` }))
       }
+    })
+  })
+
+/**
+ * Like {@link commandRunner}, but the child writes straight to this process's
+ * stdout and stderr, so long, verbose commands such as release gates stream
+ * into the terminal or CI log and nothing is buffered. It resolves with an
+ * empty string; a failure carries the exit code only.
+ */
+export const inheritingRunner = (root: string): RunCommand => async (command, args, options = {}) =>
+  new Promise((accept, reject) => {
+    const child = spawn(command, [...args], {
+      cwd: root,
+      env: { ...process.env, ...options.env },
+      stdio: ["ignore", "inherit", "inherit"],
+      signal: options.signal,
+      detached: process.platform !== "win32"
+    })
+    const { stop, cancel } = groupStopper(child)
+    options.signal?.addEventListener("abort", stop, { once: true })
+    child.once("error", reject)
+    child.once("close", (code, signal) => {
+      options.signal?.removeEventListener("abort", stop)
+      if (!options.signal?.aborted) cancel()
+      if (code === 0) accept("")
+      else reject(new ReleaseError({ step: command, message: `${command} exited ${code ?? signal}` }))
     })
   })
 

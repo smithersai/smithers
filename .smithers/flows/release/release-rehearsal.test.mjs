@@ -13,6 +13,7 @@ import {
   rehearsalContexts
 } from "./release-rehearsal.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { releaseGateCommand, releaseGates } from "./release-gates.mjs"
 
 const release = parseWorkflow(
   readFileSync(join(repoRoot, ".github", "workflows", "release.yml"), "utf8")
@@ -261,10 +262,11 @@ const otherGates = [
 
 test("only the re-run guard, the lanes, candidate preparation and publication select a path; diagnostics survive failure", () => {
   // Every gate runs after an earlier red gate but never after failed setup,
-  // exactly as the generated ci.yml renders it (#2071).
-  const gates = release.jobs.publish.steps.filter((candidate) => /pnpm exec smthrs (?!flow start )/.test(candidate.run ?? ""))
-  assert.ok(gates.length > 30)
-  assert.deepEqual(gates.filter((candidate) => candidate.if !== gateCondition).map((candidate) => candidate.name), [])
+  // exactly as the generated ci.yml renders it (#2071). One step runs the
+  // whole build-graph inventory through release/gates; none is copied.
+  assert.deepEqual(release.jobs.publish.steps.filter((candidate) => /pnpm exec smthrs (?!flow start )/.test(candidate.run ?? "")), [])
+  const gates = [step("Release gates")]
+  assert.equal(step("Release gates").if, gateCondition)
   // The candidate lane of a prerelease skips setup, and with it every gate.
   assert.deepEqual(release.jobs.publish.steps.filter((candidate) => candidate.id === "setup").map((candidate) => candidate.if), [outsideCandidate])
   const conditional = release.jobs.publish.steps
@@ -502,7 +504,7 @@ test("release builds the checked public graph and pins npm before smoke", () => 
   assert.match(install.run, /npm install --global 'npm@11\.16\.0' /)
   assert.match(install.run, /npm --version/)
   assert.equal(install.if, undefined)
-  assert.ok(release.jobs.publish.steps.indexOf(install) < release.jobs.publish.steps.indexOf(step("Workspace targets")))
+  assert.ok(release.jobs.publish.steps.indexOf(install) < release.jobs.publish.steps.indexOf(step("Release gates")))
 })
 
 test("the supported Node floor packs and smokes the tarballs and retains its receipt", () => {
@@ -570,7 +572,7 @@ test("archived retries restore an explicit immutable artifact without rebuilding
   assert.equal(restore.run.trim(), `pnpm exec smthrs flow start release/restore --data "$(jq -cn --arg directory "$PACK_DIR" '{directory: $directory}')" --wait`)
   assert.equal(restore.env.GH_TOKEN, "${{ github.token }}")
   const names = release.jobs.publish.steps.map((candidate) => candidate.name)
-  assert.ok(names.indexOf("Validate archived candidate selection") < names.indexOf("Workspace targets"))
+  assert.ok(names.indexOf("Validate archived candidate selection") < names.indexOf("Release gates"))
   assert.ok(names.indexOf("Restore and verify archived release candidate") < names.indexOf("Archive tested release artifacts"))
   assert.ok(names.indexOf("Archive tested release artifacts") < names.indexOf("Publish packages in dependency order"))
 })
@@ -597,8 +599,8 @@ test("the driver reads the toolchain steps copied out of ci.yml", () => {
 
 test("the toolchain the gates need is installed before the first gate", () => {
   const names = release.jobs.publish.steps.map((candidate) => candidate.name ?? candidate.uses)
-  const firstGate = names.indexOf("Workspace targets")
-  assert.notEqual(firstGate, -1, "release.yml no longer runs the workspace target graph")
+  const firstGate = names.indexOf("Release gates")
+  assert.notEqual(firstGate, -1, "release.yml no longer runs the release gates")
   for (const name of ["Install Go", "Install Foundry", "Install ripgrep", "Install system packages", "Install PostgreSQL", "Install Playwright browsers"]) {
     const index = names.indexOf(name)
     assert.notEqual(index, -1, `release.yml does not install ${name.replace("Install ", "")}`)
@@ -708,14 +710,14 @@ test("release rebuilds and byte-compares the committed wasm before packing", () 
   assert.equal(mirrored.length, 2, "the wasm mirror must cover both smthrs steps; an executable rename must not empty it")
   for (const ciStep of mirrored) {
     // The release runs without ci.yml's known-red list: every target it
-    // mirrors must be green there.
-    const expected = { ...ciStep, if: gateCondition, run: ciStep.run.replace(/ --known-red '[^']+'/, "") }
-    const actual = step(expected.name)
-    assert.deepEqual(actual, expected)
-    assert.ok(steps.indexOf(install) < steps.indexOf(actual))
-    assert.ok(steps.indexOf(actual) < pack)
-    assert.equal(actual.if, gateCondition)
+    // mirrors must be green there. Its results file is the gate's own.
+    const command = ciStep.run.replace(/ --known-red '[^']+'/, "").replace(/ --results-file "[^"]+"/, "")
+    assert.ok(releaseGates.some((gate) => releaseGateCommand(gate) === command), `${command} is a release gate`)
   }
+  // The gates step runs them after the pinned Rust install and before packing.
+  const gates = steps.indexOf(step("Release gates"))
+  assert.ok(steps.indexOf(install) < gates)
+  assert.ok(gates < pack)
 })
 
 test("a directory a step appends to $GITHUB_PATH leads PATH for later steps", () => {

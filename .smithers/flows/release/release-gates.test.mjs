@@ -8,18 +8,16 @@ import {
   ciGatesMissingFromInventory,
   commandCovers,
   gateRuns,
-  inventoryGatesMissingFromWorkflow,
   parseGateCommand,
   releaseGateArgs,
   releaseGateCommand,
   releaseGateExceptions,
+  releaseGateResultsFile,
   releaseGateSetForHost,
   releaseGateExclusions,
   releaseGates,
-  staleExceptions,
   staleExclusions,
   workflowGateSteps,
-  workflowGatesMissingFromInventory,
   workflowJobs
 } from "./release-gates.mjs"
 import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
@@ -28,12 +26,10 @@ import { parse, stringify } from "yaml"
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")
 const release = workflow("release.yml")
 const ci = workflow("ci.yml")
-const canonicalExceptions = releaseGateSetForHost({ platform: "linux", arch: "x64" }).exceptions
-const mirrored = releaseGates.filter((gate) => gate.flowOnly === undefined)
 
-// Mutate parsed copies only. All three jobs exercise the real parity entry
-// points; no workflow file or command outcome is replaced on disk.
-const parityJobs = [["publish", release], ["test", ci], ["repository", ci], ["apps-e2e", ci]]
+// Mutate parsed copies only. Every job exercises the real parity entry point;
+// no workflow file or command outcome is replaced on disk.
+const parityJobs = [["test", ci], ["repository", ci], ["apps-e2e", ci]]
 const metadataSteps = parse(release).jobs.publish.steps
   .filter(step => ["Validate release tag", "Compute the publish plan"].includes(step.name))
 const withRun = (source, job, name, run) => {
@@ -51,10 +47,8 @@ const withStepBefore = (source, job, anchor, step, style) => {
   steps.splice(matches[0], 0, step)
   return stringify(copy, { defaultKeyType: style, defaultStringType: style })
 }
-const missingFor = (job, source) => job === "publish"
-  ? workflowGatesMissingFromInventory(releaseGates, source)
-  : ciGatesMissingFromInventory(releaseGates, source, releaseGateExclusions)
-const reported = (job, name, command) => [{ ...(job === "publish" ? {} : { job }), name, command }]
+const missingFor = (job, source) => ciGatesMissingFromInventory(releaseGates, source, releaseGateExclusions)
+const reported = (job, name, command) => [{ job, name, command }]
 
 // Direct invocations expose all nine discovery gaps in the old pnpm-prefix
 // regex, including whitespace forms its previous pnpm-only tests already saw.
@@ -87,7 +81,7 @@ for (const [job, source] of parityJobs) {
   })
 
   test(`fail-closed ${job}: literal tokens, separators and comments preserve canonical coverage`, () => {
-    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
+    const gate = releaseGates.find(gate => gate.name === "TUI end-to-end suite")
     for (const command of [
       "'pnpm' \"exec\" 'smthrs' \"test\" \"//apps/tui:e2eTests\" --verbose",
       "pnpm ex\\ec sm\\thrs te's't '//apps/tui:e2eTests' --verbose",
@@ -100,17 +94,12 @@ for (const [job, source] of parityJobs) {
         const added = withRun(source, job, gate.name, run)
         assert.deepEqual(missingFor(job, added), [], run)
         assert.deepEqual(workflowGateSteps(added, job).at(-1), { name: gate.name, command })
-        if (job === "publish") {
-          const replaced = parse(source)
-          replaced.jobs.publish.steps.find(step => step.name === gate.name).run = run
-          assert.deepEqual(inventoryGatesMissingFromWorkflow(releaseGates, stringify(replaced)), [])
-        }
       }
     }
   })
 
   test(`fail-closed ${job}: wrappers and legacy names cannot inherit a canonical gate's ownership`, () => {
-    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
+    const gate = releaseGates.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     for (const command of [
       ...["env", "time", "nice", "xargs"].map(wrapper => `${wrapper} ${canonical}`),
@@ -127,7 +116,7 @@ for (const [job, source] of parityJobs) {
   })
 
   test(`fail-closed ${job}: unrelated expansions and eval do not taint literal gates`, () => {
-    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
+    const gate = releaseGates.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     for (const command of [
       `${canonical}\nprintf '%s' "$VAR"`, `${canonical}\nprintf '%s' "${"${VAR}"}"`,
@@ -141,7 +130,7 @@ for (const [job, source] of parityJobs) {
   // Only that one generated path joins a canonical gate; any other path or
   // expansion in the option leaves the step unowned.
   test(`fail-closed ${job}: only the generated results file joins a canonical gate`, () => {
-    const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
+    const gate = releaseGates.find(gate => gate.name === "TUI end-to-end suite")
     const canonical = releaseGateCommand(gate)
     const recorded = canonical.replace(" --verbose", ' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose')
     assert.deepEqual(missingFor(job, withRun(source, job, gate.name, recorded)), [])
@@ -223,9 +212,7 @@ test("release metadata and planning blocks contain no gate candidates", () => {
   for (const step of metadataSteps) {
     const source = stringify({ jobs: { publish: { steps: [step] } } })
     assert.deepEqual(workflowGateSteps(source, "publish"), [], step.name)
-    assert.deepEqual(workflowGatesMissingFromInventory([], source), [], step.name)
   }
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, release), [])
 })
 
 test("all nine reviewer cases execute the same Bash argv and fail parity", () => {
@@ -254,36 +241,25 @@ test("CI exclusions cannot hide wrappers, expansions or new commands", () => {
   }
 })
 
-test("exception and exclusion drift checks use literal tokens and reject dynamic gates", () => {
-  const gate = mirrored.find(gate => gate.name === "TUI end-to-end suite")
+test("exclusion drift checks use literal tokens and reject dynamic gates", () => {
+  const gate = releaseGates.find(gate => gate.name === "TUI end-to-end suite")
   const canonical = releaseGateCommand(gate)
   const command = canonical.replace("smthrs", '"smthrs"')
-  const source = stringify({ jobs: { publish: { steps: [{ name: gate.name, run: command }] } } })
-  const exception = { name: gate.name, command: canonical, reason: "test-only exception" }
-  assert.deepEqual(staleExceptions([], source, [exception]), [])
-  assert.deepEqual(workflowGatesMissingFromInventory([], source, { exceptions: [exception] }), [])
-  assert.deepEqual(staleExclusions([], source, [{ job: "publish", commands: [canonical], reason: "test-only exclusion" }]), [])
-  const dynamic = stringify({ jobs: { publish: { steps: [{ name: gate.name, run: `${canonical} $VAR` }] } } })
-  assert.equal(staleExceptions([], dynamic, [exception]).length, 1)
-  assert.equal(workflowGatesMissingFromInventory([], dynamic, { exceptions: [exception] }).length, 1)
-  assert.equal(ciGatesMissingFromInventory([], dynamic, [{ job: "publish", reason: "whole job" }]).length, 1)
+  const source = stringify({ jobs: { test: { steps: [{ name: gate.name, run: command }] } } })
+  assert.deepEqual(staleExclusions([], source, [{ job: "test", commands: [canonical], reason: "test-only exclusion" }]), [])
+  assert.deepEqual(ciGatesMissingFromInventory([], source, [{ job: "test", commands: [canonical], reason: "test-only exclusion" }]), [])
+  const dynamic = stringify({ jobs: { test: { steps: [{ name: gate.name, run: `${canonical} $VAR` }] } } })
+  assert.equal(ciGatesMissingFromInventory([], dynamic, [{ job: "test", reason: "whole job" }]).length, 1)
 })
 
 /** Pin every job so a new one forces a release decision. `on.push` is a trigger, not a job. */
 const ciJobs = ["test", ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`), "repository", "scripts", "docs", "apps-e2e", "rust", "rust-ffi", "wasm-repro", "browser", "packages", ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)]
 
-/** A copy of the release workflow with one more gate step ahead of the build. */
+/** A copy of the release workflow with one more step ahead of the build. */
 const withUnlistedStep = (source, name, command) => {
   const anchor = "      - name: Build all workspaces from clean artifacts"
   assert.ok(source.includes(anchor))
   return source.replace(anchor, `      - name: ${name}\n        run: ${command}\n${anchor}`)
-}
-
-/** A copy of a workflow with one named gate step removed. */
-const withoutStep = (source, name) => {
-  const pattern = new RegExp(`      - name: "?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"?\\n(?:        if: [^\\n]+\\n)?        run: [^\\n]+\\n(?:        env:\\n(?:          [^\\n]+\\n)*)?`)
-  assert.match(source, pattern, `${name} is a step`)
-  return source.replace(pattern, "")
 }
 
 test("the inventory names the exclusive fault matrix, serial, and the WASM byte-compare", () => {
@@ -299,28 +275,57 @@ test("the inventory names the exclusive fault matrix, serial, and the WASM byte-
   const names = releaseGates.map((gate) => gate.name)
   assert.deepEqual(names, [...new Set(names)], "gate names are unique")
   const commands = releaseGates.map(releaseGateCommand)
-  assert.deepEqual(commands, [...new Set(commands)], "gate commands are unique, so each workflow step maps to one gate")
+  assert.deepEqual(commands, [...new Set(commands)], "gate commands are unique, so each CI command maps to one gate")
   for (const gate of releaseGates) assert.ok(["ci", "test", "lint", "build"].includes(gate.verb), `${gate.name} uses a supported verb`)
 })
 
-test("the inventory is release.yml's publish job: same gates, same names, same order", () => {
-  // release.yml is hand-written and cannot import the inventory, so this reads
-  // the workflow and proves the two agree in both directions. The inventory
-  // used to hold 12 entries, only 10 of the workflow's 35 gates, and a flow-driven release then
-  // approved a candidate with far less evidence than a tag-driven one; the
-  // one-directional check of that time could not see it.
-  assert.deepEqual(inventoryGatesMissingFromWorkflow(releaseGates, release).map(releaseGateCommand), [], "release.yml lacks these inventory gates")
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, release, { exceptions: canonicalExceptions }), [], "the inventory lacks these release.yml gates")
-  assert.deepEqual(staleExceptions(releaseGates, release, canonicalExceptions), [])
-  const steps = workflowGateSteps(release, "publish")
-    .filter((step) => !canonicalExceptions.some((exception) => exception.name === step.name && exception.command === step.command))
-  assert.deepEqual(
-    mirrored.map((gate) => [gate.name, releaseGateCommand(gate)]),
-    steps.map((step) => [step.name, step.command]),
-    "the inventory runs the publish job's gates in the publish job's order"
-  )
-  assert.ok(steps.length >= 35, `${steps.length} gates is too few to be the publish job`)
-  // The gates the review found missing, named so the fix cannot regress quietly.
+/** The publish job's steps, parsed. */
+const publishSteps = parse(release).jobs.publish.steps
+
+test("release.yml runs the gates through one release/gates step and copies none", () => {
+  // The workflow used to copy every inventory gate as its own step, and a
+  // parity test kept the copy honest. Now one step starts the flow that runs
+  // the inventory, so there is no copy to drift.
+  const gates = publishSteps.filter((step) => typeof step.run === "string" && step.run.includes("smthrs flow start release/gates"))
+  assert.equal(gates.length, 1, "exactly one publish step starts release/gates")
+  const [step] = gates
+  assert.equal(step.name, "Release gates")
+  assert.equal(step.if, "${{ !cancelled() && steps.setup.conclusion == 'success' }}")
+  assert.equal(step.run.trim(), `pnpm exec smthrs flow start release/gates --data "$(jq -cn --arg directory "$RUNNER_TEMP/smthrs-results" '{resultsDirectory: $directory}')" --wait`)
+  assert.deepEqual(Object.keys(step.env).sort(), ["MSYS2_ARG_CONV_EXCL", "SMITHERS_CACHE_NAMESPACE", "SMITHERS_CACHE_READ_TOKEN", "SMITHERS_CACHE_URL"])
+  // No `smthrs <verb> //...` gate remains anywhere in the publish job.
+  assert.deepEqual(workflowGateSteps(release, "publish"), [])
+  // The gates run on the pinned Node, with the fault matrix's microVM ready,
+  // and before the candidate build.
+  const at = (name) => publishSteps.findIndex((entry) => entry.name === name)
+  const gate = at("Release gates")
+  for (const before of ["Select the repository's pinned Node", "Prepare the fault matrix microVM", "Release changelog section"]) {
+    assert.ok(at(before) >= 0 && at(before) < gate, `${before} precedes the gates`)
+  }
+  assert.ok(at("Build all workspaces from clean artifacts") > gate, "the gates precede the candidate build")
+  assert.equal(publishSteps[at("Select the repository's pinned Node")].with["node-version-file"], ".node-version")
+})
+
+test("a gate copied back into the publish job is discovered, in every run form", () => {
+  const command = "pnpm exec smthrs test '//scripts:unlisted' --verbose"
+  for (const run of [command, `|\n          ${command}`, `>\n          pnpm exec smthrs test\n          '//scripts:unlisted' --verbose`]) {
+    assert.deepEqual(workflowGateSteps(withUnlistedStep(release, "Unlisted gate", run), "publish"), [{ name: "Unlisted gate", command }])
+  }
+  const copied = releaseGates.find((gate) => gate.name === "Exclusive fault matrix")
+  assert.deepEqual(workflowGateSteps(withUnlistedStep(release, copied.name, releaseGateCommand(copied)), "publish"), [
+    { name: copied.name, command: releaseGateCommand(copied) }
+  ])
+  const unnamed = `jobs:\n  publish:\n    steps:\n      - run: ${command}\n`
+  assert.deepEqual(workflowGateSteps(unnamed, "publish"), [{ name: "", command }])
+  // A flow step that names a gate target is still a gate, not a flow start.
+  const smuggled = `pnpm exec smthrs flow start release/gates --wait && ${command}`
+  assert.deepEqual(workflowGateSteps(withUnlistedStep(release, "Smuggled", smuggled), "publish"), [{ name: "Smuggled", command }])
+})
+
+test("the inventory keeps the gates the review found missing", () => {
+  // The inventory once held 12 entries, and a flow-driven release approved a
+  // candidate with far less evidence than a tag-driven one. These are the
+  // gates that review named, so the fix cannot regress quietly.
   for (const target of [
     "//apps/tui:e2eTests", "//.smithers/flows/review/...", "//apps/bug-worker/...",
     "//:projectCopy", "//packages/smithers/agent/regression:test", "//packages/smithers/agent/regression:check", "//evals/authoring:test",
@@ -328,74 +333,26 @@ test("the inventory is release.yml's publish job: same gates, same names, same o
     "//.smithers/flows/review/seeded-bugs:check", "//:ci", "//:factoryProjection",
     "//:targetIndex", "//packages/smithers/flows/engine-store:disasterRecovery", "//packages/smithers/flows/jj-wasm:buildScript",
     "//packages/smithers/flows/jj-wasm:wasmReproducibility", "//.smithers/flows:issueClaim", "//.smithers/flows:releaseRehearsal"
-  ]) assert.ok(mirrored.some((gate) => gate.target === target), `${target} is an inventory gate`)
-  // Ordering: the fault matrix and the byte-compare both precede the build.
-  const build = release.indexOf("smthrs flow start release/build-packages")
-  assert.ok(build > 0)
-  for (const target of ["//packages/...:faults", "//packages/smithers/flows/jj-wasm:wasmReproducibility"]) {
-    const at = release.indexOf(`'${target}'`)
-    assert.ok(at >= 0 && at < build, `${target} runs before the build in release.yml`)
-  }
+  ]) assert.ok(releaseGates.some((gate) => gate.target === target), `${target} is an inventory gate`)
+  assert.ok(releaseGates.length >= 50, `${releaseGates.length} gates is too few to be the release`)
 })
 
-test("removing one required gate from the inventory is reported, and only a declared exception excuses it", () => {
-  // The regression the review asked for: delete one entry from a copy of the
-  // inventory and the parity function names it. An exception for that exact
-  // step is the only thing that silences the report, and the exception is
-  // then visible in the flow's evidence rather than passed off as a run.
-  const step = { name: "Disaster-recovery script test", command: "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose" }
-  const mutated = releaseGates.filter((gate) => gate.name !== step.name)
-  assert.equal(mutated.length, releaseGates.length - 1, "the gate was in the inventory")
-  assert.deepEqual(workflowGatesMissingFromInventory(mutated, release, { exceptions: canonicalExceptions }), [step])
-  const exception = { ...step, reason: "test-only exception" }
-  assert.deepEqual(workflowGatesMissingFromInventory(mutated, release, { exceptions: [...canonicalExceptions, exception] }), [])
-  assert.deepEqual(staleExceptions(mutated, release, [exception]), [])
-  // The same exception against the full inventory is stale: the gate would count as both ran and skipped.
-  assert.deepEqual(staleExceptions(releaseGates, release, [exception]), [`"${step.name}" is both an inventory gate and an exception`])
-  // A gate renamed in the inventory is a gap in both directions, since names key the evidence.
-  const renamed = releaseGates.map((gate) => gate.name === step.name ? { ...gate, name: "Disaster recovery" } : gate)
-  assert.deepEqual(workflowGatesMissingFromInventory(renamed, release), [step])
-  assert.deepEqual(inventoryGatesMissingFromWorkflow(renamed, release).map((gate) => gate.name), ["Disaster recovery"])
+test("each gate writes its own results file, named for the gate", () => {
+  const files = releaseGates.map((gate) => releaseGateResultsFile("/results", gate))
+  assert.deepEqual(files, [...new Set(files)], "results files are unique")
+  for (const file of files) assert.match(file, /^\/results\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/)
+  assert.equal(
+    releaseGateResultsFile("/results", { name: "Agent eval suite (offline, baseline-gated)" }),
+    "/results/agent-eval-suite-offline-baseline-gated.json"
+  )
+  const serial = releaseGates.find((gate) => gate.target === "//packages/...:faults")
+  assert.deepEqual(releaseGateArgs(serial, { resultsFile: "/results/x.json" }), ["test", "//packages/...:faults", "--jobs", "1", "--results-file", "/results/x.json", "--verbose"])
+  assert.deepEqual(releaseGateArgs(serial), ["test", "//packages/...:faults", "--jobs", "1", "--verbose"])
 })
 
-test("a gate added to release.yml without an inventory entry is reported, as is one removed from release.yml", () => {
-  const command = "pnpm exec smthrs test '//scripts:unlisted' --verbose"
-  const added = withUnlistedStep(release, "Unlisted gate", command)
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, added, { exceptions: canonicalExceptions }), [{ name: "Unlisted gate", command }])
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, added, { exceptions: [{ name: "Unlisted gate", command, reason: "declared" }] }), [])
-  const removed = withoutStep(release, "Exclusive fault matrix")
-  assert.deepEqual(inventoryGatesMissingFromWorkflow(releaseGates, removed).map((gate) => gate.name), ["Exclusive fault matrix"])
-  assert.deepEqual(inventoryGatesMissingFromWorkflow(releaseGates, release), [])
-  // A step with the right command under another name is a gap too.
-  const misnamed = release.replace("      - name: Exclusive fault matrix", "      - name: Fault matrix")
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, misnamed).map((step) => step.name), ["Fault matrix"])
-})
 
-test("parity detects unlisted commands in block runs and unnamed steps", () => {
-  const command = "pnpm exec smthrs test '//scripts:unlisted' --verbose"
-  const anchor = "      - name: Build all workspaces from clean artifacts"
-  for (const step of [
-    `      - run: ${command}\n`,
-    `      - name: Unlisted gate\n        run: |\n          ${command}\n`,
-    `      - run: |\n          ${command}\n`,
-    `      - name: Unlisted gate\n        run: >-\n          pnpm exec smthrs test\n          '//scripts:unlisted' --verbose\n`
-  ]) {
-    const added = release.replace(anchor, step + anchor)
-    assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, added), [
-      { name: step.includes("name:") ? "Unlisted gate" : "", command }
-    ])
-  }
-})
 
-test("each release command has exactly one owner, including exceptions", () => {
-  const gate = mirrored[0]
-  const step = { name: gate.name, command: releaseGateCommand(gate) }
-  assert.deepEqual(workflowGatesMissingFromInventory([...releaseGates, gate], release), [step])
-  const inventory = releaseGates.filter((entry) => entry !== gate)
-  const exception = { ...step, reason: "test-only platform exception" }
-  assert.deepEqual(workflowGatesMissingFromInventory(inventory, release, { exceptions: [exception, exception] }), [step])
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, release, { exceptions: [exception] }), [step])
-})
+
 
 // These shell spellings must remain visible even when they are not canonical
 // inventory commands. Use a target outside recursive inventory selections so
@@ -409,7 +366,6 @@ for (const [spelling, prefix] of [
   ["legacy executable whitespace", "pnpm  exec smithers-build"]
 ]) {
   for (const [job, source, anchor] of [
-    ["publish", release, "Build all workspaces from clean artifacts"],
     ["repository", ci, "Target index drift"],
     ["apps-e2e", ci, "TUI end-to-end suite"]
   ]) {
@@ -420,10 +376,8 @@ for (const [spelling, prefix] of [
         const added = withStepBefore(source, job, anchor, { name, run: command }, style)
         const steps = workflowGateSteps(added, job)
         assert.equal(steps.length, workflowGateSteps(source, job).length + 1, "every added command is discovered")
-        const missing = job === "publish"
-          ? workflowGatesMissingFromInventory(releaseGates, added)
-          : ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions)
-        assert.deepEqual(missing, [{ ...(job === "publish" ? {} : { job }), name, command }],
+        const missing = ciGatesMissingFromInventory(releaseGates, added, releaseGateExclusions)
+        assert.deepEqual(missing, [{ job, name, command }],
           style + ": the unlisted command fails parity closed with its full spelling")
       }
     })
@@ -434,18 +388,19 @@ test("continued commands retain quoted whitespace and comments cannot hide the n
   const command = "pnpm exec smthrs test '//unlisted:" + "\\" + "\nrequired' --verbose"
   const source = `jobs:\n  publish:\n    steps:\n      - name: Quoted continuation\n        run: |\n${command.split("\n").map(line => `          ${line}`).join("\n")}\n`
   assert.deepEqual(workflowGateSteps(source, "publish"), [{ name: "Quoted continuation", command }])
-  assert.deepEqual(workflowGatesMissingFromInventory([{ name: "Quoted continuation", verb: "test", target: "//unlisted:required" }], source), [{ name: "Quoted continuation", command }])
-  const gate = mirrored[0]
+  const gate = releaseGates[0]
   const commented = withUnlistedStep(release, "After comment", `|\n          # a comment ending in ${"\\"}\n          ${releaseGateCommand(gate)}`)
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, commented), [{ name: "After comment", command: releaseGateCommand(gate) }])
+  assert.deepEqual(workflowGateSteps(commented, "publish"), [{ name: "After comment", command: releaseGateCommand(gate) }])
 })
 
-test("flow-only gates are the root flows' own targets, which no CI job runs", () => {
-  // The flow gates its own sources. If ci.yml ever gains a flows job, the
-  // release should mirror it and these entries should lose their exemption.
-  const flowOnly = releaseGates.filter((gate) => gate.flowOnly !== undefined).map((gate) => gate.target)
-  assert.deepEqual(flowOnly, ["//.smithers/flows:check", "//.smithers/flows:suite"])
-  for (const target of flowOnly) assert.equal(ci.includes(`'${target}'`), false, `${target} is now a CI gate; drop its flowOnly exemption`)
+test("the root flows' own targets are release gates no CI job runs", () => {
+  // The release gates the root flows' sources itself. If ci.yml ever gains a
+  // flows job, the CI direction below covers these gates as it does the rest.
+  const own = ["//.smithers/flows:check", "//.smithers/flows:suite"]
+  for (const target of own) {
+    assert.ok(releaseGates.some((gate) => gate.verb === "ci" && gate.target === target), `${target} is a release gate`)
+    assert.equal(ci.includes(`'${target}'`), false, `${target} is now a CI gate; move its comment in release-gates.mjs`)
+  }
 })
 
 test("the release proves every CI gate the exclusions do not name, and every exclusion still describes ci.yml", () => {
@@ -465,7 +420,7 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   ])
   for (const job of ["repository", "scripts", "docs", "wasm-repro"]) {
     for (const step of workflowGateSteps(ci, job)) {
-      assert.ok(mirrored.some((gate) => gate.name === step.name && releaseGateCommand(gate) === step.command), `${job}: ${step.name} is an inventory gate by name and command`)
+      assert.ok(releaseGates.some((gate) => gate.name === step.name && releaseGateCommand(gate) === step.command), `${job}: ${step.name} is an inventory gate by name and command`)
     }
   }
 })
@@ -557,28 +512,9 @@ test("commandCovers matches exact targets, recursive selections and job bounds o
   assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:a' '//scripts:b' --jobs 2 --verbose"), false)
 })
 
-test("publish parity detects commands in YAML block scalars and unnamed run steps", () => {
-  const command = "pnpm exec smthrs test '//scripts:unlisted' --verbose"
-  for (const run of [`|\n          ${command}`, `>\n          pnpm exec smthrs test\n          '//scripts:unlisted' --verbose`]) {
-    const mutated = withUnlistedStep(release, "Unlisted gate", run)
-    assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, mutated), [{ name: "Unlisted gate", command }])
-  }
-  const unnamed = `jobs:\n  publish:\n    steps:\n      - run: ${command}\n`
-  assert.deepEqual(workflowGatesMissingFromInventory([], unnamed), [{ name: "", command }])
-})
 
-test("no inventory with the review's 12-entry shape can cover all 35 publish steps", () => {
-  // The supplied workspace already contained an expanded patch. Model the old
-  // shape without claiming that these are the exact historical ten commands.
-  const legacy = [...mirrored.slice(0, 10), ...releaseGates.filter((gate) => gate.flowOnly)]
-  assert.equal(legacy.length, 12)
-  const missing = workflowGatesMissingFromInventory(legacy, release)
-  assert.equal(missing.length, workflowGateSteps(release, "publish").length - 10)
-  assert.ok(missing.some((step) => step.name === "TUI typecheck, lint and tests"))
-  assert.ok(missing.some((step) => step.name === "Disaster-recovery script test"))
-})
 
-test("each host partitions every publish gate into exactly one run or justified exception", () => {
+test("each host partitions every gate into exactly one run or justified exception", () => {
   const canonical = releaseGateSetForHost({ platform: "linux", arch: "x64" })
   assert.deepEqual(canonical.inventory, releaseGates)
   assert.deepEqual(canonical.exceptions, [])
@@ -588,13 +524,13 @@ test("each host partitions every publish gate into exactly one run or justified 
     assert.deepEqual(local.exceptions, releaseGateExceptions)
     assert.equal(local.exceptions[0].name, "Rebuild and byte-compare flows_jj.wasm")
     assert.match(local.exceptions[0].reason, /x86_64-unknown-linux-gnu/)
-    assert.deepEqual(workflowGatesMissingFromInventory(local.inventory, release, { exceptions: local.exceptions }), [])
-    assert.deepEqual(staleExceptions(local.inventory, release, local.exceptions), [])
-    assert.deepEqual(inventoryGatesMissingFromWorkflow(local.inventory, release), [])
+    // Every gate is run or excepted, never both: the exception is the gate's own command.
+    assert.deepEqual(
+      [...local.inventory.map((gate) => gate.name), ...local.exceptions.map((exception) => exception.name)].sort(),
+      releaseGates.map((gate) => gate.name).sort()
+    )
+    for (const exception of local.exceptions) {
+      assert.ok(releaseGates.some((gate) => gate.name === exception.name && releaseGateCommand(gate) === exception.command))
+    }
   }
-  const step = workflowGateSteps(release, "publish")[0]
-  assert.deepEqual(workflowGatesMissingFromInventory([...releaseGates, releaseGates[0]], release), [step])
-  const exception = { ...step, reason: "duplicate owner" }
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates, release, { exceptions: [exception] }), [step])
-  assert.deepEqual(workflowGatesMissingFromInventory(releaseGates.slice(1), release, { exceptions: [exception, exception] }), [step])
 })

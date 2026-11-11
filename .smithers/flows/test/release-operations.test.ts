@@ -1,17 +1,17 @@
-import { Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import assert from "node:assert/strict"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { commandRunner, type RunCommand } from "../release-support/io.ts"
-import { type ReleaseGateSet, runReleaseGates } from "../release-support/operations.ts"
 import { GateEvidence } from "../release-support/schema.ts"
+import { type ReleaseGateSet, runReleaseGates } from "../release/gates/flow.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 
 // The real command runner launches a verifier that reads and advances a disk
-// journal. It must validate each argv and the previous command's completion
-// before exiting successfully. No canned successful command results are used.
-const fixture = async (t: TestContext, gates: ReleaseGateSet, failAt = -1) => {
+// journal. It checks each argv against the gate the journal expects next and
+// exits non-zero for the gates listed as red. No canned command results are used.
+const fixture = async (t: TestContext, gates: ReleaseGateSet, red: ReadonlyArray<number> = []) => {
   const root = await mkdtemp(join(import.meta.dirname, ".gate-test-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const expected = gates.inventory.map((gate) => ["pnpm", "exec", "smthrs", ...releaseGateArgs(gate)])
@@ -26,10 +26,11 @@ import { readFileSync, writeFileSync } from "node:fs"
 const expected = JSON.parse(readFileSync("expected.json", "utf8"))
 const completed = JSON.parse(readFileSync("completed.json", "utf8"))
 const attempted = JSON.parse(readFileSync("attempted.json", "utf8"))
+assert.deepEqual(process.argv.slice(2), expected[attempted.length])
+const red = ${JSON.stringify(red)}.includes(attempted.length)
 attempted.push(process.argv.slice(2))
 writeFileSync("attempted.json", JSON.stringify(attempted))
-assert.deepEqual(process.argv.slice(2), expected[completed.length])
-assert.notEqual(completed.length, ${failAt}, "gate verification failed")
+assert.equal(red, false, "gate verification failed")
 completed.push(process.argv.slice(2))
 writeFileSync("completed.json", JSON.stringify(completed))
 `
@@ -45,7 +46,7 @@ writeFileSync("completed.json", JSON.stringify(completed))
 test("real release gate processes complete the full inventory in order before issuing a receipt", async (t) => {
   const gates = { inventory: releaseGates, exceptions: [] }
   const state = await fixture(t, gates)
-  const receipt = await runReleaseGates(state.run, gates)
+  const receipt = await Effect.runPromise(runReleaseGates(state.run, gates))
   assert.deepEqual(await state.completed(), state.expected)
   assert.deepEqual(Schema.decodeUnknownSync(GateEvidence)(receipt), {
     ran: releaseGates.map((gate) => gate.name),
@@ -67,7 +68,7 @@ test("a pending process completion blocks later gates and exceptions survive sch
   const release = Promise.withResolvers<void>()
   t.after(() => release.resolve())
   let calls = 0
-  const result = runReleaseGates(async (command, args, options) => {
+  const result = Effect.runPromise(runReleaseGates(async (command, args, options) => {
     calls++
     const output = await state.run(command, args, options)
     if (calls === 1) {
@@ -75,7 +76,7 @@ test("a pending process completion blocks later gates and exceptions survive sch
       await release.promise
     }
     return output
-  }, gates)
+  }, gates))
   await Promise.race([entered.promise, result.then(() => assert.fail("receipt issued before first completion"))])
   assert.equal(calls, 1)
   assert.deepEqual(await state.completed(), state.expected.slice(0, 1))
@@ -89,10 +90,34 @@ test("a pending process completion blocks later gates and exceptions survive sch
   assert.equal(receipt.ran.includes(skipped.name), false)
 })
 
-test("a real gate failure prevents later processes and produces no successful receipt", async (t) => {
+test("a red gate does not stop later gates, and the run fails naming every red gate with no receipt", async (t) => {
+  const gates = { inventory: releaseGates.slice(0, 4), exceptions: [] }
+  const state = await fixture(t, gates, [1, 3])
+  const exit = await Effect.runPromiseExit(runReleaseGates(state.run, gates))
+  assert.deepEqual(await state.attempted(), state.expected, "every gate runs after a red one")
+  assert.deepEqual(await state.completed(), [state.expected[0], state.expected[2]])
+  assert.ok(Exit.isFailure(exit))
+  const failure = JSON.stringify(exit.cause)
+  assert.match(failure, /release\/GatesFailed/)
+  assert.ok(failure.includes(JSON.stringify([releaseGates[1]!.name, releaseGates[3]!.name])), failure)
+})
+
+test("interrupting the run stops the gate in flight and starts no later gate", async () => {
   const gates = { inventory: releaseGates.slice(0, 3), exceptions: [] }
-  const state = await fixture(t, gates, 1)
-  await assert.rejects(runReleaseGates(state.run, gates), /gate verification failed/)
-  assert.deepEqual(await state.completed(), state.expected.slice(0, 1))
-  assert.deepEqual(await state.attempted(), state.expected.slice(0, 2), "the third verifier never starts")
+  const entered = Promise.withResolvers<void>()
+  const controller = new AbortController()
+  let calls = 0
+  const exit = Effect.runPromiseExit(
+    runReleaseGates((_command, _args, options) => {
+      calls++
+      entered.resolve()
+      // A gate that runs until it is stopped: the real runner over a sleeping child.
+      return commandRunner(import.meta.dirname)(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], options)
+    }, gates),
+    { signal: controller.signal }
+  )
+  await entered.promise
+  controller.abort()
+  assert.ok(Exit.hasInterrupts(await exit))
+  assert.equal(calls, 1, "an interrupted gate is not red, so no later gate starts")
 })

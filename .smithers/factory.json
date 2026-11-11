@@ -1612,6 +1612,22 @@
       "flows": []
     },
     {
+      "id": "release/gates",
+      "description": "Run every release gate in the shared inventory and fail naming each red one.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/gates/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:pnpm *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "release/installer",
       "description": "Build, sign, verify or publish the relocatable installer archives of a packed release candidate.",
       "summary": null,

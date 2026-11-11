@@ -397,7 +397,12 @@ const reliabilityWorkflow = Smithers.NodeTest({
  */
 const faultSkips = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/fault-skips.test.mjs")]),
-  srcs: [...contracts, Smithers.file("//packages/repo-targets/contracts/fault-gaps.md")],
+  srcs: [
+    ...contracts,
+    Smithers.file("//packages/repo-targets/contracts/fault-gaps.md"),
+    Smithers.file("//.smithers/flows/release/release-gates.mjs"),
+    Smithers.file("//packages/repo-targets/ci/shards.ts")
+  ],
   deps: []
 })
 

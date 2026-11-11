@@ -9,15 +9,13 @@ const shardCommands = (verb) => packageShards.map((shard) =>
  * The release-validation inventory: every build-graph gate a release candidate
  * must pass before `build-release.mjs` and `pack-release.mjs` run.
  *
- * Two release paths consume it. The root release flow
- * (`.smithers/flows/release-support/operations.ts`) runs each entry, in order, as its
- * `checks` step. The hand-written `.github/workflows/release.yml` cannot import
- * it, so `release-gates.test.mjs` proves parity in both directions: every
- * entry here is a publish-job step with the same name and command, and every
- * `pnpm exec smthrs` step in the publish job is either an entry here or a
- * declared {@link releaseGateExceptions} entry. Before the second direction
- * existed the inventory held 12 gates, only 10 mirrored, for 35 workflow
- * gates, and the flow-driven release required substantially less evidence.
+ * It is the only copy. Two release paths run it through one runner,
+ * `runReleaseGates` in `release/gates/flow.ts`: the root release flow's
+ * `checks` step, and `.github/workflows/release.yml`, whose publish job starts
+ * the `release/gates` flow in one step and copies no gate.
+ * `release-gates.test.mjs` proves that step is the publish job's only gate
+ * entry, and that every gate in the generated ci.yml is an entry here or a
+ * declared {@link releaseGateExclusions} entry.
  *
  * Ordinary `ci '//packages/...'` deliberately excludes the `faults` tier, so
  * that selection is spelled out here with the same serial `--jobs 1` the
@@ -27,18 +25,17 @@ const shardCommands = (verb) => packageShards.map((shard) =>
 
 /**
  * @typedef {object} ReleaseGate
- * @property {string} name The workflow step name the gate carries in release.yml, verbatim.
+ * @property {string} name The gate's name in receipts, logs and its results file.
  * @property {"ci" | "test" | "lint" | "build"} verb The `smthrs` verb.
  * @property {string} target The build-graph selection.
  * @property {number} [jobs] An explicit `--jobs` bound; omitted for the default.
- * @property {string} [flowOnly] Why the root flow runs this gate although release.yml does not.
  * @property {readonly string[]} [ciCommands] Exact CI commands selected by this gate's recursive target. New commands require an explicit inventory decision.
  */
 
 /**
  * @typedef {object} ReleaseGateException
- * @property {string} name The release.yml step name, verbatim.
- * @property {string} command The step's exact `pnpm exec smthrs …` line.
+ * @property {string} name The inventory gate's name.
+ * @property {string} command The gate's command, as {@link releaseGateCommand} spells it.
  * @property {string} reason The platform fact that keeps the local path from running it.
  * @property {{ platform: string; arch: string }} [requiredHost] Hosts outside this platform/architecture report the exception.
  */
@@ -51,15 +48,15 @@ const shardCommands = (verb) => packageShards.map((shard) =>
  */
 
 /**
- * The publish job of release.yml, in its order, plus the two flow-only gates.
+ * Every release gate, in the order the release runs them.
  *
- * The first block combines required CI `test`, `repository`, `scripts`, and `docs` gates copied out
- * of the generated ci.yml; then the `apps-e2e` gates the release runs without
- * the browser suite; then the exclusive fault matrix (nightly in
- * reliability.yml, no longer a ci.yml job) and the release-only targets; then
- * the `wasm-repro` pair and the shared backend gates. `pack-release.test.mjs` proves the
- * workflow-to-workflow copy, and `release-gates.test.mjs` proves this list
- * against the workflow.
+ * The first block combines the required CI `test`, `repository`, `scripts`,
+ * and `docs` gates of the generated ci.yml, plus the root flows' own
+ * typecheck and suite, which no CI job runs; then the `apps-e2e` gates the
+ * release runs without the browser suite; then the exclusive fault matrix
+ * (nightly in reliability.yml, no longer a ci.yml job) and the release-only
+ * targets; then the `wasm-repro` pair and the shared backend gates.
+ * `release-gates.test.mjs` proves every ci.yml gate is here or excluded.
  *
  * @type {readonly ReleaseGate[]}
  */
@@ -93,14 +90,9 @@ export const releaseGates = [
   { name: "Repository flow fixtures", verb: "test", target: "//.smithers/flows:repository" },
   { name: "Wiki and release fixtures", verb: "test", target: "//.smithers/flows:fixtures" },
   { name: "Repository flows lint", verb: "lint", target: "//.smithers/flows/..." },
-  {
-    name: "Root flows typecheck", verb: "ci", target: "//.smithers/flows:check",
-    flowOnly: "The generated ci.yml declares no job for the root flows, so release.yml mirrors none; the flow gates its own sources."
-  },
-  {
-    name: "Root flows suite", verb: "ci", target: "//.smithers/flows:suite",
-    flowOnly: "The generated ci.yml declares no job for the root flows, so release.yml mirrors none; the flow gates its own sources."
-  },
+  // The generated ci.yml declares no job for the root flows; the release gates their sources.
+  { name: "Root flows typecheck", verb: "ci", target: "//.smithers/flows:check" },
+  { name: "Root flows suite", verb: "ci", target: "//.smithers/flows:suite" },
   { name: "Public export JSDoc", verb: "lint", target: "//:jsdocTree" },
   { name: "Repository automation lint", verb: "lint", target: "//.smithers/flows:moduleLint" },
   { name: "JSDoc rule harness", verb: "test", target: "//:jsdocRules" },
@@ -207,16 +199,34 @@ export const releaseGateExclusions = [
 ]
 
 /**
- * The `smthrs` argument vector for one gate, after `pnpm exec smthrs`.
+ * The `smthrs` argument vector for one gate, after `pnpm exec smthrs`, writing
+ * its results to `resultsFile` when given.
  *
  * @param {ReleaseGate} gate
+ * @param {{ resultsFile?: string }} [options]
  * @returns {string[]}
  */
-export const releaseGateArgs = (gate) =>
-  [gate.verb, gate.target, ...(gate.jobs === undefined ? [] : ["--jobs", String(gate.jobs)]), "--verbose"]
+export const releaseGateArgs = (gate, { resultsFile } = {}) => [
+  gate.verb,
+  gate.target,
+  ...(gate.jobs === undefined ? [] : ["--jobs", String(gate.jobs)]),
+  ...(resultsFile === undefined ? [] : ["--results-file", resultsFile]),
+  "--verbose"
+]
 
 /**
- * The gate as release.yml spells it: single-quoted target, explicit `--jobs`.
+ * A gate's results file in `directory`: its name in lowercase words joined by
+ * hyphens, so every gate's file is distinct and readable.
+ *
+ * @param {string} directory
+ * @param {Pick<ReleaseGate, "name">} gate
+ * @returns {string}
+ */
+export const releaseGateResultsFile = (directory, gate) =>
+  `${directory}/${gate.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.json`
+
+/**
+ * The gate as a workflow spells it: single-quoted target, explicit `--jobs`.
  *
  * @param {ReleaseGate} gate
  * @returns {string}
@@ -228,7 +238,7 @@ export const releaseGateCommand = (gate) =>
  * The verb, target and `--jobs` bound of one workflow command, or undefined
  * when the line is not a `pnpm exec smthrs` gate in the workflow's spelling.
  * A `--known-red` list is accepted and dropped: it changes which red targets
- * fail the step, not which targets run. release.yml carries none.
+ * fail the step, not which targets run.
  *
  * @param {string} command
  * @returns {{ verb: string; target: string; additionalTargets?: string[]; jobs?: number } | undefined}
@@ -559,39 +569,6 @@ const withoutKnownRed = (tokens) => {
 }
 
 /**
- * The inventory gates release.yml's job does not run under the same name and
- * command. Flow-only gates are exempt by declaration.
- *
- * @param {readonly ReleaseGate[]} inventory
- * @param {string} source The release workflow YAML.
- * @param {string} [job]
- * @returns {ReleaseGate[]}
- */
-export const inventoryGatesMissingFromWorkflow = (inventory, source, job = "publish") => {
-  const steps = discoveredJobGates(jobsOf(source), job)
-  return inventory.filter((gate) =>
-    gate.flowOnly === undefined &&
-    !steps.some((step) => step.name === gate.name && matchesCommand(step, releaseGateCommand(gate))))
-}
-
-/**
- * The gate steps release.yml's job runs without exactly one inventory or
- * exception owner, by step name and exact literal tokens. A step whose
- * command is known under another name is reported: the names are what the
- * flow's evidence and the rehearsal's `--only` selection key on.
- *
- * @param {readonly ReleaseGate[]} inventory
- * @param {string} source The release workflow YAML.
- * @param {{ job?: string; exceptions?: readonly ReleaseGateException[] }} [options]
- * @returns {{ name: string; command: string }[]}
- */
-export const workflowGatesMissingFromInventory = (inventory, source, { job = "publish", exceptions = [] } = {}) =>
-  discoveredJobGates(jobsOf(source), job).filter((step) =>
-    inventory.filter((gate) => gate.name === step.name && matchesCommand(step, releaseGateCommand(gate))).length +
-    exceptions.filter((exception) => exception.name === step.name && matchesCommand(step, exception.command)).length !== 1)
-    .map(reportedStep)
-
-/**
  * CI requires exactly one canonical owner or an explicit exclusion. The two
  * existing recursive coverage claims are pinned in the inventory, and must
  * still be selections their owner runs. A newly added descendant command is
@@ -637,31 +614,6 @@ export const staleExclusions = (inventory, source, exclusions) => {
     for (const step of steps.filter((step) => exclusion.commands === undefined || exclusion.commands.some((command) => matchesCommand(step, command)))) {
       const command = exclusion.commands?.find((command) => matchesCommand(step, command)) ?? step.command
       if (inventory.some((gate) => gateRuns(gate, command))) stale.push(`${exclusion.job} excludes ${step.command}, which the inventory runs`)
-    }
-  }
-  return stale
-}
-
-/**
- * Exceptions that no longer describe release.yml: a step the job does not run,
- * or one the inventory also carries, which would count as both ran and skipped.
- *
- * @param {readonly ReleaseGate[]} inventory
- * @param {string} source The release workflow YAML.
- * @param {readonly ReleaseGateException[]} exceptions
- * @param {string} [job]
- * @returns {string[]}
- */
-export const staleExceptions = (inventory, source, exceptions, job = "publish") => {
-  const steps = discoveredJobGates(jobsOf(source), job)
-  /** @type {string[]} */
-  const stale = []
-  for (const exception of exceptions) {
-    if (!steps.some((step) => step.name === exception.name && matchesCommand(step, exception.command))) {
-      stale.push(`${job} does not run "${exception.name}" as ${exception.command}`)
-    }
-    if (inventory.some((gate) => gate.name === exception.name || releaseGateCommand(gate) === exception.command)) {
-      stale.push(`"${exception.name}" is both an inventory gate and an exception`)
     }
   }
   return stale

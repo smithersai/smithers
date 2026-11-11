@@ -490,8 +490,9 @@ for (
     "//packages/smithers/flows/engine-store:disasterRecovery"
   ]
 ) {
-  test(`a failing ${target} gate fails checks before any later gate runs`, { timeout: 60_000 }, async (test) => {
+  test(`a failing ${target} gate fails checks naming it, after every later gate runs`, { timeout: 60_000 }, async (test) => {
     const fixture = await repository(test)
+    const gate = releaseGates.find((entry) => entry.target === target)!
     const after: string[] = []
     let failed = false
     const ops = operations({
@@ -507,9 +508,10 @@ for (
         return ""
       }
     })
-    await assert.rejects(ops.checks(fixture.evidence), new RegExp(`${target.replace(/[.]/g, "\\.")} failed`))
+    await assert.rejects(ops.checks(fixture.evidence), new RegExp(`gate\\(s\\) failed: ${gate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
     assert.equal(failed, true, "the gate was invoked")
-    assert.deepEqual(after, [], "no gate runs after the failure, so build and pack never start")
+    // A red gate does not stop the later ones, and checks still fails, so build and pack never start.
+    assert.deepEqual(after, releaseGates.slice(releaseGates.indexOf(gate) + 1).map((entry) => ["exec", "smthrs", ...releaseGateArgs(entry)].join(" ")))
   })
 }
 

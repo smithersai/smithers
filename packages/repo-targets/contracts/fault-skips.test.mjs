@@ -47,6 +47,7 @@
  */
 import assert from "node:assert/strict"
 import ts from "typescript"
+import { releaseGateCommand, releaseGates } from "../../../.smithers/flows/release/release-gates.mjs"
 import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
@@ -393,15 +394,14 @@ describe("the fault matrix is wired to a gate", () => {
   })
 
   it("selects the whole matrix nightly and retains the release fault gate", () => {
-    for (const [file, command] of [
-      ["reliability.yml", `pnpm exec smthrs test '//packages/...:faults' --jobs 1 --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`],
-      ["release.yml", "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose"]
-    ]) {
-      const workflow = parseWorkflow(readFileSync(join(root, ".github", "workflows", file), "utf8"))
-      const runs = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).flatMap((step) => step.run ? [step.run] : [])
-      assert.equal(runs.filter((run) => run === command).length, 1,
-        `${file} must select the complete fault matrix once, serially and without known-red allowances`)
-    }
+    const command = `pnpm exec smthrs test '//packages/...:faults' --jobs 1 --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
+    const workflow = parseWorkflow(readFileSync(join(root, ".github", "workflows", "reliability.yml"), "utf8"))
+    const runs = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []).flatMap((step) => step.run ? [step.run] : [])
+    assert.equal(runs.filter((run) => run === command).length, 1,
+      "reliability.yml must select the complete fault matrix once, serially and without known-red allowances")
+    // release.yml runs the release gate inventory, which selects it the same way.
+    assert.deepEqual(releaseGates.filter((gate) => gate.target.endsWith(":faults")).map(releaseGateCommand),
+      ["pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose"])
     const ci = parseWorkflow(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))
     assert.equal(ci.jobs["e2e-faults"], undefined, "the matrix belongs to nightly reliability")
   })

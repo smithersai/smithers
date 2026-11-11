@@ -17,6 +17,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 import { dirtyPaths, nextCommands, parseArguments, releaseMessage, releaseTag, steps } from "./cut-release.mjs"
+import { releaseGates } from "./release-gates.mjs"
 import { versionedChangelogs, versionedSources, versionedTemplates } from "./set-release-version.mjs"
 
 const scriptsDirectory = resolve(import.meta.dirname)
@@ -245,14 +246,13 @@ test("a cut writes both halves, refreshes both tracked lockfiles, regenerates th
   }
 })
 
-test("the cut verifies the factory projection and the target index with the exact commands the release's drift gates run", () => {
-  const release = readFileSync(join(scriptsDirectory, "../../../.github/workflows/release.yml"), "utf8")
+test("the cut verifies the factory projection and the target index with the release's own drift gates", () => {
   const lints = steps("1.0.0", everyStep).filter((step) => step.args[3] !== "//...:fmt" && step.args.slice(0, 3).join(" ") === "exec smthrs lint")
   assert.deepEqual(lints.map((step) => step.args[3]), ["//:factoryProjection", "//:targetIndex"])
   for (const step of lints) {
     assert.ok(
-      release.includes(`run: pnpm exec smthrs lint '${step.args[3]}' `),
-      `release.yml gates ${step.args[3]} with the command the cut checks`
+      releaseGates.some((gate) => gate.verb === "lint" && gate.target === step.args[3] && gate.jobs === undefined),
+      `the release gates ${step.args[3]} with the lint the cut checks`
     )
   }
 })

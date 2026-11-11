@@ -1755,7 +1755,7 @@ export const render = (attrs: Attrs): string => {
     // Gates are independent, so a red one must not skip the ones after it. No
     // setup step declares an `if:`, so the last one concludes `success` only
     // when every setup step did: gates never run over a failed install. Every
-    // job renders the same shape, so release.yml copies any gate verbatim.
+    // job renders the same shape.
     rendered.push({ ...rendered.pop()!, id: "setup" })
     for (const step of job.steps) {
       rendered.push({

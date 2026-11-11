@@ -14,7 +14,7 @@ test("release smoke enforces the certified npm floor at its boundaries", () => {
 })
 
 test("the actual CI and release workflows install a smoke-supported npm before their gates", () => {
-  for (const [filename, job] of [["ci.yml", "test"], ["release.yml", "publish"]]) {
+  for (const [filename, job, gate] of [["ci.yml", "test", "Workspace targets"], ["release.yml", "publish", "Release gates"]]) {
     const workflow = parseWorkflow(readFileSync(new URL("../../../.github/workflows/" + filename, import.meta.url), "utf8"))
     const steps = workflow.jobs[job].steps
     const install = steps.find((step) => step.name === "Install certified npm")
@@ -23,6 +23,6 @@ test("the actual CI and release workflows install a smoke-supported npm before t
     assertSmokeNpmSupport(match[1])
     assert.match(install.run, new RegExp(`test "\\$\\(npm --version\\)" = '${match[1].replaceAll(".", "\\.")}'`))
     assert.equal(install.if, undefined)
-    assert.ok(steps.indexOf(install) < steps.indexOf(steps.find((step) => step.name === "Workspace targets")))
+    assert.ok(steps.indexOf(install) < steps.indexOf(steps.find((step) => step.name === gate)))
   }
 })

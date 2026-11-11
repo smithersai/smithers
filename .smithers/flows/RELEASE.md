@@ -154,7 +154,11 @@ pnpm release:workflow --run rc-prepare --input '{"version":"1.0.0-rc.0","from":"
 ```
 
 Publication requires the requested version already committed on a clean `main`.
-It runs the Smithers package/example/site/docs targets and release helper tests,
+Its checks step runs the release gate inventory,
+`.smithers/flows/release/release-gates.mjs`, with the same runner as the
+`release/gates` flow `.github/workflows/release.yml` starts. A red gate does not
+stop the rest, and the step fails naming every red gate. Run the gates alone
+with `smthrs flow start release/gates --wait`. Publication then
 builds from clean artifacts, packs the declared 49-package train in dependency
 order, and smoke-tests the same tarballs on Node 26.4.0 with npm
 11.16.0. Each stage is recorded by Smithers. The smoke receipt and every

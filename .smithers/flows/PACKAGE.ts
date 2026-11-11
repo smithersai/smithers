@@ -1097,7 +1097,8 @@ const releaseTools = Smithers.NodeTest({
 /**
  * Every `release/<step>` flow through the flow API: the real graph and layer
  * over a real child process running the step's module, for a refusal and,
- * where the module has a side-effect-free path, a success.
+ * where the module has a side-effect-free path, a success. `release/gates`
+ * runs the real inventory against a journaling child per gate.
  *
  * @since 1.0.0
  * @category test
@@ -1109,6 +1110,7 @@ const releaseSteps = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/release/version/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/changelog/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/cut/flow.test.ts"),
+    Smithers.file("//.smithers/flows/release/gates/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/pack/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/smoke/flow.test.ts"),
     Smithers.file("//.smithers/flows/release/restore/flow.test.ts"),

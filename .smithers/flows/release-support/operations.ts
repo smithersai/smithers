@@ -9,7 +9,8 @@ import { chooseTemplate } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
 import { readWorkspaceManifests } from "../release/pack-release.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../release/publish-release.mjs"
-import { releaseGateArgs, releaseGateSetForHost } from "../release/release-gates.mjs"
+import { gateReceipt, type ReleaseGateSet, runReleaseGates } from "../release/gates/flow.ts"
+import { releaseGateSetForHost } from "../release/release-gates.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../release/set-release-version.mjs"
 import * as Release from "../release/workflow.ts"
 import { changelogNarrative, checkContent, digest, renderCard } from "./content.ts"
@@ -49,37 +50,17 @@ interface Bundle {
 }
 type Manifest = Parameters<typeof candidateIntegrity>[0]
 
-/**
- * The release inventory the checks step runs and the exceptions it reports.
- * Defaults to `.smithers/flows/release/release-gates.mjs`; tests inject a mutated copy to
- * prove the receipt without running the real gates.
- */
-export type ReleaseGateSet = ReturnType<typeof releaseGateSetForHost>
-
 export interface Options {
   readonly root: string
   readonly run?: RunCommand
   readonly tweet?: typeof postTweet
   readonly reviewDirectory?: string
+  /**
+   * The release inventory the checks step runs and the exceptions it reports.
+   * Defaults to `.smithers/flows/release/release-gates.mjs`; tests inject a
+   * mutated copy to prove the receipt without running the real gates.
+   */
   readonly gates?: ReleaseGateSet
-}
-
-/** Copy the receipt as gate-evidence.json spells it so later mutations cannot change it. */
-const gateReceipt = (gates: ReleaseGateSet): GateEvidence => ({
-  ran: gates.inventory.map((gate) => gate.name),
-  exceptions: gates.exceptions.map(({ name, command, reason }) => ({ name, command, reason }))
-})
-
-/** Run gates serially; a failed command produces no receipt and stops the inventory. */
-export const runReleaseGates = async (
-  run: RunCommand,
-  gates: ReleaseGateSet = releaseGateSetForHost(),
-  signal?: AbortSignal
-): Promise<GateEvidence> => {
-  for (const gate of gates.inventory) {
-    await run("pnpm", ["exec", "smthrs", ...releaseGateArgs(gate)], signal ? { signal } : {})
-  }
-  return gateReceipt(gates)
 }
 
 /** All I/O lives in registered action implementations, never in flow planning. */
@@ -556,12 +537,13 @@ export const operations = (
   const checks = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
     await assertHead(evidence.sourceSha, signal)
     // Smithers targets are the gate. No GitHub YAML is parsed or dispatched.
-    // The inventory is release.yml's publish job, proved in both directions by
-    // release-gates.test.mjs. The host partition runs every portable gate.
+    // The inventory is the one release.yml runs, through the same runner as
+    // the release/gates flow: every gate runs, and a red one fails the step
+    // naming every red gate. The host partition runs every portable gate.
     // A declared platform exception is never run or counted: it goes into
     // the receipt, which pack files with the candidate and the approval prompt
     // repeats, so the operator sees what this run did not prove.
-    const receipt = await runReleaseGates(run, gates, signal)
+    const receipt = await Effect.runPromise(runReleaseGates(run, gates), signal ? { signal } : undefined)
     await assertCleanMain(signal)
     return { ...evidence, gates: receipt }
   }

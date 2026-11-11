@@ -67,10 +67,6 @@ const jobSteps = (source, job, normalize = (step) => step) => {
     .map((line) => `      ${line}`).join("\n"))
 }
 
-/** Every build-graph invocation these steps make, in order. */
-const graphCommands = (steps) =>
-  steps.flatMap((step) => [...step.matchAll(/pnpm exec (?:smithers-build|smthrs) (?!flow start )[^\n]+/g)].map((match) => match[0]))
-
 /** The recursive per-package script runners the target graph replaced. */
 const scriptRunners = (source) => [...source.matchAll(/\bpnpm (?:run [a-z][a-z:-]*|test)\b/g)].map((match) => match[0])
 
@@ -279,80 +275,6 @@ test("release.yml publishes exactly the packed workspaces, in the packed order",
   assert.deepEqual([...release.matchAll(/@smthrs\/[\w-]+/g)].map((match) => match[0]), [])
 })
 
-test("every gate in ci.yml also runs in release.yml", () => {
-  // ci.yml states its gates as build-graph invocations, so this reads those
-  // rather than the `pnpm run <script>` strings the graph replaced. The old
-  // form of this case matched only script runners, which ci.yml stopped using;
-  // it went vacuous, and the release workflow then drifted onto `pnpm test`
-  // undetected until the 1.0.0-rc.0 dry run failed on @smthrs/std.
-  const ci = workflow("ci.yml")
-
-  // The roster is pinned so a new CI job forces a decision here instead of
-  // silently landing outside the release's proof. The jobs release.yml
-  // does not mirror: `browser` runs `//packages/repo-targets:webBundleContract`,
-  // which `ci '//packages/...'` already covers; `packages` runs `test '//packages/...'`,
-  // which `ci '//packages/...'` already covers; the native Rust crate remains
-  // in `rust`, while the shipped FFI
-  // job is mirrored. Release mirrors `wasm-repro` so the
-  // committed artifact is rebuilt and byte-compared before packing.
-  const jobs = Object.keys(parse(ci).jobs)
-  assert.deepEqual(jobs, [
-    "test",
-    ...Array.from({ length: 7 }, (_, index) => `test-${index + 2}`),
-    "repository",
-    "scripts",
-    "docs",
-    "apps-e2e",
-    "rust",
-    "rust-ffi",
-    "wasm-repro",
-    "browser",
-    "packages",
-    ...Array.from({ length: 7 }, (_, index) => `packages-${index + 2}`)
-  ])
-
-  const mirrored = ["repository", "scripts", "docs", "rust-ffi", "wasm-repro"]
-  const isGate = (step) => graphCommands([step]).length > 0
-  // ci.yml passes the known-red list; the release does not, so every target a
-  // release mirrors must be green there, including those main tolerates.
-  const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
-    .map((step) => step.replace(/ --known-red '[^']+'/g, ""))
-  const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)
-
-  // The gates the release adds on top of the mirrored jobs, pinned so an
-  // extra step is a decision here rather than a silent addition. Faults moved
-  // to scheduled reliability but remain a required release gate. The apps/tui
-  // gates mirror the `apps-e2e` job; the other two
-  // are release-only targets the roster comment in release.yml explains. The
-  // 2026-09-05 rename added `smthrs` copies of two gates beside their older
-  // `smithers-build` twins, and the subset check this case used to be could
-  // not see the duplicates, the dropped cache env on two gates, or a step
-  // ci.yml gained that the release never mirrored.
-  const releaseOnly = [
-    "pnpm exec smthrs ci '//apps/tui/...' --verbose",
-    "pnpm exec smthrs test '//apps/tui:e2eTests' --verbose",
-    "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
-    "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose"
-  ]
-  const command = (step) => graphCommands([step])[0]
-  const gate = (step) => command(step).replace(/ --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION.json"/g, "")
-  const workspace = actual.filter((step) => gate(step) === "pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose")
-  assert.equal(workspace.length, 1, "release retains the complete workspace aggregate, including coverage")
-  const workspaceExpected = jobSteps(ci, "test", (step) => step.name === "Workspace targets"
-    ? { ...step, run: step.run.replace(/^(pnpm exec smthrs ci) .+?( --jobs 2)/, "$1 '//packages/...'$2") }
-    : step).filter(isGate).map((step) => step.replace(/ --known-red '[^']+'/g, ""))
-  assert.deepEqual(workspace, workspaceExpected, "workspace sharding preserves the release gate's environment and enforcement")
-  const copied = actual.filter((step) => !releaseOnly.includes(gate(step)) && !workspace.includes(step))
-
-  assert.ok(expected.length > 15, `${expected.length} gates is too few to be the required CI roster`)
-  assert.deepEqual(actual.filter((step) => releaseOnly.includes(gate(step))).map(gate), releaseOnly)
-  // Whole blocks across independent jobs: a different env, a gate
-  // ci.yml dropped, or one it gained all fail here, not only a missing one.
-  assert.deepEqual(copied.map(command).sort(), expected.map(command).sort())
-  assert.deepEqual([...copied].sort(), [...expected].sort())
-  assert.doesNotMatch(workflow("release.yml"), /--known-red/)
-})
-
 test("release.yml's publish job names every step once", () => {
   // release-rehearsal.test.mjs looks steps up by name and the rehearsal
   // driver selects them by `--only` and `--skip` fragments, so a duplicated
@@ -366,8 +288,8 @@ test("release.yml's publish job names every step once", () => {
 })
 
 test("every toolchain step in ci.yml's required test job also runs in release.yml", () => {
-  // The gate above proves the release runs the same commands. This proves the
-  // release gives them the same machine. ci.yml installs ripgrep, bubblewrap,
+  // release-gates.test.mjs proves the release runs every CI gate. This proves
+  // the release gives them the same machine. ci.yml installs ripgrep, bubblewrap,
   // Go, Foundry, and the containerd image store from the `CiToolchain.Needs`
   // declaration in the root PACKAGE.ts; release.yml is hand-written and copies
   // the rendered steps. Comparing the rendered text is what keeps a toolchain

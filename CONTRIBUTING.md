@@ -83,8 +83,8 @@ The cost is that one edit lands in several places. If you change:
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm-workspace.yaml` package membership      | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the coverage-universe policy pin); lockfile inputs are derived automatically. Nesting a package inside another has its own recipe below                                                    |
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
-| root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which retains the workspace aggregate and copies the other required gates |
-| `.github/workflows/release.yml`               | the same suite, plus `.smithers/flows/release/release-rehearsal.test.mjs` and `.smithers/flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
+| root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the release gate inventory `.smithers/flows/release/release-gates.mjs`, which must run or explicitly exclude every CI gate |
+| `.github/workflows/release.yml`               | the same suite, plus `.smithers/flows/release/release-rehearsal.test.mjs`, `.smithers/flows/release/pack-release.test.mjs`, which compares the release workflow's toolchain steps against the generated `ci.yml`, and `.smithers/flows/release/release-gates.test.mjs`, which requires one `release/gates` step and no copied gate |
 | any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
 
@@ -375,12 +375,19 @@ is proved before the push.
 
 "Every gate" is literal: the release workflow installs the toolchain the
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
-containerd image store — and then runs that job's `smithers-build` steps plus
-the fault matrix, copied verbatim out of the generated `ci.yml`. It is
-hand-written, so `.smithers/flows/release/pack-release.test.mjs` compares the copied
-gates and requires the full workspace aggregate covering every CI shard. Bumping a toolchain pin in the root
-`PACKAGE.ts` therefore means regenerating `ci.yml` and copying the changed
-step into `release.yml` in the same commit.
+containerd image store — and then runs one step,
+`smthrs flow start release/gates`. That flow runs the gate inventory in
+`.smithers/flows/release/release-gates.mjs`, one gate at a time on the
+repository's pinned Node: every gate of the generated `ci.yml` the inventory
+does not explicitly exclude, the full workspace aggregate, the fault matrix and
+the release-only targets. A red gate does not stop the rest; the step fails
+naming every red gate. The workflow copies no gate, and
+`.smithers/flows/release/release-gates.test.mjs` fails when a `ci.yml` gate is
+neither in the inventory nor excluded, so a new release gate is a new inventory
+entry. The toolchain steps are still copied, and
+`.smithers/flows/release/pack-release.test.mjs` compares them: bumping a
+toolchain pin in the root `PACKAGE.ts` means regenerating `ci.yml` and copying
+the changed step into `release.yml` in the same commit.
 
 The order is bump → changelog → commit → tag → push the tag → `release.yml`
 publishes.
@@ -407,10 +414,10 @@ gh workflow run release.yml -f releaseTag=v<version> -f dryRun=true
 ```
 
 `node .smithers/flows/release/release-rehearsal.mjs --tag v<version>` runs the same workflow's
-`run:` bodies locally, against the tree you have. The workflow pins the
-supported floor, Node 26.4.0, for the gates and the smoke test, and each
-`setup-node` step switches PATH to the toolchain pinned for its version, so
-pass a bin directory for it:
+`run:` bodies locally, against the tree you have. The workflow runs the gates
+on the repository's pinned Node (`.node-version`) and the smoke test on the
+supported floor, Node 26.4.0, and each `setup-node` step switches PATH to the
+toolchain pinned for its version, so pass a bin directory for it:
 
 ```sh
 node .smithers/flows/release/release-rehearsal.mjs --tag v<version> \

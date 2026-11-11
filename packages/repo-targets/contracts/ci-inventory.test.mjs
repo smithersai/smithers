@@ -40,7 +40,11 @@ test("jobs selecting UI browser probes install the packages' pinned Chromium", (
     const install = steps.findIndex((step) => step.name === "Install Playwright browsers")
     assert.ok(install >= 0, `${job}: install Playwright's browser before running probes`)
     assert.match(steps[install].run, /cd 'packages\/smithers\/ui'\npnpm exec playwright install --with-deps 'chromium'/)
-    assert.ok(install < steps.findIndex((step) => targetInvocation(step.run)))
+    // The release runs its gates through one release/gates flow step.
+    const firstGate = job === "release"
+      ? steps.findIndex((step) => step.name === "Release gates")
+      : steps.findIndex((step) => targetInvocation(step.run))
+    assert.ok(firstGate >= 0 && install < firstGate, `${job}: install Playwright's browser before the first gate`)
   }
   const version = (cwd) => JSON.parse(readFileSync(join(root, cwd, "package.json"), "utf8")).devDependencies.playwright
   assert.equal(version("packages/smithers/ui"), version("packages/smithers/ui/terminal-frame"))
