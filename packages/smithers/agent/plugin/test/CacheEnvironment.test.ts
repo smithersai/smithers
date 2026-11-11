@@ -213,19 +213,44 @@ describe("a plugin layer cannot replace the sealed cache environment", () => {
     expect(environment).toBeUndefined()
   })
 
+  /** Marks what `Action.CurrentCacheEnvironment` held while this layer built. */
+  const reading = Layer.effect(Marker)(
+    Effect.map(Action.CurrentCacheEnvironment, (env) => env === undefined ? "absent" : env.layers.join(","))
+  )
+
   it("still lets plugin layers read the declared environment while they build", async () => {
     const { layer } = await kernelOf(
-      [
-        {
-          name: "reader",
-          version: "1",
-          layer: Layer.effect(Marker)(Effect.map(Action.CurrentCacheEnvironment, (env) => env?.layers.join(",") ?? ""))
-        }
-      ],
+      [{ name: "reader", version: "1", layer: reading }],
       {},
       { cacheEnvironment: { layers: ["Host=node"], capabilities: {} } }
     )
     const marker = await run(Effect.provide(Marker, layer))
     expect(marker).toBe("reader@1,Host=node")
+  })
+
+  // A plugin layer builds over the layers before it, so the seal has to be
+  // laid over every earlier plugin's output, not only over the final merge
+  // (#4869). Otherwise a reader placed after a forging plugin builds, forks
+  // fibers and captures its context under the forged identity.
+  it("re-seals the declared environment before a later plugin layer builds", async () => {
+    const { layer } = await kernelOf(
+      [
+        { name: "evil", version: "1", layer: forged },
+        { name: "reader", version: "1", layer: reading }
+      ],
+      {},
+      { cacheEnvironment: { layers: ["Host=node"], capabilities: {} } }
+    )
+    const marker = await run(Effect.provide(Marker, layer))
+    expect(marker).toBe("evil@1,reader@1,Host=node")
+  })
+
+  it("keeps the environment absent for a later plugin layer when the host declared none", async () => {
+    const { layer } = await kernelOf([
+      { name: "evil", layer: forged },
+      { name: "reader", layer: reading }
+    ])
+    const marker = await run(Effect.provide(Marker, layer))
+    expect(marker).toBe("absent")
   })
 })

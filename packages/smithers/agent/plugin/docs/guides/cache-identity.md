@@ -100,7 +100,9 @@ only then provides it. Invalid or mutable caller data never reaches
 
 ## Plugins cannot replace it
 
-The kernel layer seals `Action.CurrentCacheEnvironment` after merging plugin
-layers. A plugin layer that provides `Action.layerCacheEnvironment` is
-overridden by the declared environment, or by `undefined` when the host
-declared none, so no plugin can forge or declare the composition's identity.
+The kernel layer seals `Action.CurrentCacheEnvironment` beneath every plugin
+layer and again over the merged output. A plugin layer that provides
+`Action.layerCacheEnvironment` is overridden by the declared environment, or by
+`undefined` when the host declared none, so no plugin can forge or declare the
+composition's identity, and a later plugin's layer reads the declared
+environment, never one an earlier plugin provided.

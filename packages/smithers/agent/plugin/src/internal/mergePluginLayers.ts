@@ -13,8 +13,8 @@ import { PluginError } from "../PluginError.ts"
 
 /**
  * Merges plugin layers left-to-right, wrapping each build failure as
- * `layer_failed`, then seals the cache environment: it is supplied beneath
- * the plugin layers and overrides anything they output, and an absent
+ * `layer_failed`, and seals the cache environment: it is supplied beneath
+ * every plugin layer, overrides anything they output, and an absent
  * declaration stays absent.
  *
  * @private
@@ -41,17 +41,22 @@ export const mergePluginLayers = <H>(
       ]
       : []
   )
-  const merged = (layers.length === 0
-    ? Layer.empty
-    : layers.reduce((accumulated, next) => Layer.provideMerge(next, accumulated))) as Layer.Layer<any, PluginError, any>
-  // The sealed environment is provided beneath the plugin layers so they can
-  // read it, then merged last so it overrides any plugin output. An absent
-  // declaration is sealed as `undefined`, so no plugin layer can declare or
-  // replace the composition's cache identity.
+  // An absent declaration is sealed as `undefined`, so no plugin layer can
+  // declare or replace the composition's cache identity.
   const environment = Layer.succeed(Action.CurrentCacheEnvironment)(cacheEnvironment) as unknown as Layer.Layer<
     any,
     PluginError,
     any
   >
+  // Each plugin layer builds over the output of the layers before it, so the
+  // sealed environment is laid over that output before every later layer
+  // builds: a later plugin reads the declared environment, never one an
+  // earlier plugin provided (#4869). It is provided beneath the first layer
+  // the same way, then merged last so it overrides any plugin output.
+  const merged = (layers.length === 0
+    ? Layer.empty
+    : layers.reduce((accumulated, next) =>
+      Layer.provideMerge(next, Layer.merge(accumulated, environment))
+    )) as Layer.Layer<any, PluginError, any>
   return Layer.merge(Layer.provideMerge(merged, environment), environment)
 }

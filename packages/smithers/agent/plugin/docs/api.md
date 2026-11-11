@@ -351,9 +351,10 @@ keep resolved plugin order.
 plugin's services are visible to a later plugin's layer, and the later plugin
 wins when two provide the same tag. A layer that fails during acquisition
 becomes `layer_failed` with the plugin's name. `layer` also seals
-`Action.CurrentCacheEnvironment`: plugin layers read the declared environment,
-or `undefined` when none was declared, and a plugin layer that provides its own
-environment is overridden.
+`Action.CurrentCacheEnvironment`: every plugin layer reads the declared
+environment, or `undefined` when none was declared, and a plugin layer that
+provides its own environment is overridden before the next plugin layer builds
+and in the merged output.
 
 ### Limits
 

@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A selected plugin without a version admitted while cacheEnvironment is set.",
         "name@version escaping that lets two distinct (name, version) pairs produce the same identity string.",
-        "Layer.provideMerge(merged, environment) in mergePluginLayers letting a plugin layer that provides Action.layerCacheEnvironment replace the sealed environment read by Action.CurrentCacheEnvironment.",
+        "A plugin layer in mergePluginLayers built over the accumulated output without the sealed environment merged over it, or a merged output the sealed environment is not merged over, so a plugin layer that provides Action.layerCacheEnvironment replaces the environment a later plugin layer or Action.CurrentCacheEnvironment reads.",
         "Plugin identities computed from the unfiltered or unsorted input instead of the resolved plugin list."
       ],
       paths: ["src/internal/snapshotCacheEnvironment.ts", "src/internal/mergePluginLayers.ts", "src/Resolve.ts"]
