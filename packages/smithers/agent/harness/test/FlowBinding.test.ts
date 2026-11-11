@@ -178,6 +178,37 @@ describe("FlowBinding.make", () => {
     expect(input).toEqual(["net:get", "fs:read", "net:get"])
   })
 
+  it("keeps a binding's durable identity when a rebuild reformats its handler", () => {
+    // One implementation as two builds print it: the durable call key hashes
+    // the declaration digest, so a digest that followed the printed text would
+    // make every settled call, writes included, run again on restore.
+    const built = (input: typeof Echo.Type) => Effect.succeed({ text: input.text, length: input.text.length })
+    // dprint-ignore
+    const rebuilt = function(i: typeof Echo.Type) { /* minified */ return Effect.succeed({ text: i.text, length: i.text.length }) }
+    expect(Function.prototype.toString.call(built)).not.toBe(Function.prototype.toString.call(rebuilt))
+
+    const before = FlowBinding.make({ flow: echo, handler: built }).descriptor
+    const after = FlowBinding.make({ flow: echo, handler: rebuilt }).descriptor
+
+    expect(after.body).toStrictEqual(before.body)
+    expect(Descriptor.declarationDigest(after)).toBe(Descriptor.declarationDigest(before))
+    expect(Descriptor.executionDigest(after)).toBe(Descriptor.executionDigest(before))
+    // The identity is the one the declaration alone projects.
+    expect(before.body).toStrictEqual(FlowBinding.descriptorOf(echo).body)
+  })
+
+  it("moves a binding's durable identity only when the host assigns a new body digest", () => {
+    const handler = (input: typeof Echo.Type) => Effect.succeed({ text: input.text, length: input.text.length })
+    const first = FlowBinding.make({ flow: echo, handler, bodyDigest: Digest.digest("echo@1") }).descriptor
+    const same = FlowBinding.make({ flow: echo, handler, bodyDigest: Digest.digest("echo@1") }).descriptor
+    const second = FlowBinding.make({ flow: echo, handler, bodyDigest: Digest.digest("echo@2") }).descriptor
+
+    expect(first.body).toMatchObject({ contentDigest: Digest.digest("echo@1") })
+    expect(Descriptor.declarationDigest(same)).toBe(Descriptor.declarationDigest(first))
+    expect(Descriptor.declarationDigest(second)).not.toBe(Descriptor.declarationDigest(first))
+    expect(Descriptor.executionDigest(second)).not.toBe(Descriptor.executionDigest(first))
+  })
+
   it("carries projectable input and output schemas by value", () => {
     const binding = FlowBinding.make({
       flow: echo,

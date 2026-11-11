@@ -857,9 +857,9 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
  * and a field that is present and null are one value, which is what they are
  * once the descriptor has crossed JSON.
  *
- * `BodyRef.contentDigest` is the source identity discovery or `FlowBinding.make`
- * measured. It makes an in-place body edit material even when the locator is
- * unchanged. Measured `lockfiles` bind both the relative root and digest;
+ * `BodyRef.contentDigest` is the source identity discovery measured, or the
+ * one a binding's host assigned. It makes an in-place body edit material even
+ * when the locator is unchanged. Measured `lockfiles` bind both the relative root and digest;
  * descriptors without this optional identity retain their historical digest.
  *
  * Unlike {@link executionDigest} this is always defined: it identifies what was

@@ -21,6 +21,20 @@
   call boundary parsed every declaration as one exact capability, so such a
   flow was refused `capability_refused` under every envelope.
 
+- `FlowBinding.make` no longer hashes the handler's source text into the
+  binding's body digest. That digest is part of every durable call key, so a
+  rebuild that minified, re-transpiled or reformatted a handler moved the key
+  of every call the binding had settled, and a restore ran those calls again,
+  writes included. Without `bodyDigest` the identity now comes from the
+  declaration alone (name, description, capabilities, effects), as
+  `FlowBinding.descriptorOf` already derived it; a host states a changed
+  implementation by assigning `bodyDigest`. Keys recorded under an explicit
+  `bodyDigest` are unchanged. A binding that relied on the derived digest is
+  keyed once more under its declaration; to keep its recorded keys across
+  this upgrade, pass the former value,
+  `Digest.digest(Function.prototype.toString.call(handler))`, as `bodyDigest`
+  (#4828).
+
 - A cell that recurses deeply no longer takes down the host. The QuickJS realm
   bounds its interpreter stack at 128 KiB, so the recursion raises a catchable
   `InternalError: stack overflow` and the realm keeps its names. If the host's

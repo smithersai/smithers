@@ -97,9 +97,15 @@ export interface DescriptorOptions {
   /** The stable locator recorded as the descriptor's body and path. */
   readonly path?: string | undefined
   /**
-   * Content identity of the executable body. `make` derives this from the
-   * handler when omitted; direct descriptor projections derive it from the
-   * declaration they can observe.
+   * Content identity of the executable body, assigned by the host: a
+   * `Digest.digest` of the module's content or of a version the host names.
+   *
+   * It is part of every durable call key, so changing it makes settled calls
+   * run again. When omitted, the identity is derived from the declaration
+   * alone (name, description, capabilities and effects) and never from the
+   * handler's source text: a rebuild that reformats, minifies or re-transpiles
+   * a handler keeps every recorded key. A host that changes what a handler
+   * does without changing its declaration states that here.
    */
   readonly bodyDigest?: string | undefined
   readonly modelInvocable?: boolean | undefined
@@ -391,7 +397,6 @@ export const make = <
 >(options: Options<I, O, E, R>): Binding<R> => {
   const descriptor = descriptorOf({ ...options.flow, capabilities: [...new Set(options.flow.capabilities)].sort() }, {
     ...options,
-    bodyDigest: options.bodyDigest ?? Digest.digest(Function.prototype.toString.call(options.handler)),
     ...(options.inputDocument === undefined ? { inputDocument: document(options.flow.input) } : {}),
     ...(options.outputDocument === undefined ? { outputDocument: document(options.flow.output) } : {})
   })

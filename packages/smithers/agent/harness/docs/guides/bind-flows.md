@@ -43,9 +43,15 @@ A binding is `{ descriptor, run }`:
 
 - `descriptor` is an ordinary `FlowDescriptor` from
   [`@smthrs/registry`](/api/registry), projected by
-  `FlowBinding.descriptorOf`. `make` derives the body's content digest from
-  the handler source and renders both schemas as inline JSON Schema documents,
-  which is what puts a parameter schema beside the flow in `ctx.flows`.
+  `FlowBinding.descriptorOf`. `make` renders both schemas as inline JSON
+  Schema documents, which is what puts a parameter schema beside the flow in
+  `ctx.flows`. The body's content digest is the `bodyDigest` the host assigns:
+  a `Digest.digest` of the module's content or of a version the host names. It
+  is part of every durable call key, so changing it makes settled calls run
+  again. Without
+  one, the digest comes from the declaration alone (name, description,
+  capabilities, effects) and never from the handler's source text, so a
+  rebuild that reformats or minifies a handler keeps every recorded key.
 - `run` decodes the call's input through the input schema, executes the
   handler, and validates the handler's output back into serializable JSON.
 
