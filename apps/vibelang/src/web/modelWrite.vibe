@@ -7,7 +7,8 @@ import type { EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
-import { escapeScreen } from "./screenRead.vibe"
+import { escapeScreen, screenOf } from "./screenRead.vibe"
+import type { ScreenState } from "./screenDecision.vibe"
 
 /** The Model after an account step: `surface` and `docs` from the step, the account's screen fields over `base` (the
  *  current account, or the signed-out one), and every other field of the Model and of `base` unchanged. */
@@ -122,4 +123,18 @@ export function sandboxFailureWrite(model: Model, result: SandboxResult): Model 
 export function wikiVisitWrite(model: Model, account: AccountState, visit: WikiVisit, page: string): Model {
   const visited: Model = { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: visit.request, sandboxPane: visit.sandboxPane, surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false, stream: "open", epoch: visit.epoch, from: visit.from }
   return visit.people === account.people ? visited : { ...visited, account: { ...account, people: visit.people } }
+}
+
+/** The Model after a screen step: the screen's six fields, nothing else. */
+//@ verify
+//@ ensures \result == { ...model, surface: screen.surface, palette: screen.palette, tour: screen.tour, tourError: screen.tourError, docs: screen.docs, following: screen.following }
+export function screenWrite(model: Model, screen: ScreenState): Model {
+  return { ...model, surface: screen.surface, palette: screen.palette, tour: screen.tour, tourError: screen.tourError, docs: screen.docs, following: screen.following }
+}
+
+/** Writing back the screen just read changes nothing. */
+//@ verify
+//@ ensures \result == model
+export function screenKept(model: Model): Model {
+  return screenWrite(model, screenOf(model))
 }

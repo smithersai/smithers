@@ -436,7 +436,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     SucceededTour: () => TourDecision.endsLateTour(model.tour) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
     FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: { ...model, ...TourDecision.keptTour() } } : {
-      model: { ...model, ...failScreenTour(model, reason, false), surface: "chat", recoverTour: false },
+      model: { ...ModelWrite.screenWrite(model, failScreenTour(ScreenRead.screenOf(model), reason, false)), surface: "chat", recoverTour: false },
       commands: [PresentTour({ step: model.theatre.step, sound: model.theatre.sound, active: false, paused: false }), FocusComposer({})],
     },
     // The end never reached the agent: it still drives, so Esc comes back.
@@ -490,8 +490,8 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
     FailedWiki: ({ request }) => ({ model: model.wikiRequest !== undefined && ModelDecision.wikiFailureApplies(request, model.wikiRequest, model.wikiStatus === "loading") ? { ...model, wikiStatus: "error" } : model }),
     SucceededWiki: () => ({ model }),
-    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(UpdateDecision.docsRevealsWiki(model.docs, model.client.conversation.pane) ? { commands: [RevealWiki({})] } : {}) }),
-    ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
+    ClickedDocs: () => ({ model: ModelWrite.screenWrite(model, toggleScreenDocs(ScreenRead.screenOf(model))), ...(UpdateDecision.docsRevealsWiki(model.docs, model.client.conversation.pane) ? { commands: [RevealWiki({})] } : {}) }),
+    ClickedSplash: () => ({ model: { ...ModelWrite.screenWrite(model, showSplash(ScreenRead.screenOf(model))), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => {
       const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
@@ -582,7 +582,7 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       if (next.stale) return { model }
       return { model: { ...model, following: next.following, followIntent: next.followIntent } }
     },
-    ClickedLatest: () => ({ model: { ...model, ...latestScreen(model) }, commands: [FocusComposer({})] }),
+    ClickedLatest: () => ({ model: ModelWrite.screenWrite(model, latestScreen(ScreenRead.screenOf(model))), commands: [FocusComposer({})] }),
   }))
   const before = accountOf(model).identity
   const after = accountOf(next.model).identity
@@ -740,7 +740,7 @@ function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Facto
 function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const active = touringHere(model)
   const state = model.tourClient?.conversation.walkthrough
-  const next: Update.Return<Model, Message, Factory | Actions> = { model: { ...model, ...failedScreenEnd(model, active), tourDismissed: !active } }
+  const next: Update.Return<Model, Message, Factory | Actions> = { model: { ...ModelWrite.screenWrite(model, failedScreenEnd(ScreenRead.screenOf(model), active)), tourDismissed: !active } }
   if (!active || state === undefined || state.step > WALKTHROUGH.length) return next
   const theatre = { ...model.theatre, step: state.step, target: state.target || WALKTHROUGH[state.step - 1]!.target, paused: state.paused }
   return driveWalkthrough({ model: { ...next.model, theatre }, commands: [PresentTour({ step: state.step, sound: theatre.sound, active: true, paused: state.paused })] }, state)
@@ -748,7 +748,7 @@ function recoverEndTour(model: Model): Update.Return<Model, Message, Factory | A
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory | Actions> {
   const next = paletteChange(open)
-  return { model: { ...model, ...setScreenPalette(model, next.palette) }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
+  return { model: ModelWrite.screenWrite(model, setScreenPalette(ScreenRead.screenOf(model), next.palette)), commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
 }
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */

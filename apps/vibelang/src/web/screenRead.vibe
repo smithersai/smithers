@@ -7,6 +7,7 @@ import type { EscapeScreen, WikiVisitScreen } from "./updateDecision.vibe"
 import type { StreamScreen, TourEnd, TourStart } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import type { WikiDraft } from "./wikiEditorDecision.vibe"
+import type { ScreenState } from "./screenDecision.vibe"
 import type { WikiRequest } from "../core/wikiSchemas.vibe"
 
 /** The account screen: the page's surface and docs, and the account's nine screen fields. */
@@ -113,4 +114,11 @@ export function tourStartScreen(model: Model): TourStart {
 //@ ensures model.wikiEdit !== undefined ==> \result.saving == (model.wikiEdit.submission !== undefined)
 export function wikiVisitScreen(model: Model, account: AccountState): WikiVisitScreen {
   return { stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined }
+}
+
+/** The page's screen: surface, palette, tour flag and error, docs size, and whether the transcript follows. */
+//@ verify
+//@ ensures \result == { surface: model.surface, palette: model.palette, tour: model.tour, tourError: model.tourError, docs: model.docs, following: model.following }
+export function screenOf(model: Model): ScreenState {
+  return { surface: model.surface, palette: model.palette, tour: model.tour, tourError: model.tourError, docs: model.docs, following: model.following }
 }
