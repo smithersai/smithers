@@ -501,7 +501,9 @@ export const make = <E, R>(
       )
     }).pipe(withSigningKeys)
     // Only clients that retain writes through stale credentials may receive this retryable response.
-    const staleResponse = Effect.map(HttpServerRequest.HttpServerRequest, request => {
+    // Its own generator reads the request: worker-config.test.ts takes the innermost function reading one for the handler.
+    const staleResponse = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
       const accepts = request.headers[ACCEPTS_HEADER] === ACCEPTS_CREDENTIAL_STALE
       return HttpServerResponse.empty({ status: accepts ? 503 : 401, headers: {
         ...noStore, "x-smithers-credential": "stale", ...(accepts ? { "retry-after": "1" } : {}),
