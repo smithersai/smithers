@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Rewinds that fail before writing an audit now report a failed run-state
+  restoration alongside the original error instead of hiding it.
+
 - Rewinds across engine-recorded child spawns now follow the detached-child policy.
   Forks no longer claim their parent's children or continuation rounds from copied history.
 

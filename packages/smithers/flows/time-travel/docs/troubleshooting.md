@@ -257,3 +257,16 @@ A supplied check can only refuse a takeover, never widen one, because the
 evidence recovery hands the run store is always `lease-expired` and the store
 re-verifies that claim inside the same write. See
 [The rewind protocol](./concepts/rewind-protocol.md).
+
+## A pre-audit rewind failure also reports a restoration failure
+
+A rewind can fail before its audit is written, for example when the rate limiter
+fails. It still tries to restore the run's resumable status and original state. If that
+transition fails or loses ownership, the error keeps its original `code` and
+includes the restoration problem in its `message` and `cause.restoration`.
+
+There is no audit for startup recovery to find in this case. A failed database
+write can leave the run `running` under the rewind owner until the engine's
+normal stale-lease takeover. A lost ownership fence leaves the new owner alone.
+Inspect the reported restoration problem before retrying; abandoning a claim
+cannot release ownership after the claim has been activated.

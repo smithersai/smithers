@@ -245,7 +245,6 @@ export type Result = typeof Result.Type
 
 interface ClaimedRun {
   readonly row: RunStore.RunRow & { readonly status: "pending" | "suspended" }
-  readonly claimedAtMs: number
 }
 
 interface ChildPlan {
@@ -563,7 +562,7 @@ const claimRun = (
     if (row.owner !== null || row.claim !== null) {
       return yield* Effect.fail(error("busy", `run ${options.runId} is not available for rewind`))
     }
-    const claimedAtMs = yield* Lease.claimAndActivate(runs, {
+    yield* Lease.claimAndActivate(runs, {
       runId: options.runId,
       expected: RunRow.snapshotOf(row),
       claimant: options.owner,
@@ -575,7 +574,7 @@ const claimRun = (
           : error("busy", `run ${options.runId} lost the rewind claim`),
       lost: error("busy", `run ${options.runId} lost the rewind activation`)
     })
-    return { row: rewindableRow, claimedAtMs }
+    return { row: rewindableRow }
   })
 
 /**
@@ -1288,16 +1287,16 @@ const settleFailure = (
       )
       if (Exit.isFailure(restored)) {
         restorationProblems.push(fromCause(restored.cause).message)
-        if (progress.detail === undefined) {
-          yield* Effect.ignore(runs.abandonClaim(options.runId, options.owner, claimed.claimedAtMs))
-        }
       } else if (restored.value._tag !== "Transitioned") {
         restorationProblems.push(`restore run state returned ${restored.value._tag}`)
       }
       const restorationProblem = restorationProblems.length === 0
         ? undefined
         : restorationProblems.join("; ")
-      if (progress.detail !== undefined && restorationProblem !== undefined) {
+      // Activation consumed the claim. A failed owned transition cannot be
+      // repaired by abandoning it, and without an audit recovery cannot find
+      // this rewind. Always tell the caller that restoration did not finish.
+      if (restorationProblem !== undefined) {
         return yield* Effect.fail(
           error(
             failure.code,

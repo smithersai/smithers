@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Jj from "@smthrs/jj"
 import { Journal } from "@smthrs/journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
+import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { RunStore } from "@smthrs/run-store"
 import * as Ownership from "@smthrs/run-store/Ownership"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
@@ -15,6 +17,7 @@ import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
 import * as References from "effect/References"
+import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import type { LineageEdge } from "../src/Frame.ts"
@@ -22,6 +25,7 @@ import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as Migrations from "../src/Migrations.ts"
 import { error } from "../src/TimeTravelError.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 import { journalOf, row } from "./MemoryHarness.ts"
@@ -919,47 +923,96 @@ describe("Rewind protocol fault matrix", () => {
       }
     }))
 
-  it.effect("abandons the activated claim when pre-audit failure and state restoration both fail", () =>
-    Effect.gen(function*() {
-      const abandoned: Array<number> = []
-      const persistenceError = new RunStore.RunStoreError({
-        code: "persistence_failed",
-        method: "transitionOwned",
-        message: "database unavailable",
-        cause: "transitionOwned"
-      })
-      const runs = RunStore.makeNoop({
-        get: () => Effect.succeed(runRow()),
-        claim: () => Effect.succeed({ _tag: "Claimed" as const, claimedAtMs: 8 }),
-        activate: () => Effect.succeed({ _tag: "Activated" as const }),
-        transitionOwned: () => Effect.fail(persistenceError),
-        abandonClaim: (_runId, _owner, claimedAtMs) =>
-          Effect.sync(() => {
-            abandoned.push(claimedAtMs)
-            return { _tag: "Abandoned" as const }
-          })
-      })
-      const store = MemoryTimeTravelStore.make({ records: [stored(0, "baseline", {})] })
-
-      const failure = yield* (
-        Effect.flip(
-          provide(
-            Rewind.rewind({
-              runId: "run",
-              frame,
-              owner,
-              auditId: "audit-preflight-failure",
-              rateLimit: () => Effect.fail(error("rate_limited", "rate limiter unavailable"))
-            }),
-            { store, runs, jj: makeJj().service }
+  for (const status of ["pending", "suspended"] as const) {
+    for (const restoration of ["persistence failure", "lost ownership"] as const) {
+      it.effect(`reports pre-audit restoration ${restoration} for a ${status} run using the real RunStore`, () =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          const runs = yield* RunStore.RunStore
+          // The real store writes run transitions through the calling fiber's journal.
+          const journal = yield* Journal.Journal
+          const stateJson = runRow().stateJson
+          yield* sql`
+            INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+            VALUES ('run', ${status}, 1, ${stateJson})
+          `
+          const store = MemoryTimeTravelStore.make({ records: [stored(0, "baseline", {})] })
+          const replacement = { ...owner, nonce: "replacement-owner" }
+          let activated: RunStore.RunRow | undefined
+          const restorationProblem = restoration === "persistence failure"
+            ? "restore run state failed"
+            : "restore run state returned FenceLost"
+          const failure = yield* Effect.flip(
+            provide(
+              Rewind.rewind({
+                runId: "run",
+                frame,
+                owner,
+                auditId: "audit-preflight-failure",
+                rateLimit: () =>
+                  Effect.gen(function*() {
+                    activated = yield* runs.get("run").pipe(Effect.orDie)
+                    return yield* Effect.fail(error("rate_limited", "rate limiter unavailable"))
+                  })
+              }),
+              {
+                store,
+                runs: {
+                  ...runs,
+                  transitionOwned: (...args) =>
+                    restoration === "persistence failure"
+                      ? Effect.fail(
+                        new RunStore.RunStoreError({
+                          code: "persistence_failed",
+                          method: "transitionOwned",
+                          message: "database unavailable",
+                          cause: "transitionOwned"
+                        })
+                      )
+                      : Effect.gen(function*() {
+                        yield* sql`
+                          UPDATE flows_runs SET owner_nonce = ${replacement.nonce} WHERE run_id = 'run'
+                        `.pipe(Effect.orDie)
+                        return yield* runs.transitionOwned(...args)
+                      })
+                },
+                journal,
+                jj: makeJj().service
+              }
+            )
           )
-        )
-      )
-
-      expect(failure).toMatchObject({ code: "rate_limited", message: "rate limiter unavailable" })
-      expect(abandoned).toEqual([8])
-      expect(store.state().audits).toEqual([])
-    }))
+          expect(activated).toMatchObject({
+            status: "running",
+            owner,
+            claim: null,
+            claimedAtMs: null,
+            stateJson
+          })
+          const after = yield* runs.get("run")
+          expect(after).toMatchObject({
+            status: "running",
+            owner: restoration === "persistence failure" ? owner : replacement,
+            claim: null,
+            claimedAtMs: null,
+            stateJson
+          })
+          // Activation consumed the claim. Abandoning it cannot release this owner.
+          expect(yield* runs.abandonClaim("run", owner, activated!.heartbeatAtMs!)).toEqual({ _tag: "ClaimLost" })
+          expect(yield* runs.get("run")).toEqual(after)
+          expect(store.state().audits).toEqual([])
+          expect(store.state().records).toEqual([stored(0, "baseline", {})])
+          expect(failure).toMatchObject({
+            code: "rate_limited",
+            message: `rate limiter unavailable; ${restorationProblem}`,
+            cause: { rewind: expect.anything(), restoration: restorationProblem }
+          })
+        }).pipe(Effect.provide(
+          Layer.mergeAll(RunStore.layer, SqlJournal.layer({ capacity: 64, overflow: "reject" })).pipe(
+            Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))
+          )
+        )))
+    }
+  }
 
   it.effect("reports a terminal compensation failure when rewind rollback fails", () =>
     Effect.gen(function*() {
