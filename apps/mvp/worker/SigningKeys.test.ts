@@ -18,6 +18,9 @@ const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<
 const NEXT = "next-signing-secret-".padEnd(64, "9")
 const secrets = { legacy: SECRET, next: NEXT }
 const config = { ...configured, SESSION_SECRETS: JSON.stringify(secrets), SESSION_SEAL_SECRET: SECRET }
+/** The signing key ids a host captures from `settings` while it builds (`SessionStore.configuredKeyIds`). */
+const keyIdsOf = (settings: Record<string, string>) =>
+  Effect.runPromise(Store.configuredKeyIds.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(settings))))
 const makeKeys = () => runtime.runPromise(Keys.make(Redacted.make(SECRET), {
   secrets: Object.fromEntries(Object.entries(secrets).map(([id, value]) => [id, Redacted.make(value)])),
   sealSecret: Redacted.make(SECRET),
@@ -280,7 +283,7 @@ test("key equality rejects re-stamped cookies in both direct resolution and sock
   expect(await runtime.runPromise(Store.findLive(digest, "legacy"))).toEqual(Option.none())
   expect(await runtime.runPromise(Store.findLiveById(row!.id, "legacy"))).toEqual(Option.none())
   expect(await runtime.runPromise(Store.authority(row!.id, null, "legacy"))).toEqual(Option.none())
-  expect(Option.isSome(await runtime.runPromise(Store.authority(row!.id, null, "next").pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)))))).toBe(true)
+  expect(Option.isSome(await runtime.runPromise(Store.authority(row!.id, null, "next").pipe(Effect.provideService(Store.SigningKeyIds, await keyIdsOf(config)))))).toBe(true)
 })
 
 test("an issuer holding a person's row lock cannot block promotion and is terminated by the idle timeout", async () => {
@@ -377,9 +380,9 @@ test("dropping a key ends internal authority too, even without a presented cooki
   const h = await signInHarness(runtime, { config })
   await h.signInAs()
   const [row] = await query(sql => sql<{ id: string; person: string }>`SELECT id, person_id::text AS person FROM sessions`)
-  const dropped = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(
-    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ SESSION_SECRETS: JSON.stringify({ next: NEXT }) })),
-  )
+  // The key ids a host built after the key was dropped captures: runtime checks never reread configuration.
+  const keyIds = await keyIdsOf({ SESSION_SECRETS: JSON.stringify({ next: NEXT }) })
+  const dropped = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.provideService(Store.SigningKeyIds, keyIds))
   expect(await runtime.runPromise(dropped(Store.findLiveById(row!.id)))).toEqual(Option.none())
   expect(await runtime.runPromise(dropped(Store.authority(row!.id, null)))).toEqual(Option.none())
   expect(await runtime.runPromise(dropped(Store.deploymentMember(row!.person)))).toBe(false)

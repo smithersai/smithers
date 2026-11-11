@@ -33,10 +33,14 @@ export const RoleFreshMs = Context.Reference<number>("@smthrs/mvp/auth/RoleFresh
 export const roleFresh = (verifiedAt: number | null, now: number, freshMs: number): boolean =>
   verifiedAt !== null && verifiedAt <= now && now - verifiedAt < freshMs
 
-/** The host's already-validated key ids travel with its verifier; standalone stores fall back to Config. */
-export class SigningKeyIds extends Context.Service<SigningKeyIds, ReadonlyArray<string>>()(
-  "@smthrs/mvp/auth/SigningKeyIds",
-) {}
+/**
+ * The host's already-validated key ids travel with its verifier: every host captures `configuredKeyIds`, or sign-in's
+ * keys, while building and provides them. Like `RoleFreshMs`, a runtime check never rereads ambient configuration; a
+ * store used without a host has the key ids of a deployment with no `SESSION_SECRETS`.
+ */
+export const SigningKeyIds = Context.Reference<ReadonlyArray<string>>("@smthrs/mvp/auth/SigningKeyIds", {
+  defaultValue: () => ["legacy"],
+})
 
 /** The absolute cookie bound, including the alias's own start when present. */
 export const sessionDeadline = (sql: SqlClient.SqlClient, s: Statement.Fragment, h?: Statement.Fragment) =>
@@ -52,8 +56,7 @@ export const configuredKeyIds = Effect.gen(function* () {
 
 /** The one liveness predicate used by every authority reader (decision 0151). */
 export const sessionLive = (sql: SqlClient.SqlClient, s: Statement.Fragment, h?: Statement.Fragment, verifiedKey?: string | null) => Effect.gen(function* () {
-  const supplied = yield* Effect.serviceOption(SigningKeyIds)
-  const configured = Option.isSome(supplied) ? supplied.value : yield* configuredKeyIds
+  const configured = yield* SigningKeyIds
   // Internal authority has no cookie to present, but a removed key cannot keep any row live.
   const accepted = verifiedKey === undefined ? configured : configured.filter(key => key === verifiedKey)
   // Only the one-bit stale diagnostic passes null. It must not treat an unknown new stamp as a revoked row.
