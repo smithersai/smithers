@@ -6,7 +6,7 @@ import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as RunInspection from "@smthrs/engine-store/RunInspection"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Layer } from "effect"
-import { ReleaseError } from "./schema.vibe"
+import { ReleaseError } from "./schema.ts"
 
 /** The stores of one run database and the run reads over them, without an engine. */
 export const readLayer = (filename: string, root: string) =>

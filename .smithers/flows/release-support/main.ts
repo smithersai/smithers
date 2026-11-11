@@ -13,7 +13,7 @@ import { contentInput, releaseInput } from "./input.ts"
 import { atomicWrite, inside, maybeRead } from "./io.ts"
 import { inspect, readLayer, retryStep, stepTimings } from "./retry.ts"
 import { runtime } from "./runtime.ts"
-import { ContentInput, ReleaseInput, StoredRun } from "./schema.vibe"
+import { ContentInput, ReleaseInput, StoredRun } from "./schema.ts"
 
 const help = `Smithers release workflows (Node 26.4+, pnpm and jj required)
 

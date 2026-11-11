@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { commandRunner } from "../release-support/io.ts"
-import { ReleaseError } from "../release-support/schema.vibe"
+import { ReleaseError } from "../release-support/schema.ts"
 
 // A real child splits one UTF-8 character across two pipe writes 100 ms apart,
 // so the parent receives the bytes in separate chunks (#2697).

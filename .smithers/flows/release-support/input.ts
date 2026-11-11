@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { ContentInput, ReleaseInput, Version } from "./schema.vibe"
+import { ContentInput, ReleaseInput, Version } from "./schema.ts"
 
 export const version = (value: unknown): string => Schema.decodeUnknownSync(Version)(value)
 const record = (value: unknown): Record<string, unknown> => {

@@ -4,7 +4,7 @@
  * outline of the narrative it was handed. */
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { type Analysis, type ContentInput, type Evidence, ReleaseError } from "../release-support/schema.vibe"
+import { type Analysis, type ContentInput, type Evidence, ReleaseError } from "../release-support/schema.ts"
 
 /**
  * At or above this confidence Jev's narrative is the release's narrative.

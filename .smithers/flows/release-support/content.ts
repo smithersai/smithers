@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { Analysis, ContentInput, Draft, Evidence, Review } from "./schema.vibe"
+import type { Analysis, ContentInput, Draft, Evidence, Review } from "./schema.ts"
 
 export const digest = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex")
 

@@ -13,7 +13,7 @@ import {
   ReleaseError,
   Review,
   Thread
-} from "../release-support/schema.vibe"
+} from "../release-support/schema.ts"
 import { ReleaseTemplate, TemplatePick } from "./jev-template.vibe"
 
 const system = [

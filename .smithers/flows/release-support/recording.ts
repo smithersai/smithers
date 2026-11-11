@@ -4,7 +4,7 @@ import { relative } from "node:path"
 import { chromium } from "playwright"
 import { digest } from "./content.ts"
 import { atomicWrite, inside } from "./io.ts"
-import type { Evidence, Recording } from "./schema.vibe"
+import type { Evidence, Recording } from "./schema.ts"
 
 /** Record an explicitly supplied local product scenario in an isolated browser. */
 export const recordUi = async (

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { TestContext } from "node:test"
 import { templates, TemplateState } from "../release-content/jev-template.vibe"
-import type { Analysis, Draft, Evidence } from "../release-support/schema.vibe"
+import type { Analysis, Draft, Evidence } from "../release-support/schema.ts"
 
 export const evidence: Evidence = {
   version: "1.0.0-rc.1",

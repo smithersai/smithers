@@ -4,7 +4,7 @@ import { type Action, Flow, HumanTask } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { Collect } from "../release-content/workflow.vibe"
-import { ReleaseError, ReleaseInput, ReleaseResult } from "../release-support/schema.vibe"
+import { ReleaseError, ReleaseInput, ReleaseResult } from "../release-support/schema.ts"
 import {
   AuditDocs,
   Build,

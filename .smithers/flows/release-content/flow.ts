@@ -13,7 +13,7 @@ import {
   type Evidence,
   ReleaseError,
   type Review
-} from "../release-support/schema.vibe"
+} from "../release-support/schema.ts"
 import {
   Analyze,
   Check,

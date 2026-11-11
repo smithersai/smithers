@@ -28,7 +28,7 @@ import {
   ReleaseError,
   type ReleaseInput,
   type Review
-} from "./schema.vibe"
+} from "./schema.ts"
 
 interface Write {
   readonly path: string

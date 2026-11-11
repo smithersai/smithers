@@ -3372,7 +3372,7 @@
     "sha256": "41bd1fbbd30cbb93c15e1990947695272a0b49e8d982e27d76506a26d6e7e49b"
   },
   {
-    "path": ".smithers/flows/release-support/schema.vibe",
+    "path": ".smithers/flows/release-support/schema.ts",
     "sha256": "c6ff4de0464ec64de26ebeb28245b579211ef933af4b71616e10384072baee36"
   },
   {
