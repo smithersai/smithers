@@ -370,8 +370,8 @@ uses, so two connections migrating one SQLite file serialize instead of failing
 on the peer's write lock.
 
 A failing migration takes the whole pass with it: the partial DDL and the
-ledger rows roll back, and it surfaces as a `Failed` `MigrationError` on the
-defect channel.
+ledger rows roll back, and it surfaces as a `Failed` `MigrationError` in the
+typed error channel.
 
 ### layer
 

@@ -160,8 +160,8 @@ transaction, after the table has been ensured.
 ### `Migration "0_<name>" failed`
 
 **Cause:** the global id-zero migration failed. It is applied by the loader
-itself, so it surfaces as a `Failed` `MigrationError` on the defect channel
-rather than as a typed failure.
+itself, so it surfaces as a `Failed` `MigrationError` in the typed error
+channel, as the migrator reports any failed migration.
 
 **Fix:** read the cause. The whole pass rolled back, so the database is
 unchanged and the corrected migration reapplies from the start.

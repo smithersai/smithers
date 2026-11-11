@@ -607,7 +607,7 @@ const layer: Layer.Layer<
 ```
 
 Construction applies the package's migrations, so a host runs nothing itself. A
-migration the migrator raises as a defect is caught and reported as `store`,
+migration refusal from the migrator's typed error channel is reported as `store`,
 because the constructor's signature promises a `TriggerError`.
 
 ## Scheduler

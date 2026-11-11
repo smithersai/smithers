@@ -160,11 +160,12 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findError(result.failed.cause)
-        expect(Result.isSuccess(defect)).toBe(true)
-        if (Result.isSuccess(defect)) {
-          expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
-          expect(defect.success).toMatchObject({ kind: "Failed", message: `Migration "0_zero_initial" failed` })
+        expect(Result.isFailure(Cause.findDefect(result.failed.cause))).toBe(true)
+        const failure = Cause.findError(result.failed.cause)
+        expect(Result.isSuccess(failure)).toBe(true)
+        if (Result.isSuccess(failure)) {
+          expect(failure.success).toBeInstanceOf(Migrator.MigrationError)
+          expect(failure.success).toMatchObject({ kind: "Failed", message: `Migration "0_zero_initial" failed` })
         }
       }
       expect(result.records).toEqual([])
@@ -354,6 +355,10 @@ describe("composed migrations", () => {
         }
         const exit = yield* Effect.exit(Migrations.run([next, beta]))
         expect(exit._tag).toBe("Failure")
+        if (Exit.isFailure(exit)) {
+          expect(Result.isFailure(Cause.findDefect(exit.cause))).toBe(true)
+          expect(Result.getOrUndefined(Cause.findError(exit.cause))).toMatchObject({ kind: "Failed" })
+        }
         expect(yield* sql`SELECT name FROM ${TestDatabase.catalog(sql)} WHERE name = 'alpha_second'`).toEqual([])
         expect(yield* sql`SELECT migration_id FROM flows_migrations WHERE migration_id IN (2, 3)`).toEqual([])
         const corrected = { ...next, migrations: { ...next.migrations, "0003_failure": createTable("alpha_third") } }
@@ -408,11 +413,12 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findError(result.failed.cause)
-        expect(Result.isSuccess(defect)).toBe(true)
-        if (Result.isSuccess(defect)) {
-          expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
-          expect(defect.success).toMatchObject({ kind: "Failed" })
+        expect(Result.isFailure(Cause.findDefect(result.failed.cause))).toBe(true)
+        const failure = Cause.findError(result.failed.cause)
+        expect(Result.isSuccess(failure)).toBe(true)
+        if (Result.isSuccess(failure)) {
+          expect(failure.success).toBeInstanceOf(Migrator.MigrationError)
+          expect(failure.success).toMatchObject({ kind: "Failed" })
         }
       }
       expect(result.tablesAfterFailure.map((row) => row.name)).toEqual([Migrations.table])
