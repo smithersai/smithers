@@ -4,10 +4,21 @@
 #   lane-gates.sh --integration <base> [--allow-deleted <glob>]  reject lost main additions
 #   lane-gates.sh --baseline  run on a checkout of main; writes every failing name to $HOME/lanes/main-baseline-failures.txt
 # Rule: no new failing names. Only name-free tool failures may use a tool-failure baseline.
+# A baseline entry is `<check>: <name>`, and a Go name is `<package> <test>`, so a failure in one check or
+# package never excuses a same-named failure in another (#5170). The first line marks that format.
+baseline_format='# lane-gates baseline v2: <check>: <failing name>'
 set -u
 # Failing names: Node spec/TAP, Go tests and subtests (TestX, TestX/sub), bun "(fail) name", vitest "FAIL|× name".
 normalize_names() { sed -E 's/ \([0-9.]+m?s\)$//; s/ [0-9.]+m?s$//; s/ # (TODO|SKIP).*//'; }
-extract() { local esc=$'\033'; sed -E "s/${esc}\\[[0-9;]*[mK]//g" | sed -n -E '/^ *✖ failing tests:$/d; s/^ *--- FAIL: ([^ ]+).*/\1/p; s/^\(fail\) (.*) \[[0-9.]+m?s\]$/\1/p; s/^ *(FAIL|×) +(.*)$/\2/p; s/^ *✖ +(.*)$/\1/p; s/^ *not ok [0-9]+ - (.*)$/\1/p' | normalize_names | sort -u; }
+# Go prints a package's `--- FAIL:` lines before its `FAIL\t<package>` line; the package qualifies each name.
+go_packages() { awk -F '\t' '
+  /^ *--- FAIL: / { n = $0; sub(/^ *--- FAIL: /, "", n); sub(/ .*/, "", n); go[++g] = n; next }
+  $1 == "FAIL" && NF > 1 { for (i = 1; i <= g; i++) print "--- FAIL: " $2 " " go[i]; g = 0 }
+  { print }
+  END { for (i = 1; i <= g; i++) print "--- FAIL: " go[i] }'; }
+extract() { local esc=$'\033'; sed -E "s/${esc}\\[[0-9;]*[mK]//g" | go_packages | sed -n -E '/^ *✖ failing tests:$/d; s/^--- FAIL: (.*)/\1/p; s/^\(fail\) (.*) \[[0-9.]+m?s\]$/\1/p; s/^ *(FAIL|×) +(.*)$/\2/p; s/^ *✖ +(.*)$/\1/p; s/^ *not ok [0-9]+ - (.*)$/\1/p' | normalize_names | sort -u; }
+# The baseline runner's last step: the format line, then every failing `<check>: <name>` once.
+write_baseline() { { echo "$baseline_format"; sort -u "$allfails"; } > "$baseline"; }
 check() {
   local name=$1 cmd=$2 out rc names n known
   echo "== $name: $cmd" >> "$log"
@@ -16,7 +27,7 @@ check() {
   [ $rc -eq 0 ] && { echo "PASS $name" >> "$log"; return 0; }
   names=$(printf '%s\n' "$out" | extract)
   if [ $mode = baseline ]; then
-    if [ -n "$names" ]; then printf '%s\n' "$names" >> "$allfails"
+    if [ -n "$names" ]; then while IFS= read -r n; do printf '%s: %s\n' "$name" "$n"; done <<< "$names" >> "$allfails"
     elif printf '%s\n' "$out" | grep -qE '(tests? failed|fail(ed|ures)?[ :]+[1-9]|# fail [1-9]|not ok|✖|✔|✓|√|^# Subtest:|^ok [0-9]+|--- (FAIL|PASS):|\((fail|pass)\))'; then
       echo "$name: unnamed test failure" >> "$allfails"
     else echo "$name: tool-failure" >> "$allfails"; fi
@@ -37,7 +48,11 @@ check() {
     echo "FAIL $name (unreadable baseline)" >> "$log"
     newreds+=("$name: unreadable baseline"); return 1
   fi
-  while IFS= read -r n; do grep -qxF "$n" <<< "$known" || newreds+=("$name: $n"); done <<< "$names"
+  if [ "$(head -n 1 <<< "$known")" != "$baseline_format" ]; then
+    echo "FAIL $name (baseline predates per-check names; regenerate it with ~/lanes/baseline-run.sh)" >> "$log"
+    newreds+=("$name: unqualified baseline"); return 1
+  fi
+  while IFS= read -r n; do grep -qxF "$name: $n" <<< "$known" || newreds+=("$name: $n"); done <<< "$names"
   echo "FAIL $name (compared with main's baseline)" >> "$log"
 }
 
@@ -207,7 +222,7 @@ for dir in $(printf '%s\n' "$changed" | changed_test_dirs); do
 done
 
 if [ $mode = baseline ]; then
-  sort -u "$allfails" > "$baseline"; echo "BASELINE $(wc -l < "$baseline") failing names at $(git rev-parse --short HEAD) -> $baseline" | tee -a "$log"; exit 0
+  write_baseline; echo "BASELINE $(wc -l < "$baseline") failing names at $(git rev-parse --short HEAD) -> $baseline" | tee -a "$log"; exit 0
 fi
 if [ ${#newreds[@]} -gt 0 ]; then
   { echo "BLOCKED: new failures compared with main:"; printf '  %s\n' "${newreds[@]}"; } | tee -a "$log"; exit 1

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
 const script = resolve(import.meta.dirname, 'lane-gates.sh')
+const formatLine = '# lane-gates baseline v2: <check>: <failing name>\n'
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'lane-gates-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -13,32 +14,35 @@ function fixture(t) {
 }
 for (const [label, output, baseline, allowed] of [
   ['new node failure', '✖ some test (1.2ms)', 'flows: tool-failure', false],
-  ['known node failure', '✖ some test (1.2ms)', 'some test', true],
+  ['known node failure', '✖ some test (1.2ms)', 'flows: some test', true],
   ['new TAP failure', 'not ok 1 - some test', 'flows: tool-failure', false],
-  ['known TAP failure', 'not ok 1 - some test', 'some test', true],
+  ['known TAP failure', 'not ok 1 - some test', 'flows: some test', true],
   ['tool failure', 'Error: compiler unavailable', 'flows: tool-failure', true],
   ['names and tool error', '✖ some test\nError: compiler unavailable', 'flows: tool-failure', false],
   ['passed names and tool error', '✔ some test\nError: compiler unavailable', 'flows: tool-failure', false],
   ['unnamed failures', '# tests 3\n# fail 1', 'flows: tool-failure', false],
-  ['Go', '    --- FAIL: TestX/sub (0.01s)', 'TestX/sub', true],
-  ['bun', '(fail) some test [1.20ms]', 'some test', true],
-  ['vitest FAIL', ' FAIL  some test', 'some test', true],
-  ['vitest cross', ' × some test', 'some test', true],
-  ['vitest timed cross', ' × some test 124ms', 'some test', true],
-  ['vitest decimal duration', ' × some test 1.25s', 'some test', true],
-  ['vitest new timed failure', ' × new test 124ms', 'some test', false],
-  ['timed baseline milliseconds', ' × some test 124ms', 'some test 5312ms', true],
-  ['timed baseline seconds', ' × some test 1.25s', 'some test 2.75s', true],
-  ['timed baseline parentheses', '✖ some test (1.2ms)', 'some test (4ms)', true],
-  ['timed baseline does not admit new names', ' × other test 124ms', 'some test 5312ms', false],
-  ['timed baseline mixed names', ' × first test 1ms\n × second test 2ms', 'first test 13ms\nsecond test 2.5s', true],
-  ['duration inside a name stays significant', ' × takes 10ms for input 1ms', 'takes 11ms for input 13ms', false],
-  ['ANSI node', '\x1b[31m✖ some test (1ms)\x1b[0m', 'some test', true],
-  ['missing tool baseline', 'Error: compiler unavailable', 'other test', false]
+  ['Go', '    --- FAIL: TestX/sub (0.01s)', 'flows: TestX/sub', true],
+  ['bun', '(fail) some test [1.20ms]', 'flows: some test', true],
+  ['vitest FAIL', ' FAIL  some test', 'flows: some test', true],
+  ['vitest cross', ' × some test', 'flows: some test', true],
+  ['vitest timed cross', ' × some test 124ms', 'flows: some test', true],
+  ['vitest decimal duration', ' × some test 1.25s', 'flows: some test', true],
+  ['vitest new timed failure', ' × new test 124ms', 'flows: some test', false],
+  ['timed baseline milliseconds', ' × some test 124ms', 'flows: some test 5312ms', true],
+  ['timed baseline seconds', ' × some test 1.25s', 'flows: some test 2.75s', true],
+  ['timed baseline parentheses', '✖ some test (1.2ms)', 'flows: some test (4ms)', true],
+  ['timed baseline does not admit new names', ' × other test 124ms', 'flows: some test 5312ms', false],
+  ['timed baseline mixed names', ' × first test 1ms\n × second test 2ms', 'flows: first test 13ms\nflows: second test 2.5s', true],
+  ['duration inside a name stays significant', ' × takes 10ms for input 1ms', 'flows: takes 11ms for input 13ms', false],
+  ['ANSI node', '\x1b[31m✖ some test (1ms)\x1b[0m', 'flows: some test', true],
+  ['missing tool baseline', 'Error: compiler unavailable', 'flows: other test', false],
+  ['Go names carry their package', '--- FAIL: TestX (0s)\nFAIL\nFAIL\tfixture/a\t0.01s', 'flows: fixture/a TestX', true],
+  ['same Go name in another package', '--- FAIL: TestX (0s)\nFAIL\nFAIL\tfixture/b\t0.01s', 'flows: fixture/a TestX', false],
+  ['same name failing in another check', ' × some test', 'other: some test', false]
 ]) test(label, t => {
   const dir = fixture(t)
   writeFileSync(join(dir, 'output'), output)
-  writeFileSync(join(dir, 'baseline'), baseline + '\n')
+  writeFileSync(join(dir, 'baseline'), formatLine + baseline + '\n')
   const result = spawnSync('bash', ['-c', `source "$1"
 mode=gate; log="$2/log"; baseline="$2/baseline"; newreds=()
 check flows 'cat "$FIXTURE/output"; exit 1'
@@ -46,7 +50,7 @@ check flows 'cat "$FIXTURE/output"; exit 1'
     encoding: 'utf8', env: { ...process.env, FIXTURE: dir }
   })
   assert.equal(result.status, allowed ? 0 : 1, result.stderr)
-  assert.equal(readFileSync(join(dir, 'baseline'), 'utf8'), baseline + '\n')
+  assert.equal(readFileSync(join(dir, 'baseline'), 'utf8'), formatLine + baseline + '\n')
 })
 for (const behavior of ['drop', 'keep', 'delete', 'allow-delete', 'wrong-allowance']) test(`integration ${behavior}`, t => {
   const dir = fixture(t)
@@ -75,6 +79,50 @@ for (const reporter of ['spec', 'tap']) test(`real node:test ${reporter}`, t => 
   assert.equal(run.status, 1)
   const parsed = spawnSync('bash', ['-c', 'source "$1"; extract', '_', script], { input: run.stdout, encoding: 'utf8' })
   assert.match(parsed.stdout, /^some test$/m)
+})
+
+// A failure in one package used to excuse a new same-named failure in another (#5170).
+test('a baseline failure in one package does not excuse the same name failing in another', t => {
+  const dir = fixture(t)
+  for (const [pkg, body] of [['a', "throw new Error('old A failure')"], ['b', "throw new Error('new B regression')"]]) {
+    mkdirSync(join(dir, pkg))
+    writeFileSync(join(dir, pkg, 'row.test.mjs'), `import {test} from 'node:test'; test('writes a row', () => { ${body} })`)
+  }
+  const env = { ...process.env, FIXTURE: dir }; delete env.NODE_TEST_CONTEXT
+  const run = (mode, pkg) => spawnSync('bash', ['-c', `source "$1"
+mode=${mode}; log="$2/log"; baseline="$2/baseline"; allfails="$2/allfails"; newreds=()
+check tests:packages/${pkg} 'node --test "$FIXTURE/${pkg}/row.test.mjs"'
+[ $mode = baseline ] && write_baseline
+printf '%s\\n' "\${newreds[@]}"`, '_', script, dir], { encoding: 'utf8', env })
+  assert.equal(run('baseline', 'a').status, 0)
+  assert.equal(readFileSync(join(dir, 'baseline'), 'utf8'), formatLine + 'tests:packages/a: writes a row\n')
+  assert.equal(run('gate', 'a').stdout, '\n')
+  assert.equal(run('gate', 'b').stdout, 'tests:packages/b: writes a row\n')
+})
+
+test('a baseline without the per-check format line admits no named failure', t => {
+  const dir = fixture(t)
+  writeFileSync(join(dir, 'output'), ' × some test 1ms')
+  writeFileSync(join(dir, 'baseline'), 'some test\nflows: some test\n')
+  const result = spawnSync('bash', ['-c', `source "$1"
+mode=gate; log="$2/log"; baseline="$2/baseline"; newreds=()
+check flows 'cat "$FIXTURE/output"; exit 1'
+[ \${#newreds[@]} -eq 0 ]`, '_', script, dir], {
+    encoding: 'utf8', env: { ...process.env, FIXTURE: dir }
+  })
+  assert.equal(result.status, 1)
+  assert.match(readFileSync(join(dir, 'log'), 'utf8'), /baseline predates per-check names/)
+})
+
+// `go test -p 2 ./...` output for two packages that both fail TestCreate/row.
+test('go test failures are named by package', () => {
+  const output = ['a', 'b'].map(pkg => `--- FAIL: TestCreate (0.00s)
+    --- FAIL: TestCreate/row (0.00s)
+        x_test.go:3: red
+FAIL
+FAIL\tfixture.local/same/${pkg}\t0.002s`).join('\n') + '\nFAIL\n'
+  const parsed = spawnSync('bash', ['-c', 'source "$1"; extract', '_', script], { input: output, encoding: 'utf8' })
+  assert.equal(parsed.stdout, ['a', 'b'].flatMap(pkg => [`fixture.local/same/${pkg} TestCreate`, `fixture.local/same/${pkg} TestCreate/row`]).join('\n') + '\n')
 })
 
 test('baseline writes require the baseline-run marker', () => {

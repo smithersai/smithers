@@ -3,7 +3,8 @@
  *
  * Runs `lane-gates.sh` with bash. `gate`, in a lane worktree rebased onto
  * `origin/main`, fails on any failing test name absent from main's baseline
- * (`$HOME/lanes/main-baseline-failures.txt`), on unformatted Go and on root
+ * (`$HOME/lanes/main-baseline-failures.txt`) for the same check and Go
+ * package, on unformatted Go and on root
  * ESLint findings in touched files. `baseline`, on a checkout of main, writes
  * that baseline; only the baseline runner (`LANE=fr-baseline-main`) may.
  * `integration` fails when HEAD drops lines main added since `base`, except in
