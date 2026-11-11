@@ -498,7 +498,7 @@ describe("SchemaBridge", () => {
     } as const))
     try ensuring(effect {
       const cli = do {
-        provide FlowInvoker.layerNoop() {
+        provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop())) {
           try Incur.createCli("flows", Object.keys(inputs).map((name) => makeRoute(name)))
         }
       }

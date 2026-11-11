@@ -124,7 +124,9 @@ the number `42` through the flow's own schema before invocation.
 
 In [VibeLang](https://github.com/smithersai/vibelang) the scan and the command
 are `effect` functions. The stub boundary's `invoke` is an `effect` arrow that
-returns the output directly, `provide FlowInvoker.FlowInvoker = invoker`
+returns the output directly. Wrap construction in `Effect.try` to admit the
+constructor's synchronous `TypeError` into the Effect error channel.
+`provide FlowInvoker.FlowInvoker = try invoker`
 replaces `Effect.provide(Layer.succeed(…))`, and `main` provides
 `NodeServices.layer` for the `FileSystem` and `Path` services the scan needs.
 The caller passes the flows root, because a `.vibe` file has no `process.cwd()`.
@@ -137,9 +139,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Command, FileRouter, FlowInvoker } from "@smthrs/fs"
 
 /** A stub boundary that accepts every review it is handed. */
-const invoker = FlowInvoker.make({
+const invoker = Effect.try(() => FlowInvoker.make({
   invoke: effect ({ input }) => ({ accepted: true, number: (input as { readonly number: number }).number })
-})
+}))
 
 /** Scans the flows tree under `root` without importing any flow module. */
 export effect function routeNames(root: string) {
@@ -149,7 +151,7 @@ export effect function routeNames(root: string) {
 
 /** Builds the command surface and executes one command string through the stub. */
 export effect function execute(root: string, commandString: string) {
-  provide FlowInvoker.FlowInvoker = invoker {
+  provide FlowInvoker.FlowInvoker = try invoker {
     const { routes } = try FileRouter.scan({ root })
     const commands = try Command.make(routes)
     return { listed: commands.list(), output: try commands.execute(commandString) }

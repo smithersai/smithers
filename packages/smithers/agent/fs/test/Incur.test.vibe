@@ -59,13 +59,13 @@ effect function gatedLoad(gate: Promise<void>, interrupted?: Mock) {
 
 effect function makeCli(routes: ReadonlyArray<Route.Route> = [makeRoute("review")], invoke?: FlowInvoker.FlowInvoker.Shape["invoke"]) {
   const seen: Array<FlowInvoker.Invocation> = []
-  const invoker = FlowInvoker.make({
+  const invoker = try Effect.orDie(Effect.try(() => FlowInvoker.make({
     invoke: invoke ?? (effect (invocation) => {
       seen.push(invocation)
       const number = (invocation.input as { number: number }).number
       return { accepted: true, number }
     })
-  })
+  })))
   provide FlowInvoker.FlowInvoker = invoker {
     return { cli: try Incur.createCli("flows", routes), seen }
   }
@@ -520,7 +520,7 @@ describe("Incur projection", () => {
   })
 
   it.live("refuses a child route that claims the reserved self segment", effect () => {
-    provide FlowInvoker.layerNoop() {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop())) {
       expect(try failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
         .toMatchObject({ code: "duplicate_route", path: "domains/self" })
     }
@@ -798,7 +798,7 @@ describe("Incur projection", () => {
     const logger = Logger.make((entry) => {
       logged.push(entry)
     })
-    const cli = try debugCli(Logger.layer([logger]), FlowInvoker.make({ invoke: () => die(defect) }))
+    const cli = try debugCli(Logger.layer([logger]), try Effect.orDie(Effect.try(() => FlowInvoker.make({ invoke: () => die(defect) }))))
     const response = try call(cli, "HTTP")
     expect(response.failed).toBe(true)
     expect(response.body).not.toContain(defect.message)
@@ -811,7 +811,7 @@ describe("Incur projection", () => {
     const sentinel = "SECRET_SENTINEL_debug_console"
     const cli = try debugCli(
       Logger.layer([Logger.defaultLogger]),
-      FlowInvoker.make({ invoke: () => die(new Error(sentinel)) })
+      try Effect.orDie(Effect.try(() => FlowInvoker.make({ invoke: () => die(new Error(sentinel)) })))
     )
     const stdout = vi.spyOn(nativeConsole, "log").mockImplementation(() => undefined)
     const stderr = vi.spyOn(nativeConsole, "error").mockImplementation(() => undefined)

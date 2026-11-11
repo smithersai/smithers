@@ -27,16 +27,16 @@ effect function staleRecord(name: string) {
 }
 
 const invoked: Array<string> = []
-const invoker = FlowInvoker.make({
+const invoker = Effect.orDie(Effect.try(() => FlowInvoker.make({
   invoke: effect (invocation) => {
     invoked.push(invocation.name)
     return invocation.input
   }
-})
+})))
 
 /** Runs a program with the recording invoker. */
 effect function invoking<A, E>(program: A!E!FlowInvoker.FlowInvoker): A!E {
-  provide FlowInvoker.FlowInvoker = invoker {
+  provide FlowInvoker.FlowInvoker = try invoker {
     return try program
   }
 }

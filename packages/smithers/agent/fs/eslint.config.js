@@ -12,7 +12,9 @@ export default tseslint.config(
       "**/dist",
       "**/build",
       "**/coverage",
-      ...vibeDeclarations(import.meta.dirname)
+      ...vibeDeclarations(import.meta.dirname),
+      // A nested VibeLang module (FlowInvoker.vibe construction) gets its own generated declaration.
+      "**/*.vibe.*.d.ts"
     ]
   },
   js.configs.recommended,

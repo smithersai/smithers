@@ -38,6 +38,7 @@
     ".": "./src/index.ts",
     "./Directive": "./src/Directive.ts",
     "./*": "./src/*.vibe",
+    "./FlowInvoker.vibe.construction": null,
     "./internal/*": null,
     "./*/index": null
   },
@@ -73,6 +74,7 @@
         "import": "./dist/esm/*.js",
         "require": "./dist/cjs/*.js"
       },
+      "./FlowInvoker.vibe.construction": null,
       "./internal/*": null,
       "./*/index": null
     }

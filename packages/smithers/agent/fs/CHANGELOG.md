@@ -7,6 +7,9 @@
 - `Route.snapshot` reads an `Option`'s tag and payload as data properties, so
   an accessor inside `description`, `placement`, or `ui` fails with
   `invalid_route` instead of running.
+- `FlowInvoker.make`, `makeNoop`, and `layerNoop` throw `TypeError` for an
+  implementation whose `invoke` is missing, inherited, an accessor, or not
+  a function, and for an invalid supplied override, as documented.
 
 ## [0.1.0] - 2026-09-01
 

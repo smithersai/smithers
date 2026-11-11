@@ -327,8 +327,8 @@ invoking anything.
 
 Constructs an invoker that fails every invocation with
 `invocation_unavailable`, retaining no invocation data. An `invoke` override
-replaces that default; an accessor or non-function override throws
-`TypeError`.
+replaces that default; a non-record, or an inherited, accessor, or
+non-function override, throws `TypeError` without invoking anything.
 
 ### `FlowInvoker.layerNoop`
 
@@ -336,7 +336,8 @@ replaces that default; an accessor or non-function override throws
 ;((overrides?: Partial<FlowInvoker>) => Layer.Layer<FlowInvoker>)
 ```
 
-Provides `makeNoop` as the `FlowInvoker` layer.
+Provides `makeNoop` as the `FlowInvoker` layer, so an invalid override throws
+the same `TypeError` before the layer exists.
 
 ## FsError
 

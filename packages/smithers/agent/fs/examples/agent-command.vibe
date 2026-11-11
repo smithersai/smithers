@@ -4,13 +4,13 @@ import { Command, FileRouter, FlowInvoker, Incur } from "../src/index.ts"
 export { flowsRoot } from "./agent-command.platform.ts"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
-const invoker = FlowInvoker.make({
+const invoker = Effect.try(() => FlowInvoker.make({
   invoke: effect ({ input }) => ({ accepted: true, number: (input as { number: number }).number })
-})
+}))
 
 /** Lists the commands under root and executes one command string. */
 export effect function runAgentCommand(root: string, commandString: string) {
-  provide platform, FlowInvoker.FlowInvoker = invoker {
+  provide platform, FlowInvoker.FlowInvoker = try invoker {
     const { routes } = try FileRouter.scan({ root })
     const commands = try Command.make(routes)
     const output = try commands.execute(commandString)
@@ -20,7 +20,7 @@ export effect function runAgentCommand(root: string, commandString: string) {
 
 /** Serves one HTTP request and closes its CLI. */
 export effect function fetchCommand(root: string, request: Request) {
-  provide platform, FlowInvoker.FlowInvoker = invoker {
+  provide platform, FlowInvoker.FlowInvoker = try invoker {
     const { routes } = try FileRouter.scan({ root })
     const cli = try Incur.createCli("flows", routes)
     return try ensuring(

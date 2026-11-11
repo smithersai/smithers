@@ -61,7 +61,21 @@ const exit = await Effect.runPromise(
 ```
 
 To override the default with one behavior, pass `invoke` to `makeNoop` or
-`layerNoop`. An accessor or non-function override throws `TypeError`.
+`layerNoop`. An inherited, accessor, or non-function override throws `TypeError`.
+
+In VibeLang effect code, wrap constructor calls in `Effect.try` so a synchronous
+`TypeError` becomes a typed failure:
+
+```vibe
+effect function makeInvoker() {
+  return try Effect.try(() => FlowInvoker.make({
+    invoke: effect ({ input }) => input
+  }))
+}
+```
+
+This also applies to `makeNoop` and `layerNoop`. The constructors validate
+immediately; running the returned invoker remains an Effect.
 
 ## Assert on decoded input and sanitized errors
 

@@ -6,6 +6,9 @@
 
 import type * as Flow from "@smthrs/core/Flow"
 import { FsError } from "./FsError.vibe"
+import { noopConstructors } from construction
+
+export { make } from construction
 
 /**
  * One materialized invocation.
@@ -32,39 +35,91 @@ export service FlowInvoker {
   invoke(invocation: Invocation): unknown!FsError
 }
 
-/**
- * Constructs a flow invoker from an implementation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (implementation: FlowInvoker.Shape): FlowInvoker.Shape => {
-  return Object.freeze({ invoke: implementation.invoke })
-}
-
-/**
- * Constructs an invoker that fails every invocation.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const makeNoop = (overrides: Partial<FlowInvoker.Shape> = {}): FlowInvoker.Shape => {
-  return make({
-    invoke: overrides.invoke ?? (effect (_invocation) => {
-      throw new FsError({
-        code: "invocation_unavailable",
-        method: "FlowInvoker.invoke",
-        description: "No flow invoker is installed"
-      })
-    })
+const defaults = noopConstructors(FlowInvoker, effect (_invocation) => {
+  throw new FsError({
+    code: "invocation_unavailable",
+    method: "FlowInvoker.invoke",
+    description: "No flow invoker is installed"
   })
-}
+})
 
 /**
- * Provides an invoker that fails every invocation.
+ * Constructs an invoker that fails every invocation. An invalid `invoke`
+ * override throws `TypeError` without invoking anything.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeNoop = defaults.makeNoop
+
+/**
+ * Provides an invoker that fails every invocation. An invalid `invoke`
+ * override throws `TypeError` before the layer exists.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<FlowInvoker.Shape> = {}): Layer.Layer<FlowInvoker> =>
-  Layer.succeed(FlowInvoker, makeNoop(overrides))
+export const layerNoop = defaults.layerNoop
+
+// Construction is a synchronous JavaScript boundary; invocation remains an Effect.
+module construction {
+  import type * as Context from "effect/Context"
+  import * as Layer from "effect/Layer"
+  import type { FlowInvoker } from "./FlowInvoker.vibe"
+
+  type Shape = FlowInvoker.Shape
+
+  const isRecord = (value: unknown): value is object =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+
+  /** @throws {TypeError} When the implementation does not carry its own data-property function. */
+  const readInvoke = (record: unknown, surface: string, fallback?: Shape["invoke"]): Shape["invoke"] => {
+    try {
+      if (isRecord(record)) {
+        const descriptor = Object.getOwnPropertyDescriptor(record, "invoke")
+        if (descriptor === undefined && fallback !== undefined && !("invoke" in record)) return fallback
+        if (descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "function") {
+          return descriptor.value as Shape["invoke"]
+        }
+      }
+    } catch {
+      throw new TypeError(`${surface} could not inspect invoke as an own data-property function`)
+    }
+    throw new TypeError(`${surface} requires invoke as an own data-property function`)
+  }
+
+  /**
+   * Constructs a frozen flow invoker from an own data-property function.
+   *
+   * @throws {TypeError} When the implementation is not a record or its invoke is missing, inherited, an accessor, or not a function.
+   * @category constructors
+   * @since 0.1.0
+   */
+  export const make = (implementation: Shape): Shape =>
+    Object.freeze({ invoke: readInvoke(implementation, "FlowInvoker.make") })
+
+  type NoopConstructors = {
+    /** @throws {TypeError} When a supplied override is not an own data-property function. */
+    readonly makeNoop: (overrides?: Partial<Shape>) => Shape
+    /** @throws {TypeError} When a supplied override is not an own data-property function. */
+    readonly layerNoop: (overrides?: Partial<Shape>) => Layer.Layer<FlowInvoker>
+  }
+
+  /**
+   * Binds synchronous constructors to the service key and its default Effect implementation.
+   *
+   * @private
+   * @since 0.1.0
+   */
+  export const noopConstructors = (key: Context.Key<FlowInvoker, Shape>, unavailable: Shape["invoke"]): NoopConstructors => {
+    /** @throws {TypeError} When a supplied override is not an own data-property function. */
+    const makeNoop = (overrides: Partial<Shape> = {}): Shape =>
+      Object.freeze({ invoke: readInvoke(overrides, "FlowInvoker.makeNoop", unavailable) })
+
+    /** @throws {TypeError} When a supplied override is not an own data-property function. */
+    const layerNoop = (overrides: Partial<Shape> = {}): Layer.Layer<FlowInvoker> =>
+      Layer.succeed(key, makeNoop(overrides))
+
+    return { makeNoop, layerNoop }
+  }
+}

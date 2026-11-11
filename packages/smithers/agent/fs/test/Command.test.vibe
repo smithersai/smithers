@@ -209,7 +209,7 @@ describe("Command.call decoded boundary", () => {
 
   it.effect("returns decoded output from call and encoded output from execute", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
-    provide FlowInvoker.layerNoop({ invoke: effect () => 42 }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect () => 42 }))) {
       expect(try surface.call("scalar", 1)).toBe(42)
       expect(try surface.execute("scalar 1")).toBe("42")
     }
@@ -218,7 +218,7 @@ describe("Command.call decoded boundary", () => {
   it.effect("accepts decoded transforming input in call and encoded input in execute", effect () => {
     const surface = try surfaceFor(Schema.NumberFromString, Schema.Number)
     const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect ({ input }) => input)
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       expect(try surface.call("scalar", 42)).toBe(42)
       expect(try surface.execute("scalar 42")).toBe(42)
       expect(invoke.mock.calls.map(([invocation]) => invocation.input)).toEqual([42, 42])
@@ -230,7 +230,7 @@ describe("Command.call decoded boundary", () => {
   it.effect("refuses scalar tokens that execute would otherwise drop", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
     const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect () => 42)
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       for (const command of ["scalar 1 --typo x", "scalar 1 2", "scalar 1 --input 2", "scalar --input 1 --typo x"]) {
         expect(try failureOf(surface.execute(command)), command).toMatchObject({ code: "decode_failed" })
       }
@@ -247,7 +247,7 @@ describe("Command.call decoded boundary", () => {
       enumerable: true,
       get: () => ++getterCalls
     })
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       for (const input of [accessor, { number: NaN }, { number: 1, tags: ["x".repeat(65_537)] }]) {
         expect(try failureOf(surface.call("review", input as never))).toMatchObject({
           code: "decode_failed",
@@ -262,7 +262,7 @@ describe("Command.call decoded boundary", () => {
   it.effect("refuses unsafe decoded output after invocation", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.Number)
     for (const output of [NaN, Infinity]) {
-      provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
+      provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect () => output }))) {
         expect(try failureOf(surface.call("scalar", 1))).toMatchObject({
           code: "decode_failed",
           method: "Command.call"
@@ -282,7 +282,7 @@ describe("Command.call decoded boundary", () => {
       }
     })
     for (const output of [accessor, { value: "x".repeat(65_537) }]) {
-      provide FlowInvoker.layerNoop({ invoke: effect () => output }) {
+      provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect () => output }))) {
         expect(try exit(surface.call("scalar", { value: "ok" })) is Exit.Failure).toBe(true)
       }
     }
@@ -306,7 +306,7 @@ describe("Command.call decoded boundary", () => {
     const surface = try Command.make([makeRoute("scalar")])
     const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect ({ input }) => (input as { number: number }).number)
     const input: { number: number } = { number: 1 }
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       const pending = fork surface.call("scalar", input)
       try Deferred.await(loading)
       input.number = 2
@@ -319,7 +319,7 @@ describe("Command.call decoded boundary", () => {
   it.effect("preserves native decoded values on both sides of call", effect () => {
     const surface = try surfaceFor(Schema.DateFromString, Schema.DateFromString)
     const date = new Date("2026-01-01T00:00:00.000Z")
-    provide FlowInvoker.layerNoop({ invoke: effect ({ input }) => input }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect ({ input }) => input }))) {
       const output = try surface.call("scalar", date)
       expect(output).toBeInstanceOf(Date)
       expect(output).toEqual(date)
@@ -329,13 +329,13 @@ describe("Command.call decoded boundary", () => {
   it.effect("accepts void input and void output once, and lets the schema refuse undefined", effect () => {
     const surface = try surfaceFor(Schema.Void, Schema.Void)
     const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect () => undefined)
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       expect(try surface.call("scalar", undefined as never)).toBeUndefined()
     }
     expect(invoke).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ input: undefined }))
     const numeric = try surfaceFor(Schema.Number, Schema.Number)
-    provide FlowInvoker.layerNoop({ invoke }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
       expect(try failureOf(numeric.call("scalar", undefined as never))).toMatchObject({
         code: "decode_failed",
         method: "Command.call"
@@ -346,7 +346,7 @@ describe("Command.call decoded boundary", () => {
 
   it.effect("rejects invalid decoded output with a sanitized typed error", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
-    provide FlowInvoker.layerNoop({ invoke: effect () => "TOP-SECRET" }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect () => "TOP-SECRET" }))) {
       const error = try failureOf(surface.call("scalar", 1))
       expect(error).toMatchObject({ code: "decode_failed", method: "Command.call" })
       expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
@@ -372,7 +372,7 @@ describe("Command.call decoded boundary", () => {
           throw new Error(sentinel)
         }) as unknown as FlowInvoker.FlowInvoker.Shape["invoke"]
       const surface = try surfaceFor(Schema.Number, Schema.Number)
-      provide FlowInvoker.layerNoop({ invoke }) {
+      provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke }))) {
         const error = try failureOf(run(surface))
         expect(error).toMatchObject({
           code: "invocation_unavailable",
@@ -386,13 +386,13 @@ describe("Command.call decoded boundary", () => {
     it.effect("preserves interruption with a concurrent defect", effect () => {
       const sentinel = "SECRET_SENTINEL_interrupted_backend"
       const surface = try surfaceFor(Schema.Number, Schema.Number)
-      provide FlowInvoker.layerNoop({
+      provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({
         invoke: () =>
           Effect.failCause(Cause.fromReasons<never>([
             ...Cause.interrupt().reasons,
             ...Cause.die(new Error(sentinel)).reasons
           ]))
-      }) {
+      }))) {
         const outcome = try exit(run(surface))
         if (!(outcome is Exit.Failure(let cause))) return try sync(() => expect.unreachable())
         expect(cause.reasons.every(Cause.isInterruptReason)).toBe(true)
@@ -403,7 +403,7 @@ describe("Command.call decoded boundary", () => {
     it.effect("preserves deliberately public typed failures", effect () => {
       const surface = try surfaceFor(Schema.Number, Schema.Number)
       const refusal = new FsError({ code: "invocation_unavailable", method: "test.invoke", description: "Public refusal" })
-      provide FlowInvoker.layerNoop({ invoke: () => fail(refusal) }) {
+      provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: () => fail(refusal) }))) {
         expect(try failureOf(run(surface))).toBe(refusal)
       }
     })

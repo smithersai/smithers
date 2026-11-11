@@ -37,12 +37,12 @@ describe("Command surface", () => {
   it.effect("invokes decoded input and encodes output", effect () => {
     const surface = try Command.make([makeRoute("review")])
     const seen: Array<FlowInvoker.Invocation> = []
-    const invoker = FlowInvoker.make({
+    const invoker = try Effect.orDie(Effect.try(() => FlowInvoker.make({
       invoke: effect (invocation) => {
         seen.push(invocation)
         return { accepted: true, number: (invocation.input as { number: number }).number }
       }
-    })
+    })))
     provide FlowInvoker.FlowInvoker = invoker {
       expect(try surface.execute("review --number 42")).toEqual({ accepted: true, number: 42 })
     }
@@ -54,12 +54,12 @@ describe("Command surface", () => {
   it.effect("snapshots programmatic input before loading and requires an exact name", effect () => {
     const surface = try Command.make([makeRoute("nested/visible")])
     const observed: Array<unknown> = []
-    const invoker = FlowInvoker.make({
+    const invoker = try Effect.orDie(Effect.try(() => FlowInvoker.make({
       invoke: effect ({ input }) => {
         observed.push(input)
         return { accepted: true, number: (input as { number: number }).number }
       }
-    })
+    })))
     provide FlowInvoker.FlowInvoker = invoker {
       const source: { number: number } = { number: 1 }
       // Start the call before mutating its source, as runPromise would: the
@@ -90,7 +90,7 @@ describe("Command surface", () => {
 
     expect((try failureOf(surface.parse("invalid --number 1"))).code).toBe("load_failed")
 
-    provide FlowInvoker.layerNoop({ invoke: effect () => ({ accepted: "yes", number: 1 }) }) {
+    provide try Effect.orDie(Effect.try(() => FlowInvoker.layerNoop({ invoke: effect () => ({ accepted: "yes", number: 1 }) }))) {
       expect((try failureOf(surface.execute("review --number 1"))).code).toBe("encode_failed")
     }
   })
