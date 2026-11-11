@@ -30,9 +30,9 @@ export const Recording = Schema.Struct({
 })
 export const RecordingAsset = Schema.Struct({ path: Schema.String, digest: Schema.String })
 
-/** An optional input key that decodes to `value` when the caller omits it. */
-const withDefault = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
-  Schema.optionalKey(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))
+/** An input key the caller may omit; it then decodes to `value`. */
+const defaultKey = <S extends Schema.Constraint>(schema: S, value: S["Encoded"]): Schema.withDecodingDefaultKey<S> =>
+  Schema.withDecodingDefaultKey<S>(Effect.succeed(value))(schema)
 
 const localOrigins = ["localhost", "127.0.0.1", "[::1]"]
 const isLocalOrigin = (value: string) => {
@@ -47,42 +47,42 @@ const isLocalOrigin = (value: string) => {
  */
 export const ContentInput = Schema.Struct({
   version: Version,
-  from: withDefault(Schema.NonEmptyString, "auto"),
-  dryRun: withDefault(Schema.Boolean, true),
-  publish: withDefault(Schema.Boolean, false),
-  postX: withDefault(Schema.Boolean, false),
-  autoCommit: withDefault(Schema.Boolean, false),
-  recording: withDefault(Schema.NullOr(Recording), null),
-  channels: withDefault(
+  from: defaultKey(Schema.NonEmptyString, "auto"),
+  dryRun: defaultKey(Schema.Boolean, true),
+  publish: defaultKey(Schema.Boolean, false),
+  postX: defaultKey(Schema.Boolean, false),
+  autoCommit: defaultKey(Schema.Boolean, false),
+  recording: defaultKey(Schema.NullOr(Recording), null),
+  channels: defaultKey(
     Schema.Struct({
-      changelog: withDefault(Schema.Boolean, true),
-      blog: withDefault(Schema.Boolean, true),
-      thread: withDefault(Schema.Boolean, true),
-      media: withDefault(Schema.Boolean, true)
+      changelog: defaultKey(Schema.Boolean, true),
+      blog: defaultKey(Schema.Boolean, true),
+      thread: defaultKey(Schema.Boolean, true),
+      media: defaultKey(Schema.Boolean, true)
     }),
-    { changelog: true, blog: true, thread: true, media: true }
+    {}
   ),
-  title: withDefault(Schema.String, ""),
-  notes: withDefault(Schema.String, ""),
-  minScore: withDefault(
+  title: defaultKey(Schema.String, ""),
+  notes: defaultKey(Schema.String, ""),
+  minScore: defaultKey(
     Schema.Finite.check(
       Schema.isBetween({ minimum: 0, maximum: 1 }, { message: "minScore must be between 0 and 1" })
     ),
     0.86
   ),
-  maxRevisions: withDefault(
+  maxRevisions: defaultKey(
     Schema.Int.check(
       Schema.isBetween({ minimum: 0, maximum: 3 }, { message: "maxRevisions must be an integer from 0 to 3" })
     ),
     2
   ),
-  maxTweets: withDefault(
+  maxTweets: defaultKey(
     Schema.Int.check(
       Schema.isBetween({ minimum: 1, maximum: 12 }, { message: "maxTweets must be an integer from 1 to 12" })
     ),
     8
   ),
-  maxTweetChars: withDefault(
+  maxTweetChars: defaultKey(
     Schema.Int.check(
       Schema.isBetween({ minimum: 1, maximum: 280 }, { message: "maxTweetChars must be an integer from 1 to 280" })
     ),
@@ -108,12 +108,12 @@ export type ContentInput = typeof ContentInput.Type
  */
 export const ReleaseInput = Schema.Struct({
   version: Version,
-  from: withDefault(Schema.NonEmptyString, "auto"),
-  phase: withDefault(Schema.Literals(["prepare", "publish"]), "prepare"),
-  dryRun: withDefault(Schema.Boolean, true),
-  contentArtifact: withDefault(Schema.String, ""),
-  requireContentApproval: withDefault(Schema.Boolean, true),
-  provenance: withDefault(Schema.Boolean, true)
+  from: defaultKey(Schema.NonEmptyString, "auto"),
+  phase: defaultKey(Schema.Literals(["prepare", "publish"]), "prepare"),
+  dryRun: defaultKey(Schema.Boolean, true),
+  contentArtifact: defaultKey(Schema.String, ""),
+  requireContentApproval: defaultKey(Schema.Boolean, true),
+  provenance: defaultKey(Schema.Boolean, true)
 })
 export type ReleaseInput = typeof ReleaseInput.Type
 

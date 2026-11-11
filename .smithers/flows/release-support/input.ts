@@ -32,17 +32,17 @@ const requestedVersion = (input: Record<string, unknown>, current: string): stri
 }
 
 /** The host's version normalization in front of the flow's own input decoding and defaults. */
-const decode = <S extends Schema.Struct<Schema.Struct.Fields>>(
-  schema: S,
+const decode = <A>(
+  schema: Schema.Codec<A, unknown> & { readonly fields: Schema.Struct.Fields },
   value: unknown,
   currentVersion: string
-): S["Type"] => {
+): A => {
   const input = record(value)
   keys(input, [...Object.keys(schema.fields), "bump"])
   const { bump: _bump, ...fields } = input
   const channels = input.channels === undefined ? undefined : record(input.channels)
   if (channels) keys(channels, ["changelog", "blog", "thread", "media"])
-  return Schema.decodeUnknownSync(schema as Schema.Codec<S["Type"]>)({
+  return Schema.decodeUnknownSync(schema)({
     ...fields,
     version: requestedVersion(input, currentVersion)
   })
