@@ -1,37 +1,29 @@
+import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { access, mkdir, readFile, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { test } from "node:test"
 import { changelogNarrative, checkContent, renderCard } from "../release-support/content.ts"
-import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner, inside } from "../release-support/io.ts"
 import { operations } from "../release-support/operations.ts"
-import { analysis, brief, draft, evidence, repository, review } from "./fixtures.ts"
+import { ContentInput, ReleaseInput } from "../release-support/schema.ts"
+import { analysis, brief, contentInput, draft, evidence, releaseInput, repository, review } from "./fixtures.ts"
 
-test("inputs default to previews, reject typoed publication flags and bound revision plans", () => {
+test("inputs default to previews and bound revision plans", () => {
   assert.equal(contentInput({}, evidence.version).dryRun, true)
   assert.equal(releaseInput({}, evidence.version).dryRun, true)
-  assert.throws(() => contentInput({ dryrun: false }, evidence.version), /Unknown input/)
-  assert.throws(() => contentInput({ maxRevisions: 20 }, evidence.version), (error: unknown) => {
-    const message = (error as Error).message
-    return message.split("maxRevisions must be an integer from 0 to 3").length === 2 &&
-      !message.includes("Expected a value")
-  })
-  assert.throws(() => contentInput({ minScore: 2 }, evidence.version), /minScore must be between 0 and 1/)
-  assert.throws(() => contentInput({ maxTweets: 0 }, evidence.version), /maxTweets must be an integer from 1 to 12/)
-  assert.throws(
-    () => contentInput({ maxTweetChars: 281 }, evidence.version),
-    /maxTweetChars must be an integer from 1 to 280/
-  )
-  assert.throws(() => releaseInput({ version: "1.0.0-rc.01" }, evidence.version), /leading zeros/)
-  assert.throws(() => releaseInput({ version: "v1.0.0" }, evidence.version), /semver without a v prefix/)
-  assert.throws(() => contentInput({ postX: true }, evidence.version), /requires/)
-  assert.throws(() => releaseInput({ version: "../../escape" }, evidence.version), /RegExp|semver/)
-  assert.equal(releaseInput({ bump: "patch" }, "0.35.0").version, "0.35.1")
-  assert.equal(releaseInput({ bump: "minor" }, "0.35.0").version, "0.36.0")
-  assert.equal(releaseInput({ bump: "major" }, "0.35.0").version, "1.0.0")
-  assert.equal(releaseInput({ bump: "patch" }, "1.0.0-rc.0").version, "1.0.0")
-  assert.throws(() => releaseInput({ version: "1.0.0", bump: "patch" }, "0.35.0"), /not both/)
+  // The same checks a host's constructor applies, read through decoding for their messages.
+  const content = (value: object) => Schema.decodeUnknownSync(ContentInput)({ version: evidence.version, ...value })
+  const release = (value: object) => Schema.decodeUnknownSync(ReleaseInput)({ version: evidence.version, ...value })
+  assert.throws(() => content({ maxRevisions: 20 }), /maxRevisions must be an integer from 0 to 3/)
+  assert.throws(() => content({ minScore: 2 }), /minScore must be between 0 and 1/)
+  assert.throws(() => content({ maxTweets: 0 }), /maxTweets must be an integer from 1 to 12/)
+  assert.throws(() => content({ maxTweetChars: 281 }), /maxTweetChars must be an integer from 1 to 280/)
+  assert.throws(() => release({ version: "1.0.0-rc.01" }), /leading zeros/)
+  assert.throws(() => release({ version: "v1.0.0" }), /semver without a v prefix/)
+  assert.throws(() => content({ postX: true }), /requires/)
+  assert.throws(() => release({ version: "../../escape" }), /semver/)
+  assert.throws(() => contentInput({ postX: true }, evidence.version))
 })
 
 test("quality checks independently reject invented evidence, missing channels and overlong tweets", () => {

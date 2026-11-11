@@ -179,7 +179,7 @@ describe("ci conformance", () => {
     // Widened a seventh time (2026-09-06, release workflows restored): `flows`
     // is `@smithers/release-workflows`, the private, unpublished workspace of
     // the repository's own Smithers programs (release, review, triage, the
-    // release-support CLI the root `release:*` scripts call). It ships no
+    // release flows). It ships no
     // `src` tree, is never published, and sits outside the `packages/`
     // universe derivation above, so it adds no ungated publishable surface. It
     // is a member so its `check` and `test` run under the root fan-out and so
@@ -302,12 +302,6 @@ describe("ci conformance", () => {
     // `docs:sync` regenerates, and `docs:check` holds,
     // apps/site/docs-redirect/src/docsRedirectMap.ts: the retired docs sites'
     // page map is built from the package docs/ folders (#3510).
-    //
-    // `release:*` are operator entry points into the `flows` workspace's
-    // release-support program (release.yml and release-auth.yml call the same
-    // module). They run nothing in CI's package-graph gates and fan nothing
-    // out, so they neither add nor remove enforcement; they are pinned so the
-    // roster stays exact.
     const root = JSON.parse(readFileSync(join(packagesDir, "..", "package.json"), "utf8")) as {
       readonly scripts?: Record<string, string>
     }
@@ -325,10 +319,6 @@ describe("ci conformance", () => {
       "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
-      "release:answer": "node --import vibelang/register .smithers/flows/release-support/main.ts answer",
-      "release:content": "node --import vibelang/register .smithers/flows/release-support/main.ts release-content",
-      "release:status": "node --import vibelang/register .smithers/flows/release-support/main.ts status",
-      "release:workflow": "node --import vibelang/register .smithers/flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"

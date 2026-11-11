@@ -2,15 +2,14 @@ import assert from "node:assert/strict"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
 import { operations } from "../release-support/operations.ts"
-import type { ReleaseGateSet } from "../release/gates/flow.ts"
 import { type Candidate, ReleaseError } from "../release-support/schema.ts"
+import type { ReleaseGateSet } from "../release/gates/flow.ts"
 import { publishedPackages } from "../release/pack-release.mjs"
 import { candidateIntegrity, integrity } from "../release/publish-release.mjs"
 import { releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
-import { repository } from "./fixtures.ts"
+import { releaseInput, repository } from "./fixtures.ts"
 
 const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = {}) => {
   const repo = await repository(test)

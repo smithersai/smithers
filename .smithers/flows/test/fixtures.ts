@@ -11,7 +11,16 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { TestContext } from "node:test"
 import { templates, TemplateState } from "../release-content/jev-template.ts"
-import type { Analysis, Draft, Evidence } from "../release-support/schema.ts"
+import { type Analysis, ContentInput, type Draft, type Evidence, ReleaseInput } from "../release-support/schema.ts"
+
+/**
+ * A flow's input as a Smithers host builds it: the payload schema's constructor
+ * over the supplied keys, with `version` defaulting to the given one.
+ */
+export const contentInput = (value: Partial<Parameters<typeof ContentInput.make>[0]>, version: string): ContentInput =>
+  ContentInput.make({ version, ...value })
+export const releaseInput = (value: Partial<Parameters<typeof ReleaseInput.make>[0]>, version: string): ReleaseInput =>
+  ReleaseInput.make({ version, ...value })
 
 export const evidence: Evidence = {
   version: "1.0.0-rc.1",

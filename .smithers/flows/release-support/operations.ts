@@ -55,7 +55,6 @@ export interface Options {
   readonly root: string
   readonly run?: RunCommand
   readonly tweet?: typeof postTweet
-  readonly reviewDirectory?: string
   /**
    * The release inventory the checks step runs and the exceptions it reports.
    * Defaults to `.smithers/flows/release/release-gates.mjs`; tests inject a
@@ -96,7 +95,7 @@ export const refreshReleaseLockfiles = async (
 
 /** All I/O lives in registered action implementations, never in flow planning. */
 export const operations = (
-  { root, run = commandRunner(root), tweet = postTweet, reviewDirectory, gates = releaseGateSetForHost() }: Options
+  { root, run = commandRunner(root), tweet = postTweet, gates = releaseGateSetForHost() }: Options
 ) => {
   const git = (args: ReadonlyArray<string>, signal?: AbortSignal) => run("git", args, signal ? { signal } : {})
   const head = async (signal?: AbortSignal) => (await git(["rev-parse", "HEAD"], signal)).trim()
@@ -113,9 +112,6 @@ export const operations = (
   }
   const writeJson = (path: string, value: unknown) => atomicWrite(root, path, JSON.stringify(value, null, 2) + "\n")
   const readJson = async <A>(path: string): Promise<A> => json<A>(await readFile(await inside(root, path), "utf8"))
-  const showReview = async (prompt: string) => {
-    if (reviewDirectory) await writeJson(`${reviewDirectory}/review.json`, { prompt })
-  }
 
   const collect = async (
     { version, from }: { version: string; from: string },
@@ -313,7 +309,6 @@ export const operations = (
         }`
     }
     await writeJson(`${directory}/artifact.json`, artifact)
-    if (!input.dryRun) await showReview(artifact.approvalPrompt)
     return artifact
   }
 
@@ -493,7 +488,6 @@ export const operations = (
             : ""
         }The resulting changes stay in the working tree for review and commit.`
     }
-    if (!input.dryRun) await showReview(result.approvalPrompt)
     return result
   }
 
@@ -755,7 +749,6 @@ export const operations = (
         input.provenance ? "required" : "explicitly disabled"
       }.\nOnly these exact tested tarballs will be published.`
     }
-    if (!input.dryRun) await showReview(verified.approvalPrompt)
     return verified
   }
 

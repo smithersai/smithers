@@ -13,7 +13,6 @@ import { vibeLangLoader } from "../automation/run-module.ts"
 import ReleaseContent, { layer as contentLayer } from "../release-content/flow.ts"
 import { layerAt as contentLayerAt } from "../release-content/layer.ts"
 import * as Content from "../release-content/workflow.ts"
-import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
 import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentHost, agentLayers } from "../release-support/runtime.ts"
@@ -22,7 +21,7 @@ import ReleaseFlow, { layer as releaseLayer } from "../release/flow.ts"
 import { layerAt } from "../release/layer.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 import * as Release from "../release/workflow.ts"
-import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
+import { contentInput, evidence, releaseInput, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
@@ -538,29 +537,41 @@ for (
     "//packages/smithers/flows/engine-store:disasterRecovery"
   ]
 ) {
-  test(`a failing ${target} gate fails checks naming it, after every later gate runs`, { timeout: 60_000 }, async (test) => {
-    const fixture = await repository(test)
-    const gate = releaseGates.find((entry) => entry.target === target)!
-    const after: string[] = []
-    let failed = false
-    const ops = operations({
-      root: fixture.root,
-      gates: { inventory: releaseGates, exceptions: [] },
-      run: async (command, args, options) => {
-        if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
-        if (failed) after.push(args.join(" "))
-        if (args[3] === target) {
-          failed = true
-          throw new Error(`${target} failed`)
+  test(
+    `a failing ${target} gate fails checks naming it, after every later gate runs`,
+    { timeout: 60_000 },
+    async (test) => {
+      const fixture = await repository(test)
+      const gate = releaseGates.find((entry) => entry.target === target)!
+      const after: string[] = []
+      let failed = false
+      const ops = operations({
+        root: fixture.root,
+        gates: { inventory: releaseGates, exceptions: [] },
+        run: async (command, args, options) => {
+          if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
+          if (failed) after.push(args.join(" "))
+          if (args[3] === target) {
+            failed = true
+            throw new Error(`${target} failed`)
+          }
+          return ""
         }
-        return ""
-      }
-    })
-    await assert.rejects(ops.checks(fixture.evidence), new RegExp(`gate\\(s\\) failed: ${gate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
-    assert.equal(failed, true, "the gate was invoked")
-    // A red gate does not stop the later ones, and checks still fails, so build and pack never start.
-    assert.deepEqual(after, releaseGates.slice(releaseGates.indexOf(gate) + 1).map((entry) => ["exec", "smthrs", ...releaseGateArgs(entry)].join(" ")))
-  })
+      })
+      await assert.rejects(
+        ops.checks(fixture.evidence),
+        new RegExp(`gate\\(s\\) failed: ${gate.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)
+      )
+      assert.equal(failed, true, "the gate was invoked")
+      // A red gate does not stop the later ones, and checks still fails, so build and pack never start.
+      assert.deepEqual(
+        after,
+        releaseGates.slice(releaseGates.indexOf(gate) + 1).map((entry) =>
+          ["exec", "smthrs", ...releaseGateArgs(entry)].join(" ")
+        )
+      )
+    }
+  )
 }
 
 test(

@@ -19,11 +19,10 @@ import {
   templateState
 } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
-import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
 import { type Analysis, type Evidence, Outline } from "../release-support/schema.ts"
-import { analysis, evidence, repository, scriptedSeats } from "./fixtures.ts"
+import { analysis, contentInput, evidence, repository, scriptedSeats } from "./fixtures.ts"
 
 /** A scripted Jev that names one narrative with one confidence, with the rest
  * of the distribution spread over the three it did not name. */

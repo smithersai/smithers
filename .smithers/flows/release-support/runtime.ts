@@ -14,23 +14,15 @@ import {
   seatResolver,
   supervisorStance
 } from "@smthrs/cli/NodeControl"
-import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { NodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, type Scope } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
-import { hostname } from "node:os"
-import { dirname } from "node:path"
 import { evaluatorLayer } from "../coding/evaluator.ts"
-import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.ts"
-import ReleaseFlow from "../release/flow.ts"
 import * as Release from "../release/workflow.ts"
-import { relativePath } from "./io.ts"
-import { actionLayers } from "./operations.ts"
 
 /** Host composition only. Bun owns its fetch pool; Node owns replaceable Undici
  * agents, built from the egress proxy this process's environment names so a
@@ -119,28 +111,3 @@ export const agentLayers = (
     Content.Revise.layer,
     Release.AuditDocs.layer
   ).pipe(Layer.provideMerge(agentHost(seats, maxTokens, evaluator, options)))
-
-export const runtime = (options: {
-  readonly root: string
-  readonly filename: string
-  readonly model: string
-  readonly maxTokens: number
-}) => {
-  const evaluator = hostEvaluator(process.env)
-  const registration = Layer.mergeAll(
-    actionLayers({
-      root: options.root,
-      evaluator,
-      reviewDirectory: relativePath(options.root, dirname(options.filename))
-    }),
-    agentLayers(liveSeats(options.model), options.maxTokens, evaluator),
-    HumanTask.layer,
-    Interpreter.layer(ReleaseContent),
-    Interpreter.layer(ReleaseFlow)
-  ).pipe(Layer.provideMerge(Action.layerImplementations))
-  return NodeRuntime.layerHost({
-    filename: options.filename,
-    workspaceRoot: options.root,
-    owner: { hostId: hostname() }
-  }, registration)
-}

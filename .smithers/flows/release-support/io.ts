@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process"
 import { createHmac, randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, resolve, sep } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import { ReleaseError } from "./schema.ts"
 
@@ -177,7 +177,6 @@ export const maybeRead = async (path: string): Promise<string | undefined> => {
 }
 
 export const json = <A>(text: string): A => JSON.parse(text) as A
-export const relativePath = (root: string, path: string) => relative(root, path).split(sep).join("/")
 
 /** OAuth 1.0 signing for the old workflow's optional X publisher. */
 export const postTweet = async (text: string, replyTo: string | undefined, signal?: AbortSignal): Promise<string> => {

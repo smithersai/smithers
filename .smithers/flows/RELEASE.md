@@ -5,36 +5,38 @@
 `Action.make`, `AgentAction.make`, typed Effect schemas, `HumanTask`, and the
 production SQLite `NodeRuntime.layerHost`.
 
-The module descriptors are discoverable under `flows/`. Run them through the
-commands below: the small host registers their actions and durable flow bodies.
-The general CLI currently discovers module flows but requires an explicit host
-to execute them. No GitHub workflow is dispatched or used as the orchestrator.
-Discovery reports conservative authority warnings for these named delegates;
-the host supplies their implementations and approval boundaries.
+Both run on the ordinary Smithers host: `smthrs flow start release` and
+`smthrs flow start release-content`. Each flow module exports the `layer` that
+implements its steps; the host supplies the engine, the model seats, the budget
+and the approval store. The content seats (`release/analyst`, `release/writer`,
+`release/reviewer`) and the documentation audit's `coding/review` seat route
+through `.smithers/coding-project.json`. No GitHub workflow is the orchestrator;
+`.github/workflows/release.yml` runs the gate inventory through
+`release/gates` and keeps npm publication with OIDC provenance (ruling GH-9).
 
 ## Inspect without running
 
 ```sh
-pnpm release:content --plan --input '{"version":"1.0.0-rc.0","from":"v0.35.0"}'
-pnpm release:workflow --plan --input '{"version":"1.0.0-rc.0","phase":"publish"}'
+smthrs flow plan release-content --data '{"version":"1.0.0-rc.0","from":"v0.35.0"}'
+smthrs flow plan release --data '{"version":"1.0.0-rc.0","phase":"publish"}'
 ```
 
-`--plan` constructs the graph without models, registry requests, release writes,
-or publication. A normal run defaults to `dryRun: true`: it does execute the
-models or validation commands, but only produces local preview/candidate
-artifacts. A dry run never asks for publication approval or publishes.
+`flow plan` builds the graph without models, registry requests, release writes,
+or publication. Every input key except `version` has a default, so a run started
+with only a version is a dry run: `dryRun: true`, `phase: "prepare"`,
+`from: "auto"`. A dry run does execute the models and validation commands, but
+only produces local preview and candidate artifacts. It never asks for
+publication approval or publishes.
 
-Use Node 26.4+, pnpm, Bun, and the repository's build prerequisites.
-The live model uses the existing Smithers CLI seat resolver and its configured
-credentials; `--model` defaults to `openai:gpt-6-sol`. `--max-tokens` defaults
-to 250000 for the whole run. Credentials are not written into the run input.
-Models receive evidence and return typed content; they have no publication or
-shell tools.
+Use Node 26.4+, pnpm, Bun, and the repository's build prerequisites. The host
+resolves model seats from its configured credentials; `--budget-tokens` bounds
+the run's tokens. Credentials are not written into the run input. Models receive
+evidence and return typed content; they have no publication or shell tools.
 
 ## Release content
 
 ```sh
-pnpm release:content --run rc-content --input-file release-content-input.json
+smthrs flow start release-content --data @release-content-input.json --wait
 ```
 
 Example input:
@@ -146,11 +148,9 @@ After approval it runs the existing version setter and changelog generator,
 refreshes both lockfiles, and verifies coherence. It leaves the changes ready
 for review and commit on `main`. Use an explicit `version`, including for
 prereleases; the private root package's `0.0.0` is never the release version.
-The old `bump: "patch" | "minor" | "major"` option is also accepted instead of
-`version`, and resolves from the public CLI version before the run is persisted.
 
 ```sh
-pnpm release:workflow --run rc-prepare --input '{"version":"1.0.0-rc.0","from":"v0.35.0","phase":"prepare","dryRun":false,"contentArtifact":".flows/releases/content/1.0.0-rc.0/<digest>"}'
+smthrs flow start release --wait --data '{"version":"1.0.0-rc.0","from":"v0.35.0","phase":"prepare","dryRun":false,"contentArtifact":".flows/releases/content/1.0.0-rc.0/<digest>"}'
 ```
 
 Publication requires the requested version already committed on a clean `main`.
@@ -165,7 +165,7 @@ order, and smoke-tests the same tarballs on Node 26.4.0 with npm
 tarball must match the candidate manifest before the human approval is offered.
 
 ```sh
-pnpm release:workflow --run rc-npm-preview --input '{"version":"1.0.0-rc.0","from":"v0.35.0","phase":"publish","contentArtifact":".flows/releases/content/1.0.0-rc.0/<digest>"}'
+smthrs flow start release --wait --data '{"version":"1.0.0-rc.0","from":"v0.35.0","phase":"publish","contentArtifact":".flows/releases/content/1.0.0-rc.0/<digest>"}'
 ```
 
 To request actual npm publication, use a new run with `dryRun: false`. It parks
@@ -193,77 +193,53 @@ been changed by this port.
 ## Approval and resume
 
 ```sh
-pnpm release:status rc-content
-pnpm release:answer rc-content true
-pnpm release:answer rc-content false
-pnpm release:content --resume rc-content
-pnpm release:workflow --resume rc-prepare
-pnpm release:workflow --retry rc-npm-preview --run rc-npm-preview-2
+smthrs runs list                      # the run waits at its human approval
+smthrs approvals list                 # the pending approval and its exact payload
+smthrs approvals approve '<payload>'  # continue
+smthrs approvals deny '<payload>'     # complete as declined
+smthrs runs resume <run>              # reopen a parked run
 ```
 
-Answer only once: `true` continues and `false` completes as declined. The answer
-command uses the currently persisted token; it refuses a run that is not waiting
-for approval. Status reads storage without starting the engine and shows the
-review prompt. Each run has its own database under `.flows/releases/runs/<id>/`
-and retains its input, model setting and budget. `--resume` reuses those settings;
-changing them requires a new run. Keep `.flows/` to retain approvals and history.
+Decide each approval once: approving continues, denying completes the run as
+declined. The prompt names the reviewed artifact and, for publication, the
+source SHA, candidate integrity, package count, npm channel and provenance
+setting. A run keeps its input and budget in the project's run store; resuming
+reuses them, and changing them needs a new run.
 
-A failed run retains its failure; `--resume` is not a reset of failed checks or
+A failed run retains its failure; resuming is not a reset of failed checks or
 an uncertain external action. During a repeat npm attempt, the registry's exact
 integrity determines which packages still need publication.
 
 ## Retry from a failed step
 
 When the cause of a failure is outside the source tree, such as an unreachable
-registry during smoke, start a new run that retries the failed one:
+registry during smoke, retry the failed run:
 
 ```sh
-pnpm release:workflow --retry rc-npm-preview --run rc-npm-preview-2
-pnpm release:workflow --retry rc-npm-preview --from release/build --run rc-npm-preview-3
+smthrs runs retry <run> --wait
+smthrs runs retry <run> --from release/build --wait
 ```
 
-`--retry <id>` calls the engine's `Flow.retryFrom`. The new run has the input,
-model and budget of `<id>`. Every step that finished before the selected step
-is served from the record of `<id>` and does not run again; the selected step
-and every step after it run. Without `--from`, the selected step is the one
-`<id>` failed at. `--from` names another step by its action, as
-`release:status` prints it, or by its node id when a run dispatched one action
-more than once. `--run` names the new run; `--resume` reopens it like any other
-run. `release:content --retry` does the same for a content run.
-
-The failed run is not changed. The retry is a run of its own in the failed
-run's database, `.flows/releases/runs/<first id>/engine.db`, with its own
-`run.json` naming the run and step it retries. Keep the first run's directory
-while any retry of it matters.
+The new run has the input and approval of `<run>`. Every step that finished
+before the selected step is served from the record of `<run>` and does not run
+again; the selected step and every step after it run. Without `--from`, the
+selected step is the one `<run>` failed at. `--from` names another step by its
+action, or by its node id when a run dispatched one action more than once. The
+failed run is not changed.
 
 A retry is refused when the run has not settled, when the step did not run, or
 when the flow's plan changed since the run. The release steps still check the
 source: `checks`, `build`, `pack` and `verify-candidate` fail with `Source HEAD
 changed; start a new release run` when the checkout moved, so a failure that
-needs a source fix needs a new run, not a retry. A retry from `release/publish` repeats the
-publication preflight: the registry decides which packages are still missing.
+needs a source fix needs a new run, not a retry. A retry from `release/publish`
+repeats the publication preflight: the registry decides which packages are
+still missing.
 
 ## Step timing
 
-`pnpm release:status <id>` prints `steps`, one row per action in plan order:
-
-```json
-{
-  "step": "release/smoke",
-  "nodeId": "root.flow.then.then.then.then.then.then.andThen",
-  "status": "failed",
-  "attempts": 1,
-  "startedAt": "2026-11-10T18:04:11.512Z",
-  "durationMs": 184220
-}
-```
-
-`durationMs` is the time the step's attempts ran, added up, and `startedAt` is
-the start of its first attempt. Both are `null` for a step that did not run. A
-failed run also prints `failure`, the engine's record of the failing step, and
-a retry prints `retry`. In a retry, a step served from the retried run keeps
-the timing it ran with. No secret, npm write, tag, deployment, or social post
-is needed to run the test suite.
+`smthrs runs devtools <run>` shows each step's state, timing, input and output.
+No secret, npm write, tag, deployment, or social post is needed to run the test
+suite.
 
 Preparation invokes the version, changelog, and lockfile tools in sequence. If
 one fails after an earlier tool wrote files, inspect those partial changes

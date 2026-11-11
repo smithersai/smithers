@@ -6,10 +6,9 @@ import { Effect, Layer, Option, Schedule, Schema } from "effect"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import ReleaseContent from "../release-content/flow.ts"
-import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
-import { scriptedSeats, scriptedTemplate } from "./fixtures.ts"
+import { contentInput, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 
 const root = process.argv[2]!
 const phase = process.argv[3]!
