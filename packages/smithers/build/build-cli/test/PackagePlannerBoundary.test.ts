@@ -393,6 +393,35 @@ describe("workspace manifest inputs", () => {
 })
 
 describe("workspace tool availability", () => {
+  it.each(["selected", "absent", "absolute"] as const)(
+    "resolves Cargo only from the selected environment (%s)",
+    async (kind) => {
+      // A real executable exercises lookup and version probing without requiring a Rust installation.
+      const cargo = process.execPath
+      const name = Path.basename(cargo)
+      const { root, options } = await fixture(
+        "export const Package=S.Package({targets:{command:S.Shell.Test({bin:{_tag:\"CargoBin\"}})}})",
+        {},
+        `toolchains:[S.Rust.Toolchain({cargo:${
+          JSON.stringify(kind === "absolute" ? cargo : name)
+        },rustup:"missing-rustup-executable",channel:"stable"})],`
+      )
+      const bin = Path.join(root, "selected-bin")
+      await Fs.mkdir(bin)
+      if (kind === "selected") await Fs.symlink(cargo, Path.join(bin, name))
+      const node = (await PackageExec.plan({
+        ...options,
+        environment: { ...process.env, PATH: bin }
+      })).nodes.get("//:command")!
+      if (kind === "absent") {
+        expect(node.refusal).toContain("cargo executable")
+        expect(node.refusal).toContain("not present on PATH")
+      } else {
+        expect(node.refusal).toBeUndefined()
+        expect(node.argv?.[0]).toBe(kind === "absolute" ? cargo : Path.join(bin, name))
+      }
+    }
+  )
   it.each(["Npm.Pack", "Npm.Published", "Changesets.Version", "Size.Budgets", "Markdown.CodeBlocks"])(
     "refuses %s without a package manager",
     async (rule) => {

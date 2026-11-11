@@ -1053,7 +1053,7 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
       }
     } else {
       const name = layer.cargo
-      const path = NodePath.isAbsolute(name) ? name : PackageTree.findOnPath(name)
+      const path = NodePath.isAbsolute(name) ? name : PackageTree.findOnPath(name, context.environment)
       if (path === undefined) {
         outcome = {
           _tag: "refused",
