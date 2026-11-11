@@ -18,7 +18,7 @@ import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
-import { Deferred, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Deferred, Effect, Layer, Option, Schema } from "effect"
 import type * as Config from "./Config.ts"
 import * as Host from "./Host.ts"
 import * as Session from "./Session.ts"
@@ -131,6 +131,22 @@ export const RunnerJob = Flow.make("runner/Job", {
 const outcomeCode = (outcome: AgentRunner.Outcome) =>
   outcome._tag === "Failed" ? `failed:${outcome.reason}` : outcome._tag.toLowerCase()
 
+/** How often a woken job's work looks for the control the serve loop makes when it has the job back. */
+const AWAIT_CONTROL_MS = 250
+
+/** The control the serve loop makes for `job` once it has the job back, or none by the end of the grace to settle. */
+const awaitControl = (controls: ReadonlyMap<string, Session.Control>, job: Session.JobPayload) =>
+  Effect.gen(function*() {
+    yield* Effect.logInfo("runner.job").pipe(Effect.annotateLogs({ job: job.key, outcome: "awaiting_claim" }))
+    while (true) {
+      const control = controls.get(job.key)
+      if (control !== undefined) return control
+      const left = job.deadline + SETTLE_GRACE_MS - (yield* Clock.currentTimeMillis)
+      if (left <= 0) return undefined
+      yield* Effect.sleep(Math.min(AWAIT_CONTROL_MS, left))
+    }
+  })
+
 /**
  * Registers `runner/Job` with its steps: work under `config`, told of its job's
  * cancellation and reclaim by `controls` (keyed by the job's key), settling
@@ -144,12 +160,15 @@ export const registration = (config: Config.Checked, controls: ReadonlyMap<strin
     RunnerJob,
     Layer.mergeAll(
       Work.toLayer((job) =>
-        Effect.suspend(() => {
-          const control = controls.get(job.key)
-          // A job runs only under a control the serve loop made; one without is the loop's defect.
+        Effect.gen(function*() {
+          // A job's work runs under the control the serve loop made when it claimed the job. After a restart the
+          // journal can wake the execution before the loop has the job back (the host can't be reached yet): the work
+          // waits for its control, and once the host has ended the job (past its deadline and the grace to settle it)
+          // it ends `timeout`, which the settlement's fence then drops.
+          const control = controls.get(job.key) ?? (yield* awaitControl(controls, job))
           return control === undefined
-            ? Effect.die(new Error("runner/Work ran without its job's control"))
-            : Session.work(config, job, control)
+            ? { _tag: "Failed", reason: "timeout" } as const
+            : yield* Session.work(config, job, control)
         }), { implementationVersion: "runner/work/v1" }),
       SendTranscript.toLayer(({ job, outcome }) =>
         Effect.scoped(Effect.gen(function*() {
