@@ -144,6 +144,12 @@ async function main() {
     }
   }
 
+  // A report from another checkout or an empty run has no source file to gate; it must never certify 100%.
+  if (rows.length === 0) {
+    console.error(`Benchmark coverage has no source files for this checkout (${appRoot}): rerun the suite here.`)
+    process.exitCode = 1
+    return
+  }
   mkdirSync("coverage/bench/merged", { recursive: true })
   writeFileSync("coverage/bench/merged/coverage-final.json", JSON.stringify(finalMap, null, 1) + "\n")
   writeFileSync("coverage/bench/merged/per-file.json", JSON.stringify(rows, null, 1) + "\n")

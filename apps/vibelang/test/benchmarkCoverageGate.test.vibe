@@ -1,0 +1,30 @@
+// @vitest-environment node
+// The actual merge command must refuse an absent source roster, including a report from another checkout.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { node, run } from "./support/processes.vibe"
+
+const command = new URL("../bench/merge-coverage.ts", import.meta.url)
+const foreign = "/another-checkout/src/example.vibe"
+for (const kind of ["empty", "foreign"] as const) {
+  it.live(`refuses a ${kind} benchmark coverage report instead of certifying zero source files`, () => scoped(effect {
+    provide NodeServices.layer, ExperimentalNodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-bench-empty-" })
+      const script = try path.fromFileUrl(command)
+      try fs.makeDirectory(path.join(directory, "coverage/bench"), { recursive: true })
+      const data = kind === "empty" ? {} : {
+        [foreign]: { path: foreign, statementMap: { "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 9 } } },
+          s: { "0": 1 }, fnMap: {}, f: {}, branchMap: {}, b: {} },
+      }
+      try fs.writeFileString(path.join(directory, "coverage/bench/coverage-final.json"), JSON.stringify(data))
+      const result = try run(try node(), [script], {}, directory)
+      try Effect.try(() => {
+        expect(result.status).not.toBe(0)
+        expect(result.stdout + result.stderr).toContain("Benchmark coverage has no source files for this checkout")
+      })
+    }
+  }), 30_000)
+}
