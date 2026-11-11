@@ -1,0 +1,77 @@
+// The real model in a test, by ruling VL-36: replay a committed recording of the provider's HTTP and SSE (the default),
+// record one, or pass through, through @smthrs/testing's HttpRecording behind HostModel's `fetch`.
+//
+//   pnpm exec vitest run test/model.recorded.test.vibe                 replay: no key, no network
+//   CEREBRAS_API_KEY=... pnpm record:model                             record: the real model, writes test/recordings/model-*.json
+//   VIBE_MODEL=passthrough CEREBRAS_API_KEY=... pnpm exec vitest run   the real model, nothing written
+//
+// The key is read only from the environment, at record time. Request headers (the key's) never reach a recording;
+// HttpRecording scrubs the key wherever else it appears and refuses a file that still matches a credential shape. A
+// recording run stops after MODEL_CALLS model calls, whatever the model answers.
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { HostModel, type HostModelRecord } from "@smthrs/model-host"
+import { HttpRecording } from "@smthrs/testing"
+import { DEFAULT_CHAT_MODEL } from "../../worker/AgentModel.vibe"
+import { recordingPath } from "./github.vibe"
+import { fetchOver } from "./fetchOver.ts"
+
+/** The most model calls one recording run makes, across every case of the process. */
+export const MODEL_CALLS = 40
+export const configured: HttpRecording.Mode = runSync(Config.schema(HttpRecording.Mode, "VIBE_MODEL").pipe(Config.withDefault("replay" as const)))
+const key = runSync(Config.option(Config.Redacted("CEREBRAS_API_KEY")))
+/** The model calls one process's recording runs have made, all cases together. */
+const run = { calls: 0, limit: MODEL_CALLS }
+
+/** What a recording holds in place of the agent's system context. */
+export const SYSTEM_CONTEXT = "the agent's system context: not keyed"
+/**
+ * The agent's system context carries the project wiki and its tools, which change with every edit, so a model call is
+ * keyed, and recorded, without it: a replay claims the recorded calls in order, by the person's and the agent's turns.
+ */
+function normalize(request: HttpRecording.RecordedRequest): HttpRecording.RecordedRequest {
+  const body = request.body as { readonly messages?: unknown } | undefined
+  if (typeof body !== "object" || body === null || !Array.isArray(body.messages)) return request
+  const messages = body.messages.map((message: { readonly role?: unknown } | null) => message !== null && message.role === "system" ? { ...message, content: SYSTEM_CONTEXT } : message)
+  return { ...request, body: { ...body, messages } }
+}
+
+/** The live client, refusing every call after `count.limit`: a model that loops cannot spend more. */
+export function capped(live: HttpClient.HttpClient, count: { calls: number; readonly limit: number } = run): HttpClient.HttpClient {
+  return HttpClient.make((request) => effect {
+    count.calls += 1
+    if (count.calls > count.limit) return try Effect.die(new Error(`a model recording run stops after ${count.limit} calls`))
+    try Effect.logInfo("model call").pipe(Effect.annotateLogs({ call: count.calls, limit: count.limit }))
+    return try live.execute(request)
+  })
+}
+
+/**
+ * What a recorded model talks to. Only the recorder's own test (test/modelRecording.test.vibe) sets these: a scripted
+ * provider's `record` and `values` (its key, scrubbed like the real one) and a `path` outside test/recordings.
+ */
+export interface Options {
+  readonly mode?: HttpRecording.Mode
+  readonly record?: HostModelRecord
+  readonly values?: Readonly<Record<string, string>>
+  readonly path?: string
+}
+
+/**
+ * The deployment's default model (DEFAULT_CHAT_MODEL) for one test, over `test/recordings/model-<name>.json`: the
+ * HostModel service, the `fetch` its calls go through, and the configuration values a host that builds its own model
+ * from a record reads (its credential's key, a placeholder on replay, which no request reaches the provider with).
+ */
+export effect function recordedModel(name: string, options: Options = {}) {
+  const mode = options.mode ?? configured
+  const path = options.path ?? try recordingPath(`model-${name}`)
+  const record = options.record ?? DEFAULT_CHAT_MODEL
+  if (mode !== "replay" && options.values === undefined && Option.isNone(key)) return try Effect.die(new Error(`VIBE_MODEL=${mode} needs CEREBRAS_API_KEY in the environment`))
+  const values = options.values ?? { CEREBRAS_API_KEY: Option.isSome(key) ? Redacted.value(key.value) : "replay-sends-no-key" }
+  const live = capped(try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer))
+  const secrets = [...(Option.isSome(key) ? [key.value] : []), ...(options.values === undefined ? [] : Object.values(options.values).filter((value) => !value.startsWith("http")))]
+  const client = try HttpRecording.make({ mode, path, live, label: name, secrets, normalize })
+  const fetch = try Effect.try(() => fetchOver(client))
+  const model = try HostModel.make(record, { fetch }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  try Effect.logInfo("model test client").pipe(Effect.annotateLogs({ mode, recording: name }))
+  return { model, fetch, record, values }
+}

@@ -1,0 +1,81 @@
+// @vitest-environment node
+// The model recorder's own wiring (test/support/model.vibe), in every `pnpm test`, before any real recording exists: a
+// reply recorded against the scripted provider on a local socket (fuzz/model-server.vibe), then replayed in a fresh
+// client with the provider gone. A replay that asked anything the recording lacks would die with UnrecordedRequestError.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { HttpRecording } from "@smthrs/testing"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { Spend } from "../worker/Reply.vibe"
+import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
+import { ledger, within } from "./support/durableWriters.vibe"
+import { cell, scriptedModel } from "../fuzz/model-server.vibe"
+import { capped, MODEL_CALLS, recordedModel, SYSTEM_CONTEXT } from "./support/model.vibe"
+import { replyWorld } from "./support/replyWorld.vibe"
+
+it.live("a reply recorded from the provider replays with the provider gone, and the recording holds no key", () => scoped(effect {
+  provide NodeServices.layer {
+  const fs = try FileSystem.FileSystem
+  const path = `${try fs.makeTempDirectoryScoped()}/model-reply.json`
+  const live = try scoped(effect {
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Hi from the model.\"")], prompt: 9, completion: 4 }])
+    const recorded = try recordedModel("reply", { mode: "record", record: scripted.record, values: scripted.values, path })
+    return { ...(try (try replyWorld(recorded.model)).answer("Hello?")), record: scripted.record, values: scripted.values }
+  })
+  expect(live.entry).toMatchObject({ text: "Hi from the model.", done: true, error: "" })
+
+  const text = try fs.readFileString(path)
+  expect(HttpRecording.scan(text)).toEqual([])
+  expect(text).not.toContain(live.values.SMITHERS_MODEL_KEY_FUZZ)
+  // Keyed without the system context, which changes with every wiki edit.
+  expect(text).toContain(SYSTEM_CONTEXT)
+  expect(text).not.toContain("JavaScript REPL")
+  // The scripted provider's socket closed with its scope: only the recording can answer now.
+  const replayed = try scoped(effect {
+    const recorded = try recordedModel("reply", { mode: "replay", record: live.record, values: live.values, path })
+    return try (try replyWorld(recorded.model)).answer("Hello?")
+  })
+  expect(replayed.entry).toEqual(live.entry)
+  expect(replayed.types).toEqual(live.types)
+  expect(replayed.ledger).toEqual(live.ledger)
+  }
+}), 60_000)
+
+it.live("a reviewer that builds its model from configuration sends its calls through the recorded fetch", () => scoped(effect {
+  provide NodeServices.layer {
+  const fs = try FileSystem.FileSystem
+  const path = `${try fs.makeTempDirectoryScoped()}/model-review.json`
+  const answer = try scoped(effect {
+    const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: "LGTM", grade: "A", review: "Consistent." }))], prompt: 2, completion: 3 }])
+    const recorded = try recordedModel("review", { mode: "record", record: scripted.record, values: scripted.values, path })
+    const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, ledger("admit").spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...recorded.values, SPEC_REVIEW_SOL: JSON.stringify(recorded.record) }))))
+    const spec = { revision: 3, text: "# VIP\n\nA spec.", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+    return try within(layer, effect {
+      const result = try Effect.result((try SpecificationReviewers).review("sol", spec))
+      return result._tag === "Success" ? result.success.verdict : result.failure.reason
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, recorded.fetch))
+  })
+  expect(answer).toBe("LGTM")
+  const recording = try HttpRecording.load(path)
+  expect(recording.exchanges.length).toBeGreaterThan(0)
+  }
+}), 60_000)
+
+it.live("a recording run refuses the model call after its limit, before it reaches the provider", () => scoped(effect {
+  const reached = { calls: 0 }
+  const provider = HttpClient.make((request) => effect {
+    reached.calls += 1
+    return try HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer), Effect.flatMap((client) => client.execute(request)))
+  })
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell("\"Hi\"")], prompt: 1, completion: 1 }])
+  const limited = capped(provider, { calls: 0, limit: 2 })
+  const ask = Effect.exit(limited.execute(HttpClientRequest.get(scripted.origin)))
+  expect((try ask)._tag).toBe("Success")
+  expect((try ask)._tag).toBe("Success")
+  const third = try ask
+  expect(Exit.isFailure(third) && Cause.hasDies(third.cause)).toBe(true)
+  expect(reached.calls).toBe(2)
+  expect(MODEL_CALLS).toBe(40)
+}))

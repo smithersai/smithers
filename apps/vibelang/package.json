@@ -11,6 +11,7 @@
     "typecheck": "pnpm wiki:build && vibelang -p tsconfig.json --noEmit && vibelang -p worker/tsconfig.json --noEmit",
     "test": "pnpm build:surfaces && pnpm build:scripts && vitest run",
     "test:sandboxes-live": "vitest run --mode sandboxes-live",
+    "record:model": "pnpm build:surfaces && pnpm build:scripts && VIBE_MODEL=record vitest run test/model.recorded.test.vibe",
     "deploy:sandboxes-test": "pnpm wiki:build && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage vl-test",
     "destroy:sandboxes-test": "pnpm wiki:build && NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy destroy --stage vl-test",
     "test:workerd": "pnpm build && pnpm build:surfaces && node --import=vibelang/register test/workerdSuite.vibe",

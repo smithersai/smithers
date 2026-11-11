@@ -4,58 +4,16 @@
 // count, a start that waits for another reply, and an action asking for a seat the agent doesn't declare.
 import { describe, expect, it } from "@effect/vitest"
 import { AgentAction, EventSink } from "@smthrs/agent"
-import { FlowEngine } from "@smthrs/engine"
-import { FlowRuntime } from "@smthrs/flow"
-import type { Event } from "../src/core/conversation.vibe"
-import { Reply, Tours } from "../src/core/flows.vibe"
 import * as Budget from "../worker/Budget.vibe"
-import { repliesOf, toursOf } from "../worker/Objects.vibe"
-import { readerOver } from "../worker/HistoryObject.vibe"
-import { HistoryTools } from "../worker/HistoryTools.vibe"
-import { agentOf, ChatModel, registration, Replies, REASONS, REPLY_CEILING, Spend, tagOf } from "../worker/Reply.vibe"
-import { Unreachable } from "../worker/Unreachable.vibe"
-import * as Sequencer from "../worker/Sequencer.vibe"
+import { agentOf, REASONS, REPLY_CEILING, tagOf } from "../worker/Reply.vibe"
 import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
 import { within } from "./support/durableWriters.vibe"
+import { replyWorld } from "./support/replyWorld.vibe"
 
-/**
- * The reply flow over an in-memory conversation, answered by `scripts`; `busy` start answers come first, and an
- * `interrupting` history interrupts whatever reads it, as an engine reset does.
- */
+/** The reply flow answered by `scripts`; `busy` start answers come first, and an `interrupting` history interrupts. */
 effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting = false) {
   const scripted = try scriptedModel(scripts)
-  const events = try Ref.make<ReadonlyArray<Event>>([])
-  const ledger = try Ref.make<Readonly<Record<string, number>>>({})
-  const sequencer = try Sequencer.make(
-    { read: () => Ref.get(events), write: (event) => Ref.update(events, (events) => [...events, event]) },
-    { start: () => Effect.void, tour: () => Effect.void },
-  )
-  const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, 1_000_000)
-  const real = repliesOf(sequencer)
-  let refusals = busy
-  // Listed member by member: spreading a service Shape drops its methods in VibeLang 0.0.12 (0016, "Service Shape spread").
-  const replies: Replies.Shape = {
-    start: (post) => refusals-- > 0 ? Effect.succeed("busy" as const) : real.start(post),
-    history: real.history, append: real.append, restart: real.restart, finish: real.finish, fail: real.fail,
-  }
-  const spend: Spend.Shape = { admit: (_day, reply, ceiling) => budget.admit(reply, ceiling), spend: (_day, reply, tokens, reported, ceiling) => budget.spend(reply, tokens, reported, ceiling) }
-  const flows = registration.pipe(
-    Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provide(Layer.mergeAll(
-      Layer.succeed(Replies, replies), Layer.succeed(Tours, toursOf(sequencer, () => Effect.void)), Layer.succeed(Spend, spend),
-      Layer.succeed(ChatModel, { model: scripted.model, unusable: "" }),
-      Layer.succeed(HistoryTools, { history: readerOver(() => interrupting ? Effect.interrupt : Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
-    )),
-  )
-  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
-  /** Posts `text` and runs its reply to the end; the agent's entry and the event types. */
-  const answer = effect (text: string) => {
-    try sequencer.post("a", "Ada", text)
-    const ended = try Effect.exit(engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } }))
-    const snapshot = try sequencer.read(0)
-    return { ended, entry: snapshot.entries.find((entry) => entry.author === "agent")!, types: (try Ref.get(events)).map((event) => event.type), calls: try scripted.calls, ledger: try Ref.get(ledger) }
-  }
-  return { answer }
+  return try replyWorld(scripted.model, scripted.calls, busy, interrupting)
 }
 
 /** An agent action declaring a seat the reply's agent host doesn't resolve. */

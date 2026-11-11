@@ -82,6 +82,37 @@ what real GitHub cannot be made to answer: deleted accounts and null fields, for
 account, short pages, undecodable issues, outages, lag, refusals, lost roles and credentials, and failing journals.
 Each is the in-memory GitHub told to fail or a wrapped client service.
 
+## The model
+
+The same layer records the model: `test/support/model.vibe` hands `HostModel` a `fetch` (`HostModelOptions.fetch`,
+`test/support/fetchOver.ts`) over `HttpRecording`, for the deployment's default model (`DEFAULT_CHAT_MODEL`,
+Cerebras). It is the smaller fit than VIP-71's `CachedModel`/`RecordedModel`: those replay `ModelLike` calls, and the
+app's agents reach the provider through `HostModel`'s HTTP and SSE, so the wire is the contract here as for GitHub.
+
+```
+ VIBE_MODEL         reaches the provider   writes test/recordings/model-<case>.json   needs CEREBRAS_API_KEY
+ replay (default)   never                  no                                         no
+ record             yes, 40 calls at most  yes, when the case passes                  yes
+ passthrough        yes, 40 calls at most  no                                         yes
+```
+
+- **Secrets.** The key comes only from the environment. Request headers (the key's) are dropped, the key is scrubbed
+  wherever else it appears, and the file is scanned and refused on a credential shape, as for GitHub.
+- **Keying.** The agent's system context carries the project wiki and changes with every edit, so a model call is
+  keyed and recorded with it replaced by a fixed text; a replay claims the calls in order by the person's and the
+  agent's turns.
+- **Cap.** One recording run stops at the 41st model call, whatever the model answers.
+- **Cases** (`test/model.recorded.test.vibe`): the VIP agent's draft, the wiki agent's draft, a specification
+  reviewer's verdict (its model built from configuration; its calls go through the injected `FetchHttpClient.Fetch`)
+  and a reply. A real answer differs from run to run, so each checks what the product promises of any answer: every
+  field present, the asked page, a verdict and grade at the asked revision, a finished reply, one charge within the
+  ceiling. They skip until the four recordings are committed. Failures stay on the scripted model as injected faults.
+- **Wiring checked in every run** (`test/modelRecording.test.vibe`): a reply recorded from the scripted provider on a
+  local socket replays with the socket closed and the same answer, events and ledger; the file holds no key and no
+  system context; a reviewer's calls reach the recording (red without the `Fetch` injection: 0 exchanges); the cap
+  refuses the call after its limit before it reaches the provider.
+- **Recorded by the lead** on the Mac, where the key lives: `CEREBRAS_API_KEY=… pnpm record:model` in `apps/vibelang`.
+
 ## Bug found by real GitHub
 
 **A new issue or a split answered without the issue it selected.** GitHub's issue list trails a write by seconds;
@@ -96,8 +127,14 @@ so `issues/steered-host`'s "GitHub never showed the VIP" case still means what i
 
 - Fuzz targets generate requests a recording cannot hold. By VL-38 they keep the in-memory GitHub, checked against
   every committed recording by `test/fakeConformance.test.vibe` on every `pnpm test` (built, lane vl-fake-conformance).
-- The doubles `~/vl/review-tests.REPORT.md` finding 3 lists for device sign-in, accounts, the model provider and
-  sandbox machines.
+- The model's four recordings: `pnpm record:model` with the key, on the Mac. Until then the cases skip and the
+  scripted model's happy cases stay.
+- Sandbox machines are recorded: `d7d3245c` (lane vl-containers-live, VL-35) committed
+  `test/recordings/sandboxes-live.json`, the product's `Factory` client starting, commanding, checkpointing, restoring,
+  metering and sweeping a real Container on the `vl-test` stage, and `test/sandboxesReplay.test.vibe` replays it in
+  every `pnpm test`. The in-memory `memoryMachines` (`src/core/sandboxMock.vibe`) still serves
+  `test/sandboxFlow.test.vibe` and `test/sandboxKernelEdges.coverage.test.vibe`, and stays the UI's mock mode (VL-13).
+- Device sign-in and accounts wait for the GitHub App's Device Flow setting.
 - The test repository keeps every closed issue a run made. The list cut keeps them out of recordings; a passthrough
   run still reads them.
 
