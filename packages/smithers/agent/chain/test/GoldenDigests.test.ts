@@ -1,8 +1,12 @@
-import { Effect, Schema } from "effect"
+import * as Flows from "@smthrs/memory/Flows"
+import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import * as Recall from "@smthrs/memory/Recall"
+import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AuthorDeclaration from "../src/AuthorDeclaration.ts"
 import * as Catalog from "../src/Catalog.ts"
 import * as Event from "../src/Event.ts"
+import * as MemoryEntries from "../src/MemoryEntries.ts"
 import * as Script from "../src/Script.ts"
 import * as SubChains from "../src/SubChains.ts"
 
@@ -43,8 +47,26 @@ describe("golden digests", () => {
     expect(Script.make("return done(null)").digest).toBe(scriptDigest)
   })
 
+  it("pins a script digest over non-ASCII text", () => {
+    expect(Script.make("return done(\"café ✓ 日本 🚀\")").digest).toBe(
+      "612a70f60cd05b6fee33dbed6a0e6028ae705bf068b7859f8f32eba8f41e4a8c"
+    )
+  })
+
   it("pins a catalog entry digest with every digested field set", () => {
     expect(Catalog.entryDigest(entry)).toBe(entryDigest)
+  })
+
+  // An undeclared claim set claims `*`; an empty one claims nothing and
+  // skips the `Authorize` seam. A journal settled under one must never
+  // replay under the other.
+  it("pins distinct digests for undeclared and empty capabilities", () => {
+    const { capabilities: _, ...undeclared } = entry
+    const undeclaredDigest = Catalog.entryDigest(undeclared)
+    const emptyDigest = Catalog.entryDigest({ ...entry, capabilities: [] })
+    expect(undeclaredDigest).toBe("cf87c45904f553acf49b2762577988f5a9def59da7365155fa01db446770c068")
+    expect(emptyDigest).toBe("0a16b81f1c4f63ed7bd4013113218ffff3bd7101a2b855f5f378097815b06a9a")
+    expect(undeclaredDigest).not.toBe(emptyDigest)
   })
 
   it("includes the child call budget in the sub-agent contract digest", () => {
@@ -56,6 +78,26 @@ describe("golden digests", () => {
     expect(SubChains.contractDigest({ entries: [] })).toBe(
       "12f6ce3f7a304b4a89d16bd5592e91ae5446b158484edf80722662465cddd7fb"
     )
+  })
+
+  it("pins the sub-agent contract digest with every option set", () => {
+    expect(SubChains.contractDigest({ entries: [], maxCallsPerLink: 4, maxDepth: 2, maxLinks: 3, prefix: "child" }))
+      .toBe("fe4fe814cc0c07765a45c9aabfbb967f8179d9184dcfab1a1bd124503874b1f0")
+  })
+
+  // The binding digests the memory door keys `remember` and `recall` by:
+  // the shipped contract (schema identity, effects, name, description) under
+  // a fixed policy.
+  it("pins the remember and recall binding digests", async () => {
+    const entries = await Effect.runPromise(
+      MemoryEntries.make({ banks: ["worldview"], maxTokens: 1000 }).pipe(
+        Effect.provide(Layer.merge(MemoryStore.layerNoop(), Recall.layerNoop))
+      )
+    )
+    expect(entries.map((memory) => [memory.name, memory.digest])).toStrictEqual([
+      [Flows.rememberName, "323fd8972d4cef3b3a5c5d95d802ab6dfec59a79704087ffe664e52aeb71ceee"],
+      [Flows.recallName, "b6e006834066029ff26dd6903edd5d8f2de0ca23a63c3904ef5ad16a7d0578cf"]
+    ])
   })
 })
 
@@ -120,6 +162,24 @@ describe("golden wire format", () => {
       "LinkEnded",
       { _tag: "LinkEnded", link: 2, outcome: { _tag: "Park", reason: { code: "timer", message: "" } } },
       { _tag: "LinkEnded", link: 2, outcome: { _tag: "Park", reason: { code: "timer", message: "" } } }
+    ],
+    [
+      "LinkEnded Done",
+      { _tag: "LinkEnded", link: 3, outcome: { _tag: "Done", value: { fixed: 2 } } },
+      { _tag: "LinkEnded", link: 3, outcome: { _tag: "Done", value: { fixed: 2 } } }
+    ],
+    [
+      "LinkEnded To",
+      {
+        _tag: "LinkEnded",
+        link: 1,
+        outcome: { _tag: "To", script: { digest: scriptDigest, text: "return done(null)" } }
+      },
+      {
+        _tag: "LinkEnded",
+        link: 1,
+        outcome: { _tag: "To", script: { digest: scriptDigest, text: "return done(null)" } }
+      }
     ]
   ] as const
 
