@@ -620,6 +620,11 @@ interface Run extends RunContext {
   /** Terminal reports taken from `events` but not yet processed, in arrival order. */
   readonly pendingSettlements: Array<DispatchSettlementEvent>
   readonly pendingDeviations: Array<PendingDeviation>
+  /**
+   * Journaled deviations whose key digest no node of this incarnation has
+   * announced yet, held by digest until `registerAttempt` names their node.
+   */
+  readonly unkeyedDeviations: Map<string, Array<typeof DeviationPayload.Type>>
   /** Sinks a selection verdict postponed, with the edge and likelihood their debt records. */
   readonly deferrals: Map<string, { edge: Selection.SuspectedEdge; likelihood: number }>
   /** Admission passes that launched work. */
@@ -852,6 +857,7 @@ const makeRun = (context: RunContext, plan: Plan.Plan): Run => {
     observedReads: new Map(),
     pendingSettlements: [],
     pendingDeviations: [],
+    unkeyedDeviations: new Map(),
     deferrals: new Map(),
     admissions: 0,
     inFlightSteps: 0,
@@ -1525,6 +1531,12 @@ const registerAttempt = (run: Run, event: Extract<CoordinatorEvent, { readonly _
   const dispatchedUnder = run.digestToNode.get(event.digest)
   if (dispatchedUnder === undefined) {
     run.digestToNode.set(event.digest, [event.nodeId])
+    // A resumed run drains the journal from its start, so a deviation an
+    // earlier incarnation recorded can precede its node's key report here.
+    const held = run.unkeyedDeviations.get(event.digest)
+    if (held === undefined) return
+    run.unkeyedDeviations.delete(event.digest)
+    run.pendingDeviations.push(...held.map((payload) => attributeTo(run, event.nodeId, payload)))
   } else if (!dispatchedUnder.includes(event.nodeId)) {
     run.digestToNode.set(event.digest, [...dispatchedUnder, event.nodeId])
   }
@@ -1613,7 +1625,12 @@ const attributeDeviations = (run: Run, entries: Journal.EntriesPage["entries"]):
   return attributed
 }
 
-/** Attributes one journal entry to its node, when it is a deviation of an attempt this run keyed. */
+/**
+ * Attributes one journal entry to its node, when it is a deviation. A
+ * deviation of an attempt this incarnation has not keyed yet is held for
+ * `registerAttempt`: the cursor moves past it, and replay re-emits no new
+ * entry, so dropping it would let its node replay as clean.
+ */
 const attributeDeviation = (
   run: Run,
   entry: Journal.EntriesPage["entries"][number]
@@ -1621,19 +1638,28 @@ const attributeDeviation = (
   if (entry.eventType !== "flows.engine.expected-set-deviation") return undefined
   const payload = decodeDeviation(entry.payload)
   if (Option.isNone(payload)) return undefined
-  const nodeIds = run.digestToNode.get(payload.value.stepKeyDigest)
-  if (nodeIds === undefined) return undefined
+  const digest = payload.value.stepKeyDigest
+  const nodeIds = run.digestToNode.get(digest)
+  if (nodeIds === undefined) {
+    run.unkeyedDeviations.set(digest, [...(run.unkeyedDeviations.get(digest) ?? []), payload.value])
+    return undefined
+  }
   // The attempt belongs to an executing node by construction. If
   // its built settlement is absent from current bookkeeping — the
   // record arrived first, or is being durably replayed into an
   // all-clean invocation — preserve first dispatch order.
   const nodeId = nodeIds.find((candidate) => run.states.get(candidate)!.outcome === "built") ?? nodeIds[0]!
+  return attributeTo(run, nodeId, payload.value)
+}
+
+/** Records a deviation's path signature for its node, for symmetric attribution. */
+const attributeTo = (run: Run, nodeId: string, payload: typeof DeviationPayload.Type): PendingDeviation => {
   const signature = JSON.stringify([
     "expected-set-deviation/v1",
-    [...new Set(payload.value.paths)].sort(compareText)
+    [...new Set(payload.paths)].sort(compareText)
   ])
   run.deviationSignatures.set(nodeId, signature)
-  return { nodeId, signature, payload: payload.value }
+  return { nodeId, signature, payload }
 }
 
 /** Judges every pending deviation whose node has settled, in attribution order. */

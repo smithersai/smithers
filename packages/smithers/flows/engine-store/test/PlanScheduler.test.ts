@@ -1619,6 +1619,63 @@ describe("PlanScheduler reconciliation", () => {
     expect(settlements[0]?.payload).toMatchObject({ nodeId: "mystery", outcome: "failed" })
   })
 
+  it("re-judges a resumed run's deviation of a node keyed after the first drain", async () => {
+    // Incarnation 1 dies while judging `deviator`'s deviation. Incarnation 2
+    // replays `upstream` first and drains the whole journal before `deviator`
+    // is keyed; the deviation must still reach the reconciler once it is.
+    const plan = await runPromise(compile([
+      draft("upstream"),
+      draft("deviator", { inputs: [{ _tag: "Pending", from: "upstream" }], boundaryMode: "expected" }),
+      draft("dependent", { inputs: [{ _tag: "Pending", from: "deviator" }] })
+    ]))
+    const executor: PlanScheduler.Executor = { execute: ({ node }) => Effect.succeed(node.id) }
+    const crashing = Reconciliation.layer({
+      onDeviation: () => Effect.interrupt,
+      /* v8 ignore next -- no conflict arises in this plan */
+      onConflict: () => Effect.succeed({ _tag: "Fail", reason: "unused" } as const)
+    })
+    const boundary = Layer.succeed(
+      StepBoundary.StepBoundary,
+      StepBoundary.make({
+        prepare: (descriptor) => Effect.succeed({ descriptor, readSnapshot: StepBoundary.exactReads(descriptor) }),
+        settle: (prepared) =>
+          Effect.succeed({
+            declaredOutputs: {},
+            diffIdentity: "resumed-diff",
+            wholeTreeWritesVerified: true as const,
+            hermeticReadsVerified: true as const,
+            ...(prepared.descriptor.writeSet.includes("deviator.out")
+              ? {
+                deviation: {
+                  _tag: "ExpectedSetDeviation" as const,
+                  paths: ["/tmp/unexplained"],
+                  diffIdentity: "resumed-diff"
+                }
+              }
+              : {})
+          }),
+        replayOutputs: () => Effect.void
+      })
+    )
+    const runId = "run-resumed-deviation"
+    const incarnation = (reconciliation: Layer.Layer<Reconciliation.Reconciliation>) =>
+      Effect.provide(
+        scheduler({ runId, executor }).run(plan),
+        harness({ runId, executor, boundary, reconciliation })
+      )
+    const { died, resumed } = await runPromise(
+      Effect.gen(function*() {
+        yield* activate(runId)
+        const died = yield* Effect.exit(incarnation(crashing))
+        const resumed = yield* incarnation(Reconciliation.layerDefault)
+        return { died, resumed }
+      }).pipe(Effect.provide(TestStores.layer()))
+    )
+    expect(Exit.isFailure(died) && Cause.hasInterruptsOnly(died.cause)).toBe(true)
+    expect(resumed.verdicts).toMatchObject([{ nodeId: "deviator", verdict: { _tag: "Fail" } }])
+    expect(outcomes(resumed)).toEqual({ upstream: "clean", deviator: "failed", dependent: "skipped" })
+  })
+
   it("does not conflate distinct path sets whose old space-joined signatures collided", async () => {
     const plan = await runPromise(compile([
       draft("first", { writes: ["first.out"], boundaryMode: "expected" }),
