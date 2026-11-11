@@ -76,6 +76,19 @@ the ordinary claim, steal, and activate path:
    owner death across ticks rather than waking every stale run in every driver
    on every tick.
 
+A settling run records each parked parent's wake after its terminal transition
+commits. An interrupt that lands between the two, even one that ends the
+transition after its SQL `COMMIT`, still records the wakes before the drive ends.
+A process that dies between them leaves the parent parked with nothing due, so
+after the sweeps of its first tick the driver repairs that: for every parked run,
+it records the wake each settled child still owes it and wakes the run. Later
+ticks retry only the runs whose repair failed, because unlike the sweeps above, a
+pass reads every parked run. A process that dies after a surviving driver's pass
+therefore leaves its parents parked until a driver next starts on the store. A
+parent that attached to a child that had already settled is woken once for
+nothing; its round replays and parks again. A hosted store runs no sweep;
+`EngineStore.drive` announces a run it settled again instead.
+
 Registration does its own recovery: `pendingClocks(scope)` re-arms outstanding
 timers and `completedDeferreds(flowName)` recovers unconsumed completions. Both exclude rows
 whose run has settled, so a restart arms timers for runs that can still make

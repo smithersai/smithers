@@ -801,20 +801,25 @@ const recordResume = (
  *
  * The waiting row is the park: it is written in the same transaction as
  * the suspended transition and cleared by the claim that ends it, so a
- * parent that has one is parked and a parent mid-round has none. It is
- * Persist the wake even without a host recorder: the parent can belong to
+ * parent that has one is parked and a parent mid-round has none. The wake
+ * is persisted even without a host recorder: the parent can belong to
  * another process whose suspended execution discovers it by polling.
+ * Answers whether this call recorded the wake.
  */
 const parentWakePrefix = "@smthrs/engine/parent-settled/"
 const controlWakePrefix = "@smthrs/engine/control-resume/"
 
-const recordParentResume = (driver: Driver, parentExecutionId: string, childExecutionId: string): Effect.Effect<void> =>
+const recordParentResume = (
+  driver: Driver,
+  parentExecutionId: string,
+  childExecutionId: string
+): Effect.Effect<boolean> =>
   Effect.gen(function*() {
     const parent = yield* findRun(driver, parentExecutionId)
-    if (parent === undefined || isSettled(parent.status)) return
+    if (parent === undefined || isSettled(parent.status)) return false
     const state = yield* decodeState(parent.stateJson)
     const waiting = yield* driver.engineState.waiting(parentExecutionId)
-    if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
+    if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return false
     // Persist before publishing: a remote parent's poll must see this wake,
     // including when its current round has not finished parking yet.
     const recorded = yield* driver.transactState(
@@ -836,6 +841,7 @@ const recordParentResume = (driver: Driver, parentExecutionId: string, childExec
       { partition: parentExecutionId }
     ).pipe(Effect.orDie)
     if (recorded) yield* recordResume(driver, parentExecutionId, Option.isSome(waiting), "parent")
+    return recorded
   })
 
 const requestCancellation = (driver: Driver, runId: string, at: number) =>
@@ -1775,31 +1781,38 @@ const cancelOwned = (
       ...withoutResult(state),
       cancellation: { interruptedAtMs, ...(cancellation === undefined ? {} : { run: cancellation }) }
     })
-    const { settled, cascaded } = yield* commitCancellation(driver, runId, stateJson, interruptedAtMs)
-    if (cancellation !== undefined) yield* driver.coordinator.schedule(cancellation)
-    if (settled) yield* recordSettled(driver, runId, state, { outcome: "cancelled", code: "cancelled" })
-    // Post-commit, and only reachable after a transition that actually
-    // happened. Closing the parked flow scope runs the finalizers the
-    // suspension retained, with an interrupt exit so `Flow.withRollback`
-    // compensations fire — cancellation is exactly the unsuccessful exit
-    // they exist for. The run is durably cancelled first, so a crash
-    // inside a finalizer cannot resurrect it.
-    yield* releaseRetainedScope(driver, runId, Exit.failCause(Cause.interrupt()))
-    // Waking a cascaded child is in-process scheduling: a child this
-    // process owns or has parked re-enters claim/activate now and the
-    // activation cancel guard closes it, instead of waiting out a poll
-    // interval. A child owned elsewhere ignores the wake and is reached by
-    // its own owner's cancel poll or by that owner's parked-run sweep.
-    if (cascaded.length > 0) {
-      yield* Effect.forEach(cascaded, (childId) => driver.coordinator.wake(childId), { discard: true })
-    }
     // A cancelled round is a terminal settlement like a completed or
     // failed one, so every parent already parked on it — through any round
-    // of its lineage — is woken to read the cancellation (#2758). Only
-    // after the transition this call committed: a lost fence woke nobody.
-    if (settled) {
-      yield* announceSettled(driver, runId, state)
-    }
+    // of its lineage — is woken to read the cancellation (#2758), last.
+    // Only after the transition this call committed: a lost fence woke
+    // nobody.
+    yield* settleAnnounced(
+      driver,
+      runId,
+      state,
+      commitCancellation(driver, runId, stateJson, interruptedAtMs),
+      (committed) => committed.settled,
+      ({ cascaded, settled }) =>
+        Effect.gen(function*() {
+          if (cancellation !== undefined) yield* driver.coordinator.schedule(cancellation)
+          if (settled) yield* recordSettled(driver, runId, state, { outcome: "cancelled", code: "cancelled" })
+          // Post-commit, and only reachable after a transition that actually
+          // happened. Closing the parked flow scope runs the finalizers the
+          // suspension retained, with an interrupt exit so `Flow.withRollback`
+          // compensations fire — cancellation is exactly the unsuccessful exit
+          // they exist for. The run is durably cancelled first, so a crash
+          // inside a finalizer cannot resurrect it.
+          yield* releaseRetainedScope(driver, runId, Exit.failCause(Cause.interrupt()))
+          // Waking a cascaded child is in-process scheduling: a child this
+          // process owns or has parked re-enters claim/activate now and the
+          // activation cancel guard closes it, instead of waiting out a poll
+          // interval. A child owned elsewhere ignores the wake and is reached by
+          // its own owner's cancel poll or by that owner's parked-run sweep.
+          if (cascaded.length > 0) {
+            yield* Effect.forEach(cascaded, (childId) => driver.coordinator.wake(childId), { discard: true })
+          }
+        })
+    )
   })
 
 /**
@@ -2031,6 +2044,11 @@ const settleInterrupted = (
       if (row.claim !== null && row.claimedAtMs !== null && sameOwner(row.claim, driver.dependencies.owner)) {
         return abandon(driver, runId, row.claimedAtMs)
       }
+      // A drive interrupted after its terminal transition committed, but
+      // before its parents' wakes were recorded, records them now (#4774).
+      // A wake already recorded is not scheduled again, and its parent is
+      // not woken again.
+      if (isSettled(row.status)) return reannounce(driver, runId, "recorded")
       if (row.status !== "running" || row.owner === null || !sameOwner(row.owner, driver.dependencies.owner)) {
         return Effect.void
       }
@@ -2446,7 +2464,12 @@ const commitHandoff = (driver: Driver, seam: HandoffSeam, advanced: Successor, w
  * same reason `scheduleResume` records: the round this wake schedules is
  * the one a host's park guard has to recognize.
  */
-const announceSettled = (driver: Driver, executionId: string, state: RunState): Effect.Effect<void> =>
+const announceSettled = (
+  driver: Driver,
+  executionId: string,
+  state: RunState,
+  wake: ParentWake = "every"
+): Effect.Effect<void> =>
   Effect.gen(function*() {
     yield* driver.wakeBus.wake(executionId)
     const parents = new Set<string>()
@@ -2457,24 +2480,63 @@ const announceSettled = (driver: Driver, executionId: string, state: RunState): 
     }
     if (parents.size === 0) return
     for (const parentId of parents) {
-      yield* recordParentResume(driver, parentId, executionId)
+      const recorded = yield* recordParentResume(driver, parentId, executionId)
+      if (!recorded && wake === "recorded") continue
       yield* driver.coordinator.wake(parentId)
       yield* driver.wakeBus.wake(parentId)
     }
   })
 
 /**
+ * Which parents {@link announceSettled} wakes in process: `every` parent, or
+ * only the parents whose wake this announcement `recorded`, for a drive that
+ * cannot tell whether its own announcement already ran.
+ */
+type ParentWake = "every" | "recorded"
+
+/**
  * {@link announceSettled} again, for a settled run that is the last round
  * of its lineage. See {@link Service.reannounce}.
  */
-const reannounce = (driver: Driver, executionId: string): Effect.Effect<void> =>
+const reannounce = (driver: Driver, executionId: string, wake: ParentWake = "every"): Effect.Effect<void> =>
   Effect.gen(function*() {
     const latest = yield* driver.store.latestRound(executionId).pipe(Effect.orDie)
     // A round that handed off is not the lineage's settlement: its
     // successor's is.
     if (latest.runId !== executionId) return
-    yield* announceSettled(driver, executionId, yield* decodeState(latest.stateJson))
+    yield* announceSettled(driver, executionId, yield* decodeState(latest.stateJson), wake)
   })
+
+/**
+ * Commits a run's terminal transition, runs `afterCommit`, and, when
+ * `settled` says the transition committed, announces the settlement
+ * ({@link announceSettled}) however `afterCommit` ends.
+ *
+ * The parents' wakes are written after the transition, in their own
+ * transactions on the parents' partitions. An interrupt landing between the
+ * two (a shutdown, a closing registration scope, an `interrupt` of the run)
+ * would leave the run settled and its parents parked with nothing due. The
+ * commit and `afterCommit` stay interruptible: the commit's maintenance after its
+ * SQL `COMMIT` included, which {@link settleInterrupted} covers by
+ * announcing a run it finds settled. A process that dies in the gap leaves
+ * it for {@link sweepUnannouncedSettlements} to repair.
+ */
+const settleAnnounced = <A>(
+  driver: Driver,
+  executionId: string,
+  state: RunState,
+  commit: Effect.Effect<A>,
+  settled: (committed: A) => boolean,
+  afterCommit: (committed: A) => Effect.Effect<void> = () => Effect.void
+): Effect.Effect<A> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.tap(restore(commit), (committed) =>
+      restore(afterCommit(committed)).pipe(
+        Effect.ensuring(settled(committed) ? announceSettled(driver, executionId, state) : Effect.void)
+      ))
+  )
+
+const isTransitioned = (outcome: RunStore.TransitionOutcome): boolean => outcome._tag === "Transitioned"
 
 /**
  * Ends a lineage that asked for one round past its declared budget.
@@ -2489,31 +2551,36 @@ const endLineage = (driver: Driver, seam: HandoffSeam, error: Flow.MaxRoundsExce
       ...seam.state,
       result: (yield* encodeResult(seam.flow, new Flow.Complete({ exit: Exit.die(error) }))).encoded
     })
-    const transitioned = yield* transitionAndRecord(
+    const outcome = yield* settleAnnounced(
       driver,
       seam.executionId,
-      "failed",
-      stateJson,
-      {
-        decision: "lineage-exhausted",
-        status: "failed",
-        lineageId: error.lineageId,
-        maxRounds: error.maxRounds,
-        owner: driver.dependencies.owner
-      },
-      { cancelRequested: "absent" },
-      // The lineage is over, not continuing: this round is the last one,
-      // so it ends its children like any other terminal exit. A round that
-      // HANDS OFF settles through `continueLineage` instead and deliberately
-      // does not, because the lineage — and therefore the parent the
-      // children are linked to — carries on.
-      applyChildExitPolicy(driver, seam.executionId)
+      seam.state,
+      transitionAndRecord(
+        driver,
+        seam.executionId,
+        "failed",
+        stateJson,
+        {
+          decision: "lineage-exhausted",
+          status: "failed",
+          lineageId: error.lineageId,
+          maxRounds: error.maxRounds,
+          owner: driver.dependencies.owner
+        },
+        { cancelRequested: "absent" },
+        // The lineage is over, not continuing: this round is the last one,
+        // so it ends its children like any other terminal exit. A round that
+        // HANDS OFF settles through `continueLineage` instead and deliberately
+        // does not, because the lineage — and therefore the parent the
+        // children are linked to — carries on.
+        applyChildExitPolicy(driver, seam.executionId)
+      ),
+      isTransitioned
     )
-    if (transitioned._tag === "GuardFailed") {
+    if (outcome._tag === "GuardFailed") {
       yield* cancelOwned(driver, seam.executionId, seam.state)
-    } else if (transitioned._tag === "Transitioned") {
+    } else if (outcome._tag === "Transitioned") {
       yield* recordSettled(driver, seam.executionId, seam.state, RunMetrics.settlement(Exit.die(error)))
-      yield* announceSettled(driver, seam.executionId, seam.state)
     }
   })
 
@@ -2535,23 +2602,28 @@ const failRefused = (
       ...state,
       result: (yield* encodeResult(flow, new Flow.Complete({ exit: Exit.die(defect) }))).encoded
     })
-    const transitioned = yield* transitionAndRecord(
+    const outcome = yield* settleAnnounced(
       driver,
       executionId,
-      "failed",
-      stateJson,
-      { ...decision, status: "failed", owner: driver.dependencies.owner },
-      { cancelRequested: "absent" },
-      applyChildExitPolicy(driver, executionId)
+      state,
+      transitionAndRecord(
+        driver,
+        executionId,
+        "failed",
+        stateJson,
+        { ...decision, status: "failed", owner: driver.dependencies.owner },
+        { cancelRequested: "absent" },
+        applyChildExitPolicy(driver, executionId)
+      ),
+      isTransitioned
     )
-    if (transitioned._tag === "GuardFailed") {
+    if (outcome._tag === "GuardFailed") {
       yield* cancelOwned(driver, executionId, state)
-    } else if (transitioned._tag === "Transitioned") {
+    } else if (outcome._tag === "Transitioned") {
       yield* recordSettled(driver, executionId, state, {
         outcome: "refused",
         code: RunMetrics.settlement(Exit.die(defect)).code
       })
-      yield* announceSettled(driver, executionId, state)
     }
   })
 
@@ -3245,43 +3317,53 @@ const settleResult = (
       ? undefined
       : { atMs: yield* Clock.currentTimeMillis, kind: RunMetrics.waitKind(waiting.reason) }
     const defect = result._tag === "Complete" && status === "failed" ? defectRecord(result.exit) : undefined
-    const transitioned = yield* transitionAndRecord(
+    // Once a terminal settle commits, tell any in-process caller parked on
+    // this run's poll loop and every parent waiting on it, so a run driven
+    // to completion by a sweep or a coordinator wake is observed now rather
+    // than on the next tick. A suspension announces nothing.
+    const transitioned = yield* settleAnnounced(
       driver,
       executionId,
-      status,
-      FailureDiagnostic.withinState(
-        yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
-        failure,
-        failureSites
-      ),
-      {
-        decision: "transitioned",
+      activeState,
+      transitionAndRecord(
+        driver,
+        executionId,
         status,
-        owner: driver.dependencies.owner,
-        ...(defect === undefined ? {} : { defect }),
-        ...(failure === undefined ? {} : { failure })
-      },
-      { cancelRequested: "absent" },
-      // A suspension is not an exit: the run is parked and will settle
-      // later, so its children keep going and its timers stay armed. A
-      // `completed` or `failed` run is done, so its attached children
-      // end with it. The transition closes its own clock rows.
-      status === "suspended" ? undefined : applyChildExitPolicy(driver, executionId),
-      waiting
-    ).pipe(
-      // The park becomes durable the instant this transition commits, so
-      // the flag that records it is set in the transition's own exit
-      // processing. `Effect.onExit` finalizers run uninterruptibly and
-      // before the fiber can observe an interruption again, so no
-      // interrupt can land between the durable commit and the flag and
-      // make the cleanup region discard a scope the park still needs.
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (status === "suspended" && Exit.isSuccess(exit) && exit.value._tag === "Transitioned") {
-            attempt.durableParkAccepted = true
-          }
-        })
-      )
+        FailureDiagnostic.withinState(
+          yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
+          failure,
+          failureSites
+        ),
+        {
+          decision: "transitioned",
+          status,
+          owner: driver.dependencies.owner,
+          ...(defect === undefined ? {} : { defect }),
+          ...(failure === undefined ? {} : { failure })
+        },
+        { cancelRequested: "absent" },
+        // A suspension is not an exit: the run is parked and will settle
+        // later, so its children keep going and its timers stay armed. A
+        // `completed` or `failed` run is done, so its attached children
+        // end with it. The transition closes its own clock rows.
+        status === "suspended" ? undefined : applyChildExitPolicy(driver, executionId),
+        waiting
+      ).pipe(
+        // The park becomes durable the instant this transition commits, so
+        // the flag that records it is set in the transition's own exit
+        // processing. `Effect.onExit` finalizers run uninterruptibly and
+        // before the fiber can observe an interruption again, so no
+        // interrupt can land between the durable commit and the flag and
+        // make the cleanup region discard a scope the park still needs.
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            if (status === "suspended" && Exit.isSuccess(exit) && exit.value._tag === "Transitioned") {
+              attempt.durableParkAccepted = true
+            }
+          })
+        )
+      ),
+      (outcome) => status !== "suspended" && isTransitioned(outcome)
     )
     if (transitioned._tag === "GuardFailed") {
       // `cancelOwned` closes the retained scope itself, with the
@@ -3305,10 +3387,6 @@ const settleResult = (
       )
     }
     yield* recordSettled(driver, executionId, activeState, settledAs)
-    // The settle is durable; tell any in-process caller parked on this
-    // run's poll loop, so a run driven to completion by a sweep or a
-    // coordinator wake is observed now rather than on the next tick.
-    yield* announceSettled(driver, executionId, activeState)
   })
 
 /**
@@ -3617,6 +3695,54 @@ const sweepPendingFlow = (
   })
 
 /**
+ * Records the wakes that settled children owe their parked parents: every
+ * parked run's, or only the runs in `retry`. Answers the runs it could not
+ * repair, or `all` when it could not list the parked runs.
+ *
+ * A settling run commits its terminal transition and then records each
+ * waiting parent's `parent-settled` wake in a separate transaction
+ * ({@link settleAnnounced}). A process that dies between the two leaves the
+ * child settled and the parent parked with nothing due, and no other sweep
+ * revisits it. For every parked run, this records the wake of each child
+ * whose lineage has settled, unless the wake was already recorded, consumed
+ * or not, and wakes the parent. A parent that attached to a child that had
+ * already settled has no such wake either, so it is woken once for nothing:
+ * its round replays and parks again.
+ *
+ * The heartbeat sweep lists every parked run once, after its first tick, and
+ * on later ticks retries only what failed: the gap opens only when a process
+ * dies, and a scan of every parked run on every tick is the cost issue #68
+ * removed from the sweeps. A process that dies after a surviving driver's
+ * pass leaves its parents parked until a driver next starts on the store.
+ */
+const sweepUnannouncedSettlements = (
+  driver: Driver,
+  retry: Unrepaired
+): Effect.Effect<Unrepaired> =>
+  Effect.gen(function*() {
+    const parked = retry === "all"
+      ? (yield* driver.engineState.waitingRuns()).map((row) => row.runId)
+      : retry
+    const failed = new Set<string>()
+    for (const parentId of parked) {
+      const repaired = yield* Effect.gen(function*() {
+        for (const edge of yield* driver.engineState.runChildren(parentId)) {
+          const latest = yield* driver.store.latestRound(edge.childId).pipe(Effect.orDie)
+          if (!isSettled(latest.status) || !(yield* recordParentResume(driver, parentId, latest.runId))) continue
+          yield* driver.coordinator.wake(parentId)
+          yield* driver.wakeBus.wake(parentId)
+        }
+        return true
+      }).pipe(survived(`wakes owed to parked run ${parentId}`, false))
+      if (!repaired) failed.add(parentId)
+    }
+    return failed
+  }).pipe(survived<Unrepaired>("unannounced settlement", "all"))
+
+/** The parked runs {@link sweepUnannouncedSettlements} has yet to repair: `all` of them, or these. */
+type Unrepaired = "all" | ReadonlySet<string>
+
+/**
  * Reclaims hard-killed runs (issue #53). An owner that dies without
  * releasing (SIGKILL, OOM, power loss) leaves a `running` row with a
  * frozen heartbeat and no waiting row, so the parked-run sweep above
@@ -3669,6 +3795,15 @@ const resilientSweep = (sweep: Effect.Effect<void>, name: string) =>
   sweep.pipe(
     Effect.sandbox,
     Effect.catchCause((cause) => Effect.logWarning(`engine-store: ${name} sweep failed; retrying next tick`, cause))
+  )
+
+/** {@link resilientSweep} for a step with an answer: a failure is logged and answers `failed`. */
+const survived = <A>(name: string, failed: A) => (step: Effect.Effect<A>): Effect.Effect<A> =>
+  step.pipe(
+    Effect.sandbox,
+    Effect.catchCause((cause) =>
+      Effect.as(Effect.logWarning(`engine-store: ${name} sweep failed; retrying next tick`, cause), failed)
+    )
   )
 
 /** One execution a caller asks to admit. */
@@ -4790,20 +4925,27 @@ const releaseRetainedScopes = (retainedScopes: Map<string, Scope.Closeable>): Ef
  * process lifetime (issue #44) — that would silently revert to pre-#27
  * behavior where cancel of parked runs is never delivered. Mirror
  * `armClock`'s hardening: expose the full cause, log it, and keep ticking.
+ * After its sweeps, a tick runs {@link sweepUnannouncedSettlements} until
+ * it has repaired every parked run.
  */
-const sweepForever = (driver: Driver): Effect.Effect<never, never, never> =>
-  Effect.forever(
-    Effect.sleep(Ownership.heartbeatInterval).pipe(
-      Effect.andThen(
-        resilientSweep(sweepCancelRequested(driver), "parked-run cancel").pipe(
-          Effect.andThen(resilientSweep(sweepStaleRunning(driver), "stale-running")),
-          Effect.andThen(resilientSweep(sweepReadyTimers(driver), "ready timer")),
-          Effect.andThen(resilientSweep(sweepPendingCancellation(driver), "pending cancellation")),
-          Effect.andThen(resilientSweep(sweepPending(driver), "pending admission"))
-        )
-      )
-    )
+const sweepForever = (driver: Driver): Effect.Effect<never, never, never> => {
+  const sweeps = resilientSweep(sweepCancelRequested(driver), "parked-run cancel").pipe(
+    Effect.andThen(resilientSweep(sweepStaleRunning(driver), "stale-running")),
+    Effect.andThen(resilientSweep(sweepReadyTimers(driver), "ready timer")),
+    Effect.andThen(resilientSweep(sweepPendingCancellation(driver), "pending cancellation")),
+    Effect.andThen(resilientSweep(sweepPending(driver), "pending admission"))
   )
+  return Effect.gen(function*() {
+    let unrepaired: Unrepaired = "all"
+    while (true) {
+      yield* Effect.sleep(Ownership.heartbeatInterval)
+      yield* sweeps
+      if (unrepaired === "all" || unrepaired.size > 0) {
+        unrepaired = yield* sweepUnannouncedSettlements(driver, unrepaired)
+      }
+    }
+  })
+}
 
 /**
  * Constructs a scoped run driver.
