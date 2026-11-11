@@ -16,9 +16,10 @@
  *   value is found inside a longer encoded string such as a Basic
  *   credential's `user:value`.
  *
- * {@link Scrubber.stream} scrubs a body as it streams. It holds back fewer
- * bytes than the longest form, so a value split across chunks is still
- * found, and it adds no other delay or bound on the body's size. A
+ * {@link Scrubber.stream} scrubs a body as it streams. It holds back only
+ * the end of a chunk that a form could continue from in the next chunk, so
+ * a value split across chunks is still found, and it adds no other delay or
+ * bound on the body's size. A
  * transformation outside these forms, such as hexadecimal or a hash, is not
  * found: bind a secret only to hosts whose answers have been reviewed.
  *
@@ -91,11 +92,16 @@ interface Pattern {
   readonly tokens?: ReadonlyArray<ReadonlyArray<Uint8Array>>
 }
 
-const matchesAt = (input: Uint8Array, at: number, pattern: Uint8Array): boolean => {
-  for (let index = 0; index < pattern.length; index++) {
-    if (input[at + index] !== pattern[index]) return false
+/** What {@link matchedLength} answers when `input` ends inside a pattern that matches so far. */
+const cut = -1
+
+/** The length of `pattern` when it is at `at`, 0 when it is not, and {@link cut} when `input` ends inside it. */
+const matchedBytes = (input: Uint8Array, at: number, pattern: Uint8Array): number => {
+  const available = Math.min(pattern.length, input.length - at)
+  for (let index = 0; index < available; index++) {
+    if (input[at + index] !== pattern[index]) return 0
   }
-  return true
+  return available === pattern.length ? pattern.length : cut
 }
 
 // Alternatives are per byte, rather than a Cartesian product of whole echoes.
@@ -135,15 +141,19 @@ const jsonTokens = (value: string): ReadonlyArray<ReadonlyArray<Uint8Array>> =>
     return [...alternatives].map(utf8)
   })
 
+/** The length of the echo of `pattern` at `at`, 0 when there is none, and {@link cut} when `input` ends inside one. */
 const matchedLength = (input: Uint8Array, at: number, pattern: Pattern): number => {
-  if (pattern.tokens === undefined) {
-    return pattern.bytes.length <= input.length - at && matchesAt(input, at, pattern.bytes) ? pattern.bytes.length : 0
-  }
+  if (pattern.tokens === undefined) return matchedBytes(input, at, pattern.bytes)
   let end = at
   for (const token of pattern.tokens) {
-    const hit = token.find((bytes) => bytes.length <= input.length - end && matchesAt(input, end, bytes))
-    if (hit === undefined) return 0
-    end += hit.length
+    // The alternatives are prefix-free, so at most one is whole, and none is cut where one is whole.
+    let matched = 0
+    for (const bytes of token) {
+      matched = matchedBytes(input, end, bytes)
+      if (matched !== 0) break
+    }
+    if (matched <= 0) return matched
+    end += matched
   }
   return end - at
 }
@@ -171,31 +181,34 @@ export const make = (targets: ReadonlyArray<Target>): Scrubber => {
     }
   }
   patterns.sort((left, right) => right.bytes.length - left.bytes.length)
-  const longest = patterns[0]?.bytes.length ?? 0
   const firsts = new Set(
     patterns.flatMap((pattern) => pattern.tokens?.[0]!.map((bytes) => bytes[0]) ?? [pattern.bytes[0]])
   )
 
   /**
-   * Scrubs `input` up to where a form could still continue in the next chunk, or to its end when `final`, and
-   * answers the scrubbed bytes and the bytes held back.
+   * Scrubs `input` up to the first position where a form matches as far as `input` goes and could continue in the
+   * next chunk, or to its end when `final`, and answers the scrubbed bytes and the bytes held back. A form is
+   * never longer than the longest pattern, so fewer bytes than that are held back.
    */
   const scan = (input: Uint8Array, final: boolean) => {
-    const limit = final ? input.length : input.length - longest + 1
     const parts: Array<Uint8Array> = []
     let start = 0
     let at = 0
-    while (at < limit) {
+    while (at < input.length) {
       if (firsts.has(input[at])) {
         let length = 0
         let replacement: Uint8Array | undefined
+        let continues = false
         for (const pattern of patterns) {
           const matched = matchedLength(input, at, pattern)
-          if (matched > length) {
+          if (matched === cut) {
+            continues = true
+          } else if (matched > length) {
             length = matched
             replacement = pattern.replacement
           }
         }
+        if (continues && !final) break
         if (replacement !== undefined) {
           parts.push(input.subarray(start, at), replacement)
           at += length
