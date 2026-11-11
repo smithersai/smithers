@@ -163,6 +163,54 @@ const withEnv = async <A>(env: Record<string, string>, body: () => Promise<A>): 
   }
 }
 
+// Issue #5144: an added path was read with `statSync` and `readFileSync`, which follow symbolic links, so a checkout
+// path linked to a file outside it (the runner's token, a provider login) uploaded that file's bytes as its contents.
+const refusedAt = (
+  checkout: Workspace.Checkout,
+  mirror: { readonly path: string; readonly base: string }
+) =>
+  Effect.runPromise(
+    Workspace.changes(checkout, mirror.base, limits, mirror.path).pipe(
+      Effect.match({ onFailure: (error) => error.step, onSuccess: (changes) => JSON.stringify(changes) })
+    )
+  )
+
+test("an added symbolic link fails the read and uploads nothing of its target", async () => {
+  const mirror = Host.mirror(root)
+  const checkout = Workspace.of(join(root, "state"), "linked")
+  expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe("made")
+  writeFileSync(join(root, "runner-token"), "synthetic-runner-secret")
+  symlinkSync(join(root, "runner-token"), join(checkout.dir, "result.txt"))
+  writeFileSync(join(checkout.dir, "plain.txt"), "plain\n")
+  expect(await refusedAt(checkout, mirror)).toBe("read")
+  // A link that stays inside the checkout is still a link the change can't carry, never its target's copy.
+  rmSync(join(checkout.dir, "result.txt"))
+  symlinkSync("plain.txt", join(checkout.dir, "result.txt"))
+  expect(await refusedAt(checkout, mirror)).toBe("read")
+  rmSync(join(checkout.dir, "result.txt"))
+  const read = await Effect.runPromise(Workspace.changes(checkout, mirror.base, limits, mirror.path))
+  expect(read?.additions).toEqual([{ path: "plain.txt", contents: Buffer.from("plain\n").toString("base64") }])
+}, 120_000)
+
+test("a parent directory swapped for a symbolic link after the diff fails the read", async () => {
+  const mirror = Host.mirror(root)
+  const checkout = Workspace.of(join(root, "state"), "parent")
+  expect(made(await Effect.runPromise(Effect.exit(Workspace.create(mirror.path, mirror.base, checkout))))).toBe("made")
+  mkdirSync(join(checkout.dir, "sub"))
+  writeFileSync(join(checkout.dir, "sub", "result.txt"), "in the checkout\n")
+  const outside = join(root, "outside")
+  mkdirSync(outside)
+  writeFileSync(join(outside, "result.txt"), "synthetic-runner-secret")
+  // The diff lists `sub/result.txt` from a real directory; then `sub` becomes a link to a directory outside.
+  const fake = join(root, "fake-jj")
+  writeFileSync(
+    fake,
+    `#!/bin/sh\n"${resolveJjBinary().path}" "$@" || exit $?\nif [ "$3" = diff ]; then rm -rf "${checkout.dir}/sub" && ln -s "${outside}" "${checkout.dir}/sub"; fi\n`
+  )
+  chmodSync(fake, 0o755)
+  expect(await withEnv({ SMITHERS_JJ_PATH: fake }, () => refusedAt(checkout, mirror))).toBe("read")
+}, 120_000)
+
 test(
   "a missing mirror is cloned with the job's credential; without it, or with a wrong one, nothing is fetched",
   async () => {

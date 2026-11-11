@@ -38,11 +38,14 @@ import { createHash } from "node:crypto"
 import {
   accessSync,
   chmodSync,
+  closeSync,
   constants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -1013,9 +1016,48 @@ const parseSummary = (line: string): { readonly added: Array<string>; readonly d
 }
 
 /**
+ * The regular file `path` (a summary path, `/`-separated) under the checkout
+ * `root`, read without following a symbolic link at any component: a followed
+ * link would upload its target, such as a file outside the checkout, as the
+ * path's contents, and the change protocol carries no links. `undefined` for a
+ * path that is not a regular file. Throws on a link in any component, and when
+ * the path changed between its checks and its read.
+ */
+const readRegular = (root: string, path: string): Buffer | undefined => {
+  const file = join(root, path)
+  // Each parent must be a real directory; `lstat` never follows the last component.
+  const unlinked = (): Stats => {
+    let dir = root
+    for (const part of path.split("/").slice(0, -1)) {
+      dir = join(dir, part)
+      if (!lstatSync(dir).isDirectory()) throw new Error(`${dir} isn't a real directory`)
+    }
+    const stat = lstatSync(file)
+    if (stat.isSymbolicLink()) throw new Error(`${file} is a symbolic link`)
+    return stat
+  }
+  if (!unlinked().isFile()) return undefined
+  // `O_NONBLOCK`: a FIFO swapped in after the check can't hold the open.
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+  try {
+    // A parent swapped for a link before the open would name another file than the one the walk now reaches.
+    const opened = fstatSync(fd)
+    const reached = unlinked()
+    if (!opened.isFile() || opened.dev !== reached.dev || opened.ino !== reached.ino) {
+      throw new Error(`${file} changed while it was read`)
+    }
+    return readFileSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
  * The checkout's change against `base`: each added or modified file's
  * contents in base64, and each deleted path; `undefined` when the change
- * exceeds `limits`. The diff snapshots the checkout into `mirror`'s
+ * exceeds `limits`. Fails at `read` when an added path is a symbolic link or
+ * lies under one: the change can't carry a link, and following it would
+ * upload the link's target. The diff snapshots the checkout into `mirror`'s
  * repository, so it waits its turn on the mirror.
  *
  * @category constructors
@@ -1055,7 +1097,7 @@ export const changes = (
         return yield* new WorkspaceError({ step: "read" })
       }
       const read = yield* Effect.try({
-        try: () => (statSync(file).isFile() ? readFileSync(file) : undefined),
+        try: () => readRegular(root, path),
         catch: () => new WorkspaceError({ step: "read" })
       })
       if (read === undefined) continue
