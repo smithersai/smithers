@@ -32,6 +32,15 @@
 
 ### Fixed
 
+- A step answered from the shared cache records a succeeded attempt with the
+  cached result, so a later drive of the same run replays it instead of asking
+  the cache again. When the shared row was evicted, swept, or refused in
+  between, that drive used to execute a body whose result the run had already
+  consumed. Queued effects of an isolated execution are dispatched only after
+  the step boundary accepts it; a settlement that fails the attempt sends
+  nothing, and `copy-back-settled` journals an empty `dispatched` list
+  ([#4763](https://github.com/smithersai/smithers/issues/4763)).
+
 - `DisasterRecovery` backup, verify, and restore hash and copy every file in
   1 MiB chunks instead of reading it whole, so a database or blob of 2 GiB or
   more no longer fails with `io` whatever `maxFileSizeBytes` says.

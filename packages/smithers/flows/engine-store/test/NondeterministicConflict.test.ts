@@ -262,6 +262,7 @@ describe("declared nondeterministic cache conflicts", () => {
       expect(executions).toBe(1)
       expect(Option.getOrThrow(outcome.cached).meta).toMatchObject({ nondeterministic: true })
       expect(Option.getOrThrow(outcome.writerAttempt).meta).toMatchObject({ nondeterministic: true })
-      expect(Option.isNone(outcome.readerAttempt)).toBe(true)
+      // The hit is the reader's own durable attempt (issue #4763).
+      expect(Option.getOrThrow(outcome.readerAttempt)).toMatchObject({ state: "succeeded", outcome: "recorded" })
     }))
 })

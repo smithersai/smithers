@@ -106,6 +106,28 @@ describe("durable attempts precede shared cache acceleration", () => {
       }).pipe(Effect.provide(layer), Effect.scoped)
     ))
 
+  it.effect("records the attempt a cache hit answered, so a re-drive never re-runs its body (issue #4763)", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        yield* activate("recorder")
+        expect(yield* dispatch("recorder", () => Effect.succeed("recorded-result"))).toBe("recorded-result")
+        yield* activate("served")
+        expect(yield* dispatch("served", () => Effect.die("body must not run"))).toBe("recorded-result")
+        const served = yield* attemptOf("served")
+        expect(served.state).toBe("succeeded")
+        expect(served.outcome).toBe("recorded-result")
+        // Like a closed orphan, the row claims no boundary evidence it never
+        // measured, so it is never published back.
+        expect(served.meta).toEqual({ tier: "sealed", nondeterministic: true, admittedBy: owner })
+        // The shared head is mutable. Once it is gone, the run's own row
+        // answers the step it already consumed.
+        const cache = yield* CacheStore.CacheStore
+        yield* cache.evict(sha256("cache-precedence"))
+        expect(yield* dispatch("served", () => Effect.succeed("re-executed"))).toBe("recorded-result")
+        expect(Option.isNone(yield* cache.get(sha256("cache-precedence")))).toBe(true)
+      }).pipe(Effect.provide(layer), Effect.scoped)
+    ))
+
   it.effect("answers an orphaned attempt whose metadata no longer decodes (issue #3898)", () =>
     withCrypto(
       Effect.gen(function*() {

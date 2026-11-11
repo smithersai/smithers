@@ -281,9 +281,11 @@ describe("immutable age policy and validated fork replay", () => {
             const after = yield* journal.entries({ runId: "child" as never, limit: 50 })
             expect(after).toEqual(before)
             const attempts = yield* AttemptStore.AttemptStore
+            // The hit is the child's own attempt (issue #4763); its record
+            // converged with the copy the parent wrote.
             expect(
-              Option.isNone(yield* attempts.get({ runId: "child", stepKeyDigest: sha256("fork-age"), attempt: 1 }))
-            ).toBe(true)
+              Option.getOrThrow(yield* attempts.get({ runId: "child", stepKeyDigest: sha256("fork-age"), attempt: 1 }))
+            ).toMatchObject({ state: "succeeded", outcome: "parent-result" })
           }).pipe(Effect.provide(Layer.mergeAll(TestStores.layerAt(db), jj, boundary())), Effect.scoped)
         ))
         expect(bodies).toBe(1)

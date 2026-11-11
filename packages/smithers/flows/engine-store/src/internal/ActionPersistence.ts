@@ -1049,7 +1049,8 @@ const atomically = <A, E, R>(dispatch: Dispatch, effect: Effect.Effect<A, E, R>)
 const settleAttempt = (
   dispatch: Dispatch,
   row: AttemptStore.FinishAttempt,
-  records: ReadonlyArray<JournalEvent.Input>
+  records: ReadonlyArray<JournalEvent.Input>,
+  emit: Emit = emitLifecycle
 ) =>
   atomically(
     dispatch,
@@ -1063,7 +1064,7 @@ const settleAttempt = (
       if (row.state === "succeeded" && dispatch.stepFacts.annotated) {
         yield* emitCommittedStepFact(dispatch)
       }
-      yield* Effect.forEach(records, (record) => emitLifecycle(dispatch, record), { discard: true })
+      yield* Effect.forEach(records, (record) => emit(dispatch, record), { discard: true })
       if (row.state === "succeeded" && dispatch.callFacts.settles) {
         yield* emitCommittedCallFact(dispatch)
       }
@@ -2177,31 +2178,40 @@ const materialize = (boundary: StepBoundary.Service, evidence: StepBoundary.Boun
   })
 
 /**
- * Close the orphaned attempt with the result that answered
- * it, so the run carries no attempt that started and never
- * finished, and a later re-drive replays this row. The
- * meta records no boundary evidence: this attempt measured
- * none of its own, so the row is never published back.
+ * Records the result that answered the dispatch as its own succeeded
+ * attempt (issue #4763), so a later re-drive replays this row rather
+ * than asking the shared cache again. The head is mutable: eviction,
+ * a sweep, retention, or a stale read set can remove it, and the
+ * re-drive would then execute a body whose result the run already
+ * consumed. A fresh dispatch inserts its row and settles it in one
+ * transaction; an orphaned one is closed, so the run carries no
+ * attempt that started and never finished. The meta records no
+ * boundary evidence: this attempt measured none of its own, so the
+ * row is never published back. Its record converges like a replay's:
+ * a forked run's journal can already hold the copy its parent wrote.
  */
-const closeOrphan = (dispatch: Dispatch, orphaned: AttemptStore.Attempt, row: CacheStore.CacheEntry) =>
+const recordHit = (dispatch: Dispatch, orphaned: AttemptStore.Attempt | undefined, row: CacheStore.CacheEntry) =>
   Effect.gen(function*() {
     const { attemptId, deps } = dispatch
     const finishedAtMs = yield* nowMillis
-    const settled = yield* settleAttempt(dispatch, {
+    const settle = settleAttempt(dispatch, {
       ...attemptId,
       state: "succeeded",
       finishedAtMs,
       outcome: attemptPayload(row.result),
       meta: attemptPayload(
         {
-          ...decodeMeta(orphaned.meta),
+          ...decodeMeta(orphaned?.meta),
           ...dispatch.declarationMeta,
           admittedBy: deps.owner
         } satisfies AttemptMeta
       )
     }, [
       JournalRecords.attemptFinished(attemptSource(dispatch, "finished"), { ...attemptId, state: "succeeded" })
-    ])
+    ], emitConverging)
+    const settled = yield* (orphaned === undefined
+      ? atomically(dispatch, Effect.andThen(insertAttempt(dispatch), settle))
+      : settle)
     if (!settled) {
       return yield* Effect.interrupt
     }
@@ -2219,9 +2229,7 @@ const serveHit = (dispatch: Dispatch, row: CacheStore.CacheEntry, orphaned: Atte
         recordedEventSeq: row.recordedEventSeq
       })
     )
-    if (orphaned !== undefined) {
-      yield* closeOrphan(dispatch, orphaned, row)
-    }
+    yield* recordHit(dispatch, orphaned, row)
     // Counted after the provenance emit: `verified_hit` means
     // the cached result was served, and a journal failure on
     // the emit fails the dispatch before any result is
@@ -3099,7 +3107,7 @@ const runAttempt = (dispatch: Dispatch, admitted: Admitted, restore: Restore) =>
       return yield* settleFailure(dispatch, admitted, outcome.cause)
     }
     if (settlement !== undefined) {
-      yield* recordCopyBack(dispatch, settlement)
+      yield* recordDiffBundle(dispatch, settlement)
     }
     const evidence = yield* settleBoundary(dispatch, admitted.isolation, settlement)
     return yield* settleSuccess(dispatch, admitted, outcome.value, evidence)
@@ -3364,8 +3372,8 @@ const settleFailure = (dispatch: Dispatch, admitted: Admitted, cause: Cause.Caus
     return yield* Effect.failCause(cause)
   })
 
-/** Journals an isolated execution's diff bundle and copy-back, and fires its queued effects between them. */
-const recordCopyBack = (dispatch: Dispatch, settlement: SandboxedExecution.Settlement) =>
+/** Journals the diff bundle an isolated execution proposed. */
+const recordDiffBundle = (dispatch: Dispatch, settlement: SandboxedExecution.Settlement) =>
   Effect.gen(function*() {
     const { attemptId } = dispatch
     // Both records are keyed by the bundle they describe, not by the
@@ -3389,13 +3397,25 @@ const recordCopyBack = (dispatch: Dispatch, settlement: SandboxedExecution.Settl
         deviations: settlement.deviations
       })
     )
-    // THE DISPATCH STAGE. Queued effects fire here — after copy-back
-    // settled, outside the transaction, deduplicated by idempotency
-    // key so a body that queued the same key twice, and a bundle that
-    // rebased before it landed, both send exactly once.
-    const dispatcher = Option.getOrUndefined(
-      yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher)
-    )
+  })
+
+/**
+ * Journals an isolated execution's copy-back, firing its queued effects
+ * first when `deliver` says the boundary accepted the execution.
+ */
+const recordCopyBack = (dispatch: Dispatch, settlement: SandboxedExecution.Settlement, deliver: boolean) =>
+  Effect.gen(function*() {
+    const { attemptId } = dispatch
+    const bundle = settlement.bundleIdentity
+    // THE DISPATCH STAGE. Queued effects fire here: after copy-back and
+    // the boundary settled, outside the transaction, deduplicated by
+    // idempotency key so a body that queued the same key twice, and a
+    // bundle that rebased before it landed, both send exactly once. A
+    // settlement that fails the attempt sends nothing (issue #4763), or
+    // every retry of an invalid execution would reach the world again.
+    const dispatcher = deliver
+      ? Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher))
+      : undefined
     const deduped = new Set<string>()
     for (const queued of settlement.effects) {
       if (deduped.has(queued.idempotencyKey)) continue
@@ -3439,6 +3459,9 @@ const settleBoundary = (
     }
     const settled = yield* isolation.boundary.settle(isolation.prepared).pipe(Effect.exit)
     yield* Metric.update(EngineStoreMetrics.boundarySettlement[settlementKind(settled)], 1)
+    if (settlement !== undefined) {
+      yield* recordCopyBack(dispatch, settlement, Exit.isSuccess(settled))
+    }
     if (Exit.isFailure(settled)) {
       return yield* failBoundaryAttempt(dispatch, settled.cause)
     }

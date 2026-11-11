@@ -270,6 +270,13 @@ describe("declared time to live", () => {
     ))
 })
 
+/** A process that dies between a hit's journalled verdict and its attempt row. */
+const diesBeforeAttemptRow = (attempts: AttemptStore.Service) =>
+  Effect.provideService(AttemptStore.AttemptStore, {
+    ...attempts,
+    put: () => Effect.die(new Error("process died before the hit's attempt row committed"))
+  })
+
 describe("the journalled admission verdict", () => {
   for (const scenario of ["larger TTL", "smaller TTL", "copied lineage"] as const) {
     it.effect(`refuses incompatible recorded decisions for ${scenario} without changing durable state`, () =>
@@ -307,7 +314,9 @@ describe("the journalled admission verdict", () => {
           yield* execute("policy-producer", 1000)
           yield* TestClock.adjust("500 millis")
           yield* activate("policy-consumer")
-          expect(yield* execute("policy-consumer", 1000)).toBe("recorded")
+          // The consumer dies after journalling its verdict and before its
+          // hit's attempt row commits, so a later drive asks the cache again.
+          yield* execute("policy-consumer", 1000).pipe(diesBeforeAttemptRow(attempts), Effect.exit)
           const runId = JournalEvent.RunId.make(scenario === "copied lineage" ? "policy-child" : "policy-consumer")
           if (scenario === "copied lineage") {
             yield* journal.flush
@@ -400,7 +409,10 @@ describe("the journalled admission verdict", () => {
           yield* activate("proof-producer")
           yield* dispatch("proof-producer", key, body, { ttlMs: 1000 })
           yield* activate("proof-consumer")
-          yield* dispatch("proof-consumer", key, body, { ttlMs: 1000 })
+          yield* dispatch("proof-consumer", key, body, { ttlMs: 1000 }).pipe(
+            diesBeforeAttemptRow(attempts),
+            Effect.exit
+          )
           const beforeCache = yield* cache.get(digest)
           yield* journal.flush
           const beforeJournal = yield* journal.entries({ runId: JournalEvent.RunId.make("proof-consumer"), limit: 50 })

@@ -323,6 +323,51 @@ describe("sealed actions under the production composition", () => {
       expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("done")
     }))
 
+  it.effect("sends no queued effect when the boundary settlement fails the attempt (issue #4763)", () =>
+    Effect.gen(function*() {
+      const root = workspace()
+      const key = "sandbox/settle-refused"
+      const dispatched: Array<WorkspaceSandbox.QueuedEffect> = []
+      const metadata: ActionPersistence.BoundaryMetadata = {
+        readSet: [],
+        writeSet: [join(root, "out/result.txt"), join(root, "out/missing.txt")],
+        boundaryMode: "hard"
+      }
+      const program = Effect.gen(function*() {
+        yield* activate("sandbox-settle-refused")
+        const failure = yield* Effect.flip(
+          dispatch("sandbox-settle-refused", key, metadata, () =>
+            body(
+              Effect.gen(function*() {
+                const inner = yield* WorkspaceSandbox.Workspace
+                // The sandbox accepts this write; the boundary then finds the
+                // second declared output missing and fails the attempt.
+                yield* inner.writeFile("out/result.txt", encoder.encode("done"))
+                yield* inner.queueEffect({ protocol: "chat/v1", idempotencyKey: "reply-1", payload: { n: 1 } })
+                return null
+              }).pipe(Effect.orDie)
+            )).pipe(
+              Effect.provide(
+                WorkspaceSandbox.layerDispatcher({
+                  dispatch: (effect) => Effect.sync(() => dispatched.push(effect))
+                })
+              ),
+              Effect.provide(production(root, true))
+            )
+        )
+        const records = (yield* JournalRecords.entries("sandbox-settle-refused", undefined, 100)).entries
+        return { failure, records }
+      }).pipe(Effect.provide(TestStores.layer()))
+
+      const { failure, records } = yield* withCrypto(program)
+      expect(failure).toMatchObject({ _tag: "@smthrs/engine-store/MissingDeclaredOutput" })
+      expect(dispatched).toEqual([])
+      // The copy-back reached the host, and the journal says nothing was sent.
+      const settled = records.find((record) => record.eventType === "flows.engine.copy-back-settled")
+      expect(settled?.payload).toMatchObject({ queued: ["reply-1"], dispatched: [] })
+      expect(records.some((record) => record.eventType === "flows.engine.hard-violation")).toBe(true)
+    }))
+
   it.effect("resumes an attempt whose process died after it journalled its diff bundle (issue #4760)", () =>
     Effect.gen(function*() {
       const root = workspace()

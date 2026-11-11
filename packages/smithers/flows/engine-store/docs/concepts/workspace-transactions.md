@@ -142,11 +142,13 @@ transaction records it and sends nothing. A speculative send has already reached
 the world when its execution turns out to be invalid, and reaches it twice when
 a copy-back loses a race.
 
-The optional `EffectDispatcher` stage runs after copy-back settles, deduplicated
-by `QueuedEffect.idempotencyKey`, the same key an irreversible action must carry
-before it may be retried at all. With no dispatcher provided the engine journals
-what a transaction queued and sends nothing. The journal records
-`diff-bundle-captured` and `copy-back-settled`.
+The optional `EffectDispatcher` stage runs after copy-back settles and the step
+boundary accepts the execution, deduplicated by `QueuedEffect.idempotencyKey`,
+the same key an irreversible action must carry before it may be retried at all.
+A boundary settlement that fails the attempt, such as a missing declared output,
+sends nothing. With no dispatcher provided the engine journals what a
+transaction queued and sends nothing. The journal records `diff-bundle-captured`
+and `copy-back-settled`, whose `dispatched` list is empty when nothing was sent.
 
 ## One transaction, two hosts
 
