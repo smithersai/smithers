@@ -19,6 +19,37 @@ pinned hosts on this machine. They use hashed names and atomic, synced writes.
 Retain this directory across host restarts; these receipts are part of the
 run's recovery state. Cross-host receipt replication is not provided.
 
+## Runner placement
+
+`placement: "runner"` runs each issue's agent as an external agent job
+(`ExternalAgent`, step `issue-sweep/runner-fix`) on a local Smithers runner: a
+`runner.json` with no `origin`, served by `smthrs runner serve` on this
+machine. The sweep names the runner profile and the runner's repository id:
+
+```json
+{
+  "repo": "smithersai/smithers",
+  "placement": "runner",
+  "runner": { "profile": "codex", "repository": "github/smithersai/smithers" }
+}
+```
+
+The flow names no vendor CLI. The profile's `argv`, `prestart` (which picks
+the account) and `retryOn` in `runner.json` are the agent's command line,
+account choice and limit handling; a limited account ends the job retryable
+and the runner starts the next generation after the wait it asked for. The
+sweep reads no `<tool>-rr status` for this placement: its capacity is
+`maxAgents` (4 unless set), and the runner queues the rest.
+
+The host process finds the runner through `SMITHERS_RUNNER_CONFIG`, the path
+of that `runner.json`; without it every runner job fails
+`AgentJobsUnavailable`, which the engine retries. A start or cancel is a file
+under the runner's `job-requests/`, so it waits there while the runner is
+down. The step survives the host: a restarted sweep probes the same job. The
+job's files come back as the step's result and are recorded in the issue's
+workspace (`issue-sweep/record-runner-work`) as one change on its base, which
+then lands like a local agent's.
+
 ## VM capacity
 
 Each durable job owns one retained, detached microVM. Use `agentsPerVm: 1`
@@ -41,7 +72,7 @@ full host; real restart tests use one VM with a test-only disk floor.
 ## Validation
 
 ```sh
-node --test .smithers/flows/issue-sweep/test/{accounts,vm,receipts,work,remote-job,remote-job-restart}.test.ts
+node --test .smithers/flows/issue-sweep/test/{accounts,vm,receipts,work,remote-job,remote-job-restart,runner}.test.ts
 SMITHERS_VM_JOB_RESTART=1 node --test --test-name-pattern='vm job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
 SMITHERS_CLOUD_JOB_RESTART=1 node --test --test-name-pattern='cloud job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
 ```

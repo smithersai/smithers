@@ -129,6 +129,17 @@ const issueSweep = Smithers.NodeTest({
   deps: [],
   cwd
 })
+// The runner placement against a real `smthrs runner serve` and the ACP test agent.
+const issueSweepRunner = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//.smithers/flows/issue-sweep/test/runner.test.ts")]),
+  srcs: [
+    sources,
+    Smithers.file("//packages/smithers/bin/smithers.mjs"),
+    Smithers.file("//packages/smithers/agent/test/fixtures/acp-test-agent.mjs")
+  ],
+  deps: [],
+  cwd
+})
 // Boots real microVMs; skips itself, naming why, without msb or the snapshot.
 const issueSweepVm = Smithers.NodeTest({
   runner: Smithers.testRunner([
@@ -1578,6 +1589,7 @@ export const Package = Smithers.Package({
     suite,
     recording,
     issueSweep,
+    issueSweepRunner,
     issueSweepVm,
     packageDocs,
     provider,

@@ -39,7 +39,16 @@ import {
 import { infraCaused, noChangeLabel, recordVerdict, requalified } from "./verdict.ts"
 import { vmFields, vmOptions } from "./vm-options.ts"
 import { statfsFree } from "./vm.ts"
-import Work, { AgentFailed, checkoutIssue, type NoChange, removeWorkspace, type Report, requeue } from "./work/flow.ts"
+import Work, {
+  AgentFailed,
+  checkoutIssue,
+  type NoChange,
+  removeWorkspace,
+  type Report,
+  requeue,
+  runnerNamed,
+  RunnerOptions
+} from "./work/flow.ts"
 
 // The most landings one round runs at once; `landers` picks fewer.
 const maxLanders = 16
@@ -54,13 +63,16 @@ export const Input = Schema.Struct({
   // Each issue's work child is keyed by this attempt, so a restarted sweep
   // reattaches to its children; a new attempt works failed issues afresh.
   attempt: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
-  // Where agents run: on this Mac in their own sandbox (default), or in local microVMs.
-  placement: Schema.optional(Schema.Literals(["local", "vm", "cloud"])),
+  // Where agents run: on this Mac in their own sandbox (default), in local
+  // microVMs, or as external agent jobs on a Smithers runner (`runner` names
+  // its profile and repository; the runner chooses accounts and queues).
+  placement: Schema.optional(Schema.Literals(["local", "vm", "cloud", "runner"])),
+  runner: Schema.optional(RunnerOptions),
   // How many changes run their landing checks at once (default 6); pushes stay serial.
   landers: Schema.optional(
     Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(maxLanders))
   )
-})
+}).check(runnerNamed)
 
 const Issue = Schema.Struct({
   id: Schema.String,
@@ -272,8 +284,8 @@ const listIssues = ListIssues.toLayer(({ input }) => discoverIssues(input))
 export const maxLocalAgents = 24
 export const minFreeBytes = 25 * 1024 ** 3
 
-type Placement = "local" | "vm" | "cloud"
-const Placement = Schema.Literals(["local", "vm", "cloud"])
+type Placement = "local" | "vm" | "cloud" | "runner"
+const Placement = Schema.Literals(["local", "vm", "cloud", "runner"])
 
 export const localLimit = (input: typeof Input.Type, freeBytes: number): number =>
   input.placement === "cloud"
@@ -381,6 +393,8 @@ const choosePlacement = ChoosePlacement.toLayer(({ executionId }) => {
 
 const readCapacity = (input: typeof Input.Type) =>
   Effect.gen(function*() {
+    // A runner queues what it can't start yet and picks each job's account itself: only the ceiling applies here.
+    if (input.placement === "runner") return Burndown.available(localLimit(input, Infinity))
     const pools = yield* readPools
     const free = input.placement === "vm" ? statfsFree() : Infinity
     const result = placementCapacity(input, pools, perAccount, free)
@@ -682,7 +696,13 @@ const dispatchOptions: Burndown.RoundOptions<unknown, Item, Worked, Failure, Eng
         yield* reservePlacement(input, id, placement)
       }
       const execute = (executionId: string) =>
-        Work.execute({ repo: input.repo, issue: args.item.number, placement, ...vmOptions(input) }, {
+        Work.execute({
+          repo: input.repo,
+          issue: args.item.number,
+          placement,
+          ...(input.runner === undefined ? {} : { runner: input.runner }),
+          ...vmOptions(input)
+        }, {
           executionId
         })
       return yield* execute(id).pipe(
