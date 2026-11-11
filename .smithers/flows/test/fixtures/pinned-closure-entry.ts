@@ -23,7 +23,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   })
   const descriptor = yield* source.get("todo")
   const digest = expected ?? Descriptor.executionDigest(descriptor)!
-  const registry = bindRepositoryRegistry(source, Registry.makeNoop(), "a".repeat(64), [], draft ? undefined : digest, draft)
+  const registry = bindRepositoryRegistry(source, Registry.makeNoop(), [], draft ? undefined : digest, draft)
   yield* registry.loadBody("todo", digest)
   const retained = expected === undefined ? descriptor : (yield* snapshots.restore(digest)).descriptor
   const executable = yield* Executable.fromDescriptor(retained, { delegates: [], snapshots })

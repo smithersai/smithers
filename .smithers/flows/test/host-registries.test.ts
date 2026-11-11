@@ -50,19 +50,13 @@ test("built native and coding hosts expose their actual private registrations", 
 })
 
 test(
-  "hosted maintainer composition retains its repository execution and recovery layers",
+  "a host that is not an install retains its vibe delivery and recovery layers",
   { timeout: 120_000 },
   async () => {
-    const inventory = await withProductionRegistries((inventories) => Effect.succeed(inventories), undefined, true)
+    const inventory = await withProductionRegistries((inventories) => Effect.succeed(inventories), undefined, false)
     for (const host of inventory.filter((row) => row.host !== "native")) {
       for (
         const id of [
-          "repository/RunJob",
-          "repository/RunSetup",
-          "repository/ScoreExecution",
-          "repository/CheckStep",
-          "repository/RegisterCandidate",
-          "repository/DeliverChange",
           "coding/prepare-vibe-candidate",
           "coding/fast-forward-vibe",
           "coding/open-vibe-local-pull",

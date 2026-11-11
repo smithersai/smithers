@@ -248,22 +248,22 @@ test("the repository host admits only its pinned TODO descriptor before loading 
           return source.loadBody(name, digest)
         }
       })
-      const pinned = bindRepositoryRegistry(measured, Registry.makeNoop(), "a".repeat(64), [], active)
+      const pinned = bindRepositoryRegistry(measured, Registry.makeNoop(), [], active)
       const body = yield* pinned.loadBody("todo", active)
       assert.equal(body._tag, "Prompt")
       if (body._tag === "Prompt") assert.equal(body.text.trim(), "Approved TODO body")
       assert.equal(loads, 1)
       for (
         const registry of [
-          bindRepositoryRegistry(measured, Registry.makeNoop(), "a".repeat(64), []),
-          bindRepositoryRegistry(measured, Registry.makeNoop(), "a".repeat(64), [], "0".repeat(64))
+          bindRepositoryRegistry(measured, Registry.makeNoop(), []),
+          bindRepositoryRegistry(measured, Registry.makeNoop(), [], "0".repeat(64))
         ]
       ) {
         const refused = yield* registry.loadBody("todo").pipe(Effect.result)
         assert.equal(refused._tag, "Failure")
         assert.equal(loads, 1, "refusal happens before the source loader")
       }
-      const draft = bindRepositoryRegistry(measured, Registry.makeNoop(), "a".repeat(64), [], undefined, true)
+      const draft = bindRepositoryRegistry(measured, Registry.makeNoop(), [], undefined, true)
       const draftBody = yield* draft.loadBody("todo")
       assert.equal(draftBody._tag, "Prompt")
       assert.equal(loads, 2, "explicit draft host loads the working-copy version")

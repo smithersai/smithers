@@ -20,7 +20,7 @@ import type { FlowVersion } from "../coding/flow-load.ts"
 const fixture = fileURLToPath(new URL("./fixtures/flow-load-todo-source.ts", import.meta.url))
 // Reviewed registry execution identity of the project fixture, including its empty dependency set.
 // It binds the lockfile root relative to `.smithers/flows/` (`../../..`), so moving the flows changed it.
-const projectDigest = "c8b404e27f30299d543d41f4bdead750f7ddf2e034d93cb353df8329eb9e1334"
+const projectDigest = "36566bc3977b3b8cc6c1b6aa5936eb75e6dff23d4339368f5a74d973233f3e0f"
 
 for (const pinnedAdmission of [false, true]) {
   test(

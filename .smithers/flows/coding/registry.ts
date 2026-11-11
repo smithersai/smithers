@@ -1,15 +1,13 @@
 /** Bundled declarations are available before a repository has written any flows. */
 import * as Digest from "@smthrs/core/Digest"
-import * as Node from "@smthrs/core/Node"
 import type * as RuntimeFlow from "@smthrs/flow/Flow"
-import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import * as Registry from "@smthrs/registry/Registry"
 import { type RegistryError, registryError } from "@smthrs/registry/RegistryError"
-import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
+import { Context, Effect, FileSystem, Layer, Option, Path } from "effect"
 import { fileURLToPath } from "node:url"
 import {
   FLOW_AUTHORING_ENTRY,
@@ -17,9 +15,6 @@ import {
   FLOW_AUTHORING_STAGES
 } from "../../../packages/rpc/src/FlowAuthoring.ts"
 import Learning from "../learning/flow.ts"
-import { deploymentMinutes, deploymentTokens } from "../repository/inspection.ts"
-import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "../repository/schema.ts"
-import { TriggerOutcome } from "../repository/triggers.ts"
 import * as Review from "../review/flow.ts"
 import Todo from "../todo/flow.ts"
 import { builtinDefaults, shipsWithDefault } from "./builtin-defaults.ts"
@@ -33,6 +28,9 @@ import Verify from "./verify/flow.ts"
 import CodingWiki from "./wiki/flow.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
+/** The budget every bundled declaration carries: six hours and 200,000 tokens. */
+const deploymentMinutes = 360
+const deploymentTokens = 200_000
 /**
  * The built-in prompt bodies, compiled into the deployed host.
  *
@@ -87,7 +85,6 @@ const policySources = [
   "./planning-authority.ts",
   "./immutable-source.ts",
   "./check-detection.ts",
-  "../../../packages/rpc/src/RepositorySetup.ts",
   "../../../pnpm-lock.yaml",
   // A prompt a workspace runs is policy: editing one changes what every
   // built-in body tells a model to do.
@@ -102,14 +99,7 @@ export const runningRepositoryPolicy = Effect.gen(function*() {
     return __SMITHERS_CODING_ARTIFACT_DIGEST__
   }
   const fs = yield* FileSystem.FileSystem
-  // Every repository helper runs with this host's authority. Discovering the
-  // pack's directory keeps new judge and check modules in the policy identity.
-  // The pack is deleted next, and this listing with it.
-  const repositorySources = (yield* fs.readDirectory(fileURLToPath(new URL("../repository/", import.meta.url))))
-    .filter((name) => name.endsWith(".ts"))
-    .sort()
-    .map((name) => `../repository/${name}`)
-  const sources = yield* Effect.forEach([...repositorySources, ...policySources], (name) =>
+  const sources = yield* Effect.forEach(policySources, (name) =>
     Effect.gen(function*() {
       const path = fileURLToPath(new URL(name, import.meta.url)), stat = yield* fs.stat(path)
       if (stat.size > 2_000_000n) return yield* Effect.fail(new Error("Repository policy source exceeds its bound"))
@@ -225,21 +215,13 @@ export const provisionBuiltins = (
   stateRoot: string,
   policy: string,
   routes: ReadonlyArray<CodingRoute> = [],
-  checks: ReadonlyArray<BuiltinCheck> = [],
-  retainedRepositoryJobs = true
+  checks: ReadonlyArray<BuiltinCheck> = []
 ) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
     const root = path.join(stateRoot, "builtin-flows", policy)
     // A reused host state must not rediscover the retired registration door.
     yield* fs.remove(path.join(root, "register-repository"), { recursive: true, force: true })
-    // TODOs replace CI, Feature and Chores. Remove their old packaged doors
-    // from reused policy roots as well as fresh installs. Their names remain
-    // install-owned; retained issue/review execution and saved history keep
-    // the shared RunJob implementation.
-    for (const job of ["ci", "feature", "chores"]) {
-      yield* fs.remove(path.join(root, "repository-jobs", job), { recursive: true, force: true })
-    }
     for (const check of checks) {
       if (
         !builtinCheckName.test(check.flow) || (check.argv.length === 0 && check.flow !== "checks/build-only") ||
@@ -250,47 +232,14 @@ export const provisionBuiltins = (
         )
       }
     }
-    if (!retainedRepositoryJobs) {
-      for (
-        const name of ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]
-      ) {
-        yield* fs.remove(path.join(root, name), { recursive: true, force: true })
-      }
-    }
     /*
-     * The bundled flows a workspace has before its repository writes any.
-     *
+     * The bundled flows a workspace has before its repository writes any. Each
      * `flow` is the `@smthrs/flow` flow this entry IS: one file, no delegate
-     * name, and the value the bundle hands the loader. `delegate` is the older
-     * shape, still used by the repository doors whose work is chosen per
-     * invocation from the registry envelope rather than declared by the entry.
+     * name, and the value the bundle hands the loader.
      */
     const entries: ReadonlyArray<
-      & { readonly name: string; readonly description: string }
-      & ({ readonly delegate: string; readonly flow?: undefined } | {
-        readonly delegate?: undefined
-        readonly flow: RuntimeFlow.Any
-      })
+      { readonly name: string; readonly description: string; readonly flow: RuntimeFlow.Any }
     > = [
-      ...(retainedRepositoryJobs ?
-        [
-          {
-            name: "repository/setup",
-            delegate: "repository/RunSetup",
-            description: "Configure, evaluate and activate one repository responsibility."
-          },
-          {
-            name: "repository/trigger",
-            delegate: "repository/RunTrigger",
-            description: "Register one repository flow to run on a reviewed schedule."
-          },
-          ...(["issues", "review"] as const).map((job) => ({
-            name: `repository-jobs/${job}`,
-            delegate: "repository/RunJob",
-            description: `Run the reviewed ${job} responsibility with recorded evidence.`
-          }))
-        ] :
-        []),
       { name: "coding", flow: ImplementPlan, description: "Execute a native coding plan with its required checks." },
       { name: "coding/dispatch", flow: Dispatch, description: "Run one dispatched agent turn in this workspace." },
       { name: "coding/implementation", flow: ImplementAtoms, description: "Implement one native coding atom." },
@@ -311,15 +260,8 @@ export const provisionBuiltins = (
       const directory = path.join(root, entry.name)
       yield* fs.makeDirectory(directory, { recursive: true })
       const header = `// Bundled repository policy ${policy}.`
-      const body = entry.flow === undefined
-        ? `import type * as FlowBinding from "@smthrs/harness/FlowBinding"\nimport { Schema } from "effect"\n${header}\nexport default ({ name: ${
-          JSON.stringify(entry.name)
-        }, description: ${JSON.stringify(entry.description)}, capabilities: ["*"], flows: [${
-          JSON.stringify(entry.delegate)
-        }], budget: { tokens: ${deploymentTokens}, milliseconds: ${
-          deploymentMinutes * 60000
-        } }, effects: undefined, input: Schema.Unknown, output: Schema.Unknown } satisfies FlowBinding.Declared)\n`
-        : `import { Flow } from "@smthrs/flow"\nimport { Schema } from "effect"\n${header}\nexport default Flow.make(${
+      const body =
+        `import { Flow } from "@smthrs/flow"\nimport { Schema } from "effect"\n${header}\nexport default Flow.make(${
           JSON.stringify(entry.flow._tag)
         }, { description: ${
           JSON.stringify(entry.description)
@@ -335,18 +277,7 @@ export const provisionBuiltins = (
       // `Flow.make` has no `budget` option, so the value carries none either.
       modules.set(path.resolve(file), {
         body,
-        exports: {
-          default: entry.flow ??
-            ({
-              effects: undefined,
-              name: entry.name,
-              description: entry.description,
-              capabilities: ["*"],
-              flows: [entry.delegate],
-              input: Schema.Unknown,
-              output: Schema.Unknown
-            } satisfies FlowBinding.Declared)
-        }
+        exports: { default: entry.flow }
       })
     }
     // Defaults use their shipped bytes, the entry and every module beside it,
@@ -577,7 +508,6 @@ const reservedRefusals = (registry: Registry.Registry) =>
 export const bindRepositoryRegistry = (
   base: Registry.Registry,
   builtins: Registry.Registry,
-  policy: string,
   systemFlows: ReadonlyArray<string>,
   expectedTodoDigest?: string,
   draftVersion = false
@@ -588,42 +518,13 @@ export const bindRepositoryRegistry = (
   const dark = (name: string) => name === "todo" && expectedTodoDigest === undefined && !draftVersion
   const names = new Set(systemFlows)
   const bundled = (name: string) => names.has(name)
-  // Legacy packaged delegates retain their codecs and policy fence. These
-  // describe builtin schemas; they do not reserve repository names.
-  const reservedSchemas = (descriptor: Descriptor.FlowDescriptor) =>
-    descriptor.provenance.source !== "repository-host" ?
-      undefined :
-      descriptor.flows.includes("repository/RunSetup") ?
-      { input: SetupInput, output: OperationResult }
-      : descriptor.flows.includes("repository/RunTrigger")
-      ? { input: TriggerRequest, output: TriggerOutcome }
-      : descriptor.flows.includes("repository/RunJob")
-      ? { input: JobInput, output: JobResult }
-      : undefined
-  const derived = (descriptor: Descriptor.FlowDescriptor) => {
-    // Retained executors are engine bindings, never model command doors.
-    if (
-      ["coding/request", "coding/vibe", "coding/verify", "coding/rebase-conflict", "review/change"].includes(
+  // Retained executors are engine bindings, never model command doors.
+  const derived = (descriptor: Descriptor.FlowDescriptor) =>
+    ["coding/request", "coding/vibe", "coding/verify", "coding/rebase-conflict", "review/change"].includes(
         descriptor.name
       )
-    ) {
-      descriptor = new Descriptor.FlowDescriptor({ ...descriptor, modelInvocable: false })
-    }
-    const schemas = reservedSchemas(descriptor)
-    return schemas !== undefined ?
-      new Descriptor.FlowDescriptor({
-        ...descriptor,
-        budget: { tokens: deploymentTokens, milliseconds: deploymentMinutes * 60000 },
-        input: new Descriptor.SchemaRefInline({
-          document: JSON.parse(JSON.stringify(Node.schemaIdentity(schemas.input)))
-        }),
-        output: new Descriptor.SchemaRefInline({
-          document: JSON.parse(JSON.stringify(Node.schemaIdentity(schemas.output)))
-        }),
-        frontmatter: { ...descriptor.frontmatter, repositoryHostPolicy: policy }
-      }) :
-      descriptor
-  }
+      ? new Descriptor.FlowDescriptor({ ...descriptor, modelInvocable: false })
+      : descriptor
   const owned = (name: string): Effect.Effect<Registry.Registry, RegistryError> =>
     retired(name)
       ? Effect.fail(registryError({

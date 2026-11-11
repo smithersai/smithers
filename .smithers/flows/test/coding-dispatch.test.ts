@@ -436,8 +436,8 @@ for (const hosted of [false, true]) {
           const registry = Layer.effect(Registry.Registry)(
             Effect.gen(function*() {
               const base = yield* Registry.Registry
-              const builtins = yield* provisionHostBuiltins(state, policy, start.adapters)
-              return bindRepositoryRegistry(base, builtins.registry, policy, systemFlows)
+              const builtins = yield* provisionHostBuiltins(state, policy, {})
+              return bindRepositoryRegistry(base, builtins.registry, systemFlows)
             })
           ).pipe(
             Layer.provide(
@@ -469,13 +469,6 @@ for (const hosted of [false, true]) {
       // And what its prompt names: an install renders them, a hosted host has none.
       for (const name of names) {
         assert.equal(prompts.some((prompt) => prompt.includes(name)), !hosted, `${name} in the model's prompt`)
-      }
-      // The turn completes on a hosted host that serves no repository job (gate item 2b).
-      for (
-        const name of ["repository/setup", "repository/trigger", "repository-jobs/issues", "repository-jobs/review"]
-      ) {
-        assert.equal(shown.includes(name), !hosted, `${name} shown: ${shown.join(",")}`)
-        if (hosted) assert.ok(!prompts.some((prompt) => prompt.includes(name)), `${name} in the model's prompt`)
       }
     }
   )

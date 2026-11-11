@@ -38,7 +38,7 @@ test(
         const project = yield* Registry.make({
           sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
         }).pipe(Effect.provide(Discovery.layer))
-        const registry = bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows)
+        const registry = bindRepositoryRegistry(project, builtins.registry, systemFlows)
         const descriptor = yield* registry.get("pr-triage")
         return { registry, prompt: yield* registry.runPrompt("pr-triage", { args: context }), seat: descriptor.model }
       }).pipe(Effect.provide(platform))

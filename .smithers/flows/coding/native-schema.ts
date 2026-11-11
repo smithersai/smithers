@@ -171,7 +171,7 @@ export type OperationResult = typeof OperationResult.Type
  * So the field is closed, and the boundary decodes into it. The set is the
  * union of three declarations this repo already holds:
  *
- * - what this repo's own native paths raise (`native.ts`, `.smithers/flows/repository`),
+ * - what this repo's own native paths raise (`native.ts`),
  * - what the guest adapter answers, as Plue's own failure registry spells it
  *   without the `coding_` prefix (`packages/rpc/src/PlueFailureCodes.ts`),
  * - and what the same adapter answers in its `--engine` mode, as

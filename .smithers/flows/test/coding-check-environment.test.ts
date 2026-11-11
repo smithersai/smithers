@@ -6,12 +6,12 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } fro
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { test } from "node:test"
-import { consume, repositoryCheckEnvironment } from "../coding/check-environment.ts"
+import { consume } from "../coding/check-environment.ts"
 import { environmentSecrets, redactOutput, runSourceProcess, withImmutableSource } from "../coding/immutable-source.ts"
 
 const cacheUrl = "https://api.example.test/api/repos/o/r/build-cache"
 
-test("the allowlist reaches every repository process; the cache credential is kept apart and leaves the host", () => {
+test("the allowlist reaches every repository process; the cache credential leaves the host and reaches none", () => {
   const environment: Record<string, string | undefined> = {
     PATH: "/usr/bin",
     HOME: "/home/developer",
@@ -24,17 +24,10 @@ test("the allowlist reaches every repository process; the cache credential is ke
     NPM_TOKEN: "placeholder"
   }
   assert.deepEqual(consume(environment), {
-    environment: {
-      PATH: "/usr/bin",
-      HOME: "/home/developer",
-      HTTPS_PROXY: "http://proxy",
-      NODE_EXTRA_CA_CERTS: "/etc/ca.pem"
-    },
-    cache: {
-      SMITHERS_CACHE_URL: cacheUrl,
-      SMITHERS_CACHE_TOKEN: "smithers_cache_read",
-      SMITHERS_CACHE_READ_TOKEN: "smithers_cache_read"
-    }
+    PATH: "/usr/bin",
+    HOME: "/home/developer",
+    HTTPS_PROXY: "http://proxy",
+    NODE_EXTRA_CA_CERTS: "/etc/ca.pem"
   })
   assert.equal("SMITHERS_CACHE_URL" in environment, false)
   assert.equal("SMITHERS_CACHE_TOKEN" in environment, false)
@@ -53,7 +46,7 @@ test("a partial or empty cache provision reaches no process and still leaves the
     ]
   ) {
     const environment: Record<string, string | undefined> = { PATH: "/usr/bin", ...provision }
-    assert.deepEqual(consume(environment), { environment: { PATH: "/usr/bin" }, cache: {} }, JSON.stringify(provision))
+    assert.deepEqual(consume(environment), { PATH: "/usr/bin" }, JSON.stringify(provision))
     assert.deepEqual(environment, { PATH: "/usr/bin" })
   }
 })
@@ -61,22 +54,8 @@ test("a partial or empty cache provision reaches no process and still leaves the
 test("no process inherits a caller-supplied split read or write token", () => {
   assert.deepEqual(
     consume({ SMITHERS_CACHE_READ_TOKEN: "ambient-read", SMITHERS_CACHE_WRITE_TOKEN: "ambient-write" }),
-    { environment: {}, cache: {} }
+    {}
   )
-})
-
-test("only repository checks add the cache credential to the allowlist", () => {
-  const { environment, cache } = consume({ PATH: "/usr/bin", SMITHERS_CACHE_URL: cacheUrl, SMITHERS_CACHE_TOKEN: "t" })
-  assert.deepEqual(repositoryCheckEnvironment({ checkEnvironment: environment, cacheEnvironment: cache }), {
-    PATH: "/usr/bin",
-    SMITHERS_CACHE_URL: cacheUrl,
-    SMITHERS_CACHE_TOKEN: "t",
-    SMITHERS_CACHE_READ_TOKEN: "t"
-  })
-  assert.equal(repositoryCheckEnvironment({ checkEnvironment: environment, cacheEnvironment: {} }), environment)
-  assert.equal(repositoryCheckEnvironment({ checkEnvironment: environment }), environment)
-  assert.equal(repositoryCheckEnvironment({}), undefined, "an unset allowlist stays unset")
-  assert.deepEqual(repositoryCheckEnvironment({ cacheEnvironment: cache }), cache)
 })
 
 test("a check's retained output never carries its cache credential", async () => {

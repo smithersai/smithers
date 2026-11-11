@@ -2,8 +2,8 @@
  * One dispatched agent turn.
  *
  * Every other door in this package runs a *programme*: `coding/ImplementPlan`
- * implements a validated plan, `coding/Request` plans then implements with
- * required checks, `repository/Job` investigates an event. Each is registered
+ * implements a validated plan, and `coding/Request` plans then implements with
+ * required checks. Each is registered
  * only when its owning configuration exists, and each answers with receipts
  * rather than with what the agent said. A cloud caller that wants exactly one
  * turn — a person typed a message, the agent should answer it and may edit the

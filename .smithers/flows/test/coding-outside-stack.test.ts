@@ -243,7 +243,7 @@ test("a tip that moved before admission is evicted and nothing is applied", asyn
 test("only a host that lands locally serves outside-stack admission", () => {
   const local = { planning: { landing: "fast-forward" as const } } as Parameters<typeof outsideStacksServed>[0]
   assert.equal(outsideStacksServed(local), true)
-  assert.equal(outsideStacksServed({ ...local, retainedRepositoryJobs: false }), false, "never an installed host")
+  assert.equal(outsideStacksServed({ ...local, installed: true }), false, "never an installed host")
   assert.equal(
     outsideStacksServed({ ...local, landing: Layer.empty as never }),
     false,

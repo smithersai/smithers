@@ -30,42 +30,34 @@ const measuredPolicy = (changedFile?: string) =>
     return yield* runningRepositoryPolicy.pipe(Effect.provideService(FileSystem.FileSystem, source))
   })
 
-test("source repository policy fences an approved job after semantic judge code changes", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "repository-policy-identity-"))
+test("a judge code change changes the host policy and fences a planned built-in", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "coding-policy-identity-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>) =>
     Effect.runPromise(effect.pipe(Effect.provide(platform)))
   const original = await run(measuredPolicy())
   assert.equal(await run(measuredPolicy()), original, "unchanged source keeps its identity")
-
-  const builtins = await run(provisionBuiltins(root, original))
-  const generated = await readFile(join(root, "builtin-flows", original, "repository", "setup", "flow.ts"), "utf8")
-  assert.match(generated, /satisfies FlowBinding\.Declared/)
-  assert.match(generated, /effects: undefined/)
   const base = await Effect.runPromise(
     Registry.make({ sources: [] }).pipe(Effect.provide(Discovery.layer), Effect.provide(platform))
   )
-  const oldHost = bindRepositoryRegistry(base, builtins.registry, original, systemFlows)
-  const approved = Descriptor.executionDigest(await Effect.runPromise(oldHost.get("repository/setup")))
-  assert.ok(approved)
-  assert.equal((await Effect.runPromise(oldHost.loadBody("repository/setup", approved)))._tag, "Module")
+  const hostAt = async (policy: string) =>
+    bindRepositoryRegistry(base, (await run(provisionBuiltins(root, policy))).registry, systemFlows)
 
-  for (
-    const file of [
-      "coding/jev-rules.ts",
-      "repository/jev-checks.ts",
-      "repository/jev-duplicates.ts",
-      "repository/jev-reproduction.ts",
-      "repository/jev-score.ts"
-    ]
-  ) {
+  const oldHost = await hostAt(original)
+  const generated = await readFile(join(root, "builtin-flows", original, "coding", "flow.ts"), "utf8")
+  assert.ok(generated.includes(`// Bundled repository policy ${original}.`), "the written bytes carry the policy")
+  const approved = Descriptor.executionDigest(await Effect.runPromise(oldHost.get("coding")))
+  assert.ok(approved)
+  assert.equal((await Effect.runPromise(oldHost.loadBody("coding", approved)))._tag, "Module")
+
+  for (const file of ["coding/jev-rules.ts", "coding/evaluator.ts"]) {
     const changed = await run(measuredPolicy(file))
     assert.notEqual(changed, original, `${file} must change the measured host policy`)
-    const changedHost = bindRepositoryRegistry(base, builtins.registry, changed, systemFlows)
-    const current = Descriptor.executionDigest(await Effect.runPromise(changedHost.get("repository/setup")))
+    const changedHost = await hostAt(changed)
+    const current = Descriptor.executionDigest(await Effect.runPromise(changedHost.get("coding")))
     assert.notEqual(current, approved)
     await assert.rejects(
-      Effect.runPromise(changedHost.loadBody("repository/setup", approved)),
+      Effect.runPromise(changedHost.loadBody("coding", approved)),
       /Repository host policy changed after planning/
     )
   }

@@ -3,7 +3,7 @@
  * backend's landing API (Plue composes it; no queue or ledger here), or a local
  * lander from `local-landing.ts` for a host without a repository binding.
  */
-import { Cause, Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Redacted, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import {
   AppendObservation,
@@ -105,11 +105,6 @@ export interface LocalLanding {
   readonly publishStack: (input: StackPublicationInput) => Effect.Effect<StackPublication, CodingError>
 }
 export class Landing extends Context.Service<Landing, BackendLanding | LocalLanding>()("coding/Landing") {}
-/** The backend adapter when this host has one; a local lander is absent here, so repository automation never lands through it. */
-export const backendLanding: Effect.Effect<Option.Option<BackendLanding>> = Effect.map(
-  Effect.serviceOption(Landing),
-  Option.filter((landing): landing is BackendLanding => landing.kind === "backend")
-)
 /** The bound landing, refused when it is not the backend adapter. */
 export const requireBackend = Effect.flatMap(
   Landing,

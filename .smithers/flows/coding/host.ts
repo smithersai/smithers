@@ -20,22 +20,9 @@ import * as NativeEquipment from "../../../packages/smithers/src/internal/Native
 import { expandSeat, seatAliases, seatRefusal } from "../../../packages/smithers/src/Providers.ts"
 import * as Serve from "../../../packages/smithers/src/Serve.ts"
 import { layer as learningLayer, LearningFailed, machineBinding } from "../learning/flow.ts"
-import { activationLayers } from "../repository/activation.ts"
-import { changeLayers, changeModelLayers, changeModelNames } from "../repository/changes.ts"
-import { checkLayers as repositoryCheckLayers } from "../repository/checks.ts"
-import { deliveryLayers } from "../repository/delivery.ts"
-import { evaluationLayers, ScoreCase } from "../repository/evaluation.ts"
-import { executionLayers } from "../repository/execution.ts"
-import { inspectionLayers } from "../repository/inspection.ts"
-import { failureLayer, jobFlows, modelLayers, modelNames } from "../repository/jobs.ts"
-import type { RepositoryRemote } from "../repository/remote.ts"
-import { replyLayers } from "../repository/replies.ts"
-import { RunJob, RunSetup, setupLayers, SuggestSetup } from "../repository/setup.ts"
-import { RunTrigger, triggerLayers } from "../repository/triggers.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 import * as CodingTerminal from "./agentTerminal.ts"
 import { atomOperations, EditAtom } from "./atoms.ts"
-import { repositoryCheckEnvironment } from "./check-environment.ts"
 import { checkDelegate, checkLayers } from "./checks.ts"
 import { commandReceipts } from "./command-receipts.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
@@ -96,8 +83,8 @@ import { dependencyPagesLayer, wikiRefreshRegistration } from "./wiki-route.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
-  /** Private hosted maintainer machinery; the install entry disables registration. */
-  readonly retainedRepositoryJobs?: boolean
+  /** An installed host: it lands through the install's backend lander and appends no outside stacks. */
+  readonly installed?: boolean | undefined
 
   /** Installed registered-run atomic writer; never accepted in a flow payload. */
   readonly fileMutationProvider?: (canonicalRoot: string) => CodingFileSystem.MutationProvider
@@ -132,8 +119,6 @@ export interface Options extends NativeOptions {
   readonly implementationModel: string
   readonly exporterPath?: string | undefined
   readonly checkEnvironment?: Readonly<Record<string, string>> | undefined
-  /** The read-only build-cache credential, added only to repository checks' environment. */
-  readonly cacheEnvironment?: Readonly<Record<string, string>> | undefined
   /** Exact packaged host bytes and owning-process fence for the Go bridge. */
   readonly runtimeArtifactDigest?: string | undefined
   readonly runtimeSourceRevision?: string | undefined
@@ -157,14 +142,13 @@ export interface Options extends NativeOptions {
   readonly seats?: Readonly<Record<string, string>> | undefined
   /**
    * Deployment-owned landing adapter over the reserved repository credential.
-   * Repository automation uses it on its own; TODO delivery is registered only
-   * when `planning` configures the prompt route as well. Without it, the
-   * project's `landing` selects a local lander (`local-landing.ts`).
+   * TODO delivery is registered only when `planning` configures the prompt
+   * route as well. Without it, the project's `landing` selects a local lander
+   * (`local-landing.ts`).
    */
   readonly landing?: Layer.Layer<Landing> | undefined
   /** What a local lander's `jj`, `git` and `gh` processes see; defaults to `checkEnvironment`. */
   readonly landingEnvironment?: Readonly<Record<string, string>> | undefined
-  readonly repositoryRemote?: Layer.Layer<RepositoryRemote> | undefined
   /**
    * Where this host keeps `control.db`, `engine.db` and their WAL companions.
    * Defaults to `CodingState.defaultStateRoot(repositoryPath)`, beside the
@@ -189,25 +173,13 @@ export const repositoryFlowsServed = (
   options.fixedFlowCatalog !== true || (options.flowSourceRoot ?? options.repositoryPath) !== options.repositoryPath
 
 /**
- * Whether this host serves repository jobs: repository/setup, repository/trigger,
- * repository-jobs/* and the RunJob, RunSetup and RunTrigger delegates. An install
- * turns them off; a hosted host (a fixed flow catalog) never serves them, because
- * a job runs the repository's stored command checks with the network (gate item
- * 2b, Security d-alopxz, CEO a-wlojl3).
- */
-export const repositoryJobsServed = (
-  options: Pick<Options, "retainedRepositoryJobs" | "fixedFlowCatalog">
-): boolean => options.retainedRepositoryJobs !== false && options.fixedFlowCatalog !== true
-
-/**
  * Whether this host serves `coding/AppendOutsideStack` (outside-stack.ts). It
  * moves the stack's bookmark, so only a host that lands locally serves it:
  * never one with the backend's landing adapter, and never an installed host.
  */
 export const outsideStacksServed = (
-  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs">
-): boolean =>
-  options.landing === undefined && options.planning?.landing !== undefined && options.retainedRepositoryJobs !== false
+  options: Pick<Options, "planning" | "landing" | "installed">
+): boolean => options.landing === undefined && options.planning?.landing !== undefined && options.installed !== true
 
 /** The optional routes advertised by this configured host. */
 export const configuredCodingRoutes = (
@@ -231,14 +203,13 @@ export const configuredCodingRoutes = (
 export const provisionHostBuiltins = (
   stateRoot: string,
   policy: string,
-  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs" | "fixedFlowCatalog">
+  options: Pick<Options, "planning" | "landing">
 ) =>
   provisionBuiltins(
     stateRoot,
     policy,
     configuredCodingRoutes(options).map((route) => route.name),
-    options.planning?.detected ?? [],
-    repositoryJobsServed(options)
+    options.planning?.detected ?? []
   )
 
 /**
@@ -250,26 +221,12 @@ export const provisionHostBuiltins = (
  */
 export const missingCodingExecutables = (
   built: Pick<Executable.Catalog, "executables">,
-  options: Pick<Options, "planning" | "landing" | "retainedRepositoryJobs" | "fixedFlowCatalog">
-): ReadonlyArray<string> => {
-  const required: ReadonlyArray<readonly [string, string | undefined]> = [
-    ...[
-      "coding",
-      "coding/dispatch",
-      "coding/implementation",
-      ...configuredCodingRoutes(options).map((route) => route.name)
-    ]
-      .map((name) => [name, undefined] as const),
-    ...(!repositoryJobsServed(options) ? [] : [
-      ["repository/setup", RunSetup._tag],
-      ["repository/trigger", RunTrigger._tag],
-      ["repository-jobs/issues", RunJob._tag]
-    ] as const)
-  ]
-  return required.filter(([name, delegate]) =>
-    !built.executables.some((entry) => entry.descriptor.name === name && entry.delegate === delegate)
-  ).map(([name]) => name)
-}
+  options: Pick<Options, "planning" | "landing">
+): ReadonlyArray<string> =>
+  ["coding", "coding/dispatch", "coding/implementation", ...configuredCodingRoutes(options).map((route) => route.name)]
+    .filter((name) =>
+      !built.executables.some((entry) => entry.descriptor.name === name && entry.delegate === undefined)
+    )
 
 /** Refuse coding host startup when its native binding lacks a required capability. */
 export const requireCodingBinding = (options: Pick<Options, "sourcePublication">) =>
@@ -476,8 +433,6 @@ export const rolePhases: Readonly<Record<string, SeatRouter.Phase>> = {
   [reviewRole]: "review",
   "wiki/reviewer": "review",
   "repository/research": "other",
-  "repository/evaluator": "review",
-  "repository/author": "implement",
   "flow/author": "implement"
 }
 
@@ -699,9 +654,7 @@ const defaultRoles = (implementationModel: string, models: RoleModels): Readonly
   // run its checks, so they run on the seat this host writes code with; the
   // alternative is a `provider:model` literal baked into a prompt file,
   // which would outlive whatever this deployment was configured with.
-  "flow/author": implementationModel,
-  "repository/evaluator": models.planningModel ?? implementationModel,
-  "repository/author": implementationModel
+  "flow/author": implementationModel
 })
 
 /** The repository's role→seat declaration with the operator's pins over it. */
@@ -825,7 +778,6 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
         const repositoryPolicy = Digest.digest(
           Digest.canonical({
             bundle: repositoryBundle,
-            retainedRepositoryJobs: repositoryJobsServed(options),
             implementationModel: options.implementationModel,
             researchModel: options.planningModel ?? options.implementationModel,
             gateway: options.gatewayId,
@@ -840,7 +792,6 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
                 base
                 : bindWikiRegistry(base, wikiCheckPolicy(wikiOptions)),
               builtins.registry,
-              repositoryPolicy,
               options.systemFlows,
               options.todoExecutionDigest,
               options.draftVersion
@@ -911,7 +862,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
           pocSource({ ...options, fs }),
           evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer)),
           ...(landing === undefined ? [] : [
-            (options.retainedRepositoryJobs === false ? installVibeRegistration : vibeRegistration)
+            (options.installed === true ? installVibeRegistration : vibeRegistration)
               .pipe(Layer.provide(landing)),
             cleanupModels
           ]),
@@ -926,65 +877,12 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             ] :
             [])
         )
-        // Jev, the decision-only model behind every enumerable answer this host
-        // makes: the intake screen over each inbound event, the duplicates step,
-        // each AI check's changed hunks, a reproduction review's verdict and an
-        // evaluation row's verdict. It is the only model that answers any of them.
-        // Selection happened before startup. The same real or scripted evaluator
-        // serves the agent completion brake and every repository classifier.
-        const repository = options.retainedRepositoryJobs === false ? Layer.empty : Layer.mergeAll(
-          evaluator,
-          inspectionLayers({
-            repositoryPath: options.repositoryPath,
-            fs,
-            exporterPath: options.exporterPath,
-            environment: options.checkEnvironment
-          }),
-          jobFlows,
-          failureLayer,
-          executionLayers({
-            repositoryPath: options.repositoryPath,
-            fs,
-            exporterPath: options.exporterPath,
-            environment: options.checkEnvironment,
-            evaluator
-          }),
-          evaluationLayers({ evaluator }),
-          setupLayers({
-            repositoryPath: options.repositoryPath,
-            fs,
-            exporterPath: options.exporterPath,
-            environment: options.checkEnvironment
-          }),
-          activationLayers,
-          triggerLayers,
-          replyLayers,
-          deliveryLayers,
-          repositoryCheckLayers({
-            repositoryPath: options.repositoryPath,
-            fs,
-            exporterPath: options.exporterPath,
-            environment: repositoryCheckEnvironment(options),
-            evaluator
-          }),
-          changeLayers({
-            repositoryPath: options.repositoryPath,
-            fs,
-            exporterPath: options.exporterPath,
-            environment: options.checkEnvironment
-          }),
-          evidenceOnly(
-            Layer.mergeAll(modelLayers, ScoreCase.layer, SuggestSetup.layer, changeModelLayers),
-            new Set([...modelNames, ScoreCase.name, SuggestSetup.name, ...changeModelNames])
-          )
-        )
         const leaves = Layer.mergeAll(
           atomFlows,
           atomOperations,
           EditAtom.layer,
           nativeActions,
           request,
-          repository,
           learningLayer.pipe(
             Layer.provideMerge(
               Layer.merge(
@@ -1051,11 +949,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             // (read, source creation, import, publication and reserved stack
             // operations) run on the host's raw
             // spawner (NativeTransport).
-            Layer.provideMerge(nativeLayer(options).pipe(Layer.provide(NativeTransport.layerFrom(platform.host)))),
-            (layers) =>
-              options.repositoryRemote === undefined
-                ? layers
-                : layers.pipe(Layer.provideMerge(options.repositoryRemote))
+            Layer.provideMerge(nativeLayer(options).pipe(Layer.provide(NativeTransport.layerFrom(platform.host))))
           )
         // Loading verified declaration bytes reserves a sibling temporary module.
         // This is host startup work. Register the resulting flows only after that
@@ -1067,7 +961,6 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
             reviewCheckDelegate,
             securityReviewCheckDelegate,
             securityAuditDelegate,
-            ...(!repositoryJobsServed(options) ? [] : [RunSetup, RunJob, RunTrigger]),
             ...(wikiEnabled ? [wikiCheckDelegate] : [])
           ]
         }
@@ -1080,7 +973,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
               Effect.provideService(FileSystem.FileSystem, fs),
               // The catalog this host serves is rebuildable one entry at a time, which
               // is what lets a run of this host author `.smithers/flows/<id>/flow.ts` and have
-              // the next plan draw it. A reserved job declaration is held fixed: its
+              // the next plan draw it. A bundled declaration is held fixed: its
               // bytes are the measured bundle this host shipped as, and rebuilding one
               // from the working tree would replace an admitted declaration with
               // whatever is on disk. A hosted host holds all of it fixed.
@@ -1147,8 +1040,6 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
                   ...(health.capabilities ?? []),
                   "coding-plan/v1",
                   "coding-dispatch/v1",
-                  "repository-jobs/v1",
-                  "repository-source/v1",
                   ...configuredCodingRoutes(options).map((route) => route.capability),
                   ...(options.runtimeArtifactDigest === undefined ? [] : ["flow-runtime-bridge/v1"])
                 ])

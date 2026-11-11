@@ -7,8 +7,6 @@ import { parseArgs } from "node:util"
 import type * as NativeControl from "../../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../../packages/smithers/src/Serve.ts"
 import { packageVersion } from "../../../packages/smithers/src/Version.ts"
-import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
-import { remoteLayer } from "../repository/remote.ts"
 import { consume as consumeCheckEnvironment } from "./check-environment.ts"
 import { HOSTED_ROOT, localProvider } from "./filesystem.ts"
 import { seal, share } from "./host-modules.ts"
@@ -179,7 +177,7 @@ export const serve = async (
     })
     mkdirSync(stateRoot, { recursive: true, mode: 0o700 })
     const runtimeBridge = await resolveRuntimeBridgeIdentity(process.argv[1]!, process.env)
-    const repositoryProcesses = consumeCheckEnvironment(process.env)
+    const checkEnvironment = consumeCheckEnvironment(process.env)
     const options = {
       repositoryPath: root,
       draftVersion: process.env.SMITHERS_FLOW_DRAFT_VERSION === "1",
@@ -218,8 +216,7 @@ export const serve = async (
         ...operatorSeats(process.env),
         ...(process.env.SMITHERS_CODING_SEATS === undefined ? {} : parseSeats(process.env.SMITHERS_CODING_SEATS))
       },
-      checkEnvironment: repositoryProcesses.environment,
-      cacheEnvironment: repositoryProcesses.cache,
+      checkEnvironment,
       // A local lander's jj, git and gh also get the operator's jj identity and
       // gh selection; never the reserved repository credential.
       landingEnvironment: selectEnvironment([
@@ -273,7 +270,7 @@ export const serve = async (
                     ...composed,
                     flowSourceRoot,
                     flowSourceRevision,
-                    retainedRepositoryJobs: snapshot === undefined,
+                    installed: snapshot !== undefined,
                     ...models,
                     // Plans read and cite wiki revisions through the host API with
                     // the provisioned run credential (T-FLW-10). Only the machine's
@@ -290,15 +287,7 @@ export const serve = async (
                     },
                     ...(landing === undefined ? {} : {
                       nativeRepositoryToken: landing.token,
-                      landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie),
-                      repositoryRemote: Layer.merge(
-                        remoteLayer({ ...landing, gatewayId: options.gatewayId, credential: options.credential ?? "" }),
-                        checkReceiptLayer({
-                          ...landing,
-                          gatewayId: options.gatewayId,
-                          credential: options.credential ?? ""
-                        })
-                      ).pipe(Layer.provide(http), Layer.orDie)
+                      landing: Landing.layer(landing).pipe(Layer.provide(http), Layer.orDie)
                     })
                   })))
                   // The mutation provider retains this client for later writes.

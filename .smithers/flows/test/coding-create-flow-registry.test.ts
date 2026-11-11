@@ -9,7 +9,7 @@ import { systemFlows } from "./fixtures/system-flows.ts"
  * cannot pass against a name only this test believes in) resolves in the
  * registry `.smithers/flows/coding/host.ts` actually composes.
  *
- * That composition is `bindRepositoryRegistry(project, builtins, policy)` over
+ * That composition is `bindRepositoryRegistry(project, builtins)` over
  * `provisionBuiltins`, and it is built here from the real functions against a
  * real temporary state root and a real empty repository — the shape of a
  * freshly imported repo, which is where this was measured broken. A mock
@@ -46,7 +46,7 @@ const composedRegistry = (repositoryPath: string, stateRoot: string) =>
       sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     })
       .pipe(Effect.provide(Discovery.layer))
-    return bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows)
+    return bindRepositoryRegistry(project, builtins.registry, systemFlows)
   })
 
 const workspace = async (t: TestContext, options: { readonly ownFlows?: Record<string, string> } = {}) => {

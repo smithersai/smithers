@@ -24,7 +24,7 @@ for (const repository of process.argv.slice(2)) {
       // flow-load's output. It must accept the same execution identity.
       const project = yield* Registry.Registry
       const builtins = yield* provisionBuiltins(`${repository}/.host-state`, "a".repeat(64))
-      const pinned = bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows, version.digest)
+      const pinned = bindRepositoryRegistry(project, builtins.registry, systemFlows, version.digest)
       yield* pinned.loadBody("todo", version.digest)
     }).pipe(Effect.provide(layerRegistry(repository)), Effect.provide(NodeServices.layer), Effect.runPromise)
   }

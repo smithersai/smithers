@@ -53,14 +53,6 @@ const Agent = Flow.make("agent", {
   body: () => Node.succeed(undefined)
 })
 
-/** The delegate one reserved job declaration names, so the bundle resolves. */
-const Reserved = Flow.make("repository/RunSetup", {
-  payload: Executable.Invocation,
-  success: Schema.Unknown,
-  error: Schema.Unknown,
-  body: () => Node.succeed(undefined)
-})
-
 /** The delegate a project flow written after startup names. */
 const Project = Flow.make("refresh/Project", {
   payload: Executable.Invocation,
@@ -101,8 +93,8 @@ const host = (repositoryPath: string, stateRoot: string, registered: Array<strin
     const project = yield* Registry.make({ sources: [Registry.projectSource({ join }, repositoryPath)] }).pipe(
       Effect.provide(Discovery.layer)
     )
-    const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
-    const options = { delegates: [Agent, Project, Reserved] }
+    const registry = bindRepositoryRegistry(project, builtins.registry, systemFlows)
+    const options = { delegates: [Agent, Project] }
     const built = yield* repositoryCatalog(options, builtins.load).pipe(
       Effect.provideService(Registry.Registry, registry)
     )
@@ -180,30 +172,30 @@ test("a flow a run writes under the retired root flows/ is never planned", async
   assert.equal(registered.includes("mine"), false)
 })
 
-test("a reserved job declaration is held fixed against whatever the working tree says", async (t) => {
+test("a bundled declaration is held fixed against whatever the working tree says", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
   const registered: Array<string> = []
   await Effect.runPromise(Effect.scoped(
     Effect.gen(function*() {
       const composed = yield* host(repositoryPath, stateRoot, registered)
-      const before = composed.built.executables.find((entry) => entry.descriptor.name === "repository/setup")
-      assert.ok(before, "the reserved setup job is part of this host's catalog")
+      const before = composed.built.executables.find((entry) => entry.descriptor.name === "coding/dispatch")
+      assert.ok(before, "the bundled dispatch flow is part of this host's catalog")
       return yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         // Everything this host's catalog holds is registered while it starts.
         const atStartup = [...registered]
-        assert.ok(atStartup.includes("repository/setup"), "the reserved setup job registers at startup")
+        assert.ok(atStartup.includes("coding/Dispatch"), "the bundled dispatch flow registers at startup")
         // A run this host is serving can write anything into the tree. What it
-        // must not be able to do is make the host rebuild a reserved job's
+        // must not be able to do is make the host rebuild a bundled
         // declaration out of what it wrote.
         yield* Effect.promise(async () => {
-          await mkdir(join(repositoryPath, ".smithers", "flows", "repository", "setup"), { recursive: true })
-          await writeFile(join(repositoryPath, ".smithers", "flows", "repository", "setup", "flow.mdx"), declaration)
+          await mkdir(join(repositoryPath, ".smithers", "flows", "coding", "dispatch"), { recursive: true })
+          await writeFile(join(repositoryPath, ".smithers", "flows", "coding", "dispatch", "flow.mdx"), declaration)
         })
-        assert.equal((yield* refresh.flow("repository/setup"))._tag, "Fixed")
+        assert.equal((yield* refresh.flow("coding/dispatch"))._tag, "Fixed")
         assert.equal(
-          catalog.executables.find((entry) => entry.descriptor.name === "repository/setup"),
+          catalog.executables.find((entry) => entry.descriptor.name === "coding/dispatch"),
           before
         )
         assert.deepEqual(registered, atStartup)
@@ -236,7 +228,7 @@ export default Flow.make("merge", { description: "Packaged merge", payload: {}, 
     const defaultsRegistry = yield* make(defaults, "repository-host")
     // A routine service wrapper must retain collision diagnostics.
     const registry = Registry.Registry.of({
-      ...bindRepositoryRegistry(base, defaultsRegistry, policy, systemFlows)
+      ...bindRepositoryRegistry(base, defaultsRegistry, systemFlows)
     })
     const options = { delegates: [] }
     const built = yield* repositoryCatalog(options, () =>
@@ -563,8 +555,8 @@ const composedHost = (repositoryPath: string, stateRoot: string, hosted: boolean
       ),
       Registry.Registry
     )
-    const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
-    const options = { delegates: [Agent, Project, Reserved] }
+    const registry = bindRepositoryRegistry(project, builtins.registry, systemFlows)
+    const options = { delegates: [Agent, Project] }
     const built = yield* repositoryCatalog(options, builtins.load).pipe(
       Effect.provideService(Registry.Registry, registry)
     )
@@ -619,9 +611,10 @@ for (const hosted of [false, true]) {
                 assert.equal(names.includes(name), !hosted, `${name} ${where}: ${names.join(",")}`)
               }
             }
-            const setup = composed.built.executables.find((entry) => entry.descriptor.name === "repository/setup")
-            assert.ok(setup, "the built-in setup job is served")
-            assert.ok(Graph.build(setup.flow, { input: {} }).nodes.length > 0, "a built-in plan completes")
+            const dispatch = composed.built.executables.find((entry) => entry.descriptor.name === "coding/dispatch")
+            assert.ok(dispatch, "the bundled dispatch flow is served")
+            const turn = { turnId: "turn-1", prompt: "Read the greeting.", history: [], role: "coding/dispatch" }
+            assert.ok(Graph.build(dispatch.flow, { input: turn }).nodes.length > 0, "a built-in plan completes")
             return yield* Effect.gen(function*() {
               const catalog = yield* Executable.Catalog
               const refresh = yield* Executable.Refresh

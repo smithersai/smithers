@@ -10,10 +10,9 @@ It exists because every other door in this package runs a programme.
 `coding/ImplementPlan` implements a validated plan. `coding/Request` plans, then
 implements with required checks, and it is registered when the host loads a
 project JSON from `.smithers/coding-project.json` or `SMITHERS_CODING_PROJECT`.
-`repository/Job` investigates an
-event. All three answer with receipts rather than with what the agent said,
+Both answer with receipts rather than with what the agent said,
 and `validatePlan` requires a fast and a slow check per change, so a plain
-question has no legal shape in any of them.
+question has no legal shape in either.
 
 `coding/dispatch` is registered unconditionally. It needs no project
 configuration, no memory and no check table, because it makes no plan and

@@ -222,7 +222,7 @@ test("repository seats win for the roles they name and add roles its flows decla
     planningModel: "test:planning",
     seats: { "coding/implement": "luna", "coding/plan": "sol", triage: "luna", review: "opus" }
   })
-  for (const id of ["coding/implement", "coding/plan", "coding/poc", "triage", "review", "repository/author"]) {
+  for (const id of ["coding/implement", "coding/plan", "coding/poc", "triage", "review", "flow/author"]) {
     assert.equal((await Effect.runPromise(roles.resolve(id))).id, id)
   }
   assert.deepEqual(resolved, ["luna", "sol", "test:implementation", "luna", "opus", "test:implementation"])
@@ -349,8 +349,6 @@ test("this repository routes every coding role by the graph", async () => {
       ["coding/review", "review"],
       ["wiki/reviewer", "review"],
       ["repository/research", "other"],
-      ["repository/evaluator", "review"],
-      ["repository/author", "implement"],
       ["flow/author", "implement"]
     ] as const
   ) assert.deepEqual(roles.routedAs?.(role), { phase }, role)

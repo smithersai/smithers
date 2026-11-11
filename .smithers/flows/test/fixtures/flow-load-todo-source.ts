@@ -4,7 +4,7 @@
  * keeps come from the coding host the install ships. The stack engine launches it once per attempt, pinned to its digest, and
  * keeps verification and review as its own launches. No host serves it,
  * packaged or overridden, until pinned-source activation (T-FLW-03/04) binds
- * each launch to its attempt (.smithers/flows/repository/registry.ts).
+ * each launch to its attempt (.smithers/flows/coding/registry.ts).
  */
 import { Request, RequestInput, StackBase, TodoDelivery, Vibe, VibeDelivered, VibeError } from "@smthrs/coding"
 import { Flow } from "@smthrs/flow"

@@ -62,9 +62,7 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
       (Target.metadata(target).attrs as { runner: { tests?: ReadonlyArray<{ path: string }> } }).runner.tests ?? []
     )
     .map((file) => file.path.split("/").at(-1)!).filter((name) => actual.includes(name))
-  // Fixtures a second runtime re-runs, and the two the native gate also owns:
-  // `//.smithers/flows:repository` runs the cases that need no Plue tool, and the gate
-  // runs the whole file under the prerequisites the rest of it requires.
+  // Fixtures a second runtime re-runs. The native gate owns its fixtures alone.
   const twice = ordinary.filter((name, index) => ordinary.indexOf(name) !== index).sort()
   assert.deepEqual([...new Set(twice)], [
     "coding-host-modules.test.ts",
@@ -78,10 +76,11 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
     "coding-vibe-landing.test.ts",
     "coding-wiki-registry.test.ts"
   ], "a fixture in two ordinary targets is a declared runtime pair")
-  assert.deepEqual([...new Set(ordinary)].filter((name) => nativeTests.includes(name)).sort(), [
-    "repository-check-context.test.ts",
-    "repository-checks.test.ts"
-  ], "dual ownership is declared, not accidental")
+  assert.deepEqual(
+    [...new Set(ordinary)].filter((name) => nativeTests.includes(name)).sort(),
+    [],
+    "dual ownership is declared, not accidental"
+  )
   assert.deepEqual([...new Set([...ordinary, ...nativeTests])].sort(), actual.sort())
   for (const target of [Package.codingNative, Package.codingNativeBun, Package.codingBundle, Package.codingBundleBun]) {
     const metadata = Target.metadata(target)
@@ -96,7 +95,7 @@ test("every flows fixture belongs to a declared gate; native targets stay separa
     assert.equal(attrs.timeout, "45m")
     assert.equal(attrs.args[0], ".smithers/flows/test/coding-native-gate.mjs")
   }
-  assert.ok(!bunNativeTests.includes("repository-check-context.test.ts"))
+  assert.ok(!bunNativeTests.includes("wiki-citation-uncertainty.test.ts"))
   assert.ok(bunNativeTests.includes("coding-native.test.ts"))
 })
 

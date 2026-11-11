@@ -152,7 +152,7 @@ const provider = Smithers.NodeTest({
 // every backend package before an uncached coding test. The inventory is checked
 // against pnpm workspace membership; each glob retains its owning package boundary.
 const codingPackages = [
-  // Eighteen repository fixtures import `packages/rpc/src` by relative path.
+  // Coding modules and fixtures import `packages/rpc/src` by relative path.
   // Without the member here those targets cache across an rpc edit.
   "packages/rpc",
   "packages/smithers",
@@ -295,7 +295,8 @@ const codingPolicy = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-runtime-bridge.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-gates.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-pool-default-model.test.ts"),
-    Smithers.file("//.smithers/flows/test/coding-planning-wiki-prior.test.ts")
+    Smithers.file("//.smithers/flows/test/coding-planning-wiki-prior.test.ts"),
+    Smithers.file("//.smithers/flows/test/coding-policy-identity.test.ts")
   ]),
   // `coding-host.test.ts` and `coding-builtin-routes.test.ts` load the checked-in project configuration.
   srcs: [
@@ -336,6 +337,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-create-flow-registry.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-pr-triage-host.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-jev-check.test.ts"),
+    Smithers.file("//.smithers/flows/test/coding-jev-rules.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-review-check.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-security-review-check.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-wiki-memory.test.ts"),
@@ -486,7 +488,7 @@ const wiki = Smithers.NodeTest({
 const egress = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([
-    Smithers.file("//.smithers/flows/test/repository-jev-egress.test.ts"),
+    Smithers.file("//.smithers/flows/test/jev-egress.test.ts"),
     Smithers.file("//.smithers/flows/test/subscription-judge.test.ts")
   ]),
   srcs: codingSources,
@@ -494,11 +496,6 @@ const egress = Smithers.NodeTest({
   cwd
 })
 
-// The repository flows' offline fixtures, on `egress`'s key material. Before
-// this target `egress` was the only one of its family declared anywhere, so the
-// rest ran under bare `pnpm test`, which no workflow invokes.
-//
-// Legacy Plue adapter fixtures were removed with the Python adapter.
 /** Explicit cross-package inputs; declaration-scoped globs do not cross child packages. */
 const packageDocInputs = libraryPackages().flatMap(({ dir }) => {
   const docs = `${repoRoot}/${dir}/docs`
@@ -544,60 +541,16 @@ const packageDocs = Smithers.NodeTest({
 })
 
 const fixture = (name: string) => Smithers.file(`//.smithers/flows/test/${name}`)
-const repositoryFixtures = [
-  "apply-proof",
-  "approved-text",
-  "budget",
-  "check-context",
-  "check-receipt",
-  "checks",
-  "chore-events",
-  "ci-policy",
-  "consolidated-reply",
-  "evaluation",
-  "feature-issue-mode",
-  "heldout",
-  "inspection-sources",
-  "intake-screen",
-  "intake-bounds",
-  "jev-checks",
-  "jev-duplicates",
-  "jev-observation",
-  "jev-reproduction",
-  "jev-score",
-  "native-error",
-  "notification-policy",
-  "pause-integrity",
-  "policy-identity",
-  "proposal-review",
-  "push",
-  "remote-source",
-  "reply-trust",
-  "retention",
-  "review-eval",
-  "selection",
-  "setup-policy",
-  "setup-suggestion",
-  "sources",
-  "stored-registration",
-  "trial-checks",
-  "trial-registration",
-  "trigger-resume"
-] as const
+// This repository's own notification policy flow, against the app's contract.
+// The label stays `repository`: CI and the release gates run it by that name.
 const repository = Smithers.NodeTest({
   runtime: node,
-  runner: Smithers.testRunner(
-    repositoryFixtures.map((name) => fixture(`repository-${name}.test.ts`)) as [
-      Smithers.Input.File,
-      ...Array<Smithers.Input.File>
-    ]
-  ),
-  // `repository-notification-policy` reads this repository's own projected
-  // catalog to prove the policy flow is discovered into it.
+  runner: Smithers.testRunner([fixture("repository-notification-policy.test.ts")]),
+  // It reads this repository's own projected catalog to prove the policy flow
+  // is discovered into it.
   srcs: [...codingSources, Smithers.file("//.smithers/factory.json")],
   deps: codingDependencies,
-  cwd,
-  timeout: "20m"
+  cwd
 })
 
 // The wiki, release-content and canary fixtures, also in no target until now.
@@ -1146,7 +1099,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.ts, or read before it is deleted there.",
         "A spawned process or check environment built from process.env instead of the PATH/HOME/proxy allowlist in coding/check-environment.ts.",
-        "SMITHERS_CACHE_TOKEN or SMITHERS_CACHE_URL left in process.env after coding/check-environment.ts consumes them, or given to anything but repository checks (repositoryCheckEnvironment).",
+        "SMITHERS_CACHE_TOKEN or SMITHERS_CACHE_URL left in process.env after coding/check-environment.ts consumes them, or given to any process.",
         "A token or credential passed to a model prompt, a run output, a receipt, an error message, or Redacted.value outside the HTTP bearer header.",
         "invoke/serve.ts rpc or serve paths that print or journal the credential file contents."
       ],
@@ -1157,8 +1110,6 @@ const securityReview = Smithers.SecurityReview({
         "coding/landing.ts",
         "coding/host.ts",
         "invoke/**",
-        "repository/remote.ts",
-        "repository/check-receipt.ts",
         "coding/check-detection.ts"
       ]
     },
@@ -1166,33 +1117,24 @@ const securityReview = Smithers.SecurityReview({
       id: "remote-url-construction",
       title: "Repository API URLs are built only from validated, encoded identifiers",
       threat:
-        "A repository event, PR body or server response steers a credentialed request to another repository, gateway or host.",
+        "A server response or repository text steers a credentialed request to another repository, gateway or host.",
       lookFor: [
-        "A path segment interpolated into a URL without encodeURIComponent or a pattern check (job keys like flow:<slug>, change ids from a landing response, fullName from repository-source).",
-        "The github(path) proxy accepting a path that githubReadable does not fully anchor, or fullName taken from event text instead of repository-source metadata.",
-        "apiBaseUrl accepted over plain http: outside a loopback test host while carrying a bearer token.",
-        "A PR link parsed from comment text used to pick the repository whose source is retained or reviewed."
+        "A path segment interpolated into a URL without encodeURIComponent or a pattern check (the repository slug, a change id from a landing response).",
+        "apiBaseUrl accepted over plain http: outside a loopback test host while carrying a bearer token."
       ],
-      paths: ["repository/remote.ts", "repository/check-receipt.ts", "coding/landing.ts"]
+      paths: ["coding/landing.ts"]
     },
     {
       id: "source-tree-confinement",
       title: "Every read, write and process cwd stays inside its captured source tree",
-      threat:
-        "A model-authored reproduction fixture, prompt-named path or repository symlink reads or overwrites host files outside the isolated checkout.",
+      threat: "A prompt-named path or repository symlink reads or overwrites host files outside the isolated checkout.",
       lookFor: [
-        "A path from a model, event or repository joined to a root without normalizePath plus realPath containment (admitSourcePath, contained, inside).",
+        "A path from a model, event or repository joined to a root without normalizePath plus realPath containment (contained, inside).",
         "A check done on the path string but the write or read done through a symlinked ancestor created after the check (TOCTOU).",
-        "Reproduction fixtures written without flag wx or able to overwrite existing source; repro.cwd resolved outside root.",
-        "Reads of .smithers/repository-jobs or other host-private paths through a symlink that repositorySourceReader does not re-check.",
+        "A host-private path (coding/private-paths.ts) read or sent to a model through a symlink or a diff path the check does not re-test.",
         "release-support atomicWrite/inside accepting an absolute, backslash or .. path."
       ],
       paths: [
-        "repository/source.ts",
-        "repository/execution.ts",
-        "repository/inspection.ts",
-        "repository/checks.ts",
-        "repository/check-context.ts",
         "coding/private-paths.ts",
         "coding/filesystem.ts",
         "coding/immutable-source.ts",
@@ -1209,27 +1151,24 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "ChildProcess.make or spawn with a shell (sh -c, shell: true) whose string includes event, model or repository text.",
         "jj revsets or templates built by interpolating a commit id or ref that is not pattern-checked to hex first.",
-        "A model-authored argv (repro.argv, check commands) run without a timeout, output bound, or the isolated source cwd.",
+        "A check command's argv run without a timeout, output bound, or the isolated source cwd.",
         "A flow.mdx/flow.ts capability grant `proc:spawn:<cmd> *` broader than the commands the body runs."
       ],
-      paths: ["repository/**", "coding/**", "release-support/**", "**/flow.mdx", "**/flow.ts"]
+      paths: ["coding/**", "release-support/**", "**/flow.mdx", "**/flow.ts"]
     },
     {
       id: "check-command-provenance",
-      title:
-        "Shell check commands come only from the pinned, reviewed repository CI policy and run without credentials",
+      title: "Check commands come only from loaded check bodies or detected commands and run without credentials",
       threat:
-        "A change author or issue author gets arbitrary shell text run by /bin/sh -c on the coding host, or reads host credentials from inside a check.",
+        "A change author or issue author gets an arbitrary command run on the coding host, or reads host credentials from inside a check.",
       lookFor: [
-        "executeCommand's check.rule reaching /bin/sh -eu -c from the candidate tree, event payload, model output or an unpinned policy instead of readCiPolicy's pinned registration.",
-        "composeCiChecks or rawCheckId letting a local check reuse the inherited CI namespace, or a policy revision/digest change not refused by assertCiPolicyCurrent before execution.",
+        "A check argv taken from the candidate tree, event payload or model output instead of a check body the host loaded or a command it detected (coding/checks.ts, coding/check-detection.ts).",
         "checkEnvironment or ImmutableSourceOptions.environment carrying SMITHERS_JJHUB_TOKEN, a gateway credential or process.env instead of an explicit allowlist (runSourceProcess uses extendEnv: false).",
         "A command check run with no deadline, or outside the scoped immutable export root."
       ],
       paths: [
-        "repository/checks.ts",
-        "repository/ci-policy.ts",
-        "repository/changes.ts",
+        "coding/checks.ts",
+        "coding/check-detection.ts",
         "coding/immutable-source.ts",
         "coding/host.ts",
         "coding/serve.ts"
@@ -1241,18 +1180,13 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "An outside GitHub user writes an issue or comment that makes an agent land code, publish a reply, approve a step or exfiltrate repository content.",
       lookFor: [
-        "Event author text concatenated into a prompt without the untrusted-content framing in repository/intake.ts.",
-        "A publish, land, approve or pause decision keyed on text the event author controls rather than a verified role or approved digest (approved-text.ts, reply-trust).",
-        "A steering or correction message accepted from someone other than the run owner.",
-        "Withheld or hidden fields from the intake screen still reaching a later model step."
+        "Issue, PR or comment author text put into a prompt without the untrusted-content framing issue-triage/flow.mdx and pr-triage/flow.mdx state, or into the issue-sweep/triage.ts judge outside the fields it names as author text.",
+        "A publish, land, approve or pause decision keyed on text the event author controls rather than a verified role or approved digest (triage-publish/).",
+        "A steering or correction message accepted from someone other than the run owner."
       ],
       paths: [
-        "repository/intake.ts",
-        "repository/replies.ts",
-        "repository/approved-text.ts",
-        "repository/triggers.ts",
-        "repository/delivery.ts",
-        "repository/jev-*.ts",
+        "issue-sweep/triage.ts",
+        "triage-publish/**",
         "coding/jev-rules.ts",
         "coding/steering.ts",
         "coding/correction.ts",
@@ -1295,10 +1229,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "coding/landing.ts",
         "coding/vibe-*.ts",
-        "coding/source-*.ts",
-        "repository/delivery.ts",
-        "repository/changes.ts",
-        "repository/retention.ts"
+        "coding/source-*.ts"
       ]
     },
     {

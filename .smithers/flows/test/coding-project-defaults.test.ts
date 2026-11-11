@@ -19,8 +19,6 @@ import { checkDelegate } from "../coding/checks.ts"
 import { configuredCodingRoutes, missingCodingExecutables, provisionHostBuiltins } from "../coding/host.ts"
 import { loadProject } from "../coding/project-config.ts"
 import { bindRepositoryRegistry, repositoryCatalog } from "../coding/registry.ts"
-import { RunJob, RunSetup } from "../repository/setup.ts"
-import { RunTrigger } from "../repository/triggers.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
@@ -174,9 +172,9 @@ const startup = (root: string, stateRoot: string, hostPolicy = policy) =>
     const project = yield* Registry.make({ sources: [Registry.projectSource({ join }, root)] }).pipe(
       Effect.provide(Discovery.layer)
     )
-    const registry = bindRepositoryRegistry(project, builtins.registry, hostPolicy, systemFlows)
+    const registry = bindRepositoryRegistry(project, builtins.registry, systemFlows)
     const built = yield* repositoryCatalog(
-      { delegates: [RunSetup, RunJob, RunTrigger, checkDelegate] },
+      { delegates: [checkDelegate] },
       builtins.load
     ).pipe(Effect.provideService(Registry.Registry, registry))
     return { planning, built }

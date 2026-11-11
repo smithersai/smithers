@@ -11,8 +11,6 @@
     "coding/review": "auto",
     "wiki/reviewer": "auto",
     "repository/research": "auto",
-    "repository/evaluator": "auto",
-    "repository/author": "auto",
     "flow/author": "auto"
   },
   "pages": [

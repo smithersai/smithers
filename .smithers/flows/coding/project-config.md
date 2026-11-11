@@ -98,10 +98,9 @@ the subscription the workspace binds: `openai:` the ChatGPT connection,
 `auto` routes the role by the routing graph (`@smthrs/agent/SeatRouter`): Jev
 reads each step's prompt once, the graph picks the seat and its backups from
 the seats the host can run, and the run journals the route. A built-in role
-routes as its phase: `coding/implement`, `coding/poc`, `repository/author` and
-`flow/author` as implementation, `coding/plan` as planning, `coding/review`,
-`wiki/reviewer` and `repository/evaluator` as review, and `repository/research`
-as other work; `coding/dispatch` and a repository's own role leave the phase to
+routes as its phase: `coding/implement`, `coding/poc` and `flow/author` as
+implementation, `coding/plan` as planning, `coding/review` and `wiki/reviewer`
+as review, and `repository/research` as other work; `coding/dispatch` and a repository's own role leave the phase to
 Jev. When `coding/implement` is `auto` and nothing names `coding/review`, the
 review routes by the graph too. This repository routes every coding role this
 way.
