@@ -1645,30 +1645,6 @@ describe("Scheduler dispatch edges", () => {
     expect(runner.starts).toHaveLength(0)
   })
 
-  it("stops the supervisor when the poll loop itself is interrupted", async () => {
-    const runner = runnerFixture()
-    let calls = 0
-    const store = TriggerStore.makeNoop({
-      list: () =>
-        Effect.suspend(() => {
-          calls++
-          return Effect.interrupt
-        })
-    })
-    await Effect.runPromise(
-      Effect.gen(function*() {
-        yield* Effect.provide(
-          TestClock.adjust("5 minutes"),
-          Scheduler.layer().pipe(
-            Layer.provide(Layer.succeed(TriggerStore.TriggerStore)(store)),
-            Layer.provide(Layer.succeed(Scheduler.Runner)(runner.service))
-          )
-        )
-      }).pipe(Effect.provide(TestClock.layer()))
-    )
-    expect(calls).toBe(1)
-  })
-
   // The claim may report a supersession with nothing to supersede: the run the
   // store knew about settled between the read and the decision.
   it("launches a supersede claim that names no active run", async () => {

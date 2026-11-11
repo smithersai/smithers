@@ -85,8 +85,11 @@ const program = Effect.scoped(Effect.gen(function*() {
 ```
 
 Build the scheduler with `Scheduler.make` rather than `Scheduler.layer`, so no
-supervisor fiber competes with the test for ticks, and the test decides when
-each tick happens.
+tick lineage on a flow engine competes with the test for ticks, and the test
+decides when each tick happens. A test of the layer itself runs it on
+`FlowEngine.layerMemory` from `@smthrs/engine` with `NodeCrypto.layer` from
+`@effect/platform-node`, under the `TestClock`, and steps the clock through
+each durable wait.
 
 Two habits keep such a test honest:
 

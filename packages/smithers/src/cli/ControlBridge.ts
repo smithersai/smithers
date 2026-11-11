@@ -561,8 +561,11 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
     ? randomBytes(32).toString("hex")
     : undefined
   const servedBind = { ...bind, operatorToken }
+  // The refusal above makes this a local host: it owns the engine, and its
+  // Control carries the flow runtime the trigger scheduler ticks on.
   const control = NodeControl.layer({
     ...config,
+    remote: undefined,
     startsRuns: true,
     approvalChannel: true,
     approvalAuthority: config.approvalAuthority ?? ApprovalAuthority.local

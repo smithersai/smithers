@@ -519,17 +519,37 @@ const materializeEngine = native.materializeEngine
  * @category layers
  * @since 0.1.0
  */
-const layerControlFromEngine = (
-  applicationConfig: Application.Config,
+/**
+ * A configuration naming no remote control plane: this process owns the
+ * engine, so its Control composition also carries the engine's `FlowRuntime`
+ * for a host that runs its own flows on it, such as the trigger scheduler's
+ * tick lineage.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export type LocalConfig = Application.Config & { readonly remote?: undefined }
+
+/** A configuration naming the remote control plane it reaches. */
+type RemoteConfig = Application.Config & { readonly remote: string }
+
+/** `config`, as the branch its `remote` selects, so the branches can be typed apart. */
+const branch = (config: Application.Config): LocalConfig | RemoteConfig =>
+  config.remote === undefined ? { ...config, remote: undefined } : { ...config, remote: config.remote }
+
+const layerControlLocal = (
+  applicationConfig: LocalConfig,
   registry: Layer.Layer<Registry.Registry>,
   engine: EngineDurable,
   modules?: ModuleRegistration
-) => {
-  if (applicationConfig.remote === undefined) {
-    return native.layerControlFromEngine(applicationConfig, registry, engine, modules)
-  }
-  const remote = applicationConfig.remote
-  return Layer.unwrap(
+) => native.layerControlFromEngine(applicationConfig, registry, engine, modules)
+
+const layerControlRemote = (
+  applicationConfig: RemoteConfig,
+  registry: Layer.Layer<Registry.Registry>,
+  engine: EngineDurable
+) =>
+  Layer.unwrap(
     Effect.promise(async () => applicationConfig.credential ?? await applicationConfig.login?.()).pipe(
       Effect.map((credential) =>
         Application.layer({ ...applicationConfig, credential }, registry, engine).pipe(
@@ -538,14 +558,13 @@ const layerControlFromEngine = (
             // egress proxy this process's environment names, or directly when it
             // names none.
             layerEgressHttpClient(process.env),
-            websocketLayer(remote, credential),
+            websocketLayer(applicationConfig.remote, credential),
             RpcSerialization.layerNdjson
           ])
         )
       )
     )
   )
-}
 
 /**
  * Provides the application-selected Control service over Node transports.
@@ -559,35 +578,43 @@ const layerControlFromEngine = (
  * @category layers
  * @since 0.1.0
  */
-export const layerControl = (
+export function layerControl(
+  applicationConfig: LocalConfig,
+  suppliedRegistry?: Layer.Layer<Registry.Registry> | undefined,
+  suppliedEngine?: EngineDurable | undefined,
+  modules?: ModuleRegistration
+): ReturnType<typeof layerControlLocal>
+export function layerControl(
   applicationConfig: Application.Config,
   suppliedRegistry?: Layer.Layer<Registry.Registry> | undefined,
   suppliedEngine?: EngineDurable | undefined,
   modules?: ModuleRegistration
-) => {
+): ReturnType<typeof layerControlLocal> | ReturnType<typeof layerControlRemote>
+export function layerControl(
+  applicationConfig: Application.Config,
+  suppliedRegistry?: Layer.Layer<Registry.Registry> | undefined,
+  suppliedEngine?: EngineDurable | undefined,
+  modules?: ModuleRegistration
+): ReturnType<typeof layerControlLocal> | ReturnType<typeof layerControlRemote> {
+  const config = branch(applicationConfig)
+  const root = config.root ?? process.cwd()
+  const registry = suppliedRegistry ?? RegistryWorkspace.layer(
+    layerRegistry(config.executionRoot ?? root),
+    root,
+    config.executionRoot ?? root
+  )
+  if (config.remote !== undefined) {
+    return layerControlRemote(config, registry, suppliedEngine ?? engineDurable(root, registry, config))
+  }
   // Refuse before materializing the local stores. A remote client owns no agent,
   // and a composition that drives no run reaches no completion to judge.
-  if (applicationConfig.remote === undefined) {
-    applicationConfig = {
-      ...applicationConfig,
-      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator, applicationConfig.startsRuns)
-    }
+  const local: LocalConfig = {
+    ...config,
+    evaluator: native.evaluatorFor(process.env, config.evaluator, config.startsRuns)
   }
-  const root = applicationConfig.root ?? process.cwd()
-  const registry = suppliedRegistry ?? RegistryWorkspace.layer(
-    layerRegistry(applicationConfig.executionRoot ?? root),
-    root,
-    applicationConfig.executionRoot ?? root
-  )
-  const engine = suppliedEngine ?? engineDurable(root, registry, applicationConfig)
-  if (applicationConfig.remote !== undefined) {
-    return layerControlFromEngine(applicationConfig, registry, engine, modules)
-  }
+  const engine = suppliedEngine ?? engineDurable(root, registry, local)
   return Layer.unwrap(
-    Effect.map(
-      materializeEngine(engine),
-      (materialized) => layerControlFromEngine(applicationConfig, registry, materialized, modules)
-    )
+    Effect.map(materializeEngine(engine), (materialized) => layerControlLocal(local, registry, materialized, modules))
   )
 }
 
@@ -631,26 +658,8 @@ export const layerOutput = Layer.succeed(
   })
 )
 
-/**
- * Provides the complete Node command-handler environment.
- *
- * This is the production layer for `smthrs`. Local composition acquires one
- * durable engine and shares it across control, execution, memory, and serving;
- * open or migration failures terminate startup. Remote composition builds the
- * RPC client without opening a local control database.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layer = (applicationConfig: Application.Config, modules?: ModuleRegistration) => {
-  // Refuse before materializing the local stores. A remote client owns no agent,
-  // and a composition that drives no run reaches no completion to judge.
-  if (applicationConfig.remote === undefined) {
-    applicationConfig = {
-      ...applicationConfig,
-      evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator, applicationConfig.startsRuns)
-    }
-  }
+/** The references every command-handler environment is composed over. */
+const hostReferences = (applicationConfig: Application.Config) => {
   const root = applicationConfig.root ?? process.cwd()
   const registry = RegistryWorkspace.layer(
     layerRegistry(applicationConfig.executionRoot ?? root),
@@ -661,47 +670,93 @@ export const layer = (applicationConfig: Application.Config, modules?: ModuleReg
   // Sampled here, before anything opens the control database. `Project.layer`
   // reads the 0.x markers eagerly when it is called, and opening the control
   // database writes `<root>/.flows`, which is the very absence release policy
-  // the 0.x-project guard gates the notice on. Building this inside `compose` therefore
-  // sampled a directory the same invocation had already created, and the
-  // notice stopped printing on exactly the 0.x projects it exists for.
+  // the 0.x-project guard gates the notice on. Sampling it after the engine
+  // materialized therefore read a directory the same invocation had already
+  // created, and the notice stopped printing on exactly the 0.x projects it
+  // exists for.
   const project = Project.layer(root, applicationConfig.migrationRoot ?? Project.legacyRoot(undefined, root))
-  const compose = (engine: EngineDurable) => {
-    const control = layerControlFromEngine(applicationConfig, registry, engine, modules)
-    const gatewayHost = applicationConfig.remote === undefined
-      ? native.layerGatewayHost(engine, control)
-      : Layer.effect(
-        Serve.GatewayHost,
-        Effect.map(Control.Control, (controlService) =>
-          Serve.GatewayHost.of({
-            launch: (health, options, gatewayRoot) =>
-              Layer.launch(
-                Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(
-                  Layer.provideMerge(layerGateway(health, options, gatewayRoot, engine))
-                )
-              ).pipe(
-                Effect.provideService(Control.Control, controlService),
-                Effect.provide(NodeServices.layer),
-                Effect.orDie
-              )
-          }))
-      ).pipe(Layer.provide(control))
+  return { root, registry, durable, project }
+}
+
+const layerLocal = (applicationConfig: LocalConfig, modules?: ModuleRegistration) => {
+  // Refuse before materializing the local stores: a composition that drives no
+  // run reaches no completion to judge.
+  const config: LocalConfig = {
+    ...applicationConfig,
+    evaluator: native.evaluatorFor(process.env, applicationConfig.evaluator, applicationConfig.startsRuns)
+  }
+  const { durable, project, registry, root } = hostReferences(config)
+  return Layer.unwrap(Effect.map(materializeEngine(durable), (engine) => {
+    const control = layerControlLocal(config, registry, engine, modules)
     return Layer.mergeAll(
       control,
-      gatewayHost,
+      native.layerGatewayHost(engine, control),
       layerOutput,
       NodeServices.layer,
       project,
       // `smthrs memory` reads and writes the same durable store a run's
       // `memory` flow does, over the same control database. A separate
-      // connection would be a second writer to one SQLite file. A remote
-      // invocation has no local database to be that store, so it gets the
-      // refusal instead of silently writing where nothing reads.
-      applicationConfig.remote === undefined ? layerMemory(root, engine) : layerMemoryRemote
+      // connection would be a second writer to one SQLite file.
+      layerMemory(root, engine)
     )
-  }
-  return applicationConfig.remote === undefined
-    ? Layer.unwrap(Effect.map(materializeEngine(durable), compose))
-    : compose(durable)
+  }))
+}
+
+const layerRemote = (applicationConfig: RemoteConfig) => {
+  const { durable, project, registry } = hostReferences(applicationConfig)
+  const control = layerControlRemote(applicationConfig, registry, durable)
+  const gatewayHost = Layer.effect(
+    Serve.GatewayHost,
+    Effect.map(Control.Control, (controlService) =>
+      Serve.GatewayHost.of({
+        launch: (health, options, gatewayRoot) =>
+          Layer.launch(
+            Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(
+              Layer.provideMerge(layerGateway(health, options, gatewayRoot, durable))
+            )
+          ).pipe(
+            Effect.provideService(Control.Control, controlService),
+            Effect.provide(NodeServices.layer),
+            Effect.orDie
+          )
+      }))
+  ).pipe(Layer.provide(control))
+  return Layer.mergeAll(
+    control,
+    gatewayHost,
+    layerOutput,
+    NodeServices.layer,
+    project,
+    // A remote invocation has no local database to be the memory store, so it
+    // gets the refusal instead of silently writing where nothing reads.
+    layerMemoryRemote
+  )
+}
+
+/**
+ * Provides the complete Node command-handler environment.
+ *
+ * This is the production layer for `smthrs`. Local composition acquires one
+ * durable engine and shares it across control, execution, memory, and serving,
+ * and carries that engine's `FlowRuntime` beside `Control`; open or migration
+ * failures terminate startup. Remote composition builds the RPC client without
+ * opening a local control database. A {@link LocalConfig}, one that names no
+ * remote, selects the local composition's type.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export function layer(applicationConfig: LocalConfig, modules?: ModuleRegistration): ReturnType<typeof layerLocal>
+export function layer(
+  applicationConfig: Application.Config,
+  modules?: ModuleRegistration
+): ReturnType<typeof layerLocal> | ReturnType<typeof layerRemote>
+export function layer(
+  applicationConfig: Application.Config,
+  modules?: ModuleRegistration
+): ReturnType<typeof layerLocal> | ReturnType<typeof layerRemote> {
+  const config = branch(applicationConfig)
+  return config.remote === undefined ? layerLocal(config, modules) : layerRemote(config)
 }
 
 /** Refuses a composition root that still owes a service. */

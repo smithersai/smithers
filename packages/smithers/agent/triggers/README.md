@@ -77,7 +77,7 @@ guarantees, is on the
 | `CatchUp`         | The pure computation of what a trigger owes after downtime, bounded by its declaration.      |
 | `TriggerStore`    | The durable state contract: registration, listing, the claim protocol, and results.          |
 | `SqlTriggerStore` | The SQLite and PostgreSQL implementation of that contract, with its own migrations.          |
-| `Scheduler`       | The Clock-driven poller, and the `Runner` port it launches through.                          |
+| `Scheduler`       | The ticks, the durable flow lineage that runs them for a host, and the `Runner` launch port. |
 | `DispatchReader`  | The `@smthrs/control` read port served from a store: trigger summaries and the fire ledger.  |
 | `Channel`         | The authority-free inbound channel declaration: verify, then map to a start or a signal.     |
 | `Webhook`         | A verified webhook door built on `Channel`, dispatching only through Control.                |

@@ -22,9 +22,12 @@ The `next` tag carries the 1.0 release candidates.
   scheduler's Control-backed runner and every channel dispatch go through it.
 - [`@smthrs/database`](/api/database), for the SQL client and the durable
   writer that `SqlTriggerStore` writes through.
+- [`@smthrs/flow`](/api/flow) and [`@smthrs/plan`](/api/plan), which declare the
+  durable flow `Scheduler.layer` ticks under.
 
-`@smthrs/control` and `@smthrs/database` are ordinary dependencies and install
-with the package. `effect` is a peer dependency, so the install line names it.
+`@smthrs/control`, `@smthrs/database`, `@smthrs/flow` and `@smthrs/plan` are
+ordinary dependencies and install with the package. `effect` is a peer
+dependency, so the install line names it.
 
 ## Import forms
 
@@ -58,9 +61,9 @@ never runs them itself.
 
 ## What a running host adds
 
-The package declares triggers and channels; it does not open a database or
-reach a control plane. A host that actually fires triggers composes three more
-layers:
+The package declares triggers and channels; it does not open a database,
+reach a control plane, or run a flow engine. A host that actually fires
+triggers composes four more layers:
 
 - A SQL client and a durable writer, from
   [`@smthrs/database`](/api/database). `NodeDatabase.layer({ filename })` plus
@@ -68,6 +71,11 @@ layers:
 - `SqlTriggerStore.layer`, which turns those two into a `TriggerStore`.
 - A `Scheduler.Runner`. `Scheduler.layerControlRunner` is the production one
   and requires `Control.Control` from [`@smthrs/control`](/api/control).
+- The `FlowRuntime` the host runs its flows on, with the `Digest` and
+  `SecureRandom` services that engine keys executions with: `Scheduler.layer`
+  ticks on its durable timers. A Node host has the engine from
+  [`@smthrs/platform-node`](/api/platform-node) and the services from
+  `@effect/platform-node`'s `NodeCrypto.layer`.
 
 The composition is in [Run the scheduler in a host](./guides/run-the-scheduler.md).
 

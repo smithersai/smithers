@@ -37,6 +37,15 @@
 
 ### Changed
 
+- `Scheduler.layer` ticks on the flow engine's durable timers instead of a
+  fiber it forked. It registers the `Scheduler.Tick` flow, whose rounds each
+  run one `Scheduler.tick`, sleep for `pollInterval` on a durable clock, and
+  hand off to the next round with the watermark in its payload, and it starts
+  or joins that lineage under `Scheduler.tickExecutionId(host)`. The layer
+  requires the host's `FlowRuntime`, `Digest` and `SecureRandom` beside the
+  runner and the store; its `runOnce` runs one tick outside the lineage. A
+  host that starts again under the same name joins the round it finds parked,
+  and closing the scope cancels nothing. `@smthrs/plan` is a dependency.
 - `RunnerService.isActive` is replaced by `inspect`, which answers a
   `RunState`. A run that failed, was cancelled, or is unknown to the runner is
   recorded as a `failed` fire naming that state; it used to be recorded as

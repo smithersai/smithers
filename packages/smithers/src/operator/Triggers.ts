@@ -3,6 +3,7 @@
  * @since 1.0.0
  */
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import * as Trigger from "@smthrs/triggers/Trigger"
@@ -83,12 +84,15 @@ const required = (store: TriggerStore.Service, id: string) =>
     )
   )
 
-/** Hosts durable polling using the caller's Control service; it never approves a plan.
+/** Hosts the scheduler using the caller's Control service; it never approves a plan.
  *
- * The host registers the project's `S.Cron` targets as it starts, without
- * waiting for them: reading a large workspace takes seconds, and a tick that
- * runs first only fires the schedules already registered. A trigger that runs
- * build targets is executed by the build, not by Control.
+ * The scheduler ticks on the durable flow engine Control runs on, so the
+ * caller's layer provides that engine's `FlowRuntime` beside `Control`, as
+ * `NodeControl.layer` and `NodeControl.layerControl` do. The host registers the
+ * project's `S.Cron` targets as it starts, without waiting for them: reading a
+ * large workspace takes seconds, and a tick that runs first only fires the
+ * schedules already registered. A trigger that runs build targets is executed
+ * by the build, not by Control.
  *
  * @category layers
  * @since 1.0.0
@@ -108,7 +112,9 @@ export const layerTriggerScheduler = (root: string, pollIntervalMs = 1000, targe
     Layer.provide(targets.command ?? TargetRuns.layerCommand()),
     Layer.provide(TriggerPlans.layer(root)),
     Layer.provide(store),
-    Layer.provide(declarations)
+    Layer.provide(declarations),
+    // The engine keys the scheduler's tick lineage with the host's cryptography.
+    Layer.provide(NodeCrypto.layer)
   )
 }
 

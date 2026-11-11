@@ -47024,7 +47024,7 @@ https://smithers.sh/docs/reference/api/triggers/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs)
 
-> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/)
+> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/triggers` exports thirteen modules from its root entry point, and each is
 also importable from `@smthrs/triggers/<Module>`:
@@ -47672,7 +47672,8 @@ because the constructor's signature promises a `TriggerError`.
 
 ## Scheduler
 
-The Clock-driven poll loop and the launcher port it fires through.
+The ticks, the durable flow lineage `layer` runs them on, and the launcher port
+they fire through.
 
 ### Scheduler.StartInput and RunnerService
 
@@ -47782,11 +47783,13 @@ const defaultFireRetention: Duration.Duration
 const durationBoundaries: ReadonlyArray<number>
 ```
 
-`pollInterval` defaults to one minute and paces the tick loop.
-`runPollInterval` defaults to fifteen seconds and paces a launched run's monitor.
-Both must be finite, positive Effect durations; zero polls a CPU-tight loop and
-an infinite interval never completes, and both are refused with
-`invalid_options` and `TriggerError.path` naming the field.
+`pollInterval` defaults to one minute: the durable wait `layer` sleeps between
+the end of one tick and the start of the next. `runPollInterval` defaults to
+fifteen seconds and paces the run monitor of a scheduler from `make`; a tick
+from `layer` or `tick` does not watch its runs, the next tick asks. Both must be
+finite, positive Effect durations; zero would tick without pause and an
+infinite interval never completes, and both are refused with `invalid_options`
+and `TriggerError.path` naming the field.
 
 `concurrency` is how many triggers one tick processes at the same time. It
 defaults to `defaultConcurrency`, which is 4, and must be a positive integer;
@@ -47819,10 +47822,12 @@ interrupted and fails with `runner_timeout`:
 
 `host` is the name every tick records its heartbeat under through
 `TriggerStore.heartbeat`, so a listing can say which host last polled the
-store. It defaults to `defaultHost`, which is `"local"`. The heartbeat is
-observability, not dispatch: a store that cannot record it is logged with the
-host annotated and the tick goes on, so a listing's "nothing is listening" can
-never be caused by the row that reports it.
+store, and the key `layer` runs its tick lineage under, so a host that starts
+again under the same name joins the lineage it left. It defaults to
+`defaultHost`, which is `"local"`. The heartbeat is observability, not
+dispatch: a store that cannot record it is logged with the host annotated and
+the tick goes on, so a listing's "nothing is listening" can never be caused by
+the row that reports it.
 
 `fireRetention` is how long settled fire ledger rows are kept. It defaults to
 `defaultFireRetention`, thirty days, and must be a finite, positive Effect
@@ -47855,7 +47860,11 @@ const makeNoop: () => Service
 
 const layer: (
   options?: Options
-) => Layer.Layer<Scheduler, TriggerError, Runner | TriggerStore.TriggerStore>
+) => Layer.Layer<
+  Scheduler,
+  TriggerError,
+  Runner | TriggerStore.TriggerStore | FlowRuntime.FlowRuntime | Digest.Digest | SecureRandom.SecureRandom
+>
 
 const layerNoop: Layer.Layer<Scheduler>
 ```
@@ -47864,14 +47873,31 @@ const layerNoop: Layer.Layer<Scheduler>
 decides when a tick happens. The service keeps each trigger's watermark and
 its launch fibers in memory, so build it once and keep its scope open across
 ticks. A host that keeps no process between ticks calls
-[`Scheduler.tick`](#schedulertick) instead. `layer` additionally forks a supervisor fiber that
-ticks and sleeps forever. The supervisor sleeps only through the Effect Clock,
-so scope closure interrupts it, and it recovers from the whole cause of a failed
-tick rather than the typed error alone.
+[`Scheduler.tick`](#schedulertick) instead.
 
-Scope closure detaches every run monitor and cancels nothing. The runs are
-durable and outlive the process; the next incarnation re-attaches to them from
-the store. Cancellation happens only through a `supersede` claim.
+`layer` runs the ticks for a host on the flow engine's durable timers. It
+registers the one step of [`Scheduler.Tick`](#schedulertick-ticktag-tickexecutionid-and-tickflow)
+over the runner and the store it is given, then starts the lineage under
+`tickExecutionId(host)`, or joins the one an earlier host under that name
+left: a tick now, then one every `pollInterval` after the previous tick ended.
+Each tick is one `tick`, so it returns once its launches are recorded and the
+next tick settles the runs this one started. A tick that fails, by its typed
+error or by a defect raised anywhere under it, is logged with its cause, and
+the lineage sleeps and ticks again with the watermark it had. An interrupted
+tick interrupts its step and is not logged as a failure. Every option is
+checked when the layer builds, with `invalid_options` naming the field. The
+`Scheduler` the layer provides runs one tick now through `runOnce`, outside
+the lineage, from each trigger's last recorded fire. Beside the runner and the
+store, the layer requires the `FlowRuntime` the host runs flows on, from
+[`@smthrs/flow`](/docs/reference/api/flow/), and the `Digest` and `SecureRandom` services of
+`effect/crypto` that engine keys executions with.
+
+Scope closure drops the step's registration and detaches from the lineage; a
+scheduler from `make` detaches every run monitor. Neither cancels anything.
+The round parked on its timer is the engine's, and the next host to build the
+layer under the same name joins it; the runs are durable and outlive the
+process, and the next tick re-attaches to them from the store. Cancellation
+happens only through a `supersede` claim.
 
 An inspection failure logs its cause and retries three times. Retry delays
 start at `runPollInterval`, double each time, and are capped at one minute.
@@ -47887,6 +47913,39 @@ occurrence as pending, and a buffered occurrence is
 re-armed. Every failure other than interruption is logged with the trigger id.
 Interrupting the fiber detaches it; the reservation lease re-arms the
 occurrence.
+
+### Scheduler.Tick, tickTag, tickExecutionId, and TickFlow
+
+```ts
+const tickTag: "smithers/triggers/tick"
+const tickExecutionId: (host: string) => string
+
+type TickFlow = Flow.Flow<
+  typeof tickTag,
+  Schema.Struct<{ since: Schema.NullOr<Schema.Int> }>,
+  typeof Schema.Void,
+  typeof Sleep.SleepRequestInvalid,
+  Action.Requirement<"smithers/triggers/fire">
+>
+
+const Tick: TickFlow
+```
+
+The durable flow `layer` ticks under, declared with [`@smthrs/flow`](/docs/reference/api/flow/).
+Each round carries `since`, the watermark the tick before it answered in epoch
+milliseconds, or `null` on the first round. It runs one step,
+`smithers/triggers/fire`, which is one `tick` from `since`; sleeps on the
+engine's `system/sleep` timer until `pollInterval` has passed since that tick
+ended; and hands off to the next round with the watermark the tick answered.
+Nothing about the loop lives in a process: the watermark is the next round's
+payload, the wait is a durable clock, and the engine resumes a parked round
+where it left it.
+
+`tickExecutionId(host)` is `smithers/triggers/tick:<host>`, the execution id of
+the first round of `host`'s lineage: one lineage per host name on one engine.
+The flow is exported to be observed, `Tick.poll(tickExecutionId(host))` reads
+the first round and `Tick.interrupt` stops the lineage; its step is implemented
+by `layer`, so a host registers nothing for it.
 
 ### Scheduler.tick
 
@@ -47931,7 +47990,7 @@ for the five-minute reservation lease.
   protocol refuses the occurrences that already fired.
 
 Keep the watermark wherever the host keeps durable state. A durable flow keeps
-it in the payload of its next round.
+it in the payload of its next round, as `Scheduler.Tick` does for `layer`.
 
 `tick` returns once every launch it started is recorded as `launched`,
 compensated, or failed, so it waits at most `startTimeout` for one launch. It
@@ -48274,7 +48333,8 @@ occurrence and `maxCatchUp` is 0.
 `Scheduler.Options.pollInterval`, `runPollInterval`, `startTimeout`,
 `inspectTimeout`, and `cancelTimeout` must be finite, positive Effect
 durations, and `concurrency` must be a positive integer. Invalid values fail
-with `invalid_options` and identify the field in `TriggerError.path`.
+with `invalid_options` and identify the field in `TriggerError.path`;
+`Scheduler.layer` checks every option when it builds.
 `Scheduler.parkedAttempts` is 8. If the eighth Control attempt remains parked
 awaiting approval, the launch fails with `runner`.
 

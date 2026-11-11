@@ -2405,7 +2405,10 @@ export const make = (
     modules?: ModuleRegistration
   ) => {
     const root = config.root ?? process.cwd()
-    return LocalControl.layer(
+    // The executor carries the engine's flow runtime beside the port, and Control
+    // hands it on so a host can run its own flows, such as the trigger
+    // scheduler's tick lineage, on the same engine.
+    return LocalControl.layer<FlowRuntime.FlowRuntime>(
       registry,
       engine,
       layerExecutor(registry, engine, root, {

@@ -693,45 +693,6 @@ describe("Scheduler", () => {
     ])
   })
 
-  it("keeps the supervisor polling after a tick fails", async () => {
-    const results: Array<TriggerStore.Result> = []
-    const runner = runnerFixture()
-    let dueCalls = 0
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const store = yield* TriggerStore.TriggerStore
-          yield* store.register(trigger("skip", "none"))
-          const failing = TriggerStore.TriggerStore.of({
-            ...store,
-            // The first tick dies the way an exhausted occurrence search used
-            // to: a defect, which `Effect.catch` does not handle.
-            list: () => dueCalls++ === 0 ? Effect.die(new Error("Unable to find cron date")) : store.list()
-          })
-          // A minute and a half before the hour, so the tick after the failing
-          // one establishes the watermark and the tick after that crosses the
-          // boundary and fires. A supervisor that stopped at the defect never
-          // reaches either.
-          yield* TestClock.setTime(hour - 90_000)
-          yield* Effect.provide(
-            TestClock.adjust("2 minutes").pipe(Effect.andThen(Effect.yieldNow)),
-            Scheduler.layer({ pollInterval: "1 minute" }).pipe(
-              Layer.provide(Layer.succeed(TriggerStore.TriggerStore)(failing)),
-              Layer.provide(Layer.succeed(Scheduler.Runner)(runner.service))
-            )
-          )
-        })
-      ).pipe(
-        Effect.provide(TestTriggers.layer),
-        Effect.provide(TestClock.layer())
-      )
-    )
-
-    expect(dueCalls).toBeGreaterThan(1)
-    expect(runner.starts).toHaveLength(1)
-    expect(results).toHaveLength(0)
-  })
-
   // A trigger that has never fired owes nothing for the occurrence that
   // happened to pass before it existed: `catchUp: "none"` says exactly that.
   // The first poll establishes the watermark, and the trigger fires from the
@@ -798,7 +759,7 @@ describe("Scheduler", () => {
 
   // Zero polls a CPU-tight loop and an infinite interval never detects
   // completion; `Duration.fromInput` accepts both.
-  it("refuses a poll interval that is not finite and positive", async () => {
+  it("refuses a run poll interval that is not finite and positive", async () => {
     const failures = await Effect.runPromise(
       Effect.all([
         Effect.flip(Effect.scoped(Scheduler.make({ runPollInterval: 0 }))),
@@ -815,16 +776,6 @@ describe("Scheduler", () => {
     }
     expect(failures[0]?.message).toBe("runPollInterval must be a finite positive duration")
     expect(failures[3]?.message).toBe("runPollInterval must be a valid Effect duration")
-
-    const pollInterval = await Effect.runPromise(
-      Effect.flip(
-        Effect.scoped(Layer.build(Scheduler.layer({ pollInterval: 0 }))).pipe(
-          Effect.provide(TestTriggers.layer),
-          Effect.provide(Scheduler.layerNoopRunner())
-        )
-      )
-    )
-    expect(pollInterval).toMatchObject({ code: "invalid_options", path: "pollInterval" })
   })
 })
 

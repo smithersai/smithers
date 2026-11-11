@@ -43,7 +43,20 @@ export const layer = <Extra = never>(
    * will ever settle an accepted run and no verb may wait for one.
    */
   drivesRuns = true
-): Layer.Layer<Control.Control> => {
+): Layer.Layer<Control.Control | Extra> => {
+  type Inputs =
+    | ControlRuntime.ControlRuntime
+    | Journal.Journal
+    | NotificationQueue.NotificationQueue
+    | Registry.Registry
+  // What the executor provides beside the port, such as the flow runtime, is
+  // merged out with Control so a host can run its own flows on the same
+  // engine. With no executor there is nothing beside Control, and `Extra` is
+  // `never`; the assertion states that for the one branch TypeScript cannot
+  // narrow by itself.
+  const live: Layer.Layer<Control.Control | Extra, never, Inputs> = executor === undefined
+    ? (ControlLive.layer as Layer.Layer<Control.Control | Extra, never, Inputs>)
+    : ControlLive.layer.pipe(Layer.provideMerge(executor))
   const queue = NotificationQueue.layer.pipe(Layer.provide(engine.journal))
   const notifications = decorateNotifications === undefined ? queue : Layer.effect(
     NotificationQueue.NotificationQueue,
@@ -56,7 +69,7 @@ export const layer = <Extra = never>(
     })
   ).pipe(Layer.provide([queue, engine.runtime, engine.journal]))
   return Layer.merge(
-    (executor === undefined ? ControlLive.layer : ControlLive.layer.pipe(Layer.provideMerge(executor))).pipe(
+    live.pipe(
       Layer.provide([
         engine.runtime,
         engine.journal,

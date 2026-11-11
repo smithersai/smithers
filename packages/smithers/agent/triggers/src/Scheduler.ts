@@ -8,10 +8,19 @@
 
 import * as Control from "@smthrs/control/Control"
 import type { PlanCard, Receipt, RunStatus } from "@smthrs/control/ControlSchema"
+import * as Action from "@smthrs/flow/Action"
+import * as Flow from "@smthrs/flow/Flow"
+import * as FlowRuntime from "@smthrs/flow/FlowRuntime"
+import * as Interpreter from "@smthrs/flow/Interpreter"
 import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
+import * as Sleep from "@smthrs/flow/Sleep"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -21,6 +30,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as ActiveRuns from "./internal/ActiveRuns.ts"
@@ -311,7 +321,16 @@ export const layerControlRunner: Layer.Layer<Runner, never, Control.Control> = L
  * @since 0.1.0
  */
 export interface Options {
+  /**
+   * How long {@link layer} waits between two ticks, on the flow engine's
+   * durable timer. Defaults to one minute.
+   */
   readonly pollInterval?: Duration.Input | undefined
+  /**
+   * How often a scheduler from {@link make} asks the runner whether a run it
+   * launched is still active. Defaults to fifteen seconds. A tick from
+   * {@link tick} or {@link layer} does not watch its runs: the next tick asks.
+   */
   readonly runPollInterval?: Duration.Input | undefined
   /**
    * How many triggers one tick processes at the same time. Defaults to
@@ -344,6 +363,8 @@ export interface Options {
   /**
    * The name this scheduler records its heartbeat under, so a listing can say
    * which host last polled the store. Defaults to {@link defaultHost}.
+   * {@link layer} also keys its tick lineage by it, so a host that starts
+   * again under the same name joins the lineage it left.
    */
   readonly host?: string | undefined
   /**
@@ -494,6 +515,33 @@ interface Built {
   readonly clean: Effect.Effect<boolean>
 }
 
+/** The options every tick is built from, checked. */
+interface Settings {
+  readonly runPollInterval: Duration.Duration
+  readonly concurrency: number
+  readonly startTimeout: Duration.Duration
+  readonly inspectTimeout: Duration.Duration
+  readonly cancelTimeout: Duration.Duration
+  readonly fireRetention: Duration.Duration
+}
+
+const settings = (options: Options): Effect.Effect<Settings, TriggerError> =>
+  Effect.gen(function*() {
+    const runPollInterval = yield* duration(options.runPollInterval ?? "15 seconds", "runPollInterval")
+    const concurrency = options.concurrency ?? defaultConcurrency
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      return yield* Effect.fail(invalidOption("concurrency", "a positive integer"))
+    }
+    return {
+      runPollInterval,
+      concurrency,
+      startTimeout: yield* duration(options.startTimeout ?? "4 minutes", "startTimeout"),
+      inspectTimeout: yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout"),
+      cancelTimeout: yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout"),
+      fireRetention: yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
+    }
+  })
+
 const build = (
   options: Options,
   seed: Seed | undefined
@@ -513,15 +561,8 @@ const build = (
     const active = yield* ActiveRuns.make
     const observedAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
     const semaphore = yield* Semaphore.make(1)
-    const runPollInterval = yield* duration(options.runPollInterval ?? "15 seconds", "runPollInterval")
-    const concurrency = options.concurrency ?? defaultConcurrency
-    if (!Number.isInteger(concurrency) || concurrency < 1) {
-      return yield* Effect.fail(invalidOption("concurrency", "a positive integer"))
-    }
-    const startTimeout = yield* duration(options.startTimeout ?? "4 minutes", "startTimeout")
-    const inspectTimeout = yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout")
-    const cancelTimeout = yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout")
-    const fireRetention = yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
+    const { cancelTimeout, concurrency, fireRetention, inspectTimeout, runPollInterval, startTimeout } =
+      yield* settings(options)
     // A one-shot tick remembers no earlier prune. Its `since` stands in: the
     // ledger is pruned on a first tick and when an hour boundary passed since.
     const lastPrunedAt = yield* Ref.make<number | undefined>(
@@ -1169,7 +1210,10 @@ const build = (
   })
 
 /**
- * Constructs a scheduler service in the current Scope.
+ * Constructs a scheduler service in the current Scope, for a caller that
+ * decides itself when a tick happens. It forks nothing and keeps each
+ * trigger's watermark and launch monitors in memory for as long as its scope
+ * is open. A host that wants the ticks run for it composes {@link layer}.
  *
  * @category constructors
  * @since 0.1.0
@@ -1255,45 +1299,199 @@ export const tick = (
 export const makeNoop = (): Service => Scheduler.of({ runOnce: Effect.void })
 
 /**
- * Scoped scheduler layer. Its supervisor sleeps only through the Effect Clock,
- * so scope closure interrupts the poll loop and detaches every run monitor.
- * Detaching is all it does: the runs themselves are durable and keep going,
- * and the next incarnation re-attaches to them from the store.
+ * The epoch milliseconds the tick lineage records: whole, and not negative,
+ * as the engine's durable store keeps a deadline.
+ */
+const Instant = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/**
+ * What one round of the tick lineage is opened with: the watermark the tick
+ * before it answered, or `null` on the first round, as {@link tick} takes it.
+ */
+const TickPayload = { since: Schema.NullOr(Instant) }
+
+/**
+ * What one tick of the lineage answered: when it read the clock, the watermark
+ * the next round carries, and when the next tick is due.
+ */
+const Fired = Schema.Struct({ at: Instant, watermark: Schema.NullOr(Instant), wakeAt: Instant })
+
+const fireTag = "smithers/triggers/fire"
+
+/**
+ * The one step of a tick round: one {@link tick}. Its implementation is
+ * {@link layer}'s, over the layer's runner and store, so a host registers
+ * nothing for it.
+ */
+const Fire = Action.make(fireTag, { payload: TickPayload, success: Fired })
+
+/**
+ * The tag of the durable flow {@link layer} ticks under.
  *
- * The loop recovers from the whole cause rather than the typed error alone. A
- * defect raised anywhere under a tick, which `Effect.catch` by contract leaves
- * alone, would otherwise kill this fiber and stop every trigger in the process
- * with nothing written down.
+ * @category constants
+ * @since 1.0.0-rc.18
+ */
+export const tickTag = "smithers/triggers/tick"
+
+/**
+ * The execution id of the tick lineage {@link layer} runs for `host`: one
+ * lineage per host name on one engine, so a host that starts again joins the
+ * lineage it left rather than opening a second one beside it.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export const tickExecutionId = (host: string): string => `${tickTag}:${host}`
+
+/**
+ * The type of {@link Tick}, stated so its body can name the flow it belongs
+ * to.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export type TickFlow = Flow.Flow<
+  typeof tickTag,
+  Schema.Struct<typeof TickPayload>,
+  typeof Schema.Void,
+  typeof Sleep.SleepRequestInvalid,
+  Action.Requirement<typeof fireTag>
+>
+
+/**
+ * The durable flow {@link layer} ticks under. Each round runs one
+ * {@link tick}, sleeps on the engine's durable timer until the poll interval
+ * has passed since the tick ended, and hands off to the next round with the
+ * watermark the tick answered. Nothing about the loop lives in this process:
+ * the watermark is the next round's payload, the wait is a durable clock, and
+ * the engine resumes a parked round where it left it after a restart.
+ *
+ * It is exported to be observed: `Tick.poll(tickExecutionId(host))` reads the
+ * first round, and `Tick.interrupt` stops the lineage. Its one step is
+ * implemented by the layer, so a host registers nothing for it.
+ *
+ * @category flows
+ * @since 1.0.0-rc.18
+ */
+export const Tick: TickFlow = Flow.make(tickTag, {
+  description: "Run one trigger scheduler tick, sleep for the poll interval, then hand off to the next tick " +
+    "with the watermark this one answered.",
+  modelInvocable: false,
+  payload: TickPayload,
+  success: Schema.Void,
+  error: Sleep.SleepRequestInvalid,
+  body: Node.capture(
+    { fire: fireTag, sleep: Sleep.tag, tick: tickTag },
+    ({ since }: Schema.Struct.Type<typeof TickPayload>) =>
+      Fire.call({ since }).pipe(
+        // The sleep names the deadline the tick computed and the handoff names
+        // the watermark it answered, so both wait for the tick to end.
+        Node.bindPlanned(Node.capture(
+          { sleep: Sleep.tag, tick: tickTag },
+          (fired: Planned.Planned<typeof Fired.Type>) =>
+            Sleep.action.call({ until: fired.wakeAt }).pipe(Node.andThen(Tick.to({ since: fired.watermark })))
+        ))
+      )
+  )
+})
+
+/**
+ * Scheduler layer: its ticks run on the flow engine's durable timers.
+ *
+ * The layer registers {@link Tick}'s one step over the runner and store it is
+ * given and starts, or joins, the lineage keyed by `host`: a tick now, then one
+ * every `pollInterval` after the previous tick ended. Each tick is one
+ * {@link tick}, so it returns once its launches are recorded, and the next tick
+ * settles the runs this one started. A tick that fails, by its typed error or
+ * by a defect raised anywhere under it, is logged with its cause, and the
+ * lineage sleeps and ticks again with the same watermark, so no failure stops
+ * the triggers in a process with nothing written down.
+ *
+ * Closing the scope drops the step's registration and detaches from the
+ * lineage. It cancels no run and no round: the round parked on its timer
+ * belongs to the engine, and the next host to build this layer under the same
+ * `host` name joins it. Two hosts sharing one engine under one name share one
+ * lineage.
+ *
+ * The `Scheduler` it provides runs one tick now through `runOnce`, outside the
+ * lineage, from each trigger's last recorded fire.
+ *
+ * Beside the runner and the store, it requires the `FlowRuntime` the host runs
+ * flows on, and the digest and secure-random services that engine keys
+ * executions with.
  *
  * @category layers
  * @since 0.1.0
  */
 export const layer = (
   options: Options = {}
-): Layer.Layer<Scheduler, TriggerError, Runner | TriggerStore> =>
+): Layer.Layer<
+  Scheduler,
+  TriggerError,
+  Runner | TriggerStore | FlowRuntime.FlowRuntime | EffectDigest.Digest | SecureRandom.SecureRandom
+> =>
   Layer.effect(
     Scheduler,
     Effect.gen(function*() {
-      const scheduler = yield* make(options)
       const pollInterval = yield* duration(options.pollInterval ?? "1 minute", "pollInterval")
-      yield* Effect.forkScoped(
-        Effect.forever(
-          scheduler.runOnce.pipe(
+      // The options every tick is built from are checked once here, as the
+      // in-process scheduler checked them when it was built, so a bad
+      // `concurrency` refuses the layer instead of failing every tick.
+      yield* settings(options)
+      const pollMillis = Duration.toMillis(pollInterval)
+      const { pollInterval: _pollInterval, runPollInterval: _runPollInterval, ...tickOptions } = options
+      const host = options.host ?? defaultHost
+      const services = yield* Effect.context<Runner | TriggerStore>()
+      const fire = (since: number | undefined): Effect.Effect<Ticked, TriggerError> =>
+        tick({ ...tickOptions, since }).pipe(Effect.provide(services))
+      const fired = ({ since }: Schema.Struct.Type<typeof TickPayload>) =>
+        Effect.gen(function*() {
+          const ticked = yield* fire(since ?? undefined).pipe(
+            Effect.map((ticked): { readonly at: number; readonly watermark: number | null } => ({
+              at: Math.floor(ticked.at),
+              watermark: Math.floor(ticked.watermark)
+            })),
+            // The whole cause, not the typed error alone: a defect raised
+            // anywhere under a tick, which `Effect.catch` by contract leaves
+            // alone, would otherwise end the lineage and stop every trigger in
+            // the process with nothing written down. Interruption is the scope
+            // closing, not a tick failing, and interrupts the step in turn.
             Effect.catchCause((cause) =>
               Cause.hasInterrupts(cause)
-                ? Effect.failCause(cause)
-                : Effect.logWarning("A trigger scheduler tick failed", cause)
-            ),
-            Effect.andThen(Effect.sleep(pollInterval))
+                ? Effect.interrupt
+                : Effect.logWarning("A trigger scheduler tick failed", cause).pipe(
+                  Effect.andThen(Clock.currentTimeMillis),
+                  Effect.map((now) => ({ at: Math.floor(now), watermark: since }))
+                )
+            )
           )
+          // The wait starts when the tick ends, as the poll loop's did.
+          const ended = Math.floor(yield* Clock.currentTimeMillis)
+          return { ...ticked, wakeAt: ended + pollMillis }
+        })
+      const registered = yield* Layer.build(Interpreter.layerWithImplementations(Tick, Fire.toLayer(fired)))
+      yield* Tick.execute({ since: null }, { executionId: tickExecutionId(host), discard: true }).pipe(
+        Effect.provide(registered),
+        // The engine's store refusing to record the lineage is the one failure
+        // a host can meet and retry; the rest are this composition's wiring.
+        Effect.catch((error) =>
+          error instanceof FlowRuntime.StoreUnavailable
+            ? Effect.fail(
+              new TriggerError({
+                code: "store",
+                message: "The flow engine could not start the trigger scheduler's tick lineage",
+                cause: error
+              })
+            )
+            : Effect.die(error)
         )
       )
-      return scheduler
+      return Scheduler.of({ runOnce: Effect.asVoid(fire(undefined)) })
     })
   )
 
 /**
- * Provides an inert scheduler without allocating a supervisor fiber.
+ * Provides an inert scheduler that registers no flow and ticks nothing.
  *
  * @category layers
  * @since 0.1.0
