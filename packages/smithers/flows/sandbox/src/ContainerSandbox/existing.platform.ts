@@ -12,4 +12,4 @@
  * @since 1.0.0
  * @throws {never}
  */
-export const environment = (): NodeJS.ProcessEnv => process.env
+export const environment = (): typeof process.env => process.env
