@@ -3,10 +3,11 @@
  * @since 1.0.0
  */
 
+import * as Dialect from "@smthrs/database/Dialect"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import { existsSync } from "node:fs"
+import * as DatabaseLocation from "./DatabaseLocation.ts"
 
 class SnapshotRootError extends Schema.TaggedError<SnapshotRootError>()(
   "@smthrs/cli/SnapshotRootError",
@@ -34,12 +35,12 @@ export const live = (files: ReadonlyArray<string>) =>
     const rows: Array<Row> = []
     const edges: Array<Edge> = []
     for (const filename of files) {
-      if (!existsSync(filename)) continue
+      if (!DatabaseLocation.exists(filename)) continue
       const found = yield* Effect.gen(function*() {
         const sql = yield* SqlClient
-        const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master WHERE type = 'table'`
+        const tables = yield* Dialect.tables(sql)
         if (!tables.some((table) => table.name === "flows_runs")) return { rows: [], edges: [] }
-        const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(flows_runs)`
+        const columns = yield* Dialect.columns(sql, "flows_runs")
         const state = columns.some((column) => column.name === "state_json")
           ? sql.literal("state_json") :
           sql.literal("NULL")
