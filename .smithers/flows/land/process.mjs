@@ -33,13 +33,13 @@ export function runProcess(command, args, { cwd, env = process.env, signal, time
     signal?.throwIfAborted()
     const child = spawn(command, args, { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] })
     const stdout = [], stderr = []
-    let bytes = 0, failure, escalation
+    let bytes = 0, failure, escalation, escalated = false, finish
     const kill = (name) => { if (child.pid) { try { process.kill(-child.pid, name) } catch (error) { if (error.code !== "ESRCH") failure ??= error } } }
     const stop = (error) => {
       if (failure) return
       failure = error
       kill("SIGTERM")
-      escalation = setTimeout(() => kill("SIGKILL"), 3000)
+      escalation = setTimeout(() => { escalated = true; kill("SIGKILL"); finish?.() }, 3000)
     }
     try { onStart?.(child.pid) } catch (error) { stop(error) }
     const abort = () => stop(signal.reason ?? new Error("Command interrupted"))
@@ -53,14 +53,24 @@ export function runProcess(command, args, { cwd, env = process.env, signal, time
     }
     child.stdout.on("data", (chunk) => collect(stdout, process.stdout, chunk))
     child.stderr.on("data", (chunk) => { collect(stderr, process.stderr, chunk); if (streamError && !stream) process.stderr.write(chunk) })
-    const cleanup = () => { clearTimeout(timeout); clearTimeout(escalation); signal?.removeEventListener("abort", abort) }
-    child.once("error", (error) => { cleanup(); reject(error) })
+    const cleanup = () => { clearTimeout(timeout); signal?.removeEventListener("abort", abort) }
+    const groupAlive = () => { try { process.kill(-child.pid, 0); return true } catch (error) { return error.code === "EPERM" } }
+    child.once("error", (error) => { cleanup(); clearTimeout(escalation); reject(error) })
     child.once("close", (status, killedBy) => {
       cleanup()
-      try { onEnd?.(status, killedBy, failure) } catch (error) { failure ??= error }
-      const result = { status, signal: killedBy, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") }
-      if (failure) reject(failure)
-      else resolve(result)
+      let reaping
+      finish = () => {
+        finish = undefined
+        clearTimeout(escalation)
+        clearInterval(reaping)
+        try { onEnd?.(status, killedBy, failure) } catch (error) { failure ??= error }
+        const result = { status, signal: killedBy, stdout: Buffer.concat(stdout).toString("utf8"), stderr: Buffer.concat(stderr).toString("utf8") }
+        if (failure) reject(failure)
+        else resolve(result)
+      }
+      // A stopped group settles once every descendant has exited or been sent SIGKILL, not when the direct child closes.
+      if (escalation && !escalated && groupAlive()) reaping = setInterval(() => { if (!groupAlive()) finish?.() }, 50)
+      else finish()
     })
   })
 }
