@@ -2,6 +2,10 @@
  * Check-suite pattern: run independent checks with bounded concurrency and
  * reduce their rows to one verdict.
  *
+ * `make` and `run` take the checks as a record written with the suite.
+ * `makeDiscovered` and `runDiscovered` take one check and the ids to run it
+ * for, so a suite can run the checks a repository turned out to have.
+ *
  * @see https://smithers.sh/docs/reference/api/patterns
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
@@ -194,6 +198,66 @@ export const verdict = (results: ReadonlyArray<CheckResult>, strategy: Strategy)
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 /**
+ * Joins check calls in batches of `concurrency` and maps the joined record to
+ * a verdict with `decide`. `entries` pairs each call with the key its row is
+ * joined under.
+ */
+const joined = <R>(
+  entries: ReadonlyArray<readonly [key: string, call: Node.Node<unknown, unknown, R>]>,
+  concurrency: number,
+  continueOnFail: boolean,
+  captures: Readonly<Record<string, unknown>>,
+  decide: (values: unknown) => Verdict
+): Node.Node<unknown, unknown, R> => {
+  const keys = entries.map(([key]) => key)
+  const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
+    const members = Object.fromEntries(entries.slice(offset, offset + concurrency)) as Record<string, Node.Any>
+    return continueOnFail
+      ? Quarantine.all(members, { policy: "quarantine" })
+      : Quarantine.all(members, { policy: "halt" })
+  }
+  // Each batch gates the next, and the rows a batch produced are carried on
+  // as planned field references: a batch's result does not exist while the
+  // graph builds, so the suite assembles the record the verdict reads rather
+  // than merging two symbols.
+  const visit = (
+    offset: number,
+    carried: Readonly<Record<string, Planned.Planned<unknown>>>
+  ): Node.Node<unknown, unknown, R> => {
+    if (offset >= entries.length) {
+      return Node.map(Node.succeed(carried), Node.capture(captures, decide))
+    }
+    const batched = keys.slice(offset, offset + concurrency)
+    return Node.bindPlanned(
+      batchAt(offset),
+      Node.capture({ offset, batched }, (reference) =>
+        Node.andThen(
+          Node.succeed(reference),
+          visit(offset + concurrency, {
+            ...carried,
+            ...Object.fromEntries(
+              batched.map((key) => [key, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[key]!])
+            )
+          })
+        ))
+    )
+  }
+  return visit(0, {})
+}
+
+/** One runtime check's classified result; a tolerant suite turns its typed failure into a failed result. */
+const attempt = <Out, E, R>(
+  id: string,
+  check: Effect.Effect<Out, E, R>,
+  continueOnFail: boolean
+): Effect.Effect<CheckResult, E, R> => {
+  const classified = Effect.map(check, (row) => classify(id, row))
+  return continueOnFail
+    ? Effect.catch(classified, (error) => Effect.succeed({ id, passed: false, error }))
+    : classified
+}
+
+/**
  * Builds the check-suite topology: one call per check, batched into `Node.all`
  * groups of `concurrency` members, then one pure verdict map.
  *
@@ -241,49 +305,14 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
     continueOnFail
   }
   const { name, description } = Compose.label("checkSuite", { checks: ids, strategy, concurrency }, options)
-  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
-    const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
-      const members = Object.fromEntries(
-        declared.slice(offset, offset + concurrency).map(([id, check]) => [
-          id,
-          callMember(check, { check: id, input })
-        ])
-      ) as Record<string, Node.Any>
-      return continueOnFail
-        ? Quarantine.all(members, { policy: "quarantine" })
-        : Quarantine.all(members, { policy: "halt" })
-    }
-    // Each batch gates the next, and the rows a batch produced are carried on
-    // as planned field references: a batch's result does not exist while the
-    // graph builds, so the suite assembles the record the verdict reads rather
-    // than merging two symbols.
-    const visit = (
-      offset: number,
-      carried: Readonly<Record<string, Planned.Planned<unknown>>>
-    ): Node.Node<unknown, unknown, R> => {
-      if (offset >= declared.length) {
-        return Node.map(
-          Node.succeed(carried),
-          Node.capture(captures, (values) => verdict(rows(values, ids, continueOnFail), strategy))
-        )
-      }
-      const batched = ids.slice(offset, offset + concurrency)
-      return Node.bindPlanned(
-        batchAt(offset),
-        Node.capture({ offset, batched }, (reference) =>
-          Node.andThen(
-            Node.succeed(reference),
-            visit(offset + concurrency, {
-              ...carried,
-              ...Object.fromEntries(
-                batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
-              )
-            })
-          ))
-      )
-    }
-    return visit(0, {})
-  }
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> =>
+    joined(
+      declared.map(([id, check]) => [id, callMember(check, { check: id, input })]),
+      concurrency,
+      continueOnFail,
+      captures,
+      (values) => verdict(rows(values, ids, continueOnFail), strategy)
+    )
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),
     payload: OpaqueInput,
@@ -348,14 +377,213 @@ export const run = <I, Out, E, R>(
   return Effect.map(
     Effect.forEach(
       declared,
-      ([id, check]): Effect.Effect<CheckResult, E, R> => {
-        const attempt = Effect.map(check(input), (row) => classify(id, row))
-        return continueOnFail
-          ? Effect.catch(attempt, (error) => Effect.succeed({ id, passed: false, error }))
-          : attempt
-      },
+      ([id, check]) => attempt(id, check(input), continueOnFail),
       { concurrency }
     ),
+    (results) => verdict(results, strategy)
+  )
+}
+
+/**
+ * What a discovered suite with no checks decides: `pass` settles a true
+ * verdict, `fail` a false one. Either way `passed` and `failed` are empty.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type OnEmpty = "pass" | "fail"
+
+/**
+ * The payload a discovered suite takes: the ids of the checks to run, in the
+ * order to run and report them, and the input every check receives.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const DiscoveredPayload = Schema.Struct({ checks: Schema.Array(Schema.String), input: Schema.Unknown })
+
+/**
+ * The declared form of a discovered check suite.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type DiscoveredFlow<R = never> = Flow.Flow<
+  string,
+  typeof DiscoveredPayload,
+  typeof Schema.Unknown,
+  typeof Schema.Unknown,
+  R
+>
+
+/**
+ * Configuration for {@link makeDiscovered}.
+ *
+ * `check` is the one member every discovered id is run through. It is called
+ * with `{ check, input }`: the id and the suite's input.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DiscoveredMakeOptions<R = never> {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
+  readonly check: Member<R>
+  readonly strategy: Strategy
+  readonly concurrency: number
+  readonly continueOnFail: boolean
+  readonly onEmpty: OnEmpty
+}
+
+/**
+ * Operational callbacks for {@link runDiscovered}.
+ *
+ * `check` receives the same `{ check, input }` a declared suite's member does.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface DiscoveredRuntimeOptions<I, Out, E, R> {
+  readonly check: (payload: { readonly check: string; readonly input: I }) => Effect.Effect<Out, E, R>
+  readonly strategy: Strategy
+  readonly concurrency: number
+  readonly continueOnFail: boolean
+  readonly onEmpty: OnEmpty
+}
+
+/** The ids a discovered suite was handed, copied, or why they are not a suite. */
+const discoveredIds = (checks: unknown): ReadonlyArray<string> | PatternError => {
+  if (!Array.isArray(checks) || checks.some((id) => typeof id !== "string")) {
+    return new PatternError({ code: "invalid_input", message: "CheckSuite discovered checks must be an array of ids" })
+  }
+  const ids: ReadonlyArray<string> = [...checks]
+  if (ids.some((id) => id === "")) {
+    return new PatternError({ code: "invalid_input", message: "CheckSuite check ids must not be empty" })
+  }
+  if (new Set(ids).size !== ids.length) {
+    return new PatternError({ code: "invalid_input", message: "CheckSuite discovered check ids must be unique" })
+  }
+  return ids
+}
+
+const emptyVerdict = (strategy: Strategy, onEmpty: OnEmpty): Verdict => ({
+  passed: [],
+  failed: [],
+  errors: {},
+  strategy,
+  verdict: onEmpty === "pass"
+})
+
+/**
+ * Builds a check suite whose checks arrive with its input.
+ *
+ * {@link make} needs every check when the suite is written. A discovered suite
+ * needs one `check` member and takes the ids as `{ checks, input }`, so the
+ * step before it can find them: the scripts a commit has, the packages a
+ * change touches. The ids must be known when the suite's graph builds, which
+ * they are when the suite is called with the result of an earlier step.
+ *
+ * Each id becomes one call to `check` with `{ check: id, input }`, batched and
+ * joined exactly as {@link make} does, so `continueOnFail` changes the
+ * topology here too. The checks run and are reported in the order the ids
+ * came in. The calls are joined under positional keys, never under the ids,
+ * so an id that looks like an array index keeps its place and an id such as
+ * `__proto__` cannot collide with a record's own keys.
+ *
+ * A suite handed no ids calls nothing and settles the verdict `onEmpty` names.
+ * Ids that are not an array of unique, non-empty strings settle the flow with
+ * a `PatternError` coded `invalid_input` before any check runs.
+ * `makeDiscovered` throws a `PatternError` when `concurrency` is not a
+ * positive safe integer.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const makeDiscovered = <R = never>(options: DiscoveredMakeOptions<R>): DiscoveredFlow<R> => {
+  // The body runs when the graph builds, later than this call, so it reads
+  // these snapshots and never the caller's options again.
+  const check = options.check
+  const strategy = options.strategy
+  const concurrency = options.concurrency
+  const continueOnFail = options.continueOnFail
+  const onEmpty = options.onEmpty
+  if (!bound(concurrency)) {
+    throw new PatternError({
+      code: "invalid_decorator",
+      message: "CheckSuite concurrency must be a positive safe integer"
+    })
+  }
+  const captures = { strategy, concurrency, continueOnFail, onEmpty }
+  const { name, description } = Compose.label("checkSuiteDiscovered", { strategy, concurrency, onEmpty }, options)
+  const body = (payload: { readonly checks: unknown; readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const ids = discoveredIds(payload.checks)
+    // A declared failure, not a throw: a body that throws is reported as an
+    // incomplete graph, while `runDiscovered` fails with this error.
+    if (ids instanceof PatternError) return Node.fail(ids)
+    if (ids.length === 0) return Node.succeed(emptyVerdict(strategy, onEmpty))
+    const keys = ids.map((_, index) => `check-${index}`)
+    return joined(
+      ids.map((id, index) => [keys[index]!, callMember(check, { check: id, input: payload.input })]),
+      concurrency,
+      continueOnFail,
+      { ...captures, checks: ids },
+      (values) =>
+        verdict(
+          rows(values, keys, continueOnFail).map((result, index) => ({ ...result, id: ids[index]! })),
+          strategy
+        )
+    )
+  }
+  return Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: DiscoveredPayload,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    body: Node.capture(captures, body)
+  })
+}
+
+/**
+ * Runs `check` once per discovered id with bounded concurrency and returns
+ * the verdict.
+ *
+ * The runtime form of {@link makeDiscovered}: the same payload, the same
+ * order, the same `continueOnFail` and `onEmpty`, and the same refusals. A
+ * `concurrency` that is not a positive safe integer and ids that are not an
+ * array of unique, non-empty strings each fail with a `PatternError` before
+ * any check runs. No ids succeeds with the verdict `onEmpty` names and runs
+ * nothing.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const runDiscovered = <I, Out, E, R>(
+  payload: { readonly checks: ReadonlyArray<string>; readonly input: I },
+  options: DiscoveredRuntimeOptions<I, Out, E, R>
+): Effect.Effect<Verdict, E | PatternError, R> => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the id array or the option object in between must not reach it.
+  const check = options.check
+  const strategy = options.strategy
+  const concurrency = options.concurrency
+  const continueOnFail = options.continueOnFail
+  const onEmpty = options.onEmpty
+  const input = payload.input
+  const ids = discoveredIds(payload.checks)
+  if (!bound(concurrency)) {
+    return Effect.fail(
+      new PatternError({
+        code: "invalid_decorator",
+        message: "CheckSuite concurrency must be a positive safe integer"
+      })
+    )
+  }
+  if (ids instanceof PatternError) return Effect.fail(ids)
+  if (ids.length === 0) return Effect.succeed(emptyVerdict(strategy, onEmpty))
+  return Effect.map(
+    Effect.forEach(ids, (id) => attempt(id, Effect.suspend(() => check({ check: id, input })), continueOnFail), {
+      concurrency
+    }),
     (results) => verdict(results, strategy)
   )
 }

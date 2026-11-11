@@ -9,6 +9,14 @@
   before any worker call, so a model-returned plan cannot multiply worker
   calls without bound.
 
+### Added
+
+- `CheckSuite.makeDiscovered` and `CheckSuite.runDiscovered` run one check once
+  per id handed to the suite as `{ checks, input }`, so a suite can run the
+  checks found at run time. The ids keep their order, a repeated or empty id
+  fails `invalid_input`, and `onEmpty` decides the verdict when none were
+  found ([#4589](https://github.com/smithersai/smithers/issues/4589)).
+
 ### Fixed
 
 - `Loop.ralph` rejects bounds above the existing branch-construction ceiling before planning, including the extra arms a stall breaker needs. ([#4103](https://github.com/smithersai/smithers/issues/4103)).

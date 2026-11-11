@@ -3,6 +3,7 @@ import { Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Result from "effect/Result"
@@ -10,7 +11,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as CheckSuite from "../src/CheckSuite.ts"
 import { PatternError } from "../src/PatternError.ts"
-import { execute } from "./Execute.ts"
+import { execute, executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 const checkFlow = (tag: string, answer: () => Node.Node<unknown, unknown, never>) =>
@@ -530,5 +531,231 @@ describe("CheckSuite", () => {
     expect(tolerant.map((node) => node.draft.material.body)).not.toEqual(
       failFast.map((node) => node.draft.material.body)
     )
+  })
+})
+
+// A discovered suite takes its check ids with its input. Every case runs the
+// declaration and the runtime form on the same ids and compares whole verdicts.
+describe("CheckSuite discovered checks", () => {
+  // `fails` lists the ids whose check fails with a typed error, `rejects` the
+  // ids whose check answers a failure row; every other id passes.
+  const script = (fails: ReadonlyArray<string>, rejects: ReadonlyArray<string>) => {
+    const ran: Array<string> = []
+    const member = Flow.make("discovered-check", {
+      payload: { check: Schema.String, input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: ({ check }) =>
+        fails.includes(check)
+          ? Node.fail(`${check} crashed`)
+          : Node.succeed({ ok: !rejects.includes(check) })
+    })
+    const callback = ({ check, input }: { readonly check: string; readonly input: string }) =>
+      Effect.suspend(() => {
+        ran.push(`${check}@${input}`)
+        return fails.includes(check)
+          ? Effect.fail(`${check} crashed`)
+          : Effect.succeed({ ok: !rejects.includes(check) })
+      })
+    return { ran, member, callback }
+  }
+
+  const settings = { strategy: "all-pass" as const, concurrency: 2, continueOnFail: true, onEmpty: "pass" as const }
+
+  it.effect("runs the ids in the order they were found, whatever they look like", () =>
+    Effect.gen(function*() {
+      // A record would run "2" before "lint" and could lose "__proto__".
+      const ids = ["lint", "10", "2", "__proto__", "constructor"]
+      const { ran, member, callback } = script(["__proto__"], ["2"])
+      const expected = {
+        passed: ["lint", "10", "constructor"],
+        failed: ["2", "__proto__"],
+        errors: { ["__proto__"]: "__proto__ crashed" },
+        strategy: "all-pass",
+        verdict: false
+      }
+
+      const executed = yield* CheckSuite.runDiscovered({ checks: ids, input: "head" }, {
+        ...settings,
+        concurrency: 1,
+        check: callback
+      })
+      expect(executed).toStrictEqual(expected)
+      expect(Object.hasOwn(executed.errors, "__proto__")).toBe(true)
+      expect(ran).toEqual(ids.map((id) => `${id}@head`))
+
+      const suite = CheckSuite.makeDiscovered({ ...settings, check: member })
+      const declared = yield* Effect.promise(() => execute(suite, { checks: ids, input: "head" }, "discovered-order"))
+      expect(declared).toStrictEqual(expected)
+    }))
+
+  it("declares one call per discovered id, batched at the concurrency bound", () => {
+    const { member } = script([], [])
+    const ids = ["lint", "typecheck", "test"]
+    const build = (continueOnFail: boolean) =>
+      Graph.build(CheckSuite.makeDiscovered({ ...settings, continueOnFail, check: member }), {
+        checks: ids,
+        input: "head"
+      })
+
+    const tolerant = build(true)
+    expect(Flow.isFlow(CheckSuite.makeDiscovered({ ...settings, check: member }))).toBe(true)
+    expect(callsTo(tolerant, "discovered-check").map((node) => payloadOf(node))).toEqual(
+      ids.map((check) => ({ check, input: "head" }))
+    )
+    expect(Graph.nodes(tolerant).filter((node) => node.kind === "All")).toHaveLength(2)
+    expect(Graph.nodes(tolerant).filter((node) => node.kind === "Catch")).toHaveLength(3)
+    expect(Graph.diagnostics(tolerant)).toEqual([])
+    const failFast = build(false)
+    expect(Graph.nodes(failFast).filter((node) => node.kind === "Catch")).toHaveLength(0)
+    // The only `Map` a fail-fast suite declares is the verdict.
+    expect(Graph.nodes(failFast).filter((node) => node.kind === "Map")).toHaveLength(1)
+  })
+
+  for (const onEmpty of ["pass", "fail"] as const) {
+    it.effect(`settles a suite that found no checks as onEmpty says: ${onEmpty}`, () =>
+      Effect.gen(function*() {
+        const { ran, member, callback } = script([], [])
+        const expected = { passed: [], failed: [], errors: {}, strategy: "all-pass", verdict: onEmpty === "pass" }
+        const suite = CheckSuite.makeDiscovered({ ...settings, onEmpty, check: member })
+
+        expect(callsTo(Graph.build(suite, { checks: [], input: "head" }), "discovered-check")).toHaveLength(0)
+        expect(
+          yield* Effect.promise(() => execute(suite, { checks: [], input: "head" }, `discovered-empty-${onEmpty}`))
+        )
+          .toEqual(expected)
+        expect(
+          yield* CheckSuite.runDiscovered({ checks: [], input: "head" }, { ...settings, onEmpty, check: callback })
+        ).toStrictEqual(expected)
+        expect(ran).toEqual([])
+      }))
+  }
+
+  it.effect("tolerates a failing check, or stops at it, as continueOnFail says", () =>
+    Effect.gen(function*() {
+      const ids = ["lint", "typecheck", "test"]
+      const tolerant = script(["typecheck"], [])
+      const expected = {
+        passed: ["lint", "test"],
+        failed: ["typecheck"],
+        errors: { typecheck: "typecheck crashed" },
+        strategy: "majority",
+        verdict: true
+      }
+      const options = { ...settings, strategy: "majority" as const, concurrency: 1 }
+
+      expect(
+        yield* CheckSuite.runDiscovered({ checks: ids, input: "head" }, { ...options, check: tolerant.callback })
+      ).toStrictEqual(expected)
+      expect(
+        yield* Effect.promise(() =>
+          execute(
+            CheckSuite.makeDiscovered({ ...options, check: tolerant.member }),
+            { checks: ids, input: "head" },
+            "discovered-tolerant"
+          )
+        )
+      ).toStrictEqual(expected)
+
+      const failFast = script(["typecheck"], [])
+      const failure = yield* CheckSuite.runDiscovered({ checks: ids, input: "head" }, {
+        ...options,
+        continueOnFail: false,
+        check: failFast.callback
+      }).pipe(Effect.flip)
+      expect(failure).toBe("typecheck crashed")
+      expect(failFast.ran).toEqual(["lint@head", "typecheck@head"])
+      const declared = yield* Effect.promise(() =>
+        executeExit(
+          CheckSuite.makeDiscovered({ ...options, continueOnFail: false, check: failFast.member }),
+          { checks: ids, input: "head" },
+          "discovered-fail-fast"
+        )
+      )
+      expect(Exit.isFailure(declared)).toBe(true)
+    }))
+
+  for (
+    const [name, found, message] of [
+      ["a repeated id", ["lint", "lint"], "CheckSuite discovered check ids must be unique"],
+      ["an empty id", ["lint", ""], "CheckSuite check ids must not be empty"],
+      ["an id that is not a string", ["lint", 7], "CheckSuite discovered checks must be an array of ids"],
+      ["ids that are not an array", { lint: true }, "CheckSuite discovered checks must be an array of ids"]
+    ] as const
+  ) {
+    it.effect(`refuses ${name} before any check runs`, () =>
+      Effect.gen(function*() {
+        const { ran, member, callback } = script([], [])
+        const payload = { checks: found as unknown as ReadonlyArray<string>, input: "head" }
+
+        const refused = yield* CheckSuite.runDiscovered(payload, { ...settings, check: callback }).pipe(Effect.flip)
+        expect(refused).toBeInstanceOf(PatternError)
+        expect(refused).toMatchObject({ code: "invalid_input", message })
+        expect(ran).toEqual([])
+
+        const graph = Graph.build(CheckSuite.makeDiscovered({ ...settings, check: member }), payload as never)
+        expect(callsTo(graph, "discovered-check")).toHaveLength(0)
+        const failures = Graph.nodes(graph).filter((node) => node.kind === "Fail")
+        expect(failures).toHaveLength(1)
+        expect(JSON.stringify(failures[0]!.ast)).toContain(message)
+      }))
+  }
+
+  it.effect("rejects an invalid concurrency in both forms", () =>
+    Effect.gen(function*() {
+      const { ran, member, callback } = script([], [])
+      const invalid = { code: "invalid_decorator", message: "CheckSuite concurrency must be a positive safe integer" }
+
+      for (const concurrency of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
+        expect(() => CheckSuite.makeDiscovered({ ...settings, concurrency, check: member }))
+          .toThrow(expect.objectContaining(invalid))
+        const refused = yield* CheckSuite.runDiscovered({ checks: ["lint"], input: "head" }, {
+          ...settings,
+          concurrency,
+          check: callback
+        }).pipe(Effect.flip)
+        expect(refused).toMatchObject(invalid)
+      }
+      expect(ran).toEqual([])
+    }))
+
+  it.effect("runs the ids and options it was called with, not later edits", () =>
+    Effect.gen(function*() {
+      const { ran, member, callback } = script([], [])
+      const ids = ["lint"]
+      const options = { ...settings, check: callback } as {
+        -readonly [K in keyof CheckSuite.DiscoveredRuntimeOptions<string, unknown, string, never>]:
+          CheckSuite.DiscoveredRuntimeOptions<string, unknown, string, never>[K]
+      }
+      const running = CheckSuite.runDiscovered({ checks: ids, input: "head" }, options)
+      const declaredOptions = { ...settings, check: member } as {
+        -readonly [K in keyof CheckSuite.DiscoveredMakeOptions]: CheckSuite.DiscoveredMakeOptions[K]
+      }
+      const suite = CheckSuite.makeDiscovered(declaredOptions)
+
+      ids.push("late")
+      options.concurrency = 0
+      options.strategy = "any-pass"
+      options.continueOnFail = false
+      options.onEmpty = "fail"
+      declaredOptions.concurrency = 0
+      declaredOptions.strategy = "any-pass"
+
+      const expected = { passed: ["lint"], failed: [], errors: {}, strategy: "all-pass", verdict: true }
+      expect(yield* running).toStrictEqual(expected)
+      expect(ran).toEqual(["lint@head"])
+      expect(yield* Effect.promise(() => execute(suite, { checks: ["lint"], input: "head" }, "discovered-snapshot")))
+        .toStrictEqual(expected)
+    }))
+
+  it("labels the declared flow by its bounds unless the caller names it", () => {
+    const { member } = script([], [])
+    const suite = CheckSuite.makeDiscovered({ ...settings, check: member })
+    const named = CheckSuite.makeDiscovered({ ...settings, check: member, name: "ci", description: "Run each gate." })
+
+    expect(suite._tag).toBe("checkSuiteDiscovered(strategy=all-pass, concurrency=2, onEmpty=pass)")
+    expect(suite.description).toBeUndefined()
+    expect(named._tag).toBe("ci")
+    expect(named.description).toBe("Run each gate.")
   })
 })
