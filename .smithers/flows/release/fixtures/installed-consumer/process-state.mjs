@@ -58,6 +58,26 @@ export const selfReportedPid = (pid, platform = process.platform, read = readFil
   return line === null ? pid : Number(line[1].split(/\s+/).at(-1))
 }
 
+/** Whether the host still has a process with `pid`; a zombie counts until it is reaped. */
+export const alive = (pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error.code === "ESRCH") return false
+    throw error
+  }
+}
+
+/** Polls until `pid` is gone, for at most `withinMs`. */
+export const exited = async (pid, withinMs = 2000) => {
+  for (const started = Date.now(); Date.now() - started < withinMs;) {
+    if (!alive(pid)) return true
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return false
+}
+
 export const processStates = (pids) => {
   const selected = new Set(pids)
   assert.ok(selected.size > 0)

@@ -2,11 +2,11 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { descendantsOf, processStates, processTable, selfReportedPid } from "./fixtures/installed-consumer/process-state.mjs"
+import { alive, descendantsOf, exited, processStates, processTable, selfReportedPid } from "./fixtures/installed-consumer/process-state.mjs"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { captureProcess, consumerEnv, redactCredentials } from "./release-process.mjs"
+import { captureProcess, consumerEnv, redactCredentials, superviseProcess } from "./release-process.mjs"
 
 const node = (source, options) => captureProcess(process.execPath, ["--eval", source], process.cwd(), options)
 
@@ -40,23 +40,20 @@ test("a probe that never terminates is killed within its budget", async () => {
   assert.match(result.output, /timed out after 100 ms/)
 })
 
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    if (error.code === "ESRCH") return false
-    throw error
-  }
-}
-
-const exited = async (pid, withinMs = 2000) => {
-  for (const started = Date.now(); Date.now() - started < withinMs;) {
-    if (!alive(pid)) return true
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  return false
-}
+test("a supervised process reads its input and keeps stdin open until the probe settles", async () => {
+  let output = ""
+  const { failure, code, signal } = await superviseProcess(process.execPath, [
+    "--eval",
+    'process.stdin.on("data", (chunk) => process.stdout.write("read " + chunk)); process.stdin.on("end", () => process.stdout.write("eof"))'
+  ], {
+    cwd: process.cwd(),
+    input: "request\n",
+    timeoutMs: 300,
+    onOutput: (chunk) => { output += chunk }
+  })
+  assert.deepEqual({ failure: failure.message, code, signal }, { failure: "Command timed out after 300 ms before its output closed", code: null, signal: null })
+  assert.equal(output, "read request\n")
+})
 
 /** Parent writes, starts one owned descendant with the given stdio, records its PID, and exits 0. */
 const parentWithDescendant = (pidFile, stdio) => `

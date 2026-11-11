@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 import { inc } from "semver"
 
 import { EXPECTED_EFFECT_VERSION as pin } from "../../../packages/repo-targets/contracts/check-single-effect-version.mjs"
+import { alive, exited } from "./fixtures/installed-consumer/process-state.mjs"
 import {
   assertEffectFamilyAccepts,
   assertEffectFamilyInstalled,
@@ -84,6 +85,51 @@ test("rejects every way a server can fail the handshake, with its stderr", async
     await assert.rejects(mcpInitialize(process.execPath, [script], { cwd: root, timeoutMs: 500 }), expected, name)
   }
   await assert.rejects(mcpInitialize(join(root, "missing-binary"), [], { cwd: root }), /MCP server could not start/)
+})
+
+/**
+ * A server that starts one long-lived process on its own stdout and stderr,
+ * records that process's pid, then runs `body` for the request.
+ */
+const serverWithDescendant = (pidFile, body) =>
+  server(`const { spawn } = require("node:child_process")
+  const { writeFileSync } = require("node:fs")
+  const descendant = spawn(process.execPath, ["--eval", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] })
+  writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid))
+  ${body}`)
+
+test("every settlement kills what the server started and closes the pipes it inherited", async (t) => {
+  const root = await scratch(t, "smthrs-mcp-descendants-")
+  await write(join(root, "package.json"), JSON.stringify({ version: "1.0.0" }))
+  const descendants = []
+  t.after(() => {
+    for (const pid of descendants) if (alive(pid)) process.kill(pid, "SIGKILL")
+  })
+  const probe = async (name, body, timeoutMs) => {
+    const pidFile = join(root, `${name}.pid`)
+    const script = join(root, "bin", `${name}.cjs`)
+    await write(script, serverWithDescendant(pidFile, body))
+    const started = Date.now()
+    const outcome = await mcpInitialize(process.execPath, [script], { cwd: root, timeoutMs })
+      .then((serverInfo) => ({ serverInfo }), (error) => ({ error }))
+    const pid = Number(await readFile(pidFile, "utf8"))
+    descendants.push(pid)
+    return { ...outcome, elapsed: Date.now() - started, pid }
+  }
+  // The reply settles the probe at once, while the descendant still holds the output open.
+  const answered = await probe(
+    "answers",
+    `process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { serverInfo: { name: "fixture", version } } }) + "\\n")`,
+    5000
+  )
+  assert.deepEqual(answered.serverInfo, { name: "fixture", version: "1.0.0" })
+  assert.ok(answered.elapsed < 5000, `settled after ${answered.elapsed} ms`)
+  assert.equal(await exited(answered.pid), true)
+  // A server that exits without answering leaves the descendant on the pipes:
+  // the deadline ends the probe, with the server's last words.
+  const gone = await probe("exits", `console.error("gone"); process.exit(1)`, 300)
+  assert.match(gone.error.message, /timed out after 300 ms[\s\S]*gone/)
+  assert.equal(await exited(gone.pid), true)
 })
 
 const effectPackage = async (directory, name, version) =>

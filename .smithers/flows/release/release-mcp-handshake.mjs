@@ -9,58 +9,67 @@
  * installed `smthrs --mcp` and read every Effect-family package that consumer
  * resolved.
  */
-import { spawn } from "node:child_process"
 import { readdirSync, readFileSync, realpathSync } from "node:fs"
 import { join } from "node:path"
 
 import { satisfies } from "semver"
 
+import { superviseProcess } from "./release-process.mjs"
+
+const initialize = `${JSON.stringify({
+  jsonrpc: "2.0",
+  id: 1,
+  method: "initialize",
+  params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "smthrs-release-smoke", version: "1" } }
+})}\n`
+
 /**
  * Sends MCP `initialize` over stdio to `command args` and returns the
- * server's `serverInfo`. Rejects when the process exits, errors, answers with
- * an error, or does not answer within `timeoutMs`; the child is always killed.
+ * server's `serverInfo`. Rejects when the server cannot start, exits, answers
+ * with an error, or does not answer within `timeoutMs`. Every outcome kills
+ * the server's whole process group and closes its pipes, so a process the
+ * server started neither outlives the probe nor keeps the release waiting.
  */
-export const mcpInitialize = (command, args, { cwd, env = process.env, timeoutMs = 120_000 } = {}) =>
-  new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] })
-    let stdout = ""
-    let stderr = ""
-    let settled = false
-    const finish = (error, value) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      child.kill("SIGKILL")
-      if (error) reject(new Error(`${error}\nstderr:\n${stderr.slice(-4000)}`))
-      else resolve(value)
-    }
-    const timer = setTimeout(() => finish(`MCP initialize timed out after ${timeoutMs} ms`), timeoutMs)
-    child.stderr.on("data", (chunk) => { stderr += chunk })
-    child.stdout.on("data", (chunk) => {
+export const mcpInitialize = async (command, args, { cwd, env = process.env, timeoutMs = 120_000 } = {}) => {
+  let stdout = ""
+  let stderr = ""
+  let serverInfo
+  const { failure, code, signal } = await superviseProcess(command, args, {
+    cwd,
+    env,
+    input: initialize,
+    timeoutMs,
+    timeoutMessage: `MCP initialize timed out after ${timeoutMs} ms`,
+    onOutput: (chunk, source, stop) => {
+      if (source === "stderr") {
+        stderr += chunk
+        return
+      }
       stdout += chunk
       for (let end = stdout.indexOf("\n"); end >= 0; end = stdout.indexOf("\n")) {
         const line = stdout.slice(0, end).trim()
         stdout = stdout.slice(end + 1)
         if (line === "") continue
         let reply
-        try { reply = JSON.parse(line) } catch { return finish(`MCP server wrote a non-JSON line: ${line.slice(0, 200)}`) }
+        try { reply = JSON.parse(line) } catch { return stop(new Error(`MCP server wrote a non-JSON line: ${line.slice(0, 200)}`)) }
         if (reply.id !== 1) continue
-        if (reply.error !== undefined) return finish(`MCP initialize failed: ${JSON.stringify(reply.error)}`)
-        const serverInfo = reply.result?.serverInfo
-        if (typeof serverInfo?.version !== "string") return finish(`MCP initialize answered without serverInfo.version: ${line.slice(0, 200)}`)
-        return finish(undefined, serverInfo)
+        if (reply.error !== undefined) return stop(new Error(`MCP initialize failed: ${JSON.stringify(reply.error)}`))
+        if (typeof reply.result?.serverInfo?.version !== "string") {
+          return stop(new Error(`MCP initialize answered without serverInfo.version: ${line.slice(0, 200)}`))
+        }
+        serverInfo = reply.result.serverInfo
+        return stop()
       }
-    })
-    child.once("error", (error) => finish(`MCP server could not start: ${error.message}`))
-    child.once("exit", (code, signal) => finish(`MCP server exited with ${code ?? signal} before answering initialize`))
-    child.stdin.on("error", () => {})
-    child.stdin.write(`${JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "smthrs-release-smoke", version: "1" } }
-    })}\n`)
+    }
   })
+  if (serverInfo !== undefined) return serverInfo
+  // A start failure is Node's error for the spawn syscall; every other failure
+  // is the deadline's or this probe's, already worded.
+  const reason = failure === undefined
+    ? `MCP server exited with ${code ?? signal} before answering initialize`
+    : failure.syscall === undefined ? failure.message : `MCP server could not start: ${failure.message}`
+  throw new Error(`${reason}\nstderr:\n${stderr.slice(-4000)}`)
+}
 
 const isEffectFamily = (name) => name === "effect" || name.startsWith("@effect/")
 

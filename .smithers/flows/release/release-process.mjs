@@ -52,18 +52,21 @@ export const redactCredentials = (text, env = process.env) => {
 /**
  * Runs one owned process group until stdout and stderr close, a deadline
  * expires, or the caller stops it. Every settlement kills the whole group and
- * destroys both pipes, so a descendant that inherited the output pipes can
- * neither keep the caller waiting nor outlive the probe.
+ * destroys every pipe, so a descendant that inherited them can neither keep
+ * the caller waiting nor outlive the probe.
  *
+ * `input`, when given, is written to the process's stdin, which then stays
+ * open until settlement: a stdio server exits at end of input, and a probe
+ * that sent a request is waiting for the answer. Without it stdin is closed.
  * `onOutput(chunk, source, stop)` receives each stdout/stderr chunk until settlement.
  * Resolves `{ failure, code, signal }`; `failure` is set when the deadline
- * expired, the caller stopped the run, or the process could not start.
+ * expired, the caller stopped the run with an error, or the process could not start.
  */
-export const superviseProcess = (command, args, { cwd, env = process.env, timeoutMs, timeoutMessage = `Command timed out after ${timeoutMs} ms before its output closed`, onOutput = () => {} }) =>
+export const superviseProcess = (command, args, { cwd, env = process.env, input, timeoutMs, timeoutMessage = `Command timed out after ${timeoutMs} ms before its output closed`, onOutput = () => {} }) =>
   new Promise((resolve) => {
     let child
     try {
-      child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: posix })
+      child = spawn(command, args, { cwd, env, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: posix })
     } catch (error) {
       resolve({ failure: error, code: null, signal: null })
       return
@@ -82,6 +85,7 @@ export const superviseProcess = (command, args, { cwd, env = process.env, timeou
           if (error.code !== "ESRCH") failure ??= error
         }
       }
+      child.stdin?.destroy()
       child.stdout.destroy()
       child.stderr.destroy()
       resolve({ failure, code, signal })
@@ -94,6 +98,12 @@ export const superviseProcess = (command, args, { cwd, env = process.env, timeou
     for (const source of ["stdout", "stderr"]) child[source].on("data", (chunk) => { if (!settled) onOutput(chunk, source, stop) })
     child.once("error", stop)
     child.once("close", settle)
+    if (input !== undefined) {
+      // A process that ends before reading its input breaks the pipe; its exit
+      // is the settlement that reports it.
+      child.stdin.on("error", () => {})
+      child.stdin.write(input)
+    }
   })
 
 /**
