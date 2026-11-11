@@ -80,6 +80,11 @@ queue refuses a reused id whose content changed. An alert stamped with the
 reading time would become permanently undeliverable the moment one tick was
 refused and time moved on.
 
+The policy is the one input that is not journal time. When an operator changes a
+rule's severity, owner, runbook, or delay between a refused page and its retry,
+the queue keeps the alert it first admitted, and the retry still pages, with the
+fields of the policy now in force.
+
 ## The delay is the policy
 
 `Alerts.Rule.afterMs` is how long a condition must last before it is worth

@@ -367,9 +367,18 @@ export const layer = (
             }
             // Raised unchanged: a queue that rejects the admission outright is
             // not the journal failing, and calling it `sink_failed` would send
-            // an operator looking at the webhook.
-            const receipt = yield* queue.admit(runId, alertNotification(alert))
-            if (receipt.decision === "rejected-full") {
+            // an operator looking at the webhook. The one exception is this
+            // alert's own id admitted earlier with other content: the policy
+            // that stamps severity, owner, runbook and `firedAt` changed
+            // between a refused page and its retry. The run already holds the
+            // alert, so the page still goes out, under the policy now in force.
+            const receipt = yield* queue.admit(runId, alertNotification(alert)).pipe(
+              Effect.catchIf(
+                (error) => error.code === "notification_id_reused" && error.notificationId === alertId(alert),
+                () => Effect.succeed(undefined)
+              )
+            )
+            if (receipt?.decision === "rejected-full") {
               // The alert has nowhere durable to sit, so paging about it would
               // tell an operator about something the run will never read.
               yield* record(failedEventType, alert, "refused", { code: "notification_full" })

@@ -10,7 +10,7 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Cause, Duration, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Logger, References, Tracer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as HttpClient from "effect/http/HttpClient"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
@@ -517,6 +517,53 @@ describe("Alerts.layer over a real journal", () => {
     expect(observed.retried.delivered).toHaveLength(1)
     expect(observed.delivered).toBe(1)
     expect(sink.sent).toHaveLength(1)
+  })
+
+  it("pages an alert a failed tick admitted after the policy behind it changed", async () => {
+    const sink = controllableSink()
+    const changed: Alerts.Policy = {
+      defaults: { severity: "critical", owner: "platform" },
+      rules: {
+        "waiting-approval": { afterMs: 90_000, runbook: "https://runbook/approvals/v2" },
+        stalled: { afterMs: 30_000 }
+      }
+    }
+    const observed = await Effect.runPromise(
+      Effect.gen(function*() {
+        const alerts = yield* Alerts.AlertRuntime
+        yield* parkForApproval
+        yield* TestClock.adjust("2 minutes")
+        sink.set("fail")
+        const refused = yield* alerts.tick(runId)
+        // An operator edits the rule and redeploys while the pager is down. The
+        // queue still holds the alert under its first policy's content.
+        const redeployed = Context.get(yield* Layer.build(Alerts.layer(changed)), Alerts.AlertRuntime)
+        yield* Effect.flatMap(Journal.Journal, (journal) =>
+          journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make(runId),
+              sourceId: JournalEvent.SourceId.make("/monitor"),
+              eventType: "control.monitor.beat",
+              payload: { runId, health: "stalled" }
+            })
+          ))
+        yield* TestClock.adjust("1 minute")
+        sink.set("ok")
+        const retried = yield* redeployed.tick(runId)
+        return { refused, retried, delivered: yield* countEntries(Alerts.deliveredEventType) }
+      }).pipe(Effect.provide(stack(sink.layer)), Effect.scoped, Effect.orDie)
+    )
+
+    expect(observed.refused.failed.map((alert) => alert.condition)).toEqual(["waiting-approval"])
+    // The retry pages the stuck approval under the policy now in force, and the
+    // alert raised beside it in the same tick goes out too.
+    expect(observed.retried.delivered.map((alert) => alert.condition).sort()).toEqual(["stalled", "waiting-approval"])
+    expect(sink.sent.find((alert) => alert.condition === "waiting-approval")).toMatchObject({
+      owner: "platform",
+      severity: "critical",
+      runbook: "https://runbook/approvals/v2"
+    })
+    expect(observed.delivered).toBe(2)
   })
 })
 
