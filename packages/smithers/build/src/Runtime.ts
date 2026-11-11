@@ -236,12 +236,10 @@ const comparators = [">=", "<=", ">", "<", "="] as const
 const numericParts = (value: string): ReadonlyArray<number> | undefined => {
   const token = value.trim()
   if (!versionToken.test(token)) return undefined
-  const core = token.replace(/^v/, "").split(/[-+]/)[0]
-  if (core === undefined || core === "") return undefined
+  const core = token.replace(/^v/, "").split(/[-+]/)[0]!
   const parts = core.split(".")
   const numbers: Array<number> = []
   for (const part of parts) {
-    if (!/^\d+$/.test(part)) return undefined
     const parsed = Number(part)
     if (!Number.isSafeInteger(parsed)) return undefined
     numbers.push(parsed)
@@ -283,7 +281,6 @@ const compare = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): num
 const comparePrerelease = (left: string, right: string): number => {
   if (left === right) return 0
   if (left === "") return 1
-  if (right === "") return -1
   const a = left.split(".")
   const b = right.split(".")
   for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
@@ -566,7 +563,7 @@ const measureVersion = (
       // Node prints `v24.9.0` and Bun prints `1.3.0`. Taking the first
       // version-shaped token on the first line covers both without a
       // per-runtime parser.
-      const first = output.split("\n", 1)[0] ?? ""
+      const first = output.split("\n", 1)[0]!
       const token = first.trim().split(/\s+/).find((word) => versionToken.test(word))
       return token === undefined
         ? Effect.fail(

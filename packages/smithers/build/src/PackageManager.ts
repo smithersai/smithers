@@ -1663,7 +1663,7 @@ const parseNpmrc = (text: string): Array<readonly [name: string, value: string]>
     if (line.length === 0 || /^\s*[;#]/.test(line)) continue
     const match = /^\[([^\]]*)\]$|^([^=]+)(=(.*))?$/.exec(line)
     if (match === null || match[2] === undefined) continue
-    settings.push([iniValue(match[2]), match[3] === undefined ? "true" : iniValue(match[4] ?? "")])
+    settings.push([iniValue(match[2]), match[3] === undefined ? "true" : iniValue(match[4]!)])
   }
   return settings
 }

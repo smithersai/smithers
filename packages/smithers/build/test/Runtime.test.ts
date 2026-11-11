@@ -697,3 +697,31 @@ describe("Runtime measurement", () => {
     })
   })
 })
+
+describe("Runtime version boundaries", () => {
+  it("zero-pads a shorter measured version and compares equivalent numeric prerelease identifiers", () => {
+    expect(Runtime.satisfies("1.0.0", "1")).toBe(true)
+    expect(Runtime.satisfies(">=1.0.1", "1")).toBe(false)
+    expect(Runtime.satisfies(">=1.0.0-rc.02", "1.0.0-rc.2")).toBe(true)
+    expect(Runtime.satisfies("<1.0.0-rc.1.alpha", "1.0.0-rc.1")).toBe(true)
+    expect(Runtime.satisfies(">1.0.0-rc.1", "1.0.0-rc.1.alpha")).toBe(true)
+    expect(Runtime.satisfies("=1.0.0-rc.02", "1.0.0-rc.2")).toBe(false)
+  })
+
+  it("refuses invalid UTF-8 from a successful probe", async () => {
+    await withFixture(async (root) => {
+      const executable = NodePath.join(root, "invalid.mjs")
+      await writeExecutable(executable, "process.stdout.write(Buffer.from([0xff]))")
+      const error = await refusalOf(
+        Runtime.make("node", {
+          requirement: "1.0.0",
+          platform,
+          executable
+        }).pipe(Effect.flatMap((service) => service.version), Effect.provide(ExecutableFixture.layer))
+      )
+      expect(error.code).toBe("probe_failed")
+      expect(error.message).toContain("stdout is not valid UTF-8")
+      expect(error.cause?.name).toBe("Error")
+    })
+  })
+})

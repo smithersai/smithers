@@ -114,6 +114,83 @@ const packageJsonDigest = (root: string) =>
   )
 
 describe("Install", () => {
+  it("measures a Bun manager's own lockfile without pnpm-only configuration", async () => {
+    await withFixture(async (root) => {
+      await Fs.writeFile(NodePath.join(root, "bun.lock"), "bun lockfile")
+      await Fs.writeFile(NodePath.join(root, ".pnpmfile.cjs"), "throw new Error()")
+      await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), "packages: []")
+      const content = await Effect.runPromise(
+        Install.executeMeasure().pipe(
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
+          Effect.provideService(
+            PackageManager.PackageManager,
+            managerService({
+              root,
+              evidence: await packageJsonDigest(root),
+              name: "bun"
+            })
+          )
+        )
+      )
+      expect(content.lockfile.path).toBe("bun.lock")
+      expect(content.lockfile.digest).toMatch(/^[0-9a-f]{64}$/)
+      expect(content.pnpmfile).toBeNull()
+      expect(content.workspace).toBeNull()
+    })
+  })
+
+  it("links content with npmrc, hook and workspace identities intact", async () => {
+    await withFixture(async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), "registry=https://registry.example/")
+      await Fs.writeFile(NodePath.join(root, ".pnpmfile.mjs"), "export default {}")
+      await Fs.writeFile(NodePath.join(root, "pnpm-workspace.yaml"), "packages: []")
+      const manager = managerService({ root, evidence: await packageJsonDigest(root) })
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const content = yield* Install.executeMeasure()
+          expect(content.npmrc?.path).toBe(".npmrc")
+          const store = yield* Install.executeFetch({ content })
+          return yield* Install.executeLink({ content, store })
+        }).pipe(
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
+          Effect.provideService(PackageManager.PackageManager, manager),
+          Effect.provideService(Runtime.Runtime, runtimeService())
+        )
+      )
+      expect(result.linked).toBe(true)
+      expect(result.manifest).toMatch(/^[0-9a-f]{64}$/)
+    })
+  })
+
+  it("names removed optional inputs and missing recorded fields in drift refusals", async () => {
+    await withFixture(async (root) => {
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), "registry=https://registry.example/")
+      const manager = managerService({ root, evidence: await packageJsonDigest(root) })
+      const run = <A, E>(
+        effect: Effect.Effect<
+          A,
+          E,
+          PackageManager.PackageManager | Runtime.Runtime | FileSystem.FileSystem | EffectDigest.Digest
+        >
+      ) =>
+        Effect.runPromise(effect.pipe(
+          Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
+          Effect.provideService(PackageManager.PackageManager, manager),
+          Effect.provideService(Runtime.Runtime, runtimeService())
+        ))
+      const content = await run(Install.executeMeasure())
+      await Fs.rm(NodePath.join(root, ".npmrc"))
+      const removed = await run(Effect.flip(Install.executeFetch({ content })))
+      expect(removed.code).toBe("input_drift")
+      expect(removed.message).toContain(".npmrc")
+      const absent = await run(Effect.flip(Install.executeFetch({
+        content: { ...content, npmrc: undefined } as never
+      })))
+      expect(absent.code).toBe("input_drift")
+      expect(absent.message).toContain("npmrc")
+    })
+  })
+
   it("refuses an optional input it cannot inspect while measuring", async () => {
     await withFixture(async (root) => {
       const real = await Effect.runPromise(

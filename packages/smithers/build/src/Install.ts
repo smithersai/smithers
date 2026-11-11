@@ -215,7 +215,7 @@ export const Measure = Action.make("smithers-build/install/measure", {
 const makeFetch = <Tag extends string>(
   name: Tag,
   lockfile: string,
-  manager: PackageManager.Name
+  manager: "pnpm"
 ) =>
   Action.make(name, {
     payload: {
@@ -226,16 +226,12 @@ const makeFetch = <Tag extends string>(
     tier: "sealed"
   })
     .annotate(Flow.EffectsDeclaration, {
-      reads: manager === "pnpm"
-        ? [lockfile, ".npmrc", ...PackageManager.pnpmfileNames, "pnpm-workspace.yaml"]
-        : [lockfile, ".npmrc"],
+      reads: [lockfile, ".npmrc", ...PackageManager.pnpmfileNames, "pnpm-workspace.yaml"],
       writes: [
         { _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` },
         // `pnpm fetch` also writes the virtual store (`node_modules/.pnpm`) and its
         // `.modules.yaml` state file beside it.
-        ...(manager === "pnpm"
-          ? [{ _tag: "Glob" as const, include: ["**/node_modules/.pnpm/**", "**/node_modules/.modules.yaml"] as const }]
-          : [])
+        { _tag: "Glob", include: ["**/node_modules/.pnpm/**", "**/node_modules/.modules.yaml"] }
       ],
       boundaryMode: "expected"
     })
