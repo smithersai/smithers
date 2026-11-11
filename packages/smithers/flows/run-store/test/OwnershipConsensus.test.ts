@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import type { DurableWriter } from "@smthrs/database"
-import { DatabaseError } from "@smthrs/database/DurableWriter"
+import { DatabaseError, DurableWriter as Writer, make as makeWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Consensus from "@smthrs/journal/Consensus"
 import { Journal } from "@smthrs/journal/Journal"
@@ -24,6 +24,7 @@ import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import { Clock, Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
 import { heartbeatStaleAfter } from "../src/Heartbeat.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -45,6 +46,10 @@ const evidence = (
   expectedOwner,
   checkedAtMs,
   kind: expectedOwner.hostId === claimant.hostId ? "same-host-pid-dead" : "cross-host-unreachable-stale"
+})
+
+const busy = new SqlError.SqlError({
+  reason: new SqlError.LockTimeoutError({ cause: { code: "SQLITE_BUSY", message: "busy" } })
 })
 
 type Strategy = Layer.Layer<Consensus.Consensus, never, DurableWriter.DurableWriter | SqlClient.SqlClient>
@@ -399,6 +404,79 @@ const suite = (name: string, strategy: Strategy) => {
           claimedAtMs: nowMs
         })
       })))
+
+    it.effect("leaves the run claimable after a claim, claimAndOwn, steal, or activate rolls back", () =>
+      run(Effect.gen(function*() {
+        const store = yield* RunStore
+        const journal = yield* Journal
+        // The grant succeeds, then the enclosing transaction rolls back.
+        const rolledBack = <A, E>(write: Effect.Effect<A, E>, granted: A) =>
+          Effect.gen(function*() {
+            const exit = yield* Effect.exit(journal.transact(Effect.gen(function*() {
+              expect(yield* write).toEqual(granted)
+              return yield* Effect.fail("rolled back")
+            })))
+            expect(exit._tag).toBe("Failure")
+          })
+
+        yield* store.create("rollback-claim", "{}")
+        yield* rolledBack(store.claim("rollback-claim", pending, ownerA, 0), { _tag: "Claimed", claimedAtMs: 0 })
+        expect(yield* store.claim("rollback-claim", pending, ownerB, 0)).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+
+        yield* store.create("rollback-own", "{}")
+        yield* rolledBack(store.claimAndOwn("rollback-own", pending, ownerA, 0), { _tag: "Activated" })
+        expect(yield* holds("rollback-own", ownerA)).toBe(false)
+        expect(yield* store.claimAndOwn("rollback-own", pending, ownerB, 0)).toEqual({ _tag: "Activated" })
+
+        yield* store.create("rollback-activate", "{}")
+        expect(yield* store.claim("rollback-activate", pending, ownerA, 0)).toEqual({ _tag: "Claimed", claimedAtMs: 0 })
+        yield* rolledBack(store.activate("rollback-activate", ownerA, 0, pending), { _tag: "Activated" })
+        expect(yield* holds("rollback-activate", ownerA)).toBe(false)
+        // The claim the rollback restored still activates.
+        expect(yield* store.activate("rollback-activate", ownerA, 0, pending)).toEqual({ _tag: "Activated" })
+
+        yield* store.create("rollback-steal", "{}")
+        expect(yield* store.claimAndOwn("rollback-steal", pending, ownerA, 0)).toEqual({ _tag: "Activated" })
+        yield* TestClock.adjust(Duration.toMillis(heartbeatStaleAfter) + 1)
+        const nowMs = yield* Clock.currentTimeMillis
+        const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
+        yield* rolledBack(
+          store.steal("rollback-steal", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs)),
+          { _tag: "Claimed", claimedAtMs: nowMs }
+        )
+        expect(yield* store.steal("rollback-steal", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))).toEqual({
+          _tag: "Claimed",
+          claimedAtMs: nowMs
+        })
+      })))
+
+    it.effect("claimAndOwn replayed after a busy conflict is granted by the replay", () =>
+      run(Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* (yield* RunStore).create("busy-replay", "{}")
+        // The run row's activation fails once with a busy conflict after the
+        // strategy granted the lease, so the writer replays the whole body.
+        let conflicts = 0
+        const injected = new Proxy(sql, {
+          apply(target, thisArg, args) {
+            const statement = Reflect.apply(target, thisArg, args)
+            return Array.isArray(args[0]) && args[0].join("").includes("started_at_ms = COALESCE(started_at_ms")
+              ? Effect.suspend(() => ++conflicts === 1 ? Effect.fail(busy) : statement)
+              : statement
+          }
+        })
+        const store = yield* RunStoreLive.make.pipe(
+          Effect.provideService(SqlClient.SqlClient, injected),
+          Effect.provideService(Writer, makeWriter(sql, { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 }))
+        )
+        const fiber = yield* store.claimAndOwn("busy-replay", pending, ownerA, 0).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        while (fiber.pollUnsafe() === undefined) yield* TestClock.adjust(1)
+        expect(yield* Fiber.join(fiber)).toEqual({ _tag: "Activated" })
+        expect(conflicts).toBe(2)
+        expect(yield* holds("busy-replay", ownerA)).toBe(true)
+      })))
   })
 }
 
@@ -449,18 +527,31 @@ describe("SqlConsensus leases share the ownership write's transaction", () => {
 describe("the strategy is authoritative when the materialization disagrees", () => {
   const run = withStack(Consensus.layerLocal)
 
-  it.effect("claim and claimAndOwn report the row-classified loss when the lease refuses the grant", () =>
+  it.effect("claim and claimAndOwn report the strategy's reason when the lease refuses the grant", () =>
     run(Effect.gen(function*() {
       const store = yield* RunStore
       const consensus = yield* Consensus.Consensus
       yield* store.create("run-lease-claimed", "{}")
       // The lease is taken behind the store's back, so the row still admits
-      // the claim the strategy refuses.
+      // the claim the strategy refuses. The snapshot did not change, so
+      // SnapshotChanged would send the caller to re-read and retry forever.
       expect((yield* consensus.claim("run-lease-claimed", ownerB, 0))._tag).toBe("Claimed")
-      expect(yield* store.claim("run-lease-claimed", pending, ownerA, 0)).toEqual({ _tag: "SnapshotChanged" })
+      expect(yield* store.claim("run-lease-claimed", pending, ownerA, 0)).toEqual({ _tag: "AlreadyClaimed" })
       expect(yield* store.claimAndOwn("run-lease-claimed", pending, ownerA, 0)).toEqual({
-        _tag: "SnapshotChanged"
+        _tag: "AlreadyClaimed"
       })
+      expect((yield* consensus.activate("run-lease-claimed", ownerB, 0, 0))._tag).toBe("Activated")
+      expect(yield* store.claim("run-lease-claimed", pending, ownerA, 0)).toEqual({ _tag: "HeartbeatFresh" })
+      expect(yield* store.claimAndOwn("run-lease-claimed", pending, ownerA, 0)).toEqual({
+        _tag: "HeartbeatFresh"
+      })
+    })))
+
+  it.effect("claim falls back to the row's classification for a refusal that names no lease state", () =>
+    withStack(Consensus.layerNoop())(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* store.create("run-no-strategy", "{}")
+      expect(yield* store.claim("run-no-strategy", pending, ownerA, 0)).toEqual({ _tag: "SnapshotChanged" })
     })))
 
   it.effect("claimAndOwn releases its fresh grant when the strategy revokes the activation", () =>
@@ -509,7 +600,7 @@ describe("the strategy is authoritative when the materialization disagrees", () 
       expect((yield* consensus.claim("run-moved", ownerB, 1))._tag).toBe("Claimed")
     })))
 
-  it.effect("steal reports the row-classified loss when the lease still records a live owner", () =>
+  it.effect("steal reports HeartbeatFresh when the lease still records a live owner", () =>
     run(Effect.gen(function*() {
       const store = yield* RunStore
       const consensus = yield* Consensus.Consensus
@@ -522,11 +613,11 @@ describe("the strategy is authoritative when the materialization disagrees", () 
       expect((yield* consensus.heartbeat("run-live-lease", ownerA, nowMs))._tag).toBe("Renewed")
       const stale: RunSnapshot = { status: "running", owner: ownerA, heartbeatAtMs: 0 }
       expect(yield* store.steal("run-live-lease", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))).toEqual({
-        _tag: "SnapshotChanged"
+        _tag: "HeartbeatFresh"
       })
       expect(
         yield* store.claimAndOwn("run-live-lease", stale, ownerB, nowMs, evidence(ownerA, ownerB, nowMs))
-      ).toEqual({ _tag: "SnapshotChanged" })
+      ).toEqual({ _tag: "HeartbeatFresh" })
     })))
 
   it.effect("recoverClaim reports ClaimChanged when the lease's claim moved on", () =>

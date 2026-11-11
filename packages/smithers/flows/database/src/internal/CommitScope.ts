@@ -17,6 +17,7 @@ export interface CommitScope {
   readonly key: SqlClient.SqlClient["transactionService"]
   readonly transaction: SqlClient.TransactionConnection.Service
   readonly effects: Array<Effect.Effect<void>>
+  readonly undos: Array<Effect.Effect<void>>
   open: boolean
 }
 
@@ -45,6 +46,20 @@ export const matches = (
   scope !== undefined && scope.open && scope.key === key &&
   scope.transaction[0] === transaction[0] && scope.transaction[1] === transaction[1]
 
+const register = (
+  pick: (scope: CommitScope) => Array<Effect.Effect<void>>,
+  effect: Effect.Effect<void>,
+  client: SqlClient.SqlClient | undefined
+): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    const scope = yield* Current
+    if (scope === undefined || (client !== undefined && scope.key !== client.transactionService)) return false
+    const transaction = yield* Effect.serviceOption(scope.key)
+    if (Option.isNone(transaction) || !matches(scope, scope.key, transaction.value)) return false
+    pick(scope).push(effect)
+    return true
+  })
+
 /**
  * Registers optional publication only when the current transaction is owned.
  *
@@ -54,12 +69,16 @@ export const matches = (
 export const afterCommit = (
   effect: Effect.Effect<void>,
   client?: SqlClient.SqlClient
-): Effect.Effect<boolean> =>
-  Effect.gen(function*() {
-    const scope = yield* Current
-    if (scope === undefined || (client !== undefined && scope.key !== client.transactionService)) return false
-    const transaction = yield* Effect.serviceOption(scope.key)
-    if (Option.isNone(transaction) || !matches(scope, scope.key, transaction.value)) return false
-    scope.effects.push(effect)
-    return true
-  })
+): Effect.Effect<boolean> => register((scope) => scope.effects, effect, client)
+
+/**
+ * Registers an undo of process-local state only when the current transaction
+ * is owned. It runs when the registering attempt or savepoint does not commit.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const afterRollback = (
+  undo: Effect.Effect<void>,
+  client?: SqlClient.SqlClient
+): Effect.Effect<boolean> => register((scope) => scope.undos, undo, client)

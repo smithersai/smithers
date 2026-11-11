@@ -12,6 +12,10 @@
 
 ### Added
 
+- `DurableWriter.afterRollback(undo, client?)` registers an undo of
+  process-local state that runs when the managed write does not commit: a
+  failed or interrupted body, a rejected COMMIT, or an attempt the writer
+  retries. A successful savepoint hands its undos to its parent.
 - `PostgresDatabase` is exported from the root entry point, with
   `UnsupportedDatabase`, `UnsupportedDatabaseCode` and `isUnsupportedDatabase`
   re-exported on it. The `postgres/PostgresDatabase` subpath is the same module.

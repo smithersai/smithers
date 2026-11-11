@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `Consensus.layerLocal` undoes a lease change when the write that made it
+  rolls back. A claim whose `RunStore` write failed, was interrupted, or was
+  replayed after a busy conflict left the in-memory lease claimed over a free
+  run row, and every later claim of that run was refused until the process
+  restarted. Each change now registers its undo with
+  `DurableWriter.afterRollback`.
 - `Service.withPermit` no longer interrupts work when one lease renewal takes
   longer than a second or the strategy returns a transient storage error. Misses
   are retried until the lease has gone unconfirmed for `heartbeatWriteTolerance`,

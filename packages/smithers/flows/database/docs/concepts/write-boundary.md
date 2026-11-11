@@ -98,6 +98,21 @@ Publication is uninterruptible, so updates must be short and non-blocking.
 This hook is not a durable outbox: a crash after SQL commits can lose local
 publication. External deliveries need their own durable records and retries.
 
+## Process-local state rolls back with the write
+
+Some state must change inside the transaction because the rest of the body
+reads it, and must still roll back with the SQL. `Consensus.layerLocal` keeps
+run leases in memory this way: a claim grants the lease, and the same write
+records it on the run row. Change the state in the body, then register its undo
+with `DurableWriter.afterRollback(undo)`. The writer runs the undo when the
+attempt does not commit, including a rejected COMMIT, an interruption, and an
+attempt it retries, before the retry replays the body. Undos run newest first.
+A caught savepoint failure undoes only that savepoint; a successful savepoint's
+undos run if its parent rolls back.
+
+Like `afterCommit`, the helper returns `false` outside a managed write. Such a
+change is not undone by a raw transaction's rollback.
+
 ## Retry classification is domain policy
 
 Classification is dialect blind by construction. `DurableWriter.make` accepts

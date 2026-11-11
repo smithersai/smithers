@@ -22,7 +22,9 @@ const retryTransaction = SqlClient.TransactionConnection(-1)
 const retrySql = {
   transactionService: retryTransaction,
   withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Effect.provideService(effect, retryTransaction, [undefined as never, 0])
+    Effect.provideService(effect, retryTransaction, [undefined as never, 0]),
+  // A client without Effect SQL transactions runs commit callbacks at once.
+  afterCommit: <R>(effect: Effect.Effect<void, never, R>) => effect
 } as SqlClient.SqlClient
 
 const metricRegistry = new Map()

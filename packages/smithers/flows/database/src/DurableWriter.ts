@@ -178,6 +178,30 @@ export class DurableWriter extends Context.Service<DurableWriter, Service>()("@s
 export const afterCommit = CommitScope.afterCommit
 
 /**
+ * Schedules a non-failing undo of process-local state, run when the managed
+ * write that registered it does not commit.
+ *
+ * A store whose state lives in process memory beside the database (an
+ * in-memory lease, say) changes that state inside the write and registers the
+ * undo here, so the two roll back together. The undo runs when the
+ * registering attempt fails or is interrupted, including a rejected COMMIT and
+ * an attempt the writer retries, before the retry replays the body. An
+ * interruption that lands after COMMIT does not undo a committed write. A
+ * savepoint that fails runs only its own undos; one that succeeds hands them
+ * to its parent, which runs them if it rolls back. A committed write drops
+ * them. Undos run newest first and uninterruptibly; keep them short.
+ *
+ * Returns false without registering outside a managed write, including raw SQL
+ * transactions and savepoints whose rollback this writer does not own: the
+ * change then stands even if that transaction rolls back. Pass the store's SQL
+ * client when the state belongs to a particular database.
+ *
+ * @category transactions
+ * @since 1.0.0
+ */
+export const afterRollback = CommitScope.afterRollback
+
+/**
  * Converts an Effect SQL error into the package's stable error vocabulary.
  *
  * The category comes from `WriteRetry.classifySqlError`, the same call the
@@ -268,6 +292,13 @@ export const affectedRows = (raw: unknown): Effect.Effect<number, DatabaseError>
     }
   })
 
+// Every undo runs even when an earlier one dies; the defects join the
+// write's failure.
+const runUndos = (undos: ReadonlyArray<Effect.Effect<void>>): Effect.Effect<void> =>
+  Effect.forEach([...undos].reverse(), (undo) => Effect.exit(undo)).pipe(
+    Effect.flatMap((exits) => Exit.asVoidAll(exits))
+  )
+
 /**
  * Builds the durable writer around an existing SQL client.
  *
@@ -295,6 +326,8 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
         // list so a failure caught by its parent cannot publish rolled-back data.
         const attempt = Effect.suspend(() => {
           const effects: Array<Effect.Effect<void>> = []
+          const undos: Array<Effect.Effect<void>> = []
+          let committed = false
           let scope: CommitScope.CommitScope | undefined
           let bodyStarted = false
           let bodySucceeded = false
@@ -304,7 +337,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             Effect.flatMap(Effect.serviceOption(sql.transactionService), (transaction) => {
               bodyStarted = true
               scope = managed && Option.isSome(transaction)
-                ? { key: sql.transactionService, transaction: transaction.value, effects, open: true }
+                ? { key: sql.transactionService, transaction: transaction.value, effects, undos, open: true }
                 : undefined
               return Effect.provideService(effect, CommitScope.Current, scope).pipe(
                 Effect.provideService(WriteLock.Requested, undefined),
@@ -313,6 +346,13 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
                   Effect.sync(() => {
                     bodySucceeded = true
                   })
+                ),
+                // Effect SQL runs this after COMMIT, even for an interrupted
+                // fiber. A savepoint's would wait for the outer commit.
+                Effect.tap(() =>
+                  nested ? Effect.void : sql.afterCommit(Effect.sync(() => {
+                    committed = true
+                  }))
                 )
               )
             })
@@ -339,7 +379,25 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
             Effect.ensuring(Effect.sync(() => {
               if (scope !== undefined) scope.open = false
             })),
-            Effect.map((value) => ({ value, effects }))
+            // The attempt did not commit: its SQL rolled back, so the
+            // process-local state it changed is restored, newest change
+            // first, before a retry replays the body or the failure escapes.
+            // An interruption held through COMMIT or a savepoint's release
+            // lands after it. A committed attempt keeps its changes, and a
+            // released savepoint's undos still roll back with its parent.
+            // A body that succeeded ended synchronously in Effect SQL's
+            // finalizer, which commits or releases it.
+            Effect.onError((cause) => {
+              if (!Cause.hasInterruptsOnly(cause)) return runUndos(undos)
+              if (!nested && committed) return Effect.void
+              if (nested && bodySucceeded) {
+                return Effect.sync(() => {
+                  if (scope !== undefined) parent!.undos.push(...undos)
+                })
+              }
+              return runUndos(undos)
+            }),
+            Effect.map((value) => ({ value, effects, undos }))
           )
         })
         return yield* Effect.uninterruptibleMask((restore) => {
@@ -355,10 +413,14 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
           )
           return transaction.pipe(
             Effect.catchCause((cause) => Effect.failCause(normalizeSqlErrors(cause))),
-            Effect.flatMap(({ value, effects }) =>
+            Effect.flatMap(({ value, effects, undos }) =>
               (nested
                 ? Effect.sync(() => {
-                  if (managed) parent!.effects.push(...effects)
+                  // A released savepoint still rolls back with its parent.
+                  if (managed) {
+                    parent!.effects.push(...effects)
+                    parent!.undos.push(...undos)
+                  }
                 })
                 // A defective update must not suppress the other committed
                 // publications. Retain every failure, but never retry SQL.

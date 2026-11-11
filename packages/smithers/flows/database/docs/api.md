@@ -103,6 +103,27 @@ owned by the writer, including raw SQL transactions/savepoints. Skip optional
 cache publication in that case; never publish uncommitted data as a fallback.
 See [commit ownership](./concepts/write-boundary.md#process-local-state-follows-the-outer-commit).
 
+### afterRollback
+
+```ts
+const afterRollback: (undo: Effect.Effect<void>, client?: SqlClient.SqlClient) => Effect.Effect<boolean>
+```
+
+Registers a short, non-failing undo of process-local state inside a managed
+`write`. It runs when the registering attempt does not commit: a failed or
+interrupted body, a rejected COMMIT, or an attempt the writer retries, before
+the retry replays the body. An interruption that lands after COMMIT does not
+undo a committed write. A failed savepoint runs only its own undos; a
+successful one hands them to its parent. A committed write drops them. Undos run
+newest first and uninterruptibly; a defect in one does not skip the others and
+joins the write's failure.
+
+`client` scopes the registration as it does for `afterCommit`. Returns `false`
+without registering when the current transaction is not owned by the writer,
+including raw SQL transactions/savepoints; the change then stands even if that
+transaction rolls back.
+See [rolling back process-local state](./concepts/write-boundary.md#process-local-state-rolls-back-with-the-write).
+
 ### make
 
 ```ts

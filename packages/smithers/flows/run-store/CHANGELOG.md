@@ -26,6 +26,11 @@
 
 ### Fixed
 
+- `claim`, `claimAndOwn` and `steal` classify a grant the consensus strategy
+  refused from the strategy's reason instead of the unchanged row: a held
+  lease claim reports `AlreadyClaimed` and a held or live owner lease reports
+  `HeartbeatFresh`. They reported `SnapshotChanged`, which sent a caller that
+  re-reads and retries into the same refusal.
 - Fixed the CommonJS build of the migration set. `migrations/0001_initial`
   now exports `initial` and `migrations/0002_lineage` exports `lineage` as
   named bindings, and every importer reads them by name, because esbuild's

@@ -36,6 +36,13 @@ describe("docs/api.md", () => {
     for (const parameter of parameters) expect(signature).toContain(parameter)
   })
 
+  it("documents every afterRollback parameter", () => {
+    const signature = documented(read("../docs/api.md"), "afterRollback")
+    const parameters = declared(read("../src/internal/CommitScope.ts"), "afterRollback")
+    expect(parameters.length).toBe(2)
+    for (const parameter of parameters) expect(signature).toContain(parameter)
+  })
+
   // `Metric.Counter` needs its input type argument, so the bare name does not
   // compile when it is copied out of the page.
   it("documents the retry counter with its input type", () => {

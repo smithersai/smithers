@@ -30,6 +30,7 @@
  * @since 1.0.0
  */
 
+import { afterRollback } from "@smthrs/database/DurableWriter"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
@@ -574,6 +575,23 @@ interface LocalLease {
   claim: { readonly id: OwnerId; readonly claimedAtMs: number } | undefined
 }
 
+const snapshot = (lease: LocalLease | undefined): LocalLease | undefined =>
+  lease && {
+    owner: lease.owner && { ...lease.owner },
+    claim: lease.claim && { ...lease.claim }
+  }
+
+const sameLease = (left: LocalLease | undefined, right: LocalLease | undefined): boolean =>
+  left === undefined || right === undefined
+    ? left === right
+    : (left.owner === undefined || right.owner === undefined
+      ? left.owner === right.owner
+      : sameOwner(left.owner.id, right.owner.id) && left.owner.grantedAtMs === right.owner.grantedAtMs &&
+        left.owner.heartbeatAtMs === right.owner.heartbeatAtMs) &&
+      (left.claim === undefined || right.claim === undefined
+        ? left.claim === right.claim
+        : sameOwner(left.claim.id, right.claim.id) && left.claim.claimedAtMs === right.claim.claimedAtMs)
+
 /**
  * Constructs the in-memory single-process strategy.
  *
@@ -597,11 +615,29 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
     }
   }
 
+  // The lease is not in the database, so each change registers its own undo
+  // with the managed write it runs in: a transition whose transaction rolls
+  // back leaves the lease as it found it, as `SqlConsensus`'s does. An undo
+  // restores only a lease still in the state its change left, so it never
+  // reverts a transition another fiber made outside the write.
+  const transactional = <A>(runId: string, apply: () => A): Effect.Effect<A> =>
+    Effect.suspend(() => {
+      const before = snapshot(leases.get(runId))
+      const result = apply()
+      const after = snapshot(leases.get(runId))
+      if (sameLease(before, after)) return Effect.succeed(result)
+      return afterRollback(Effect.sync(() => {
+        if (!sameLease(snapshot(leases.get(runId)), after)) return
+        if (before === undefined) leases.delete(runId)
+        else leases.set(runId, before)
+      })).pipe(Effect.as(result))
+    })
+
   const service: Service = Consensus.of({
     withPermit: (key, owner, isAlive, effect) =>
       resourcePermit(service, () => Effect.sync(() => leases.get(key)), key, owner, isAlive, effect),
     claim: Effect.fn("Consensus.claim")((runId: string, claimant: OwnerId, nowMs: number) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         const lease = leaseOf(runId)
         if (lease.claim !== undefined) return rejected("already_claimed")
         if (lease.owner !== undefined) return rejected("owner_held")
@@ -615,7 +651,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       grantedAtMs: number,
       nowMs: number
     ) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         const lease = leaseOf(runId)
         if (
           lease.claim === undefined ||
@@ -631,7 +667,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       })
     ),
     heartbeat: Effect.fn("Consensus.heartbeat")((runId: string, owner: OwnerId, nowMs: number) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         const lease = leases.get(runId)
         if (lease?.owner === undefined || !sameOwner(lease.owner.id, owner)) return lost
         lease.owner.heartbeatAtMs = Math.max(lease.owner.heartbeatAtMs, nowMs)
@@ -639,7 +675,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       })
     ),
     reconfirm: Effect.fn("Consensus.reconfirm")((runId: string, owner: OwnerId, nowMs: number) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         const lease = leases.get(runId)
         if (lease?.owner === undefined || lease.claim !== undefined || !sameOwner(lease.owner.id, owner)) return lost
         lease.owner.heartbeatAtMs = Math.max(lease.owner.heartbeatAtMs, nowMs)
@@ -647,7 +683,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       })
     ),
     release: Effect.fn("Consensus.release")((runId: string, owner: OwnerId, claimedAtMs?: number) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         const lease = leases.get(runId)
         if (lease === undefined) return
         if (
@@ -669,7 +705,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       nowMs: number,
       evidence: LivenessEvidence
     ) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         if (!matchesEvidence(evidence.expectedOwner, claimant, nowMs, evidence)) {
           return rejected("evidence_invalid")
         }
@@ -693,7 +729,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       nowMs: number,
       evidence: LivenessEvidence
     ) =>
-      Effect.sync(() => {
+      transactional(runId, () => {
         if (!matchesEvidence(staleClaimant, observer, nowMs, evidence)) return rejected("evidence_invalid")
         const lease = leases.get(runId)
         if (
@@ -731,11 +767,14 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
  * one instance to every service that must agree on it, which is what
  * `SqlJournal.layerWith` and `RunStore.layerWith` exist for.
  *
- * The lease is not part of any database transaction: a transition made inside
- * a `Journal.transact` that later rolls back stays applied in memory, so the
- * lease and a rolled-back run row can disagree until the next transition.
- * `SqlConsensus` keeps the two in one transaction; prefer it wherever a
- * database is present.
+ * The lease is not in the database, so each transition made inside a managed
+ * `DurableWriter` write (every `RunStore` and `Journal.transact` write)
+ * registers its undo with `DurableWriter.afterRollback`: when the write rolls
+ * back, is interrupted, or is replayed after a busy conflict, the lease
+ * returns to what it was before the write. A transition made outside a
+ * managed write, including inside a raw SQL transaction, stands. `SqlConsensus`
+ * keeps the lease in the database itself; prefer it wherever a database is
+ * present.
  *
  * @since 1.0.0
  * @category layers

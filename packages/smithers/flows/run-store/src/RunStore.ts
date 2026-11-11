@@ -41,6 +41,7 @@ import {
   makeNoop as makeConsensusNoop,
   matchesEvidence,
   provesDeath,
+  type RejectionReason,
   sameOwner,
   type Service as ConsensusService
 } from "@smthrs/journal/Consensus"
@@ -1181,6 +1182,22 @@ const classifyClaimLoss = (
   return snapshotChanged
 }
 
+/**
+ * The loss for a grant the strategy refused although the row admitted it.
+ * The reason names lease state the unchanged row cannot show: a held claim or
+ * a held, live lease is not a changed snapshot, and reporting one would send a
+ * caller that re-reads and retries into the same refusal forever.
+ */
+const classifyRefusedGrant = (
+  reason: RejectionReason,
+  row: DatabaseRunRow,
+  nowMs: number
+): ClaimLossOutcome => {
+  if (reason === "already_claimed") return alreadyClaimed
+  if (reason === "owner_held" || reason === "owner_live") return heartbeatFresh
+  return classifyClaimLoss(row, nowMs)
+}
+
 const evidenceMatches = (
   expected: RunSnapshot,
   claimant: OwnerId,
@@ -1544,12 +1561,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               claimColumnsFree(row)
             if (!admissible) return classifyClaimLoss(row, nowMs)
             const grant = yield* consensus.claim(runId, claimant, nowMs)
-            if (grant._tag === "Rejected") {
-              // The strategy is authoritative: the row admitted what the lease
-              // refused, and the loss is classified from the row exactly as a
-              // failed compare-and-swap always was.
-              return classifyClaimLoss(row, nowMs)
-            }
+            // The strategy is authoritative: the row admitted what the lease
+            // refused, so the lease's reason classifies the loss.
+            if (grant._tag === "Rejected") return classifyRefusedGrant(grant.reason, row, nowMs)
             yield* sql`
           UPDATE flows_runs
           SET
@@ -1642,7 +1656,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
                 grant = yield* consensus.steal(runId, owner, nowMs, evidence!)
                 transition = "stolen"
               }
-              if (grant._tag === "Rejected") return classifyClaimLoss(row, nowMs)
+              if (grant._tag === "Rejected") return classifyRefusedGrant(grant.reason, row, nowMs)
               const activation = yield* consensus.activate(runId, owner, grant.grantedAtMs, nowMs)
               if (activation._tag === "Lost") {
                 // The strategy revoked the grant it just made — its lease moved
@@ -2052,7 +2066,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
               if (grant._tag === "Rejected") {
                 // The strategy refused what the row admitted — for example its
                 // lease still records a fresh heartbeat — and is authoritative.
-                return classifyClaimLoss(row, nowMs)
+                return classifyRefusedGrant(grant.reason, row, nowMs)
               }
               yield* sql`
           UPDATE flows_runs
