@@ -5,7 +5,9 @@ description: "Raise a SmithersError from a helper, catch it in a caller, branch 
 
 This walkthrough runs one failure the whole way through: a helper refuses an
 argument, a caller classifies the refusal by code, and a log line records it.
-It needs no network and no credentials.
+It needs no network and no credentials. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Raise the error
 
@@ -142,6 +144,55 @@ for (const code of smithersErrorCodes) {
 
 `getSmithersErrorDefinition` answers `undefined` for anything outside the two
 codes, including inherited property names such as `toString`.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the helper is an `effect`
+function, so the refusal is a typed failure rather than an exception: `throw`
+fails with the `SmithersError`, `catch` recovers it, and `match` branches on
+the code. A `match` with no `default` arm is checked for exhaustiveness by the
+compiler, so `describeCode` needs no `never` assignment.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { getSmithersErrorDefinition, SmithersError, type SmithersErrorCode, smithersErrorCodes } from "@smthrs/errors"
+
+const MAX_MESSAGE_LENGTH = 4096
+
+/** Fails with a typed refusal when a chunk size is out of range. */
+export effect function requireChunkLength(maxLength: number): number!SmithersError {
+  if (!Number.isSafeInteger(maxLength) || maxLength < 1 || maxLength > MAX_MESSAGE_LENGTH) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Chunk maxLength must be an integer between 1 and ${MAX_MESSAGE_LENGTH}.`,
+      { maxLength }
+    )
+  }
+  return maxLength
+}
+
+/** Recovers the refusal and branches on its code, never on its message. */
+export effect function parseChunkLength(raw: number): (number | string)!! {
+  return requireChunkLength(raw) catch (error) =>
+    match (error.code) {
+      when "INVALID_INPUT": `Fix the request: ${error.summary}`;
+      default: `Integration failure (${error.code}): ${error.summary}`;
+    }
+}
+
+/** A `match` with no `default` fails to compile when a new code has no arm. */
+export const describeCode = (code: SmithersErrorCode): string =>
+  match (code) {
+    when "INVALID_INPUT": "The request is invalid.";
+    when "INTEGRATION_ERROR": "An integration call failed.";
+  }
+
+/** What each code means, one line per code, as a diagnostic command prints them. */
+export const codeMeanings = (): ReadonlyArray<string> =>
+  smithersErrorCodes.map((code) => `${code}: ${getSmithersErrorDefinition(code)?.when}`)
+```
 
 ## Next
 

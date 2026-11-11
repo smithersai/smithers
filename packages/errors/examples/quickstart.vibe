@@ -1,0 +1,35 @@
+import { getSmithersErrorDefinition, SmithersError, type SmithersErrorCode, smithersErrorCodes } from "@smthrs/errors"
+
+const MAX_MESSAGE_LENGTH = 4096
+
+/** Fails with a typed refusal when a chunk size is out of range. */
+export effect function requireChunkLength(maxLength: number): number!SmithersError {
+  if (!Number.isSafeInteger(maxLength) || maxLength < 1 || maxLength > MAX_MESSAGE_LENGTH) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Chunk maxLength must be an integer between 1 and ${MAX_MESSAGE_LENGTH}.`,
+      { maxLength }
+    )
+  }
+  return maxLength
+}
+
+/** Recovers the refusal and branches on its code, never on its message. */
+export effect function parseChunkLength(raw: number): (number | string)!! {
+  return requireChunkLength(raw) catch (error) =>
+    match (error.code) {
+      when "INVALID_INPUT": `Fix the request: ${error.summary}`;
+      default: `Integration failure (${error.code}): ${error.summary}`;
+    }
+}
+
+/** A `match` with no `default` fails to compile when a new code has no arm. */
+export const describeCode = (code: SmithersErrorCode): string =>
+  match (code) {
+    when "INVALID_INPUT": "The request is invalid.";
+    when "INTEGRATION_ERROR": "An integration call failed.";
+  }
+
+/** What each code means, one line per code, as a diagnostic command prints them. */
+export const codeMeanings = (): ReadonlyArray<string> =>
+  smithersErrorCodes.map((code) => `${code}: ${getSmithersErrorDefinition(code)?.when}`)

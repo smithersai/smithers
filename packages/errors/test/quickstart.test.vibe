@@ -1,0 +1,24 @@
+import { expect, it } from "@effect/vitest"
+import { smithersErrorCodes } from "@smthrs/errors"
+import { codeMeanings, describeCode, parseChunkLength, requireChunkLength } from "../examples/quickstart.vibe"
+import { failureOf } from "./helpers.vibe"
+
+it.effect("refuses an out-of-range chunk length with a typed INVALID_INPUT failure", effect () => {
+  expect(try requireChunkLength(512)).toBe(512)
+  expect(try failureOf(requireChunkLength(0))).toMatchObject({ code: "INVALID_INPUT", details: { maxLength: 0 } })
+})
+
+it.effect("recovers the refusal by its code", effect () => {
+  expect(try parseChunkLength(0)).toBe("Fix the request: Chunk maxLength must be an integer between 1 and 4096.")
+  expect(try parseChunkLength(4096)).toBe(4096)
+})
+
+it("describes every code", () => {
+  expect(smithersErrorCodes.map(describeCode)).toEqual(["The request is invalid.", "An integration call failed."])
+})
+
+it("reads each code's meaning from the exported definitions", () => {
+  expect(codeMeanings()).toHaveLength(2)
+  expect(codeMeanings()[0]).toMatch(/^INVALID_INPUT: \S/)
+  expect(codeMeanings()[1]).toMatch(/^INTEGRATION_ERROR: \S/)
+})
