@@ -156,6 +156,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/launch-a-detached-run/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/launch-a-detached-run.md"],
     ["/guides/native-module-host/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/native-module-host.md"],
     ["/guides/pinned-execution-source/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/pinned-execution-source.md"],
+    ["/guides/schedule-a-target/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/schedule-a-target.md"],
     ["/guides/script-the-cli/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/script-the-cli.md"],
     ["/guides/serve-the-workspace-gateway/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/serve-the-workspace-gateway.md"],
     ["/guides/wire-the-mcp-server/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/wire-the-mcp-server.md"],

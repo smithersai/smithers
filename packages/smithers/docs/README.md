@@ -156,6 +156,7 @@ line.
   [launch a detached run](./guides/launch-a-detached-run.md),
   [diagnose a run](./guides/diagnose-a-run.md),
   [serve the workspace gateway](./guides/serve-the-workspace-gateway.md),
+  [schedule a build target](./guides/schedule-a-target.md),
   [wire the MCP server into an agent](./guides/wire-the-mcp-server.md), and
   [embed the command tree](./guides/embed-the-command-tree.md).
 - [The CLI reference](./reference/cli/README.md): every verb, and the three

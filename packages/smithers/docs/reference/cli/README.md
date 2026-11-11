@@ -324,7 +324,7 @@ declared request's kind, options, and schema to shape the answer.
 | --- | --- |
 | `memory` | `list/get/set/rm`, `recall`, `notes list/get/add/status/supersede`, `threads list/create/show/rm`, `messages list/add`, and `compact`. |
 | `credentials` | `list/add/rotate/revoke`; encrypted secrets are supplied through `--secret-env` or `--secret-file`, and output contains references only. |
-| `triggers` | `list/show/register/enable/disable/fire/serve`; registration accepts flags or `--file`, and `fire` queues an occurrence for the scheduler. |
+| `triggers` | `list/show/register/sync/enable/disable/fire/serve`; registration accepts flags or `--file`, `sync` registers the workspace's `S.Cron` targets, and `fire` queues an occurrence for the scheduler. |
 | `integrations` | `list` and `doctor [--offline]`. |
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. `run` also records score observations in the project's `.flows/engine.db` when it exists. |
 
@@ -396,6 +396,15 @@ the persisted `activePlan.plan.approval` payload; submit that unchanged to `appr
 scheduler retains the same plan across restarts and waits until it is approved
 or denied. Both `approvals approve` and `approve` default to `--scope run`.
 `approvals list` lists in-run requests, not these pre-run plans.
+
+A scheduler host also registers every `S.Cron` target the workspace's
+`PACKAGE.ts` files declare, under the target's label, and `triggers sync` does
+the same on demand. Such a trigger has the reserved flow `system/target-run`
+and the labels to run as its input. The build executes it as
+`smthrs target <labels>`, so it has no plan and needs no approval;
+`triggers show <label>` reports the run under `activeTargetRun`, and the
+command's output is kept under `.flows/logs/`. See
+[Schedule a build target](../../guides/schedule-a-target.md).
 A launch attempt persists `launching` before calling Control. Cancellation
 before the run ID is recorded remains `cancelling` while the scheduler
 reconciles the durable launch key. Any accepted run is recorded and cancelled.
