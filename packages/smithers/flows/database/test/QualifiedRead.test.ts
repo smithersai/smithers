@@ -21,6 +21,9 @@ describe("qualify", () => {
       .toBe(`SELECT MAX(s) AS next FROM ( SELECT MAX(seq) AS s FROM "s".flows_journal_events WHERE r = $1 ) t`)
     expect(qualify(`SELECT flows_runs.status FROM flows_runs`, `odd"name`))
       .toBe(`SELECT "odd""name".flows_runs.status FROM "odd""name".flows_runs`)
+    // A comma between a function's arguments or a select list's columns isn't a join.
+    expect(qualify(`SELECT coalesce(a, b), c FROM flows_runs WHERE d IN (SELECT e FROM flows_b) ORDER BY c, a`, "s"))
+      .toBe(`SELECT coalesce(a, b), c FROM "s".flows_runs WHERE d IN (SELECT e FROM "s".flows_b) ORDER BY c, a`)
   })
 
   it("leaves a literal and an alias alone", () => {
@@ -51,6 +54,17 @@ describe("qualify", () => {
     ["a line comment", `SELECT 1 FROM flows_runs -- flows_a`],
     ["a block comment", `SELECT 1 /* x */ FROM flows_runs`],
     ["a dollar quote", `SELECT $$flows_runs$$, x FROM flows_runs`],
+    ["a tagged dollar quote", `SELECT $tag$ see flows_runs $tag$ AS note, x FROM flows_runs`],
+    ["an engine-named alias", `SELECT count(*) AS flows_total FROM flows_runs`],
+    ["an engine-named column", `SELECT x FROM flows_runs ORDER BY flows_rank`],
+    ["an engine-named type", `SELECT x FROM flows_runs WHERE k = $1::flows_kind`],
+    ["a comma join after ON", `SELECT a.x FROM flows_a a JOIN flows_b b ON a.id = b.id, sessions s`],
+    ["a comma join after a subquery", `SELECT t.x FROM (SELECT x FROM flows_a) t, sessions`],
+    ["a parenthesized join", `SELECT x FROM (sessions s JOIN flows_a a ON a.id = s.id)`],
+    ["a TABLE query", `SELECT x FROM flows_a WHERE id IN (TABLE sessions)`],
+    ["a dollar sign ending the text", `SELECT x FROM flows_runs WHERE y = $`],
+    ["an unbalanced parenthesis", `SELECT x) FROM flows_runs, sessions`],
+    ["a comma join inside a subquery", `SELECT n FROM (SELECT 1 AS n FROM flows_a JOIN flows_b ON true, s) t`],
     ["an unterminated literal", `SELECT 'x FROM flows_runs`]
   ])("keeps %s framed", (_, sql) => {
     expect(qualify(sql, "s")).toBeUndefined()
