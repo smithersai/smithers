@@ -871,7 +871,7 @@ function extractExpr(node: Expression): RawExpr {
           continue;
         }
         const s = extractExpr(prop.getExpression());
-        acc = acc === null ? s : { kind: "recordMerge", base: acc, override: s };
+        acc = acc === null ? s : { kind: "recordMerge", base: acc, override: s, line: prop.getStartLineNumber() };
       } else if (Node.isShorthandPropertyAssignment(prop)) {
         const name = prop.getName();
         update(name, { kind: "var", name });

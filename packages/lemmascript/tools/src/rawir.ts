@@ -46,7 +46,7 @@ export type RawExpr =
   | { kind: "index"; obj: RawExpr; idx: RawExpr }
   | { kind: "field"; obj: RawExpr; field: string }
   | { kind: "record"; spread: RawExpr | null; fields: { name: string; value: RawExpr }[] }
-  | { kind: "recordMerge"; base: RawExpr; override: RawExpr }   // { ...base, ...override } — field-wise merge; resolve expands to a record using the result type's fields
+  | { kind: "recordMerge"; base: RawExpr; override: RawExpr; line?: number }   // { ...base, ...override } — field-wise merge; resolve expands to a record using the result type's fields
   | { kind: "arrayLiteral"; elems: RawExpr[] }
   | { kind: "lambda"; params: { name: string; tsType?: string }[]; body: RawExpr | RawStmt[]; returnTsType?: string }
   | { kind: "conditional"; cond: RawExpr; then: RawExpr; else: RawExpr }  // ternary ? :

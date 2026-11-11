@@ -1215,7 +1215,11 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
     }
 
     case "recordMerge":
-      return resolveRecordMerge(e.base, e.override, ctx);
+      try {
+        return resolveRecordMerge(e.base, e.override, ctx);
+      } catch (err) {
+        throw locateError(err, { line: e.line });
+      }
 
     case "result":
       // \result desugars to a regular var so all the variable-narrowing
@@ -1432,7 +1436,32 @@ function resolveBlock(stmts: RawStmt[], ctx: Ctx): TStmt[] {
   return result;
 }
 
+/** A resolution error names the source line of the statement it occurred in (innermost wins) and its function. */
+class ResolveLocationError extends Error {
+  constructor(message: string, readonly located: { line?: number; fn?: string }) { super(message); }
+}
+function locatedMessage(err: unknown): string {
+  return err instanceof Error ? (err instanceof ResolveLocationError ? err.message.replace(/^(?:\S+ )?line \d+: /, "") : err.message) : String(err);
+}
+function locateError(err: unknown, at: { line?: number; fn?: string }): ResolveLocationError {
+  const known = err instanceof ResolveLocationError ? err.located : {};
+  const located = { line: known.line ?? at.line, fn: known.fn ?? at.fn };
+  const where = [located.fn, located.line === undefined ? undefined : `line ${located.line}`].filter(Boolean).join(" ");
+  const message = locatedMessage(err);
+  const error = new ResolveLocationError(where ? `${where}: ${message}` : message, located);
+  if (err instanceof Error && err.stack) error.stack = err.stack;
+  return error;
+}
+
 function resolveStmt(s: RawStmt, ctx: Ctx): [TStmt, Env | null] {
+  try {
+    return resolveStmtAt(s, ctx);
+  } catch (err) {
+    throw locateError(err, { line: "line" in s && typeof s.line === "number" ? s.line : undefined });
+  }
+}
+
+function resolveStmtAt(s: RawStmt, ctx: Ctx): [TStmt, Env | null] {
   switch (s.kind) {
     case "let": {
       // No source annotation → infer type from initializer (resolved first).
@@ -1802,7 +1831,15 @@ function containsReturn(stmts: RawStmt[]): boolean {
 
 // ── Resolve function / module ────────────────────────────────
 
-function resolveFunction(
+function resolveFunction(...args: Parameters<typeof resolveFunctionAt>): TFunction {
+  try {
+    return resolveFunctionAt(...args);
+  } catch (err) {
+    throw locateError(err, { fn: args[0].name });
+  }
+}
+
+function resolveFunctionAt(
   fn: RawFunction, typeDecls: TypeDeclInfo[], pureFns: Set<string>,
   fnParams: Map<string, Ty[]> = new Map(), fnReturns: Map<string, Ty> = new Map(),
   externs: Map<string, ExternSignature> = new Map(),
