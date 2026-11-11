@@ -880,3 +880,48 @@ workload counts (`wire.vibe` 52, `protocolDecision.vibe` 117). Both modules also
 (`scripts/wiki.vibe`, through `pnpm wiki:build` and `scripts.bench.vibe`), so the full run's subprocess coverage of
 the same source is the likely cause; not diagnosed. Per-file counts and merged maps:
 `~/vl/vl-bench-evidence/2026-11-11-claude-resume5/` on nyc-01.
+
+**Sandbox and storage paths, and a merge that lost hits (2026-11-11).**
+
+*The merge loss was a provider defect, now fixed.* Vitest's V8 provider merges raw V8 coverage by script URL before
+it maps anything back to source. `bench/browser.bench.vibe` starts Playwright, whose web server runs `pnpm wiki:build`
+(`node --import=vibelang/register scripts/wiki.vibe`). That child inherits the worker's `NODE_V8_COVERAGE` and dumps
+`src/core/wikiLinks.vibe` and `src/web/markdown.vibe` under the same URLs the worker imported through Vite. The
+loader's code is not Vite's, so its offsets landed on the wrong ranges of the worker's script, and lines the worker ran
+read 0. The repository's `@vitest/coverage-v8` patch now keeps a child's script only when Node ran the file as written
+(its top-level range spans exactly the file's length) and counts the rest under `DEBUG=vitest:coverage` ("Dropped N
+child-process scripts a module loader rewrote"). A native-loaded child was never credited correctly (0016,
+`~/vl/vibelang-bugs/coverage-native-loader/`); now it can't take a worker's hits either. Regression:
+`test/coverageProvider.test.vibe`, "keeps a worker's hits when a native-loader child runs the same source", which read
+0 for the worker's line before the fix. The unit gate (`pnpm test:coverage`) after the fix lists the same files below
+100% as main's runs that morning, plus `historyView.vibe` 59, new in main's `9164011d`.
+
+*Sandbox lines.* With lane vl-bench2's fixes, `sandbox-objects` and `sandbox-faults` pass, and `machineDecision.vibe`
+29, 36, 102 count. `sandboxHost.vibe` 198-199 never ran: the invalid clock in `sandbox-faults` fails in `load()`
+(`emergency` from line 88), before the meter. New workloads:
+
+| Workload | Journey | Lines | Checked every sample |
+| --- | --- | --- | --- |
+| `sandbox-meter-fault` | start a sandbox; use at 2^53 - 1 ms; one second; the alarm's `tick` | `sandboxHost.vibe` 198, 199 | `meter-overflow`; one stop; ledger stopped; `meterFailure` recorded |
+| `sandbox-mock-alarm` | the product mock: start, 60 TestClock seconds, the mock alarm's meter | `sandboxMock.vibe` 38 | a meter logged after start returned |
+| `startup-storage-refused` | the real page behind a Window whose storages throw, at `/` and `/?agent=mock` | `startup.vibe` 38, 88 | fresh tour session, sound off, first-visit tour; the ask renders |
+
+Non-tautology: with `emergency` removed from `sampled`, the mock's meter call removed, or either storage catch made to
+touch storage again, the matching workload fails; sources restored. Limitations: the ledger's use is written directly
+(no product path reaches 2^53 - 1 ms); the mock's minute is TestClock time; storage refusal is an injected Window
+proxy, not a browser setting.
+
+*Re-measured* with this range, one `bench:coverage` on a 6-vCPU Playwright box, 10:28 to 11:17 UTC. Three Vitest files
+failed: `scripts.bench.vibe` (box git 2.39), `budget-reservations` (fails the same way on nyc-01 without coverage:
+`[3, 0, 0, 0, 0]` where `[3, 0, 0, 0, 3]` is expected; main's), and the browser fault-path workload (Playwright
+locator timeouts on the composer status). Lines of `src/` and `worker/`: **7,957/8,098 (98.26%)**.
+
+| Directory | Lines | Uncovered |
+| --- | ---: | --- |
+| `src/surfaces` | 507/507 | none |
+| `src/web` | 1,976/1,981 | `issueDecision.vibe` 208 (specification only); `main.vibe` 429, 766 and `issuesView.vibe` 83, 84, behind the failed browser fault-path workload |
+| `src/core` | 1,998/2,032 | specification only, waiting on lane vl-ghost-functions (34) |
+
+Sandbox Container bindings (`SandboxAccounts`, `SandboxMachine`, `SandboxProbe`, `sandboxProbeFetch`) remain live
+only, as above.
+

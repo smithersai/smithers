@@ -4165,3 +4165,18 @@ checks and limitations: [0017](decisions/0017-benchmarks.md), "Small paths, Fact
 
 `src-edge-decisions`' 116 ms maximum is its first, cold sample; its median is under 1 ms. `web-tour-pause` includes a
 fresh app runtime, its first render and the mock tour's first step.
+
+## Sandbox meter fault, mock alarm, refused storage (2026-11-11, nyc-01)
+
+Vitest built-in bench, local, nyc-01 (32 cores) at load 50, so wall times are observations only. Method, checks and
+limitations: [0017](decisions/0017-benchmarks.md), "Sandbox and storage paths, and a merge that lost hits".
+
+| Workload | Mean ms | Min ms | Max ms | Samples | Artifact |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `sandbox-meter-fault` | 2.76 | 1.02 | 15.62 | 37 | `2026-11-11T10-30-05.313Z-sandbox-meter-fault.json` |
+| `sandbox-mock-alarm` | 28.37 | 17.97 | 40.05 | 5 | `2026-11-11T10-30-23.190Z-sandbox-mock-alarm.json` |
+| `startup-storage-refused` | 572.73 | 543.13 | 636.61 | 5 | `2026-11-11T10-30-21.094Z-startup-storage-refused.json` |
+
+`startup-storage-refused` includes two fresh app startups and one first render. `sandbox-mock-alarm`'s minute is
+TestClock time; its samples are the mock's start, 60 clock steps and the forked alarm fiber's meter.
+
