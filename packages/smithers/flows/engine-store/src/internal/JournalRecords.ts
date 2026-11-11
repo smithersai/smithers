@@ -220,8 +220,12 @@ export const expectedSetDeviation = (options: EventOptions, payload: unknown) =>
  * rebase loop owns the window in between, and a bundle that lost every race
  * was never a proposal the host saw. A crash inside that window leaves the
  * attempt row unfinished, so the replay re-executes and journals the bundle it
- * actually applies. An execution the declaration invalidated journals nothing
- * here at all; its `hard-violation` record carries the identity instead.
+ * actually applies. A crash after this record but before the attempt row
+ * commits re-executes too, over a host that already holds the output: the
+ * record is keyed by its bundle identity, so that execution's bundle is a
+ * second record rather than a producer conflict. An execution the declaration
+ * invalidated journals nothing here at all; its `hard-violation` record
+ * carries the identity instead.
  *
  * @since 0.1.0
  * @category events

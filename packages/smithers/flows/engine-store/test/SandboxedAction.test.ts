@@ -323,6 +323,71 @@ describe("sealed actions under the production composition", () => {
       expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("done")
     }))
 
+  it.effect("resumes an attempt whose process died after it journalled its diff bundle (issue #4760)", () =>
+    Effect.gen(function*() {
+      const root = workspace()
+      const key = "sandbox/resumed-copy-back"
+      const runId = "sandbox-resumed-copy-back"
+      const metadata: ActionPersistence.BoundaryMetadata = {
+        readSet: [],
+        writeSet: [join(root, "out/result.txt")],
+        boundaryMode: "hard"
+      }
+      const writer = () =>
+        body(
+          Effect.gen(function*() {
+            const inner = yield* WorkspaceSandbox.Workspace
+            yield* inner.writeFile("out/result.txt", encoder.encode("done"))
+            yield* inner.queueEffect({ protocol: "chat/v1", idempotencyKey: "reply-1", payload: {} })
+            return null
+          }).pipe(Effect.orDie)
+        )
+      const dispatched: Array<string> = []
+      const program = Effect.gen(function*() {
+        const attempts = yield* AttemptStore.AttemptStore
+        yield* activate(runId)
+        // The process dies in the dispatch stage: copy-back reached the host
+        // and the diff bundle is journalled, but the attempt row never commits.
+        const died = yield* dispatch(runId, key, metadata, writer).pipe(
+          Effect.provide(
+            WorkspaceSandbox.layerDispatcher({ dispatch: () => Effect.die(new Error("process killed")) })
+          ),
+          Effect.provide(production(root, true)),
+          Effect.exit
+        )
+        const crashed = yield* attempts.get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+        // The next drive adopts the running row and re-executes the body over a
+        // host that already holds its output.
+        const result = yield* dispatch(runId, key, metadata, writer).pipe(
+          Effect.provide(
+            WorkspaceSandbox.layerDispatcher({
+              dispatch: (effect) => Effect.sync(() => dispatched.push(effect.idempotencyKey))
+            })
+          ),
+          Effect.provide(production(root, true))
+        )
+        const row = yield* attempts.get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+        const records = (yield* JournalRecords.entries(runId, undefined, 100)).entries
+        return { died, crashed, result, row, records }
+      }).pipe(Effect.provide(TestStores.layer()))
+
+      const { crashed, died, records, result, row } = yield* withCrypto(program)
+      expect(died._tag).toBe("Failure")
+      expect(Option.isSome(crashed) ? crashed.value.state : undefined).toBe("running")
+      expect(result).toBeNull()
+      expect(Option.isSome(row) ? row.value.state : undefined).toBe("succeeded")
+      expect(dispatched).toEqual(["reply-1"])
+      // Both bundles stay journal facts: the one the dead process applied, and
+      // the empty one the re-execution proposed over the already-updated host.
+      const captured = records.filter((record) => record.eventType === "flows.engine.diff-bundle-captured")
+      const settled = records.filter((record) => record.eventType === "flows.engine.copy-back-settled")
+      expect(captured.map((record) => (record.payload as { changedPaths: unknown }).changedPaths))
+        .toEqual([["out/result.txt"], []])
+      expect(settled.map((record) => (record.payload as { bundleIdentity: unknown }).bundleIdentity))
+        .toEqual([(captured[1]!.payload as { bundleIdentity: unknown }).bundleIdentity])
+      expect(yield* withCrypto(hostText(root, "out/result.txt"))).toBe("done")
+    }))
+
   it.effect("journals what a transaction queued and sends nothing when no dispatcher is composed", () =>
     Effect.gen(function*() {
       const root = workspace()
