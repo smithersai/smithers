@@ -13,14 +13,17 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AlertPolicy from "../src/AlertPolicy.ts"
+import * as AlertProbe from "../src/AlertProbe.ts"
 import * as AlertRuntime from "../src/AlertRuntime.ts"
 import * as Alerts from "../src/Alerts.ts"
 import * as AlertSink from "../src/AlertSink.ts"
+import * as layerChannels from "../src/layerChannels.ts"
 import * as layerWebhook from "../src/layerWebhook.ts"
 
 /** The module each published name is declared in, and the only one it may come from. */
 const owners: ReadonlyArray<readonly [string, Readonly<Record<string, unknown>>, ReadonlyArray<string>]> = [
   ["AlertPolicy", AlertPolicy, [
+    "acknowledgedEventType",
     "alertId",
     "coalescingKey",
     "conditions",
@@ -29,12 +32,15 @@ const owners: ReadonlyArray<readonly [string, Readonly<Record<string, unknown>>,
     "deliveredEventType",
     "Detector",
     "failedEventType",
+    "maxSummaryLength",
     "Policy",
     "Rule",
     "Severity"
   ]],
   ["AlertSink", AlertSink, ["AlertError", "FailureCode", "layerNoop", "Sink"]],
+  ["AlertProbe", AlertProbe, ["probeDetector", "probeEventType", "probes", "ProbeState", "Report", "report"]],
   ["AlertRuntime", AlertRuntime, ["AlertRuntime", "layer"]],
+  ["layerChannels", layerChannels, ["layerChannels", "messageOf"]],
   ["layerWebhook", layerWebhook, ["defaultWebhookTimeout", "layerWebhook"]]
 ]
 
@@ -86,11 +92,21 @@ describe("the Alerts types", () => {
     const tick: Alerts.Tick = { delivered: [alert], failed: [], refused: [], suppressed: [] }
     const code: Alerts.FailureCode = "sink_timeout"
     const sink: Alerts.SinkService = { deliver: () => Effect.fail(new Alerts.AlertError({ code, message: code })) }
-    const runtime: Alerts.RuntimeService = { tick: () => Effect.succeed(tick) }
+    const standing: Alerts.Standing = { alertId: Alerts.alertId(alert), alert, state: "raised" }
+    const runtime: Alerts.RuntimeService = {
+      tick: () => Effect.succeed(tick),
+      acknowledge: () => Effect.succeed(true),
+      standing: () => Effect.succeed([standing])
+    }
+    const report: Alerts.Report = { runId: open.runId, probe: "disk", state: "ok" }
+    const state: Alerts.ProbeState = report.state
+    const options: Alerts.ChannelsSinkOptions = { destination: { _tag: "telegram", chatId: "42" } }
 
     expect(Alerts.decide(policy, [open], 30_000)).toEqual([alert])
     expect(Alerts.alertId(alert)).toBe("alert:run-1:stalled:0")
     expect(Effect.runSync(Effect.result(sink.deliver(alert))).toString()).toContain(code)
     expect(Effect.runSync(runtime.tick(alert.runId))).toBe(tick)
+    expect(Effect.runSync(runtime.standing(alert.runId))).toEqual([standing])
+    expect([state, options.destination._tag]).toEqual(["ok", "telegram"])
   })
 })

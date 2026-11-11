@@ -972,6 +972,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/alert-on-a-stuck-run/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/alert-on-a-stuck-run.md"],
     ["/guides/drain-at-a-turn-boundary/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/drain-at-a-turn-boundary.md"],
     ["/guides/handle-a-full-queue/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/handle-a-full-queue.md"],
+    ["/guides/raise-an-alert-from-a-step/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/raise-an-alert-from-a-step.md"],
     ["/guides/report-pending-notifications/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/report-pending-notifications.md"],
     ["/guides/send-alerts-to-a-webhook/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/send-alerts-to-a-webhook.md"],
     ["/guides/send-by-email-and-telegram/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/guides/send-by-email-and-telegram.md"],

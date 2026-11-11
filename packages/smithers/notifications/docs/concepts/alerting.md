@@ -49,6 +49,21 @@ Only a condition the policy has a rule for is watched at all, and only own
 properties count: a detector named `toString` reads no evidence off
 `Object.prototype`.
 
+## A probe is a condition a step reports
+
+The four default conditions are things the control plane says about a run. A
+probe is a check a flow step makes about anything else, and `Alerts.report`
+journals what it saw into the run that owns the problem. Each probe writes
+under its own event type, `flows.alerts.probe.<name>`, with a `state` of
+`failing` or `ok`, and `Alerts.probes` builds the detector that reads it. So a
+probe is one more condition: the first failing report opens it, later failing
+reports leave its clock alone, and an `ok` report closes it.
+
+A detector may also name a `summary` field. The string under that key on the
+entry that **opened** the condition rides on the alert, cut to
+`Alerts.maxSummaryLength` characters. Later entries never change it, so the
+alert stays byte-identical on every attempt.
+
 ## Journal time, not wall time
 
 A condition's clock starts at `emittedAtMs` of the entry that opened it.
@@ -93,6 +108,21 @@ which is `alert:<coalescingKey>:<since>` and stable for the life of one
 condition. A condition that clears and re-opens gets a new id, because the second
 approval wait is not the first one.
 
+## Acknowledged, or paged again
+
+An alert pages once. A rule with `repeatMs` pages again for every whole period
+the condition has stayed open past its delay. Each repeat is an alert of its
+own: its `reminder` counts the periods, its `firedAt` is the journal instant
+that repeat came due, and its id ends in `:r<n>`, so a sink that dedupes on the
+id still sends it. A tick that runs late sends the latest repeat only.
+
+`acknowledge(runId, alertId, by)` journals `flows.alerts.acknowledged` for an
+open condition, and from then on a tick neither pages nor repeats that alert.
+The id is the alert's without a repeat's ending. The first acknowledgement
+stands, and a condition that clears and re-opens is a new alert nobody has
+acknowledged. `standing(runId)` lists every open condition past its delay as
+`raised`, `delivered` or `acknowledged`.
+
 ## Four outcomes, and only one is a failure
 
 `Alerts.Tick` sorts every alert the tick considered:
@@ -100,7 +130,7 @@ approval wait is not the first one.
 | Field        | What it means                                                        |
 | ------------ | -------------------------------------------------------------------- |
 | `delivered`  | The sink accepted the page, and `flows.alerts.delivered` records it. |
-| `suppressed` | A delivery record already exists. The sink was not called.           |
+| `suppressed` | This page was already delivered, or the alert is acknowledged.       |
 | `failed`     | The sink refused or could not be reached. Retried on the next tick.  |
 | `refused`    | The notification queue was at capacity. The sink was not called.     |
 
@@ -116,16 +146,17 @@ past.
 
 ## The alerter never reads its own records
 
-`flows.alerts.delivered` and `flows.alerts.failed` are written into the same
-journal the detectors read. They carry the alert's own vocabulary: a refusal
+`flows.alerts.delivered`, `flows.alerts.failed` and `flows.alerts.acknowledged`
+are written into the same journal the detectors read. The first two carry the alert's own vocabulary: a refusal
 reports the answering HTTP `status`, which a detector watching the run's
-`status` would read as the condition clearing. So both event types are excluded
+`status` would read as the condition clearing. So all three event types are excluded
 from condition detection outright. Without that exclusion, a page would close the
 condition it paged about, the next tick would re-open it, and a webhook that
 answered 503 once would alert forever.
 
 A delivery record suppresses a repeat page only under the source the alerter
-writes it with, `/notifications/alerts/<alertId>/delivered`. Another producer's
+writes it with, `/notifications/alerts/<alertId>/delivered`, and an
+acknowledgement counts only under `/notifications/alerts/<alertId>/acknowledged`. Another producer's
 record naming the same `alertId` under its own source is ignored. The journal
 does not bind a source to a writer, so this scopes records; it does not
 authenticate the writer.
@@ -136,3 +167,5 @@ authenticate the writer.
   and what each field of the result means.
 - [Send alerts to a webhook](../guides/send-alerts-to-a-webhook.md): the shipped
   sink, its idempotency header, and its timeout.
+- [Raise an alert from a flow step](../guides/raise-an-alert-from-a-step.md):
+  probe reports, a page on Telegram, and acknowledgement.

@@ -14,15 +14,18 @@
  */
 
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Clock, Context, Effect, HashSet, Layer, Result, Schema } from "effect"
+import { Clock, Context, Effect, HashMap, HashSet, Layer, Option, Result, Schema } from "effect"
 import {
+  acknowledgedEventType,
   type Alert,
   alertId,
+  coalescingKey,
   decide,
   deliveredEventType,
   detectorsOf,
   failedEventType,
   observe,
+  type Opened,
   payloadRecord,
   Policy,
   recordSourceId
@@ -48,8 +51,29 @@ export interface Tick {
    * sink was not called for them, and they are retried on the next tick.
    */
   readonly refused: ReadonlyArray<Alert>
-  /** Alerts that had already been delivered, and were not delivered again. */
+  /**
+   * Alerts that were not delivered again: this page had already been
+   * delivered, or somebody acknowledged the alert.
+   */
   readonly suppressed: ReadonlyArray<Alert>
+}
+
+/**
+ * One alert a run has now, and what has happened to it.
+ *
+ * `raised` has outlived its delay and no sink has taken it yet. `delivered`
+ * reached the sink at least once. `acknowledged` was taken by a person, who
+ * is named in `acknowledgedBy`, and is not paged about again.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Standing {
+  /** The alert's id, without a repeat's ending: what {@link RuntimeService.acknowledge} takes. */
+  readonly alertId: string
+  readonly alert: Alert
+  readonly state: "raised" | "delivered" | "acknowledged"
+  readonly acknowledgedBy?: string | undefined
 }
 
 /**
@@ -72,6 +96,22 @@ export interface RuntimeService {
    * at capacity is not a failure either; it comes back in {@link Tick.refused}.
    */
   readonly tick: (runId: string) => Effect.Effect<Tick, Journal.JournalError | NotificationError>
+  /**
+   * Records that `by` has taken the alert `alertId` on `runId`.
+   *
+   * Answers `true` once the acknowledgement is journaled, and again for every
+   * repeat of the same acknowledgement. Answers `false`, and writes nothing,
+   * when no open condition on the run has that id: the condition cleared, or
+   * the id names a repeat or another run's alert. From then on a tick neither
+   * pages nor repeats the alert. A condition that clears and re-opens is a new
+   * alert, and nobody has acknowledged that one.
+   */
+  readonly acknowledge: (runId: string, alertId: string, by: string) => Effect.Effect<boolean, Journal.JournalError>
+  /**
+   * The alerts a run has now: every open condition past its delay, with
+   * whether it was delivered and who acknowledged it.
+   */
+  readonly standing: (runId: string) => Effect.Effect<ReadonlyArray<Standing>, Journal.JournalError>
 }
 
 /**
@@ -89,15 +129,32 @@ export class AlertRuntime extends Context.Service<AlertRuntime, RuntimeService>(
  * already paged, and the sequence the fold stopped at.
  */
 interface Watched {
-  readonly open: ReadonlyMap<string, number>
+  readonly open: ReadonlyMap<string, Opened>
   /**
    * The alerts already paged, as a persistent set: a tick adds a node and
    * leaves the fold the previous tick published untouched, where copying the
    * set would cost the run's whole delivery history on every tick.
    */
   readonly delivered: HashSet.HashSet<string>
+  /** The alerts with at least one delivered page, by the id a person acknowledges. */
+  readonly paged: HashSet.HashSet<string>
+  /** Who acknowledged each alert, by the same id. */
+  readonly acknowledged: HashMap.HashMap<string, string>
   readonly cursor: number | undefined
 }
+
+/** The id a person acknowledges an alert by: its first page's. */
+const firstId = (alert: Pick<Alert, "coalescingKey" | "since">): string =>
+  alertId({ coalescingKey: alert.coalescingKey, since: alert.since })
+
+/** The same id, read back off a delivery record of any of the alert's pages. */
+const firstIdOf = (pageId: string, reminder: unknown): string => {
+  const ending = `:r${String(reminder)}`
+  return typeof reminder === "number" && pageId.endsWith(ending) ? pageId.slice(0, -ending.length) : pageId
+}
+
+/** The longest name of an acknowledging person a record keeps. */
+const maxAcknowledgerLength = 200
 
 /**
  * How many runs one alert runtime keeps folded at a time. The retention policy
@@ -123,6 +180,8 @@ const alertNotification = (alert: Alert): NotificationModel.Notification => ({
     severity: alert.severity,
     since: alert.since,
     firedAt: alert.firedAt,
+    ...(alert.reminder === undefined ? {} : { reminder: alert.reminder }),
+    ...(alert.summary === undefined ? {} : { summary: alert.summary }),
     ...(alert.owner === undefined ? {} : { owner: alert.owner }),
     ...(alert.runbook === undefined ? {} : { runbook: alert.runbook })
   }
@@ -165,7 +224,13 @@ export const layer = (
       const observed = (runId: JournalEvent.RunId): Effect.Effect<Watched, Journal.JournalError> =>
         Effect.gen(function*() {
           const base: Watched = watched.get(runId) ??
-            { open: new Map(), delivered: HashSet.empty(), cursor: undefined }
+            {
+              open: new Map(),
+              delivered: HashSet.empty(),
+              paged: HashSet.empty(),
+              acknowledged: HashMap.empty(),
+              cursor: undefined
+            }
           const fresh: Array<JournalEvent.Entry> = []
           let after = base.cursor === undefined ? undefined : JournalEvent.Seq.make(base.cursor)
           while (true) {
@@ -180,6 +245,8 @@ export const layer = (
           // delivery history is not, so it grows by one persistent node.
           const open = new Map(base.open)
           let delivered = base.delivered
+          let paged = base.paged
+          let acknowledged = base.acknowledged
           let cursor = base.cursor
           for (const entry of fresh) {
             cursor = entry.seq
@@ -192,11 +259,23 @@ export const layer = (
               // The journal does not bind a source to a writer.
               if (typeof id === "string" && entry.sourceId === recordSourceId(id, "delivered")) {
                 delivered = HashSet.add(delivered, id)
+                paged = HashSet.add(paged, firstIdOf(id, payload["reminder"]))
+              }
+            }
+            if (entry.eventType === acknowledgedEventType) {
+              const id = payload["alertId"]
+              const by = payload["by"]
+              // Scoped to the alerter's source exactly as a delivery is.
+              if (
+                typeof id === "string" && typeof by === "string" &&
+                entry.sourceId === recordSourceId(id, "acknowledged")
+              ) {
+                acknowledged = HashMap.set(acknowledged, id, by)
               }
             }
             observe(checked, detectors, entry, payload, open)
           }
-          const next: Watched = { open, delivered, cursor }
+          const next: Watched = { open, delivered, paged, acknowledged, cursor }
           // Published at commit, exactly as `NotificationQueue.load` publishes
           // its fold. A tick inside an enclosing transaction reads that
           // transaction's uncommitted rows, and caching them would outlive the
@@ -228,25 +307,61 @@ export const layer = (
               since: alert.since,
               severity: alert.severity,
               alertId: alertId(alert),
+              ...(alert.reminder === undefined ? {} : { reminder: alert.reminder }),
               ...(outcome.code === undefined ? {} : { code: outcome.code }),
               ...(outcome.status === undefined ? {} : { status: outcome.status })
             }
           })
         ).pipe(Effect.asVoid)
 
+      /** One run's fold, and the alerts its open conditions raise now. */
+      const considered = Effect.fnUntraced(function*(runId: string) {
+        const history = yield* observed(JournalEvent.RunId.make(runId))
+        const now = yield* Clock.currentTimeMillis
+        const open = Array.from(history.open, ([condition, opened]) => ({ runId, condition, ...opened }))
+        return { history, raised: decide(checked, open, now) }
+      })
+
       return AlertRuntime.of({
+        acknowledge: Effect.fn("AlertRuntime.acknowledge")(function*(runId: string, id: string, by: string) {
+          const history = yield* observed(JournalEvent.RunId.make(runId))
+          const open = Array.from(history.open).some(([condition, opened]) =>
+            firstId({ coalescingKey: coalescingKey(runId, condition), since: opened.since }) === id
+          )
+          if (!open) return false
+          yield* journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId: JournalEvent.RunId.make(runId),
+              sourceId: JournalEvent.SourceId.make(recordSourceId(id, "acknowledged")),
+              sourceSeq: JournalEvent.SourceSeq.make(0),
+              // The first acknowledgement stands. A second person saying the
+              // same thing later is the same fact.
+              dedupe: "identity",
+              eventType: acknowledgedEventType,
+              payload: { runId, alertId: id, by: by.slice(0, maxAcknowledgerLength) }
+            })
+          )
+          return true
+        }),
+        standing: Effect.fn("AlertRuntime.standing")(function*(runId: string) {
+          const { history, raised } = yield* considered(runId)
+          return raised.map((alert): Standing => {
+            const id = firstId(alert)
+            const by = HashMap.get(history.acknowledged, id)
+            if (Option.isSome(by)) return { alertId: id, alert, state: "acknowledged", acknowledgedBy: by.value }
+            return { alertId: id, alert, state: HashSet.has(history.paged, id) ? "delivered" : "raised" }
+          })
+        }),
         tick: Effect.fn("AlertRuntime.tick")(function*(runId: string) {
-          const journalRunId = JournalEvent.RunId.make(runId)
-          const history = yield* observed(journalRunId)
-          const now = yield* Clock.currentTimeMillis
-          const open = Array.from(history.open, ([condition, since]) => ({ runId, condition, since }))
-          const raised = decide(checked, open, now)
+          const { history, raised } = yield* considered(runId)
           const delivered: Array<Alert> = []
           const failed: Array<Alert> = []
           const refused: Array<Alert> = []
           const suppressed: Array<Alert> = []
           for (const alert of raised) {
-            if (HashSet.has(history.delivered, alertId(alert))) {
+            if (
+              HashMap.has(history.acknowledged, firstId(alert)) || HashSet.has(history.delivered, alertId(alert))
+            ) {
               suppressed.push(alert)
               continue
             }

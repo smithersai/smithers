@@ -35,6 +35,22 @@ export const deliveredEventType = "flows.alerts.delivered"
 export const failedEventType = "flows.alerts.failed"
 
 /**
+ * The journal event type one acknowledgement is recorded under.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const acknowledgedEventType = "flows.alerts.acknowledged"
+
+/**
+ * The most characters of a summary an alert carries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maxSummaryLength = 500
+
+/**
  * How loud an alert is.
  *
  * @category models
@@ -60,13 +76,18 @@ export type Severity = typeof Severity.Type
  * the field with a different value CLOSES the condition, which is what makes a
  * resume clear an approval alert without a second vocabulary for "cleared".
  *
+ * `summary` names a payload key whose string, on the entry that opened the
+ * condition, rides on the alert as the line a person reads. Only the first
+ * {@link maxSummaryLength} characters are kept.
+ *
  * @category models
  * @since 0.1.0
  */
 export const Detector = Schema.Struct({
   field: Schema.NonEmptyString,
   value: Schema.NonEmptyString,
-  eventTypes: Schema.optional(Schema.Array(Schema.NonEmptyString))
+  eventTypes: Schema.optional(Schema.Array(Schema.NonEmptyString)),
+  summary: Schema.optional(Schema.NonEmptyString)
 })
 
 /**
@@ -86,11 +107,15 @@ export type Detector = typeof Detector.Type
  * `null`, and a negative one fires with a `firedAt` earlier than the condition
  * it describes.
  *
+ * `repeatMs` pages again, every that many milliseconds, about a condition that
+ * is still open and that nobody acknowledged. Without it an alert pages once.
+ *
  * @category models
  * @since 0.1.0
  */
 export const Rule = Schema.Struct({
   afterMs: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+  repeatMs: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
   severity: Schema.optional(Severity),
   owner: Schema.optional(Schema.String),
   runbook: Schema.optional(Schema.String)
@@ -172,6 +197,8 @@ export interface Open {
   readonly condition: string
   /** The journal time of the entry that opened the condition. */
   readonly since: number
+  /** What the opening entry said, when its detector names a summary field. */
+  readonly summary?: string | undefined
 }
 
 /**
@@ -189,8 +216,19 @@ export interface Alert {
    * rule's `afterMs`, never the wall clock of whichever tick noticed.
    */
   readonly firedAt: number
+  /**
+   * Which repeat of the page this is, when the rule has a `repeatMs` and the
+   * first page went unacknowledged for that long. Absent on the first page.
+   * `firedAt` is then the journal instant this repeat came due.
+   */
+  readonly reminder?: number | undefined
   readonly severity: Severity
   readonly coalescingKey: string
+  /**
+   * What the entry that opened the condition said. Later entries never change
+   * it, so the alert stays byte-identical on every attempt.
+   */
+  readonly summary?: string | undefined
   readonly owner?: string | undefined
   readonly runbook?: string | undefined
 }
@@ -205,7 +243,7 @@ export interface Alert {
  * a writer.
  *
  * @param id the alert's {@link alertId}
- * @param outcome `delivered`, `refused`, or `failed/<code>`
+ * @param outcome `delivered`, `acknowledged`, `refused`, or `failed/<code>`
  * @private
  * @since 1.0.0
  */
@@ -234,12 +272,16 @@ export const coalescingKey = (runId: string, condition: string): string =>
  * re-opens is a NEW alert, because the second approval wait is not the first
  * one, and a key without the time would suppress it forever.
  *
+ * A repeat of the page is a page of its own, so its id ends in `:r<n>` and a
+ * sink that dedupes on the id still sends it. The id without that ending
+ * names the alert itself, and is what a person acknowledges.
+ *
  * @param alert the alert
  * @category getters
  * @since 0.1.0
  */
-export const alertId = (alert: Pick<Alert, "coalescingKey" | "since">): string =>
-  `alert:${alert.coalescingKey}:${alert.since}`
+export const alertId = (alert: Pick<Alert, "coalescingKey" | "since" | "reminder">): string =>
+  `alert:${alert.coalescingKey}:${alert.since}${alert.reminder === undefined ? "" : `:r${alert.reminder}`}`
 
 /**
  * The detectors one policy decides with: the four this package ships, with
@@ -266,6 +308,18 @@ export const payloadRecord = (payload: unknown): Readonly<Record<string, unknown
     : undefined
 
 /**
+ * One open condition as the fold holds it: when it opened, and what the
+ * opening entry said.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export interface Opened {
+  readonly since: number
+  readonly summary?: string | undefined
+}
+
+/**
  * Folds one entry into the open-condition map. Shared by {@link conditions}
  * and the runtime's incremental read, so both decide a condition the same
  * way.
@@ -285,9 +339,12 @@ export const observe = (
   detectors: Readonly<Record<string, Detector>>,
   entry: JournalEvent.Entry,
   payload: Readonly<Record<string, unknown>>,
-  open: Map<string, number>
+  open: Map<string, Opened>
 ): void => {
-  if (entry.eventType === deliveredEventType || entry.eventType === failedEventType) return
+  if (
+    entry.eventType === deliveredEventType || entry.eventType === failedEventType ||
+    entry.eventType === acknowledgedEventType
+  ) return
   for (const condition of Object.keys(policy.rules)) {
     const detector = detectors[condition]
     if (detector === undefined) continue
@@ -297,7 +354,13 @@ export const observe = (
     // run as evidence and close the condition on all of them.
     if (!Object.hasOwn(payload, detector.field)) continue
     if (payload[detector.field] === detector.value) {
-      if (!open.has(condition)) open.set(condition, entry.emittedAtMs)
+      if (open.has(condition)) continue
+      const key = detector.summary
+      const summary = key !== undefined && Object.hasOwn(payload, key) ? payload[key] : undefined
+      open.set(condition, {
+        since: entry.emittedAtMs,
+        ...(typeof summary === "string" ? { summary: summary.slice(0, maxSummaryLength) } : {})
+      })
     } else {
       open.delete(condition)
     }
@@ -324,13 +387,13 @@ export const conditions = (
   entries: ReadonlyArray<JournalEvent.Entry>
 ): ReadonlyArray<Open> => {
   const detectors = detectorsOf(policy)
-  const open = new Map<string, number>()
+  const open = new Map<string, Opened>()
   for (const entry of entries) {
     const payload = payloadRecord(entry.payload)
     if (payload === undefined) continue
     observe(policy, detectors, entry, payload, open)
   }
-  return Array.from(open, ([condition, since]) => ({ runId, condition, since }))
+  return Array.from(open, ([condition, opened]) => ({ runId, condition, ...opened }))
 }
 
 /**
@@ -360,6 +423,11 @@ export const decide = (
     const severity = rule.severity ?? policy.defaults?.severity ?? "warning"
     const owner = rule.owner ?? policy.defaults?.owner
     const runbook = rule.runbook ?? policy.defaults?.runbook
+    const firedAt = condition.since + rule.afterMs
+    // How many whole repeat periods the condition has outlived its delay by.
+    // Each repeat is its own alert id, so its content is as stable across
+    // ticks as the first page's.
+    const reminder = rule.repeatMs === undefined ? 0 : Math.floor((now - firedAt) / rule.repeatMs)
     return [{
       runId: condition.runId,
       condition: condition.condition,
@@ -368,9 +436,11 @@ export const decide = (
       // stable across ticks, and the queue refuses a reused id whose content
       // changed, so an alert stamped with the reading time would become
       // permanently undeliverable the moment a tick refused and time moved on.
-      firedAt: condition.since + rule.afterMs,
+      firedAt: rule.repeatMs === undefined ? firedAt : firedAt + reminder * rule.repeatMs,
+      ...(reminder === 0 ? {} : { reminder }),
       severity,
       coalescingKey: coalescingKey(condition.runId, condition.condition),
+      ...(condition.summary === undefined ? {} : { summary: condition.summary }),
       ...(owner === undefined ? {} : { owner }),
       ...(runbook === undefined ? {} : { runbook })
     }]
