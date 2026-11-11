@@ -177,10 +177,15 @@ describe("SelectionStore", () => {
           Number.MAX_SAFE_INTEGER + 1
         ]
       ) {
-        const exit = yield* withStore((store) => store.upsert([edge({ validFromMs })]).pipe(Effect.exit))
-        expect(errorOf(exit)).toMatchObject({ code: "invalid_input" })
+        const observed = yield* withStore((store) =>
+          Effect.gen(function*() {
+            const exit = yield* store.upsert([edge({ affects: "valid" }), edge({ validFromMs })]).pipe(Effect.exit)
+            return { exit, listed: yield* store.list() }
+          })
+        )
+        expect(errorOf(observed.exit)).toMatchObject({ code: "invalid_input" })
+        expect(observed.listed).toEqual([])
       }
-      expect(yield* withStore((store) => store.list())).toEqual([])
     }))
 
   it.effect("rejects malformed training observations before reading or writing", () =>
@@ -197,11 +202,15 @@ describe("SelectionStore", () => {
 
   it.effect("refuses a scope over the wildcard cap before writing", () =>
     Effect.gen(function*() {
-      const exit = yield* withStore((store) =>
-        store.upsert([edge({ scope: "**a".repeat(12) + "**b" })]).pipe(Effect.exit)
+      const observed = yield* withStore((store) =>
+        Effect.gen(function*() {
+          const exit = yield* store.upsert([edge({ affects: "valid" }), edge({ scope: "**a".repeat(12) + "**b" })])
+            .pipe(Effect.exit)
+          return { exit, listed: yield* store.list() }
+        })
       )
-      expect(errorOf(exit)).toMatchObject({ code: "invalid_input" })
-      expect(yield* withStore((store) => store.list())).toEqual([])
+      expect(errorOf(observed.exit)).toMatchObject({ code: "invalid_input" })
+      expect(observed.listed).toEqual([])
     }))
 
   it.effect("refuses to list a scope stored before the wildcard cap", () =>

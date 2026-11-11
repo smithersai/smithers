@@ -34,9 +34,11 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -250,8 +252,19 @@ describe.skipIf(absent !== undefined)("a parent edge recorded again", () => {
               ),
               { concurrency: "unbounded" }
             )
-            const failed = exits.filter((exit) => exit._tag === "Failure")
-            expect(failed, `${ring.length} runs, round ${round}`).toHaveLength(1)
+            const at = `${ring.length} runs, round ${round}`
+            const refused = exits.flatMap((exit, index) =>
+              Exit.isFailure(exit) ? [{ child: named[index]!, error: Cause.squash(exit.cause) }] : []
+            )
+            // Only the typed refusal is admissible: a lock timeout or deadlock dies, and kills the admitting parent.
+            expect(refused, at).toHaveLength(1)
+            expect(refused[0]!.error, at).toBeInstanceOf(DurableEngineState.RunParentCycleError)
+            for (const [index, child] of named.entries()) {
+              const parents = (yield* first.runParents(child)).map((edge) => edge.parentId)
+              expect(parents, `${at}, ${child}`).toEqual(
+                child === refused[0]!.child ? [] : [named[(index + 1) % named.length]]
+              )
+            }
           }
         }
       }))),
