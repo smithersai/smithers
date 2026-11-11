@@ -1354,6 +1354,27 @@ function namedTypeString(type: Type, hint: string, loc: Node, extraDecls: TypeDe
   return adoptAnonymous({ name, kind: "record", fields: fieldsOf(name, type, loc, extraDecls) }, type, extraDecls);
 }
 
+/** A local's or parameter's type text. An anonymous object type (an inline `{ … }` parameter, a destructured value,
+ *  a rest binding) becomes a datatype named from `hint`, as a field's does (`namedTypeString`). A temporary's name
+ *  (`_destr0`) is no type name: Dafny identifiers cannot start with `_` and the type filter keeps capitalized names,
+ *  so the leading underscores go and the first letter is capitalized. */
+function localTypeText(type: Type, hint: string, loc: Node): string {
+  const printed = typeToString(type);
+  if (_synthArrayUnions === null) return printed;
+  const bare = hint.replace(/^_+/, "") || "Anonymous";
+  const name = typeName(bare.charAt(0).toUpperCase() + bare.slice(1));
+  if (/\b__(?:type|object)\b/.test(printed)) return namedTypeString(type, name, loc, _synthArrayUnions);
+  // A rest binding's type (`const { a, ...rest } = x`) carries the binding's own name as its symbol, which is not a
+  // type: anonymous unless an interface, alias or class declares it.
+  if (!type.isObject() || type.isArray() || type.isTuple() || type.getCallSignatures().length > 0 || type.getProperties().length === 0) return printed;
+  const declared = (type.getSymbol()?.getDeclarations() ?? []).some(d => Node.isInterfaceDeclaration(d) || Node.isTypeAliasDeclaration(d) || Node.isClassDeclaration(d));
+  if (declared || type.getAliasSymbol() !== undefined) return printed;
+  const known = _anonNames.get(type.compilerType);
+  if (known) return known;
+  const fresh = freshTypeName(name);
+  return adoptAnonymous({ name: fresh, kind: "record", fields: fieldsOf(fresh, type, loc, _synthArrayUnions) }, type, _synthArrayUnions);
+}
+
 /** A tagged union of anonymous object types (an Effect Schema `Union` of `TaggedStruct`s) as a discriminated-union
  *  datatype named from `hint`; undefined when the members share no literal discriminant. */
 function taggedUnionName(type: Type, members: Type[], hint: string, loc: Node, extraDecls: TypeDeclInfo[]): string | undefined {
@@ -1872,6 +1893,47 @@ function extractStmts(stmts: Node[]): RawStmt[] {
               }
               continue;
             }
+          }
+        }
+        // Destructuring rest of a record: `const { a: x, ...rest } = obj`. Each named element is a field read. When
+        // every omitted field is optional, `rest` is `obj` with them absent, `{ ...obj, a: undefined }` of `obj`'s
+        // type, so a spread of `rest` carries exactly the fields it has; otherwise it is a record of the rest.
+        if (!isHavoc && Node.isObjectBindingPattern(nameNode)) {
+          const elements = nameNode.getElements();
+          const restEl = elements.find(el => el.getDotDotDotToken());
+          const named = elements.filter(el => !el.getDotDotDotToken());
+          const initializer = d.getInitializer();
+          if (restEl && initializer && named.every(el => { const pn = el.getPropertyNameNode(); return !pn || Node.isIdentifier(pn); })) {
+            const sourceType = initializer.getType();
+            const omitted = named.map(el => el.getPropertyNameNode()?.getText() ?? el.getName());
+            const required = omitted.filter(f => {
+              const prop = sourceType.getProperty(f);
+              return !prop || !(prop.hasFlags(ts.SymbolFlags.Optional) || (prop.getDeclarations()[0] as any)?.hasQuestionToken?.());
+            });
+            const tempName = freshName(`_destr${_destrCounter++}`);
+            const sourceTs = localTypeText(sourceType, tempName, initializer);
+            result.push({ kind: "let", name: tempName, mutable: false, tsType: sourceTs, init: extractExpr(initializer), line });
+            const source: RawExpr = { kind: "var", name: tempName };
+            for (const el of named) {
+              const inner = el.getNameNode();
+              if (!Node.isIdentifier(inner)) throw new Error(`nested binding pattern in object destructuring not yet supported: ${el.getText()}`);
+              const field = el.getPropertyNameNode()?.getText() ?? inner.getText();
+              result.push({ kind: "let", name: inner.getText(), mutable: s.getDeclarationKind() === "let", tsType: _eraseGenerics(typeToString(el.getType())), init: { kind: "field", obj: source, field }, line });
+            }
+            // Omitting a required field changes the type: `rest` is then a record of the remaining fields, each read
+            // from `obj`.
+            const restType = restEl.getType();
+            result.push(required.length === 0 ? {
+              kind: "let", name: restEl.getName(), mutable: s.getDeclarationKind() === "let", tsType: sourceTs,
+              init: { kind: "record", spread: source, fields: omitted.map(f => ({ name: f, value: { kind: "var", name: "undefined" } as RawExpr })) },
+              line,
+            } : {
+              kind: "let", name: restEl.getName(), mutable: s.getDeclarationKind() === "let",
+              tsType: localTypeText(restType, restEl.getName(), restEl),
+              init: { kind: "record", spread: null, fields: restType.getProperties().map(f => ({ name: f.getName(), value: { kind: "field", obj: source, field: f.getName() } as RawExpr })) },
+              line,
+            });
+            continue;
           }
         }
         // Destructuring rest: const { [k]: _, ...rest } = map → let rest = map.delete(k)
@@ -2397,6 +2459,9 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       let tsType: string;
       if (tn && Node.isUnionTypeNode(tn)) {
         tsType = _eraseGenerics(_tsTypeFromUnionNode(tn));
+      } else if (tn && Node.isTypeLiteral(tn)) {
+        // An inline record type (`model: { readonly k: number }`) has no name for a datatype: synthesize one.
+        tsType = localTypeText(p.getType(), typeName(fn.getName() ?? "anonymous", p.getName()), p);
       } else if (tn) {
         tsType = _eraseGenerics(tn.getText());
       } else {

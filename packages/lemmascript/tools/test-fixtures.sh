@@ -157,6 +157,12 @@ expect_proof_failure \
 expect_proof_failure \
   "Dafny treated a present zero as a nullish fallback" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-falsy-wrong.ts"
+# A destructured anonymous record, its nested record and an inline record parameter are declared records.
+cp tools/fixtures/destructured-nested-record.ts tools/fixtures/destructured-nested-record-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/destructured-nested-record.ts"
+expect_proof_failure \
+  "Dafny accepted a destructured sum over the wrong nested field" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/destructured-nested-record-wrong.ts"
 # `x ?? null` and `x ?? undefined` keep the optional type; claiming another field is a proof failure.
 cp tools/fixtures/nullish-null-default.ts tools/fixtures/nullish-null-default-wrong.ts "$fixture_dir/"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/nullish-null-default.ts"
