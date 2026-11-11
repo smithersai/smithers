@@ -915,7 +915,7 @@ product runs on: it serves `create-flow`, so it is where an agent's
 repository's own tree with the verified loader, the reserved job declarations
 out of the measured bundle it shipped as — so it serves that catalog through
 `Executable.layerRefreshable` and names which half may be rebuilt.
-`refreshableEntry` in `.smithers/flows/repository/registry.ts` is that rule, shared with
+`refreshableEntry` in `.smithers/flows/coding/registry.ts` is that rule, shared with
 `.smithers/flows/test/coding-catalog-refresh.test.ts` rather than restated there: a
 reserved declaration is held `Fixed`, because a run this host is serving can
 write anything into the tree and must not be able to replace an admitted

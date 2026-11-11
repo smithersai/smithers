@@ -11,8 +11,8 @@ import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import { privatePath } from "../repository/check-context.ts"
 import { files } from "./jev-check.ts"
+import { privatePath } from "./private-paths.ts"
 import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt } from "./schema.ts"
 
 /** The role every lens runs on. */

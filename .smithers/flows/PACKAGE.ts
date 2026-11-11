@@ -1190,6 +1190,7 @@ const securityReview = Smithers.SecurityReview({
         "repository/inspection.ts",
         "repository/checks.ts",
         "repository/check-context.ts",
+        "coding/private-paths.ts",
         "coding/filesystem.ts",
         "coding/immutable-source.ts",
         "coding/snapshots.ts",
@@ -1249,6 +1250,7 @@ const securityReview = Smithers.SecurityReview({
         "repository/triggers.ts",
         "repository/delivery.ts",
         "repository/jev-*.ts",
+        "coding/jev-rules.ts",
         "coding/steering.ts",
         "coding/correction.ts",
         "coding/feedback.ts",
@@ -1273,7 +1275,7 @@ const securityReview = Smithers.SecurityReview({
         "coding/host-modules.ts",
         "coding/host-modules-build.mjs",
         "coding/build.mjs",
-        "repository/registry.ts"
+        "coding/registry.ts"
       ]
     },
     {

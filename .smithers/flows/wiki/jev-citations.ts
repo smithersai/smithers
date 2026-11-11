@@ -6,7 +6,7 @@
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Result, Schema } from "effect"
-import { batches } from "../repository/jev-checks.ts"
+import { batches } from "../coding/jev-rules.ts"
 import { visibleLine } from "./evidence.ts"
 import { type Evidence, type Review, WikiError } from "./schema.ts"
 

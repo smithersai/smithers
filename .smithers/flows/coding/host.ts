@@ -27,16 +27,7 @@ import { deliveryLayers } from "../repository/delivery.ts"
 import { evaluationLayers, ScoreCase } from "../repository/evaluation.ts"
 import { executionLayers } from "../repository/execution.ts"
 import { inspectionLayers } from "../repository/inspection.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
 import { failureLayer, jobFlows, modelLayers, modelNames } from "../repository/jobs.ts"
-import {
-  bindRepositoryRegistry,
-  type CodingRoute,
-  provisionBuiltins,
-  repositoryCatalog,
-  repositoryRegistration,
-  runningRepositoryPolicy
-} from "../repository/registry.ts"
 import type { RepositoryRemote } from "../repository/remote.ts"
 import { replyLayers } from "../repository/replies.ts"
 import { RunJob, RunSetup, setupLayers, SuggestSetup } from "../repository/setup.ts"
@@ -50,6 +41,7 @@ import { commandReceipts } from "./command-receipts.ts"
 import { correctionLayers, SelectRepair } from "./correction.ts"
 import { dispatchModels } from "./dispatch.ts"
 import { dispatchRegistration } from "./dispatch/flow.ts"
+import { evaluatorLayer } from "./evaluator.ts"
 import * as CodingFileSystem from "./filesystem.ts"
 import { loadFlowsLayer } from "./flow-load.ts"
 import FlowLoad from "./flow-load/flow.ts"
@@ -70,6 +62,14 @@ import { preparationLayers } from "./preparation.ts"
 import { type ProjectConfig, roleSeatRefusal } from "./project-config.ts"
 import { prototypeRegistration } from "./prototype.ts"
 import { registration } from "./registration.ts"
+import {
+  bindRepositoryRegistry,
+  type CodingRoute,
+  provisionBuiltins,
+  repositoryCatalog,
+  repositoryRegistration,
+  runningRepositoryPolicy
+} from "./registry.ts"
 import { requestRegistration } from "./request.ts"
 import { reviewCheckDelegate, reviewCheckLayers, ReviewLens, reviewRole } from "./review-check.ts"
 import {

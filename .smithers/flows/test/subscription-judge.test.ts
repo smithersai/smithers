@@ -8,8 +8,8 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { test } from "node:test"
+import { evaluatorLayer } from "../coding/evaluator.ts"
 import { hostEvaluator as releaseEvaluator } from "../release-support/runtime.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
 import { hostEvaluator as wikiEvaluator } from "../wiki/runtime.ts"
 
 const unavailableJev = Layer.succeed(HttpClient.HttpClient)(

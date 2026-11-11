@@ -16,21 +16,21 @@ import {
   FLOW_AUTHORING_PACK,
   FLOW_AUTHORING_STAGES
 } from "../../../packages/rpc/src/FlowAuthoring.ts"
-import Dispatch from "../coding/dispatch/flow.ts"
-import FlowLoad from "../coding/flow-load/flow.ts"
-import ImplementPlan from "../coding/flow.ts"
-import { seal } from "../coding/host-modules.ts"
-import ImplementAtoms from "../coding/implementation/flow.ts"
-import TodoConflict from "../coding/rebase-conflict/flow.ts"
-import Verify from "../coding/verify/flow.ts"
-import CodingWiki from "../coding/wiki/flow.ts"
 import Learning from "../learning/flow.ts"
+import { deploymentMinutes, deploymentTokens } from "../repository/inspection.ts"
+import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "../repository/schema.ts"
+import { TriggerOutcome } from "../repository/triggers.ts"
 import * as Review from "../review/flow.ts"
 import Todo from "../todo/flow.ts"
 import { builtinDefaults, shipsWithDefault } from "./builtin-defaults.ts"
-import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
-import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "./schema.ts"
-import { TriggerOutcome } from "./triggers.ts"
+import Dispatch from "./dispatch/flow.ts"
+import FlowLoad from "./flow-load/flow.ts"
+import ImplementPlan from "./flow.ts"
+import { seal } from "./host-modules.ts"
+import ImplementAtoms from "./implementation/flow.ts"
+import TodoConflict from "./rebase-conflict/flow.ts"
+import Verify from "./verify/flow.ts"
+import CodingWiki from "./wiki/flow.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
 /**
@@ -55,32 +55,38 @@ declare const __SMITHERS_BUILTIN_DEFAULTS__: Readonly<Record<string, string>> | 
 const authoringSource = (name: string) => `../${name}/flow.mdx`
 const firstPartyPrompts = ["issue/repro", "issue/poc", "pr-triage", "review/change"] as const
 const policySources = [
-  "../coding/host.ts",
-  "../coding/native.ts",
-  "../coding/native-schema.ts",
-  "../coding/schema.ts",
-  "../coding/dispatch.ts",
-  "../coding/flow.ts",
-  "../coding/dispatch/flow.ts",
-  "../coding/implementation/flow.ts",
-  "../coding/request-flow.ts",
-  "../coding/todo.ts",
-  "../coding/todo-route.ts",
-  "../coding/steps.ts",
-  "../coding/package.json",
-  "../coding/flow-load.ts",
-  "../coding/flow-load/flow.ts",
+  "./registry.ts",
+  "./builtin-defaults.ts",
+  "./evaluator.ts",
+  "./jev-rules.ts",
+  "./clip.ts",
+  "./private-paths.ts",
+  "./host.ts",
+  "./native.ts",
+  "./native-schema.ts",
+  "./schema.ts",
+  "./dispatch.ts",
+  "./flow.ts",
+  "./dispatch/flow.ts",
+  "./implementation/flow.ts",
+  "./request-flow.ts",
+  "./todo.ts",
+  "./todo-route.ts",
+  "./steps.ts",
+  "./package.json",
+  "./flow-load.ts",
+  "./flow-load/flow.ts",
   "../todo/flow.ts",
   "../learning/flow.ts",
-  "../coding/verify/flow.ts",
-  "../coding/rebase-conflict/flow.ts",
-  "../coding/todo-conflict.ts",
-  "../coding/todo-conflict-schema.ts",
-  "../coding/vibe-flow.ts",
-  "../coding/wiki/flow.ts",
-  "../coding/planning-authority.ts",
-  "../coding/immutable-source.ts",
-  "../coding/check-detection.ts",
+  "./verify/flow.ts",
+  "./rebase-conflict/flow.ts",
+  "./todo-conflict.ts",
+  "./todo-conflict-schema.ts",
+  "./vibe-flow.ts",
+  "./wiki/flow.ts",
+  "./planning-authority.ts",
+  "./immutable-source.ts",
+  "./check-detection.ts",
   "../../../packages/rpc/src/RepositorySetup.ts",
   "../../../pnpm-lock.yaml",
   // A prompt a workspace runs is policy: editing one changes what every
@@ -97,10 +103,12 @@ export const runningRepositoryPolicy = Effect.gen(function*() {
   }
   const fs = yield* FileSystem.FileSystem
   // Every repository helper runs with this host's authority. Discovering the
-  // source directory keeps new judge and check modules in the policy identity.
-  const repositorySources = (yield* fs.readDirectory(fileURLToPath(new URL(".", import.meta.url))))
+  // pack's directory keeps new judge and check modules in the policy identity.
+  // The pack is deleted next, and this listing with it.
+  const repositorySources = (yield* fs.readDirectory(fileURLToPath(new URL("../repository/", import.meta.url))))
     .filter((name) => name.endsWith(".ts"))
     .sort()
+    .map((name) => `../repository/${name}`)
   const sources = yield* Effect.forEach([...repositorySources, ...policySources], (name) =>
     Effect.gen(function*() {
       const path = fileURLToPath(new URL(name, import.meta.url)), stat = yield* fs.stat(path)

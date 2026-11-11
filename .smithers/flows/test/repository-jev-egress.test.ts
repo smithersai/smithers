@@ -9,7 +9,7 @@ import type { AddressInfo } from "node:net"
 import type { Duplex } from "node:stream"
 import { test } from "node:test"
 import { platform } from "../../../packages/smithers/src/internal/NodeControlHost.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { evaluatorLayer } from "../coding/evaluator.ts"
 
 const unavailableJev = Layer.succeed(HttpClient.HttpClient)(
   HttpClient.make((request) =>

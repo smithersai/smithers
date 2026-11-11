@@ -24,7 +24,7 @@ import { Effect, Schema, Semaphore } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
-import { clip } from "../repository/clip.ts"
+import { clip } from "../coding/clip.ts"
 import { workspaces } from "./host.ts"
 import { bookkeeping, marker, type Need as VerdictNeed } from "./verdict.ts"
 

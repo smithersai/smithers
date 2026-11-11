@@ -6,7 +6,7 @@ import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { policySources } from "../wiki/reuse.ts"
-import { builtinDefaults, shipsWithDefault } from "../repository/builtin-defaults.ts"
+import { builtinDefaults, shipsWithDefault } from "./builtin-defaults.ts"
 import { hostModulesSource } from "./host-modules-build.mjs"
 import { typecheckInputs, typecheckSource } from "./flow-typecheck-build.mjs"
 import { wikiPolicyIdentity } from "./wiki-policy.ts"
@@ -146,7 +146,7 @@ export const bundle = async (entryPoint, outfile) => {
   for (const source of policySources) policyTexts.set(source, await readFile(resolve(root, source), "utf8"))
   // The packaged default flows travel with the executable the same way: each
   // entry and the modules beside it, so the host writes and measures exactly
-  // the closure it compiled (.smithers/flows/repository/builtin-defaults.ts).
+  // the closure it compiled (.smithers/flows/coding/builtin-defaults.ts).
   const defaults = {}
   for (const name of builtinDefaults) {
     const directory = resolve(root, ".smithers", "flows", name)

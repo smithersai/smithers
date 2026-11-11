@@ -13,8 +13,9 @@ import {
   withImmutableSource
 } from "../coding/immutable-source.ts"
 import { normalizePath, Source } from "../coding/planning-sources.ts"
+import { privatePath } from "../coding/private-paths.ts"
 import { CodingError } from "../coding/schema.ts"
-import { captureCheckContext, CheckContext, contextFailure, privatePath, rulePaths } from "./check-context.ts"
+import { captureCheckContext, CheckContext, contextFailure, rulePaths } from "./check-context.ts"
 import { currentExecutionId } from "./inspection.ts"
 import { jevSemanticCheck } from "./jev-checks.ts"
 import { retainedStepError, Work } from "./jobs.ts"

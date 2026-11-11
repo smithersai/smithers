@@ -9,18 +9,18 @@ import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Result, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import { privatePath } from "../repository/check-context.ts"
-import type { Comparison } from "../repository/checks.ts"
 import {
   batches,
   hunks,
   jevUnavailable,
   jevVerdict,
   MAX_HUNK_BYTES,
+  type RuleCheck,
   ruleClassifier,
+  type RuleComparison,
   scopedPaths
-} from "../repository/jev-checks.ts"
-import type { Check as RepositoryCheck } from "../repository/schema.ts"
+} from "./jev-rules.ts"
+import { privatePath } from "./private-paths.ts"
 import { Check, checkInputDigest, CodingError, type Finding, Implementation, Receipt } from "./schema.ts"
 
 /** The most rules one check body may declare. */
@@ -210,7 +210,7 @@ export const judge = (
     // A file touching a private repository-job path on either side never reaches Jev.
     const public_ = parsed.filter((file) => !file.sides.some(privatePath))
     const paths = public_.map((file) => file.path)
-    const comparison: typeof Comparison.Type = { base, candidate, diff: "", paths, files: [], changes: [] }
+    const comparison: RuleComparison = { diff: "", paths, files: [], changes: [] }
     const changed = public_.flatMap((file) =>
       hunks({ ...comparison, diff: file.text }).map((hunk) => ({ ...hunk, path: file.path }))
     )
@@ -220,14 +220,7 @@ export const judge = (
         finding(`${clipped.path}:${clipped.line} has a hunk too large for the Jev check to judge whole`)
       ])
     }
-    const checks = rules.map((rule): typeof RepositoryCheck.Type => ({
-      id: rule.id,
-      name: rule.id,
-      kind: "ai",
-      rule: rule.rule,
-      paths: rule.paths,
-      policy: "report"
-    }))
+    const checks = rules.map((rule): RuleCheck => ({ id: rule.id, name: rule.id, rule: rule.rule, paths: rule.paths }))
     const scope = checks.map((rule) => {
       const scoped = new Set(scopedPaths(comparison, rule))
       return {

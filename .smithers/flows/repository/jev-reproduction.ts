@@ -3,8 +3,8 @@
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Schema } from "effect"
+import { clip } from "../coding/clip.ts"
 import { CodingError } from "../coding/schema.ts"
-import { clip } from "./clip.ts"
 import { subjectOf } from "./jev-duplicates.ts"
 import type { Observation, Reproduction, ReproductionReview, Work } from "./jobs.ts"
 

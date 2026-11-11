@@ -20,9 +20,9 @@ import * as NodeFs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Label from "../../../packages/smithers/build/build-cli/src/Label.ts"
 import * as TrustedReview from "../../../packages/smithers/build/build-cli/src/TrustedReview.ts"
-import { privatePath } from "../repository/check-context.ts"
 import { type ImmutableSourceOptions, withImmutableCommit, withImmutableSource } from "./immutable-source.ts"
 import { NativeCoding } from "./native.ts"
+import { privatePath } from "./private-paths.ts"
 import { Check, checkInputDigest, CodingError, Implementation, Receipt } from "./schema.ts"
 
 /** The registered Markdown flow's verified body, as its first nonempty line: the review labels it applies. */

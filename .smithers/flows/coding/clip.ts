@@ -1,8 +1,8 @@
 /**
  * Clips one string to a byte budget without splitting a surrogate pair. Every
  * Jev classifier in the flows holds its state to the same 32 KiB, so they all
- * clip the same way. It lives apart from `jev-checks.ts` so a classifier can
- * clip without loading the host judge.
+ * clip the same way. It lives apart from `jev-rules.ts` and `evaluator.ts` so a
+ * classifier can clip without loading the rule judge or the host evaluator.
  */
 const encoder = new TextEncoder()
 const bytes = (value: string): number => encoder.encode(value).length

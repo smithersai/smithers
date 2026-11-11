@@ -30,8 +30,8 @@ import * as CodingFileSystem from "../coding/filesystem.ts"
 import * as HostRegistry from "../coding/host-registry.ts"
 import { provisionHostBuiltins, repositoryFlowsServed, roleResolver } from "../coding/host.ts"
 import { NativeCoding } from "../coding/native.ts"
+import { bindRepositoryRegistry } from "../coding/registry.ts"
 import { composeRoot } from "../coding/serve-host.ts"
-import { bindRepositoryRegistry } from "../repository/registry.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const changeId = "k".repeat(32)

@@ -16,7 +16,9 @@ const data = [
     ".smithers/flows/wiki/runtime.ts",
     ".smithers/flows/wiki/reuse.ts",
     ".smithers/flows/wiki/jev-citations.ts",
-    ".smithers/flows/repository/jev-checks.ts",
+    ".smithers/flows/coding/evaluator.ts",
+    ".smithers/flows/coding/jev-rules.ts",
+    ".smithers/flows/coding/clip.ts",
     ".smithers/flows/coding/schema.ts",
     ".smithers/flows/coding/wiki-output.ts",
     ".smithers/flows/release-support/runtime.ts"

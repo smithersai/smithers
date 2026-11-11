@@ -117,5 +117,5 @@ fails `unconfigured` only when it holds neither.
 
 ## Examples
 
-- [.smithers/flows/coding/jev-check.ts](https://github.com/smithersai/smithers/blob/main/flows/coding/jev-check.ts)
-- [.smithers/flows/repository/jev-checks.ts](https://github.com/smithersai/smithers/blob/main/flows/repository/jev-checks.ts)
+- [.smithers/flows/coding/jev-check.ts](https://github.com/smithersai/smithers/blob/main/.smithers/flows/coding/jev-check.ts)
+- [.smithers/flows/coding/jev-rules.ts](https://github.com/smithersai/smithers/blob/main/.smithers/flows/coding/jev-rules.ts)

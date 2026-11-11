@@ -3,6 +3,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Effect, Path, Schema } from "effect"
 import { contained, type ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { extractPaths, normalizePath, Source } from "../coding/planning-sources.ts"
+import { privatePath } from "../coding/private-paths.ts"
 import { repositorySourceReader } from "./inspection.ts"
 import type { Check } from "./schema.ts"
 
@@ -22,9 +23,6 @@ export const CheckContext = Schema.Struct({
 })
 export type CheckContext = typeof CheckContext.Type
 const maxFiles = 24, maxBytes = 128_000, maxReads = 96, maxDepth = 3
-/** A job's own retained configuration. `writeCandidate` commits it into the
- * repository, and no check may read it back as reviewable source. */
-export const privatePath = (path: string): boolean => /^\.smithers\/repository-jobs(?:\/|$)/i.test(path)
 const script = /\.(?:[cm]?[jt]sx?)$/i
 const encoder = new TextEncoder()
 

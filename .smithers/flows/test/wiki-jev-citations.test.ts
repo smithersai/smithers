@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { MAX_STATES } from "../repository/jev-checks.ts"
+import { MAX_STATES } from "../coding/jev-rules.ts"
 import Wiki from "../wiki/flow.ts"
 import {
   checkCitations,

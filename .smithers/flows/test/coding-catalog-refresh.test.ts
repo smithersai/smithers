@@ -32,13 +32,13 @@ import { test, type TestContext } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as HostRegistry from "../coding/host-registry.ts"
 import { repositoryFlowsServed } from "../coding/host.ts"
-import { composeRoot } from "../coding/serve-host.ts"
 import {
   bindRepositoryRegistry,
   provisionBuiltins,
   repositoryCatalog,
   repositoryRegistration
-} from "../repository/registry.ts"
+} from "../coding/registry.ts"
+import { composeRoot } from "../coding/serve-host.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 const policy = "a".repeat(64)

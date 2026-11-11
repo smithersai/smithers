@@ -230,7 +230,7 @@ test("the repository host admits only its pinned TODO descriptor before loading 
   const Registry = await import("@smthrs/registry/Registry")
   const Discovery = await import("@smthrs/registry/Discovery")
   const Descriptor = await import("@smthrs/registry/Descriptor")
-  const { bindRepositoryRegistry } = await import("../repository/registry.ts")
+  const { bindRepositoryRegistry } = await import("../coding/registry.ts")
   await Effect.runPromise(
     Effect.gen(function*() {
       const source = yield* Registry.make({

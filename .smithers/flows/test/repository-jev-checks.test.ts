@@ -8,6 +8,7 @@ import { Effect, FileSystem, Layer, ManagedRuntime, Result, Schema } from "effec
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import { batches, hunks, MAX_STATES } from "../coding/jev-rules.ts"
 import { CodingError } from "../coding/schema.ts"
 import type { CheckContext } from "../repository/check-context.ts"
 import * as Checks from "../repository/checks.ts"
@@ -22,7 +23,7 @@ import {
   RunChecks,
   verifyTrialChecks
 } from "../repository/checks.ts"
-import { batches, hunks, jevSemanticCheck, MAX_STATES, proposalHunks } from "../repository/jev-checks.ts"
+import { jevSemanticCheck, proposalHunks } from "../repository/jev-checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check, Draft, JobResult, StepResult } from "../repository/schema.ts"
 

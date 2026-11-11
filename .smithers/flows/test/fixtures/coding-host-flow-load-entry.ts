@@ -2,7 +2,7 @@ import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
 import * as Registry from "@smthrs/registry/Registry"
 import { layerRegistry } from "../../../../packages/smithers/src/NodeControl.ts"
-import { bindRepositoryRegistry, provisionBuiltins } from "../../repository/registry.ts"
+import { bindRepositoryRegistry, provisionBuiltins } from "../../coding/registry.ts"
 // The coding host's own composition, so this bundle shares exactly what the
 // packaged host shares and flow-load loads a repository's flows with it.
 import "../../coding/host.ts"

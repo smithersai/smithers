@@ -4,7 +4,7 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect } from "effect"
 import { join } from "node:path"
-import { bindRepositoryRegistry, provisionBuiltins } from "../../repository/registry.ts"
+import { bindRepositoryRegistry, provisionBuiltins } from "../../coding/registry.ts"
 
 const root = process.argv[2]
 if (root === undefined) throw new Error("Expected a fresh repository root")

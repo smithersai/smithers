@@ -5,7 +5,7 @@
  * This module exists because those ids are a contract between two halves that
  * cannot import each other. The app's `/flow.new` door launches
  * {@link FLOW_AUTHORING_ENTRY} through the gateway; the workspace host
- * (`.smithers/flows/repository/registry.ts`) provisions the same names as built-in
+ * (`.smithers/flows/coding/registry.ts`) provisions the same names as built-in
  * bodies on every workspace it serves. When the two drifted apart the door
  * launched `create-workflow`, a name from the 0.x JSX runtime that no 1.0
  * composition has ever registered, and every attempt refused.

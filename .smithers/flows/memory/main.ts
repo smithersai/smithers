@@ -23,7 +23,7 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import * as GrantStore from "../../../packages/smithers/flows/kernel/src/GrantStore.ts"
 import * as KernelHttpClient from "../../../packages/smithers/flows/kernel/src/HttpClient.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { evaluatorLayer } from "../coding/evaluator.ts"
 import * as Calibrate from "./calibrate.ts"
 
 const { positionals, values } = parseArgs({

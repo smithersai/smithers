@@ -4,9 +4,9 @@
 import * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Result, Schema } from "effect"
+import { clip } from "../coding/clip.ts"
+import { batches } from "../coding/jev-rules.ts"
 import { CodingError } from "../coding/schema.ts"
-import { clip } from "./clip.ts"
-import { batches } from "./jev-checks.ts"
 import type { Classification, Observation, Work } from "./jobs.ts"
 import type { Record } from "./schema.ts"
 

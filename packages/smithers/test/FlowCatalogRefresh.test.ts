@@ -100,7 +100,7 @@ export default ({
  * carries each node's declaration site relative to the project root, and a
  * site outside that root is dropped whole rather than published as somebody's
  * home directory. A project registers its own flows from its own files, so
- * this file stands where `.smithers/flows/repository/registry.ts` stands in this
+ * this file stands where `.smithers/flows/coding/registry.ts` stands in this
  * repository.
  */
 const delegates = `import { Action, Flow, Interpreter } from "@smthrs/flow"

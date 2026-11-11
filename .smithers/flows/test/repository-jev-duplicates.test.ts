@@ -8,10 +8,10 @@ import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import { batches } from "../coding/jev-rules.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { executionLayers } from "../repository/execution.ts"
 import { inspectionLayers } from "../repository/inspection.ts"
-import { batches } from "../repository/jev-checks.ts"
 import {
   DUPLICATE_CONFIDENCE,
   duplicateCandidates,
