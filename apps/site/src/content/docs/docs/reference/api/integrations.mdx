@@ -1,6 +1,6 @@
 ---
 title: "@smthrs/integrations"
-description: "GitHub adapters over the Smithers control plane"
+description: "GitHub and Telegram adapters over the Smithers control plane"
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/integrations/docs/api.md"
 ---
 
@@ -10,15 +10,16 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
-The package exports `Core` and `GitHub` from `@smthrs/integrations`,
-`@smthrs/integrations/core`, and `@smthrs/integrations/github`.
+The package exports `Core`, `GitHub` and `Telegram` from `@smthrs/integrations`,
+`@smthrs/integrations/core`, `@smthrs/integrations/github`, and
+`@smthrs/integrations/telegram`.
 `Environment` is available through `@smthrs/integrations/Environment`.
 
 Conventions worth knowing before the signatures:
 
 - Clients are Effect services. Each has a tag (for example `GitHubClient`), a
   `make` constructor for direct use, and a `layer` for composition.
-- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`) takes
+- Everything that speaks HTTP (`GitHubClient`, `Proxy`, `OAuthToken`, `Telegram.Source`) takes
   Effect's `HttpClient` from context. Provide `FetchHttpClient.layer` from
   `effect/http`, or, in a test, a client of your own that injects a transport
   fault. None of them follows a redirect: each sets the fetch transport's
@@ -706,3 +707,34 @@ ones `container`-scoped records. Deletions are not listed by GitHub; run a
 tombstones. A rate limit or a transient read failure fails the run once,
 `retryable`; run the sync as a durable step whose retry policy repeats it, and
 the repeat resumes from the committed cursor.
+
+## Telegram
+
+Receiving only: a `getUpdates` long-poll source and the schemas of what it
+delivers. Sending is `Channels` in `@smthrs/notifications`. See
+[the Telegram guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/guides/telegram.md).
+
+### Telegram.Source
+
+| Export                                         | Signature                                                                                     | Notes                                                                                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                                         | `(options: Options, env?) => Effect<Source, IntegrationError, HttpClient>`                    | A core `Source.Source` over `getUpdates`. Fails `invalid-config` for bad options and `credentials-missing` for no well-formed token.     |
+| `Options`                                      | `{ allowedChatIds, botToken?, sourceId?, pollTimeoutSeconds?, requestTimeout?, apiBaseUrl? }` | `allowedChatIds` is required and non-empty. The token falls back to `SMITHERS_TELEGRAM_BOT_TOKEN` in `env`.                              |
+| `Source`                                       | `Core.Source.Source`                                                                          | `poll` is one request and commits nothing; `run` is `Core.Source.runWithCursor`, committing `update_id + 1` after the batch was handled. |
+| `updateToEvents`                               | `(source, update, receivedAtMs) => ReadonlyArray<ExternalEvent>`                              | A `message` or `edited_message` becomes one event, or two in a thread. Anything else, or a message with no chat, becomes none.           |
+| `chatCorrelationId`, `threadCorrelationId`     | `(chatId) => string`, `(chatId, threadId) => string`                                          | `chat:<id>` and `chat:<id>:thread:<id>`.                                                                                                 |
+| `MESSAGE_EVENT`, `EDITED_MESSAGE_EVENT`        | `string`                                                                                      | `integration:telegram:message` and `integration:telegram:edited_message`.                                                                |
+| `SERVICE`, `DEFAULT_API_BASE_URL`, `TOKEN_ENV` | `string`                                                                                      | `telegram`, `https://api.telegram.org`, `SMITHERS_TELEGRAM_BOT_TOKEN`.                                                                   |
+
+`poll` fails `poll-failed` with `details.retryable` true for a transport
+failure, a timeout, 408, 429 and 5xx, and false for every other status. A 429
+carries Telegram's `retry_after` as `details.retryAfterMillis`, capped at one
+minute. An answer with no update array, or an update with no `update_id`,
+fails `decode-failed`. A stored cursor that is not an update offset fails
+`invalid-config` before any request. No failure holds the token.
+
+### Telegram.Payload
+
+`Chat`, `User` and `Message` are open schemas: the common Bot API fields are
+typed and every other field passes through. `Message` is the payload of both
+Telegram signal names.

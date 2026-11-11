@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "GitHub adapters over the Smithers control plane",
+  "description": "GitHub and Telegram adapters over the Smithers control plane",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -20,12 +20,14 @@
     "typescript",
     "effect",
     "github",
+    "telegram",
     "webhooks"
   ],
   "keywords": [
     "typescript",
     "effect",
     "github",
+    "telegram",
     "webhooks"
   ],
   "engines": {
@@ -78,15 +80,15 @@
     "./linear/LinearClient": null,
     "./linear/Payload": null,
     "./linear/Webhook": null,
-    "./telegram": null,
+    "./telegram": "./src/telegram.ts",
     "./telegram/Actions": null,
     "./telegram/Approval": null,
     "./telegram/Chunk": null,
     "./telegram/Config": null,
     "./telegram/InitData": null,
     "./telegram/Markdown": null,
-    "./telegram/Payload": null,
-    "./telegram/Source": null,
+    "./telegram/Payload": "./src/telegram/Payload.ts",
+    "./telegram/Source": "./src/telegram/Source.ts",
     "./telegram/TelegramClient": null
   },
   "publishConfig": {
@@ -436,15 +438,42 @@
       "./linear/LinearClient": null,
       "./linear/Payload": null,
       "./linear/Webhook": null,
-      "./telegram": null,
+      "./telegram": {
+        "import": {
+          "types": "./dist/esm/telegram.d.ts",
+          "default": "./dist/esm/telegram.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram.d.ts",
+          "default": "./dist/cjs/telegram.js"
+        }
+      },
       "./telegram/Actions": null,
       "./telegram/Approval": null,
       "./telegram/Chunk": null,
       "./telegram/Config": null,
       "./telegram/InitData": null,
       "./telegram/Markdown": null,
-      "./telegram/Payload": null,
-      "./telegram/Source": null,
+      "./telegram/Payload": {
+        "import": {
+          "types": "./dist/esm/telegram/Payload.d.ts",
+          "default": "./dist/esm/telegram/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Payload.d.ts",
+          "default": "./dist/cjs/telegram/Payload.js"
+        }
+      },
+      "./telegram/Source": {
+        "import": {
+          "types": "./dist/esm/telegram/Source.d.ts",
+          "default": "./dist/esm/telegram/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/telegram/Source.d.ts",
+          "default": "./dist/cjs/telegram/Source.js"
+        }
+      },
       "./telegram/TelegramClient": null
     }
   },
