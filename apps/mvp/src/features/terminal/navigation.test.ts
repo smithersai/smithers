@@ -4,7 +4,7 @@ import { Files } from "../files/files"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { createMemoryHistory } from "@tanstack/react-router"
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
 import { router } from "../../router"
@@ -74,8 +74,13 @@ test.each(["empty", "mine", "watching"] as const)(
     context.terminal.queries.tabs.startSyncImmediate()
     context.branch.queries.current.startSyncImmediate()
     theme.queries.theme.startSyncImmediate()
-    const { session } = await runtime.runPromise(Effect.service(AuthStore))
-    await vi.waitFor(() => expect(session.tanstack.get(SESSION)?.status).not.toBe("loading"))
+    const { session, sessionState } = await runtime.runPromise(Effect.service(AuthStore))
+    // Session confirmation is setup, not a navigation deadline. Observe its real completion before changing the role.
+    await runtime.runPromise(sessionState.rows.pipe(
+      Stream.filter((rows) => rows[0] !== undefined && rows[0].status !== "loading"),
+      Stream.runHead,
+    ))
+    expect(session.tanstack.get(SESSION)?.status).toBe("signed_in")
     await runtime.runPromise(session.update(SESSION, (row) => void Object.assign(row, {
       status: "signed_in", login: "person-member", role: "member",
     })))
