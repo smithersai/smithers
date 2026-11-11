@@ -72,7 +72,10 @@ it. A neutral ceiling beside the provider's own name for it (`cpu`,
 The limits enter `ContainerSandbox`, `KubernetesSandbox`, and `AwsSandbox`
 configuration fingerprints, so a leftover machine created under other limits
 is refused rather than reattached. A sticky `MicrosandboxSandbox` records its
-limits as the `smithers.limits` label and reattaches only under the same ones.
+limits as the `smithers.limits` label and reattaches only under the same ones,
+and records its boot source, vendor-named ceilings, and security profile as
+the `smithers.configuration` label; it reattaches only a machine of its own
+owner whose record matches every one of those the session names.
 `VercelSandbox` refuses a resumed sandbox holding another vCPU count, or a
 session that runs past `timeoutSecs` from the acquire, because Vercel can
 extend a session but not shorten it. A reattached `DaytonaSandbox` has a later

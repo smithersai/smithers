@@ -956,7 +956,20 @@ describe("MicrosandboxSandbox", () => {
         pullPolicy: "if-missing",
         // The ownership keys are the provider's own: a caller label cannot
         // forge the holder `reap` judges.
-        labels: { owner: "smithers", ...ownership("installation-a", "host-7"), "smithers.network": "none" },
+        labels: {
+          owner: "smithers",
+          ...ownership("installation-a", "host-7"),
+          "smithers.network": "none",
+          "smithers.configuration": JSON.stringify({
+            image: "alpine:3.22",
+            cpus: 2,
+            maxCpus: 4,
+            memoryMib: 1024,
+            maxMemoryMib: 2048,
+            maxDurationSecs: 900,
+            security: "restricted"
+          })
+        },
         maxDuration: 900,
         idleTimeout: 120,
         disableNetwork: true,
@@ -1319,6 +1332,74 @@ describe("MicrosandboxSandbox", () => {
       expect(fake.recorded.builds[0]?.settings["labels"]).toMatchObject({
         "smithers.limits": JSON.stringify({ cpus: 8, memoryMib: 8192 })
       })
+    }))
+
+  it.effect("refuses another installation's machine of the same name and leaves it untouched", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "foreign-owner-ws")
+      const installation = (owner: string, persistence: "ephemeral" | "sticky") =>
+        microsandbox({ sdk: fake.sdk, workdir, owner, persistence })
+      // Installation a leaves its machine for `issue:42`; installation b, on
+      // the same Microsandbox home, acquires the same session key.
+      yield* inSession(installation("a", "sticky"), "issue:42", () => Effect.void)
+      const [name] = [...fake.machines.keys()]
+      const planted = { ...fake.machines.get(name!)!.labels }
+      const refused = yield* Effect.exit(inSession(installation("b", "ephemeral"), "issue:42", () => Effect.void))
+      expect(String(Exit.isFailure(refused) ? refused.cause : "")).toContain("belongs to another owner or provider")
+      expect(refusalOf(refused)).toMatchObject({ code: "ownership_mismatch" })
+      // Not relabelled, connected to, or removed.
+      expect(fake.recorded.modifies).toEqual([])
+      expect(fake.recorded.connects).toEqual([])
+      expect(fake.recorded.destroys).toEqual([])
+      expect(fake.machines.get(name!)?.labels).toEqual(planted)
+
+      // A machine of the same owner another provider created is refused too.
+      fake.machines.get(name!)!.labels["smithers.provider"] = "elsewhere"
+      const foreign = yield* Effect.exit(inSession(installation("a", "sticky"), "issue:42", () => Effect.void))
+      expect(refusalOf(foreign)).toMatchObject({ code: "ownership_mismatch" })
+      expect(fake.recorded.modifies).toEqual([])
+    }))
+
+  it.effect("reattaches a machine only under the security profile, boot source and ceilings it booted with", () =>
+    Effect.gen(function*() {
+      const fake = fakeSdk()
+      const workdir = join(root, "configuration-reattach-ws")
+      const sticky = (options: Partial<MicrosandboxSandbox.MicrosandboxSandboxOptions> = {}) =>
+        microsandbox({ sdk: fake.sdk, workdir, persistence: "sticky", ...options })
+      const refusedUnder = (options: Partial<MicrosandboxSandbox.MicrosandboxSandboxOptions>, named: string) =>
+        Effect.map(Effect.exit(inSession(sticky(options), "configured", () => Effect.void)), (exit) => {
+          expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(`was created with another ${named}`)
+          expect(refusalOf(exit)).toMatchObject({ code: "configuration_mismatch" })
+        })
+
+      yield* inSession(sticky({ security: "default", cpus: 2 }), "configured", () => Effect.void)
+      // The operator tightened the profile: the weaker machine is not reused.
+      yield* refusedUnder({ security: "restricted" }, "security")
+      yield* refusedUnder({ image: "alpine:3" }, "image")
+      yield* refusedUnder({ snapshot: "warm" }, "snapshot")
+      yield* refusedUnder({ cpus: 4 }, "cpus")
+      yield* refusedUnder({ maxDurationSecs: 60 }, "maxDurationSecs")
+      expect(fake.recorded.modifies).toEqual([])
+
+      // The same configuration reattaches, and one that names no profile or
+      // ceiling accepts whichever the machine booted with.
+      yield* inSession(sticky({ security: "default", cpus: 2 }), "configured", () => Effect.void)
+      yield* inSession(sticky(), "configured", () => Effect.void)
+      // That reattach kept the record of what the machine booted with.
+      yield* refusedUnder({ security: "restricted" }, "security")
+      yield* inSession(sticky({ security: "default", cpus: 2 }), "configured", () => Effect.void)
+      expect(fake.recorded.modifies).toHaveLength(3)
+      expect(
+        JSON.parse((fake.recorded.builds[0]?.settings["labels"] as Record<string, string>)["smithers.configuration"]!)
+      ).toEqual({ image: "oven/bun:1", cpus: 2, security: "default" })
+
+      // A machine that records no configuration, created before it was
+      // recorded, is refused: its boot source cannot be read.
+      const [name] = [...fake.machines.keys()]
+      delete fake.machines.get(name!)!.labels["smithers.configuration"]
+      yield* refusedUnder({}, "image")
+      expect(fake.recorded.modifies).toHaveLength(3)
     }))
 
   it.effect("labels every machine with a default owner and a holder minted per provider", () =>
@@ -1863,6 +1944,7 @@ describe("MicrosandboxSandbox", () => {
         holder: "first"
       })
       const bytes = new Uint8Array([0, 254, 8])
+      const snapshotConfiguration = { "smithers.configuration": JSON.stringify({ snapshot: "snapshot-7" }) }
 
       const name = yield* inSession(provider, "sticky", (session) =>
         Effect.gen(function*() {
@@ -1873,7 +1955,7 @@ describe("MicrosandboxSandbox", () => {
       expect(fake.recorded.destroys).toEqual([])
       expect(fake.recorded.builds[0]?.settings).toEqual({
         snapshot: "snapshot-7",
-        labels: { ...ownership("installation-a", "first"), "smithers.network": "none" },
+        labels: { ...ownership("installation-a", "first"), "smithers.network": "none", ...snapshotConfiguration },
         disableNetwork: true,
         ephemeral: false,
         detached: false
@@ -1896,7 +1978,11 @@ describe("MicrosandboxSandbox", () => {
       expect(Array.from(reopened)).toEqual(Array.from(bytes))
       expect(fake.recorded.starts).toEqual([{ name, detached: false }])
       expect(fake.recorded.modifies).toEqual([
-        { name, labels: { ...ownership("installation-a", "second"), "smithers.network": "none" }, policy: "next_start" }
+        {
+          name,
+          labels: { ...ownership("installation-a", "second"), "smithers.network": "none", ...snapshotConfiguration },
+          policy: "next_start"
+        }
       ])
       expect(fake.machines.get(name)?.labels["smithers.holder"]).toBe("second")
 
