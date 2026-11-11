@@ -2,6 +2,7 @@
 // ../review/whyExcluded.ts, plus "deleted" from ../review/previewFromSnapshot.ts.
 const reasonLabels: Record<string, string> = {
   binary: "binary file",
+  patch_withheld: "diff too large for GitHub to show",
   user_exclude: "excluded by review rules",
   unsupported_ext: "file type not reviewed",
   default_path: "outside the default review set",

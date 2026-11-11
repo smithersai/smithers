@@ -24,6 +24,9 @@ PR integration via the `gh` CLI.
   Superseding first would leave the PR carrying only "superseded" notes when
   every post attempt fails or the run dies in between.
 
+- `comparisonSnapshot.ts` — no `gh`: turns the `files` of GitHub's compare API
+  into the review snapshot a host without a checkout hands the rounds.
+
 Invariant: GitHub rejects the whole review batch when any single comment fails
 to anchor, so anchor checks (`anchorFor` + commentable-lines) gate every inline
 comment.

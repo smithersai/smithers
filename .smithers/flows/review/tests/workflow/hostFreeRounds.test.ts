@@ -24,7 +24,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 const ENTRIES = [
   "src/workflow/reviewFlow.ts",
   "src/workflow/reviewActions.ts",
-  "src/review/preparedReviewOf.ts"
+  "src/review/preparedReviewOf.ts",
+  "src/github/comparisonSnapshot.ts"
 ]
 
 const PACKAGES = new Set(["effect", "@smthrs/flow", "@smthrs/plan", "@smthrs/agent/AgentAction"])

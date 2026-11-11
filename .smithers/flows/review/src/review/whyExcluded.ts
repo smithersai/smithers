@@ -150,6 +150,7 @@ function isUserIncluded(filter: FileFilter | null, path: string) {
  */
 export function whyExcluded(diff: DiffRecord, filter: FileFilter | null) {
   if (diff.isBinary) return "binary"
+  if (diff.patchWithheld) return "patch_withheld"
   const path = effectivePath(diff)
   if (isUserExcluded(filter, path)) return "user_exclude"
   if (!isAllowedExt(path)) return "unsupported_ext"

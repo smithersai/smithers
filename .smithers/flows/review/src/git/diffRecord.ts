@@ -16,4 +16,10 @@ export type DiffRecord = {
   isNew: boolean
   isDeleted: boolean
   isBinary: boolean
+  /**
+   * The source showed no patch for a text change: GitHub leaves out a diff it
+   * finds too large to show. Git always prints one, so a record read from a
+   * checkout never sets this.
+   */
+  patchWithheld?: boolean
 }
