@@ -1586,6 +1586,49 @@ describe("Journal", () => {
     )
   })
 
+  effect("keeps following a run when another run loses a lossy entry", () => {
+    const followed = runId("loss-elsewhere-followed")
+    const lost = runId("loss-elsewhere-lost")
+    const source = sourceId("producer")
+
+    return Effect.gen(function*() {
+      const journal = yield* Journal
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      const follower = yield* journal.stream({ runId: followed }).pipe(
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* journal.emitLossy(input(followed, source, "before", {}))
+      yield* journal.flush
+
+      // A competing writer claims the identity a lossy retry in the other run
+      // reuses with different content, so only that run loses an entry.
+      yield* sql`
+        INSERT INTO flows_journal_events (
+          run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+          event_type, payload_json, meta_json
+        ) VALUES (
+          ${lost}, 0, ${makeEventId(lost, source, sourceSeq(0))}, ${source}, 0, 0,
+          'original', '{"value":0}', 'null'
+        )
+      `
+      yield* journal.emitLossy(input(lost, source, "retry", { value: 1 }, sourceSeq(0)))
+      expect((yield* Effect.flip(journal.flush)).code).toBe("idempotency_conflict")
+
+      yield* journal.emitLossy(input(followed, source, "after", {}))
+      yield* journal.flush
+      const seen = yield* Fiber.join(follower)
+      expect(Array.from(seen, (entry) => entry.eventType)).toEqual(["before", "after"])
+    }).pipe(
+      Effect.provide(Layer.provideMerge(
+        SqlJournal.layer({ capacity: 4, overflow: "reject" }),
+        migratedDatabase()
+      )),
+      Effect.scoped
+    )
+  })
+
   effect("recovers the lossy writer after a transient sink outage", () => {
     const run = runId("sink-failure-recovers")
     const source = sourceId("producer")

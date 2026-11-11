@@ -11,7 +11,7 @@ import { Context, Effect, Exit, Layer, Metric, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { Journal, JournalError, type Service } from "../src/Journal.ts"
-import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { Input, makeEventId, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
 import * as JournalMetrics from "../src/JournalMetrics.ts"
 import * as Migrations from "../src/Migrations.ts"
 import type { OwnerId } from "../src/OwnerId.ts"
@@ -81,6 +81,32 @@ const committed = (sql: SqlClient.SqlClient, runId: RunId) =>
     `,
     (rows) => rows.map((row) => `${Number(row.seq)}:${(JSON.parse(row.payload_json) as { label: string }).label}`)
   )
+
+/**
+ * Loses one lossy entry of `other` with nobody flushing: a competing writer
+ * already holds its identity with different content, so the queued writer
+ * refuses it as an idempotency conflict and leaves the report for the next
+ * flush.
+ */
+const loseUnflushedEntry = (journal: Service, sql: SqlClient.SqlClient) =>
+  Effect.gen(function*() {
+    const retried = input(other, "retried", 0)
+    yield* sql`
+      INSERT INTO flows_journal_events (
+        run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+        event_type, payload_json, meta_json
+      ) VALUES (
+        ${other}, 0, ${makeEventId(other, retried.sourceId, 0 as SourceSeq)}, ${retried.sourceId}, 0, 0,
+        'original', '{"label":"original"}', 'null'
+      )
+    `
+    yield* journal.emitLossy(retried)
+    const lost = Metric.value(JournalMetrics.lost("idempotency_conflict"))
+    for (let attempt = 0; attempt < 100 && (yield* lost).count === 0; attempt++) {
+      yield* Effect.yieldNow
+    }
+    expect((yield* lost).count).toBe(1)
+  })
 
 describe("SqlJournal.emitDeferred", () => {
   it.effect("drops only what the owner that lost the run queued", () =>
@@ -260,6 +286,37 @@ describe("SqlJournal.emitDeferred", () => {
       const refused = yield* Effect.flip(journal.emitDeferred!(input(run, "after"), owner))
       expect((refused as JournalError).code).toBe("journal_closed")
     })).pipe(Effect.provide(TestClock.layer())))
+
+  it.effect("commits queued entries when it reports another run's earlier lossy loss", () =>
+    withJournal((journal, sql) =>
+      Effect.gen(function*() {
+        yield* loseUnflushedEntry(journal, sql)
+        yield* journal.emitDeferred!(input(run, "kept"), owner)
+        const failed = yield* Effect.flip(journal.flush)
+        expect((failed as JournalError).code).toBe("idempotency_conflict")
+        expect(yield* committed(sql, run)).toEqual(["0:kept"])
+      })
+    ))
+
+  it.effect("commits queued entries at close after another run lost a lossy entry nobody flushed", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const sql = Context.get(yield* Layer.build(database), SqlClient.SqlClient)
+      yield* Leases.hold(sql, run, owner)
+      const scope = yield* Scope.make()
+      const journal = Context.get(
+        yield* Layer.buildWithScope(
+          SqlJournal.layer({ capacity: 8, overflow: "reject" }).pipe(
+            Layer.provide(Layer.provideMerge(DurableWriter.layer(), Layer.succeed(SqlClient.SqlClient)(sql)))
+          ),
+          scope
+        ),
+        Journal
+      ) as Service
+      yield* loseUnflushedEntry(journal, sql)
+      yield* journal.emitDeferred!(input(run, "at-close"), owner)
+      yield* Scope.close(scope, Exit.void)
+      expect(yield* committed(sql, run)).toEqual(["0:at-close"])
+    })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Metric.MetricRegistry, new Map())))
 
   it.effect("refuses a malformed owner", () =>
     withJournal((journal) =>

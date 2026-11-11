@@ -108,8 +108,9 @@ the journal closes during this admission wait, the emit fails with
 `journal_closed` after the wait instead of offering to the closed queue.
 
 A batch the writer cannot persist is lost and reported once: to the `flush`
-waiters that covered it, to live `stream` consumers that were following at the
-time, and, if nobody was waiting, to the next `flush`. The writer fiber
+waiters that covered it, to live `stream` consumers of a run that lost an entry
+and were following at the time, and, if nobody was waiting, to the next
+`flush`. A loss in one run never ends another run's `stream`. The writer fiber
 survives the failure. Entries queued behind the lost batch stay outstanding, so
 a later `flush` still waits for them rather than vouching for unpersisted work.
 

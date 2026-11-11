@@ -655,14 +655,17 @@ must tolerate running more than once; see
 
 The two channels fail independently, and neither failure is permanent. A batch
 the optimistic writer cannot persist is lost and reported: to the `flush`
-waiters that covered it, to live `stream` consumers that were following when it
-happened, and, if nobody was waiting, to the next `flush`. The writer fiber
-survives it. Each loss is reported once; a later `flush` with nothing
-outstanding succeeds, while entries queued behind the lost batch stay
+waiters that covered it, to live `stream` consumers of a run that lost an entry
+and were following when it happened, and, if nobody was waiting, to the next
+`flush`. A loss in one run never ends another run's `stream` or `project`. The
+writer fiber survives it. Each loss is reported once; a later `flush` with
+nothing outstanding succeeds, while entries queued behind the lost batch stay
 outstanding, so a subsequent `flush` still waits for them instead of vouching
-for unpersisted work. `emitDurable` was never gated by the queue: it opens its
-own transaction inline, so the lossless lifecycle channel keeps working as soon
-as the database is healthy again.
+for unpersisted work. A reported loss never stops `flush`, or the final flush
+when the journal closes, from committing what `emitDeferred` queued; `flush`
+then fails with the first failure. `emitDurable` was never gated by the queue:
+it opens its own transaction inline, so the lossless lifecycle channel keeps
+working as soon as the database is healthy again.
 
 `changes` is a bounded sliding buffer sized by the layer's `capacity`: a slow
 subscriber loses entries with no error and no gap signal. `stream` is the

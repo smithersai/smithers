@@ -300,6 +300,16 @@ interface SourceEvent {
 
 type Status = "open" | "closing" | "closed"
 
+/**
+ * One live `stream` of one run. `lost` holds the first loss of an entry of
+ * that run while the stream was following; a loss in any other run never
+ * reaches it, because none of this run's entries were lost.
+ */
+interface Follower {
+  readonly wake: PubSub.PubSub<void>
+  lost: JournalError | undefined
+}
+
 interface State {
   status: Status
   /**
@@ -308,10 +318,11 @@ interface State {
    * revoke the lossy channel, and with it the durable delivery paths that call
    * `flush`, for the rest of the process's life.
    *
-   * Each loss is reported to whoever was waiting on it (`flushWaiters`, live
-   * streams) and, via `lossEpoch`, to at most one later `flush` and to every
-   * live stream that had not yet observed it. After that the report is spent
-   * and the journal is usable again the moment the database is.
+   * Each loss is reported to whoever was waiting on it (`flushWaiters`) and,
+   * via `lossEpoch`, to at most one later `flush`. After that the report is
+   * spent and the journal is usable again the moment the database is. Live
+   * streams get their own report, and only for a loss in their own run (see
+   * {@link Follower}).
    */
   sinkFailure: JournalError | undefined
   /** Incremented on every lost batch; identifies an unreported loss. */
@@ -638,7 +649,7 @@ export const make = (
 
     const queue = yield* Queue.dropping<QueuedEntry>(options.capacity)
     const changes = yield* PubSub.sliding<Entry>(options.capacity)
-    const wakes = new Map<RunId, Set<PubSub.PubSub<void>>>()
+    const wakes = new Map<RunId, Set<Follower>>()
     /**
      * The durable cursor of every live in-process stream, per run: the
      * highest committed sequence the stream has read from the store, or its
@@ -1019,17 +1030,22 @@ export const make = (
       }
     }
 
-    const flushInternal: Effect.Effect<void, JournalError> = Effect.suspend(() => {
-      // A loss that happened while nothing was registered still has to reach
-      // a caller, so the first flush after it reports it, once. A later
-      // flush has nothing to do with the lost batch and must succeed, or a
-      // single transient outage would stall every durable delivery that
-      // flushes (`DeferredPersistence.completeDeferred`, `recordClockScheduled`)
-      // for the process's lifetime.
+    // A loss that happened while nothing was registered still has to reach
+    // a caller, so the first flush after it reports it, once. A later
+    // flush has nothing to do with the lost batch and must succeed, or a
+    // single transient outage would stall every durable delivery that
+    // flushes (`DeferredPersistence.completeDeferred`, `recordClockScheduled`)
+    // for the process's lifetime.
+    const reportUnflushedLoss: Effect.Effect<void, JournalError> = Effect.suspend(() => {
       if (state.sinkFailure !== undefined && state.lossEpoch > state.flushedLossEpoch) {
         state.flushedLossEpoch = state.lossEpoch
         return Effect.fail(state.sinkFailure)
       }
+      return Effect.void
+    })
+
+    /** Waits until every lossy entry and maintenance pass queued now has settled. */
+    const awaitQueued: Effect.Effect<void, JournalError> = Effect.suspend(() => {
       if (state.status === "closed") {
         return Effect.fail(error("journal_closed", "journal is closed"))
       }
@@ -1043,7 +1059,12 @@ export const make = (
           state.flushWaiters.delete(waiter)
         }))
       )
-    }).pipe(Effect.ensuring(Effect.sync(retireQuiescentRuns)))
+    })
+
+    const flushInternal: Effect.Effect<void, JournalError> = reportUnflushedLoss.pipe(
+      Effect.andThen(awaitQueued),
+      Effect.ensuring(Effect.sync(retireQuiescentRuns))
+    )
 
     const prepare = (input: Input, emittedAtMs: number): Result.Result<Prepared, JournalError> =>
       Result.gen(function*() {
@@ -1471,22 +1492,23 @@ export const make = (
       Effect.gen(function*() {
         const wake = yield* PubSub.sliding<void>(1)
         const subscription = yield* PubSub.subscribe(wake)
+        const follower: Follower = { wake, lost: undefined }
         yield* Effect.acquireRelease(
           Effect.sync(() => {
             const subscribers = wakes.get(runId) ?? new Set()
-            subscribers.add(wake)
+            subscribers.add(follower)
             wakes.set(runId, subscribers)
           }),
           () =>
             Effect.sync(() => {
               const subscribers = wakes.get(runId)
-              subscribers?.delete(wake)
+              subscribers?.delete(follower)
               if (subscribers?.size === 0) {
                 wakes.delete(runId)
               }
             }).pipe(Effect.andThen(PubSub.shutdown(wake)))
         )
-        return subscription
+        return { subscription, follower }
       })
 
     const stream = (streamOptions: StreamOptions): Stream.Stream<Entry, JournalError> =>
@@ -1500,7 +1522,7 @@ export const make = (
             decodeStreamOptions(streamOptions),
             (cause) => error("invalid_event", "stream options violate the journal read contract", cause)
           ))
-          const wake = yield* subscribeRun(streamOptions.runId)
+          const { follower, subscription: wake } = yield* subscribeRun(streamOptions.runId)
           // The cursor lives in a registered box for the stream's lifetime
           // so `compact` can see how far every live follower has read.
           const reader = { cursor: streamOptions.afterSequence ?? -1 }
@@ -1519,15 +1541,14 @@ export const make = (
                 }
               })
           )
-          // A live consumer is told about losses that happen while it is
-          // following, and only about those: a loss it never overlapped is
-          // already spent by the time it subscribes.
-          const subscribedLossEpoch = state.lossEpoch
+          // A live consumer is told about losses of its own run that happen
+          // while it is following, and only about those: a loss it never
+          // overlapped is already spent by the time it subscribes.
           const readPages = (initialCursor: number): Stream.Stream<Entry, JournalError> =>
             Stream.paginate(initialCursor, (cursor) =>
               Effect.suspend(() =>
-                state.sinkFailure !== undefined && state.lossEpoch > subscribedLossEpoch
-                  ? Effect.fail(state.sinkFailure)
+                follower.lost !== undefined
+                  ? Effect.fail(follower.lost)
                   : readPage({
                     runId: streamOptions.runId,
                     ...(cursor < 0 ? {} : { after: cursor as Seq }),
@@ -1556,9 +1577,7 @@ export const make = (
           // interruption cause when the consumer is cancelled.
           const live = Stream.fromEffectRepeat(
             Effect.raceFirst(PubSub.take(wake), Effect.sleep("1 second"))
-          ).pipe(Stream.flatMap(() =>
-            readPages(reader.cursor)
-          ))
+          ).pipe(Stream.flatMap(() => readPages(reader.cursor)))
           return Stream.concat(historical, live)
         })()
       )
@@ -1862,7 +1881,7 @@ export const make = (
             Effect.andThen(
               Effect.forEach(
                 wakes.get(commit.entry.runId) ?? [],
-                (wake) => PubSub.publish(wake, undefined),
+                (follower) => PubSub.publish(follower.wake, undefined),
                 { discard: true }
               )
             ),
@@ -2765,9 +2784,12 @@ export const make = (
         state.flushedLossEpoch = state.lossEpoch
       }
       completeFlushWaiters(Effect.fail(cause))
-      for (const subscribers of wakes.values()) {
-        for (const wake of subscribers) {
-          PubSub.publishUnsafe(wake, undefined)
+      // A failed transaction loses every run in its batch; a refused entry
+      // loses only its own run.
+      for (const runId of new Set(batch.map((queued) => queued.runId))) {
+        for (const follower of wakes.get(runId) ?? []) {
+          follower.lost = cause
+          PubSub.publishUnsafe(follower.wake, undefined)
         }
       }
     }
@@ -2865,9 +2887,15 @@ export const make = (
         })
         // The last flush is the last chance to say that queued entries were
         // lost; nothing is left to report the failure to once this returns.
-        yield* flushInternal.pipe(
-          Effect.andThen(flushDeferred),
-          Effect.catch((cause) => Effect.logWarning("journal final flush failed while closing", cause))
+        // An earlier loss nobody flushed is only a report, so every step
+        // still runs after it, and after each other's failures: skipping one
+        // would drop the lossy entries or the `emitDeferred` entries still
+        // queued.
+        yield* Effect.forEach(
+          [reportUnflushedLoss, awaitQueued, flushDeferred],
+          (step) =>
+            step.pipe(Effect.catch((cause) => Effect.logWarning("journal final flush failed while closing", cause))),
+          { discard: true }
         )
         yield* Effect.sync(() => {
           state.status = "closed"
@@ -2952,8 +2980,12 @@ export const make = (
       project,
       flush: Effect.fn("Journal.flush")(() =>
         Effect.suspend(() => Effect.annotateCurrentSpan({ pending: state.pending, deferred: deferred.size })).pipe(
-          Effect.andThen(flushInternal),
-          Effect.andThen(flushDeferred)
+          // A failed lossy flush says nothing about the `emitDeferred`
+          // entries, so they are written either way; the first failure wins.
+          Effect.andThen(Effect.exit(flushInternal)),
+          Effect.flatMap((lossy) =>
+            Effect.flatMap(Effect.exit(flushDeferred), (queued) => Exit.isFailure(lossy) ? lossy : queued)
+          )
         )
       )(),
       checkpoint,

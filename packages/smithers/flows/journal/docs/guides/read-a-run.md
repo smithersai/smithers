@@ -90,8 +90,9 @@ Three properties are worth knowing before you use it:
 
 - It pages the history rather than materializing it, so the first entry arrives
   after one page rather than after the whole run.
-- It reports a sink loss that happens while it is following, to every consumer
-  that was following at the time.
+- It reports a sink loss of one of its run's entries that happens while it is
+  following, to every consumer of that run that was following at the time. A
+  loss in another run never ends it.
 - **It never completes.** Following is the point, so bound the stream yourself:
   `Stream.take`, `Stream.takeUntil`, or a forked fiber you interrupt.
 
