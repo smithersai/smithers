@@ -132,6 +132,7 @@
     "@tanstack/browser-db-sqlite-persistence@0.2.36": "patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch",
     "@effect/platform-node-shared@4.1.1": "patches/@effect__platform-node-shared@4.1.1.patch",
     "effect@4.1.1": "patches/effect@4.1.1.patch",
-    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch"
+    "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
+    "@effect/platform-node@4.1.1": "patches/@effect__platform-node@4.1.1.patch"
   }
 }
