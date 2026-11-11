@@ -18,6 +18,7 @@ import { createHash } from "node:crypto"
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { parseArgs } from "node:util"
+import { scrubRecord } from "./records.mjs"
 import { refuseUncheckedTls } from "../tls.mjs"
 
 refuseUncheckedTls(process.env)
@@ -51,8 +52,10 @@ export const stateOf = (lines) => {
  * Seeds `records` on `repo`. `fetch`, `sleep`, `locked` (whether a production e2e run holds its lock) and `log` are the
  * run's only contact with the world besides the state file at `state`. Answers the final record.
  */
-export const seed = async ({ repo, origin, records, state, every, lockedEvery, limit, headers, fetch, sleep, locked, log }) => {
-  const { admitted, settled } = stateOf(existsSync(state) ? readFileSync(state, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [])
+export const seed = async ({ repo, origin, records: saved, state, every, lockedEvery, limit, headers, fetch, sleep, locked, log }) => {
+  // Re-screen saved records and state keys: a records file may predate the current credential policy.
+  const records = saved.map(scrubRecord)
+  const { admitted, settled } = stateOf(existsSync(state) ? readFileSync(state, "utf8").split("\n").filter(Boolean).map((line) => scrubRecord(JSON.parse(line))) : [])
   const save = (line) => appendFileSync(state, JSON.stringify(line) + "\n", { mode: 0o600 })
   const todo = records.filter((record) => !admitted.has(record.key)).slice(0, limit)
   const watching = records.filter((record) => admitted.has(record.key) && settled.get(record.key) !== "done")

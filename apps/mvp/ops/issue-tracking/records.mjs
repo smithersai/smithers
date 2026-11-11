@@ -1,11 +1,14 @@
 // Pure parts of the issue-tracking import (collect.mjs): scrubbing, one issue record per tracked thing, and the order
 // issues are created in. Tested by records.test.ts with synthetic input only.
+import { createHash } from "node:crypto"
 
 /** The longest title and body the writes route takes (src/features/issues/contract.ts), kept well under. */
 const MAX_TITLE = 200
 const MAX_BODY = 8000
 
 export const CREDENTIAL_SHAPES = [
+  // 32 bytes encoded as base64url need not contain digits; Markdown may put an underscore before the prefix.
+  /smm_[A-Za-z0-9_-]{43,}/g,
   /\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/g,
   /\bsk-[A-Za-z0-9_-]{16,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
@@ -25,6 +28,27 @@ export const scrub = (text) => {
       typeof name === "string" && /^(authorization|bearer|token|secret|password|api)/i.test(name) ? `${name}: [redacted]` : "[redacted]")
   }
   return out.replace(/\/(?:Users|home)\/[A-Za-z0-9._-]+/g, "~")
+}
+
+const scrubFields = (value) => {
+  if (typeof value === "string") return scrub(value)
+  if (Array.isArray(value)) return value.map(scrubFields)
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, field]) => [key, scrubFields(field)]))
+  }
+  return value
+}
+
+/**
+ * Screens every string, including links, before a record is saved or seeded. An identity that needs redaction
+ * becomes a digest rather than shared redaction text, so distinct records keep distinct idempotency keys.
+ */
+export const scrubRecord = (record) => {
+  const out = scrubFields(record)
+  if (typeof record.key === "string" && out.key !== record.key) {
+    out.key = `redacted:${createHash("sha256").update(record.key).digest("hex")}`
+  }
+  return out
 }
 
 const clip = (text, limit) => (text.length <= limit ? text : `${text.slice(0, limit - 1)}…`)
@@ -123,7 +147,7 @@ export const recordsOf = ({ inbox, remote }) => {
       ],
     })
   }
-  return records
+  return records.map(scrubRecord)
 }
 
 /**

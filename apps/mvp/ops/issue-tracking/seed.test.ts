@@ -70,4 +70,26 @@ describe("the issue seed", () => {
     expect(rerun.final).toMatchObject({ event: "unsettled", sent: 2, done: 1, failed: 1 })
     expect(rerun.said).toContainEqual({ event: "failed", key: "lane:a", writeId: idOf("lane:a"), status: "refused" })
   })
+
+  test("a saved record holding a machine token is re-screened before it is sent, logged or saved", async () => {
+    const token = `smm_${"A".repeat(43)}`
+    const state = stateFile()
+    // A records file collected before the policy redacted digit-free tokens, and a state line that already holds one key.
+    writeFileSync(state, JSON.stringify({ key: `lane:${token}-old`, writeId: "sent", status: 202, at: "2026-11-02T00:00:00.000Z" }) + "\n")
+    const posted: Array<string> = []
+    const said: Array<unknown> = []
+    const final = await seed({
+      repo: "acme/widgets", origin: "https://smithers.test", state, every: 0, lockedEvery: 0, limit: undefined, headers: {},
+      records: [{ key: `lane:${token}-old`, title: "Old", body: "old" }, { key: `lane:${token}`, title: `Use ${token}`, body: `Run with ${token}` }],
+      fetch: async (_url: string, init: RequestInit) => {
+        posted.push(String(init.body))
+        return new Response(JSON.stringify({ status: "done" }), { status: 200 })
+      },
+      sleep: async () => {}, locked: () => false, log: (line: unknown) => void said.push(line),
+    })
+    expect(final).toMatchObject({ event: "done", sent: 2, done: 2 })
+    expect(posted).toHaveLength(2)
+    expect(posted.map((body) => JSON.parse(body))).toContainEqual(expect.objectContaining({ title: "Use [redacted]", body: "Run with [redacted]" }))
+    for (const text of [...posted, JSON.stringify(said), readFileSync(state, "utf8").split("\n").slice(1).join("\n")]) expect(text).not.toContain(token)
+  })
 })
