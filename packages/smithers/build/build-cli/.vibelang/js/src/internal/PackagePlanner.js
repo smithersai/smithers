@@ -1025,7 +1025,7 @@ const treeInputFiles = async (context, packagePath, declaration) => {
         const paths = Input.nodeModulesPaths(packagePath, declaration);
         const rows = [];
         for (const path of [paths.manifest, ...paths.lockfiles]) {
-            const digest = await Input.digestFile(NodePath.join(context.root, path), {
+            const digest = await Input.digestFile($platform.join(context.root, path), {
                 workspaceRoot: context.root,
                 signal: context.signal
             });
@@ -1538,17 +1538,17 @@ const visit = async (context, target, options) => {
             continue;
         const { tree } = Input.nodeModulesPaths(inputPackage(metadata, packagePath), expanded.declaration);
         readSet.push(tree);
-        const absolute = NodePath.join(context.root, ...tree.split("/"));
+        const absolute = $platform.join(context.root, ...tree.split("/"));
         let real;
         try {
-            real = NodeFs.realpathSync(absolute);
+            real = $platform.realpathSync(absolute);
         }
         catch {
             real = undefined;
         }
         // Only an installed tree earns the grant: a link to any other host
         // directory stays closed, and the confinement then refuses the target.
-        if (real !== undefined && !Path.contains(context.root, real) && NodePath.basename(real) === "node_modules" &&
+        if (real !== undefined && !Path.contains(context.root, real) && $platform.basename(real) === "node_modules" &&
             !externalReads.includes(real))
             externalReads.push(real);
     }
