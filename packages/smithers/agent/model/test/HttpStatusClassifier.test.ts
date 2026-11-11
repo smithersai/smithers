@@ -246,3 +246,47 @@ describe("opaque safety prose", () => {
       .toBe("content_policy")
   })
 })
+
+// #4726: a 400 quotes the request back. A tool or parameter whose name holds a
+// limit, sign-in or safety word is still a malformed request, never a reason to
+// retry, refresh a sign-in or report a refusal.
+describe("a refusal that quotes the request", () => {
+  it.each(
+    [
+      [400, "invalid_request_error", "Invalid schema for function 'get_rate_limit': 'foo' is not valid."],
+      [400, "invalid_request_error", "Invalid schema for function 'check_authentication': schema must be an object."],
+      [400, "invalid_request_error", "Unsupported parameter: 'safety_identifier' is not supported with this model."],
+      [400, "invalid_request_error", "Invalid schema for function 'buy_credit_balance_report': 'x' is required."],
+      [422, undefined, "Unknown field \"authentication\" in tools[0]"],
+      [404, undefined, "No tool named `rate limit`"]
+    ] as const
+  )("classifies HTTP %i %s %s as invalid_request", (status, code, message) => {
+    expect(classifyHttpStatus(status, code, message, "provider")).toBe("invalid_request")
+  })
+
+  it("keeps the provider's own words and codes on a refusing status", () => {
+    expect(classifyHttpStatus(400, "invalid_request_error", "Output blocked by content filtering policy", "provider"))
+      .toBe("content_policy")
+    expect(classifyHttpStatus(400, "content_filter", "The prompt for 'get_weather' was filtered.", "provider"))
+      .toBe("content_policy")
+    expect(classifyHttpStatus(400, undefined, "content_policy violation in 'messages[0]'", "provider"))
+      .toBe("content_policy")
+    expect(classifyHttpStatus(400, "rate_limit_error", "Slow down on 'search'.", "provider")).toBe("rate_limited")
+    expect(classifyHttpStatus(400, "invalid_api_key", "Key for 'search' rejected.", "provider")).toBe("authentication")
+    expect(
+      classifyHttpStatus(
+        400,
+        "invalid_request_error",
+        "You can't call this; your credit balance is too low.",
+        "provider"
+      )
+    )
+      .toBe("quota_exceeded")
+  })
+
+  it("keeps an opaque 5xx page that mentions authentication a server fault", () => {
+    expect(classifyHttpStatus(502, undefined, "<html>Bad gateway: upstream authentication service timed out", "opaque"))
+      .toBe("provider_internal")
+    expect(classifyHttpStatus(503, "invalid_api_key", "Service unavailable", "provider")).toBe("provider_internal")
+  })
+})

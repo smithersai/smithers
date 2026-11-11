@@ -154,6 +154,13 @@
 
 ### Fixed
 
+- A 400, 404, 409, 413 or 422 whose message quotes the request no longer
+  classifies as a limit, a sign-in fault or a safety refusal. A tool named
+  `get_rate_limit` with a bad schema used to come back `rate_limited` and be
+  retried; `check_authentication` came back `authentication`. Quoted spans in
+  those messages are the request's words, and authentication words on a 5xx
+  page no longer turn a server fault into `authentication` (#4726).
+
 - `ModelProxy.serve` reads every request `ModelProxy.makeClient` sends. The
   client writes the request through Effect Schema's JSON codec, which writes an
   optional field that is present but undefined, such as an assistant
