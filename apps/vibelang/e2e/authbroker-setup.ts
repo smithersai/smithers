@@ -20,7 +20,8 @@ export default async function setup() {
   }
   try {
     process.env.AUTH_BROKER_TEST_ORIGINS = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(output)), 120_000)
+      // Compiling the host takes minutes on a loaded host, like the web server build: E2E_SERVER_SECONDS sets both.
+      const timer = setTimeout(() => reject(new Error(output)), Number(process.env.E2E_SERVER_SECONDS ?? 600) * 1000)
       host.stdout!.on("data", chunk => {
         output += String(chunk)
         const ready = output.match(/AUTH_BROKER_READY (\{[^\n]+\})/)
