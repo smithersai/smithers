@@ -443,3 +443,164 @@ describe("sortCollections properties", () => {
     )
   })
 })
+
+describe("depth and shared references (#4493)", () => {
+  const nest = (leaf: unknown, depth: number): unknown => {
+    let value = leaf
+    for (let level = 0; level < depth; level++) value = [value]
+    return value
+  }
+  const leafOf = (value: unknown): unknown => {
+    let current = value
+    while (Array.isArray(current)) current = current[0]
+    return current
+  }
+  /** `x = [y, y], y = [z, z], ...`: `depth` objects that expand to 2^depth leaves. */
+  const shared = (leaf: unknown, depth: number): unknown => {
+    let value: unknown = [leaf]
+    for (let level = 0; level < depth; level++) value = [value, value]
+    return value
+  }
+
+  it("orders set entries nested far past the call stack, under every insertion order", () => {
+    // canonicalize accepts 10,000 levels; the recursive ranker overflowed near
+    // 5,000 and fell back to insertion order.
+    for (const depth of [1000, 5000, 9000, 10_000, 50_000]) {
+      const forward = [...sortCollections(new Set([nest("a", depth), nest("b", depth)]))].map(leafOf)
+      const backward = [...sortCollections(new Set([nest("b", depth), nest("a", depth)]))].map(leafOf)
+      expect(forward, `depth ${depth}`).toEqual(["a", "b"])
+      expect(backward, `depth ${depth}`).toEqual(["a", "b"])
+    }
+  })
+
+  it("sorts a collection nested far past the call stack", () => {
+    for (const depth of [3000, 10_000, 50_000]) {
+      const sorted = sortCollections(nest(new Set(["b", "a"]), depth))
+      expect([...leafOf(sorted) as Set<string>], `depth ${depth}`).toEqual(["a", "b"])
+    }
+    let sets: Set<unknown> = new Set(["b", "a"])
+    for (let level = 0; level < 5000; level++) sets = new Set<unknown>(["c", sets])
+    let inner: unknown = sortCollections(sets)
+    for (let level = 0; level < 5000; level++) {
+      const [next, text] = [...inner as Set<unknown>]
+      expect(text).toBe("c")
+      inner = next
+    }
+    expect([...inner as Set<string>]).toEqual(["a", "b"])
+  })
+
+  it("ranks an object once however often it is shared", () => {
+    // 2^200 leaves when expanded. The unmemoized ranker took 13 s at depth 22.
+    const forward = [...sortCollections(new Set([shared("b", 200), "x", shared("a", 200)]))].map(leafOf)
+    const backward = [...sortCollections(new Set([shared("a", 200), "x", shared("b", 200)]))].map(leafOf)
+    expect(forward).toEqual(["a", "b", "x"])
+    expect(backward).toEqual(["a", "b", "x"])
+
+    // Equal values built apart rank equal, so they keep their insertion order.
+    const one = shared("a", 200)
+    const two = shared("a", 200)
+    expect([...sortCollections(new Set([one, two]))][0]).toBe(one)
+    expect([...sortCollections(new Set([two, one]))][0]).toBe(two)
+
+    // A shared object below a cycle is still ranked once; the cycle is not.
+    const wide = shared("a", 200)
+    const loop: Array<unknown> = [wide, wide]
+    loop.push(loop)
+    const other: Array<unknown> = [wide, wide]
+    other.push(other, "after")
+    const sorted = [...sortCollections(new Set([loop, other]))]
+    expect(sorted[0]).toBe(other)
+    expect(sorted[1]).toBe(loop)
+    expect([...sortCollections(new Set([other, loop]))][0]).toBe(other)
+  })
+
+  it("orders a map by key, then by value, when the keys are too large to rank inline", () => {
+    const key = (): ReadonlyArray<unknown> => ["k".repeat(2000), ["k".repeat(2000)]]
+    const [first, second, third, fourth] = [key(), key(), key(), key()]
+    const entries: ReadonlyArray<readonly [unknown, unknown]> = [
+      [first, 12],
+      [second, 1],
+      [third, [1, "v".repeat(2000)]],
+      [fourth, 1]
+    ]
+    const expected = [second, fourth, first, third]
+    expect([...sortCollections(new Map(entries)).keys()]).toEqual(expected)
+    expect([...sortCollections(new Map([...entries].reverse())).keys()]).toEqual([fourth, second, first, third])
+    expect([...sortCollections(new Set<unknown>(["s", first, 3]))]).toEqual([3, first, "s"])
+  })
+
+  it("lets an engine RangeError through and never turns it into a rank", () => {
+    const failing = (after: number): object => {
+      let reads = 0
+      return new Proxy({}, {
+        ownKeys: () => {
+          if (reads++ >= after) throw new RangeError("Maximum call stack size exceeded")
+          return []
+        }
+      })
+    }
+    // Thrown while looking for collections, then while ranking.
+    expect(() => sortCollections(new Set([failing(0), "a"]))).toThrow(RangeError)
+    expect(() => sortCollections(new Set([failing(1), "a"]))).toThrow(RangeError)
+    const unnamed = new Proxy(() => 1, {
+      get: () => {
+        throw new RangeError("Invalid string length")
+      }
+    })
+    expect(() => sortCollections(new Set<unknown>([unnamed, "a"]))).toThrow(RangeError)
+  })
+
+  /** The rank text the recursive implementation built, for values that hold no cycle. */
+  const textRank = (value: unknown): string => {
+    if (typeof value === "string") return `s${JSON.stringify(value)}`
+    if (typeof value === "number") return `n${value}`
+    const object = value as object
+    const prototype: unknown = Object.getPrototypeOf(object)
+    const name = prototype === null ? "" : prototype === Array.prototype ? "Array" : "Object"
+    const members = Object.getOwnPropertyNames(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${textRank((object as Record<string, unknown>)[key])}`)
+    return `o${JSON.stringify(name)}{${members.join(",")}}`
+  }
+  const byText = <A>(values: ReadonlyArray<A>, rankOf: (value: A) => string): Array<A> =>
+    values
+      .map((value) => ({ value, rank: rankOf(value) }))
+      .sort((left, right) => (left.rank < right.rank ? -1 : left.rank > right.rank ? 1 : 0))
+      .map(({ value }) => value)
+
+  /** Trees with long equal prefixes and shared subtrees, so ranks split into shared parts. */
+  const tree = FastCheck.letrec<{ tree: unknown; node: unknown }>((tie) => ({
+    tree: FastCheck.oneof(
+      { maxDepth: 6 },
+      FastCheck.constantFrom<unknown>("a", "b", 1, 12, "p".repeat(700), `${"p".repeat(700)}a`, "q".repeat(1100)),
+      tie("node")
+    ),
+    node: FastCheck.oneof(
+      FastCheck.array(tie("tree"), { maxLength: 3 }),
+      FastCheck.record({ a: tie("tree"), b: tie("tree") }, { requiredKeys: [] }),
+      FastCheck.tuple(tie("tree"), tie("tree")).map(([key, entry]) => [key, key, [key, entry], entry])
+    )
+  })).tree
+
+  it("orders entries exactly as their rank text orders, whatever the shape", () => {
+    FastCheck.assert(
+      FastCheck.property(FastCheck.array(tree, { maxLength: 6 }), FastCheck.boolean(), (values, asMap) => {
+        if (asMap) {
+          const pairs = values.map((value, index) => [[value], values[values.length - 1 - index]] as const)
+          const expected = byText(pairs, ([key, entry]) => `${textRank(key)}\u0000${textRank(entry)}`)
+          const sorted = [...sortCollections(new Map(pairs))]
+          expect(sorted.map(([key]) => pairs.findIndex((pair) => pair[0] === key))).toEqual(
+            expected.map((pair) => pairs.indexOf(pair))
+          )
+        } else {
+          const entries = values.map((value) => [value])
+          const sorted = [...sortCollections(new Set(entries))]
+          expect(sorted.map((entry) => entries.indexOf(entry))).toEqual(
+            byText(entries, textRank).map((entry) => entries.indexOf(entry))
+          )
+        }
+      }),
+      params
+    )
+  })
+})

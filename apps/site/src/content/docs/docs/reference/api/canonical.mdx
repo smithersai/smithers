@@ -215,8 +215,16 @@ payload codec: sort, `Schema.toCodecJson`, `Canonical`, SHA-256.
 - It copies only objects that reach a collection; everything else keeps its
   reference. Cycles and shared references survive. Accessors are never
   invoked. The input is never mutated.
-- It never throws. An object it cannot inspect, such as a revoked proxy, is a
-  leaf and ranks after every value it can inspect.
+- An object it cannot inspect, such as a revoked proxy, is a leaf and ranks
+  after every value it can inspect. The one error it lets through is a
+  `RangeError` raised while it inspects an object: that is the engine
+  reporting an exhausted call stack or an over-long string, so it never
+  becomes a rank.
+- It keeps its own stack. Nesting depth is bounded by memory, not by the
+  runtime's call stack, so every runtime sorts a deep value the same way.
+- An object on no cycle is ranked once however often it is shared, so a chain
+  of shared references costs its objects, not its expanded tree. Inside a
+  cycle, a shared object is ranked once for each path that reaches it.
 - Ranks read own data properties only. Elements that differ only behind
   accessors or private fields rank equal and keep their insertion order, and
   a copied class instance has its prototype and own properties but not its
