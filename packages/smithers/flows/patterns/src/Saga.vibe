@@ -38,7 +38,9 @@ export {
  * {@link Compensated}.
  *
  * Each completed step registers a scope finalizer, so the unwind is LIFO and
- * runs on interruption as well as on failure. A compensation that fails does
+ * runs on interruption as well as on failure. A step marked `uninterruptible`
+ * runs its action and registers that finalizer as one uninterruptible unit, so
+ * a cancel during its action still compensates it. A compensation that fails does
  * not stop the ones behind it; every failing step id is collected and the run
  * fails `PatternError { code: "compensation_failed" }` naming them, because
  * state left dirty outranks the failure that started the unwind. An
@@ -63,6 +65,7 @@ export const run = <I, A, E, R, E2, R2>(
   // not reach it.
   const steps: ReadonlyArray<RuntimeStep<I, A, E, R, E2, R2>> = options.steps.map((step) => ({
     id: step.id,
+    uninterruptible: step.uninterruptible,
     action: step.action,
     compensation: step.compensation
   }))
@@ -84,17 +87,28 @@ export const run = <I, A, E, R, E2, R2>(
       if (policy !== "fail") try addFinalizer(reportInterrupted)
       const completed = new Map<string, A>()
       for (const step of steps) {
-        const value = try step.action({
-          input,
-          completed: Object.fromEntries(completed)
-        })
-        completed.set(step.id, value)
-        if (policy === "fail") continue
-        try addFinalizer(effect (outcome) => {
-          if (Exit.isSuccess(outcome)) return
-          const undone = try exit(suspend(() => step.compensation({ id: step.id, input, value })))
-          if (Exit.isFailure(undone)) residue.push({ id: step.id, error: Cause.squash(undone.cause) })
-        })
+        const commit = effect {
+          const value = try step.action({
+            input,
+            completed: Object.fromEntries(completed)
+          })
+          completed.set(step.id, value)
+          if (policy === "fail") return value
+          try addFinalizer(effect (outcome) => {
+            if (Exit.isSuccess(outcome)) return
+            const undone = try exit(suspend(() => step.compensation({ id: step.id, input, value })))
+            if (Exit.isFailure(undone)) residue.push({ id: step.id, error: Cause.squash(undone.cause) })
+          })
+          return value
+        }
+        // An interrupt between the action's end and the finalizer's
+        // registration would leave a changed world with no undo, so an
+        // uninterruptible step makes the two one unit.
+        if (step.uninterruptible === true) {
+          uninterruptible { try commit }
+        } else {
+          try commit
+        }
       }
       return Object.fromEntries(completed)
     }

@@ -402,7 +402,10 @@ original failure under `compensate-and-fail`. Step values are nested under
 
 `Saga.run(input, { steps, onFailure })` registers one scope finalizer per
 completed step, so the unwind is LIFO and runs on interruption as well as on
-failure. An interrupted run cannot fail with
+failure. Set `uninterruptible: true` on a step whose action must not be lost to
+a cancel, such as a charge: the interrupt then waits for the action, and the
+unwind compensates it. Without the flag, an interrupted action counts as not
+completed, even when it guards its own side effect. An interrupted run cannot fail with
 `compensation_failed`, so it logs the failed step ids at error level and adds
 them to the current span as `saga.compensation_failed`. A compensation that dies or whose callback throws before returning an
 effect is recorded as a failed compensation rather

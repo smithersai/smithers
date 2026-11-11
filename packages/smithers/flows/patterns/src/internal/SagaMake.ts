@@ -66,11 +66,19 @@ export interface MakeOptions<R = never> {
 /**
  * One operational step.
  *
+ * Set `uninterruptible` for an action whose side effect must not be lost to a
+ * cancel, such as a charge or a deploy. `run` then runs the action and
+ * registers its compensation as one uninterruptible unit: an interrupt that
+ * arrives while the action runs waits for it, and the unwind compensates it.
+ * Without the flag, an interrupted action counts as not completed and is never
+ * compensated, even when it guards its own side effect.
+ *
  * @category models
  * @since 0.1.0
  */
 export interface RuntimeStep<I, A, E, R, E2, R2> {
   readonly id: string
+  readonly uninterruptible?: boolean | undefined
   readonly action: (
     input: { readonly input: I; readonly completed: Readonly<Record<string, A>> }
   ) => Effect.Effect<A, E, R>
@@ -82,8 +90,8 @@ export interface RuntimeStep<I, A, E, R, E2, R2> {
 /**
  * Configuration for {@link run}.
  *
- * `run` snapshots `steps`, each step's `id`, `action`, and `compensation`,
- * and `onFailure` at the call, so a later edit to the array, a step record,
+ * `run` snapshots `steps`, each step's `id`, `uninterruptible`, `action`,
+ * and `compensation`, and `onFailure` at the call, so a later edit to the array, a step record,
  * or the option object does not alter that run. See
  * https://smithers.sh/docs/reference/api/patterns#identity-and-ownership.
  *

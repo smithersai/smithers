@@ -3,6 +3,7 @@ import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -564,6 +565,43 @@ describe("Saga", () => {
       yield* Fiber.interrupt(fiber)
 
       expect(trace).toEqual(["do-one", "undo-one"])
+    }))
+
+  // An interrupt that arrives while an uninterruptible action runs is held
+  // until the action returns. The step must still be compensated.
+  it.effect("compensates an uninterruptible step whose action was interrupted in flight", () =>
+    Effect.gen(function*() {
+      const trace: Array<string> = []
+      const gate = yield* Deferred.make<void>()
+      const fiber = yield* Effect.forkChild(
+        Saga.run("order", {
+          steps: [
+            {
+              id: "charge",
+              uninterruptible: true,
+              action: () => Deferred.await(gate).pipe(Effect.map(() => (trace.push("do-charge"), "charged"))),
+              compensation: ({ value }) => Effect.sync(() => trace.push(`undo-charge:${String(value)}`))
+            },
+            {
+              id: "ship",
+              action: () => Effect.never,
+              compensation: () => Effect.sync(() => trace.push("undo-ship"))
+            }
+          ],
+          onFailure: "compensate"
+        }),
+        { startImmediately: true }
+      )
+      yield* Effect.yieldNow
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber), { startImmediately: true })
+      yield* Effect.yieldNow
+      expect(trace).toEqual([])
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(interrupting)
+      const exit = yield* Fiber.await(fiber)
+
+      expect(Exit.hasInterrupts(exit)).toBe(true)
+      expect(trace).toEqual(["do-charge", "undo-charge:charged"])
     }))
 
   // On interruption `run` cannot return the typed `compensation_failed`
