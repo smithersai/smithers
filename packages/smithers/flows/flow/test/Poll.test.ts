@@ -189,6 +189,11 @@ describe("Poll.delayMillis", () => {
     expect(linear).toEqual([100, 200, 300])
     expect(exponential).toEqual([100, 200, 400])
   })
+
+  it("has no finite exponential wait for an attempt that is not a positive whole number", () => {
+    expect([0, -1, 1.5].map((attempt) => Poll.delayMillis({ intervalMs: 100, backoff: "exponential", attempt })))
+      .toEqual([Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY])
+  })
 })
 
 describe("stable error codes", () => {
@@ -364,12 +369,10 @@ describe("Poll as a plan", () => {
 
     // Every option below is a finite number on its own. The SCHEDULE they
     // describe is not: `delayMillis` multiplies the interval by the backoff, so
-    // a five-second poll doubling for two thousand attempts asks, long before
-    // the last one, for a wait of `Infinity` — the timer that never fires the
-    // interval guard exists to refuse.
-    expect(Poll.delayMillis({ intervalMs: 1000, backoff: "exponential", attempt: 2000 })).toBe(
-      Number.POSITIVE_INFINITY
-    )
+    // a one-second poll doubling for two thousand attempts asks, long before
+    // the last one, for a wait of `Number.MAX_VALUE` milliseconds — a timer
+    // that never fires, which the interval guard exists to refuse.
+    expect(Poll.delayMillis({ intervalMs: 1000, backoff: "exponential", attempt: 2000 })).toBe(Number.MAX_VALUE)
     expect(declare({ intervalMs: 1000, maxAttempts: 2000, backoff: "exponential" })).toThrow(RangeError)
     expect(declare({ intervalMs: 1000, maxAttempts: 2000, backoff: "exponential" })).toThrow(/backoff/)
     expect(declare({ intervalMs: 1e308, maxAttempts: 3, backoff: "linear" })).toThrow(/backoff/)

@@ -7,7 +7,7 @@
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime, Interpreter, JournalDecode, RunMetrics } from "@smthrs/flow"
+import { Flow, FlowRuntime, Interpreter, JournalDecode, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Journal, Redaction } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -390,9 +390,11 @@ const staleRunningSweepBatch = 64
  * `heartbeatStaleAfter` of the last refusal, which is the same window every
  * other reclaim decision is made against.
  */
-const stealRefusalBackoffFirst = Duration.times(Ownership.heartbeatInterval, 2)
-
-const stealRefusalBackoffMax = Ownership.heartbeatStaleAfter
+const stealRefusalBackoff = RetryPolicy.make({
+  initialMs: Duration.toMillis(Duration.times(Ownership.heartbeatInterval, 2)),
+  factor: 2,
+  maxMs: Duration.toMillis(Ownership.heartbeatStaleAfter)
+})
 
 /**
  * A refusal this driver remembers: which lease it was refused against, when
@@ -612,10 +614,7 @@ const deferSteal = (driver: Driver, runId: string, heartbeatAtMs: number | null,
   // A moved lease is new evidence about a different state of the world, so
   // it starts the ladder over instead of inheriting the old wait.
   const attempt = previous !== undefined && previous.heartbeatAtMs === heartbeatAtMs ? previous.attempt + 1 : 1
-  const waitMs = Math.min(
-    Duration.toMillis(stealRefusalBackoffFirst) * Math.pow(2, attempt - 1),
-    Duration.toMillis(stealRefusalBackoffMax)
-  )
+  const waitMs = Option.getOrThrow(RetryPolicy.nextDelay(stealRefusalBackoff, attempt))
   driver.stealRefusals.set(runId, { heartbeatAtMs, nextProbeAtMs: nowMs + waitMs, attempt })
 }
 

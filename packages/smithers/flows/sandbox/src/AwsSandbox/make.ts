@@ -4,9 +4,11 @@
  * @since 0.1.0
  */
 
+import { RetryPolicy } from "@smthrs/flow"
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import * as ChildProcess from "effect/process/ChildProcess"
 import type { Scope } from "effect/Scope"
 import * as Stream from "effect/Stream"
@@ -361,6 +363,10 @@ const awaitReady = (
 ): Effect.Effect<Task, ProviderError> => {
   const interval = options.pollIntervalMs ?? 1_000
   const attempts = options.maxPollAttempts ?? 60
+  // `pollIntervalMs`, doubling, at most 10 s; an interval that is not positive polls without a wait.
+  const backoff = interval > 0
+    ? RetryPolicy.make({ initialMs: Math.min(interval, 10_000), factor: 2, maxMs: 10_000 })
+    : undefined
 
   const poll = (index: number): Effect.Effect<Task, ProviderError> =>
     Effect.flatMap(describe(options, taskArn), (output) => {
@@ -372,7 +378,7 @@ const awaitReady = (
       if (index + 1 >= attempts) {
         return Effect.fail(failure("timeout", `${taskArn} did not make its ECS Exec agent ready`, output.failures))
       }
-      const delay = Math.min(interval * (2 ** index), 10_000)
+      const delay = backoff === undefined ? 0 : Option.getOrThrow(RetryPolicy.nextDelay(backoff, index + 1))
       return Effect.andThen(Effect.sleep(Duration.millis(delay)), poll(index + 1))
     })
 

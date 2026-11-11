@@ -8,6 +8,7 @@
 
 import * as Control from "@smthrs/control/Control"
 import type { PlanCard, Receipt, RunStatus } from "@smthrs/control/ControlSchema"
+import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
@@ -191,6 +192,14 @@ const runIdFromReceipt = (
  */
 export const parkedAttempts = 8
 
+/** The waits between parked launches: one second, doubling, until `parkedAttempts` attempts are spent. */
+const parkedRetry = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 1_000 * 2 ** (parkedAttempts - 2),
+  maxAttempts: parkedAttempts
+})
+
 const runApprovedPlan = (
   control: Control.Service,
   plan: PlanCard,
@@ -207,17 +216,19 @@ const runApprovedPlan = (
     Effect.mapError((error) => runnerError("Control could not launch the scheduled run", error)),
     Effect.flatMap((receipt) => {
       if (receipt._tag !== "Parked") return runIdFromReceipt(receipt)
-      if (attempt >= parkedAttempts) {
-        return Effect.fail(
-          runnerError(
-            `Control plan ${plan.planId} is still parked awaiting approval after ${attempt} attempts`
+      return Option.match(RetryPolicy.nextDelay(parkedRetry, attempt), {
+        onNone: () =>
+          Effect.fail(
+            runnerError(
+              `Control plan ${plan.planId} is still parked awaiting approval after ${attempt} attempts`
+            )
+          ),
+        onSome: (delay) =>
+          Effect.logInfo(`A scheduled plan is parked awaiting approval, attempt ${attempt}`).pipe(
+            Effect.andThen(Effect.sleep(Duration.millis(delay))),
+            Effect.andThen(Effect.suspend(() => runApprovedPlan(control, plan, key, attempt + 1)))
           )
-        )
-      }
-      return Effect.logInfo(`A scheduled plan is parked awaiting approval, attempt ${attempt}`).pipe(
-        Effect.andThen(Effect.sleep(Duration.millis(1000 * 2 ** (attempt - 1)))),
-        Effect.andThen(Effect.suspend(() => runApprovedPlan(control, plan, key, attempt + 1)))
-      )
+      })
     })
   )
 
@@ -673,6 +684,12 @@ const build = (
     // An inspection error is not evidence that a run stopped. Retry three
     // times, doubling the poll interval up to a minute, then let the next tick
     // inspect the durable owner again. Interruption must still close the scope.
+    const inspectRetry = RetryPolicy.make({
+      initialMs: Math.min(Duration.toMillis(runPollInterval), 60_000),
+      factor: 2,
+      maxMs: 60_000,
+      maxAttempts: 4
+    })
     const inspectRun = (triggerId: string, runId: string): Effect.Effect<Option.Option<RunState>, TriggerError> =>
       Effect.gen(function*() {
         for (let attempt = 0;; attempt++) {
@@ -688,13 +705,14 @@ const build = (
             )
           )
           if (Option.isSome(inspected)) return inspected
-          if (attempt === 3) {
+          const wait = RetryPolicy.nextDelay(inspectRetry, attempt + 1)
+          if (Option.isNone(wait)) {
             yield* Effect.logWarning("A trigger run monitor detached after inspection retries").pipe(
               Effect.annotateLogs({ triggerId, runId })
             )
             return Option.none<RunState>()
           }
-          yield* Effect.sleep(Math.min(Duration.toMillis(runPollInterval) * 2 ** attempt, 60_000))
+          yield* Effect.sleep(wait.value)
         }
       })
 

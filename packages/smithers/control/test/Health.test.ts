@@ -371,4 +371,9 @@ describe("Health configuration and Effect evaluation", () => {
       60_000
     ])
   })
+  it("waits the cap after more failures than a safe integer counts", () => {
+    expect(
+      [2 ** 53, Number.POSITIVE_INFINITY].map((failures) => Health.nextDelay(Health.defaultPolicy, failures))
+    ).toEqual([60_000, 60_000])
+  })
 })

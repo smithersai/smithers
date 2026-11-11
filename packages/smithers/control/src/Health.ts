@@ -4,8 +4,9 @@
 
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as Fault from "@smthrs/flow/Fault"
+import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import { Cause, Effect, Metric, Schema } from "effect"
+import { Cause, Effect, Metric, Option, Schema } from "effect"
 import type { ControlEvent, RunSummary } from "./ControlSchema.ts"
 import { makeJevSessionChecker } from "./JevSessionChecker.ts"
 
@@ -396,10 +397,8 @@ export const makeRegistry = (
 export const nextDelay = (policy: CheckPolicy, consecutiveFailures: number): number =>
   consecutiveFailures <= 0 ? policy.intervalMs : Math.max(
     policy.intervalMs,
-    Math.min(
-      policy.backoff.maxMs,
-      policy.backoff.initialMs * policy.backoff.factor ** Math.min(consecutiveFailures - 1, 32)
-    )
+    // A count past what a safe integer holds has failed long enough to wait the cap.
+    Option.getOrElse(RetryPolicy.nextDelay(policy.backoff, consecutiveFailures), () => policy.backoff.maxMs)
   )
 /** Host-only ordering stamp captured before a probe.
  * @category models

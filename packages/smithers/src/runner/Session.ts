@@ -40,6 +40,7 @@
 import * as Acp from "@smthrs/agent/Acp"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
+import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, type Latch, Option, Queue, Schema, Stream } from "effect"
 import {
@@ -460,7 +461,9 @@ export const work = (
  * How long a checkout waits for a credential the host couldn't issue, when
  * the host said no wait: 15 s, doubling, to 5 minutes.
  */
-const provisionWaitSeconds = (attempt: number): number => Math.min(300, 15 * 2 ** (attempt - 1))
+const provisionWait = RetryPolicy.make({ initialMs: 15_000, factor: 2, maxMs: 300_000 })
+const provisionWaitSeconds = (attempt: number): number =>
+  Option.getOrThrow(RetryPolicy.nextDelay(provisionWait, attempt)) / 1000
 
 /** Time left before the deadline below which a checkout isn't tried again: the job ends `timeout`. */
 const PROVISION_LAST_TRY_MS = 1000

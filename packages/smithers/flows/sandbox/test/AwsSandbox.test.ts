@@ -1,10 +1,11 @@
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Logger, Path, PlatformError, Sink, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Logger, Path, PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
 import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
+import { TestClock } from "effect/testing"
 import {
   chmodSync,
   closeSync,
@@ -1278,6 +1279,28 @@ describe("AwsSandbox", () => {
         () => Effect.void
       ))
       expect(timeoutFailure).toMatchObject({ code: "timeout" })
+    }))
+
+  it.effect("waits pollIntervalMs between readiness reads, doubling up to 10 seconds", () =>
+    Effect.gen(function*() {
+      const fake = fakeEcs()
+      fake.describeSteps.push("missing", "missing", "missing", "missing")
+      const fiber = yield* Effect.forkChild(Effect.flip(acquired(
+        taskDefinitionProvider(fake, { pollIntervalMs: 4_000, maxPollAttempts: 4 }),
+        () => Effect.void
+      )))
+      // The fake SDK answers through promises, so each step lets them settle before it counts reads.
+      const settle = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve))).pipe(
+        Effect.repeat({ times: 4 })
+      )
+      const reads: Array<number> = []
+      for (const wait of [0, 3_999, 1, 7_999, 1, 9_999, 1]) {
+        yield* TestClock.adjust(wait)
+        yield* settle
+        reads.push(fake.describeInputs.length)
+      }
+      expect(reads).toEqual([1, 1, 2, 2, 3, 3, 4])
+      expect(yield* Fiber.join(fiber)).toMatchObject({ code: "timeout" })
     }))
 
   it.effect("finalizes every successfully created AWS resource on later failure", () =>

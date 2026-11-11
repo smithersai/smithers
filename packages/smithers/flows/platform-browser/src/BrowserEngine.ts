@@ -265,9 +265,8 @@ export const Inspection = RunReads.Inspection
  */
 export const RunList = RunReads.RunList
 
-/** The first wait before `runs` reads again after a failed read, and the longest. */
-const RUNS_BACKOFF_MS = 250
-const RUNS_BACKOFF_CAP_MS = 5_000
+/** The waits before `runs` reads again after failed reads: 250 ms, doubling, at most 5 s. */
+const runsBackoff = RetryPolicy.make({ initialMs: 250, factor: 2, maxMs: 5_000 })
 
 /**
  * Requests this tab sent, by `request` and `outcome` (`replied` or `refused`).
@@ -495,7 +494,7 @@ export const make = (options: Options): Effect.Effect<Service, never, TabChannel
                     : failure.reason
                 })
               )
-              const wait = Math.min(RUNS_BACKOFF_MS * 2 ** failed, RUNS_BACKOFF_CAP_MS)
+              const wait = Option.getOrThrow(RetryPolicy.nextDelay(runsBackoff, failed + 1))
               yield* Effect.forkIn(Effect.andThen(Effect.sleep(wait), Queue.offer(again, undefined)), scope)
               return Option.none<RunInspection.RunList>()
             })

@@ -23,6 +23,7 @@ import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
 import * as Interpreter from "./Interpreter.ts"
+import * as RetryPolicy from "./RetryPolicy.ts"
 import * as Sleep from "./Sleep.ts"
 
 /**
@@ -196,6 +197,9 @@ export const make = <
   const timeout = millis(options.timeout, "timeout")
   const restarts = options.restarts ?? 0
   if (maximum < every) throw new RangeError("ExternalJob.make: probe.max must be at least probe.every")
+  // The wait after probe `n`: `probe.every`, doubling, at most `probe.max`.
+  const probing = RetryPolicy.make({ initialMs: every, factor: 2, maxMs: maximum })
+  const probeDelay = (probe: number): number => Option.getOrThrow(RetryPolicy.nextDelay(probing, probe))
   if (!Number.isSafeInteger(restarts) || restarts < 0) {
     throw new RangeError("ExternalJob.make: restarts must be a nonnegative safe integer")
   }
@@ -517,7 +521,7 @@ export const make = <
         Effect.gen(function*() {
           const begunAt = Math.floor(yield* Clock.currentTimeMillis)
           const deadline = job.startedAt + timeout
-          const delay = Math.min(maximum, every * 2 ** Math.min(job.probe - 1, 1023))
+          const delay = probeDelay(job.probe)
           let timedOut = begunAt >= deadline
           // The read may wait for the work to end until the next probe is due (`StatusOptions`), so an adapter that
           // can wait answers an exit when it happens, and the park after it is over at once.
@@ -624,7 +628,7 @@ export const make = <
           if (now >= until) return Option.none<A["Type"]>()
           // The next read is due on the job's schedule from this one's start: at once after a read that waited that
           // long, as one that can wait does, and after the rest of the delay otherwise.
-          const dueAt = Math.min(until, begunAt + Math.min(maximum, every * 2 ** Math.min(probe - 1, 1023)))
+          const dueAt = Math.min(until, begunAt + probeDelay(probe))
           yield* Effect.sleep(Math.max(0, dueAt - now))
         }
       })

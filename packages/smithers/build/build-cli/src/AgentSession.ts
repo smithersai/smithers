@@ -32,12 +32,14 @@
  */
 
 import type { Action, FlowRuntime } from "@smthrs/flow"
+import * as RetryPolicy from "@smthrs/flow/RetryPolicy"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as AgentTarget from "@smthrs/targets/AgentTarget"
 import type * as Input from "@smthrs/targets/Input"
 import type * as Reference from "@smthrs/targets/Reference"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -971,6 +973,9 @@ const overlayOf = (
 })
 
 /** Publishes new bytes on a fresh inode, retaining only ordinary permission bits. */
+/** Waits between Windows rename retries: 10 ms, doubling, six retries. */
+const renameRetry = RetryPolicy.make({ initialMs: 10, factor: 2, maxMs: 320, maxAttempts: 7 })
+
 const publishFile = async (path: string, contents: string, mode?: number): Promise<void> => {
   const permissions = mode === undefined ? undefined : mode & 0o777
   const temporary = `${path}.tmp-${process.pid}-${randomBytes(12).toString("hex")}`
@@ -991,11 +996,12 @@ const publishFile = async (path: string, contents: string, mode?: number): Promi
         const code = (cause as NodeJS.ErrnoException).code
         // Windows replacement can briefly conflict with another replacement.
         // Retry the same closed inode; never unlink the published destination.
+        const wait = RetryPolicy.nextDelay(renameRetry, attempt + 1)
         if (
-          process.platform !== "win32" || attempt >= 6 ||
+          process.platform !== "win32" || Option.isNone(wait) ||
           (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")
         ) throw cause
-        await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt))
+        await new Promise((resolve) => setTimeout(resolve, wait.value))
       }
     }
   } finally {

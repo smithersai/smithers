@@ -46306,7 +46306,7 @@ https://smithers.sh/docs/reference/api/triggers/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs)
 
-> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/)
+> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/)
 
 `@smthrs/triggers` exports twelve modules from its root entry point, and each is
 also importable from `@smthrs/triggers/<Module>`:

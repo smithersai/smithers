@@ -1371,6 +1371,7 @@
       "dependencies": {
         "@smthrs/control": "1.0.0-rc.17",
         "@smthrs/database": "1.0.0-rc.17",
+        "@smthrs/flow": "1.0.0-rc.17",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",

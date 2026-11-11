@@ -36,10 +36,12 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
 import * as Flow from "./Flow/index.ts"
 import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
+import * as RetryPolicy from "./RetryPolicy.ts"
 import * as Sleep from "./Sleep.ts"
 
 /**
@@ -152,8 +154,14 @@ export const delayMillis = (options: {
 }): number =>
   // A zero interval is zero under every backoff. Multiplying it by a factor
   // that has overflowed to `Infinity` would make it `NaN`.
-  options.intervalMs === 0 ? 0 : options.intervalMs *
-    (options.backoff === "fixed" ? 1 : options.backoff === "linear" ? options.attempt : 2 ** (options.attempt - 1))
+  options.intervalMs === 0 || options.backoff === "fixed"
+    ? options.intervalMs
+    : options.backoff === "linear"
+    ? options.intervalMs * options.attempt
+    : Option.getOrElse(
+      RetryPolicy.nextDelay({ initialMs: options.intervalMs, factor: 2, maxMs: Number.MAX_VALUE }, options.attempt),
+      () => Number.POSITIVE_INFINITY
+    )
 
 /**
  * What a poll round can fail with.
