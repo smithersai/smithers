@@ -3530,7 +3530,7 @@ GitHub; shared host. Raw HTTP on the same routes: `issues-wiki-web` above.
 
 ## Fault-path coverage set (2026-11-10, nyc-01)
 
-Not a timing benchmark. `bench/browser-faults.spec.ts` runs seven Chromium workloads on the `e2e` build, each over one
+Not a timing benchmark. `bench/browser-faults.spec.ts` runs eight Chromium workloads on the `e2e` build, each over one
 faulty Effect service, and records which steps passed; its artifacts (`fault-coverage-<name>`, build
 `e2e-fault-coverage`) hold no duration, and none is quoted here (0017). Its Chromium counts join the benchmark coverage
 gate.
@@ -3539,7 +3539,8 @@ gate.
 | --- | --- | --- |
 | refusals | post `Unavailable`; tour `Refused` busy | "Send failed" then Retry answers; "Agent busy" then Learn more starts the tour |
 | disconnect | event stream `Unavailable` before #4 | Disconnected, Reconnect, Connected, answer done |
-| tour | tour stream `Unavailable`; tour end `Unavailable` at step 2 | after Exit the composer reads "Send failed"; a second Exit ends the tour |
+| tour | tour stream `Unavailable`; tour control `Unavailable`; tour end `Unavailable` at step 2 | the stream is followed again and Skip reaches step 2; Pause shows "Connection lost", a second Pause clears it and pauses; a second Exit ends the tour |
+| stale | issue list served as a stale copy | "Stale" mark titled "As of 2026-11-10 13:40 UTC" |
 | media | empty-state image fails to load | composer still answers |
 | sandbox | every read fails; first start fails | "Couldn't load the sandbox"; "Couldn't start a sandbox", Retry, Running |
 | roles | first role subscription `AccountUnavailable` | "Connection lost." toast, Retry clears it |

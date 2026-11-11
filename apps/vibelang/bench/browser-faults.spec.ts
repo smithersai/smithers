@@ -71,28 +71,58 @@ test("a broken event stream offers Reconnect, and the answer completes", async (
   })
 })
 
-test("a lost tour stream and an unavailable tour end keep the tour recoverable", async ({ page, baseURL }) => {
+// Each wait is a web-first assertion with a stated bound, never a sleep: the tour's first step waits on the mock
+// agent's first answer, so it gets the bound e2e/chat-paths.spec.ts gives it.
+const tourStarts = 15_000
+const tourMoves = 10_000
+
+test("a lost tour stream, a lost tour control and an unavailable tour end keep the tour recoverable", async ({ page, baseURL }) => {
   await workload(page, baseURL, "tour", async step => {
     await page.goto(`${baseURL}${runtime}?fault=tour-events`)
-    await step("tour-events-lost", async () => {
-      await page.getByRole("button", { name: "Learn more" }).click()
+    await step("tour-events-refollowed", async () => {
+      await page.getByRole("button", { name: "Learn more", exact: true }).click()
       const bar = page.locator(".vl-theatre-bar")
-      await expect(bar).toHaveAttribute("data-step", "1")
-      await page.getByRole("button", { name: "Exit", exact: true }).click()
-      await expect(bar).toHaveCount(0)
-      await expect(page.locator("[data-docked] .sui-chat-composer-status")).toHaveText("Send failed")
+      await expect(bar).toHaveAttribute("data-step", "1", { timeout: tourStarts })
+      await page.getByRole("button", { name: "Skip", exact: true }).click()
+      await expect(bar).toHaveAttribute("data-step", "2", { timeout: tourMoves })
+    })
+    await page.goto(`${baseURL}${runtime}?fault=tour-control`)
+    await step("tour-control-lost-and-retried", async () => {
+      await page.getByRole("button", { name: "Learn more", exact: true }).click()
+      const bar = page.locator(".vl-theatre-bar")
+      await expect(bar).toHaveAttribute("data-step", "1", { timeout: tourStarts })
+      await page.getByRole("button", { name: "Pause", exact: true }).click()
+      const alert = page.getByRole("region", { name: "Walkthrough" }).getByRole("alert")
+      await expect(alert).toHaveText("Connection lost", { timeout: tourMoves })
+      await page.getByRole("button", { name: "Pause", exact: true }).click()
+      await expect(alert).toHaveCount(0, { timeout: tourMoves })
+      await expect(bar).toHaveAttribute("data-paused", "true", { timeout: tourMoves })
     })
     await page.goto(`${baseURL}${runtime}?fault=end-tour-unavailable`)
     await step("tour-end-unavailable-at-step", async () => {
       await page.getByRole("button", { name: "Learn more", exact: true }).click()
       const bar = page.locator(".vl-theatre-bar")
-      await expect(bar).toHaveAttribute("data-step", "1")
+      await expect(bar).toHaveAttribute("data-step", "1", { timeout: tourStarts })
       await page.getByRole("button", { name: "Skip", exact: true }).click()
-      await expect(bar).toHaveAttribute("data-step", "2")
+      await expect(bar).toHaveAttribute("data-step", "2", { timeout: tourMoves })
       await page.getByRole("button", { name: "Exit", exact: true }).click()
-      await expect(bar).toHaveAttribute("data-step", "2")
+      await expect(bar).toHaveAttribute("data-step", "2", { timeout: tourMoves })
       await page.getByRole("button", { name: "Exit", exact: true }).click()
-      await expect(bar).toHaveCount(0)
+      await expect(bar).toHaveCount(0, { timeout: tourMoves })
+    })
+  })
+})
+
+test("a copy GitHub refused to refresh is marked stale with its time", async ({ page, baseURL }) => {
+  await workload(page, baseURL, "stale", async step => {
+    await page.goto(`${baseURL}${runtime}?fault=stale`)
+    await step("issues-stale-marked", async () => {
+      await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")
+      await expect(page.locator(".vl-nav-role")).toHaveText("Maintainer")
+      await page.getByRole("button", { name: "Issues", exact: true }).click()
+      const mark = page.locator(".sui-page-header .vl-stale")
+      await expect(mark).toHaveText("Stale")
+      await expect(mark).toHaveAttribute("title", "As of 2026-11-10 13:40 UTC")
     })
   })
 })
