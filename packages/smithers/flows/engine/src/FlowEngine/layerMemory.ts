@@ -141,6 +141,12 @@ interface Memory {
   readonly parents: Map<string, Set<string>>
   readonly children: Map<string, Set<string>>
   readonly actions: Map<string, ActionState>
+  /**
+   * The highest attempt per action key with a settlement, so a re-drive
+   * resumes the retry loop there instead of re-sleeping the backoff ladder
+   * of attempts it replays (issue #4695).
+   */
+  readonly latestAttempts: Map<string, number>
   readonly deferredResults: Map<string, Exit.Exit<any, any>>
   readonly clocks: FiberMap.FiberMap<string>
   /**
@@ -169,6 +175,7 @@ const makeMemory = (
   parents: new Map(),
   children: new Map(),
   actions: new Map(),
+  latestAttempts: new Map(),
   deferredResults: new Map(),
   clocks,
   missedWakes: new Set()
@@ -823,10 +830,24 @@ const priorSettlement = (
   return exit
 }
 
-/** Keeps a settled dispatch for replay; an interrupted dispatch has no settlement to replay. */
-const recordSettlement = (memory: Memory, owner: ActionState, actionId: string, exit: Exit.Exit<Result>) => {
-  if (Exit.isSuccess(exit)) owner.exit = exit
-  else memory.actions.delete(actionId)
+/**
+ * Keeps a settled dispatch for replay and advances its key's latest attempt;
+ * an interrupted dispatch has no settlement to replay, and a suspended one is
+ * retired by the next dispatch, so neither advances it.
+ */
+const recordSettlement = (
+  memory: Memory,
+  owner: ActionState,
+  options: ActionExecuteOptions,
+  actionId: string,
+  exit: Exit.Exit<Result>
+) => {
+  if (Exit.isSuccess(exit)) {
+    owner.exit = exit
+    if (exit.value._tag !== "Suspended") {
+      memory.latestAttempts.set(options.key, Math.max(memory.latestAttempts.get(options.key) ?? 0, options.attempt))
+    }
+  } else memory.actions.delete(actionId)
   return Deferred.succeed(owner.settlement, exit)
 }
 
@@ -834,7 +855,7 @@ const recordSettlement = (memory: Memory, owner: ActionState, actionId: string, 
 const runAction = (
   memory: Memory,
   instance: Instance,
-  action: ActionExecuteOptions["action"],
+  options: ActionExecuteOptions,
   actionId: string,
   restore: Restore
 ) => {
@@ -854,12 +875,12 @@ const runAction = (
   // same way (issue #42).
   const waitingBefore = instance.waiting
   actionInstance.waiting = waitingBefore
-  return restore(action.executeEncoded.pipe(
+  return restore(options.action.executeEncoded.pipe(
     Flow.intoResult,
     Effect.provideService(FlowRuntime.FlowInstance, actionInstance),
     Effect.provideService(Action.StoredSerialization, memory.serialization)
   )).pipe(
-    Effect.onExit((exit) => recordSettlement(memory, owner, actionId, exit)),
+    Effect.onExit((exit) => recordSettlement(memory, owner, options, actionId, exit)),
     Effect.ensuring(Effect.sync(() => {
       if (instance.waiting === waitingBefore) instance.waiting = actionInstance.waiting
     }))
@@ -883,7 +904,7 @@ const actionExecute = Effect.fnUntraced(function*(
       if (prior !== undefined) {
         return prior
       }
-      return runAction(memory, instance, options.action, actionId, restore)
+      return runAction(memory, instance, options, actionId, restore)
     })
   )
 })
@@ -1008,6 +1029,7 @@ const adapter = (memory: Memory): Encoded => ({
     options?.poll === true ? pollResume(memory, flow, executionId) : resumeAuthorized(memory, flow, executionId),
   resumeSignal: (_flow, executionId) => resumeSignal(memory, executionId),
   actionExecute: (options) => actionExecute(memory, options),
+  actionLatestAttempt: ({ key }) => Effect.sync(() => Option.fromNullishOr(memory.latestAttempts.get(key))),
   poll: (flow, executionId) => poll(memory, flow, executionId),
   deferredResult: (deferred) => deferredResult(memory, deferred),
   deferredDone: (options) => deferredDone(memory, options),

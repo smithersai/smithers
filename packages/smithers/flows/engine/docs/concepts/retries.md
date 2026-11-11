@@ -22,8 +22,11 @@ highest persisted attempt for this step key and continues from there whenever
 that number is above the one the caller passed. A value that is not a safe
 integer is rejected with a warning and the caller's number is used instead.
 
-Without that member the counter is in-process, which is correct for the
-in-memory engine and for any store that keeps no attempt rows.
+The in-memory engine implements it from the settlements it holds, so a flow
+re-driven after a park replays its recorded attempts without sleeping their
+backoff again. Without that member the counter is in-process, which is correct
+only for a store that keeps no attempt rows: every re-drive starts at attempt 1
+and re-sleeps the ladder of the attempts it replays.
 
 ## The elapsed-time origin
 
