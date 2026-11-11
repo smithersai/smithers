@@ -63,7 +63,8 @@
     "test": "vitest",
     "coverage": "vitest --coverage",
     "differential": "node scripts/differential.ts",
-    "reference": "node scripts/reference.ts"
+    "reference": "node scripts/reference.ts",
+    "mutants": "node scripts/mutants.ts"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

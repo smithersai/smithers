@@ -1,0 +1,596 @@
+[
+  {
+    "name": "land-without-green",
+    "what": "Land a run whose result is not green.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if green cfg r.results then",
+      "mutated": "      if green cfg r.results || true then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  if (batch === undefined || !green(config, found.results)) return state",
+      "mutated": "  if (batch === undefined) return state"
+    }
+  },
+  {
+    "name": "green-ignores-failure",
+    "what": "Call a result green although a check failed.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  !cfg.required.isEmpty && cfg.required.all (passed results) && !failed results",
+      "mutated": "  !cfg.required.isEmpty && cfg.required.all (passed results)"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "config.required.every((check) => passed(results, check)) && !failed(results)",
+      "mutated": "config.required.every((check) => passed(results, check))"
+    }
+  },
+  {
+    "name": "green-with-no-checks",
+    "what": "Call a result green when no check is required.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  !cfg.required.isEmpty && cfg.required.all (passed results) && !failed results",
+      "mutated": "  cfg.required.all (passed results) && !failed results"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  config.required.length > 0 && config.required.every((check) => passed(results, check)) && !failed(results)",
+      "mutated": "  config.required.every((check) => passed(results, check)) && !failed(results)"
+    }
+  },
+  {
+    "name": "green-on-partial",
+    "what": "Call a result green when any one required check passed.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  !cfg.required.isEmpty && cfg.required.all (passed results) && !failed results",
+      "mutated": "  !cfg.required.isEmpty && cfg.required.any (passed results) && !failed results"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "config.required.every((check) => passed(results, check)) && !failed(results)",
+      "mutated": "config.required.some((check) => passed(results, check)) && !failed(results)"
+    }
+  },
+  {
+    "name": "live-ignores-readiness",
+    "what": "Treat a run as live although a part was withdrawn, fixed or blamed.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  | some (p :: rest) => if (p :: rest).all s.partReady then some (p :: rest) else none",
+      "mutated": "  | some (p :: rest) => some (p :: rest)"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  return added !== undefined && added.length > 0 && added.every((entry) => partReady(state, entry)) ? added : undefined",
+      "mutated": "  return added !== undefined && added.length > 0 ? added : undefined"
+    }
+  },
+  {
+    "name": "strip-accepts-another-tree",
+    "what": "Treat a tree as extending the target although its start differs.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  | a :: m, b :: t => if a = b then strip m t else none",
+      "mutated": "  | _ :: m, _ :: t => strip m t"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  candidate.length >= main.length && main.every((entry, index) => samePart(entry, candidate[index]!))",
+      "mutated": "  candidate.length >= main.length"
+    }
+  },
+  {
+    "name": "land-another-tree",
+    "what": "Move the target onto a tree other than the one tested.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "          main := r.tree",
+      "mutated": "          main := s.main ++ batch.take 1"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    main: tree(found),",
+      "mutated": "    main: [...state.main, ...batch.slice(0, 1)],"
+    }
+  },
+  {
+    "name": "land-keeps-the-run",
+    "what": "Keep a landed run, so it could land again.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "          runs := s.runs.filter fun x => x.id != run\n",
+      "mutated": "          runs := s.runs\n"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    runs: state.runs.filter((entry) => entry.id !== run),\n    landed:",
+      "mutated": "    runs: state.runs,\n    landed:"
+    }
+  },
+  {
+    "name": "land-does-not-mark-merged",
+    "what": "Land a batch without recording its changes as merged.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "            if batch.contains c.part ∧ c.status.isQueued then { c with status := .merged } else c",
+      "mutated": "            c"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "        ? { ...change, status: { _tag: \"merged\" } }\n        : change\n    ),",
+      "mutated": "        ? change\n        : change\n    ),"
+    }
+  },
+  {
+    "name": "land-drops-the-record",
+    "what": "Land without writing the landing to the record.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "          landed := s.landed ++ [{ run, base := s.main, batch, results := r.results }] }",
+      "mutated": "          landed := s.landed }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    landed: [...state.landed, { run, base: state.main, batch, results: found.results }]",
+      "mutated": "    landed: state.landed"
+    }
+  },
+  {
+    "name": "result-overwrites",
+    "what": "Let a later result for a check replace the first.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if cfg.required.contains check ∧ s.runs.any (fun r => r.id == run && !answered r.results check) then\n    { s with\n      runs := s.runs.map fun r =>\n        if r.id = run ∧ answered r.results check = false then { r with results := r.results ++ [(check, verdict)] }",
+      "mutated": "  if cfg.required.contains check ∧ s.runs.any (fun r => r.id == run) then\n    { s with\n      runs := s.runs.map fun r =>\n        if r.id = run then { r with results := r.results ++ [(check, verdict)] }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  config.required.includes(check) && state.runs.some((entry) => entry.id === run && !answered(entry.results, check))\n    ? {\n      ...state,\n      runs: state.runs.map((entry) =>\n        entry.id === run && !answered(entry.results, check)",
+      "mutated": "  config.required.includes(check) && state.runs.some((entry) => entry.id === run)\n    ? {\n      ...state,\n      runs: state.runs.map((entry) =>\n        entry.id === run"
+    }
+  },
+  {
+    "name": "result-for-any-check",
+    "what": "Record a result for a check that is not required.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if cfg.required.contains check ∧ s.runs.any (fun r => r.id == run && !answered r.results check) then",
+      "mutated": "  if s.runs.any (fun r => r.id == run && !answered r.results check) then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  config.required.includes(check) && state.runs.some((entry) => entry.id === run && !answered(entry.results, check))",
+      "mutated": "  state.runs.some((entry) => entry.id === run && !answered(entry.results, check))"
+    }
+  },
+  {
+    "name": "result-on-every-run",
+    "what": "Record a result on every run, not the one it names.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "        if r.id = run ∧ answered r.results check = false then { r with results := r.results ++ [(check, verdict)] }",
+      "mutated": "        if answered r.results check = false then { r with results := r.results ++ [(check, verdict)] }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "        entry.id === run && !answered(entry.results, check)\n          ? { ...entry",
+      "mutated": "        !answered(entry.results, check)\n          ? { ...entry"
+    }
+  },
+  {
+    "name": "pending-ignores-failure",
+    "what": "Count a failed run as still pending.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  !failed r.results && !complete cfg r.results",
+      "mutated": "  !complete cfg r.results"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "export const pending = (config: Config, run: Run): boolean => !failed(run.results) && !complete(config, run.results)",
+      "mutated": "export const pending = (config: Config, run: Run): boolean => !complete(config, run.results)"
+    }
+  },
+  {
+    "name": "blame-without-failure",
+    "what": "Blame a change whose run has no failed check.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if failed r.results then",
+      "mutated": "      if true then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  if (batch === undefined || batch.length !== 1 || !failed(found.results)) return state",
+      "mutated": "  if (batch === undefined || batch.length !== 1) return state"
+    }
+  },
+  {
+    "name": "blame-several-suspects",
+    "what": "Blame the first change of a failed batch of several.",
+    "lean": null,
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  if (batch === undefined || batch.length !== 1 || !failed(found.results)) return state",
+      "mutated": "  if (batch === undefined || !failed(found.results)) return state"
+    }
+  },
+  {
+    "name": "blame-ignores-attempt-limit",
+    "what": "Allow one fix attempt more than the limit.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "              if c.attempts < cfg.maxAttempts then { c with attempts := c.attempts + 1, status := .fixing run }",
+      "mutated": "              if c.attempts < cfg.maxAttempts + 1 then { c with attempts := c.attempts + 1, status := .fixing run }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      ? change.attempts < config.maxAttempts\n",
+      "mutated": "      ? change.attempts <= config.maxAttempts\n"
+    }
+  },
+  {
+    "name": "blame-keeps-exhausted-queued",
+    "what": "Leave a change queued when it fails with no attempt left.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "              else\n                { c with\n                  status := .unmergeable ⟨.attemptsExhausted, exhaustedDetail, failures r.results, c.attempts⟩ }",
+      "mutated": "              else c"
+    },
+    "ts": null
+  },
+  {
+    "name": "blame-does-not-count",
+    "what": "Start a fix without counting the attempt.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "{ c with attempts := c.attempts + 1, status := .fixing run }",
+      "mutated": "{ c with status := .fixing run }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "        ? { ...change, attempts: change.attempts + 1, status: { _tag: \"fixing\", run } }",
+      "mutated": "        ? { ...change, status: { _tag: \"fixing\", run } }"
+    }
+  },
+  {
+    "name": "fixed-any-attempt",
+    "what": "Accept a fix answer from an earlier attempt.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then { c with rev := c.rev + 1, status := .queued }",
+      "mutated": "      if c.id = id ∧ c.status.isFixing ∧ attempt ≤ c.attempts then { c with rev := c.rev + 1, status := .queued }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt\n      ? { ...change, rev: change.rev + 1",
+      "mutated": "    change.id === id && change.status._tag === \"fixing\" && attempt <= change.attempts\n      ? { ...change, rev: change.rev + 1"
+    }
+  },
+  {
+    "name": "fixed-keeps-revision",
+    "what": "Requeue a fixed change at its old revision, so its old failed run still counts.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "{ c with rev := c.rev + 1, status := .queued }",
+      "mutated": "{ c with status := .queued }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }",
+      "mutated": "      ? { ...change, status: { _tag: \"queued\" } }"
+    }
+  },
+  {
+    "name": "fixed-stays-fixing",
+    "what": "Take a fix answer without requeueing the change.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "{ c with rev := c.rev + 1, status := .queued }",
+      "mutated": "{ c with rev := c.rev + 1 }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }",
+      "mutated": "      ? { ...change, rev: change.rev + 1 }"
+    }
+  },
+  {
+    "name": "verdict-without-words",
+    "what": "Put a change out as unmergeable with no words for its author.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt ∧ detail ≠ \"\" then",
+      "mutated": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt && detail !== \"\"",
+      "mutated": "      change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt"
+    }
+  },
+  {
+    "name": "verdict-any-attempt",
+    "what": "Accept a verdict from an earlier attempt.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt ∧ detail ≠ \"\" then",
+      "mutated": "      if c.id = id ∧ c.status.isFixing ∧ attempt ≤ c.attempts ∧ detail ≠ \"\" then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt && detail !== \"\"",
+      "mutated": "      change.id === id && change.status._tag === \"fixing\" && attempt <= change.attempts && detail !== \"\""
+    }
+  },
+  {
+    "name": "withdraw-a-merged-change",
+    "what": "Withdraw a change that already merged.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if c.id = id ∧ (c.status.isQueued ∨ c.status.isFixing) then { c with status := .withdrawn } else c }",
+      "mutated": "      if c.id = id then { c with status := .withdrawn } else c }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    change.id === id && (change.status._tag === \"queued\" || change.status._tag === \"fixing\")",
+      "mutated": "    change.id === id"
+    }
+  },
+  {
+    "name": "withdraw-only-queued",
+    "what": "Refuse to withdraw a change that is being fixed.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      if c.id = id ∧ (c.status.isQueued ∨ c.status.isFixing) then { c with status := .withdrawn } else c }",
+      "mutated": "      if c.id = id ∧ c.status.isQueued then { c with status := .withdrawn } else c }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "    change.id === id && (change.status._tag === \"queued\" || change.status._tag === \"fixing\")",
+      "mutated": "    change.id === id && change.status._tag === \"queued\""
+    }
+  },
+  {
+    "name": "enqueue-a-known-id",
+    "what": "Accept a second change under an id the queue has seen.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if s.changes.any (fun c => c.id == id) then s",
+      "mutated": "  if false then s"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  state.changes.some((change) => change.id === id)\n    ? state",
+      "mutated": "  false\n    ? state"
+    }
+  },
+  {
+    "name": "enqueue-reuses-arrival",
+    "what": "Give two changes the same arrival number.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      nextSeq := s.nextSeq + 1 }",
+      "mutated": "      nextSeq := s.nextSeq }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      nextSeq: state.nextSeq + 1",
+      "mutated": "      nextSeq: state.nextSeq"
+    }
+  },
+  {
+    "name": "start-skips-the-first",
+    "what": "Start a run that skips the first ready change.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  let batch := (s.ready.take count).map Change.part",
+      "mutated": "  let batch := ((s.ready.drop 1).take count).map Change.part"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  const batch = waiting.slice(0, count).map(part)",
+      "mutated": "  const batch = waiting.slice(1, count + 1).map(part)"
+    }
+  },
+  {
+    "name": "start-over-the-run-limit",
+    "what": "Start one run more than the run limit allows.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if count = 0 ∨ s.ready.length < count ∨ cfg.maxRuns ≤ s.pendingCount cfg\n",
+      "mutated": "  if count = 0 ∨ s.ready.length < count ∨ cfg.maxRuns < s.pendingCount cfg\n"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  return count === 0 || waiting.length < count || config.maxRuns <= pendingCount(config, state)\n",
+      "mutated": "  return count === 0 || waiting.length < count || config.maxRuns < pendingCount(config, state)\n"
+    }
+  },
+  {
+    "name": "start-the-same-tree-twice",
+    "what": "Start a second run on a tree already under test.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if count = 0 ∨ s.ready.length < count ∨ cfg.maxRuns ≤ s.pendingCount cfg\n      ∨ s.runs.any (fun r => r.tree == s.main ++ batch) then s",
+      "mutated": "  if count = 0 ∨ s.ready.length < count ∨ cfg.maxRuns ≤ s.pendingCount cfg then s"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "\n      || state.runs.some((run) => sameTree(tree(run), candidate))\n",
+      "mutated": "\n"
+    }
+  },
+  {
+    "name": "start-reuses-a-run-id",
+    "what": "Give two runs the same id.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "      nextRun := s.nextRun + 1 }",
+      "mutated": "      nextRun := s.nextRun }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      nextRun: state.nextRun + 1",
+      "mutated": "      nextRun: state.nextRun"
+    }
+  },
+  {
+    "name": "order-ignores-priority",
+    "what": "Order the queue by arrival only.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  a.priority > b.priority || (a.priority == b.priority && a.seq ≤ b.seq)",
+      "mutated": "  a.seq ≤ b.seq"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  left.priority > right.priority || (left.priority === right.priority && left.seq <= right.seq)",
+      "mutated": "  left.seq <= right.seq"
+    }
+  },
+  {
+    "name": "order-lowest-priority-first",
+    "what": "Put lower priority first.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  a.priority > b.priority || (a.priority == b.priority && a.seq ≤ b.seq)",
+      "mutated": "  a.priority < b.priority || (a.priority == b.priority && a.seq ≤ b.seq)"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  left.priority > right.priority || (left.priority === right.priority && left.seq <= right.seq)",
+      "mutated": "  left.priority < right.priority || (left.priority === right.priority && left.seq <= right.seq)"
+    }
+  },
+  {
+    "name": "cancel-forgets-every-run",
+    "what": "Cancelling one run forgets every other run instead.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  { s with runs := s.runs.filter fun x => x.id != run }",
+      "mutated": "  { s with runs := s.runs.filter fun x => x.id == run }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "export const cancel = (state: State, run: number): State => ({\n  ...state,\n  runs: state.runs.filter((entry) => entry.id !== run)",
+      "mutated": "export const cancel = (state: State, run: number): State => ({\n  ...state,\n  runs: state.runs.filter((entry) => entry.id === run)"
+    }
+  },
+  {
+    "name": "history-keeps-one-too-many",
+    "what": "Remember one duration more than the window.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "  if (next.filter fun h => h.1 == check).length > window then",
+      "mutated": "  if (next.filter fun h => h.1 == check).length > window + 1 then"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "  if (next.filter((sample) => sample.check === check).length <= window) return next",
+      "mutated": "  if (next.filter((sample) => sample.check === check).length <= window + 1) return next"
+    }
+  },
+  {
+    "name": "bisect-does-not-narrow",
+    "what": "Retest the whole failing prefix instead of a shorter one.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "      if tested + 1 < m then some (tested + (m - tested + 1) / 2) else none",
+      "mutated": "      if tested + 1 < m then some (tested + (m - tested)) else none"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "  return tested + 1 < shortest ? tested + Math.floor((shortest - tested + 1) / 2) : undefined",
+      "mutated": "  return tested + 1 < shortest ? tested + (shortest - tested) : undefined"
+    }
+  },
+  {
+    "name": "speculate-past-the-queue",
+    "what": "Start a run on more changes than are ready.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "      if tested < ready then some (tested + min (max cfg.maxBatch 1) (ready - tested)) else none",
+      "mutated": "      if tested < ready then some (tested + max cfg.maxBatch 1) else none"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "    return tested < waiting ? tested + Math.min(Math.max(config.maxBatch, 1), waiting - tested) : undefined",
+      "mutated": "    return tested < waiting ? tested + Math.max(config.maxBatch, 1) : undefined"
+    }
+  },
+  {
+    "name": "never-cancel",
+    "what": "Never cancel a run the queue no longer needs.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "      match s.runs.find? fun r => (!(s.live r).isSome && !s.evidence r) || s.doomed r with",
+      "mutated": "      match s.runs.find? fun _ => false with"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "  const useless = state.runs.find((run) =>\n    (live(state, run) === undefined && !evidence(state, run)) || doomed(state, run)\n  )",
+      "mutated": "  const useless = state.runs.find(() => false)"
+    }
+  },
+  {
+    "name": "ignore-the-run-limit-in-policy",
+    "what": "Plan a start when no run slot is free.",
+    "lean": {
+      "file": "lean/MergeQueue/Policy.lean",
+      "original": "  if cfg.maxRuns ≤ s.pendingCount cfg then none\n  else if s.outOfOrder cfg then none",
+      "mutated": "  if s.outOfOrder cfg then none"
+    },
+    "ts": {
+      "file": "src/Policy.ts",
+      "original": "  if (config.maxRuns <= pendingCount(config, state)) return undefined\n",
+      "mutated": "\n"
+    }
+  },
+  {
+    "name": "estimate-takes-the-fastest",
+    "what": "Predict the fastest sample instead of the median.",
+    "lean": {
+      "file": "lean/MergeQueue/Predict.lean",
+      "original": "  match sorted[sorted.length / 2]? with",
+      "mutated": "  match sorted[0]? with"
+    },
+    "ts": {
+      "file": "src/Predict.ts",
+      "original": "  return sorted[Math.floor(sorted.length / 2)] ?? config.defaultDuration",
+      "mutated": "  return sorted[0] ?? config.defaultDuration"
+    }
+  },
+  {
+    "name": "schedule-drops-a-check",
+    "what": "Leave a required check out of the schedule.",
+    "lean": {
+      "file": "lean/MergeQueue/Predict.lean",
+      "original": "  cfg.required.mergeSort fun a b => estimate cfg history b ≤ estimate cfg history a",
+      "mutated": "  (cfg.required.drop 1).mergeSort fun a b => estimate cfg history b ≤ estimate cfg history a"
+    },
+    "ts": {
+      "file": "src/Predict.ts",
+      "original": "  [...config.required].sort(",
+      "mutated": "  [...config.required.slice(1)].sort("
+    }
+  },
+  {
+    "name": "schedule-fastest-first",
+    "what": "Start the fastest checks first.",
+    "lean": {
+      "file": "lean/MergeQueue/Predict.lean",
+      "original": "  cfg.required.mergeSort fun a b => estimate cfg history b ≤ estimate cfg history a",
+      "mutated": "  cfg.required.mergeSort fun a b => estimate cfg history a ≤ estimate cfg history b"
+    },
+    "ts": {
+      "file": "src/Predict.ts",
+      "original": "estimate(config, history, right) - estimate(config, history, left)",
+      "mutated": "estimate(config, history, left) - estimate(config, history, right)"
+    }
+  }
+]

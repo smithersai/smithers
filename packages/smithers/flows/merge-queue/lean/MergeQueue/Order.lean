@@ -58,6 +58,15 @@ theorem earlier_arrival_first {a b : Change} (same : a.priority = b.priority) (f
     a.before b = true := by
   simp [Change.before, same, first]
 
+/-- **Higher priority lands first**, whenever the two changes arrived. -/
+theorem higher_priority_first {a b : Change} (higher : b.priority < a.priority) :
+    a.before b = true ∧ b.before a = false := by
+  constructor
+  · simp [Change.before, higher]
+  · simp only [Change.before, Bool.or_eq_false_iff, decide_eq_false_iff_not, Bool.and_eq_false_iff,
+      beq_eq_false_iff_ne, ne_eq]
+    omega
+
 /-- A fix keeps a change's place in the queue: its priority and arrival number
 do not change. -/
 theorem fix_keeps_place (s : State) (id : ChangeId) (attempt : Nat) :

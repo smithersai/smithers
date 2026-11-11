@@ -320,6 +320,15 @@ theorem stale_verdict_refused (s : State) (id : ChangeId) (attempt : Nat) (detai
     · rfl
   rw [same]
 
+/-- **A change that has not ended can always be withdrawn.** Queued or being
+fixed, it is withdrawn at once. -/
+theorem withdraw_takes_effect (s : State) {c : Change} (member : c ∈ s.changes)
+    (unfinished : c.status.isTerminal = false) :
+    { c with status := Status.withdrawn } ∈ (s.withdraw c.id).changes := by
+  simp only [State.withdraw, List.mem_map]
+  refine ⟨c, member, ?_⟩
+  cases status : c.status <;> simp_all [Status.isTerminal, Status.isQueued, Status.isFixing]
+
 /-- **Cancelling a run forgets that run and no other.** -/
 theorem cancel_keeps_other_runs (s : State) (run : RunId) (r : Run) (member : r ∈ s.runs) (other : r.id ≠ run) :
     r ∈ (s.cancel run).runs := by
