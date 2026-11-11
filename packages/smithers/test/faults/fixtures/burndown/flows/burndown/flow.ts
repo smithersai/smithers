@@ -23,7 +23,7 @@ const Work = Action.make("burndown/Work", {
   tier: "irreversible"
 })
 export const Land = Action.make("burndown/Land", {
-  implementationVersion: "fault-3367/v1",
+  implementationVersion: "fault-3367/v3",
   payload: { root: Schema.String, count: Schema.Number, index: Schema.Number },
   success: Schema.String,
   error: Schema.Unknown,

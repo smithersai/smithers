@@ -91,7 +91,7 @@ const make = (name: string) => {
   cpSync(fixture, root, { recursive: true })
   // The fixture keeps its flows at `flows/`; a project keeps them at `.smithers/flows/`.
   mkdirSync(join(root, ".smithers"))
-  renameSync(join(root, ".smithers", "flows"), join(root, ".smithers", "flows"))
+  renameSync(join(root, "flows"), join(root, ".smithers", "flows"))
   json(join(root, "runtime.json"), { node: process.version, platform: process.platform, arch: process.arch })
   const keep = new Set([
     "burndown",
@@ -199,8 +199,11 @@ const rows = (root: string): RunRow[] => {
   if (!existsSync(path)) return []
   const db = new DatabaseSync(path, { readOnly: true })
   try {
-    return db.prepare("select run_id, status, waiting_reason, state_json from flows_runs order by run_id")
-      .all() as unknown as RunRow[]
+    // The host's own health discovery run parks on a timer between rounds; it is not a fixture run.
+    return db.prepare(
+      "select run_id, status, waiting_reason, state_json from flows_runs"
+        + " where json_extract(state_json, '$.flowName') is not 'smithers/health/Discovery' order by run_id"
+    ).all() as unknown as RunRow[]
   } finally {
     db.close()
   }
@@ -481,12 +484,15 @@ describe("host stall", () => {
         const leases = () => {
           const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
           try {
-            return db.prepare("select run_id, owner_pid, heartbeat_at_ms from flows_consensus_leases order by run_id")
-              .all() as unknown as Array<{
-                run_id: string
-                owner_pid: number
-                heartbeat_at_ms: number
-              }>
+            // Health discovery holds its own lease while a round runs; `rows` leaves that run out too.
+            return db.prepare(
+              "select run_id, owner_pid, heartbeat_at_ms from flows_consensus_leases"
+                + " where run_id is not 'smithers-health-discovery' order by run_id"
+            ).all() as unknown as Array<{
+              run_id: string
+              owner_pid: number
+              heartbeat_at_ms: number
+            }>
           } finally {
             db.close()
           }
