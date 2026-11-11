@@ -840,3 +840,23 @@ them V8 drops the child profiles before remapping and the CLIs read 0.
 `scripts/wiki` and `scripts/mythical-seed` declare `REPLAY_FLOOR`: one execution runs two CLIs or creates jj
 repositories. Fuzz-only coverage of this file alone, 5 s per target: all 8 files 100% statements, branches, functions
 and lines. A mutant that drops the stack's `vl-test` branch is falsified in 2 executions.
+
+### `src/web/main.vibe`: replies before their pane
+
+Web targets at seed 20261126, 5 s: 667/667 lines, 762/823 branches. `web/arbitrary-update` generates a whole `Model`
+and ran 25 executions in 5 s, so the `??` fallbacks that only a reply arriving before its pane exists takes stayed
+open. `web/pane-messages` (`fuzz/pane-messages.fuzz.vibe`) builds issue, wiki-edit and action replies from a few
+generated fields over the mock Factory's issue records: 9,309 executions in 5 s. Oracles: the Model stays valid; a
+wiki-edit reply without an editor, details without an issues pane, and a projection older than the one shown change
+nothing. Its first run falsified the oracle, not the product: a projection at the shown seq applies
+(`issueProjectionApplies` is `incoming >= current`, proved). It reaches 8 of the 61 open arms.
+
+`LoadIssues` and `ActOnIssue` tested `result._tag === "Success"` again inside the success branch, a dead arm, and
+repeated `IssueDecision.issueDefaultRole`. Both now read `result.success.role ?? IssueDecision.issueDefaultRole(factory.mode)`;
+behavior is unchanged. The `roleless` web backend answers issues without a role, so the fallback runs, and
+`web/command-bodies` checks that the mock then answers `maintainer`.
+
+Still open (53 arms, seed 20261126 plus `web/pane-messages`): wiki-edit replies to a live editor (467 to 477), tour
+plans (555, 561, 575, 585), Command bodies against specific Factory answers (911, 929, 966, 978, 1233, 1418, 1445,
+1447, 1457, 1513, 1514), DOM effects and subscriptions without a document or with specific keys (1055 to 1142, 1281
+to 1286), and the roles stream without accounts (1256).

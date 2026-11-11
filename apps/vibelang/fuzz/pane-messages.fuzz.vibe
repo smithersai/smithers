@@ -1,0 +1,90 @@
+// src/web/main.vibe's update under the issue, wiki-edit and action replies a pane can receive in any order: before its
+// pane exists, for a stale request, or out of sequence. Each step is a few generated fields over real issue records read
+// once from the mock Factory, so a run covers thousands of sequences where web/arbitrary-update's whole generated Model
+// covers tens.
+import { it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const ROLE = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const OP = Schema.Literals(["read", "new", "comment", "split", "propose", "draft"])
+const Step = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("open-card"), number: Int }),
+  Schema.Struct({ kind: Schema.Literal("clicked-issues") }),
+  Schema.Struct({ kind: Schema.Literal("projection"), seq: Int, role: Schema.optionalKey(ROLE), items: Int }),
+  Schema.Struct({ kind: Schema.Literal("issue-ui"), action: Schema.Literals(["select", "retry", "close", "new-form", "vip-form", "title", "new", "comment", "back", "list", "unknown"]), value: Schema.Union([Schema.Literals(["1", "2", "45", ""]), Text]) }),
+  Schema.Struct({ kind: Schema.Literal("loaded"), seq: Int, items: Int, created: Schema.Boolean, role: ROLE, op: Schema.optionalKey(OP), key: Schema.optionalKey(Schema.Literals(["k", "s-1"])), draft: Schema.Boolean, saved: Schema.optionalKey(Schema.Literals(["running", "failed", "completed"])), agent: Schema.Boolean, selected: Schema.optionalKey(Int) }),
+  Schema.Struct({ kind: Schema.Literal("failed"), reason: Schema.Literals(["connect", "fork", "install", "unavailable", "conflict", "busy"]), unwritten: Schema.optionalKey(Schema.Boolean), op: Schema.optionalKey(OP), key: Schema.optionalKey(Schema.Literals(["k", "s-1"])) }),
+  Schema.Struct({ kind: Schema.Literal("details"), seq: Int, number: Int, failed: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("mode"), live: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("wiki"), page: Schema.Literals(["/wiki/index", "/wiki/rulings", "/wiki/missing"]) }),
+  Schema.Struct({ kind: Schema.Literal("wiki-edit"), op: Schema.Literals(["edit", "draft", "update", "submit", "cancel"]), value: Text }),
+  Schema.Struct({ kind: Schema.Literal("wiki-reply"), reply: Schema.Literals(["began", "completed", "failed"]), request: Int, page: Schema.Literals(["index", "rulings"]), stale: Schema.optionalKey(Int), unwritten: Schema.optionalKey(Schema.Boolean) }),
+  Schema.Struct({ kind: Schema.Literal("actions"), reply: Schema.Literals(["open", "loaded", "failed", "retry"]), epoch: Schema.optionalKey(Int) }),
+])
+type Step = typeof Step.Type
+type Item = typeof Message.IssuesLoaded.Type["data"]["items"][number]
+
+function messageOf(step: Step, items: ReadonlyArray<Item>): Message {
+  const records = (count: number) => items.slice(0, count % (items.length + 1))
+  switch (step.kind) {
+    case "open-card": return Message.OpenIssueCard({ number: step.number })
+    case "clicked-issues": return Message.ClickedIssues()
+    case "projection": return Message.IssueProjectionLoaded({ data: { seq: step.seq, items: records(step.items), ...(step.role === undefined ? {} : { role: step.role }) } })
+    case "issue-ui": return Message.IssueUi({ action: step.action, value: step.value })
+    case "loaded": {
+      const request = { op: step.op ?? "new", number: 0, parent: 0, title: "T", text: "S", assignee: "", example: "", prior: "", key: step.key ?? "k" }
+      return Message.IssuesLoaded({
+        data: {
+          seq: step.seq, items: records(step.items),
+          ...(step.draft ? { draft: { title: "T", summary: "S", example: "E", prior: "P" } } : {}),
+          ...(step.saved === undefined ? {} : { saved: { request, status: step.saved, unwritten: false, selected: step.seq } }),
+          ...(step.agent ? { assignees: [{ login: "agent", label: "VibeLang agent" }] } : {}),
+          ...(step.selected === undefined ? {} : { selected: step.selected }),
+        },
+        created: step.created, role: step.role,
+        ...(step.op === undefined ? {} : { op: step.op }), ...(step.key === undefined ? {} : { key: step.key }),
+      })
+    }
+    case "failed": return Message.IssuesFailed({ reason: step.reason, ...(step.unwritten === undefined ? {} : { unwritten: step.unwritten }), ...(step.op === undefined ? {} : { op: step.op }), ...(step.key === undefined ? {} : { key: step.key }) })
+    case "details": return step.failed ? Message.IssueDetailsFailed({ number: step.number }) : Message.IssueDetailsLoaded({ number: step.number, data: { seq: step.seq, items: records(step.number) } })
+    case "mode": return Message.ResolvedMode({ mode: step.live ? "live" : "mock" })
+    case "wiki": return Message.ClickedWiki({ page: step.page })
+    case "wiki-edit": return step.op === "edit" ? Message.ClickedEditWiki() : step.op === "draft" ? Message.ClickedWikiDraft({ page: "index" }) : step.op === "update" ? Message.UpdatedWikiEdit({ value: step.value }) : step.op === "submit" ? Message.SubmittedWikiEdit() : Message.CanceledWikiEdit()
+    case "wiki-reply": return step.reply === "began" ? Message.BeganWikiEdit({ request: step.request, page: step.page, source: "# Page", draft: "# Page", ...(step.stale === undefined ? {} : { stale: step.stale }) })
+      : step.reply === "completed" ? Message.CompletedWikiEdit({ request: step.request, page: step.page, source: "# Page", revision: "r", review: "" })
+      : Message.FailedWikiEdit({ request: step.request, reason: "conflict", ...(step.unwritten === undefined ? {} : { unwritten: step.unwritten }) })
+    case "actions": return step.reply === "open" ? Message.ClickedActions() : step.reply === "loaded" ? Message.LoadedActions({ entries: [], commands: [], runs: [], ...(step.epoch === undefined ? {} : { epoch: step.epoch }) }) : step.reply === "failed" ? Message.FailedActions({ code: "fault", ...(step.epoch === undefined ? {} : { epoch: step.epoch }) }) : Message.RetriedActions()
+  }
+}
+
+/** The mock Factory's issue records, as a maintainer sees them. */
+effect function mockItems() {
+  provide mockFactoryFor("maintainer") {
+    return (try (try Factory).issues!.read()).items
+  }
+}
+
+/**
+ * Every step leaves a valid Model. A reply for a pane that does not exist, or that an older projection or detail
+ * answers, changes nothing: wiki-edit replies without an editor, details without an issues pane, and a projection
+ * older than the one shown (IssueDecision.issueProjectionApplies).
+ */
+it.live("web/pane-messages", () => scoped(effect {
+  const items = try mockItems()
+  try run("web/pane-messages", Schema.Struct({ flags: Flags, steps: Schema.Array(Step).check(Schema.isMaxLength(24)) }), ({ flags, steps }) => {
+    let model = init(flags).model
+    for (const step of steps) {
+      const before = model
+      model = update(before, messageOf(step, items)).model
+      if (!Schema.is(Model)(model)) return false
+      const unchanged = model === before || JSON.stringify(model) === JSON.stringify(before)
+      if (step.kind === "wiki-reply" && before.wikiEdit === undefined && !unchanged) return false
+      if (step.kind === "details" && before.issues === undefined && !unchanged) return false
+      if (step.kind === "projection" && step.seq < (before.issues?.data.seq ?? 0) && !unchanged) return false
+    }
+    return true
+  })
+}))

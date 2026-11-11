@@ -1457,7 +1457,7 @@ export const LoadIssues = Command.define("LoadIssues", {
       return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
     })
     if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
-    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason }))
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result.success.role ?? IssueDecision.issueDefaultRole(factory.mode) }) : Message.IssuesFailed({ reason: result.failure.reason }))
   },
 })
 export const ActOnIssue = Command.define("ActOnIssue", {
@@ -1470,7 +1470,7 @@ export const ActOnIssue = Command.define("ActOnIssue", {
       return try factory.issues.act(request)
     })
     if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
-    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result.success.role ?? IssueDecision.issueDefaultRole(factory.mode) }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
   },
 })
 export const ShowIssueDialog = Command.define("ShowIssueDialog", {
