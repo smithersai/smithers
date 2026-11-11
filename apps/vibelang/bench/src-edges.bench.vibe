@@ -103,21 +103,23 @@ it("a running sandbox's command prints its output as CLI text", async ({ bench }
   await runPromise(artifact("cli-sandbox-run-text", "Vitest built-in bench; in process, the sandbox-start and sandbox-run commands against the product mock factory, rendering sandbox-run's text with no operation id given (one is generated). Exact output checked.", ["In process: the CLI's process start and argument parsing are in cli-text; one mock process can't hold a running sandbox across two CLI invocations."], result))
 })
 
-it("two clients answer without a request: live accounts never choose, and a forced-mock history reports its mode", async ({ bench }) => {
+it("two clients answer without a request: live accounts never choose or sign an agent in, and a forced-mock history reports its mode", async ({ bench }) => {
   const principal = { role: "maintainer" as const, name: "Ada", agent: false }
   const result = await workload(bench, "client-local-answers", "async", () => runPromise(scoped(effect {
     provide FetchHttpClient.layer {
       const accounts = try liveAccounts("http://accounts.invalid")
       const chose = try Effect.flip(accounts.choose("new"))
+      const agent = try Effect.flip(accounts.signInAgent())
       provide BrowserMythical("http://history.invalid", true, principal) {
         const mode = try (try HistoryBackend).ready
         const client = try Mythical
         try Effect.try(() => {
           expect([chose._tag, chose.reason]).toEqual(["AccountUnavailable", "account unavailable"])
+          expect([agent._tag, agent.reason]).toEqual(["AccountUnavailable", "account unavailable"])
           expect([mode, client.mode]).toEqual(["mock", "mock"])
         })
       }
     }
   }))).run(quick)
-  await runPromise(artifact("client-local-answers", "Vitest built-in bench; LiveAccounts.choose (live accounts are chosen by GitHub sign-in, so it refuses at once) and BrowserMythical forced to mock: the backend's ready mode and the client's mode getter. Both checked; neither sends a request.", ["Includes loading the mock history module once per process (cached after the first sample)."], result))
+  await runPromise(artifact("client-local-answers", "Vitest built-in bench; LiveAccounts.choose and signInAgent (a live account comes from GitHub sign-in, so both refuse at once) and BrowserMythical forced to mock: the backend's ready mode and the client's mode getter. Both checked; neither sends a request.", ["Includes loading the mock history module once per process (cached after the first sample)."], result))
 })
