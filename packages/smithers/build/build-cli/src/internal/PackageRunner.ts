@@ -867,12 +867,15 @@ export const executeEffect = (
     let unconfinedWarned = false
     /**
      * Whether this node's result may leave the local tier: only a run the host
-     * confined publishes. The first result a configured remote does not get
-     * says so once, because a publisher that silently shares nothing reads as
-     * a cache that never hits (#2254).
+     * confined publishes. `confined` is false for a dispatch that runs its
+     * process outside the node's sandbox (the bundler host, a repository's
+     * child CLI), whatever the node requested (#5104). The first result a
+     * configured remote does not get says so once, because a publisher that
+     * silently shares nothing reads as a cache that never hits (#2254).
      */
-    const publishable = (node: PackageNode): boolean => {
+    const publishable = (node: PackageNode, confined: boolean): boolean => {
       if (
+        confined &&
         ExecSandbox.enforceable(
           sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory),
           ExecSandbox.host()
@@ -891,7 +894,8 @@ export const executeEffect = (
     const cachePut = (
       node: PackageNode,
       output: unknown,
-      key: string = node.keyPreview
+      key: string = node.keyPreview,
+      confined = true
     ): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
         if (!node.cacheable) return
@@ -906,7 +910,7 @@ export const executeEffect = (
             exitOk: true,
             output,
             storedAt: new Date().toISOString()
-          }, { shared: publishable(node) }).catch((cause: unknown) => {
+          }, { shared: publishable(node, confined) }).catch((cause: unknown) => {
             log(`smthrs: could not store ${node.label} in the cache: ${Diagnostic.describe(cause)}`)
           })
         )
@@ -1069,7 +1073,8 @@ export const executeEffect = (
       node: PackageNode,
       key: string,
       sourceRoot: string = root,
-      publish = true
+      publish = true,
+      confined = true
     ): Effect.Effect<BuildOutput, unknown> =>
       Effect.gen(function*() {
         const manifests = yield* Effect.forEach(
@@ -1080,7 +1085,7 @@ export const executeEffect = (
           node.outFiles,
           (file) => joined(() => PackageTree.captureFile(sourceRoot, cacheDirectory, file, root))
         )
-        if (publish) yield* cachePut(node, { kind: "build", manifests, files }, key)
+        if (publish) yield* cachePut(node, { kind: "build", manifests, files }, key, confined)
         return { manifests, files }
       })
 
@@ -1865,7 +1870,7 @@ export const executeEffect = (
               exitOk: true,
               output: { kind: "agent-verdict", value },
               storedAt: new Date().toISOString()
-            }, { shared: publishable(node) }).catch((cause: unknown) => {
+            }, { shared: publishable(node, true) }).catch((cause: unknown) => {
               log(`smthrs: could not store the ${node.label} verdict in the cache: ${Diagnostic.describe(cause)}`)
             })
           ).pipe(Effect.mapError((cause) => agentSessionError("cache", cause)))
@@ -2526,12 +2531,18 @@ export const executeEffect = (
                   environment
                 })
               yield* joined((signal) => ApprovalBridge.withBridge(options.approvals, child(signal)))
-              yield* cachePut(node, {
-                kind: "repo-target",
-                repo: lane.resolution.repoName,
-                label: lane.resolution.label,
-                head: lane.git.head
-              })
+              // The child CLI runs unconfined, so its result stays local.
+              yield* cachePut(
+                node,
+                {
+                  kind: "repo-target",
+                  repo: lane.resolution.repoName,
+                  label: lane.resolution.label,
+                  head: lane.git.head
+                },
+                node.keyPreview,
+                false
+              )
               return green("ran")
             }
             case "Shell.Build":
@@ -3074,7 +3085,8 @@ export const executeEffect = (
               }
               const stored: StoredResolve = { kind: "bundler-resolve", result: exit.value }
               resolveResults.set(node.label, exit.value)
-              yield* cachePut(node, stored)
+              // The bundler host evaluates the workspace config unconfined.
+              yield* cachePut(node, stored, node.keyPreview, false)
               log(`${node.label}  graph: ${graphSummary(exit.value)}`)
               return green("ran")
             }
@@ -3103,7 +3115,7 @@ export const executeEffect = (
                     : Diagnostic.describe(value, "bundler build failed")
                 )
               }
-              yield* captureBuild(node, key)
+              yield* captureBuild(node, key, root, true, false)
               return green("ran")
             }
             case "Owners.Codeowners":

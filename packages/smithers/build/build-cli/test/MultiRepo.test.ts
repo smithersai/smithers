@@ -2,8 +2,10 @@
  * Opaque local-repository acceptance: discovery and glob boundaries, child
  * query metadata/refusals, real nested execution, and clean-tree caching.
  */
+import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as Input from "@smthrs/targets/Input"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
+import { Effect } from "effect"
 import { execFile } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -11,9 +13,15 @@ import * as NodePath from "node:path"
 import { promisify } from "node:util"
 import { afterAll, describe, expect, it } from "vitest"
 import { approvalRevision, openPackageIndex } from "../src/Cli.ts"
+import {
+  executeEffect,
+  ExecutionServices,
+  executionServicesLive,
+  sandboxRequest
+} from "../src/internal/PackageRunner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { isPackageError } from "../src/PackageError.ts"
-import type * as PackageExec from "../src/PackageExec.ts"
+import * as PackageExec from "../src/PackageExec.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as RepoResolution from "../src/RepoResolution.ts"
 import { serve } from "./helpers/ServeCli.ts"
@@ -383,4 +391,48 @@ describe("explicit child CLI sandbox policy", () => {
     expect(result.stderr).toContain("child repository echo")
     expect(result.stderr).not.toContain("outer child CLI runs unconfined")
   })
+})
+
+describe("repository target publication", () => {
+  it("keeps a repository result local even when the node's sandbox request is enforceable (#5104)", async () => {
+    const root = await workspace()
+    const index = await openPackageIndex({ workspace: root })
+    const options = { index, cacheDirectory: ".flows", verb: "auto" as const, patterns: ["//:childTest"] }
+    const plan = await PackageExec.plan(options)
+    const node = plan.nodes.get("//:childTest")!
+    expect(node.rule).toBe("Repo.Target")
+    // Without an enforceable request every result stays local and this proves nothing.
+    expect(ExecSandbox.enforceable(sandboxRequest(node, plan.nodes, index.workspace, ".flows"), ExecSandbox.host()))
+      .toBe(true)
+    const shares = new Map<string, boolean | undefined>()
+    const notes: Array<string> = []
+    const result = await Effect.runPromise(
+      executeEffect(plan, {
+        ...options,
+        log: (line) => notes.push(line),
+        // Present so the publisher reports what it withholds; the store below never reaches it.
+        remoteCache: {
+          endpoint: "http://127.0.0.1:9/cache",
+          credentials: { _tag: "shared", tokenEnv: "FIXTURE_CACHE_TOKEN" },
+          readToken: () => undefined,
+          writeToken: () => undefined,
+          publishNamespace: undefined
+        }
+      }).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        cache: (settings) =>
+          executionServicesLive.cache({ ...settings, endpoint: undefined }).pipe(Effect.map((store) => ({
+            ...store,
+            put: (key, value, putOptions) => {
+              shares.set(value.label, putOptions?.shared)
+              return store.put(key, value, putOptions)
+            }
+          })))
+      }))
+    )
+    expect(result.ok, JSON.stringify(result.results)).toBe(true)
+    expect(Object.fromEntries(shares)).toEqual({ "//:childTest": false })
+    expect(notes.join("\n")).toContain("smthrs: remote cache publication skipped: //:childTest ran unconfined")
+    // One child query to plan and one child execution.
+  }, 240_000)
 })

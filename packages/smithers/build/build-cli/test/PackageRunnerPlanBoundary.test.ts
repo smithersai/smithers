@@ -1,6 +1,7 @@
 import * as AgentTarget from "@smthrs/targets/AgentTarget"
 import * as BundlerTarget from "@smthrs/targets/BundlerTarget"
 import * as Exec from "@smthrs/targets/Exec"
+import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as LlmLint from "@smthrs/targets/LlmLint"
 import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
@@ -19,6 +20,7 @@ import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import type * as Workspace from "../src/Workspace.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const roots: Array<string> = []
@@ -1131,6 +1133,88 @@ describe("materialization cache outage", () => {
     ]))
     expect(await Fs.readFile(Path.join(root, "dist/a.txt"), "utf8")).toBe("built")
     expect(await Fs.readFile(Path.join(root, "out.txt"), "utf8")).toBe("built")
+  })
+})
+
+describe("unconfined bundler publication", () => {
+  it("keeps bundler results local even when the node's sandbox request is enforceable (#5104)", async () => {
+    const { root, options, plan, node } = await fixture()
+    const confined = {
+      ...node,
+      label: "//:files",
+      rule: "Filegroup",
+      sandbox: undefined,
+      cacheable: true
+    } as PackageExec.PackageNode
+    const graph = {
+      ...node,
+      label: "//:graph",
+      rule: "Bundler.Rspack.resolve",
+      sandbox: undefined,
+      keyPreview: "b".repeat(64),
+      cacheable: true,
+      lane: { kind: "bundler-resolve", payload: { configPath: "rsbuild.config.ts", entries: [], mode: "development" } }
+    } as PackageExec.PackageNode
+    const build = {
+      ...node,
+      label: "//:bundle",
+      rule: "Bundler.Rspack.build",
+      sandbox: undefined,
+      cacheable: true,
+      keyTemplate: node.keyMaterial,
+      dependencies: [graph.label],
+      lane: {
+        kind: "bundler-build",
+        graphLabel: graph.label,
+        payload: { configPath: "rsbuild.config.ts", environment: "web", mode: "production", env: {}, outDirs: [] }
+      }
+    } as PackageExec.PackageNode
+    const nodes = new Map([[confined.label, confined], [graph.label, graph], [build.label, build]])
+    // Without an enforceable request every result stays local and this proves nothing.
+    for (const each of nodes.values()) {
+      expect(
+        ExecSandbox.enforceable(sandboxRequest(each, nodes, options.index.workspace, ".flows"), ExecSandbox.host())
+      )
+        .toBe(true)
+    }
+    const shares = new Map<string, boolean | undefined>()
+    const notes: Array<string> = []
+    const result = await Effect.runPromise(
+      executeEffect({ ...plan, nodes, workList: [...nodes.values()] }, {
+        ...options,
+        log: (line) => notes.push(line),
+        // Present so the publisher reports what it withholds; the store below never reaches it.
+        remoteCache: {
+          endpoint: "http://127.0.0.1:9/cache",
+          credentials: { _tag: "shared", tokenEnv: "FIXTURE_CACHE_TOKEN" },
+          readToken: () => undefined,
+          writeToken: () => undefined,
+          publishNamespace: undefined
+        } satisfies Workspace.RemoteCacheAccess
+      }).pipe(Effect.provideService(ExecutionServices, {
+        ...executionServicesLive,
+        cache: (settings) =>
+          executionServicesLive.cache({ ...settings, endpoint: undefined }).pipe(Effect.map((store) => ({
+            ...store,
+            put: (key, value, putOptions) => {
+              shares.set(value.label, putOptions?.shared)
+              return store.put(key, value, putOptions)
+            }
+          }))),
+        resolveGraph: () =>
+          Effect.succeed({
+            files: [],
+            packages: [],
+            moduleCount: 0,
+            graphDigest: BundlerTarget.graphDigest({ files: [], packages: [] })
+          }),
+        build: () => Effect.succeed({ exitCode: 0, stdout: "", stderr: "" })
+      }))
+    )
+    expect(result.ok, JSON.stringify(result.results)).toBe(true)
+    expect(Object.fromEntries(shares)).toEqual({ "//:files": true, "//:graph": false, "//:bundle": false })
+    expect(notes.join("\n")).toContain("smthrs: remote cache publication skipped: //:graph ran unconfined")
+    await expect(Fs.stat(Path.join(root, "launched"))).rejects.toMatchObject({ code: "ENOENT" })
   })
 })
 

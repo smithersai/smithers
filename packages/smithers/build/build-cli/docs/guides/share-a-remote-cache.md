@@ -104,7 +104,9 @@ publication stops publication only; it never fails the run.
 Publishing pays only when results are shareable. A result is shared only when a
 confined run produced it, so a workspace whose default sandbox is
 `S.Sandbox.None()` publishes nothing, and the runner warns once that
-publication was skipped. Most targets (formatters, typecheck, test suites) are
+publication was skipped. `Bundler.Rspack` targets and `S.Repo.Target` targets
+always run their process unconfined (the bundler host and the child repository's
+CLI), so their results stay local whatever their `sandbox` attr says. Most targets (formatters, typecheck, test suites) are
 not cacheable at all, so a remote saves little on them.
 
 Smithers' own CI reads the remote and has no publishing job for that reason.
@@ -124,12 +126,12 @@ whole-file entries remain readable. One entry may reference at most 1000
 artifacts, represent at most 16 GiB of unique files, and have a remote body
 under 1 MiB. Complete legacy local results remain usable above remote limits.
 
-| Symptom                                        | What it means                                                                      |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------- |
-| One warning, then no further remote activity   | A remote failure disabled the remote for the rest of the process.                  |
-| A `409` warning                                | Two jobs published the same key. The first result stands.                          |
-| Everything runs on a machine you expect to hit | The key moved. Compare `--plan` key previews between the two machines.             |
-| A `publication skipped` warning                | A result ran unconfined (`sandbox: "none"` or `S.Sandbox.None()`) and stays local. |
+| Symptom                                        | What it means                                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| One warning, then no further remote activity   | A remote failure disabled the remote for the rest of the process.            |
+| A `409` warning                                | Two jobs published the same key. The first result stands.                    |
+| Everything runs on a machine you expect to hit | The key moved. Compare `--plan` key previews between the two machines.       |
+| A `publication skipped` warning                | A result ran unconfined (`sandbox: "none"`, a bundler or repository target). |
 
 To compare keys across machines, run the same pattern with `--plan` on both
 and diff the key previews, or set `SMTHRS_DEBUG_KEYS=<file>` to append every
