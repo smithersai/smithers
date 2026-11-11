@@ -42,28 +42,13 @@ export interface SmithersErrorDefinition {
  */
 export const smithersErrorDefinitions = {
   INVALID_INPUT: {
-    when:
-      "An integration helper receives an argument it cannot use: a missing bot token, an approval option key containing a colon, callback data over Telegram's 64-byte limit, or a non-https Mini App URL.",
-    details:
-      "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ length }` on the malformed `publicKeyHex` failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
+    when: "An integration signal service or event segment is empty after trimming or contains a colon.",
+    details: "`{ service: value }` or `{ event: value }`, naming the invalid segment"
   },
   INTEGRATION_ERROR: {
     when:
       "An integration client, webhook source, or listener reconciliation fails. `reason` classifies the failure so a caller can map it to a transport status.",
     details: "{ reason, ...providerSafeDetails }"
-  },
-  TELEGRAM_API_ERROR: {
-    when:
-      "The Telegram Bot API answers a call with `ok: false`, a non-JSON body, or a transport failure. The bot token is redacted from the message and details.",
-    details: "{ method, errorCode, description, retryAfterSeconds, deliveredMessageIds }"
-  },
-  TELEGRAM_INIT_DATA_INVALID: {
-    when:
-      "Telegram Mini App `initData` is empty, expired, missing its hash or signature, or fails HMAC or Ed25519 verification.",
-    details: "`{ authDate }` on the expiry failures, otherwise none"
-  },
-  UNSUPPORTED: {
-    when: "The runtime lacks a primitive an integration needs, such as Web Crypto or Ed25519 verification."
   }
 } as const satisfies Record<string, SmithersErrorDefinition>
 

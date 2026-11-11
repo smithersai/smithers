@@ -87,7 +87,7 @@ export const file = (path) => InputModule.file(path);
  */
 export { label } from "./Reference.js";
 /** @category constructors @since 0.1.0 */
-export { gitDiff, glob, pnpmWorkspace } from "./Input.js";
+export { gitDiff, glob, nodeModules, pnpmWorkspace } from "./Input.js";
 /** @category constructors @since 0.1.0 */
 export { Workspace } from "./WorkspaceDeclaration.js";
 /** @category constructors @since 0.1.0 */

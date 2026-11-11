@@ -84,7 +84,9 @@ reproduce the finding:
 
 ```ts
 Fuzz.run(arbitrary, property, { replay: finding.replay })
-// Falsified when the same failure is confirmed; Passed when it no longer occurs.
+// Falsified when the current failure is confirmed, even if its signature changed; Passed only when the input passes.
+// A signature change is shown as "Replay expected <original>, got <current>" in formatReport.
+// FuzzError("Execution") when replay reaches the execution driver's step limit.
 // ReplayMismatch when the tape discards or its shrink path no longer exists (stats.stale: 1).
 ```
 
@@ -125,6 +127,8 @@ signature-only fixture filenames still load; they need not be renamed.
 
 `runTarget` with `executions: 0` only replays saved failures: the regression mode used by test runners. Confirmed saved
 failures count toward `maxFindings`, so its default of 1 stops search until the known failure is fixed.
+A saved failure that reaches the execution driver's step limit raises `FuzzError("Execution")`; it has not passed,
+and its fixture stays in the store.
 
 ## `@smthrs/testing/Vitest`
 
@@ -197,11 +201,14 @@ The world is closed: real I/O, native timers, `Date.now`, `Math.random` and prom
 
 Virtual time is kept in integer nanoseconds, so `Effect.sleep("500 micros")` advances `Clock.currentTimeNanos` by
 exactly 500,000; `currentTimeMillis` is whole milliseconds, like `Date.now`. `maxSteps` (default 100,000) counts both
-dispatched tasks and timer wakes, so a loop of sleeps ends as a discard. A long evaluation yields the fuzz fiber every
-4,096 steps, so interrupting the run stops it. After a deadlock or a step limit, the driver interrupts the program and
-runs its finalizers inside the world with another `maxSteps`. Cleanup that exceeds that budget is a
-`FuzzError("Execution")` naming `maxSteps`; cleanup that deadlocks, including an uninterruptible suspended root, is
-also an `Execution` error. The error identifies incomplete cleanup; a suspended fiber cannot be forced to release
+dispatched tasks and timer wakes, so a loop of sleeps ends as a discard during search. A step-limited token replay
+or saved failure is an `Execution` error; a limited confirmation recheck makes the finding flaky.
+A long evaluation yields the fuzz fiber every
+4,096 steps, so interrupting the run stops it. After every evaluation, including one that completes, the driver
+interrupts each fiber still alive in the world (a deadlocked or step-limited root, and fibers that outlive the root, such
+as `Effect.forkDetach` forks) and runs their finalizers inside the world with another `maxSteps`. Cleanup that exceeds
+that budget is a `FuzzError("Execution")` naming `maxSteps`; cleanup that deadlocks, including an uninterruptible
+suspended fiber, is also an `Execution` error. The error identifies incomplete cleanup; a suspended fiber cannot be forced to release
 resources. It is not reported as a successful cleanup or an ordinary finding.
 
 ## Determinism and its limits

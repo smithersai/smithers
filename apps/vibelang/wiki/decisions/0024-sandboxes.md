@@ -22,8 +22,10 @@ lock: Stop stays available, and a late result cannot overwrite a stopped or rest
 A separate Durable Object owns each Cloudflare Container, using `SandboxObject.wake`, `ContainerSession` and
 `SandboxTools` from the existing Smithers packages, as apps/mvp/worker/BranchSandboxes.ts does. Internet is off;
 there are no egress intercepts, credentials or inherited host environment. Commands run as numeric uid/gid 1000:1000
-in /workspace, with only the image's PATH and the literal HOME=/workspace. The deployment must supply an image with
-sh, GNU timeout and the tools it wants available. Nothing here imports a private repository or injects a model key.
+in /workspace, with only the image's PATH and the literal HOME=/workspace. The machine starts every Container with
+its own entrypoint, `sleep infinity` (`ENTRYPOINT` in `worker/machineObject.vibe`), whatever the image's command, so
+the deployment's image (VIBELANG_SANDBOX_IMAGE) must supply GNU `sleep` (it takes `infinity`), `sh`, `mkdir`, `chown`,
+GNU `timeout` and the tools it wants available. See "The image contract" below. Nothing here imports a private repository or injects a model key.
 
 Command receipts also live outside the guest, in the machine object's SQLite. Deleting the guest's tool fence
 cannot cause a replay to execute twice. Completed command output is bounded by SandboxTools; the visible transcript
@@ -101,7 +103,9 @@ legacy fences without identity metadata return ToolLost, preserving files and ne
 @smthrs/sandbox is declared directly from the app's existing transitive SDK closure; no new external runtime library
 is introduced. @smthrs/fuzz is the monorepo test tool, listed in 0008 pending Will's VL-5 review.
 
-Every lifecycle, meter, lease, checkpoint and command step has a span, outcome-only log and counter. The engine adds
+Every lifecycle, meter, lease, checkpoint and command step has a span, a log and a counter carrying its outcome
+(`done`, `refused` or `failed`) and, unless done, a content-free `reason`: the machine's refusal reason or a
+failure's tag (`failureReason` in `src/core/sandboxHost.vibe`). The engine adds
 its real run/action records. Commands, terminal bytes, prompts, identities and keys never enter telemetry. Only
 private state/flow payloads carry user content; no credential is put in a sandbox environment or flow payload.
 
@@ -150,14 +154,49 @@ suite (LiveFactory) ── Bearer token, x-vibelang-probe-owner: probe-<deadline
   deploy itself wait on the first live run. Durable Object storage and native snapshots outlive a run (snapshots expire
   after 30 days without restore); `pnpm destroy:sandboxes-test` removes the stage.
 
+### The first live run, and the image contract (2026-11-10)
+
+The first live run (main `cc3e981d`, `debian:bookworm-slim`) refused the start in about 8 s with
+`{ refusal: "unavailable" }` and nothing else. The live tail showed `cloudflare.sandbox.wake outcome started`, then
+`container-start outcome failed` 0.5 s later, then `container-stop done` and the cancelled start. The machine's
+catch-all turned the error into a bare `{ ok: false }` and the account turned every machine refusal into
+`container-operation`, so no record named the cause.
+
+**Refusal reasons.** A machine answer that is not ok now carries `reason`: `generation`, `phase`, `lease-duration`,
+`not-running-after-wake`, `setup-exit-<code>`, `running-after-destroy`, `not-current`, `receipt-conflict`,
+`lease-expired`, or a failed operation's error tag. The account raises `Unavailable("container-<operation>:<reason>")`,
+a cancelled start keeps it in its receipt (`start-failed:<reason>`, also on replay), and the gateway answers 409
+`{ refusal: "unavailable", reason }`, which LiveFactory decodes into `Refused.reason`. So the live suite's failure
+names the cause, for example `start-failed:container-start:not-running-after-wake`. Reasons hold no user text, no
+command and no key. `test/sandboxObjects.workerd.test.vibe` checks each machine reason in real workerd with faulty
+Container services; `test/sandboxProbe.test.vibe` checks the log, the counter and the refusal the suite sees.
+
+**The image contract (decided).** The likely cause: Cloudflare runs the image's own command as the Container's main
+process, and `debian:bookworm-slim`'s is `bash`, which exits at once with no terminal attached. The Container then
+stops before the machine's setup `exec`. Two ways to hold it up were weighed:
+
+| Option | For | Against |
+| --- | --- | --- |
+| The machine starts every Container with `entrypoint: ["sleep", "infinity"]` (chosen) | Any image with GNU coreutils works; the deploy builds nothing, so a machine without Docker deploys; one line, tested | `sleep` as PID 1 reaps no orphan, so a command's background child that exits stays a zombie until the sandbox stops |
+| The repository owns a Dockerfile with a long-running init (apps/mvp's `infra/sandbox/Dockerfile` uses tini) | Reaps orphans; pins the toolset | The deploy needs Docker or a prebuilt image in Cloudflare's registry; a second artifact to keep current |
+
+The entrypoint is chosen: sandboxes here are short (a lease of at most the allowance, the probe's 10 minutes), and a
+zombie holds a process slot, not CPU. If orphans matter, an owned image with tini replaces it; the entrypoint stays
+the machine's, so the contract below still holds. **VIBELANG_SANDBOX_IMAGE must provide** a Linux image whose `PATH`
+has GNU `sleep`, `sh`, `mkdir`, `chown` and GNU `timeout`; its own command and entrypoint are ignored. Cloudflare's
+registry or Docker Hub by tag or digest; `docker.io/library/debian:bookworm-slim` satisfies it.
+`test/sandboxObjects.workerd.test.vibe`'s `exits` fault models an image whose command exits: without the entrypoint
+its start is refused `not-running-after-wake` (checked by mutation). The next live run confirms the cause through the
+reasons above.
+
 The lead deploys and runs it from the Mac, with Cloudflare credentials:
 
 ```sh
 cd apps/vibelang
-export VIBELANG_SANDBOX_IMAGE=docker.io/library/debian:bookworm-slim   # any image with sh and GNU timeout
+export VIBELANG_SANDBOX_IMAGE=docker.io/library/debian:bookworm-slim   # GNU sleep, sh, mkdir, chown, GNU timeout
 export VIBELANG_SANDBOX_PROBE_TOKEN="$(openssl rand -hex 32)"
-pnpm deploy:sandboxes-test                                             # prints the probe's workers.dev URL
+pnpm deploy:sandboxes-test --yes                                       # prints the probe's workers.dev URL
 VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live
 VIBELANG_SANDBOX_MODE=record VIBELANG_SANDBOX_PROBE_URL=https://<probe>.workers.dev pnpm test:sandboxes-live   # then read and commit test/recordings/sandboxes-live.json
-pnpm destroy:sandboxes-test                                            # removes the stage
+pnpm destroy:sandboxes-test --yes                                      # removes the stage
 ```

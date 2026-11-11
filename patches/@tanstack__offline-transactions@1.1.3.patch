@@ -27,6 +27,17 @@ diff --git a/dist/esm/OfflineExecutor.js b/dist/esm/OfflineExecutor.js
      this.onlineDetector = config.onlineDetector ?? new WebOnlineDetector();
      this.storage = null;
      this.outbox = null;
+@@ -226,6 +226,10 @@ let OfflineExecutor$1 = class OfflineExecutor {
+       console.warn(`Failed to execute transactions:`, error);
+     });
+   }
++  /** Loads the stored writes again and replays them, for a host whose storage hid them from an earlier load. */
++  async reloadPendingTransactions() {
++    await this.loadAndReplayTransactions();
++  }
+   get isOfflineEnabled() {
+     return !this.disposed && this.mode === `offline` && this.isLeaderState;
+   }
 diff --git a/dist/esm/executor/KeyScheduler.js b/dist/esm/executor/KeyScheduler.js
 --- a/dist/esm/executor/KeyScheduler.js
 +++ b/dist/esm/executor/KeyScheduler.js
@@ -108,6 +119,17 @@ diff --git a/dist/cjs/OfflineExecutor.cjs b/dist/cjs/OfflineExecutor.cjs
      this.onlineDetector = config.onlineDetector ?? new OnlineDetector.WebOnlineDetector();
      this.storage = null;
      this.outbox = null;
+@@ -228,6 +228,10 @@ let OfflineExecutor$1 = class OfflineExecutor {
+       console.warn(`Failed to execute transactions:`, error);
+     });
+   }
++  /** Loads the stored writes again and replays them, for a host whose storage hid them from an earlier load. */
++  async reloadPendingTransactions() {
++    await this.loadAndReplayTransactions();
++  }
+   get isOfflineEnabled() {
+     return !this.disposed && this.mode === `offline` && this.isLeaderState;
+   }
 diff --git a/dist/cjs/types.d.cts b/dist/cjs/types.d.cts
 --- a/dist/cjs/types.d.cts
 +++ b/dist/cjs/types.d.cts
@@ -208,6 +230,18 @@ diff --git a/src/OfflineExecutor.ts b/src/OfflineExecutor.ts
      this.onlineDetector = config.onlineDetector ?? new WebOnlineDetector()
  
      // Initialize as pending - will be set by async initialization
+@@ -352,6 +352,11 @@ export class OfflineExecutor {
+     })
+   }
+ 
++  /** Loads the stored writes again and replays them, for a host whose storage hid them from an earlier load. */
++  async reloadPendingTransactions(): Promise<void> {
++    await this.loadAndReplayTransactions()
++  }
++
+   get isOfflineEnabled(): boolean {
+     return !this.disposed && this.mode === `offline` && this.isLeaderState
+   }
 diff --git a/src/types.ts b/src/types.ts
 --- a/src/types.ts
 +++ b/src/types.ts
@@ -290,3 +324,27 @@ diff --git a/src/executor/KeyScheduler.ts b/src/executor/KeyScheduler.ts
    }
  
    private isReadyToRun(transaction: OfflineTransaction): boolean {
+diff --git a/dist/cjs/OfflineExecutor.d.cts b/dist/cjs/OfflineExecutor.d.cts
+--- a/dist/cjs/OfflineExecutor.d.cts
++++ b/dist/cjs/OfflineExecutor.d.cts
+@@ -35,6 +35,8 @@ export declare class OfflineExecutor {
+     private setupEventListeners;
+     private initialize;
+     private loadAndReplayTransactions;
++    /** Loads the stored writes again and replays them, for a host whose storage hid them from an earlier load. */
++    reloadPendingTransactions(): Promise<void>;
+     get isOfflineEnabled(): boolean;
+     /**
+      * Wait for the executor to fully initialize.
+diff --git a/dist/esm/OfflineExecutor.d.ts b/dist/esm/OfflineExecutor.d.ts
+--- a/dist/esm/OfflineExecutor.d.ts
++++ b/dist/esm/OfflineExecutor.d.ts
+@@ -35,6 +35,8 @@ export declare class OfflineExecutor {
+     private setupEventListeners;
+     private initialize;
+     private loadAndReplayTransactions;
++    /** Loads the stored writes again and replays them, for a host whose storage hid them from an earlier load. */
++    reloadPendingTransactions(): Promise<void>;
+     get isOfflineEnabled(): boolean;
+     /**
+      * Wait for the executor to fully initialize.

@@ -108,6 +108,71 @@ describe("Egress.decide", () => {
 })
 
 describe("Egress.forward", () => {
+  test.each(["DELETE", "POST", "PUT", "PATCH", "OPTIONS"])(
+    "a bodiless %s reaches its bound host and is audited as forwarded",
+    async (method) => {
+      for (const framing of [{}, { "content-length": "0" }, { "transfer-encoding": "chunked" }]) {
+        const upstream = scripted()
+        const { response, body, entries, recorded } = await forwardThrough(
+          new Request("https://api.github.com/resource", {
+            method,
+            headers: { ...framing, authorization: `Bearer ${OTHER_PLACEHOLDER}` }
+          }),
+          { fetch: upstream.fetch }
+        )
+        expect([response.status, body]).toEqual([200, "ok"])
+        expect(upstream.seen).toHaveLength(1)
+        expect(upstream.seen[0]).toMatchObject({
+          method,
+          body: "",
+          headers: { authorization: `Bearer ${OTHER}` }
+        })
+        expect(entries).toEqual([{ host: "api.github.com", method, outcome: "forwarded", secrets: ["GH_TOKEN"] }])
+        expect(recorded.count("forwarded")).toBe(1)
+        expect(recorded.count("unavailable_upstream")).toBe(0)
+        expect(leaks(recorded.recorded())).toEqual([])
+      }
+    }
+  )
+
+  test.each(["DELETE", "POST", "PUT", "PATCH", "OPTIONS"])(
+    "%s preserves an empty or nonempty body without a content length",
+    async (method) => {
+      for (const payload of ["", `body ${OTHER_PLACEHOLDER}`]) {
+        const upstream = scripted()
+        const request = new Request("https://api.github.com/resource", {
+          method,
+          headers: { authorization: `Bearer ${OTHER_PLACEHOLDER}` },
+          body: payload
+        })
+        expect(request.headers.has("content-length")).toBe(false)
+        const { response, body } = await forwardThrough(request, { fetch: upstream.fetch })
+        expect([response.status, body]).toEqual([200, "ok"])
+        expect(upstream.seen).toHaveLength(1)
+        expect(upstream.seen[0]).toMatchObject({ method, body: payload, headers: { authorization: `Bearer ${OTHER}` } })
+      }
+    }
+  )
+
+  test("a request body read failure stays unavailable instead of becoming an empty body", async () => {
+    const upstream = scripted()
+    const request = new Request("https://api.github.com/resource", {
+      method: "POST",
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error("can not create stream from empty body"))
+        }
+      }),
+      duplex: "half"
+    } as RequestInit)
+    const { response, body, recorded } = await forwardThrough(request, { fetch: upstream.fetch })
+    expect([response.status, body]).toEqual([502, "upstream"])
+    expect(upstream.seen).toEqual([])
+    expect(recorded.count("forwarded")).toBe(0)
+    expect(recorded.count("unavailable_upstream")).toBe(1)
+    expect(leaks(recorded.recorded())).toEqual([])
+  })
+
   test("a placeholder in a header reaches its own host as the value, and only in that header", async () => {
     const upstream = scripted()
     const { response, body, entries } = await forwardThrough(
@@ -284,14 +349,23 @@ describe("Egress.forward", () => {
     expect(entries).toEqual([{ host: API, method: "GET", outcome: "headers_too_large", secrets: ["API_KEY"] }])
   })
 
-  test("a stored value that can't go in a header is never sent", async () => {
+  test.each([
+    "value\r\nX-Injected: 1",
+    "tokenévalue",
+    "token😀value",
+    " token-value",
+    "token-value "
+  ])("a stored value that cannot go in a header is never sent: %j", async (value) => {
     const upstream = scripted()
-    const { response, body } = await forwardThrough(
+    const { response, body, entries, recorded } = await forwardThrough(
       new Request(`https://${API}/`, { headers: { "x-api-key": PLACEHOLDER } }),
-      { fetch: upstream.fetch, values: { API_KEY: "value\r\nX-Injected: 1", GH_TOKEN: OTHER } }
+      { fetch: upstream.fetch, values: { API_KEY: value, GH_TOKEN: OTHER } }
     )
     expect([response.status, body]).toEqual([503, "value"])
     expect(upstream.seen).toEqual([])
+    expect(entries).toEqual([])
+    expect(recorded.count("unavailable_value")).toBe(1)
+    expect(leaks(recorded.recorded(), [value])).toEqual([])
   })
 
   test("a value the vault can't reveal fails closed: 503 and nothing sent", async () => {
@@ -332,13 +406,23 @@ describe("Egress.forward", () => {
     expect(leaks(recorded.recorded())).toEqual([])
   })
 
-  test("HEAD and bodiless statuses answer with no body", async () => {
-    for (const [method, status] of [["HEAD", 200], ["GET", 204], ["GET", 304]] as const) {
+  test("HEAD and bodiless statuses answer with no body and settle telemetry once", async () => {
+    for (const [method, status] of [["HEAD", 200], ["HEAD", 204], ["GET", 204], ["GET", 205], ["GET", 304]] as const) {
       const upstream = scripted(() => new Response(null, { status, headers: { etag: "x" } }))
-      const { response, body } = await forwardThrough(new Request("https://registry.npmjs.org/p", { method }), {
-        fetch: upstream.fetch
-      })
+      const { response, body, recorded } = await forwardThrough(
+        new Request("https://registry.npmjs.org/p", { method }),
+        {
+          fetch: upstream.fetch
+        }
+      )
       expect([response.status, body, response.headers.get("etag")]).toEqual([status, "", "x"])
+      expect(recorded.count("forwarded")).toBe(1)
+      expect(recorded.count("broken")).toBe(0)
+      expect(recorded.logs).toHaveLength(1)
+      expect(recorded.logs[0]).toMatchObject({
+        level: "Info",
+        annotations: { outcome: "forwarded", host: "registry.npmjs.org", method, status, secrets: 0 }
+      })
     }
   })
 
@@ -403,6 +487,9 @@ describe("Egress.forward", () => {
     expect(JSON.stringify(exit)).toContain("@smthrs/secrets/Egress/Broken")
     expect(leaks(JSON.stringify(exit))).toEqual([])
     expect(recorded.count("broken")).toBe(1)
+    expect(recorded.count("cancelled")).toBe(0)
+    expect(recorded.logs).toHaveLength(1)
+    expect(recorded.logs[0]).toMatchObject({ level: "Warn", annotations: { outcome: "broken" } })
     expect(leaks(recorded.recorded())).toEqual([])
   })
 })
@@ -440,6 +527,32 @@ describe("Egress.execute", () => {
     expect(upstream.seen[0]!.body).toBe(`body ${PLACEHOLDER}`)
   })
 
+  test.each([["HEAD", 200], ["HEAD", 204], ["GET", 204], ["GET", 205], ["GET", 304]] as const)(
+    "%s %s settles before its body is read and is never counted twice",
+    async (method, status) => {
+      const upstream = scripted(() => new Response(null, { status }))
+      const recorded = telemetry()
+      const exit = await run(
+        recorded.provide(Effect.gen(function*() {
+          const answer = yield* Egress.execute(HttpClientRequest.make(method)("https://registry.npmjs.org/p"), policy)
+          expect(answer.status).toBe(status)
+          expect(recorded.count("forwarded")).toBe(1)
+          expect(recorded.logs).toHaveLength(1)
+          expect(recorded.logs[0]).toMatchObject({
+            level: "Info",
+            annotations: { outcome: "forwarded", method, status }
+          })
+          yield* Stream.runDrain(answer.body)
+          yield* Stream.runDrain(answer.body)
+        })),
+        upstream.fetch
+      )
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(recorded.count("forwarded")).toBe(1)
+      expect(recorded.logs).toHaveLength(1)
+    }
+  )
+
   test("a refusal is a typed failure with its code; nothing is sent", async () => {
     const upstream = scripted()
     const exit = await run(
@@ -472,7 +585,15 @@ describe("Egress.execute", () => {
       )
     )
     expect(Exit.hasInterrupts(exit)).toBe(true)
-    expect(recorded.count("broken")).toBe(1)
+    expect(recorded.count("cancelled")).toBe(1)
+    expect(recorded.count("broken")).toBe(0)
+    expect(recorded.count("forwarded")).toBe(0)
+    expect(recorded.logs).toHaveLength(1)
+    expect(recorded.logs[0]).toMatchObject({
+      level: "Info",
+      annotations: { outcome: "cancelled", host: API, status: 200 }
+    })
+    expect(leaks(recorded.recorded())).toEqual([])
   })
 
   test("a caller's own fetch options are kept, with redirects never followed", async () => {

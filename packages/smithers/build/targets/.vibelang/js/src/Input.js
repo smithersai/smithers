@@ -62,12 +62,22 @@ export const PnpmWorkspace = Schema.TaggedStruct("PnpmWorkspace", {
     path: Schema.NonEmptyString
 });
 /**
+ * Schema for an installed dependency tree, named by the directory that holds
+ * its manifest, its lockfile and its `node_modules`.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const NodeModules = Schema.TaggedStruct("NodeModules", {
+    path: Schema.NonEmptyString
+});
+/**
  * Schema for every declared input value the planner understands.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Declared = Schema.Union([Glob, File, GitDiff, PnpmWorkspace]);
+export const Declared = Schema.Union([Glob, File, GitDiff, PnpmWorkspace, NodeModules]);
 export function glob(pattern, options = {}) {
     if (typeof pattern === "string") {
         return Glob.make({ pattern, exclude: [...(options.exclude ?? [])] });
@@ -156,6 +166,67 @@ export { inputLiterals as Literals, inputOptional as Optional, InputSpec as Spec
  * @since 0.1.0
  */
 export const pnpmWorkspace = (path) => PnpmWorkspace.make({ path });
+/**
+ * Declares an installed dependency tree without reading the filesystem.
+ *
+ * `path` names the directory that holds a `package.json`, a lockfile and the
+ * `node_modules` an install made from them, for a tool that resolves modules
+ * from a directory that is not above its own. The planner keys the manifest
+ * and every lockfile present in that directory; the installed files are not
+ * hashed, because the lockfile is the install's identity. Under confinement
+ * the tool may read that `node_modules`, and nothing else in the directory.
+ * A directory with no manifest or no lockfile is refused: an install without
+ * an identity is never granted. It is an input of the target that reads the
+ * install, not a `Filegroup` member; share it between targets as a constant.
+ *
+ * @example
+ * ```ts
+ * import { Smithers } from "@smthrs/targets"
+ *
+ * const effect = Smithers.nodeModules("//experiments")
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const nodeModules = (path) => NodeModules.make({ path });
+/**
+ * The lockfile names that can carry an install's identity, in the order the
+ * planner reads them.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const nodeModulesLockfiles = Object.freeze([
+    "bun.lock",
+    "bun.lockb",
+    "npm-shrinkwrap.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock"
+]);
+/**
+ * The workspace-relative paths one installed-tree declaration names.
+ *
+ * `manifest` and `lockfiles` are the files whose content keys the install;
+ * `tree` is the `node_modules` directory a confined tool may read. Nothing is
+ * read here: the planner digests the files and refuses a tree with no
+ * identity.
+ *
+ * @category expansion
+ * @since 1.0.0
+ */
+export const nodeModulesPaths = (packageDir, declaration) => {
+    const resolved = resolvePath(packageDir, declaration.path);
+    const directory = resolved === "." ? "" : resolved;
+    const within = (name) => directory === "" ? name : `${directory}/${name}`;
+    return {
+        directory,
+        manifest: within("package.json"),
+        lockfiles: nodeModulesLockfiles.map(within),
+        tree: within("node_modules")
+    };
+};
 /** Reports whether UTF-8 encoding can preserve a string without replacement. */
 const isWellFormed = (value) => {
     for (let index = 0; index < value.length; index += 1) {
@@ -195,7 +266,8 @@ const declaredFields = {
     File: ["_tag", "path"],
     Glob: ["_tag", "pattern", "exclude"],
     GitDiff: ["_tag", "base", "paths", "added", "addedLines"],
-    PnpmWorkspace: ["_tag", "path"]
+    PnpmWorkspace: ["_tag", "path"],
+    NodeModules: ["_tag", "path"]
 };
 /**
  * Checks a descriptor-only copy so schema recognition cannot invoke author

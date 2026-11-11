@@ -45,5 +45,5 @@ export effect function sandboxRequest<R>(gateway: Gateway<R>) {
     if (action === "stop") return json(try gateway.stopSandbox(conversation, body.operationId, body.generation))
     if (body.command === undefined) return json({ error: "command" }, 400)
     return json({ output: try gateway.sandboxCommand(conversation, body.operationId, body.command, body.generation) })
-  }) catch (error) => error._tag === "Refused" ? json({ refusal: error.refusal }, error.refusal === "forbidden" ? 403 : 409) : json({ error: "sandbox unavailable" }, 503)
+  }) catch (error) => error._tag === "Refused" ? json({ refusal: error.refusal, ...(error.reason === undefined ? {} : { reason: error.reason }) }, error.refusal === "forbidden" ? 403 : 409) : json({ error: "sandbox unavailable" }, 503)
 }

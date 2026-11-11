@@ -232,6 +232,68 @@ describe("Fuzz", () => {
       30_000
     )
 
+    it.effect("replay reports the current failure when its signature changes", () =>
+      Effect.gen(function*() {
+        const original = firstFinding(
+          yield* fuzz(ints, (n) => n >= 100 ? Effect.fail(new Boom({ n })) : Effect.succeed(true))
+        )
+        const properties: ReadonlyArray<readonly [string, (n: number) => boolean | Effect.Effect<boolean, Bust>]> = [
+          ["ReturnedFalse", (n) => n < 100],
+          ["PropertyError:Bust", (n) => n >= 100 ? Effect.fail(new Bust()) : Effect.succeed(true)],
+          ["Died:TypeError", (n) => {
+            if (n >= 100) throw new TypeError("still broken")
+            return true
+          }]
+        ]
+        for (const [signature, property] of properties) {
+          const report = yield* Fuzz.run(ints, property, { replay: original.replay })
+          const current = firstFinding(report)
+          assert.deepStrictEqual(
+            [current.signature, current.input, current.execution, current.replay],
+            [signature, 100, 1, original.replay]
+          )
+          assert.strictEqual(current.failure._tag, signature.split(":")[0])
+          assert.deepStrictEqual(report._tag === "Falsified" && report.flaky, [])
+          assert.include(Fuzz.formatReport(report)!, signature)
+          assert.include(Fuzz.formatReport(report)!, `Replay expected PropertyError:Boom, got ${signature}`)
+        }
+      }))
+
+    it.effect("replay confirms a changed signature against the current failure", () =>
+      Effect.gen(function*() {
+        const original = firstFinding(yield* fuzz(Arbitrary.Constant(0), () => Effect.fail(new Bust())))
+        let calls = 0
+        const report = yield* Fuzz.run(Arbitrary.Constant(0), () => calls++ === 0 ? false : Effect.die("changed again"), {
+          replay: original.replay
+        })
+        assert.strictEqual(report._tag, "Flaky")
+        if (report._tag !== "Flaky") return
+        assert.deepStrictEqual(
+          [report.flaky[0].signature, report.flaky[0].failure, report.flaky[0].recheck, calls],
+          ["ReturnedFalse", { _tag: "ReturnedFalse" }, { _tag: "Died", defect: "changed again" }, 2]
+        )
+        assert.include(Fuzz.formatReport(report)!, "then gave Died:string")
+        assert.include(Fuzz.formatReport(report)!, "Replay expected PropertyError:Bust, got ReturnedFalse")
+      }))
+
+    it.effect("formatting replay reports tolerates missing or invalid tokens", () =>
+      Effect.gen(function*() {
+        const original = firstFinding(yield* fuzz(Arbitrary.Constant(0), () => false))
+        const report = yield* Fuzz.run(Arbitrary.Constant(0), () => false, { replay: original.replay })
+        assert.strictEqual(report._tag, "Falsified")
+        if (report._tag !== "Falsified") return
+        assert.notInclude(Fuzz.formatReport(report)!, "Replay expected")
+        for (const replay of [undefined, "invalid token"]) {
+          const supplied: Fuzz.Falsified<number, never> = {
+            ...report,
+            findings: [{ ...report.findings[0], replay }]
+          }
+          const text = Fuzz.formatReport(supplied)!
+          assert.include(text, "returned false")
+          assert.notInclude(text, "Replay expected")
+        }
+      }))
+
     it.effect("a token that cannot regenerate reports ReplayMismatch", () =>
       Effect.gen(function*() {
         const finding = firstFinding(yield* fuzz(ints, (n) => n < 500))

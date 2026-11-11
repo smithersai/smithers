@@ -23,6 +23,15 @@ test("percent echoes include reserved punctuation, mixed hex case and form space
   await check(value, "ab%21c'd%28e)%2a~key-XYZ%2f9%2b+")
 })
 
+test("percent echoes that leave reserved characters literal, as encodeURI and path escapers do", async () => {
+  const key = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+  // Python `urllib.parse.quote(key)`, whose default keeps `/` literal.
+  await check(key, "wJalrXUtnFEMI/K7MDENG%2BbPxRfiCYEXAMPLEKEY")
+  const password = "pass word/with:colon=1"
+  await check(password, encodeURI(password))
+  await check(password, "pass+word%2Fwith:colon%3d1")
+})
+
 test("an empty target does not scrub arbitrary text", () => {
   const scrub = Scrub.make([{ value: Redacted.make(""), replacement: "PH" }])
   expect(scrub.active).toBe(false)

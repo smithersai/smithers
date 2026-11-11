@@ -252,6 +252,62 @@ describe("branch scoped proxy", () => {
     expect(result.seen.at(-1)!.body).toBe(pkt(`want ${tip} side-band-64k ofs-delta\n`) + "0000" + pkt("done\n"))
   })
 
+  test.each(["gzip", "x-gzip"])("decodes %s before validating and stripping have probes", async (encoding) => {
+    const wanted = pkt(`want ${tip} side-band-64k ofs-delta\n`) + "0000"
+    const input = wanted + pkt(`have ${other}\n`).repeat(32) + pkt("done\n")
+    expect(new TextEncoder().encode(input).length).toBeGreaterThan(1024)
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, {
+        method: "POST",
+        body: gzipSync(input),
+        headers: { "content-encoding": encoding }
+      }),
+      (request) => request.headers.get("git-protocol") === "version=2" ? listing() : new Response("PACK"),
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(200)
+    expect(result.body).toBe("PACK")
+    expect(result.seen.at(-1)!.body).toBe(wanted + pkt("done\n"))
+    expect(result.seen.at(-1)!.headers.get("content-encoding")).toBeNull()
+    expect(result.seen.at(-1)!.headers.get("git-protocol")).toBeNull()
+    expect(result.seen.at(-1)!.headers.get("content-type")).toBe("application/x-git-upload-pack-request")
+    expect(result.recorded.count(GitProxy.requests, { service: "upload-pack", outcome: "ok" })).toBe(1)
+  })
+
+  test.each([
+    new Uint8Array([1, 2, 3]),
+    gzipSync(pkt(`want ${tip}\n`) + "0000" + pkt("done\n")).subarray(0, -1),
+    gzipSync(pkt(`want ${other}\n`) + "0000" + pkt("done\n"))
+  ])("refuses malformed gzip or compressed private wants without forwarding a pack request", async (body) => {
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body, headers: { "content-encoding": "gzip" } }),
+      listing,
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(403)
+    expect(result.seen).toHaveLength(1)
+    expect(result.seen[0]!.headers.get("git-protocol")).toBe("version=2")
+    expect(result.recorded.count(GitProxy.requests, { service: "upload-pack", outcome: "refused" })).toBe(1)
+  })
+
+  test.each([20_971, 20_972])("caps decoded gzip bytes rather than compressed bytes: %i wants", async (wants) => {
+    const input = pkt(`want ${tip}\n`).repeat(wants) + "0000" + pkt("done\n")
+    const body = gzipSync(input)
+    expect(body.length).toBeLessThan(1024 * 1024)
+    const allowed = new TextEncoder().encode(input).length <= 1024 * 1024
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body, headers: { "content-encoding": "gzip" } }),
+      (request) => request.headers.get("git-protocol") === "version=2" ? listing() : new Response("PACK"),
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(allowed ? 200 : 403)
+    expect(result.seen).toHaveLength(allowed ? 2 : 1)
+    if (allowed) expect(result.seen.at(-1)!.body).toBe(input)
+  })
+
   test.each([
     pkt(`want ${other}\n`) + "0000" + pkt("done\n"),
     pkt(`want ${tip}\n`) + pkt(`want ${other}\n`) + "0000" + pkt("done\n"),
@@ -279,8 +335,13 @@ describe("branch scoped proxy", () => {
     expect(result.seen.every((request) => request.headers.get("git-protocol") === "version=2")).toBe(true)
   })
 
-  test.each([{ "content-encoding": "gzip" }, { "git-protocol": "version=3" }])(
-    "refuses encoded or v2 bodies",
+  test.each([
+    { "content-encoding": "br" },
+    { "content-encoding": "deflate" },
+    { "content-encoding": "gzip, gzip" },
+    { "git-protocol": "version=3" }
+  ])(
+    "refuses unsupported encodings or protocols",
     async (headers) => {
       const result = await proxy(
         new Request(`${GUEST}/git-upload-pack`, { method: "POST", body: "0000", headers }),

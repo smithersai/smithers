@@ -239,8 +239,11 @@ describe("PUT /api/me/model", () => {
     expect(await refusal(put(saveOne("openai-chat", OPENAI_ORIGIN, "has space")))).toEqual([400, { code: "invalid_model" }])
     expect(await refusal(put(saveOne("openai-chat", OPENAI_ORIGIN, "x".repeat(82))))).toEqual([400, { code: "invalid_model" }])
     expect(await refusal(withKey("short"))).toEqual([400, { code: "too_short" }])
-    // Eight bytes, so a value a secret may be, but four characters: its "last four" would be all of it.
-    expect(await refusal(withKey("éééé"))).toEqual([400, { code: "too_short" }])
+    expect(await refusal(withKey("éééé"))).toEqual([400, { code: "non_ascii" }])
+    expect(await refusal(withKey("sk-SENTINEL-tokené"))).toEqual([400, { code: "non_ascii" }])
+    expect(await refusal(withKey("sk-SENTINEL-token😀"))).toEqual([400, { code: "non_ascii" }])
+    expect(await refusal(withKey(" sk-SENTINEL-token"))).toEqual([400, { code: "surrounding_space" }])
+    expect(await refusal(withKey("sk-SENTINEL-token "))).toEqual([400, { code: "surrounding_space" }])
     expect(await refusal(withKey("x".repeat(15)))).toEqual([400, { code: "too_short" }])
     expect(await refusal(withKey("x".repeat(16 * 1024 + 1)))).toEqual([400, { code: "too_long" }])
     expect(await refusal(withKey("sk-line\nbreak"))).toEqual([400, { code: "control_character" }])

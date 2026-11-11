@@ -1,0 +1,88 @@
+{
+  "name": "@smthrs/merge-queue",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "A merge queue whose rules are proved in Lean: a target branch moves only onto a tree whose every required check passed, with streaming results, fix agents, bisection and predicted durations",
+  "homepage": "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/merge-queue",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/merge-queue"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "keywords": [
+    "merge-queue",
+    "ci",
+    "lean",
+    "formal-verification",
+    "flow"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/esm/index.d.ts",
+        "import": "./dist/esm/index.js",
+        "require": "./dist/cjs/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage",
+    "differential": "node scripts/differential.ts",
+    "reference": "node scripts/reference.ts",
+    "mutants": "node scripts/mutants.ts"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
+    "vitest": "5.0.0"
+  }
+}

@@ -1,7 +1,10 @@
 import { Chunk, Effect, Redacted, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Scrub } from "../src/index.ts"
-import { leaks, PLACEHOLDER, VALUE } from "./fixtures.ts"
+import { leaks, PLACEHOLDER, VALUE as HEADER_VALUE } from "./fixtures.ts"
+
+// Scrubbing still protects legacy Unicode values, even though new header credentials are ASCII.
+const VALUE = `${HEADER_VALUE}é`
 
 const encoder = new TextEncoder()
 const b64 = (text: string) => btoa(String.fromCharCode(...encoder.encode(text)))
@@ -28,6 +31,14 @@ const streamed = (chunks: ReadonlyArray<Uint8Array>) =>
   Effect.runPromise(
     Stream.runCollect(scrubber.stream(Stream.fromIterable(chunks))).pipe(
       Effect.map((out) => new TextDecoder().decode(concat(Chunk.toReadonlyArray(Chunk.fromIterable(out)))))
+    )
+  )
+
+/** What `scrub` delivers for `chunks`, one text per delivery: the scrubber delivers at most once per chunk. */
+const deliveries = (scrub: Scrub.Scrubber, chunks: ReadonlyArray<string>) =>
+  Effect.runPromise(
+    Stream.runCollect(scrub.stream(Stream.fromIterable(chunks.map((chunk) => encoder.encode(chunk))))).pipe(
+      Effect.map((out) => Array.from(out, (bytes) => new TextDecoder().decode(bytes)))
     )
   )
 
@@ -102,9 +113,44 @@ describe("Scrub", () => {
     expect(out).toBe(scrubber.text(text))
   })
 
-  test("a stream shorter than the longest form is held back and then flushed whole", async () => {
+  test("a stream shorter than the longest form, and an empty one, come out as they went in", async () => {
     expect(await streamed([encoder.encode("hi")])).toBe("hi")
     expect(await streamed([])).toBe("")
+  })
+
+  test("a chunk no form can continue from is delivered at once, however long the longest value", async () => {
+    // The longest form of a 16 KiB value is about 98 KiB: every event here is far shorter.
+    const long = Scrub.make([
+      { value: Redacted.make(VALUE), replacement: PLACEHOLDER },
+      { value: Redacted.make("k".repeat(16 * 1024)), replacement: "<long>" }
+    ])
+    const events = Array.from({ length: 12 }, (_, index) => `data: {"delta":${index}}\n\n`)
+    expect(await deliveries(long, events)).toEqual(events)
+  })
+
+  test("only the end of a chunk that a form could continue from waits for the next chunk", async () => {
+    expect(await deliveries(scrubber, [`data: ${VALUE.slice(0, 5)}`, `${VALUE.slice(5)}\n`, "tail"])).toEqual([
+      "data: ",
+      `${PLACEHOLDER}\n`,
+      "tail"
+    ])
+    // The start of a value that turns out not to be one is delivered with the chunk that settles it.
+    expect(await deliveries(scrubber, [`data: ${VALUE.slice(0, 5)}`, "ost\n"])).toEqual([
+      "data: ",
+      `${VALUE.slice(0, 5)}ost\n`
+    ])
+    // A stream that ends inside a form delivers what it held.
+    expect(await deliveries(scrubber, [`data: ${VALUE.slice(0, 5)}`])).toEqual(["data: ", VALUE.slice(0, 5)])
+  })
+
+  test("a shorter form waits while a longer one at the same position could still continue", async () => {
+    const both = Scrub.make([
+      { value: Redacted.make("abcdefgh"), replacement: "<short>" },
+      { value: Redacted.make("abcdefghijkl"), replacement: "<long>" }
+    ])
+    expect(await deliveries(both, ["xabcdefgh", "ijklx"])).toEqual(["x", "<long>x"])
+    expect(await deliveries(both, ["xabcdefgh", "ijx"])).toEqual(["x", "<short>ijx"])
+    expect(await deliveries(both, ["xabcdefghij"])).toEqual(["x", "<short>ij"])
   })
 
   test("scrubbing costs time linear in the body's size", async () => {

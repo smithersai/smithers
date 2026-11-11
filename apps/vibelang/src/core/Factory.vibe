@@ -28,8 +28,11 @@ export schema SandboxSnapshot {
 /** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
 export schema error Unavailable { reason: string }
 
-/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy`, `not-replying` or `full`. */
-export schema error Refused { refusal: string }
+/**
+ * The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy`, `not-replying` or `full`. A sandbox refusal
+ * may carry `reason`, its content-free cause (an `unavailable` start's `start-failed:container-start:setup-exit-1`).
+ */
+export schema error Refused { refusal: string; reason?: string }
 
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every

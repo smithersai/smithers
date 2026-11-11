@@ -37,14 +37,16 @@ import * as Exit from "effect/Exit";
 import * as HttpBody from "effect/http/HttpBody";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Redacted from "effect/Redacted";
-import * as Stream from "effect/Stream";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
+import * as Channel from "effect/Channel";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Metric from "effect/Metric";
+import * as Stream from "effect/Stream";
 import * as GitRemote from "./GitRemote.js";
+import * as $platform from "./GitProxy.platform.js";
 import { readAtMost } from "./internal/bounded.js";
 import { negotiation, packet, validBranch } from "./internal/scopedGit.js";
 /**
@@ -89,7 +91,7 @@ const statusClass = (status) => `${Math.floor(status / 100)}xx`;
  * credential, or refuses it with 403. An optional `branch` confines the guest
  * to that branch: discovery negotiates protocol v0 and synthesizes HEAD and
  * that ref only; fetch permits only its current tip. Scoped requests are
- * bounded to 1 MiB, accept uncompressed protocol v0 only, and strip haves to
+ * bounded to 1 MiB after gzip decoding, accept protocol v0 only, and strip haves to
  * avoid exposing other objects through ACKs. Shallow, partial, and thin packs
  * and arbitrary capabilities are refused. A failed scoped ref read is 502.
  * Unscoped upstream failures come back as their
@@ -121,7 +123,8 @@ export const uploadPack = (request, upstream, branch) => withSpan(Effect_1.gen(f
     if (branch !== undefined) {
         const encoding = request.headers["content-encoding"];
         const protocol = request.headers["git-protocol"];
-        if (!validBranch(branch) || (encoding !== undefined && encoding !== "identity") ||
+        if (!validBranch(branch) ||
+            (encoding !== undefined && encoding !== "identity" && encoding !== "gzip" && encoding !== "x-gzip") ||
             (protocol !== undefined && !/^version=[012]$/.test(protocol))) {
             yield* done("refused", 403);
             return HttpServerResponse.empty({ status: 403 });
@@ -137,7 +140,13 @@ export const uploadPack = (request, upstream, branch) => withSpan(Effect_1.gen(f
                 packet(`${tip.value} HEAD\0side-band-64k ofs-delta symref=HEAD:refs/heads/${branch}\n`) +
                 packet(`${tip.value} refs/heads/${branch}\n`) + "0000", { headers: { "content-type": "application/x-git-upload-pack-advertisement", "cache-control": "no-store" } });
         }
-        const body = yield* (Effect.option(readAtMost(request.stream, 1024 * 1024)));
+        const decoded = encoding === "gzip" || encoding === "x-gzip"
+            ? request.stream.pipe(Stream.map((chunk) => new Uint8Array(chunk)), Stream.pipeThroughChannel(Channel.fromTransformStream({
+                evaluate: () => $platform.gunzip(),
+                onError: () => undefined
+            })))
+            : request.stream;
+        const body = yield* (Effect.option(readAtMost(decoded, 1024 * 1024)));
         scopedBody = body._tag === "Some" && !body.value.truncated
             ? negotiation(body.value.bytes, tip.value)
             : undefined;

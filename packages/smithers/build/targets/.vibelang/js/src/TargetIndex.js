@@ -57,6 +57,7 @@ export const RowInput = Schema.Union([
         exclude: Schema.Array(Schema.NonEmptyString)
     }),
     Schema.Struct({ kind: Schema.Literal("pnpm-workspace"), path: Schema.NonEmptyString }),
+    Schema.Struct({ kind: Schema.Literal("node-modules"), path: Schema.NonEmptyString }),
     Schema.Struct({
         kind: Schema.Literal("git-diff"),
         base: Schema.NonEmptyString,

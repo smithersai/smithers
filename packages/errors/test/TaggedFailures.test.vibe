@@ -1,32 +1,34 @@
-import { $errorSubclass } from "vibelang-runtime"
-import { $schemaErrorMatcher } from "vibelang-runtime"
 import { describe, expect, it } from "@effect/vitest"
+import type { SmithersErrorCode } from "../src/ErrorCode.ts"
 import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
 import { failureOf } from "./helpers.vibe"
 
-// An adapter's subclass, tagged with its own name (D278).
-class AdapterError extends $errorSubclass(SmithersError, "AdapterError") {
-static {
-    $schemaErrorMatcher(this, "AdapterError", true);
+// An adapter's subclass, tagged with its own name. It is written as
+// @smthrs/integrations' IntegrationError is: an error declaration cannot
+// extend a class (VIP-13), so the subclass sets its tag and its name itself.
+class AdapterError extends SmithersError {
+  declare readonly _tag: "AdapterError"
+
+  constructor(code: SmithersErrorCode, summary: string) {
+    super(code, summary)
+    this._tag = "AdapterError"
+  }
 }
-declare readonly _tag: "AdapterError";
-}
+AdapterError.prototype.name = "AdapterError"
 
 // A subclass with a field and its own constructor, as @smthrs/integrations'
 // IntegrationError is.
-class IntegrationError extends $errorSubclass(SmithersError, "IntegrationError") {
-static {
-    $schemaErrorMatcher(this, "IntegrationError", true);
-}
-declare readonly _tag: "IntegrationError";
-readonly declare reason: string;
-
+class IntegrationError extends SmithersError {
+  declare readonly _tag: "IntegrationError"
+  readonly reason: string
 
   constructor(reason: string, options?: { readonly cause?: unknown }) {
     super("INTEGRATION_ERROR", "poll failed", { reason }, { cause: options?.cause })
+    this._tag = "IntegrationError"
     this.reason = reason
   }
 }
+IntegrationError.prototype.name = "IntegrationError"
 
 effect function raise<E>(error: E): never!E {
   throw error
@@ -53,6 +55,8 @@ describe("tagged failures", () => {
   it.effect("matches a subclass by class in a catch", effect () => {
     const caught = raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")) catch (error) => match (error) {
       when AdapterError: error.summary;
+      // A hand-written class pattern covers no finite case (EK4701).
+      default: "unmatched";
     }
     expect(caught).toBe("adapter failed")
   })
@@ -62,7 +66,7 @@ describe("tagged failures", () => {
   })
 
   it("tags each subclass with its own name, which it reports and its stack starts with", () => {
-    const error = new AdapterError("UNSUPPORTED", "x")
+    const error = new AdapterError("INVALID_INPUT", "x")
     expect(error._tag).toBe("AdapterError")
     expect(error.name).toBe("AdapterError")
     expect(Object.hasOwn(error, "name")).toBe(false)
@@ -70,14 +74,14 @@ describe("tagged failures", () => {
   })
 
   it("keeps the tag enumerable and in JSON, as Data.TaggedError does", () => {
-    const error = new AdapterError("UNSUPPORTED", "x")
+    const error = new AdapterError("INVALID_INPUT", "x")
     expect(Object.keys(error)).toEqual(["code", "summary", "docsUrl", "_tag"])
-    expect($invoke(JSON,() => (JSON.stringify(error)))).toEqual({
-      code: "UNSUPPORTED",
+    expect(JSON.stringify(error)).toBe(JSON.stringify({
+      code: "INVALID_INPUT",
       summary: "x",
       docsUrl: error.docsUrl,
       _tag: "AdapterError"
-    })
+    }))
   })
 
   it("lets a subclass always spell the optional cause key", () => {
@@ -88,6 +92,26 @@ describe("tagged failures", () => {
     const withCause = new IntegrationError("poll-failed", { cause })
     expect(Object.hasOwn(withCause, "cause")).toBe(true)
     expect(withCause.cause).toBe(cause)
+  })
+
+  it("matches a subclass's own instances only, so a base instance is not a subclass", () => {
+    const base = new SmithersError("INTEGRATION_ERROR", "x")
+    expect(base is SmithersError).toBe(true)
+    expect(base is AdapterError).toBe(false)
+    expect(base is IntegrationError).toBe(false)
+    expect(new AdapterError("INVALID_INPUT", "x") is IntegrationError).toBe(false)
+    const routed = match (base) {
+      when AdapterError: "adapter";
+      when IntegrationError: "integration";
+      default: "base";
+    }
+    expect(routed).toBe("base")
+  })
+
+  it("matches a base instance from another copy of the package by its tag", () => {
+    const copy = { _tag: "SmithersError", code: "INTEGRATION_ERROR" }
+    expect(copy is SmithersError).toBe(true)
+    expect({ _tag: "AdapterError" } is AdapterError).toBe(false)
   })
 
   it("keeps the subclass prototype, so instanceof, is, and the refinements accept it", () => {
@@ -101,8 +125,3 @@ describe("tagged failures", () => {
     expect(isSmithersError(new Error("plain"))).toBe(false)
   })
 })
-
-module $call$ts {
-export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
-}
-import { invoke as $invoke } from $call$ts

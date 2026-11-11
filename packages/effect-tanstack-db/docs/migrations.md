@@ -97,7 +97,8 @@ Outbox.layer({
   A write from before stamping takes the declared `unstamped` versions.
 - **Upgrade.** Before the library loads the stored writes, each one an older
   build made is brought to this build's payload versions and stored again.
-  Upgrading twice writes the same bytes.
+  Upgrading twice writes the same bytes. A write the storage fails to upgrade
+  or park stays stored and unsent; a later start carries it.
 - **Park.** A write naming a mutation or collection this build doesn't have, at
   a newer or unknown version, or whose row won't decode or a migration refuses,
   moves to `parked:<id>`. The library never loads it. `parked` hands each one to

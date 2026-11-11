@@ -6,7 +6,7 @@ import { Egress, Scrub } from "../src/index.ts"
 // per test, or the real one against real local servers), and the host's vault and audit are injected services.
 
 /** A value no test text otherwise contains, with characters that make each of its encoded forms differ. */
-export const VALUE = "sk_live_51Hq SENTINEL/value+=:\"quoted\"~é"
+export const VALUE = "sk_live_51Hq SENTINEL/value+=:\"quoted\"~"
 
 /** Another bound value, for a second secret. */
 export const OTHER = "ghp_OtherSentinelToken0123456789"
@@ -94,7 +94,7 @@ export const audit = (down = false) => {
 /** Everything a program records: its spans (with their attributes and events), log lines and metric registry. */
 export const telemetry = () => {
   const spans: Array<Tracer.NativeSpan> = []
-  const logs: Array<{ message: unknown; annotations: Record<string, unknown> }> = []
+  const logs: Array<{ level: string; message: unknown; annotations: Record<string, unknown> }> = []
   const registry = new Map()
   const tracer = Tracer.make({
     span(options) {
@@ -103,8 +103,8 @@ export const telemetry = () => {
       return span
     }
   })
-  const recorder = Logger.make(({ message, fiber }) => {
-    logs.push({ message, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
+  const recorder = Logger.make(({ logLevel, message, fiber }) => {
+    logs.push({ level: logLevel, message, annotations: { ...fiber.getRef(References.CurrentLogAnnotations) } })
   })
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(

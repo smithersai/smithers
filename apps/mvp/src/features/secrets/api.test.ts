@@ -4,6 +4,7 @@ import { Effect, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { SecretsClient } from "./api"
+import { FAILURE_COPY } from "./copy"
 
 // The real secrets client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
 // stalled answer, a body that isn't a refusal and nothing listening are what a browser would meet. ChatApi's own
@@ -93,4 +94,13 @@ test("a refusal names its code; any other answer, or none, names none", async ()
   await servers.pop()!()
   const unreachable = await call(closed.origin, (client) => client.put("octo", "hello", "K", { value: Redacted.make(VALUE), hosts: ["a.com"] }))
   expect(unreachable).toMatchObject({ _tag: "Failure", failure: { _tag: "SecretNotSaved" } })
+})
+
+test.each(["non_ascii", "surrounding_space"] as const)("an invalid header credential keeps its %s reason", async (code) => {
+  const { origin } = await serve(json(400, { code }))
+  expect(await call(origin, (client) => client.put("octo", "hello", "K", { value: Redacted.make(VALUE), hosts: ["a.com"] })))
+    .toMatchObject({ _tag: "Failure", failure: { _tag: "SecretNotSaved", code } })
+  expect(FAILURE_COPY[code]).toBe(code === "non_ascii"
+    ? "Values must use ASCII characters"
+    : "Values can't start or end with a space")
 })

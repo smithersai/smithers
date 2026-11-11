@@ -26,7 +26,9 @@ Each returns a plain tagged object.
 | `file(path)`                 | `{ _tag: "File", path }`             |
 | `gitDiff(base)`              | `{ _tag: "GitDiff", base }`          |
 
-`Input.isDeclared(value)` tests for one of the three tags. The union is
+`nodeModules(path)` declares an installed dependency tree; see
+[Installed trees](#installed-trees). `Input.isDeclared(value)` tests for a
+declared input's tag. The union is
 `Input.Declared`.
 
 ## No I/O at evaluation
@@ -183,6 +185,40 @@ An empty change set digests the empty string.
 
 This makes a diff first-class key material: a target re-keys exactly when the
 patch content changes. `LlmLint` is the target built on it.
+
+## Installed trees
+
+```ts
+const effect = Smithers.nodeModules("//experiments")
+```
+
+`nodeModules(path)` returns `{ _tag: "NodeModules", path }`. `path` names a
+directory that holds a `package.json`, a lockfile and the `node_modules` an
+install made from them. Declare it on a target whose tool resolves modules
+from a directory that is not above the tool's own working directory; the
+trees above it need no declaration.
+
+| Part                               | Role                                       |
+| ---------------------------------- | ------------------------------------------ |
+| `<path>/package.json`              | Key material                               |
+| Every lockfile present in `<path>` | Key material                               |
+| `<path>/node_modules`              | Readable under confinement; never hashed   |
+| Everything else in `<path>`        | Neither keyed nor readable unless declared |
+
+The lockfiles read are `bun.lock`, `bun.lockb`, `npm-shrinkwrap.json`,
+`package-lock.json`, `pnpm-lock.yaml` and `yarn.lock`. The lockfile is the
+install's identity, which is the contract the trees above the working
+directory already have: installing from an unchanged lockfile reproduces the
+tree, so the installed files are not digested, and editing them by hand does
+not re-key the target. Install with the manager's frozen-lockfile mode before
+running `smthrs`.
+
+A directory with no `package.json`, or with no lockfile, fails planning and
+names what is missing. An install with no identity is never granted.
+
+`smthrs affected` selects the target when the manifest or a lockfile changes.
+The declaration is an input of the target that reads the install, not a
+`Filegroup` member; share one constant between the targets that need it.
 
 ## Sharing declarations
 

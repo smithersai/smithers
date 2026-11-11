@@ -5,13 +5,28 @@ import { ContainerSession, SandboxObject } from "@smthrs/platform-cloudflare"
 import { SandboxTools } from "@smthrs/sandbox"
 import type { RuntimeContext } from "alchemy/RuntimeContext"
 import type { SandboxImage } from "../infra/SandboxImage.vibe"
-import { observed } from "../src/core/sandboxHost.vibe"
+import { failureReason, observed } from "../src/core/sandboxHost.vibe"
 import { checkpointOutput, checkpointPhase, checkpointed, commandOutput, commandTimeout, currentRunning, generationRefused, leaseDurationRefused, leaseExpired, receiptPassed, receiptText, restoredOptions, startRefused, stoppedPhase } from "../src/core/machineDecision.vibe"
 
 export type Operation = "start" | "stop" | "command" | "lease" | "status"
+/**
+ * A refusal's `reason` is content-free: `generation`, `phase`, `lease-duration`, `not-running-after-wake`,
+ * `setup-exit-<code>`, `running-after-destroy`, `not-current`, `receipt-conflict`, `lease-expired`, or a failed
+ * operation's error tag (failureReason). The account carries it to the refusal the client sees (decision 0024).
+ */
+export interface Answer { readonly ok: boolean; readonly output: string; readonly reason?: string }
 export interface MachineShape {
-  apply(kind: Operation, generation: number, operationId: string, command: string): { readonly ok: boolean; readonly output: string }!!RuntimeContext
+  apply(kind: Operation, generation: number, operationId: string, command: string): Answer!!RuntimeContext
 }
+/**
+ * What the Container runs as its main process, whatever the image's own command: it stays up until destroy or
+ * Cloudflare's inactivity timeout. An image's default command can exit at once (`debian:bookworm-slim` runs `bash`,
+ * which exits with nothing attached), and a stopped container runs no setup. The image needs `sleep` that takes
+ * `infinity` (GNU coreutils), `sh`, `mkdir`, `chown` and GNU `timeout` (decision 0024).
+ */
+export const ENTRYPOINT = ["sleep", "infinity"]
+const answered = (output: string): Answer => ({ ok: true, output })
+const refused = (reason: string): Answer => ({ ok: false, output: "", reason })
 export type MachineBox = Effect.Success<typeof SandboxImage>
 export type ObjectState = Cloudflare.DurableObjectState["Service"]
 /** The object's body, apart from Alchemy's binding of it, so a local container can drive the same code. */
@@ -30,30 +45,30 @@ export function machineObject(box: MachineBox, state: ObjectState) {
     effect function saved() { return (try promise(() => state.raw.storage.get<Saved>("machine"))) ?? { generation: 0, phase: "stopped" as const } }
     effect function apply(kind: Operation, generation: number, operationId: string, command: string) {
       // Whether the container runs, whatever its generation: the probe's sweep reports this, not the ledger (0024).
-      if (kind === "status") return { ok: true, output: (try box.running) ? "running" : "stopped" }
+      if (kind === "status") return answered((try box.running) ? "running" : "stopped")
       const previous = try saved()
-      if (!Number.isSafeInteger(generation) || generationRefused(kind === "start", generation, previous.generation)) return { ok: false, output: "" }
+      if (!Number.isSafeInteger(generation) || generationRefused(kind === "start", generation, previous.generation)) return refused("generation")
       if (kind === "lease") {
-        if (!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)) return { ok: true, output: "stopped" }
+        if (!currentRunning(generation, previous.generation, previous.phase) || !(try box.running)) return answered("stopped")
         const duration = Number(command)
-        if (!Number.isSafeInteger(duration) || leaseDurationRefused(duration)) return { ok: false, output: "" }
+        if (!Number.isSafeInteger(duration) || leaseDurationRefused(duration)) return refused("lease-duration")
         try SandboxObject.rearm(box, duration)
         try promise(() => state.raw.storage.put("machine", { ...previous, leaseUntil: Date.now() + duration }))
-        return { ok: true, output: "running" }
+        return answered("running")
       }
       if (kind === "start") {
-        if (startRefused(generation, previous.generation, previous.phase)) return { ok: false, output: "" }
+        if (startRefused(generation, previous.generation, previous.phase)) return refused("phase")
         const starting: Saved = { ...previous, generation, phase: "starting" }
         try promise(() => state.raw.storage.put("machine", starting))
-        try SandboxObject.wake({ ...box, start: (options) => box.start(restoredOptions(options, previous.snapshot)) }, { intercepts: [], instance: "lite", inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
-        if (!(try box.running)) return { ok: false, output: "" }
+        try SandboxObject.wake({ ...box, start: (options) => box.start({ ...restoredOptions(options, previous.snapshot), entrypoint: ENTRYPOINT }) }, { intercepts: [], instance: "lite", inactivityTimeoutMs: 150000, startTimeoutMs: 150000 })
+        if (!(try box.running)) return refused("not-running-after-wake")
         const setup = try SandboxObject.run(box, ["sh", "-c", "mkdir -p /workspace /var/lib/vibelang/calls && chown 1000:1000 /workspace /var/lib/vibelang/calls"], { user: "0:0" })
-        if (setup !== 0) return { ok: false, output: "" }
+        if (setup !== 0) return refused(`setup-exit-${setup}`)
         try promise(() => state.raw.storage.put("machine", { ...starting, phase: "running" }))
-        return { ok: true, output: "" }
+        return answered("")
       }
       if (kind === "stop") {
-        if (stoppedPhase(previous.phase)) return { ok: true, output: "" }
+        if (stoppedPhase(previous.phase)) return answered("")
         let snapshot = previous.snapshot
         let checkpointFailed = previous.checkpointFailed ?? false
         if (checkpointPhase(previous.phase) && (try box.running)) {
@@ -67,41 +82,42 @@ export function machineObject(box: MachineBox, state: ObjectState) {
         const stopping: Saved = { ...previous, phase: "stopping", checkpointFailed, ...(snapshot === undefined ? {} : { snapshot }) }
         try promise(() => state.raw.storage.put("machine", stopping))
         try box.destroy()
-        if (try box.running) return { ok: false, output: "" }
+        if (try box.running) return refused("running-after-destroy")
         try promise(() => state.raw.storage.put("machine", { ...stopping, phase: "stopped" }))
-        return { ok: true, output: checkpointOutput(checkpointFailed) }
+        return answered(checkpointOutput(checkpointFailed))
       }
       const key = `${generation}/${operationId}`
       const admission = try Semaphore.withPermits(gate, 1)(effect {
         const latest = try saved()
-        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return { admitted: false, output: "", ok: false, timeout: 0 }
+        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return { admitted: false, output: "", ok: false, timeout: 0, reason: "not-current" }
         const receipts = try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec<{ command: string; phase: string; output: string | null }>("SELECT command, phase, output FROM sandbox_machine_commands WHERE id = ?", key).toArray()))
         const prior = receipts[0]
-        if (prior !== undefined) return { admitted: false, ok: receiptPassed(prior.phase, prior.command, command), output: receiptText(prior.output), timeout: 0 }
+        if (prior !== undefined) return { admitted: false, ok: receiptPassed(prior.phase, prior.command, command), output: receiptText(prior.output), timeout: 0, reason: "receipt-conflict" }
         const remaining = (latest.leaseUntil ?? 0) - Date.now()
-        if (leaseExpired(remaining)) return { admitted: false, output: "", ok: false, timeout: 0 }
+        if (leaseExpired(remaining)) return { admitted: false, output: "", ok: false, timeout: 0, reason: "lease-expired" }
         // The outer SQL fence survives even a guest that deletes its own tool fence. Uncertain commands never rerun.
         try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("INSERT INTO sandbox_machine_commands (id, command, phase) VALUES (?, ?, 'pending')", key, command)))
-        return { admitted: true, output: "", ok: true, timeout: commandTimeout(remaining) }
+        return { admitted: true, output: "", ok: true, timeout: commandTimeout(remaining), reason: "" }
       })
-      if (!admission.admitted) return { ok: admission.ok, output: admission.output }
+      if (!admission.admitted) return admission.ok ? answered(admission.output) : { ...refused(admission.reason), output: admission.output }
       const session = try ContainerSession.make(box, { id: "sandbox", workdir: "/workspace", user: "1000:1000", env: { HOME: "/workspace" } })
       // No writer lock is held over a long command. Stop can destroy its generation immediately.
       const result = try SandboxTools.execute(session, { tool: "run", command, timeoutSeconds: admission.timeout }, { callId: key, callsDirectory: "/var/lib/vibelang/calls" })
       const snapshot = try box.snapshotContainer()
       return try Semaphore.withPermits(gate, 1)(effect {
         const latest = try saved()
-        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return { ok: false, output: "" }
+        if (!currentRunning(generation, latest.generation, latest.phase) || !(try box.running)) return refused("not-current")
         try promise(() => state.raw.storage.put("machine", { ...latest, snapshot }))
         const output = result.tool === "run" ? commandOutput(result.stdout, result.stderr, result.truncated, result.exitCode !== 0, String(result.exitCode)) : ""
         try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("UPDATE sandbox_machine_commands SET phase = 'done', output = ? WHERE id = ?", output, key)))
-        return { ok: true, output }
+        return answered(output)
       })
     }
     return {
       apply: effect (kind: Operation, generation: number, operationId: string, command: string) => {
-        const work = observed(`container-${kind}`, apply(kind, generation, operationId, command))
-        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch () => ({ ok: false, output: "" })
+        // A refusal is logged and metered as `refused` with its reason; a failure, as `failed` with its error's tag.
+        const work = observed(`container-${kind}`, apply(kind, generation, operationId, command), (answer: Answer) => answer.reason ?? "")
+        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => refused(failureReason(error))
       },
     }
   }

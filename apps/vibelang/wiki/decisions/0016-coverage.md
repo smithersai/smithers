@@ -660,7 +660,7 @@ The unit gate still fails below 100%. No file below is excluded and no threshold
 
 | Path | Needs | Test that covers it once available |
 | --- | --- | --- |
-| `worker/SandboxMachine.vibe`, `worker/SandboxProbe.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Will ruled yes (VL-35, 2026-11-10); the `vl-test` stage declares one (0024) and awaits its first deploy. No scripted Container namespace. | `test/sandboxes.live.test.vibe` through `pnpm test:sandboxes-live` against the stage, on demand. Its body also runs in `pnpm test` over local processes (`test/sandboxProbe.test.vibe`), which covers `worker/sandboxProbeFetch.vibe` but not these bindings |
+| `worker/SandboxMachine.vibe`, `worker/SandboxProbe.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Will ruled yes (VL-35, 2026-11-10); the `vl-test` stage declares one (0024). Its first live run (2026-11-10) refused the start with no cause; refusals now carry a content-free reason (0024), and the machine gives every Container its own entrypoint. `test/sandboxObjects.workerd.test.vibe` checks each machine reason, and an image whose command exits, in real workerd with faulty Container services. No scripted Container namespace. | `test/sandboxes.live.test.vibe` through `pnpm test:sandboxes-live` against the stage, on demand. Its body also runs in `pnpm test` over local processes (`test/sandboxProbe.test.vibe`), which covers `worker/sandboxProbeFetch.vibe` but not these bindings |
 | `worker/Api.vibe` | Closed 2026-11-10 (vl-coverage-workerd): its wiring runs only in workerd, and the suite now loads it there as Alchemy builds and bridges it (`test/workerd/api.vibe`), measured in the unit and fuzz gates. | `test/alchemyApi.workerd.test.vibe`; fuzz target `workerd/alchemy-api-requests` |
 | `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
 | `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. `test/vipDraft.test.vibe` covers `VipDraft`, opt-in on the same key |
@@ -2207,3 +2207,20 @@ HistoryActions, WikiDraft, VipDraft and SpecificationReviewers.
 Combined: 550/550 lines, 207/207 functions, 693/693 statements,
 359/359 branches. Production code was unchanged by these tests.
 The writer controls above also pass under main's reserved-ceiling policy.
+
+## Dead budget charge (lane vl-coverage2, 2026-11-10)
+
+`worker/budgetDecision.vibe` kept `charge`, the per-reply charge from before main's reservation change (`c5bbf81b`).
+No source, test, benchmark or fuzz target imports it, and no mutation case names it: `worker/Budget.vibe` settles
+through `reserve`, `settle` and `canCharge`. Its two lines and three branches were the file's whole gap, and the
+benchmark lane had recorded it as unused (0017). Deleted with its `Charge` type instead of covered; the function
+inventory in 0018 is regenerated, and the module's remaining proofs pass.
+
+## Action protocol callers and refusals (lane vl-coverage2, 2026-11-10)
+
+`worker/ActionsHttp.vibe` had five gaps. A rerun now runs as a maintainer without a name (the run records `Guest`)
+and as an agent (`agent`); a start and a rerun the actions API refuses as `forbidden` answer 403; an unreadable rerun
+body answers 400 without reaching the API (`test/actionsHttp.coverage.test.vibe`). The fifth, `parts[0] ?? ""`, could
+not run: `split` always yields a first part, so the fallback is gone. Making a forbidden rerun answer 404 fails the new
+case (1 of 10). The file has no uncovered statement, function or branch in the focused run.
+

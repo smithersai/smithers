@@ -52,6 +52,7 @@ export default defineConfig({
         "journal/**",
         "kernel/**",
         "keys/**",
+        "merge-queue/**",
         "observability/**",
         "patterns/**",
         "plan/**",

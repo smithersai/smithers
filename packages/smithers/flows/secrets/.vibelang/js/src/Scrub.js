@@ -9,16 +9,18 @@
  * ({@link forms}):
  *
  * - the value itself, as UTF-8;
- * - percent-encoded, with uppercase and lowercase hexadecimal, and with `+`
- *   for a space;
+ * - percent-encoded, with uppercase and lowercase hexadecimal, with `+` for
+ *   a space, and with any byte but `%` escaped or left literal, as
+ *   `encodeURI` and path escapers leave reserved characters;
  * - inside a JSON string;
  * - inside base64 or base64url, at each of the three byte alignments, so the
  *   value is found inside a longer encoded string such as a Basic
  *   credential's `user:value`.
  *
- * {@link Scrubber.stream} scrubs a body as it streams. It holds back fewer
- * bytes than the longest form, so a value split across chunks is still
- * found, and it adds no other delay or bound on the body's size. A
+ * {@link Scrubber.stream} scrubs a body as it streams. It holds back only
+ * the end of a chunk that a form could continue from in the next chunk, so
+ * a value split across chunks is still found, and it adds no other delay or
+ * bound on the body's size. A
  * transformation outside these forms, such as hexadecimal or a hash, is not
  * found: bind a secret only to hosts whose answers have been reviewed.
  *
@@ -56,12 +58,16 @@ export const forms = (value) => {
     found.delete("");
     return [...found];
 };
-const matchesAt = (input, at, pattern) => {
-    for (let index = 0; index < pattern.length; index++) {
+/** What {@link matchedLength} answers when `input` ends inside a pattern that matches so far. */
+const cut = -1;
+/** The length of `pattern` when it is at `at`, 0 when it is not, and {@link cut} when `input` ends inside it. */
+const matchedBytes = (input, at, pattern) => {
+    const available = Math.min(pattern.length, input.length - at);
+    for (let index = 0; index < available; index++) {
         if (input[at + index] !== pattern[index])
-            return false;
+            return 0;
     }
-    return true;
+    return available === pattern.length ? pattern.length : cut;
 };
 // Alternatives are per byte, rather than a Cartesian product of whole echoes.
 // Every token is nonempty and prefix-free, so matching needs no backtracking.
@@ -70,7 +76,9 @@ const percentTokens = (value) => Array.from(utf8(value), (byte) => {
     const escapes = [...new Set([hex.charAt(0), hex.charAt(0).toUpperCase()])].flatMap((first) => [...new Set([hex.charAt(1), hex.charAt(1).toUpperCase()])].map((last) => utf8(`%${first}${last}`)));
     if (byte === 32)
         escapes.push(utf8("+"));
-    if (/^[A-Za-z0-9!'()*~._-]$/.test(String.fromCharCode(byte)))
+    // Encoders differ in which bytes they leave literal (`encodeURI` and path escapers keep `/`, `:` and `=`), so
+    // every byte but `%` may appear as itself. `%` starts every escape, so the tokens stay prefix-free.
+    if (byte !== 0x25)
         escapes.push(Uint8Array.of(byte));
     return escapes;
 });
@@ -94,16 +102,22 @@ const jsonTokens = (value) => Array.from(value, (point) => {
         alternatives.add("\\/");
     return [...alternatives].map(utf8);
 });
+/** The length of the echo of `pattern` at `at`, 0 when there is none, and {@link cut} when `input` ends inside one. */
 const matchedLength = (input, at, pattern) => {
-    if (pattern.tokens === undefined) {
-        return pattern.bytes.length <= input.length - at && matchesAt(input, at, pattern.bytes) ? pattern.bytes.length : 0;
-    }
+    if (pattern.tokens === undefined)
+        return matchedBytes(input, at, pattern.bytes);
     let end = at;
     for (const token of pattern.tokens) {
-        const hit = token.find((bytes) => bytes.length <= input.length - end && matchesAt(input, end, bytes));
-        if (hit === undefined)
-            return 0;
-        end += hit.length;
+        // The alternatives are prefix-free, so at most one is whole, and none is cut where one is whole.
+        let matched = 0;
+        for (const bytes of token) {
+            matched = matchedBytes(input, end, bytes);
+            if (matched !== 0)
+                break;
+        }
+        if (matched <= 0)
+            return matched;
+        end += matched;
     }
     return end - at;
 };
@@ -129,28 +143,33 @@ export const make = (targets) => {
         }
     }
     patterns.sort((left, right) => right.bytes.length - left.bytes.length);
-    const longest = patterns[0]?.bytes.length ?? 0;
     const firsts = new Set(patterns.flatMap((pattern) => pattern.tokens?.[0].map((bytes) => bytes[0]) ?? [pattern.bytes[0]]));
     /**
-     * Scrubs `input` up to where a form could still continue in the next chunk, or to its end when `final`, and
-     * answers the scrubbed bytes and the bytes held back.
+     * Scrubs `input` up to the first position where a form matches as far as `input` goes and could continue in the
+     * next chunk, or to its end when `final`, and answers the scrubbed bytes and the bytes held back. A form is
+     * never longer than the longest pattern, so fewer bytes than that are held back.
      */
     const scan = (input, final) => {
-        const limit = final ? input.length : input.length - longest + 1;
         const parts = [];
         let start = 0;
         let at = 0;
-        while (at < limit) {
+        while (at < input.length) {
             if (firsts.has(input[at])) {
                 let length = 0;
                 let replacement;
+                let continues = false;
                 for (const pattern of patterns) {
                     const matched = matchedLength(input, at, pattern);
-                    if (matched > length) {
+                    if (matched === cut) {
+                        continues = true;
+                    }
+                    else if (matched > length) {
                         length = matched;
                         replacement = pattern.replacement;
                     }
                 }
+                if (continues && !final)
+                    break;
                 if (replacement !== undefined) {
                     parts.push(input.subarray(start, at), replacement);
                     at += length;

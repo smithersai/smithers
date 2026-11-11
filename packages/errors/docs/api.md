@@ -39,14 +39,14 @@ package.
 ### class SmithersError
 
 ```vibe
-error SmithersError {
-  _tag: string
-  message: string
-  code: SmithersErrorCode
-  summary: string
-  docsUrl: string
-  details?: Readonly<Record<string, unknown>>
-
+class SmithersError extends TaggedError("SmithersError" as string)<{
+  readonly _tag: string
+  readonly message: string
+  readonly code: SmithersErrorCode
+  readonly summary: string
+  readonly docsUrl: string
+  readonly details?: Readonly<Record<string, unknown>>
+}> {
   constructor(
     code: SmithersErrorCode,
     summary: string,
@@ -58,17 +58,19 @@ error SmithersError {
 }
 ```
 
-An error declaration (VibeLang D278): the class extends Effect's
-`Data.TaggedError`, and every field is readonly.
+The class extends Effect's `Data.TaggedError`, through the VibeLang prelude's
+`TaggedError`, and every field is readonly. It is a class rather than an
+`error` declaration because a declaration takes no constructor, no `_tag`
+field and no subclass (VibeLang VIP-13).
 
 Constructor parameters:
 
-| Parameter | Type                      | Meaning                                                                                               |
-| --------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed by its type over the five documented codes. |
-| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                  |
-| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.    |
-| `options` | `SmithersErrorOptions`    | The cause and the documentation-URL switch. Optional.                                                 |
+| Parameter | Type                      | Meaning                                                                                              |
+| --------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `code`    | `SmithersErrorCode`       | The machine-readable classification. Required, and closed by its type over the two documented codes. |
+| `summary` | `string`                  | The message a person reads, without the documentation URL. Required.                                 |
+| `details` | `Record<string, unknown>` | Caller-supplied context. Optional. Omitting it leaves the instance with no own `details` property.   |
+| `options` | `SmithersErrorOptions`    | The cause and the documentation-URL switch. Optional.                                                |
 
 Fields:
 
@@ -92,9 +94,27 @@ cause before attaching it.
 
 `SmithersError` is an Effect tagged error: yielding an instance inside
 `Effect.gen` fails the effect with it, and `Effect.catchTag` routes by `_tag`.
-A subclass is an error declaration, `error IntegrationError extends
-SmithersError`, tagged with its own name. Since a `SmithersError` may be any
-subclass, its `_tag` is typed `string`: `catchTag("SmithersError")` handles
+In TypeScript, a subclass must set its own `_tag` after `super(...)` and set
+its prototype's `name`:
+
+```ts
+class AdapterError extends SmithersError {
+  declare readonly _tag: "AdapterError"
+
+  constructor(...args: ConstructorParameters<typeof SmithersError>) {
+    super(...args)
+    this._tag = "AdapterError"
+  }
+}
+AdapterError.prototype.name = "AdapterError"
+```
+
+A plain `class AdapterError extends SmithersError {}` inherits the base tag
+and name. See [Raise a SmithersError from an adapter](./guides/raise-an-error.md#subclass-when-you-have-typed-fields)
+for the `IntegrationError` constructor with typed fields.
+
+Since a `SmithersError` may be any subclass, its `_tag` is typed `string`:
+`catchTag("SmithersError")` handles
 base instances and leaves `SmithersError` in the failure type, and a match by
 class, `when SmithersError:`, handles the whole family.
 
@@ -133,7 +153,7 @@ Whether `value` has the structural fields of a `SmithersError`. Answers `true`
 when all four hold:
 
 1. `value instanceof Error`.
-2. `isSmithersErrorCode(value.code)`, so the code is one of the five documented
+2. `isSmithersErrorCode(value.code)`, so the code is one of the two documented
    codes.
 3. `value.summary` and `value.docsUrl` are both strings.
 4. `value.details` is absent, or is a non-null object that is not an array.
@@ -171,8 +191,7 @@ type SmithersErrorCode = keyof typeof smithersErrorDefinitions
 
 A code carried by a `SmithersError`. Derived from the keys of
 `smithersErrorDefinitions`, so the set is closed:
-`"INVALID_INPUT" | "INTEGRATION_ERROR" | "TELEGRAM_API_ERROR" |
-"TELEGRAM_INIT_DATA_INVALID" | "UNSUPPORTED"`.
+`"INVALID_INPUT" | "INTEGRATION_ERROR"`.
 
 ### SmithersErrorDefinition
 
@@ -194,9 +213,6 @@ nothing validates a constructed error against them.
 const smithersErrorDefinitions: {
   readonly INVALID_INPUT: { readonly when: string; readonly details: string }
   readonly INTEGRATION_ERROR: { readonly when: string; readonly details: string }
-  readonly TELEGRAM_API_ERROR: { readonly when: string; readonly details: string }
-  readonly TELEGRAM_INIT_DATA_INVALID: { readonly when: string; readonly details: string }
-  readonly UNSUPPORTED: { readonly when: string }
 }
 ```
 
@@ -213,8 +229,7 @@ const smithersErrorCodes: ReadonlyArray<SmithersErrorCode>
 ```
 
 Every documented code, in declaration order: `INVALID_INPUT`,
-`INTEGRATION_ERROR`, `TELEGRAM_API_ERROR`, `TELEGRAM_INIT_DATA_INVALID`,
-`UNSUPPORTED`. Frozen at module load.
+`INTEGRATION_ERROR`. Frozen at module load.
 
 ### isSmithersErrorCode
 
@@ -238,7 +253,7 @@ Returns the frozen table entry itself, not a copy.
 
 ## Related
 
-- [Error code reference](./reference/error-codes.md): every code with its raise
+- [Error code reference](./reference/error-codes.md): every code with its current construction
   sites and the caller's move.
 - [The shape of a SmithersError](./concepts/error-shape.md): the guarantee
   behind each field.

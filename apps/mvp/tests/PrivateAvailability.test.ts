@@ -11,6 +11,8 @@ import { FlowsUi } from "../src/features/flows-ui/flowsUi"
 import { FlowsUiStore } from "../src/features/flows-ui/store"
 import { FlowsUiProvider } from "../src/features/flows-ui/components/FlowsUiContext"
 import { FlowCodeCard } from "../src/features/flows-ui/components/FlowCodeCard"
+import { Issues } from "../src/features/issues/issues"
+import { IssuesProvider } from "../src/features/issues/components/IssuesContext"
 import { Todos } from "../src/features/todos/todos"
 import { TodosStore } from "../src/features/todos/store"
 import { TodosProvider } from "../src/features/todos/components/TodosContext"
@@ -30,8 +32,9 @@ test("storage refusal leaves a recoverable draft, disables Commit, and explains 
   document.body.append(container)
   const root = createRoot(container)
   try {
-    const { chat, flows, todos, store } = await app.runPromise(Effect.all({
-      chat: Effect.service(Chat), flows: Effect.service(FlowsUi), todos: Effect.service(Todos), store: Effect.service(TodosStore),
+    const { chat, flows, todos, issues, store } = await app.runPromise(Effect.all({
+      chat: Effect.service(Chat), flows: Effect.service(FlowsUi), todos: Effect.service(Todos), issues: Effect.service(Issues),
+      store: Effect.service(TodosStore),
     }))
     chat.queries.connection.startSyncImmediate()
     await vi.waitFor(() => expect(chat.queries.connection.toArray[0]?.status).toBe("stopped"))
@@ -47,7 +50,8 @@ test("storage refusal leaves a recoverable draft, disables Commit, and explains 
     await act(async () => {
       await router.load()
       root.render(createElement(ChatProvider, { value: chat }, createElement(FlowsUiProvider, { value: flows },
-        createElement(TodosProvider, { value: todos }, createElement(RouterProvider, { router })))))
+        // A draft chooses the issue it hangs under from its repository's issues (DraftCard, decision 0153).
+        createElement(IssuesProvider, { value: issues }, createElement(TodosProvider, { value: todos }, createElement(RouterProvider, { router }))))))
     })
     await vi.waitFor(async () => {
       await act(async () => {})

@@ -32,12 +32,15 @@
  * @since 0.2.0
  */
 
+import * as Channel from "effect/Channel"
 import * as Effect from "effect/Effect"
 import * as HttpClient from "effect/http/HttpClient"
 import type * as HttpServerRequest from "effect/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Metric from "effect/Metric"
+import * as Stream from "effect/Stream"
 import * as GitRemote from "./GitRemote.vibe"
+import * as $platform from "./GitProxy.platform.ts"
 import { readAtMost } from "./internal/bounded.vibe"
 import { negotiation, packet, validBranch } from "./internal/scopedGit.ts"
 
@@ -97,7 +100,7 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
  * credential, or refuses it with 403. An optional `branch` confines the guest
  * to that branch: discovery negotiates protocol v0 and synthesizes HEAD and
  * that ref only; fetch permits only its current tip. Scoped requests are
- * bounded to 1 MiB, accept uncompressed protocol v0 only, and strip haves to
+ * bounded to 1 MiB after gzip decoding, accept protocol v0 only, and strip haves to
  * avoid exposing other objects through ACKs. Shallow, partial, and thin packs
  * and arbitrary capabilities are refused. A failed scoped ref read is 502.
  * Unscoped upstream failures come back as their
@@ -133,7 +136,8 @@ export const uploadPack = (
       const encoding = request.headers["content-encoding"]
       const protocol = request.headers["git-protocol"]
       if (
-        !validBranch(branch) || (encoding !== undefined && encoding !== "identity") ||
+        !validBranch(branch) ||
+        (encoding !== undefined && encoding !== "identity" && encoding !== "gzip" && encoding !== "x-gzip") ||
         (protocol !== undefined && !/^version=[012]$/.test(protocol))
       ) {
         try done("refused", 403)
@@ -153,7 +157,16 @@ export const uploadPack = (
           { headers: { "content-type": "application/x-git-upload-pack-advertisement", "cache-control": "no-store" } }
         )
       }
-      const body = try (readAtMost(request.stream, 1024 * 1024) |> Effect.option(%))
+      const decoded = encoding === "gzip" || encoding === "x-gzip"
+        ? request.stream.pipe(
+          Stream.map((chunk) => new Uint8Array(chunk)),
+          Stream.pipeThroughChannel(Channel.fromTransformStream({
+            evaluate: () => $platform.gunzip(),
+            onError: () => undefined
+          }))
+        )
+        : request.stream
+      const body = try (readAtMost(decoded, 1024 * 1024) |> Effect.option(%))
       scopedBody = body._tag === "Some" && !body.value.truncated
         ? negotiation(body.value.bytes, tip.value)
         : undefined

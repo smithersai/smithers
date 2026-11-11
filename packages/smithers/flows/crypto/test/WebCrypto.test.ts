@@ -1,7 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Effect, Exit, type Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as EffectWebCrypto from "effect/crypto/WebCrypto"
 import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { digest as sha256, digestSync, WebCrypto } from "../src/index.ts"
@@ -16,13 +17,6 @@ const digest = (algorithm: EffectDigest.Algorithm, data: Uint8Array) =>
   Effect.runPromise(
     EffectDigest.Digest.use((service) => service.digest(algorithm, data)).pipe(Effect.provide(WebCrypto.make()))
   )
-const refusal = async (algorithm: EffectDigest.Algorithm, data: Uint8Array) => {
-  const result = await Effect.runPromiseExit(
-    EffectDigest.Digest.use((service) => service.digest(algorithm, data)).pipe(Effect.provide(WebCrypto.make()))
-  )
-  if (Exit.isFailure(result)) return Cause.squash(result.cause)
-  throw new Error("Expected the digest to fail")
-}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -104,8 +98,15 @@ describe("WebCrypto.make digest", () => {
 
   it("preserves a WebCrypto rejection as a defect", async () => {
     const cause = new DOMException("the operation failed", "OperationError")
-    vi.spyOn(globalThis.crypto.subtle, "digest").mockRejectedValueOnce(cause)
-    expect(await refusal(EffectDigest.sha256, new Uint8Array(1))).toBe(cause)
+    // A host whose SubtleCrypto rejects, injected through Effect's WebCrypto reference.
+    const rejecting = { subtle: { digest: () => Promise.reject(cause) } } as unknown as Crypto
+    const result = await Effect.runPromiseExit(
+      EffectDigest.Digest.use((service) => service.digest(EffectDigest.sha256, new Uint8Array(1))).pipe(
+        Effect.provide(Layer.provide(WebCrypto.make(), EffectWebCrypto.layer(rejecting)))
+      )
+    )
+    expect(Exit.isFailure(result) && Cause.hasDies(result.cause)).toBe(true)
+    expect(Exit.isFailure(result) ? Cause.squash(result.cause) : undefined).toBe(cause)
   })
 
   it("supports MD5 through Effect's pure implementation", async () => {

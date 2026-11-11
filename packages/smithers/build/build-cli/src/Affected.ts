@@ -136,6 +136,13 @@ const compileInput = (
       const excludes = input.exclude.map((exclude) => glob(Input.resolvePath(packagePath, exclude)))
       return (path) => pattern.match(path) && !excludes.some((exclude) => exclude.match(path))
     }
+    // An install's identity is its manifest and lockfiles; the installed tree
+    // is ignored state and never a changed path.
+    case "NodeModules": {
+      const paths = Input.nodeModulesPaths(packagePath, input)
+      const identity = new Set([paths.manifest, ...paths.lockfiles])
+      return (path) => identity.has(path)
+    }
     // Ambient inputs affect their target but do not own changed paths.
     case "GitDiff":
     case "PnpmWorkspace":

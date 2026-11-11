@@ -74,6 +74,13 @@ export const ReleaseInput = Schema.Struct({
 })
 export type ReleaseInput = typeof ReleaseInput.Type
 
+/**
+ * What makes a run a retry: the settled run `of` it retries, the node `step` it
+ * runs again from, and the run `store` whose directory holds the database both
+ * runs live in. A retry of a retry keeps the first run's store.
+ */
+export const RunRetry = Schema.Struct({ of: Schema.String, step: Schema.String, store: Schema.String })
+
 const storedRun = <const Kind extends string, Input extends Schema.Top>(kind: Kind, input: Input) =>
   Schema.Struct({
     schemaVersion: Schema.optionalKey(Schema.Literal(1)).pipe(
@@ -83,7 +90,8 @@ const storedRun = <const Kind extends string, Input extends Schema.Top>(kind: Ki
     id: Schema.String,
     input,
     model: Schema.String,
-    maxTokens: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+    maxTokens: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+    retry: Schema.optionalKey(RunRetry)
   })
 /**
  * The run record persisted at .flows/releases/runs/<id>/run.json. Records written

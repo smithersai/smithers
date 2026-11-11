@@ -4,6 +4,10 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { act, createElement, Fragment } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
+import { Auth } from "../src/features/auth/auth"
+import { AuthProvider } from "../src/features/auth/components/AuthContext"
+import { Repo } from "../src/features/repo/repo"
+import { RepoProvider } from "../src/features/repo/components/RepoContext"
 import { RunsProvider } from "../src/features/runs/components/RunsContext"
 import { FlowSummaryView } from "../src/features/runs/components/FlowSummaryView"
 import { RunListView } from "../src/features/runs/components/RunListView"
@@ -44,7 +48,10 @@ test("run tables render product words, precise durations, filtering and expansio
     })
     const router = createRouter({ isServer: false, routeTree: routeRoot.addChildren([route]), history: createMemoryHistory({ initialEntries: ["/app/runs"] }) })
     await router.load()
-    await act(async () => root.render(createElement(RunsProvider, { value: runs }, createElement(RouterProvider, { router }))))
+    // Run rows show through the repository gate (`useRepoVisible`), which reads this device's session and roles.
+    const { auth, repo } = await device.runPromise(Effect.all({ auth: Effect.service(Auth), repo: Effect.service(Repo) }))
+    await act(async () => root.render(createElement(AuthProvider, { value: auth }, createElement(RepoProvider, { value: repo },
+      createElement(RunsProvider, { value: runs }, createElement(RouterProvider, { router }))))))
     expect(container.querySelector("table")).toBeNull()
     await device.runPromise(store.view.update(VIEW, (row) => { row.listLoaded = true; row.cloudLoaded = true }))
     await vi.waitFor(async () => { await act(async () => {}); expect(container.textContent).toContain("No runs yet") })

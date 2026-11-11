@@ -1,0 +1,24 @@
+config required=1,2 maxAttempts=1 maxBatch=2 maxRuns=2 window=3 defaultDuration=60
+enqueue 10 5
+enqueue 11 5
+enqueue 12 9
+plan
+plan
+plan
+result 0 1 pass 30
+result 0 2 pass 50
+plan
+plan
+result 1 1 fail 10
+plan
+plan
+plan
+plan
+result 2 2 fail 9
+plan
+plan
+fixed 10 1
+gaveup 11 1 needs a rewrite
+plan
+plan
+bogus

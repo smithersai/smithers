@@ -5,6 +5,7 @@ import * as Hex from "effect/encoding/Hex"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import { Digest, digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
+import { makeSnapshotSync } from "../src/internal/snapshot.ts"
 import { millionA, vectors } from "./fixtures.ts"
 
 const runDigest = (input: string | Uint8Array): Digest =>
@@ -148,22 +149,30 @@ describe("Digest validation and one-way schema behavior", () => {
 
   it("preserves text-encoding failures without retaining the input", () => {
     const cause = new Error("encoder unavailable")
-    const original = TextEncoder.prototype.encode
-    TextEncoder.prototype.encode = () => {
-      throw cause
+    class FailingEncoder extends TextEncoder {
+      override encode(): Uint8Array<ArrayBuffer> {
+        throw cause
+      }
     }
+    const snapshot = makeSnapshotSync(
+      new FailingEncoder(),
+      (code, message, cause) => new Sha256Error({ code, message, cause })
+    )
+    let error: unknown
     try {
-      expect(() => digestSync("secret-text")).toThrow(expect.objectContaining({
-        code: "text_encoding_failed",
-        cause
-      }))
-      const error = digestFailure("secret-text")
-      expect(error).toBeInstanceOf(Sha256Error)
-      expect(error).toMatchObject({ code: "text_encoding_failed", cause })
-      expect(error.message).not.toContain("secret-text")
-    } finally {
-      TextEncoder.prototype.encode = original
+      snapshot("secret-text")
+    } catch (thrown) {
+      error = thrown
     }
+    expect(error).toBeInstanceOf(Sha256Error)
+    expect(error).toMatchObject({
+      code: "text_encoding_failed",
+      message: "SHA-256 text input could not be encoded as UTF-8",
+      cause
+    })
+    expect(inspect(error, { depth: null, customInspect: false })).not.toContain("secret-text")
+    // Invalid text is refused before the encoder is ever asked.
+    expect(() => snapshot("\ud800")).toThrow(expect.objectContaining({ code: "invalid_text" }))
   })
 
   it("turns a detached byte view into a cause-preserving invalid-input error", () => {

@@ -1,11 +1,11 @@
 ---
 title: "The closed code vocabulary"
-description: "Why SmithersErrorCode holds five codes instead of a registry: the definitions table is the runtime source of truth, the union is derived from its keys, and every other package states its failures as tagged errors."
+description: "Why SmithersErrorCode holds two codes instead of a registry: the definitions table is the runtime source of truth, the union is derived from its keys, and every other package states its failures as tagged errors."
 sidebar:
   order: 1
 ---
 
-`SmithersErrorCode` is a union of five string literals, and nothing widens it
+`SmithersErrorCode` is a union of two string literals, and nothing widens it
 at runtime. That closure is the design, not an accident of the current code
 count.
 
@@ -28,7 +28,7 @@ keys, so the two cannot drift. `isSmithersErrorCode` answers from
 names such as `toString`, `hasOwnProperty`, and `__proto__`.
 
 The table, each definition inside it, and the code list are all frozen at
-module load. A consumer cannot add a sixth code by assigning to the table.
+module load. A consumer cannot add a new code by assigning to the table.
 
 ## What closure buys the caller
 
@@ -48,12 +48,11 @@ The cost is that adding a code is a deliberate edit in two files, not a string
 literal typed at a throw site. That is the intended friction:
 [Add an error code](../guides/add-an-error-code.md) is the procedure.
 
-## Why five and not one hundred and eighty
+## Why two and not one hundred and eighty
 
 Smithers 0.x carried a registry of 180 codes for an orchestrator engine that no
-longer exists. Under the 1.0 release policy the registry was trimmed to the
-five integration codes. Two Telegram codes remain for historical decoding
-after that adapter's MVP retirement.
+longer exists. The current catalog keeps only the two codes the integration
+helpers and adapters raise.
 
 The rest of Smithers does not use codes at all. A Smithers package states
 each failure it can produce as a `Schema.TaggedError` class on the effect that

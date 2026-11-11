@@ -200,32 +200,37 @@ const readWrite = (stored) => {
  * Upgrades every stored write an older build made, before the library loads
  * them: rewrites one it can bring forward, and moves one it can't to
  * `parked:<id>`. Each is logged and counted in `carried`; a storage that fails
- * leaves the write as it was.
+ * leaves the write as it was, and the pass goes on to the next one.
  */
-const carry = (storage, upgrade) => withSpan(Effect.catch(Effect_1.gen(function* () {
-    var topic_1, topic_2;
-    const keys = yield* Effect.tryPromise(() => storage.keys());
-    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) {
+const carry = (storage, upgrade) => {
+    const logged = (program) => Effect.catch(program, (error) => { var topic_1; return (topic_1 = Effect.logWarning("outbox couldn't upgrade its writes"), Effect.annotateLogs({ error: errorName(error) })(topic_1)); });
+    const one = (key) => Effect_1.gen(function* () {
+        var topic_2, topic_3;
         const stored = yield* Effect.tryPromise(() => storage.get(key));
         if (stored === null)
-            continue;
+            return;
         const upgraded = upgrade.write(stored);
         if (upgraded._tag === "Current")
-            continue;
+            return;
         const { name } = readWrite(stored);
         if (upgraded._tag === "Upgraded") {
             yield* Effect.tryPromise(() => storage.set(key, upgraded.value));
             yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "upgraded", reason: "none" }), 1);
-            yield* ((topic_1 = Effect.logInfo("outbox write upgraded"), Effect.annotateLogs({ name })(topic_1)));
-            continue;
+            yield* ((topic_2 = Effect.logInfo("outbox write upgraded"), Effect.annotateLogs({ name })(topic_2)));
+            return;
         }
         const parked = { reason: upgraded.reason, name, write: stored };
         yield* Effect.tryPromise(() => storage.set(`${PARKED_PREFIX}${key.slice(KEY_PREFIX.length)}`, JSON.stringify(parked)));
         yield* Effect.tryPromise(() => storage.delete(key));
         yield* Metric.update(Metric.withAttributes(carried, { name, outcome: "parked", reason: upgraded.reason }), 1);
-        yield* ((topic_2 = Effect.logWarning("outbox write parked"), Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })(topic_2)));
-    }
-}), (error) => { var topic_3; return (topic_3 = Effect.logWarning("outbox couldn't upgrade its writes"), Effect.annotateLogs({ error: errorName(error) })(topic_3)); }), "outbox.carry");
+        yield* ((topic_3 = Effect.logWarning("outbox write parked"), Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })(topic_3)));
+    });
+    return withSpan(logged(Effect_1.gen(function* () {
+        const keys = yield* Effect.tryPromise(() => storage.keys());
+        for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX)))
+            yield* logged(one(key));
+    })), "outbox.carry");
+};
 /** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
 const parkedIn = (storage, principal) => Effect.catch(Effect_1.gen(function* () {
     const keys = yield* Effect.tryPromise(() => storage.keys());
@@ -323,15 +328,18 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         // Replay must wait for the same recovery barrier as admission after a leadership transfer.
         await sequenceReady;
         const keys = (await options.storage.keys()).filter((key) => !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX)));
-        if (options.principal === undefined)
+        // The library loads only writes at this build's versions: one the upgrade pass didn't reach stays stored
+        // for a later start to carry.
+        const upgrade = migrated ? options.upgrade : undefined;
+        if (options.principal === undefined && upgrade === undefined)
             return keys;
         const own = [];
         for (const key of keys) {
             const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null;
-            if (!sealed(key, stored))
-                own.push(key);
-            else
+            if (sealed(key, stored))
                 seal(stored, "load");
+            else if (stored === null || upgrade === undefined || upgrade.write(stored)._tag === "Current")
+                own.push(key);
         }
         return own;
     };
@@ -379,6 +387,10 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         var topic_7;
         run((topic_7 = Effect.logWarning(stage === "write" ? "outbox couldn't write held index" : "outbox couldn't read held status"), Effect.annotateLogs({ stage, error: errorName(error) })(topic_7)));
     };
+    const orderError = (error) => {
+        var topic_8;
+        run((topic_8 = Effect.logWarning("outbox couldn't recover admission order"), Effect.annotateLogs({ error: errorName(error) })(topic_8)));
+    };
     const persistIndex = async () => {
         // A failed publication stays dirty until an existing storage or retry step can repair it.
         indexDirty = true;
@@ -404,7 +416,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         });
     };
     const reconcile = async (readOnly = false) => {
-        var topic_8;
+        var topic_9;
         const apply = async (plan) => {
             const pending = [];
             for (const item of plan) {
@@ -456,7 +468,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
                 if (row !== null && !sealed(key, row))
                     rows[index] = [key, await options.storage.get(key)];
             }
-            run((topic_8 = Effect.logInfo("outbox admission order migrated"), Effect.annotateLogs({ writes: assignments.length })(topic_8)));
+            run((topic_9 = Effect.logInfo("outbox admission order migrated"), Effect.annotateLogs({ writes: assignments.length })(topic_9)));
         }
         // Do not discard the last known status if storage cannot complete its snapshot.
         const writes = new Map();
@@ -519,7 +531,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         });
     };
     const changed = () => {
-        var topic_9;
+        var topic_10;
         publishing = true;
         try {
             options.changes?.publish();
@@ -527,7 +539,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         catch (error) {
             indexDirty = true;
             // Notifications are hints and cannot revoke a successful durable admission.
-            run((topic_9 = Effect.logWarning("outbox couldn't publish its change"), Effect.annotateLogs({ error: errorName(error) })(topic_9)));
+            run((topic_10 = Effect.logWarning("outbox couldn't publish its change"), Effect.annotateLogs({ error: errorName(error) })(topic_10)));
         }
         finally {
             publishing = false;
@@ -656,6 +668,17 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
             void refreshHeld();
     })), (unsubscribe) => Effect.sync(() => unsubscribe?.()));
     let sequenceReady = yield* Effect.sync(() => Promise.resolve());
+    // The leader's recovery. Until it succeeds, admission refuses and replay sees none of the stored writes.
+    const lead = () => serialize(() => withAdmission(async () => {
+        await reconcile();
+        try {
+            await persistIndex();
+            changed();
+        }
+        catch (error) {
+            statusError(error, "write");
+        }
+    })).catch(orderError);
     // Which send of each write this is, for its span; forgotten once the write settles.
     const sends = new Map();
     const send = (name, mutation) => (params) => {
@@ -684,22 +707,22 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         // A refusal is final and logged; a write that will be sent again is logged on its first retry only, so a long
         // outage writes one line per write, while `attempts` counts every send.
         , (error) => {
-            var topic_10, topic_11;
+            var topic_11, topic_12;
             const status = String(error.status ?? "none");
             return error._tag === "Refused"
                 ? Effect.all([
                     outcome("refused"),
                     Metric.update(Metric.withAttributes(refused, { name, status }), 1),
-                    (topic_10 = Effect.logWarning("outbox write refused"), Effect.annotateLogs({ name, status, outcome: "refused" })(topic_10))
+                    (topic_11 = Effect.logWarning("outbox write refused"), Effect.annotateLogs({ name, status, outcome: "refused" })(topic_11))
                 ], { discard: true })
                 : Effect.andThen(outcome(error.held ? "held" : "retry"), attempt === 1
-                    ? ((topic_11 = Effect.logWarning("outbox write retrying"), Effect.annotateLogs({ name, status, outcome: error.held ? "held" : "retry" })(topic_11)))
+                    ? ((topic_12 = Effect.logWarning("outbox write retrying"), Effect.annotateLogs({ name, status, outcome: error.held ? "held" : "retry" })(topic_12)))
                     : Effect.void);
         }), (defect) => {
-            var topic_12;
+            var topic_13;
             return Effect.all([
                 outcome("defect"),
-                (topic_12 = Effect.logError("outbox write failed"), Effect.annotateLogs({ name, outcome: "defect", "error.type": errorName(defect) })(topic_12))
+                (topic_13 = Effect.logError("outbox write failed"), Effect.annotateLogs({ name, outcome: "defect", "error.type": errorName(defect) })(topic_13))
             ]);
         });
         // Under the permit, so `withdraw` sees this write either taken back, and it settles here unsent, or in flight.
@@ -717,11 +740,11 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         // Succeeds with whether the write reached a server, which clears `failing`: a withdrawn one never did. A sealed
         // one fails, so its rows roll back; the library's delete leaves it in the storage, which is another's.
         const program = withSpan(Effect.flatMap(claim, (claimed) => {
-            var topic_13;
+            var topic_14;
             return claimed === "sent"
                 ? Effect.as(sending, true)
                 : claimed === "sealed"
-                    ? Effect.andThen(outcome("sealed"), Effect.andThen((topic_13 = Effect.logWarning("outbox write sealed"), Effect.annotateLogs({ name, stage: "send" })(topic_13)), Effect.fail(new Sealed({ name }))))
+                    ? Effect.andThen(outcome("sealed"), Effect.andThen((topic_14 = Effect.logWarning("outbox write sealed"), Effect.annotateLogs({ name, stage: "send" })(topic_14)), Effect.fail(new Sealed({ name }))))
                     : Effect.as(outcome(claimed), claimed === "sent_elsewhere");
         }), "outbox.send", {
             attributes: { name, attempt },
@@ -764,7 +787,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
     }
     // A follower can open while another context's admission is paused. Only the leader mutates ordering.
     sequenceReady = yield* Effect.sync(() => serialize(() => options.leader?.isLeader()
-        ? withAdmission(() => reconcile())
+        ? withAdmission(() => reconcile()).catch(orderError)
         : reconcile(true)).catch(statusError));
     yield* Effect.promise(() => sequenceReady);
     const executor = yield* runtime.acquireRelease(Effect.sync(() => options.start({
@@ -788,16 +811,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
             if (leader && !closing) {
                 sequenceKnown = false;
                 // A follower may have waited while newer writes were admitted. Reconcile before its first admission.
-                sequenceReady = serialize(() => withAdmission(async () => {
-                    await reconcile();
-                    try {
-                        await persistIndex();
-                        changed();
-                    }
-                    catch (error) {
-                        statusError(error, "write");
-                    }
-                })).catch(statusError);
+                sequenceReady = lead();
             }
             // Subscribers can admit immediately. Publish only after their recovery barrier names this leadership.
             setStatus({ leader });
@@ -816,13 +830,34 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
             yield* Effect.sync(() => executor.dispose());
         });
     });
-    yield* (Effect.catch(Effect.tryPromise(() => executor.waitForInit()), (error) => { var topic_14; return (topic_14 = Effect.logWarning("outbox couldn't load its writes"), Effect.annotateLogs({ error: errorName(error) })(topic_14)); }));
+    yield* (Effect.catch(Effect.tryPromise(() => executor.waitForInit()), (error) => { var topic_15; return (topic_15 = Effect.logWarning("outbox couldn't load its writes"), Effect.annotateLogs({ error: errorName(error) })(topic_15)); }));
+    // A failed recovery is repeated by the next write or `retryNow` while this program leads. Its stored writes then
+    // load before any later admission, which takes a later sequence.
+    let recovering;
+    const recover = () => {
+        if (recovering === undefined && !sequenceKnown && !closing && executor.isOfflineEnabled) {
+            recovering = (sequenceReady = lead()).then(async () => {
+                if (!sequenceKnown)
+                    return;
+                try {
+                    await executor.reloadPendingTransactions();
+                }
+                catch (error) {
+                    sequenceKnown = false;
+                    orderError(error);
+                }
+            }).finally(() => {
+                recovering = undefined;
+            });
+        }
+        return recovering ?? Promise.resolve();
+    };
     // Who a write is queued by, stamped into its metadata when the outbox has a principal.
     const principalStamp = () => {
         const now = options.principal?.now();
         return now === undefined ? {} : { principal: now };
     };
-    const transact = (name, { idempotencyKey, joinExisting }, mutate) => { var topic_15; return (topic_15 = Effect_1.gen(function* () {
+    const transact = (name, { idempotencyKey, joinExisting }, mutate) => { var topic_16; return (topic_16 = Effect_1.gen(function* () {
         const key = JSON.stringify([name, idempotencyKey]);
         const existing = liveAdmissions.get(key);
         if (joinExisting && existing !== undefined)
@@ -833,6 +868,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         const services = yield* Effect.context();
         const span = yield* Effect.option(Effect.currentSpan);
         yield* Effect.promise(() => sequenceReady);
+        yield* Effect.promise(recover);
         if (!sequenceKnown)
             return yield* Effect_1.fail(new NotAdmitted({ reason: "storage" }));
         if (closing || !executor.isOfflineEnabled)
@@ -898,7 +934,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
             });
         });
         return write;
-    }), Semaphore.withPermits(creating, 1)(topic_15)); };
+    }), Semaphore.withPermits(creating, 1)(topic_16)); };
     const notWithdrawn = (reason) => new NotWithdrawn({ reason });
     const withdraw = (idempotencyKey) => withSpan(Effect.asVoid(Effect.tapError(Effect.tap(Effect.tap(permit.withPermit(Effect.uninterruptible(Effect_1.gen(function* () {
         // A follower's view of the storage is no lock: the leader may be sending the write.
@@ -926,20 +962,20 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         yield* Effect.sync(() => executor.rejectTransaction(write.id, thrown(WITHDRAWN, "The write was withdrawn before it was sent.")));
         return write;
     }))), (write) => Effect.promise(() => live.get(write.id) ?? Promise.resolve())), (write) => {
-        var topic_16;
-        return Effect.all([
-            Effect.annotateCurrentSpan({ outcome: "withdrawn" }),
-            (topic_16 = Effect.logInfo("outbox write withdrawn"), Effect.annotateLogs({ name: write.mutationFnName })(topic_16))
-        ], { discard: true });
-    }), ({ reason }) => {
         var topic_17;
         return Effect.all([
+            Effect.annotateCurrentSpan({ outcome: "withdrawn" }),
+            (topic_17 = Effect.logInfo("outbox write withdrawn"), Effect.annotateLogs({ name: write.mutationFnName })(topic_17))
+        ], { discard: true });
+    }), ({ reason }) => {
+        var topic_18;
+        return Effect.all([
             Effect.annotateCurrentSpan({ outcome: reason }),
-            (topic_17 = (reason === "storage" ? Effect.logWarning : Effect.logDebug)("outbox write not withdrawn"), Effect.annotateLogs({ reason })(topic_17))
+            (topic_18 = (reason === "storage" ? Effect.logWarning : Effect.logDebug)("outbox write not withdrawn"), Effect.annotateLogs({ reason })(topic_18))
         ], { discard: true });
     })), "outbox.withdraw");
     const discard = (id) => Effect.catch(Effect_1.gen(function* () {
-        var topic_18;
+        var topic_19;
         const key = `${PARKED_PREFIX}${id}`;
         const stored = yield* Effect.tryPromise(() => options.storage.get(key));
         if (stored === null)
@@ -948,8 +984,8 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
         if (!owns(options.principal, stampOf(parked.write)))
             return;
         yield* Effect.tryPromise(() => options.storage.delete(key));
-        yield* ((topic_18 = Effect.logInfo("outbox write discarded"), Effect.annotateLogs({ name: parked.name })(topic_18)));
-    }), (error) => { var topic_19; return (topic_19 = Effect.logWarning("outbox couldn't discard a parked write"), Effect.annotateLogs({ error: errorName(error) })(topic_19)); });
+        yield* ((topic_19 = Effect.logInfo("outbox write discarded"), Effect.annotateLogs({ name: parked.name })(topic_19)));
+    }), (error) => { var topic_20; return (topic_20 = Effect.logWarning("outbox couldn't discard a parked write"), Effect.annotateLogs({ error: errorName(error) })(topic_20)); });
     // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
     // One no feature takes stays parked, never sent: it is logged again on each load, so it is never forgotten silently.
     for (const write of yield* parkedIn(options.storage, options.principal)) {
@@ -978,6 +1014,7 @@ export const layer = (options) => Layer.effect(Outbox, Effect_1.gen(function* ()
                     statusError(error, "write");
                 }
             }).then(refreshHeld).catch(statusError);
+            void recover();
             executor.getOnlineDetector().notifyOnline();
         }),
         withdraw,
@@ -1073,8 +1110,8 @@ export const lockLeader = (options) => {
                 set(false);
                 hold("wait");
             })), (defect) => {
-                var topic_20;
-                return Effect.andThen((topic_20 = Effect.logWarning("outbox lock refused"), Effect.annotateLogs({ error: defect instanceof Error ? defect.name : typeof defect })(topic_20)), Effect.sync(() => {
+                var topic_21;
+                return Effect.andThen((topic_21 = Effect.logWarning("outbox lock refused"), Effect.annotateLogs({ error: defect instanceof Error ? defect.name : typeof defect })(topic_21)), Effect.sync(() => {
                     holding = undefined;
                     set(false);
                     tell(false);

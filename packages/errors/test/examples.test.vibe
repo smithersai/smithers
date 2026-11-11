@@ -10,13 +10,13 @@ it("constructs a tagged failure with safe context and a separately retained caus
   expect(failure.details).toEqual({ reason: "transport", retryable: true })
   expect(Object.isFrozen(failure.details)).toBe(true)
   expect(failure.cause).toEqual(new Error("Connection closed"))
-  expect($invoke(JSON,() => (JSON.stringify(failure)))).toEqual({
+  expect(JSON.stringify(failure)).toBe(JSON.stringify({
     code: "INTEGRATION_ERROR",
     summary: "Provider unavailable",
     docsUrl: failure.docsUrl,
     details: { reason: "transport", retryable: true },
     _tag: "SmithersError"
-  })
+  }))
 })
 
 it("looks up a recognized failure and leaves unrelated values unclassified", () => {
@@ -32,8 +32,3 @@ it.effect("fails with the constructed failure", effect () => {
 it.effect("recovers the tagged failure through the public error code", effect () => {
   expect(try recoverFailure()).toBe("Recovered INTEGRATION_ERROR")
 })
-
-module $call$ts {
-export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
-}
-import { invoke as $invoke } from $call$ts

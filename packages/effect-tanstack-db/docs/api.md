@@ -464,6 +464,12 @@ Settlement remains available after disposal so a completed send can persist its
 terminal receipt and leave storage without being replayed on reopening.
 The recovery barrier is installed before leadership status is published, so
 subscribers admitting a retained write wait for the correct sequence snapshot.
+A leader whose recovery can't read the storage refuses every write with
+`NotAdmitted` (`reason: "storage"`) and sends none of its stored writes. The
+next `transact` or `retryNow` repeats the recovery, then loads the stored
+writes, so they are sent before any write admitted after. Each failure is logged
+as `outbox couldn't recover admission order` at Warn level with `error`, the
+storage error's name.
 
 Held status treats persisted transaction rows as authoritative on every
 invalidation, including previously cached keys. `retryNow` remains a synchronous
@@ -743,7 +749,7 @@ changes without a new version fails a test. The guide is
 | `retired({ id, kind, version, family? })`                                  | A store this build no longer keeps; a local one's rows are set aside.                                                                                                                                                                                |
 | `step(from, to, migrate)`                                                  | A pure migration; it returns the next row or `Unmigratable`, and never changes the key.                                                                                                                                                              |
 | `member(store, name)`                                                      | `<id>:<name>`, a family's collection.                                                                                                                                                                                                                |
-| `registry({ stores, retired?, outbox? })`                                  | Every declaration, checked: two with one id, or an unstamped version no payload has, is an `InvalidDeclaration`. Its `epoch` grows with every change.                                                                                                |
+| `registry({ stores, retired?, outbox? })`                                  | Every declaration, checked: two with one id, or an unstamped version no payload has, is an `InvalidDeclaration`. Its `epoch` is a hash of the declarations, so it changes with each one.                                                             |
 | `apply(registry, sql)`                                                     | Brings the device store on `sql` to the registry's versions, one transaction per local collection; synced ones are left to the persistence, which drops their rows. Answers a `Report`; fails with `MigrationFailed`.                                |
 | `prepare(registry)`                                                        | `{ epoch, success: Report, run }`, which `@smthrs/platform-browser`'s leader runs as `device/prepare` before it serves the database.                                                                                                                 |
 | `outbox(registry)`                                                         | The `OutboxUpgrade` `Outbox.layer` takes: `stamp`, and `write(stored)`, which answers `Current`, `Upgraded` or `Parked` with a reason.                                                                                                               |

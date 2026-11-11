@@ -132,18 +132,24 @@ it.live("web/cancel-run", () => effect {
   if (cancels.count === before) throw new Finding({ report: "web/cancel-run: the witness started no run" })
 })
 
-const Terminal = Schema.Struct({ session: Int, role: Role, commands: Schema.Array(TextOrBoundary).check(Schema.isMinLength(1), Schema.isMaxLength(6)), stop: Schema.Boolean })
+// `slash` starts the sandbox by submitting `/sandbox` in the composer instead of the button.
+const Terminal = Schema.Struct({ session: Int, role: Role, commands: Schema.Array(TextOrBoundary).check(Schema.isMinLength(1), Schema.isMaxLength(6)), stop: Schema.Boolean, slash: Schema.optionalKey(Schema.Boolean) })
 
 /** Every command typed into a started sandbox answers: the terminal is never left busy. */
-function terminal({ session: id, role, commands, stop }: typeof Terminal.Type) {
+function terminal({ session: id, role, commands, stop, slash }: typeof Terminal.Type) {
   return Effect.provide(effect {
     const session = tab({ session: `t${id}`, mode: "mock", name: "Guest" })
     const send = effect (message: () => Message) => { try session.send(try Effect.try(message)) }
     try session.settle
     try send(() => Message.ResolvedMode({ mode: "mock" }))
     try send(() => Message.ChoseIdentity({ role }))
-    try send(() => Message.ClickedSandboxes())
-    try send(() => Message.StartedSandbox())
+    if (slash === true) {
+      try send(() => Message.UpdatedDraft({ value: "/sandbox" }))
+      try send(() => Message.SubmittedDraft())
+    } else {
+      try send(() => Message.ClickedSandboxes())
+      try send(() => Message.StartedSandbox())
+    }
     for (const command of commands) {
       try send(() => Message.UpdatedTerminal({ value: command }))
       try send(() => Message.SubmittedTerminal())

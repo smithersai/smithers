@@ -19,6 +19,8 @@ import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import * as Formatter from "effect/Formatter"
 import * as Internal from "./internal/fuzz/engine.ts"
+import * as Format from "./internal/fuzz/format.ts"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import type * as Types from "effect/Types"
 
@@ -378,7 +380,7 @@ export type Report<A, E> = Passed | Falsified<A, E> | Flaky<A, E> | Exhausted | 
  * - `Corpus`: the store failed or holds an unreadable entry.
  * - `Generation`: the Arbitrary died or is not deterministic.
  * - `Feedback`: a feedback source died.
- * - `Execution`: the execution driver died.
+ * - `Execution`: the execution driver died, or a replay token or saved failure reached its step limit.
  * - `Codec`: a saved value could not be decoded or uses another codec. Encoding errors fall back to tapes.
  *
  * @stability unstable
@@ -566,8 +568,9 @@ export interface ScheduleTape {
  *
  * **Details**
  *
- * `Deadlock` becomes a finding. `Limited` means the driver hit its own resource cap; the execution counts as a
- * discard.
+ * `Deadlock` becomes a finding. `Limited` means the driver hit its own resource cap. During search the execution
+ * counts as a discard; replaying a token or saved failure raises an `Execution` error. A limited confirmation
+ * recheck makes the finding flaky.
  *
  * @stability unstable
  * @category execution
@@ -719,7 +722,16 @@ export const formatReport = <A, E>(report: Report<A, E>): string | undefined => 
       `  Input: ${Formatter.format(finding.input, { space: 2 })}`,
       failure
     )
-    if (finding.replay !== undefined) lines.push(`  Replay: ${finding.replay}`)
+    if (finding.replay !== undefined) {
+      if (stats.stoppedBy === "Replay") {
+        const token = finding.replay
+        const decoded = Result.try(() => Format.decodeReplay(token))
+        if (Result.isSuccess(decoded) && decoded.success.signature !== finding.signature) {
+          lines.push(`  Replay expected ${decoded.success.signature}, got ${finding.signature}`)
+        }
+      }
+      lines.push(`  Replay: ${finding.replay}`)
+    }
     if (finding.codecError !== undefined) lines.push(`  Codec: ${finding.codecError}; saved the generator tape instead`)
     if (finding.saved === "Tape") {
       lines.push(

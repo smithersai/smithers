@@ -15,6 +15,7 @@
 import * as Effect_1 from "effect/Effect";
 import * as EffectDigest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
+import { isWellFormed } from "./internal/snapshot.js";
 const pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const encoder = new TextEncoder();
 /**
@@ -39,7 +40,9 @@ const format = (bytes) => {
  * The version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of the
  * namespace's 16 bytes followed by the name's UTF-8 bytes, cut to 16 bytes,
  * with the version and variant bits set. A `namespace` that isn't a UUID is a
- * defect: it is a constant the caller wrote.
+ * defect, as is a name containing an unpaired UTF-16 surrogate or a host digest
+ * that is not a 20-byte Uint8Array. Well-formed names are encoded without
+ * Unicode normalization.
  *
  * @category constructors
  * @since 1.0.0-rc.17
@@ -48,11 +51,17 @@ export const v5 = (namespace, name) => {
     return Effect_1.gen(function* v5() {
         if (!isUuid(namespace))
             return yield* Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"));
+        if (!isWellFormed(name)) {
+            return yield* Effect.die(new TypeError("Uuid.v5: name contains an unpaired UTF-16 surrogate"));
+        }
         const nameBytes = encoder.encode(name);
         const input = new Uint8Array(16 + nameBytes.length);
         input.set(bytesOf(namespace), 0);
         input.set(nameBytes, 16);
         const digest = yield* (yield* EffectDigest.Digest).digest(EffectDigest.sha1, input);
+        if (!(digest instanceof Uint8Array) || digest.length !== 20) {
+            return yield* Effect.die(new TypeError("Uuid.v5: host digest must be a 20-byte Uint8Array"));
+        }
         const bytes = digest.slice(0, 16);
         bytes[6] = (bytes[6] & 0x0f) | 0x50;
         bytes[8] = (bytes[8] & 0x3f) | 0x80;

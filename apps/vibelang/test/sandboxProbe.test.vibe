@@ -16,6 +16,7 @@ import { accountObject, gatewayOf } from "../worker/accountObject.vibe"
 import { machineObject, type MachineBox, type ObjectState } from "../worker/machineObject.vibe"
 import { admitted, deadlineOf, leaseClamped, leaseFor, OWNER_HEADER, PROBE_CONVERSATION, PROBE_WINDOW_MS, probeFetch, probeIdentity, probeOwner } from "../worker/sandboxProbeFetch.vibe"
 import { makeBox, namespaceOf } from "../fuzz/machine-box.ts"
+import { steps } from "../src/core/sandboxHost.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 import { expectLifecycle, lifecycle, normalize, probeClient, REPLAY_ORIGIN, sweep } from "./support/sandboxesLive.vibe"
 
@@ -166,6 +167,42 @@ describe("the sandbox probe", () => {
     p.local.faults.add("running")
     const swept = try sweep(probeClient(try HttpClient.HttpClient, TOKEN, probeOwner(Date.now() - 1)), "")
     try Effect.try(() => expect(swept).toEqual({ running: true, status: 200 }))
+  }), 30_000)
+
+  it.live("logs and counts a refused machine step and the failed provision with their reasons", () => provided(effect {
+    const lines = try Ref.make<ReadonlyArray<{ readonly message: string; readonly annotations: Readonly<Record<string, unknown>> }>>([])
+    const capture = Logger.layer([Logger.make((options) => {
+      Effect.runSync(Ref.update(lines, (all) => [...all, { message: String(options.message), annotations: { ...options.fiber.getRef(References.CurrentLogAnnotations) } }]))
+    })])
+    const refusedStart = Metric.withAttributes(steps, { step: "container-start", outcome: "refused", reason: "setup-exit-1" })
+    const before = try Metric.value(refusedStart)
+    provide capture {
+      const p = try probe()
+      p.local.faults.add("setup")
+      try p.account.run(probeOwner(Date.now() + 60_000), "start", PROBE_CONVERSATION, "op-1", 0, "")
+    }
+    const after = try Metric.value(refusedStart)
+    const records = (try Ref.get(lines)).filter((record) => record.message.includes("vibelang.sandbox")).map((record) => record.annotations)
+    try Effect.try(() => {
+      expect(Number(after.count)).toBe(Number(before.count) + 1)
+      expect(records).toContainEqual(expect.objectContaining({ step: "container-start", outcome: "refused", reason: "setup-exit-1" }))
+      expect(records).toContainEqual(expect.objectContaining({ step: "provision", outcome: "failed", reason: "container-start:setup-exit-1" }))
+    })
+  }), 30_000)
+
+  it.live("names why a start failed in the refusal the suite sees: a box that never runs, and a setup that exits 1", () => provided(effect {
+    const p = try probe()
+    const owner = probeOwner(Date.now() + 60_000)
+    const refusal = (operationId: string) => asked(TOKEN, owner, (factory) => Effect.flip(factory.startSandbox(PROBE_CONVERSATION, operationId)))
+    p.local.faults.add("stuck")
+    const inert = try refusal("op-1")
+    p.local.faults.delete("stuck")
+    p.local.faults.add("setup")
+    const setup = try refusal("op-2")
+    try Effect.try(() => {
+      expect(inert).toMatchObject({ _tag: "Refused", refusal: "unavailable", reason: "start-failed:container-start:not-running-after-wake" })
+      expect(setup).toMatchObject({ _tag: "Refused", refusal: "unavailable", reason: "start-failed:container-start:setup-exit-1" })
+    })
   }), 30_000)
 })
 

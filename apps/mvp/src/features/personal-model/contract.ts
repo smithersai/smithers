@@ -403,6 +403,8 @@ export const REFUSALS = [
   "too_long",
   "control_character",
   "malformed_text",
+  "non_ascii",
+  "surrounding_space",
   "too_large",
   "key_required",
   "invalid_token",

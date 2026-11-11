@@ -194,6 +194,7 @@ pnpm release:answer rc-content true
 pnpm release:answer rc-content false
 pnpm release:content --resume rc-content
 pnpm release:workflow --resume rc-prepare
+pnpm release:workflow --retry rc-npm-preview --run rc-npm-preview-2
 ```
 
 Answer only once: `true` continues and `false` completes as declined. The answer
@@ -204,9 +205,60 @@ and retains its input, model setting and budget. `--resume` reuses those setting
 changing them requires a new run. Keep `.flows/` to retain approvals and history.
 
 A failed run retains its failure; `--resume` is not a reset of failed checks or
-an uncertain external action. Correct the cause and start a new run. During a
-repeat npm attempt, the registry's exact integrity determines which packages
-still need publication. No secret, npm write, tag, deployment, or social post
+an uncertain external action. During a repeat npm attempt, the registry's exact
+integrity determines which packages still need publication.
+
+## Retry from a failed step
+
+When the cause of a failure is outside the source tree, such as an unreachable
+registry during smoke, start a new run that retries the failed one:
+
+```sh
+pnpm release:workflow --retry rc-npm-preview --run rc-npm-preview-2
+pnpm release:workflow --retry rc-npm-preview --from release/build --run rc-npm-preview-3
+```
+
+`--retry <id>` calls the engine's `Flow.retryFrom`. The new run has the input,
+model and budget of `<id>`. Every step that finished before the selected step
+is served from the record of `<id>` and does not run again; the selected step
+and every step after it run. Without `--from`, the selected step is the one
+`<id>` failed at. `--from` names another step by its action, as
+`release:status` prints it, or by its node id when a run dispatched one action
+more than once. `--run` names the new run; `--resume` reopens it like any other
+run. `release:content --retry` does the same for a content run.
+
+The failed run is not changed. The retry is a run of its own in the failed
+run's database, `.flows/releases/runs/<first id>/engine.db`, with its own
+`run.json` naming the run and step it retries. Keep the first run's directory
+while any retry of it matters.
+
+A retry is refused when the run has not settled, when the step did not run, or
+when the flow's plan changed since the run. The release steps still check the
+source: `checks`, `build`, `pack` and `verify-candidate` fail with `Source HEAD
+changed; start a new release run` when the checkout moved, so a failure that
+needs a source fix needs a new run, not a retry. A retry from `release/publish` repeats the
+publication preflight: the registry decides which packages are still missing.
+
+## Step timing
+
+`pnpm release:status <id>` prints `steps`, one row per action in plan order:
+
+```json
+{
+  "step": "release/smoke",
+  "nodeId": "root.flow.then.then.then.then.then.then.andThen",
+  "status": "failed",
+  "attempts": 1,
+  "startedAt": "2026-11-10T18:04:11.512Z",
+  "durationMs": 184220
+}
+```
+
+`durationMs` is the time the step's attempts ran, added up, and `startedAt` is
+the start of its first attempt. Both are `null` for a step that did not run. A
+failed run also prints `failure`, the engine's record of the failing step, and
+a retry prints `retry`. In a retry, a step served from the retried run keeps
+the timing it ran with. No secret, npm write, tag, deployment, or social post
 is needed to run the test suite.
 
 Preparation invokes the version, changelog, and lockfile tools in sequence. If
@@ -223,7 +275,9 @@ pnpm --filter @smithers/release-workflows test
 Tests run the production agent/QuickJS loop with a scripted model transport and
 real SQLite storage. They cover approval and denial, bounded revision failure,
 disabled channels, dry runs, source/artifact checks, and process restart without
-redrafting. Publishing tests substitute external commands and provider calls.
+redrafting. `test/release-retry.test.ts` runs the release command against a
+smoke step that fails once: the retry runs smoke and verification only, and
+status reports each step's own time. Publishing tests substitute external commands and provider calls.
 The optional recorder is tested against a local HTML fixture in real Chromium.
 Type checking and workflow tests are registered as `//.smithers/flows:check` and
 `//.smithers/flows:suite`; the browser test is `//.smithers/flows:recording` and requires Playwright's

@@ -7,7 +7,8 @@
  * is an exact DNS name: no wildcard, no IP address, no port and no single
  * label such as `localhost`.
  *
- * A value is bounded control-free text, checked by {@link checkValue} before
+ * A value is bounded printable ASCII text with no surrounding spaces,
+ * checked by {@link checkValue} before
  * it is stored and again before the egress puts it in a header: no control
  * character can split a header, and no value is so short that scrubbing its
  * echoes would rewrite ordinary text.
@@ -110,12 +111,19 @@ export const maximumValueBytes = 16 * 1024
 /**
  * Why a value can't be a secret's: shorter than {@link minimumValueBytes},
  * longer than {@link maximumValueBytes}, holding a control character
- * (U+0000 to U+001F, U+007F), or holding an unpaired surrogate.
+ * (U+0000 to U+001F, U+007F), holding an unpaired surrogate, holding a
+ * non-ASCII character, or starting or ending with a space.
  *
  * @category models
  * @since 0.1.0
  */
-export type ValueProblem = "too_short" | "too_long" | "control_character" | "malformed_text"
+export type ValueProblem =
+  | "too_short"
+  | "too_long"
+  | "control_character"
+  | "malformed_text"
+  | "non_ascii"
+  | "surrounding_space"
 
 /**
  * What is wrong with `value` as a secret's value, or `undefined` when nothing
@@ -128,6 +136,8 @@ export const valueProblem = (value: string): ValueProblem | undefined => {
   if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(value)) return "malformed_text"
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(value)) return "control_character"
+  if (/[^\u0020-\u007e]/.test(value)) return "non_ascii"
+  if (value.startsWith(" ") || value.endsWith(" ")) return "surrounding_space"
   const bytes = utf8(value).length
   if (bytes < minimumValueBytes) return "too_short"
   if (bytes > maximumValueBytes) return "too_long"
@@ -141,7 +151,14 @@ export const valueProblem = (value: string): ValueProblem | undefined => {
  * @since 0.1.0
  */
 export class ValueInvalid extends Schema.TaggedError<ValueInvalid>()("@smthrs/secrets/Binding/ValueInvalid", {
-  reason: Schema.Literals(["too_short", "too_long", "control_character", "malformed_text"])
+  reason: Schema.Literals([
+    "too_short",
+    "too_long",
+    "control_character",
+    "malformed_text",
+    "non_ascii",
+    "surrounding_space"
+  ])
 }) {}
 
 /**

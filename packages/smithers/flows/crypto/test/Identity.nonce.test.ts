@@ -5,47 +5,35 @@
  * `crypto.getRandomValues` at global scope with error 10021, "Disallowed
  * operation called within global scope", so any bundle containing this module
  * would fail to deploy.
+ *
+ * The nonce is the module's only entropy read, and it lives in the realm-shared
+ * state a compatible copy adopts. Each test hands a fresh module that state and
+ * reads the nonce slot, so no global is patched.
  */
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-/**
- * Replaces `globalThis.crypto` with a proxy that counts `getRandomValues` calls
- * and rejects them until the test allows them, mimicking the Workers global
- * scope restriction.
- */
-const guardCrypto = () => {
-  const real = globalThis.crypto
-  let allowed = false
-  let calls = 0
-  const getRandomValues = <A extends ArrayBufferView | null>(array: A): A => {
-    calls++
-    if (!allowed) throw new Error("Disallowed operation called within global scope")
-    return real.getRandomValues(array as never) as A
-  }
-  vi.stubGlobal(
-    "crypto",
-    new Proxy(real, {
-      get: (target, property, receiver) =>
-        property === "getRandomValues" ? getRandomValues : Reflect.get(target, property, receiver)
-    })
-  )
-  return {
-    allow: () => {
-      allowed = true
-    },
-    deny: () => {
-      allowed = false
-    },
-    calls: () => calls
-  }
+const stateKey = Symbol.for("@smthrs/crypto/Identity/state/v5")
+
+interface SharedState {
+  readonly captured: WeakMap<object, never>
+  readonly ephemeral: WeakMap<object, never>
+  ordinal: number
+  nonce: string | undefined
 }
 
-/** Evaluates a fresh copy of the module under the guarded global. */
-const importFresh = async () => {
+/** Evaluates a fresh copy of the module that adopts `shared` as its realm state. */
+const importWith = async (shared: SharedState) => {
   vi.resetModules()
-  vi.stubGlobal(Symbol.for("@smthrs/crypto/Identity/state/v5"), undefined)
+  vi.stubGlobal(stateKey, shared)
   return import("../src/Identity.ts")
 }
+
+const unseeded = (): SharedState => ({
+  captured: new WeakMap(),
+  ephemeral: new WeakMap(),
+  ordinal: 0,
+  nonce: undefined
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -53,55 +41,52 @@ afterEach(() => {
 })
 
 describe("ephemeral identity nonce", () => {
-  it("evaluates the module without reading entropy", async () => {
-    const crypto = guardCrypto()
+  it("evaluates the module without seeding the nonce", async () => {
+    const shared = unseeded()
 
-    await expect(importFresh()).resolves.toBeDefined()
-    expect(crypto.calls()).toBe(0)
+    await expect(importWith(shared)).resolves.toBeDefined()
+    expect(shared.nonce).toBeUndefined()
   })
 
   it("seeds the nonce on the first unannotated identity and memoizes it", async () => {
-    const crypto = guardCrypto()
-    const identity = await importFresh()
+    const shared = unseeded()
+    const identity = await importWith(shared)
 
-    crypto.allow()
     const first = identity.functionIdentity((value: number) => value + 1)
     expect(first.algorithm).toBe("sha256-source-ephemeral/v4")
     expect(first.digest).toMatch(/^[0-9a-f]{64}$/)
-    expect(crypto.calls()).toBe(1)
+    const seeded = shared.nonce
+    expect(seeded).toMatch(/^[0-9a-f]{32}$/)
 
-    // A memoized nonce never reaches entropy again, so a second identity
-    // succeeds even after the guard closes.
-    crypto.deny()
+    // A second identity folds in the same nonce with a new ordinal.
     const second = identity.functionIdentity((value: number) => value * 2)
     expect(second.digest).toMatch(/^[0-9a-f]{64}$/)
     expect(second.digest).not.toBe(first.digest)
-    expect(crypto.calls()).toBe(1)
+    expect(shared.nonce).toBe(seeded)
+    expect(shared.ordinal).toBe(2)
   })
 
   it("shares one seeded nonce with every other ephemeral encoding", async () => {
-    const crypto = guardCrypto()
-    const identity = await importFresh()
+    const shared = unseeded()
+    const identity = await importWith(shared)
 
-    crypto.allow()
     const first = identity.processNonce()
     expect(first).toMatch(/^[0-9a-f]{32}$/)
-    expect(crypto.calls()).toBe(1)
+    expect(shared.nonce).toBe(first)
 
     // A second reader folds in the same per-process value, so two encodings
     // cannot disagree about which process they were minted in.
-    crypto.deny()
     expect(identity.processNonce()).toBe(first)
     identity.functionIdentity((value: number) => value + 1)
-    expect(crypto.calls()).toBe(1)
+    expect(shared.nonce).toBe(first)
   })
 
-  it("digests a captured function without reading entropy at all", async () => {
-    const crypto = guardCrypto()
-    const identity = await importFresh()
+  it("digests a captured function without seeding the nonce", async () => {
+    const shared = unseeded()
+    const identity = await importWith(shared)
 
     const captured = identity.capture({ step: 1 }, (value: number) => value + 1)
     expect(identity.functionIdentity(captured).algorithm).toBe("sha256-source-captures/v5")
-    expect(crypto.calls()).toBe(0)
+    expect(shared.nonce).toBeUndefined()
   })
 })

@@ -150,8 +150,11 @@ statements stay on: Hyperdrive supports them, and PgBouncer does with
 
 The `pgbouncer` service in `apps/mvp/docker-compose.yml` (127.0.0.1:54322) is
 PgBouncer 1.25 in transaction mode with four server connections, resetting each
-one when its transaction ends, as Hyperdrive does. `test/PostgresPooling.test.ts`
-runs one suite through it and directly against `SMITHERS_TEST_PG_URL`.
+one when its transaction ends, as Hyperdrive does. The package's `test` target
+declares the same PgBouncer over its own PostgreSQL and names it in
+`SMITHERS_TEST_PGBOUNCER_URL`, which takes the compose one's place.
+`test/PostgresPooling.test.ts` runs one suite through PgBouncer and directly
+against `SMITHERS_TEST_PG_URL`; a named PgBouncer that does not answer fails it.
 
 ### The writer lock
 

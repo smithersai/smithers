@@ -6,6 +6,7 @@ import { Cause, Effect, Exit, Layer, Metric, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { MODEL_WITHIN, ModelNotTaken, PersonalModelClient, TEST_WITHIN } from "./api"
+import { REFUSAL_COPY } from "./copy"
 import { ModelRefused, ModelUnsent } from "./flows"
 import { type Op, type Outcome, writes } from "./metrics"
 import type { TestResult } from "./schema"
@@ -53,6 +54,17 @@ const ok: TestResult = { ok: true, latencyMs: 412, sample: "ok" }
 const refusedByProvider: TestResult = { ok: false, latencyMs: 98, code: "authentication", status: 401, host: "api.openai.com" }
 
 describe("PersonalModelClient", () => {
+  test.each(["non_ascii", "surrounding_space"] as const)("a save keeps an invalid header credential's %s reason", async (code) => {
+    expect(refusalOf(await client(() => json({ code }, 400)).run((c) => c.put(put)))).toEqual({
+      _tag: "ModelNotTaken",
+      status: 400,
+      code,
+    })
+    expect(REFUSAL_COPY[code]).toBe(code === "non_ascii"
+      ? "Keys must use ASCII characters"
+      : "Keys can't start or end with a space")
+  })
+
   test("Save puts the whole list, a typed key once; Remove deletes; Test posts, of one connection when named; Link posts", async () => {
     const answers = [json({}, 202), json({}, 202), json(ok, 200), json(refusedByProvider, 200), json(started, 202)]
     const { run, seen } = client(() => answers.shift()!)

@@ -343,8 +343,10 @@ export interface OutboxDeclaration {
 
 /**
  * Every store a program keeps, the stores it retired and its outbox's
- * writes. `epoch` grows with every new version, store or retirement, so two
- * builds compare by it.
+ * writes. `epoch` identifies the declarations: a hash of every store, payload
+ * and retired store with its kind and version, so two builds with different
+ * declarations have different epochs, even when a later build drops a retired
+ * store.
  *
  * @category models
  * @since 0.3.0
@@ -386,8 +388,17 @@ export const registry = (options: {
       $raise(new InvalidDeclaration({ store: key, message: `no payload version ${version} for unstamped writes` }))
     }
   }
-  const epoch = [...options.stores, ...outbox.payloads].reduce((sum, store) => sum + store.schemaVersion, 0) +
-    retiredStores.reduce((sum, store) => sum + store.schemaVersion + 1, 0)
+  const declarations = [
+    ...options.stores.map((store) =>
+      store._tag === "Local"
+        ? ["local", store.id, false, store.schemaVersion]
+        : ["synced", store.id, store.family, store.schemaVersion]
+    ),
+    ...outbox.payloads.map((declared) => ["payload", declared.key, false, declared.schemaVersion]),
+    ...retiredStores.map((store) => [`retired ${store.kind}`, store.id, store.family, store.schemaVersion])
+  ].map((declaration) => JSON.stringify(declaration)).sort()
+  // The hash's first 52 bits, so the epoch stays a safe integer.
+  const epoch = Number.parseInt(fnv1a(JSON.stringify(declarations)).slice(0, 13), 16)
   return { stores: options.stores, retired: retiredStores, outbox, epoch }
 }
 

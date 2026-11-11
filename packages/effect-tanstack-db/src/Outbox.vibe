@@ -400,22 +400,26 @@ const readWrite = (stored: string): { readonly name: string; readonly rows: Read
  * Upgrades every stored write an older build made, before the library loads
  * them: rewrites one it can bring forward, and moves one it can't to
  * `parked:<id>`. Each is logged and counted in `carried`; a storage that fails
- * leaves the write as it was.
+ * leaves the write as it was, and the pass goes on to the next one.
  */
-const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
-  effect {
-    const keys = try Effect.tryPromise(() => storage.keys())
-    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) {
+const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) => {
+  const logged = <E>(program: void!E) =>
+    program
+      |> Effect.catch(%, (error) =>
+        Effect.logWarning("outbox couldn't upgrade its writes") |> Effect.annotateLogs({ error: errorName(error) })(%)
+      )
+  const one = (key: string) =>
+    effect {
       const stored = try Effect.tryPromise(() => storage.get(key))
-      if (stored === null) continue
+      if (stored === null) return
       const upgraded = upgrade.write(stored)
-      if (upgraded._tag === "Current") continue
+      if (upgraded._tag === "Current") return
       const { name } = readWrite(stored)
       if (upgraded._tag === "Upgraded") {
         try Effect.tryPromise(() => storage.set(key, upgraded.value))
         try Metric.update(Metric.withAttributes(carried, { name, outcome: "upgraded", reason: "none" }), 1)
         try (Effect.logInfo("outbox write upgraded") |> Effect.annotateLogs({ name })(%))
-        continue
+        return
       }
       const parked: StoredParked = { reason: upgraded.reason, name, write: stored }
       try Effect.tryPromise(() =>
@@ -426,11 +430,12 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
       try (Effect.logWarning("outbox write parked")
         |> Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })(%))
     }
-  }
-    |> Effect.catch(%, (error) =>
-      Effect.logWarning("outbox couldn't upgrade its writes") |> Effect.annotateLogs({ error: errorName(error) })(%)
-    )
+  return logged(effect {
+    const keys = try Effect.tryPromise(() => storage.keys())
+    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) try logged(one(key))
+  })
     |> withSpan(%, "outbox.carry")
+}
 
 /** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
 const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): ReadonlyArray<Parked>!! =>
@@ -562,12 +567,15 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         const keys = (await options.storage.keys()).filter((key) =>
           !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX))
         )
-        if (options.principal === undefined) return keys
+        // The library loads only writes at this build's versions: one the upgrade pass didn't reach stays stored
+        // for a later start to carry.
+        const upgrade = migrated ? options.upgrade : undefined
+        if (options.principal === undefined && upgrade === undefined) return keys
         const own: Array<string> = []
         for (const key of keys) {
           const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null
-          if (!sealed(key, stored)) own.push(key)
-          else seal(stored!, "load")
+          if (sealed(key, stored)) seal(stored!, "load")
+          else if (stored === null || upgrade === undefined || upgrade.write(stored)._tag === "Current") own.push(key)
         }
         return own
       }
@@ -611,6 +619,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         run(
           Effect.logWarning(stage === "write" ? "outbox couldn't write held index" : "outbox couldn't read held status")
               |> Effect.annotateLogs({ stage, error: errorName(error) })(%)
+        )
+      }
+      const orderError = (error: unknown) => {
+        run(
+          Effect.logWarning("outbox couldn't recover admission order")
+            |> Effect.annotateLogs({ error: errorName(error) })(%)
         )
       }
       const persistIndex = async () => {
@@ -879,6 +893,19 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         (unsubscribe) => Effect.sync(() => unsubscribe?.())
       )
       let sequenceReady: Promise<void> = try Effect.sync(() => Promise.resolve())
+      // The leader's recovery. Until it succeeds, admission refuses and replay sees none of the stored writes.
+      const lead = () =>
+        serialize(() =>
+          withAdmission(async () => {
+            await reconcile()
+            try {
+              await persistIndex()
+              changed()
+            } catch (error) {
+              statusError(error, "write")
+            }
+          })
+        ).catch(orderError)
 
       // Which send of each write this is, for its span; forgotten once the write settles.
       const sends = new Map<string, number>()
@@ -1006,7 +1033,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           options.leader?.isLeader()
             ? withAdmission(() =>
               reconcile()
-            )
+            ).catch(orderError)
             : reconcile(true)
         ).catch(statusError)
       )
@@ -1043,17 +1070,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               if (leader && !closing) {
                 sequenceKnown = false
                 // A follower may have waited while newer writes were admitted. Reconcile before its first admission.
-                sequenceReady = serialize(() =>
-                  withAdmission(async () => {
-                    await reconcile()
-                    try {
-                      await persistIndex()
-                      changed()
-                    } catch (error) {
-                      statusError(error, "write")
-                    }
-                  })
-                ).catch(statusError)
+                sequenceReady = lead()
               }
               // Subscribers can admit immediately. Publish only after their recovery barrier names this leadership.
               setStatus({ leader })
@@ -1077,6 +1094,26 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           Effect.logWarning("outbox couldn't load its writes") |> Effect.annotateLogs({ error: errorName(error) })(%)
         ))
 
+      // A failed recovery is repeated by the next write or `retryNow` while this program leads. Its stored writes then
+      // load before any later admission, which takes a later sequence.
+      let recovering: Promise<void> | undefined
+      const recover = (): Promise<void> => {
+        if (recovering === undefined && !sequenceKnown && !closing && executor.isOfflineEnabled) {
+          recovering = (sequenceReady = lead()).then(async () => {
+            if (!sequenceKnown) return
+            try {
+              await executor.reloadPendingTransactions()
+            } catch (error) {
+              sequenceKnown = false
+              orderError(error)
+            }
+          }).finally(() => {
+            recovering = undefined
+          })
+        }
+        return recovering ?? Promise.resolve()
+      }
+
       // Who a write is queued by, stamped into its metadata when the outbox has a principal.
       const principalStamp = (): { readonly principal?: string } => {
         const now = options.principal?.now()
@@ -1093,6 +1130,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const services = try Effect.context<never>()
           const span = try Effect.option(Effect.currentSpan)
           try Effect.promise(() => sequenceReady)
+          try Effect.promise(recover)
           if (!sequenceKnown) throw new NotAdmitted({ reason: "storage" })
           if (closing || !executor.isOfflineEnabled) throw new NotAdmitted({ reason: "follower" })
           const queuedAt = try Clock.currentTimeMillis
@@ -1254,6 +1292,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
               statusError(error, "write")
             }
           }).then(refreshHeld).catch(statusError)
+          void recover()
           executor.getOnlineDetector().notifyOnline()
         }),
         withdraw,

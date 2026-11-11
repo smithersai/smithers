@@ -105,8 +105,8 @@ describe("SmithersError", () => {
 
   it("rewraps a blank summary to the same blank message", () => {
     for (const summary of ["", "   "]) {
-      const first = new SmithersError("UNSUPPORTED", summary)
-      const rewrapped = new SmithersError("UNSUPPORTED", first.message)
+      const first = new SmithersError("INVALID_INPUT", summary)
+      const rewrapped = new SmithersError("INVALID_INPUT", first.message)
       expect(rewrapped.message).toBe(summary)
       expect(rewrapped.summary).toBe(summary)
     }
@@ -120,21 +120,21 @@ describe("SmithersError", () => {
   })
 
   it("does not append the documentation URL to blank summaries", () => {
-    expect(new SmithersError("UNSUPPORTED", "").message).toBe("")
-    expect(new SmithersError("UNSUPPORTED", "").summary).toBe("")
-    expect(new SmithersError("UNSUPPORTED", "   ").message).toBe("   ")
+    expect(new SmithersError("INVALID_INPUT", "").message).toBe("")
+    expect(new SmithersError("INVALID_INPUT", "").summary).toBe("")
+    expect(new SmithersError("INVALID_INPUT", "   ").message).toBe("   ")
   })
 
   it("suppresses the documentation URL on request", () => {
-    const error = new SmithersError("UNSUPPORTED", "no Ed25519", undefined, { includeDocsUrl: false })
-    expect(error.message).toBe("no Ed25519")
+    const error = new SmithersError("INVALID_INPUT", "invalid signal name", undefined, { includeDocsUrl: false })
+    expect(error.message).toBe("invalid signal name")
     expect(error.details).toBeUndefined()
     const suffix = ` See ${ERROR_REFERENCE_URL}`
-    const stripped = new SmithersError("UNSUPPORTED", `no Ed25519${suffix}`, undefined, {
+    const stripped = new SmithersError("INVALID_INPUT", `invalid signal name${suffix}`, undefined, {
       includeDocsUrl: false
     })
-    expect(stripped.message).toBe("no Ed25519")
-    expect(stripped.summary).toBe("no Ed25519")
+    expect(stripped.message).toBe("invalid signal name")
+    expect(stripped.summary).toBe("invalid signal name")
   })
 
   it("treats an explicit includeDocsUrl true like the default", () => {
@@ -381,8 +381,8 @@ describe("SmithersError", () => {
 })
 
 describe("error refinements", () => {
-  // TaggedFailures.test.vibe holds the subclass rows: a subclass is an error
-  // declaration, which a .ts file cannot write.
+  // TaggedFailures.test.vibe covers VibeLang subclass tagging. TypeScript
+  // subclasses set their tag and prototype name explicitly.
   it("accepts a real instance", () => {
     const error = new SmithersError("INVALID_INPUT", "x")
     expect(isSmithersError(error)).toBe(true)
@@ -529,15 +529,24 @@ describe("error codes", () => {
     expect(Object.isFrozen(smithersErrorCodes)).toBe(true)
   })
 
-  it("documents exactly the codes the integration adapters raise", () => {
-    expect([...smithersErrorCodes].sort()).toEqual([
-      "INTEGRATION_ERROR",
-      "INVALID_INPUT",
-      "TELEGRAM_API_ERROR",
-      "TELEGRAM_INIT_DATA_INVALID",
-      "UNSUPPORTED"
-    ])
+  it("lists the supported integration error codes", () => {
+    expectTypeOf<SmithersErrorCode>().toEqualTypeOf<"INVALID_INPUT" | "INTEGRATION_ERROR">()
+    expect(smithersErrorCodes).toEqual(["INVALID_INPUT", "INTEGRATION_ERROR"])
   })
+
+  it.each(["TELEGRAM_API_ERROR", "TELEGRAM_INIT_DATA_INVALID", "UNSUPPORTED"])(
+    "rejects the retired code %s at catalog and structural boundaries",
+    (code) => {
+      expect(isSmithersErrorCode(code)).toBe(false)
+      expect(getSmithersErrorDefinition(code)).toBeUndefined()
+      const error = Object.assign(new Error("retired failure"), {
+        code,
+        summary: "retired failure",
+        docsUrl: ERROR_REFERENCE_URL
+      })
+      expect(hasSmithersErrorShape(error)).toBe(false)
+    }
+  )
 
   it("gives every code a trigger description", () => {
     expectTypeOf<SmithersErrorDefinition>().toEqualTypeOf<{
@@ -581,17 +590,45 @@ describe("error codes", () => {
     expect(new Set(smithersErrorCodes)).toEqual(new Set(Object.keys(smithersErrorDefinitions)))
   })
 
-  it("documents details carried by input and init-data failures", () => {
-    expect(smithersErrorDefinitions.INVALID_INPUT.details)
-      .toBe(
-        "`{ [field]: value }` on the signal-name failures, `{ maxLength }` on the chunk-size failure, `{ length }` on the malformed `publicKeyHex` failure, `{ maxAgeSeconds }` or `{ nowMs }` on the init-data policy failures, otherwise none"
-      )
-    expect(smithersErrorDefinitions.TELEGRAM_INIT_DATA_INVALID.details)
-      .toBe("`{ authDate }` on the expiry failures, otherwise none")
+  it("documents the signal-name input failures and their details", () => {
+    expect(smithersErrorDefinitions.INVALID_INPUT).toEqual({
+      when: "An integration signal service or event segment is empty after trimming or contains a colon.",
+      details: "`{ service: value }` or `{ event: value }`, naming the invalid segment"
+    })
   })
 })
 
 describe("API reference", () => {
+  it("documents TypeScript subclass tagging", () => {
+    const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
+    expect(api).toContain("this._tag = \"AdapterError\"")
+    expect(api).toContain("AdapterError.prototype.name = \"AdapterError\"")
+    const snippet = api.match(/```ts\n(class AdapterError[\s\S]*?)\n```/)?.[1]
+    expect(snippet).toBeDefined()
+    execFileSync(process.execPath, [
+      "--import=vibelang/register",
+      "--input-type=module-typescript",
+      "--eval",
+      `
+        import assert from "node:assert/strict"
+        import { Effect } from "effect"
+        import { SmithersError } from "./src/SmithersError.vibe"
+        ${snippet}
+        const error = new AdapterError("INTEGRATION_ERROR", "adapter failed", { retryable: true })
+        assert.equal(error._tag, "AdapterError")
+        assert.equal(error.name, "AdapterError")
+        assert.equal(Object.hasOwn(error, "name"), false)
+        assert.ok(error instanceof SmithersError)
+        assert.equal(JSON.parse(JSON.stringify(error))._tag, "AdapterError")
+        assert.equal(Effect.runSync(
+          Effect.fail(error).pipe(
+            Effect.catchTag("AdapterError", (caught) => Effect.succeed(caught.summary))
+          )
+        ), "adapter failed")
+      `
+    ], { cwd: fileURLToPath(new URL("..", import.meta.url)), timeout: 20_000 })
+  })
+
   it("limits the enumerable-fields guarantee to Object.keys and JSON.stringify", () => {
     const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8").replaceAll(/\s+/g, " ")
     expect(api).not.toContain("`JSON.stringify` and `util.inspect` therefore show")
@@ -601,6 +638,15 @@ describe("API reference", () => {
 })
 
 describe("published module formats", () => {
+  it("documents the shipped runtime dependency", () => {
+    const installation = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+    expect(installation).not.toContain("no runtime dependencies")
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      expect(installation).toContain(`\`${name}\` \`${version}\``)
+    }
+  })
+
   it("documents distinct ESM and CommonJS constructor identities", () => {
     const installation = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
     expect(installation).not.toContain("both resolve to the same class")

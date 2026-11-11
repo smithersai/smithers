@@ -8,7 +8,8 @@
  * is an exact DNS name: no wildcard, no IP address, no port and no single
  * label such as `localhost`.
  *
- * A value is bounded control-free text, checked by {@link checkValue} before
+ * A value is bounded printable ASCII text with no surrounding spaces,
+ * checked by {@link checkValue} before
  * it is stored and again before the egress puts it in a header: no control
  * character can split a header, and no value is so short that scrubbing its
  * echoes would rewrite ordinary text.
@@ -104,6 +105,10 @@ export const valueProblem = (value) => {
     // eslint-disable-next-line no-control-regex
     if (/[\u0000-\u001f\u007f]/.test(value))
         return "control_character";
+    if (/[^\u0020-\u007e]/.test(value))
+        return "non_ascii";
+    if (value.startsWith(" ") || value.endsWith(" "))
+        return "surrounding_space";
     const bytes = utf8(value).length;
     if (bytes < minimumValueBytes)
         return "too_short";
@@ -118,7 +123,14 @@ export const valueProblem = (value) => {
  * @since 0.1.0
  */
 export class ValueInvalid extends Schema.TaggedError()("@smthrs/secrets/Binding/ValueInvalid", {
-    reason: Schema.Literals(["too_short", "too_long", "control_character", "malformed_text"])
+    reason: Schema.Literals([
+        "too_short",
+        "too_long",
+        "control_character",
+        "malformed_text",
+        "non_ascii",
+        "surrounding_space"
+    ])
 }) {
 }
 /**

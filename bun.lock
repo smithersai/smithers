@@ -1563,7 +1563,7 @@
         "@smthrs/views": "1.0.0-rc.17",
         "ignore": "7.0.8",
         "minimatch": "10.2.6",
-        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-runtime": "0.0.14-pre.b9285da0f2be",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1582,8 +1582,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.14-pre.6279f9f9fbfc",
-        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang": "0.0.14-pre.b9285da0f2be",
+        "vibelang-vite": "0.0.14-pre.b9285da0f2be",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2185,6 +2185,29 @@
       },
       "peerDependencies": {
         "effect": "4.1.1",
+      },
+    },
+    "packages/smithers/flows/merge-queue": {
+      "name": "@smthrs/merge-queue",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@effect/language-service": "0.87.2",
+        "@eslint/js": "9.39.5",
+        "@types/node": "26.4.1",
+        "@vitest/coverage-v8": "5.0.0",
+        "dprint": "0.57.1",
+        "esbuild": "0.28.2",
+        "eslint": "9.39.5",
+        "eslint-import-resolver-typescript": "4.4.5",
+        "eslint-plugin-import": "2.32.0",
+        "eslint-plugin-jsdoc": "64.3.4",
+        "eslint-plugin-unicorn": "65.0.0",
+        "madge": "8.0.0",
+        "typescript": "5.9.3",
+        "typescript-eslint": "8.69.0",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
+        "vitest": "5.0.0",
       },
     },
     "packages/smithers/flows/observability": {
@@ -4598,6 +4621,8 @@
     "@smthrs/mcp": ["@smthrs/mcp@workspace:packages/smithers/mcp"],
 
     "@smthrs/memory": ["@smthrs/memory@workspace:packages/smithers/agent/memory"],
+
+    "@smthrs/merge-queue": ["@smthrs/merge-queue@workspace:packages/smithers/flows/merge-queue"],
 
     "@smthrs/migrate": ["@smthrs/migrate@workspace:packages/smithers/migrate"],
 

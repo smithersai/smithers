@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `S.nodeModules(directory)` declares an installed dependency tree as a target
+  input. The directory's `package.json` and lockfiles key the target, and a
+  confined tool may read its `node_modules`. A tool that resolves modules from
+  a directory that is not above its own, such as a compiler test reading a
+  sibling install, can now run inside the sandbox and publish to the shared
+  cache. A directory with no manifest or no lockfile is refused.
 - Runtime version requirements compare numeric prerelease identifiers exactly,
   including values beyond JavaScript's safe integer range. Adjacent large
   identifiers no longer admit an older runtime through rounding.

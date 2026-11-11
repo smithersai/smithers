@@ -66,7 +66,7 @@ POST /api/model/<role>                     a todo run                       POST
   `https://api.openai.com/v1` is `https://api.openai.com`, `https://openrouter.ai/api/v1` is `https://openrouter.ai/api`.
 - **Model:** the provider's model id: 1 to 81 letters, digits, `.`, `_`, `/`, `:` and `-`, starting with a letter or
   digit, trimmed. Model kinds only.
-- **Key:** 16 characters to 16 KiB of text with no control character (`@smthrs/secrets` `Binding.valueProblem`, and at
+- **Key:** 16 characters to 16 KiB of printable ASCII with no leading or trailing spaces (`@smthrs/secrets` `Binding.valueProblem`, and at
   least 16 characters so the four the browser sees again are a small part of it). The browser and ChatApi check a save
   with the same rules (`checkSave` in `src/features/personal-model/contract.ts`).
 - **Sealing:** AES-256-GCM under SECRETS_KEY's sealing key, the one repository secrets use, with `person:<id>`, `model`
@@ -74,7 +74,7 @@ POST /api/model/<role>                     a todo run                       POST
   route seals before the flow starts, so the flow's payload and journal hold only ciphertext. A save clears the last
   refusal.
 - **Refusals** answer `{ code }`: `authentication` 401, `forbidden` 403, `invalid` 400, and `invalid_protocol`,
-  `invalid_base_url`, `invalid_model`, `invalid_token`, `too_short`, `too_long`, `control_character`, `malformed_text`,
+  `invalid_base_url`, `invalid_model`, `invalid_token`, `too_short`, `too_long`, `control_character`, `malformed_text`, `non_ascii`, `surrounding_space`,
   `key_required` 400, `too_large` 413 (over 192 KiB), `off` 503 (no SECRETS_KEY), `unavailable` 503. A link answers
   `link_expired` or `link_refused`.
 

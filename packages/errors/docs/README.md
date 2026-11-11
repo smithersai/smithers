@@ -1,10 +1,10 @@
 ---
 title: "@smthrs/errors"
-description: "One error class and five closed codes for the Smithers integration adapters: classify a failure by code, show a person a summary, and log context that carries no credential."
+description: "One error class and two closed codes for the Smithers integration adapters: classify a failure by code, show a person a summary, and log context that carries no credential."
 ---
 
 `@smthrs/errors` is a single error class, `SmithersError`, and a closed
-vocabulary of five codes. Smithers is a durable-execution engine for agent
+vocabulary of two codes. Smithers is a durable-execution engine for agent
 workflows. Its GitHub adapter raises `SmithersError` when
 an integration call fails, and a caller decides what to do by reading
 `error.code` rather than by matching on message text.
@@ -25,8 +25,8 @@ possible. With that check, adding a code without a matching case is a type
 error. `summary` is the message without the documentation URL the constructor
 appends, which is what you put in a chat reply or a form field. `details` is the
 context the raise site attached, copied and frozen at construction so it cannot
-change under you. Only those fields
-serialize: `name` and `stack` stay out of `JSON.stringify`.
+change under you. `code`, `summary`, `docsUrl`, optional `details`, and `_tag`
+serialize; `name` and `stack` stay out of `JSON.stringify`.
 
 The class never redacts. It stores `details` and `cause` exactly as it received
 them, so the code that constructs the error removes bot tokens, API keys, and
@@ -52,8 +52,9 @@ npm install @smthrs/errors@next effect
 is on this site, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
 [Installation](./installation.md) has the root entry point, the two module
-subpaths, and the paths the exports map refuses. The package has no runtime
-dependencies, peers `effect` `4.1.1`, and needs Node.js 22.19.0 or later.
+subpaths, and the paths the exports map refuses. The package depends on
+`vibelang-runtime` `0.0.12`, peers `effect` `4.1.1`, and needs Node.js 22.19.0
+or later.
 
 ## A small example
 
@@ -83,16 +84,16 @@ try {
   error.code // "INVALID_INPUT"
   error.summary // "Chunk maxLength must be an integer between 1 and 4096."
   error.details // { maxLength: 0 }
-  Object.keys(error) // ["code", "summary", "docsUrl", "details"]
+  Object.keys(error) // ["code", "summary", "docsUrl", "details", "_tag"]
 }
 ```
 
-`error.code` narrows to the five documented literals. A switch can keep a
+`error.code` narrows to the two documented literals. A switch can keep a
 fallback or [check exhaustiveness explicitly](./quickstart.md#check-exhaustiveness-explicitly).
 [Quickstart](./quickstart.md) shows both forms and runs the same failure the
 whole way through, from the raise site to a log line.
 
-## The five codes
+## The two codes
 
 `smithersErrorDefinitions` is the runtime table every code is derived from, and
 nothing widens it at runtime:
@@ -100,24 +101,20 @@ nothing widens it at runtime:
 - `INVALID_INPUT`: the call is wrong, and no retry makes it right.
 - `INTEGRATION_ERROR`: a provider call, a webhook read, or a listener
   reconciliation failed. `details.reason` says which, and whether to retry.
-- `TELEGRAM_API_ERROR` and `TELEGRAM_INIT_DATA_INVALID`: retained for
-  historical failure decoding. The Telegram adapter is outside the MVP.
-- `UNSUPPORTED`: the runtime lacks a primitive the call needs, such as Web
-  Crypto.
 
-[Error code reference](./reference/error-codes.md) names every raise site, the
-`details` each one attaches, and the caller's move.
+[Error code reference](./reference/error-codes.md) names current construction sites,
+the `details` they attach, and the caller's move.
 
 ## Where this sits in Smithers
 
-`@smthrs/errors` is the bottom of its own dependency tree. It imports nothing
-from Smithers and nothing from npm, so it is a root you can read on its own.
+`@smthrs/errors` imports no other Smithers package. Its tagged-error base and
+schema matcher come from the npm package `vibelang-runtime`, which uses the
+`effect` peer dependency.
 The packages built on top of it are how you get from here into the rest of the
 system:
 
 - [`@smthrs/integrations`](/api/integrations) is the only package that depends
   on this one. Its `Core.IntegrationError` carries a classified `reason`.
-  Historical error codes remain readable after their adapters are retired.
 - Those adapters answer webhooks through the Smithers control plane,
   [`@smthrs/control`](/api/control), and expose their provider calls as durable
   actions built with [`@smthrs/flow`](/api/flow). A durable action is the

@@ -108,6 +108,78 @@ describe("FuzzSimulation", () => {
       assert.strictEqual(forever._tag === "Falsified" && forever.findings[0].signature, "Deadlock")
     }))
 
+  it.effect("replaying a token that reaches the step limit is an Execution error", () =>
+    Effect.gen(function*() {
+      const arbitrary = Arbitrary.Constant(0)
+      const execution = FuzzSimulation.execution({ maxSteps: 100 })
+      const found = yield* Fuzz.run(arbitrary, () => false, { seed: 1, executions: 1, execution })
+      assert.strictEqual(found._tag, "Falsified")
+      if (found._tag !== "Falsified") return
+      let released = 0
+      const error = yield* Effect.flip(Fuzz.run(arbitrary, () =>
+        Effect.as(Effect.ensuring(
+          Effect.forever(Effect.sleep("1 millis")),
+          Effect.sync(() => released++)
+        ), true), { replay: found.findings[0].replay, execution }))
+      assert.deepStrictEqual([error._tag, error.reason, released], ["FuzzError", "Execution", 1])
+      assert.include(error.message, "simulation")
+      assert.include(error.message, "step limit")
+      assert.include(error.message, "replay")
+    }))
+
+  it.effect("a saved fixture that reaches the step limit is an Execution error and is retained", () =>
+    Effect.gen(function*() {
+      const arbitrary = Arbitrary.Constant(0)
+      const execution = FuzzSimulation.execution({ maxSteps: 100 })
+      for (const codec of [undefined, { id: "number", encode: String, decode: Number }]) {
+        const store = Fuzz.memoryCorpus()
+        const options = { id: "limited-regression", revision: "1", codec }
+        const found = yield* Fuzz.runTarget(Fuzz.target(arbitrary, () => false, options), {
+          seed: 1, executions: 1, execution
+        }).pipe(Effect.provideService(Fuzz.Corpus, store))
+        assert.strictEqual(found._tag, "Falsified")
+        if (found._tag !== "Falsified") return
+        assert.strictEqual(found.findings[0].saved, codec === undefined ? "Tape" : "Value")
+        const saved = yield* store.load(options.id)
+        let released = 0
+        const limited = Fuzz.target(arbitrary, () =>
+          Effect.as(Effect.ensuring(
+            Effect.forever(Effect.sleep("1 millis")),
+            Effect.sync(() => released++)
+          ), true), options)
+        const error = yield* Effect.flip(Fuzz.runTarget(limited, { executions: 0, execution }).pipe(
+          Effect.provideService(Fuzz.Corpus, store)
+        ))
+        assert.deepStrictEqual([error._tag, error.reason, released], ["FuzzError", "Execution", 1])
+        assert.include(error.message, "simulation")
+        assert.include(error.message, "step limit")
+        assert.include(error.message, "saved failure")
+        assert.deepStrictEqual(yield* store.load(options.id), saved)
+        const fixed = yield* Fuzz.runTarget(Fuzz.target(arbitrary, () => true, options), {
+          executions: 0, execution
+        }).pipe(Effect.provideService(Fuzz.Corpus, store))
+        assert.deepStrictEqual([fixed._tag, fixed.stats.regressions], ["Passed", 1])
+      }
+    }))
+
+  it.effect("replaying a token reports a new deadlock instead of passing", () =>
+    Effect.gen(function*() {
+      const arbitrary = Arbitrary.Constant(0)
+      const execution = FuzzSimulation.execution()
+      const original = yield* Fuzz.run(arbitrary, () => false, { seed: 1, executions: 1, execution })
+      assert.strictEqual(original._tag, "Falsified")
+      if (original._tag !== "Falsified") return
+      const replayed = yield* Fuzz.run(arbitrary, () => Effect.as(Effect.never, true), {
+        replay: original.findings[0].replay, execution
+      })
+      assert.strictEqual(replayed._tag, "Falsified")
+      if (replayed._tag !== "Falsified") return
+      assert.deepStrictEqual([replayed.findings[0].signature, replayed.findings[0].failure, replayed.flaky], [
+        "Deadlock", { _tag: "Deadlock" }, []
+      ])
+      assert.include(Fuzz.formatReport(replayed)!, "deadlock")
+    }))
+
   it.effect("time is virtual: sleeps finish at once, in deadline then registration order", () =>
     Effect.gen(function*() {
       const execution = FuzzSimulation.execution()
@@ -230,6 +302,50 @@ describe("FuzzSimulation", () => {
       }
     }))
 
+  it.effect("F5: fibers that outlive a completed property are interrupted and their finalizers run", () =>
+    Effect.gen(function*() {
+      let started = 0
+      let released = 0
+      const background = Effect.ensuring(
+        Effect.andThen(Effect.sync(() => started++), Effect.sleep("1 second")),
+        Effect.andThen(Effect.repeat(Effect.yieldNow, { times: 9 }), Effect.sync(() => released++))
+      )
+      const report = yield* Fuzz.run(Arbitrary.Constant(0), () =>
+        Effect.gen(function*() {
+          yield* Effect.forkDetach(background)
+          yield* Effect.yieldNow
+          return true
+        }), { execution: FuzzSimulation.execution(), seed: 1, executions: 20 })
+      // A fork the root outlives before its first step is interrupted before it starts; its finalizer still runs.
+      assert.deepStrictEqual([report._tag, released], ["Passed", 20])
+      assert.isAbove(started, 0)
+      // A detached fork that has not started yet is still queued when the root exits; it is released too.
+      const unstarted = yield* FuzzSimulation.execution().run(
+        Effect.exit(Effect.as(Effect.forkDetach(background), "done")),
+        { next: () => 0 }
+      )
+      assert.deepStrictEqual([unstarted, released], [{ _tag: "Completed", exit: Exit.succeed("done") }, 21])
+    }))
+
+  it.effect("F5: leftover fibers that cannot finish are an Execution error", () =>
+    Effect.gen(function*() {
+      for (
+        const [leftover, message] of [
+          [Effect.uninterruptible(Effect.never), "cleanup deadlocked"],
+          [Effect.uninterruptible(Effect.forever(Effect.yieldNow)), "its finalizers did not finish within 50 more steps"]
+        ] as const
+      ) {
+        const error = yield* Effect.flip(Fuzz.run(Arbitrary.Constant(0), () =>
+          Effect.gen(function*() {
+            yield* Effect.forkDetach(leftover)
+            yield* Effect.yieldNow
+            return true
+          }), { seed: 1, executions: 1, execution: FuzzSimulation.execution({ maxSteps: 50 }) }))
+        assert.strictEqual(error.reason, "Execution")
+        assert.include(error.message, `the simulation completed an evaluation, but ${message}`)
+      }
+    }))
+
   it.effect("virtual time keeps sub-millisecond precision", () =>
     Effect.gen(function*() {
       const program = Effect.gen(function*() {
@@ -263,8 +379,7 @@ describe("FuzzSimulation", () => {
     for (const sequence of [0, 1]) {
       world.timers.push({ deadline: BigInt(1), sequence, wake: () => woken.push(sequence) })
     }
-    const running = { pollUnsafe: () => undefined } as unknown as Fiber.Fiber<unknown, unknown>
-    assert.deepStrictEqual([world.run(running, Infinity), woken], ["Limited", [0]])
+    assert.deepStrictEqual([world.run(() => false, Infinity), woken], ["Limited", [0]])
   })
 
   it.effect("timer wakes count toward maxSteps, so a sleep loop is limited", () =>

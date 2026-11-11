@@ -331,10 +331,11 @@ fails every GET, `dropAfterLink` fails the GETs after a sub-issue link, and `hid
 
 Fuzz-only coverage of this lane's files, all 63 Node fuzz files at 5 s (63 files, 202 targets, exit 0):
 `worker/ActionRuns.vibe` 120/120 lines, 178/178 branches; `worker/Issues.vibe` 298/298, 452/453; `worker/Wiki.vibe`
-175/175, 233/234; `Objects`, `Sequencer`, `HistoryActions` and the five view files 100%. The two open arms are one
-guard, `retryFrom`'s `step === undefined` (`Issues` 374, `Wiki` 251): a failed execution the engine inspects always
-records its `perform` step, and the engine's `RunInspection` is built inside `executeIssues`/`executeWiki`, so no
-injected service reaches it. It stays as the guard for an engine that breaks that invariant.
+175/175, 233/234; `Objects`, `Sequencer`, `HistoryActions` and the five view files 100%. The two open arms were one
+guard, `retryFrom`'s `step === undefined` (`Issues` 375, `Wiki` 251). A store that lost the run's step events reaches
+it: `faultyStore`'s `lose(pattern)` answers a matching read with no rows, as a store restored from an older copy
+does, and the `store` scenarios of `issues/steered-host` and `wiki/steered-host` lose `RunInspection.inspect`'s node
+events before a recovery, which answers `unavailable`; healed, the recovery retries the write (2026-11-10).
 
 `test/entry.coverage.test.vibe` failed about half its runs with an unhandled teardown error: `src/web/entry.vibe`
 started the page with `Runtime.run` and kept no handle. It now starts it with `Runtime.embed` and exports the handle;
@@ -474,7 +475,11 @@ below was checked by breaking the code, seeing the test fail, and restoring it.
   `issues/steered-host` at 5 seconds, which passed at 60 seconds with one execution.
 - **No target reaches the network.** `history/github-public-read` left the suite; `test/mainLog.github.test.vibe`
   replays a recording of real GitHub and records again only with `VIBE_GITHUB=record` and `GITHUB_TEST_TOKEN`
-  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub: a recording cannot hold generated requests.
+  ([0032](0032-record-replay.md)). Fuzz targets keep the in-memory GitHub by VL-38: a recording cannot hold generated requests.
+  `test/fakeConformance.test.vibe` replays every committed real-GitHub recording through it on every `pnpm test`,
+  comparing status and every field the app's production decoders read ([0032](0032-record-replay.md#fake-conformance-vl-38-lane-vl-fake-conformance)).
+  The fake's visibility clock models delayed listings and timelines; no status or meaningful decoded value is
+  normalized away. Normalization rules and reasons live together in `NON_SEMANTIC_DIFFERENCES`.
 - **Named answers.** `sandbox/host-recovery`, `api-objects/world`, `web/subscriptions`, `wiki/tools`,
   `history/page-paths`, `reply/failure-tags`, `http/doors`, `actions/history-host`, `web/arbitrary-update`,
   `history/arbitrary-update` and `history/view-models` now require the expected outcome; the api-workerd bench reads one
@@ -808,3 +813,8 @@ older answer; 248 executions pass at that seed.
 `actions/steered-runs` (5 s budget) for 0 executions, after 1 each in the run before: replaying the saved value and
 one execution took 21.7 s and 8.5 s with coverage counters. Both declare `STEERED_FLOOR` (30 s) in `fuzz/run.vibe`.
 With it, under coverage: `wiki/steered-host` 1 execution in 31.8 s, `actions/steered-runs` 7 in 31.7 s.
+
+`web/terminal` also starts its sandbox by submitting `/sandbox` in the composer (`slash`), which reaches
+`src/web/main.vibe` 795 and 796 (31 hits at seed 20261124). The web targets now leave 3 of 667 lines of `main.vibe`
+unreached at seed 20261122 (795, 796 and the roles stream's end, 1258, which the `closing` backend reaches at other
+seeds) and 70 of 823 branch arms.

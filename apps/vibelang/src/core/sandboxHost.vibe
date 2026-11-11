@@ -5,8 +5,13 @@ import { Factory, Refused, Unavailable, type SandboxSnapshot } from "./Factory.v
 import { meter, meterDelayMilliseconds, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
 import { mayStart, SandboxPolicy } from "./sandboxPolicy.vibe"
 
-export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
-export interface Receipt { readonly request: Pending; readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string }
+/** `reason`: a cancelled start's content-free cause (failureReason), kept so its receipt names it. */
+export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string; readonly reason?: string }
+export interface Receipt { readonly request: Pending; readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string; readonly reason?: string }
+/** A refused receipt's Unavailable reason: its refusal, then the cause when one was recorded. */
+export function receiptReason(receipt: Receipt): string {
+  return receipt.reason === undefined ? receipt.refusal : `${receipt.refusal}:${receipt.reason}`
+}
 export interface SandboxState {
   readonly ledger: SandboxLedger
   readonly months: Readonly<Record<string, number>>
@@ -39,13 +44,32 @@ export interface Machines {
   command(id: string, generation: number, operationId: string, command: string): string!Unavailable
 }
 export const steps = Metric.counter("vibelang_sandbox_steps", { incremental: true })
-export effect function observed<A, E, R>(step: string, work: A!E!R) {
+/**
+ * A failure's content-free cause: an Unavailable's own reason (fixed words, statuses and the machine's refusal reasons,
+ * never user text), else the error's tag, else `defect`.
+ */
+export function failureReason(error: unknown): string {
+  if (typeof error !== "object" || error === null) return "defect"
+  const tagged = error as { readonly _tag?: unknown; readonly reason?: unknown }
+  if (tagged._tag === "Unavailable" && typeof tagged.reason === "string") return tagged.reason
+  return typeof tagged._tag === "string" ? tagged._tag : "defect"
+}
+/**
+ * Logs, meters and spans one step. A failure carries its failureReason. `refusalOf` names a successful answer that is a
+ * refusal (the machine's `{ ok: false, reason }`): that step is `refused`, with the reason, not `done`.
+ */
+export effect function observed<A, E, R>(step: string, work: A!E!R, refusalOf: (answer: A) => string = () => "") {
   return try work.pipe(
-    Effect.tap(() => Metric.update(Metric.withAttributes(steps, { step, outcome: "done" }), 1)),
-    Effect.tap(() => Effect.logInfo("vibelang.sandbox").pipe(Effect.annotateLogs({ step, outcome: "done" }))),
-    Effect.tapError(() => effect {
-      try Metric.update(Metric.withAttributes(steps, { step, outcome: "failed" }), 1)
-      try Effect.logWarning("vibelang.sandbox").pipe(Effect.annotateLogs({ step, outcome: "failed" }))
+    Effect.tap((answer) => effect {
+      const reason = refusalOf(answer)
+      const attributes: Record<string, string> = reason === "" ? { step, outcome: "done" } : { step, outcome: "refused", reason }
+      try Metric.update(Metric.withAttributes(steps, attributes), 1)
+      try (reason === "" ? Effect.logInfo("vibelang.sandbox") : Effect.logWarning("vibelang.sandbox")).pipe(Effect.annotateLogs(attributes))
+    }),
+    Effect.tapError((error) => effect {
+      const attributes = { step, outcome: "failed", reason: failureReason(error) }
+      try Metric.update(Metric.withAttributes(steps, attributes), 1)
+      try Effect.logWarning("vibelang.sandbox").pipe(Effect.annotateLogs(attributes))
     }),
     Effect.withSpan(`vibelang.sandbox.${step}`),
   )
@@ -98,7 +122,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (pending.kind === "start") {
       const started = try Effect.result(observed("provision", machines.start(id, pending.generation)))
       if (started._tag === "Failure") {
-        const cancelled: Pending = { ...pending, kind: "cancel-start" }
+        const cancelled: Pending = { ...pending, kind: "cancel-start", reason: failureReason(started.failure) }
         const cancelling = { ...state, pending: cancelled }
         try store.write(cancelling)
         try arm(cancelling)
@@ -106,7 +130,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       }
       const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
       if (remainingMilliseconds(measured.ledger.allowanceMilliseconds, measured.ledger.usedMilliseconds) === 0) {
-        const cancelled: Pending = { ...pending, kind: "cancel-start" }
+        const cancelled: Pending = { ...pending, kind: "cancel-start", reason: "out-of-minutes" }
         const cancelling = { ...state, ...measured, pending: cancelled }
         try store.write(cancelling)
         return try complete(cancelling, cancelled, now)
@@ -122,7 +146,8 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
       const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
       next = try transition({ ...state, ...measured }, pending, now)
     }
-    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...pending, kind: "start" } : pending, snapshot: view(next, pending.conversation), output: "", refusal }
+    const { reason, ...request } = pending
+    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...request, kind: "start" } : pending, snapshot: view(next, pending.conversation), output: "", refusal, ...(pending.kind === "cancel-start" && reason !== undefined ? { reason } : {}) }
     next = { ...next, pending: null }
     try store.write(next, receipt)
     try arm(next)
@@ -203,7 +228,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     const old = try store.receipt(request.operationId)
     if (old !== undefined) {
       if (old.request.kind !== request.kind || old.request.conversation !== request.conversation || old.request.command !== request.command || (request.kind !== "start" && old.request.generation !== request.generation)) throw new Refused({ refusal: "operation-conflict" })
-      if (old.refusal !== "") throw new Unavailable({ reason: old.refusal })
+      if (old.refusal !== "") throw new Unavailable({ reason: receiptReason(old) })
       return { type: "receipt" as const, receipt: old }
     }
     const snapshot = view(state, request.conversation)
@@ -228,7 +253,7 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (admitted.type === "receipt") return admitted.receipt
     try complete(admitted.state, admitted.pending, admitted.now)
     const receipt = (try store.receipt(request.operationId))!
-    if (receipt.refusal !== "") throw new Unavailable({ reason: receipt.refusal })
+    if (receipt.refusal !== "") throw new Unavailable({ reason: receiptReason(receipt) })
     return receipt
   }
   effect function command(conversation: string, operationId: string, text: string, generation: number) {

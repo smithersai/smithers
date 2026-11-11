@@ -21,7 +21,7 @@ distinct constructors, even with one installed package version.
 **Fix.** Use `hasSmithersErrorShape` at the boundary where the value arrives.
 It validates the fields instead of the prototype, and still refuses a plain
 `Error`, an object that is not an `Error`, and a code outside the documented
-five. See
+two. See
 [Detect an error across module copies](./guides/detect-an-error-across-module-copies.md).
 
 If duplicate installations are in your own dependency tree, deduplicate them
@@ -67,7 +67,9 @@ again.
 so it cannot regress.
 
 **Fix.** Pass the details at construction. For a name and a tag of its own,
-declare a subclass: `error MyError extends SmithersError`.
+a TypeScript subclass must assign `_tag` after `super(...)` and set
+`MyError.prototype.name = "MyError"`; a plain subclass inherits the base values.
+See [the subclass example](./guides/raise-an-error.md#subclass-when-you-have-typed-fields).
 
 ## The message has no documentation URL
 
@@ -130,4 +132,4 @@ and treating them as codes is how a prototype-pollution style input becomes a
 lookup hit.
 
 **Fix.** Nothing to fix. `undefined` and `false` are the correct answers for
-every value outside the five documented codes.
+every value outside the two documented codes.

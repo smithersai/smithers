@@ -8,6 +8,7 @@ import { Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { expect, test, vi } from "vitest"
 import { openTestApp, TestChatApi } from "../../test/chatApi"
+import * as Store from "../../../worker/github/Store.ts"
 import { Auth } from "../auth/auth"
 import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
@@ -37,6 +38,11 @@ test("a branch page renders the shared toast stack, anchored under its chrome, o
     repo.queries.view.startSyncImmediate()
     await vi.waitFor(() => expect(repo.queries.view.toArray[0]?.view.repoId).toBe("github/acme/widgets"))
     const subject = "clone:github/acme/widgets"
+    // acme/widgets is a public repository without the App: its notices sync only while GitHub's answer that it is public
+    // is fresh (decision 0155, worker/github/VisibilityReceipt.ts), so each batch of notices follows a fresh answer.
+    const publicRepository = () => Effect.runPromise(api.github.run(Effect.flatMap(Store.repositoryObservation, (at) =>
+      Store.recordRepository("github/acme/widgets", { private: false }, at))))
+    await publicRepository()
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href)
         VALUES ('person-member', ${subject}, 'clone', 'failed', true, 'github/acme/widgets', 'acme/widgets',
@@ -58,6 +64,7 @@ test("a branch page renders the shared toast stack, anchored under its chrome, o
     const plugins = await runtime.runPromise(Effect.service(PluginsUi))
     const html = branchRenderer({ home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views, plugins })(router)
     const services = { home: await runtime.runPromise(Effect.service(Home)), files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, personalModel, todos, views, plugins }
+    await publicRepository()
     await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.all([
       // A push to `main` is a repository's: a notice of one names it (decision 0110, the data gate; one naming none is hidden).
       sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, href, occurred_at, updated_at)

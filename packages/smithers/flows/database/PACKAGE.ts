@@ -28,11 +28,46 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   ]
 })
 
+/** The named volume holding `adapterPostgresDatabase`'s Unix socket. */
+const postgresSocket = "smithers-database-test-postgres-socket"
+
 /** Run the database matrix against a declared PostgreSQL service in CI. */
 const adapterPostgresDatabase = Smithers.Docker.Service({
   image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
   env: { POSTGRES_PASSWORD: "smithers-adapter-test", POSTGRES_DB: "smithers_adapter_test" },
   ports: { "5432": 55436 },
+  // The PgBouncer below reaches this server through its Unix socket: services
+  // publish only on the host's loopback, which no other container can reach.
+  volumes: { [postgresSocket]: "/var/run/postgresql" },
+  readiness: {
+    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "smithers_adapter_test"],
+    timeout: "120s"
+  },
+  stop: { signal: "SIGTERM", grace: "10s" }
+})
+
+/**
+ * PgBouncer in transaction pooling over `adapterPostgresDatabase`, configured
+ * as the compose `pgbouncer` (`apps/mvp/docker-compose.yml`): four server
+ * connections, each reset when its transaction ends, as Cloudflare Hyperdrive
+ * does. The pooling, partition and read-snapshot suites run through it.
+ */
+const adapterPgbouncer = Smithers.Docker.Service({
+  image: "edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340",
+  env: {
+    DB_HOST: "/var/run/postgresql",
+    DB_USER: "postgres",
+    DB_PASSWORD: "smithers-adapter-test",
+    DB_NAME: "smithers_adapter_test",
+    POOL_MODE: "transaction",
+    SERVER_RESET_QUERY: "RESET ALL",
+    SERVER_RESET_QUERY_ALWAYS: "1",
+    AUTH_TYPE: "scram-sha-256",
+    MAX_PREPARED_STATEMENTS: "200",
+    DEFAULT_POOL_SIZE: "4"
+  },
+  ports: { "5432": 56440 },
+  volumes: { [postgresSocket]: "/var/run/postgresql" },
   readiness: {
     exec: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "smithers_adapter_test"],
     timeout: "120s"
@@ -60,8 +95,11 @@ const test = Smithers.Shell.Test({
   ],
   timeout: "20m",
   hosts: ["linux"],
-  env: { SMITHERS_TEST_PG_URL: "postgres://postgres:smithers-adapter-test@127.0.0.1:55436/smithers_adapter_test" },
-  services: [adapterPostgresDatabase],
+  env: {
+    SMITHERS_TEST_PG_URL: "postgres://postgres:smithers-adapter-test@127.0.0.1:55436/smithers_adapter_test",
+    SMITHERS_TEST_PGBOUNCER_URL: "postgres://postgres:smithers-adapter-test@127.0.0.1:56440/smithers_adapter_test"
+  },
+  services: [adapterPostgresDatabase, adapterPgbouncer],
   sandbox: { network: "loopback" }
 })
 
@@ -223,6 +261,7 @@ export const Package = Smithers.Package({
     lint,
     test,
     adapterPostgresDatabase,
+    adapterPgbouncer,
     ...securityReview
   }
 })

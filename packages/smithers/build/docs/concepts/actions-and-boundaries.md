@@ -161,6 +161,7 @@ native mechanism. `S.Sandbox.None()` also disables confinement.
 Under confinement a tool may read its declared read set and nothing else under
 the workspace: the target's expanded declared inputs, the outputs of every
 transitive dependency, the `node_modules` trees above its working directory,
+the `node_modules` of every install it declares with `S.nodeModules`,
 and the cache directory's scratch and fetch store. It may write its declared
 outputs, its declared `changes`, and the cache directory with the result cache
 itself re-closed, plus a private temporary directory and home. A declared
@@ -192,6 +193,15 @@ A target declaring `services` must also declare `{ network: "loopback" }` or
 `{ network: true }`; service dependencies never widen a policy implicitly.
 Since Linux refuses loopback-only access, a cross-platform service consumer
 must explicitly opt into the full network.
+
+An installed tree is admitted by its identity, not by its content. The
+`node_modules` trees above the working directory belong to the workspace's
+declared package manager and lockfile. A tool that resolves modules from any
+other directory declares that install: `S.nodeModules("//experiments")` keys
+the directory's `package.json` and lockfiles and opens its `node_modules`,
+and nothing else in the directory. A tree that is a link to a shared install
+is admitted only when the link resolves to a directory named `node_modules`;
+a link to any other directory fails the target closed.
 
 An undeclared workspace read is missing or refused, and an undeclared write
 fails at the kernel. Native host reads outside the admitted runtime and explicit

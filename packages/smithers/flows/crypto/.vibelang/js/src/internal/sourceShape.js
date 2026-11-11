@@ -23,7 +23,9 @@
  *   renames the binding.
  * - Comments and whitespace are dropped. A line break is kept only where it
  *   ends a statement: after `return`, `break`, `continue`, `throw`, `yield`
- *   or `async`, and before a `++` or `--` that follows an operand.
+ *   or `async`, and before a `++` or `--` that follows an operand. A class
+ *   member that follows a field at a line break gets the `;` a minifier
+ *   writes there, so the next field's name stays a key.
  *
  * So swapping two parameters' or two locals' uses changes the shape. What it
  * cannot see is which outer binding a name reads, beyond the pattern of its
@@ -344,6 +346,15 @@ const endsOperand = (token) => {
             return true;
     }
 };
+/**
+ * Whether the token, after an operand and a line break, starts a new class
+ * member: a key that cannot continue the field before it. `in` and
+ * `instanceof` continue it, and so do `[`, `(`, `*` and a template.
+ *
+ * @private
+ */
+const startsMember = (token) => token.kind === "name" ? token.text !== "in" && token.text !== "instanceof" : token.kind === "private" ||
+    token.kind === "literal";
 /** The end of the template chunk that starts at `start`, after its `` ` `` or `}`. @private */
 const templateEnd = (source, start) => {
     let index = start + 1;
@@ -851,6 +862,8 @@ export const sourceShape = (source) => {
         return own < 0 ? { name: tokens[index].text, scope } : `$${own}`;
     };
     let previous;
+    // Whether the previous token ends an operand or a member key, so a member may follow a line break.
+    let ended = false;
     for (let index = 0; index < count; index++) {
         while (index > scope.end)
             scope = scope.parent;
@@ -862,6 +875,16 @@ export const sourceShape = (source) => {
             ((previous.kind === "name" && restricted.has(previous.text)) ||
                 ((token.text === "++" || token.text === "--") && endsOperand(previous))))
             shape.push(";");
+        if (top.kind === "class" && !top.key && top.conditionals === 0 && token.newline && ended && startsMember(token) &&
+            classAt !== stack.length) {
+            // A class member after a field that ends at a line break, as a minifier writes it, unless
+            // a class head at this depth is still open. The field's arrow functions end with it.
+            if (shape[shape.length - 1] !== ";")
+                shape.push(";");
+            top.key = true;
+            scope = top.scope;
+        }
+        let ends = endsOperand(token);
         let text = token.text;
         if (token.kind === "template") {
             if (token.text.startsWith("}") && stack.length > 1)
@@ -882,7 +905,7 @@ export const sourceShape = (source) => {
                         classAt = -1;
                     if (kind === "block" && !bodies.has(index))
                         enter(after(index) - 1, false);
-                    stack.push({ kind, conditionals: 0, key: kind !== "block" });
+                    stack.push({ kind, conditionals: 0, key: kind !== "block", scope });
                     break;
                 }
                 case "}": {
@@ -934,12 +957,14 @@ export const sourceShape = (source) => {
         else if (token.kind === "name") {
             if (previous?.kind === "punctuator" && (previous.text === "." || previous.text === "?.")) {
                 // A property name.
+                ends = true;
             }
             else if (member && top.key) {
                 const modifier = modifiers.has(token.text) && following !== undefined &&
                     (following.kind !== "punctuator" || following.text === "[" || following.text === "*");
                 if (!modifier) {
                     top.key = false;
+                    ends = true;
                     const next = following?.text;
                     if (is(index + 1, "("))
                         method(index + 1);
@@ -984,6 +1009,7 @@ export const sourceShape = (source) => {
         }
         shape.push(text);
         previous = token;
+        ended = ends;
     }
     const free = new Map();
     return shape.map((piece) => {

@@ -21,7 +21,7 @@ try {
   await send(chatId, text)
 } catch (error) {
   if (!isSmithersError(error)) throw error
-  // error.code is now one of the five documented literals.
+  // error.code is now one of the two documented literals.
 }
 ```
 
@@ -38,23 +38,21 @@ instead of `isSmithersError`. See
 switch (error.code) {
   case "INVALID_INPUT":
     return badRequest(error.summary)
-  case "TELEGRAM_INIT_DATA_INVALID":
-    return unauthorized()
-  case "UNSUPPORTED":
-    return serverError("This runtime lacks a required primitive.")
-  case "TELEGRAM_API_ERROR":
   case "INTEGRATION_ERROR":
     return classifyProviderFailure(error)
+  default: {
+    const unhandled: never = error.code
+    return unhandled
+  }
 }
 ```
 
 The union is closed, so this `switch` is exhaustive and the compiler will find
-it again the day a sixth code is added. A message is prose an adapter may
+it again the day a new code is added. A message is prose an adapter may
 reword between releases; a code is a checked literal.
 
-`INVALID_INPUT`, `TELEGRAM_INIT_DATA_INVALID`, and `UNSUPPORTED` are all
-terminal. Retrying any of them repeats the same computation on the same input
-and gets the same answer.
+`INVALID_INPUT` is terminal. Retrying the same invalid input repeats the
+same computation and gets the same answer.
 
 ## Read the reason on a provider failure
 
@@ -81,9 +79,6 @@ boundary and refuses one whose `reason` this build cannot encode, which
 the key the clients set on the responses a retry can plausibly clear.
 `toUnauthorized` and `toInvalidInput` build the control plane's typed errors
 from `summary`, so no documentation URL reaches the transport.
-
-`TELEGRAM_API_ERROR` is retained for decoding historical failures. The Telegram
-adapter is outside the MVP; new GitHub calls report `INTEGRATION_ERROR` directly.
 
 ## Fail an action, do not throw inside one
 

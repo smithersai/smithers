@@ -3,14 +3,15 @@ import * as TestSchemas from "../src/TestSchemas.ts"
  * `PostgresDatabase` behind a transaction-pooling proxy, and on a direct
  * connection, through one suite.
  *
- * PgBouncer with `pool_mode=transaction` (the `pgbouncer` service in
- * `apps/mvp/docker-compose.yml`, on 127.0.0.1:54322 over the compose Postgres)
- * stands in for Cloudflare Hyperdrive: it runs each transaction on whichever of
+ * PgBouncer with `pool_mode=transaction` (`SMITHERS_TEST_PGBOUNCER_URL`, which
+ * the package gate declares, or else the `pgbouncer` service in
+ * `apps/mvp/docker-compose.yml` on 127.0.0.1:54322) stands in for Cloudflare
+ * Hyperdrive: it runs each transaction on whichever of
  * its four server connections is free and resets that connection when the
  * transaction ends, so a session setting made outside a transaction is lost. The
  * same cases run directly against `SMITHERS_TEST_PG_URL`, the server the
- * storage matrix provides. Each endpoint skips, and says why, only when nothing
- * listens there.
+ * storage matrix provides. A PgBouncer the environment names must answer; otherwise
+ * each endpoint skips, and says why, only when nothing listens there.
  */
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
@@ -20,24 +21,13 @@ import { randomUUID } from "node:crypto"
 import { DatabaseMetrics, DurableWriter, PostgresDatabase } from "../src/index.vibe"
 import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
-import { listening, pgbouncerUrl } from "./harness/listening.ts"
+import { absence, pgbouncer, postgres } from "./harness/listening.ts"
 
-const endpoints = [
-  { name: "PostgreSQL", url: process.env.SMITHERS_TEST_PG_URL, start: "`pnpm coverage` provides a server" },
-  {
-    name: "PgBouncer with pool_mode=transaction",
-    url: pgbouncerUrl,
-    start: "run `docker compose up -d pgbouncer` in apps/mvp"
-  }
-]
+const endpoints = [postgres(), pgbouncer()]
 
 for (const endpoint of endpoints) {
   const url = endpoint.url
-  const absent = url === undefined
-    ? `SMITHERS_TEST_PG_URL is unset; ${endpoint.start}`
-    : await listening(url)
-    ? undefined
-    : `nothing listens on ${new URL(url).host}; ${endpoint.start}`
+  const absent = await absence(endpoint)
 
   describe(endpoint.name, () => {
     if (url === undefined || absent !== undefined) {

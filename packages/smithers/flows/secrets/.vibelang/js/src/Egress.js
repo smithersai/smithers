@@ -42,7 +42,8 @@
  * number of secrets; failures carry a code and nothing of the request. Each
  * request is one `Egress.execute` span and one count on
  * `secret_egress_requests` by `outcome`, recorded when the answer's body has
- * ended.
+ * ended, or immediately for HEAD and bodiless statuses. A caller of
+ * `execute` must drain a body-bearing answer to settle its telemetry.
  *
  * @since 0.1.0
  */
@@ -181,8 +182,9 @@ export class Audit extends runtime.$service("@smthrs/secrets/Egress/Audit") {
 }
 /**
  * {@link execute} calls, by `outcome`: `forwarded` when the answer's body
- * ended, `broken` when it broke off, a {@link Refusal}, or `unavailable_`
- * and the {@link Unavailable} code.
+ * ended (or immediately for HEAD and bodiless statuses), `cancelled` when
+ * the guest interrupted it, `broken` when the host broke it off, a
+ * {@link Refusal}, or `unavailable_` and the {@link Unavailable} code.
  *
  * @category observability
  * @since 0.1.0
@@ -298,7 +300,9 @@ const headerBytes = (headers) => {
  * in its headers, and answers the host's answer scrubbed. Fails with
  * {@link Refused} before anything is revealed or sent, or with
  * {@link Unavailable}. Requires the host's `HttpClient`, {@link Vault} and
- * {@link Audit}.
+ * {@link Audit}. HEAD and bodiless statuses settle telemetry immediately.
+ * For every other answer, consume or drain `body` even if only the status
+ * or headers are needed: its stream exit settles the count and log line.
  *
  * @category egress
  * @since 0.1.0
@@ -321,7 +325,7 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(function* () 
             var topic_1;
             const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
             yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1);
-            yield* ((topic_1 = Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress"), Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })(topic_1)));
+            yield* ((topic_1 = Effect.logWithLevel(outcome === "forwarded" || outcome === "cancelled" ? "Info" : "Warn")("secrets.egress"), Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })(topic_1)));
         });
     };
     yield* Effect.annotateCurrentSpan({ "server.address": decision.host, "http.request.method": method });
@@ -401,10 +405,14 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(function* () 
             answered[name] = scrubber.text(value);
         }
     }
+    if (method === "HEAD" || bodiless.has(sent.status)) {
+        yield* settle("forwarded", sent.status, used.length);
+        return { status: sent.status, headers: answered, body: Stream.empty };
+    }
     const body = scrubber.stream(sent.stream.pipe(
     // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
     // redirect's, with no body at all, which reaches the guest as an empty one.
-    Stream.catch((error) => error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())))).pipe(Stream.onExit((exit) => Effect.provideContext(settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length), services)));
+    Stream.catch((error) => error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())))).pipe(Stream.onExit((exit) => Effect.provideContext(settle(Exit.isSuccess(exit) ? "forwarded" : Cause.hasInterruptsOnly(exit.cause) ? "cancelled" : "broken", sent.status, used.length), services)));
     return { status: sent.status, headers: answered, body };
 })), "Egress.execute", { kind: "client" });
 /** Statuses whose answer has no body (RFC 9110 §6.4.1). */
@@ -423,7 +431,9 @@ export const forward = (request, policy) => {
     const method = request.method;
     const body = method === "GET" || method === "HEAD"
         ? HttpBody.empty
-        : HttpBody.stream(request.stream, request.headers["content-type"]);
+        : HttpBody.stream(request.stream.pipe(
+        // Web requests with no body expose a failing stream; only that absence is an empty upload.
+        Stream.catch((error) => error.reason.description === "can not create stream from empty body" ? Stream.empty : Stream.fail(error))), request.headers["content-type"]);
     const outgoing = requestWithMethod(method, request.originalUrl, request.headers, body);
     let $do1;
     {

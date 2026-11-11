@@ -219,8 +219,15 @@ export const registry = (options) => {
             $raise(new InvalidDeclaration({ store: key, message: `no payload version ${version} for unstamped writes` }));
         }
     }
-    const epoch = [...options.stores, ...outbox.payloads].reduce((sum, store) => sum + store.schemaVersion, 0) +
-        retiredStores.reduce((sum, store) => sum + store.schemaVersion + 1, 0);
+    const declarations = [
+        ...options.stores.map((store) => store._tag === "Local"
+            ? ["local", store.id, false, store.schemaVersion]
+            : ["synced", store.id, store.family, store.schemaVersion]),
+        ...outbox.payloads.map((declared) => ["payload", declared.key, false, declared.schemaVersion]),
+        ...retiredStores.map((store) => [`retired ${store.kind}`, store.id, store.family, store.schemaVersion])
+    ].map((declaration) => JSON.stringify(declaration)).sort();
+    // The hash's first 52 bits, so the epoch stays a safe integer.
+    const epoch = Number.parseInt(fnv1a(JSON.stringify(declarations)).slice(0, 13), 16);
     return { stores: options.stores, retired: retiredStores, outbox, epoch };
 };
 const belongs = (store, collection) => store.id === collection || (store.family && collection.startsWith(`${store.id}:`));

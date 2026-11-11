@@ -241,20 +241,21 @@ describe("issues through smithers.sh's delegation", () => {
     expect(vip.path).toMatch(/^docs\/design\/vips\/proposal-[0-9a-f]{64}\.md$/)
     expect(w.fake.pulls.at(-1)).toMatchObject({ title: "VIP: Tuples", head: { ref: expect.stringMatching(/^vibelang\/vip-/) } })
 
+    // PR 600 and its issue 601 share GitHub's number sequence; the next PR is 602.
     // GitHub's first read after the VIP's issue shows its review changing another document. The flow's retry adopts
     // the same issue, branch and review once GitHub shows the document: one VIP, never two.
     let issued = false
     let lagged = 0
     w.fault((request, url) => {
       if (request.method === "POST" && url.pathname === "/repos/o/r/issues") issued = true
-      if (!issued || lagged > 0 || request.method !== "GET" || url.pathname !== "/repos/o/r/pulls/601/files") return undefined
+      if (!issued || lagged > 0 || request.method !== "GET" || url.pathname !== "/repos/o/r/pulls/602/files") return undefined
       lagged += 1
       return json(200, [{ filename: "docs/design/vips/proposal-seed.md", status: "added" }])
     })
     const writes = w.fake.writes
     const records = succeeded(try w.act("propose", { ...full, title: "Records" }))
     expect(lagged).toBe(1)
-    expect(item(records, records.selected!)).toMatchObject({ title: "Records", vip: "In review", review: "https://github.com/o/r/pull/601" })
+    expect(item(records, records.selected!)).toMatchObject({ title: "Records", vip: "In review", review: "https://github.com/o/r/pull/602" })
     expect(records.items.filter((entry) => entry.title === "Records")).toHaveLength(1)
     expect(w.fake.writes - writes).toBe(4)
   }))

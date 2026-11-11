@@ -6,6 +6,8 @@ import { SqlClient } from "effect/sql"
 import { act, createElement, StrictMode, Fragment } from "react"
 import { createRoot } from "react-dom/client"
 import { afterAll, expect, test, vi } from "vitest"
+import { AuthProvider } from "../src/features/auth/components/AuthContext"
+import { Auth } from "../src/features/auth/auth"
 import { AuthStore, SESSION } from "../src/features/auth/store"
 import { Commands } from "../src/features/commands/commands"
 import { Repo } from "../src/features/repo/repo"
@@ -22,9 +24,10 @@ import { StatusProvider } from "../src/features/status/components/StatusContext"
 import { Todos } from "../src/features/todos/todos"
 import { TodosProvider } from "../src/features/todos/components/TodosContext"
 import { Chat } from "../src/features/chat/chat"
+import * as ConversationPeople from "../worker/branch/ConversationPeople"
 import * as Conversations from "../worker/branch/Conversations"
 import { shaOf } from "../worker/test/codeStorage"
-import { openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
+import { member, openTab, openTestApp, TestChatApi } from "../src/test/chatApi"
 
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom), requestAnimationFrame: dom.requestAnimationFrame.bind(dom), cancelAnimationFrame: dom.cancelAnimationFrame.bind(dom), MutationObserver: dom.MutationObserver, ResizeObserver: dom.ResizeObserver })
 afterAll(() => dom.happyDOM.close())
@@ -50,16 +53,24 @@ test.each([false, true])("branch=%s: cold sync keeps the existing view and the n
   document.body.append(container)
   const root = createRoot(container)
   try {
-    const { commands, repo, views, web, store, auth, chatState, status, todos } = await app.runPromise(Effect.all({
+    const { commands, repo, views, web, store, auth, authView, chatState, status, todos } = await app.runPromise(Effect.all({
       commands: Effect.service(Commands), repo: Effect.service(Repo), views: Effect.service(Views),
-      web: Effect.service(Web), store: Effect.service(ViewsStore), auth: Effect.service(AuthStore), chatState: Effect.service(Chat), status: Effect.service(Status), todos: Effect.service(Todos),
+      web: Effect.service(Web), store: Effect.service(ViewsStore), auth: Effect.service(AuthStore), authView: Effect.service(Auth), chatState: Effect.service(Chat), status: Effect.service(Status), todos: Effect.service(Todos),
     }))
     await vi.waitFor(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("signed_in"), { timeout: 40_000 })
     const about = { name: "octocat/Spoon-Knife", description: null, homepage: null, topics: [], stars: 0, forks: 0, watchers: 0, license: null, defaultBranch: "main", archived: false, languages: [], release: null, releases: null, contributors: [], contributorCount: null, commits: null, branches: null, tags: null, head: null, root: [], readme: { path: "README.md", text: "# Spoon-Knife" }, installUrl: null }
+    // Spoon-Knife is public on GitHub, and the App isn't on it: its public metadata admits the deployment's Member (decision 0156).
+    api.github.scripted.publicElsewhere.add("octocat/Spoon-Knife")
     await app.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO repo_about (repo_id, about, via, read_at, fresh_until) VALUES ('github/octocat/spoon-knife', ${JSON.stringify(about)}, 'anonymous', now(), now() + interval '1 hour')`)))
-    const conversationId = branch ? (await app.runPromise(api.branches.run(Conversations.track("github/octocat/spoon-knife", "feature", "open", shaOf("feature"))))).branch.conversationId : undefined
+    // Branch `ref` of Spoon-Knife, tracked and opened by the person as `POST /api/branches` records it: a branch
+    // conversation shows only from their list (the data gate, decision 0110). Its conversation's id.
+    const opened = async (ref: string) => (await app.runPromise(api.branches.run(Effect.tap(
+      Conversations.track("github/octocat/spoon-knife", ref, "open", shaOf(ref)),
+      (tracked) => ConversationPeople.opened(tracked.branch.conversationId, member.subject.id, "octocat", "spoon-knife", ref),
+    )))).branch.conversationId
+    const conversationId = branch ? await opened("feature") : undefined
     await chatState.actions.show(conversationId ?? null)
-    const destinationId = (await app.runPromise(api.branches.run(Conversations.track("github/octocat/spoon-knife", "main", "open", shaOf("main"))))).branch.conversationId
+    const destinationId = await opened("main")
     const oldId = crypto.randomUUID()
     const seeded = await api.fetch(`${api.origin}/api/views`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: oldId, template: "repo", props: { repo: "octocat/Spoon-Knife" }, ...(conversationId === undefined ? {} : { conversationId }) }) })
     expect(seeded.status).toBe(202)
@@ -73,13 +84,15 @@ test.each([false, true])("branch=%s: cold sync keeps the existing view and the n
     const router = createRouter({ isServer: false, routeTree: parent.addChildren([chat, page]), history: createMemoryHistory({ initialEntries: [origin] }) })
     await act(async () => {
       await router.load()
+      // A repository view renders behind its visibility (RepoGate), which reads the session: main.tsx provides it.
       root.render(createElement(StrictMode, null,
+        createElement(AuthProvider, { value: authView },
         createElement(ChatProvider, { value: chatState },
         createElement(StatusProvider, { value: status },
         createElement(TodosProvider, { value: todos },
         createElement(ViewsProvider, { value: views },
         createElement(WebProvider, { value: web },
-        createElement(RepoProvider, { value: repo }, createElement(RouterProvider, { router })))))))))
+        createElement(RepoProvider, { value: repo }, createElement(RouterProvider, { router }))))))))))
     })
     const until = (assertion: () => void) => vi.waitFor(async () => { await act(async () => {}); assertion() }, { timeout: 40_000, interval: 20 })
     await app.runPromise(Deferred.await(requested))

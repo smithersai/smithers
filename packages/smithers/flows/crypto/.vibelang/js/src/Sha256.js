@@ -26,10 +26,10 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaParser from "effect/SchemaParser";
 import { sha256, Sha256Prefix } from "./internal/sha256.js";
+import { makeSnapshotSync } from "./internal/snapshot.js";
 const digestBytes = 32;
 const digestPattern = /^[0-9a-f]{64}$/;
 const hex = "0123456789abcdef";
-const encoder = new TextEncoder();
 /**
  * Schema for exactly 64 lowercase hexadecimal SHA-256 characters.
  *
@@ -77,45 +77,8 @@ const failure = (code, message, cause) => new Sha256Error({
     message,
     ...(cause === undefined ? {} : { cause })
 });
-/** Whether UTF-8 can represent a JavaScript string without replacement. */
-const isWellFormed = (value) => {
-    for (let index = 0; index < value.length; index++) {
-        const code = value.charCodeAt(index);
-        if (code >= 0xd800 && code <= 0xdbff) {
-            const next = value.charCodeAt(index + 1);
-            if (index + 1 >= value.length || next < 0xdc00 || next > 0xdfff)
-                return false;
-            index++;
-        }
-        else if (code >= 0xdc00 && code <= 0xdfff) {
-            return false;
-        }
-    }
-    return true;
-};
 /** Copies an input and performs strict UTF-8 encoding. */
-const snapshotSync = (input) => {
-    if (typeof input === "string") {
-        if (!isWellFormed(input)) {
-            throw failure("invalid_text", "SHA-256 text input contains an unpaired UTF-16 surrogate");
-        }
-        try {
-            return encoder.encode(input);
-        }
-        catch (cause) {
-            throw failure("text_encoding_failed", "SHA-256 text input could not be encoded as UTF-8", cause);
-        }
-    }
-    if (input instanceof Uint8Array) {
-        try {
-            return new Uint8Array(input);
-        }
-        catch (cause) {
-            throw failure("invalid_input", "SHA-256 byte input could not be copied", cause);
-        }
-    }
-    throw failure("invalid_input", "SHA-256 input must be a string or Uint8Array");
-};
+const snapshotSync = makeSnapshotSync(new TextEncoder(), failure);
 /** Copies the input when an Effect starts, not when it is constructed. */
 const snapshot = (input) => Effect.try({
     try: () => snapshotSync(input),

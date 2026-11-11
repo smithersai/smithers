@@ -23,20 +23,25 @@ import { Binding, Egress, Placeholder, Scrub } from "@smthrs/secrets"
 
 ## `Binding`
 
-| Export                                   | Signature                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `Name`                                   | `Schema<string>`: `^[A-Z_][A-Z0-9_]{0,63}$`                                                              |
-| `Host`, `isHost`                         | a lowercase DNS name of two or more labels, at most 253 characters, not ending in an all-digit label     |
-| `Method`                                 | `"GET" \| "HEAD" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"`                                              |
-| `Binding`                                | `Schema<{ name, hosts, methods? }>`: 1 to `maximumHosts` (16) hosts; methods, when present, at least one |
-| `minimumValueBytes`, `maximumValueBytes` | `8`, `16384`                                                                                             |
-| `valueProblem`                           | `(value: string) => "too_short" \| "too_long" \| "control_character" \| "malformed_text" \| undefined`   |
-| `checkValue`                             | `(value: Redacted<string>) => Effect<void, ValueInvalid>`                                                |
-| `ValueInvalid`                           | `{ reason }`, never the value                                                                            |
+| Export                                   | Signature                                                                                                                                    |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Name`                                   | `Schema<string>`: `^[A-Z_][A-Z0-9_]{0,63}$`                                                                                                  |
+| `Host`, `isHost`                         | a lowercase DNS name of two or more labels, at most 253 characters, not ending in an all-digit label                                         |
+| `Method`                                 | `"GET" \| "HEAD" \| "POST" \| "PUT" \| "PATCH" \| "DELETE"`                                                                                  |
+| `Binding`                                | `Schema<{ name, hosts, methods? }>`: 1 to `maximumHosts` (16) hosts; methods, when present, at least one                                     |
+| `minimumValueBytes`, `maximumValueBytes` | `8`, `16384`                                                                                                                                 |
+| `valueProblem`                           | `(value: string) => "too_short" \| "too_long" \| "control_character" \| "malformed_text" \| "non_ascii" \| "surrounding_space" \| undefined` |
+| `checkValue`                             | `(value: Redacted<string>) => Effect<void, ValueInvalid>`                                                                                    |
+| `ValueInvalid`                           | `{ reason }`, never the value                                                                                                                |
 
-| Export         | Contract                                                                                                                                                |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ValueProblem` | Type union `too_short`, `too_long`, `control_character`, `malformed_text`; `valueProblem(value)` returns it or undefined, without disclosing the value. |
+| Export         | Contract                                                                                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ValueProblem` | Type union `too_short`, `too_long`, `control_character`, `malformed_text`, `non_ascii`, `surrounding_space`; `valueProblem(value)` returns it or `undefined`, without disclosing the value. |
+
+Values must be 8 bytes to 16 KiB of printable ASCII (`U+0020` to `U+007E`),
+without leading or trailing spaces. Interior spaces are allowed.
+`non_ascii` rejects characters whose header bytes would differ from UTF-8 or
+cannot be sent by Fetch; `surrounding_space` rejects spaces Fetch would strip.
 
 ## `Scrub`
 

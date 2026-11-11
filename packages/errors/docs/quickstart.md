@@ -49,8 +49,6 @@ const parseChunkLength = (raw: unknown): number | string => {
     switch (error.code) {
       case "INVALID_INPUT":
         return `Fix the request: ${error.summary}`
-      case "UNSUPPORTED":
-        return "Run this on a runtime with Web Crypto."
       default:
         return `Integration failure (${error.code}): ${error.summary}`
     }
@@ -61,7 +59,7 @@ parseChunkLength(0)
 // "Fix the request: Chunk maxLength must be an integer between 1 and 4096."
 ```
 
-`error.code` narrows to the five documented literals. This example deliberately
+`error.code` narrows to the two documented literals. This example deliberately
 keeps a fallback branch: any code without its own case returns the integration
 failure message. Adding a code does not make this switch fail type checking.
 
@@ -83,12 +81,6 @@ const describeCode = (code: SmithersErrorCode): string => {
       return "The request is invalid."
     case "INTEGRATION_ERROR":
       return "An integration call failed."
-    case "TELEGRAM_API_ERROR":
-      return "A Telegram Bot API call failed."
-    case "TELEGRAM_INIT_DATA_INVALID":
-      return "Telegram Mini App initData did not authenticate."
-    case "UNSUPPORTED":
-      return "The runtime lacks a required primitive."
     default: {
       const unhandled: never = code
       return unhandled
@@ -97,8 +89,7 @@ const describeCode = (code: SmithersErrorCode): string => {
 }
 ```
 
-The two Telegram cases handle historical failures; their adapter is outside
-the MVP. After all five cases return, `code` narrows to `never`. If a code is added to
+After both cases return, `code` narrows to `never`. If a code is added to
 `SmithersErrorCode` without a matching case here, the assignment to `unhandled`
 fails type checking. The explicit `never` check provides that guarantee; the
 closed union alone does not.
@@ -111,7 +102,7 @@ of them:
 ```ts
 const error = new SmithersError("INTEGRATION_ERROR", "poll failed", { reason: "poll-failed" })
 
-Object.keys(error) // ["code", "summary", "docsUrl", "details"]
+Object.keys(error) // ["code", "summary", "docsUrl", "details", "_tag"]
 console.log(JSON.stringify(error))
 ```
 
@@ -120,13 +111,13 @@ console.log(JSON.stringify(error))
   "code": "INTEGRATION_ERROR",
   "summary": "poll failed",
   "docsUrl": "https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md",
-  "details": { "reason": "poll-failed" }
+  "details": { "reason": "poll-failed" },
+  "_tag": "SmithersError"
 }
 ```
 
 `message`, `stack`, and `name` stay out of that object: the first two are
-non-enumerable on `Error`, and the constructor installs `name` as a
-non-enumerable own property for the same reason.
+non-enumerable on `Error`, and `name` comes from the prototype.
 
 `details` appears only when the constructor received one, so a log line never
 carries `details: undefined`.
@@ -149,11 +140,11 @@ for (const code of smithersErrorCodes) {
 }
 ```
 
-`getSmithersErrorDefinition` answers `undefined` for anything outside the five
+`getSmithersErrorDefinition` answers `undefined` for anything outside the two
 codes, including inherited property names such as `toString`.
 
 ## Next
 
 - [Handle a failed integration call](./guides/handle-a-failure.md) covers
   retries, the `IntegrationError` subclass, and the durable action boundary.
-- [Error code reference](./reference/error-codes.md) lists every raise site.
+- [Error code reference](./reference/error-codes.md) lists current construction sites and their details.

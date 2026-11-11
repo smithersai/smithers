@@ -72,7 +72,7 @@ describe("the lock", () => {
   test("records every version of every store, payload and mutation name; a registry matching it has no problem", () => {
     const lock = recorded(base)
     expect(lock).toEqual({
-      epoch: 3,
+      epoch: base.epoch,
       stores: {
         drafts: { kind: "local", versions: { 1: Migrations.fingerprint(V1) } },
         messages: { kind: "synced", versions: { 1: Migrations.fingerprint(V1) } }
@@ -115,7 +115,7 @@ describe("the lock", () => {
     ])
     const next = recorded(bumped, lock)
     expect(next.stores["messages"]?.versions).toEqual({ 1: Migrations.fingerprint(V1), 2: Migrations.fingerprint(V2) })
-    expect(next.epoch).toBe(6)
+    expect(next.epoch).toBe(bumped.epoch)
     expect(Migrations.check(bumped, next)).toEqual([])
   })
 

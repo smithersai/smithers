@@ -49,6 +49,8 @@ export const REFUSALS = [
   "too_long",
   "control_character",
   "malformed_text",
+  "non_ascii",
+  "surrounding_space",
   "too_large",
   "off",
   "unavailable",
