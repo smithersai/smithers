@@ -1244,6 +1244,8 @@ interface FoldState {
   engineTrace: ReadonlyArray<Builder> | undefined
   /** The span each builder last froze to. */
   readonly frozen: WeakMap<Builder, TraceSpan>
+  /** The end applied to running spans in the last model; absent while live. */
+  stoppedAt: number | undefined
   /**
    * The run's direct children a step may have changed since the last model.
    * Every other child is a closed subtree, and its frozen span is reused as is.
@@ -1275,6 +1277,7 @@ const foldInit = (run: TraceIdentity): FoldState => ({
   engine: [],
   engineTrace: undefined,
   frozen: new WeakMap(),
+  stoppedAt: undefined,
   dirty: new Set(),
   topOf: new WeakMap()
 })
@@ -1282,7 +1285,7 @@ const foldInit = (run: TraceIdentity): FoldState => ({
 /**
  * Folds one record, in sequence order, into a dispatch's trace.
  *
- * Frames open on `turn-opened` and close when the next opens or the run ends;
+ * Frames open on `turn-opened` and close when the next opens;
  * cells open on `cell-produced` and close on `cell-settled`; calls open on
  * `cell-call-started` under the open cell (or the frame, when a call is
  * journaled outside a cell) and settle by stable call identity the way the gateway's own
@@ -1496,7 +1499,6 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
       case "control.run.completed":
       case "control.run.failed":
       case "control.run.cancelled": {
-        closeFrame(at)
         root.endedAt = at
         // The journal's own verdict outranks the card's phase word: a scrub to this record shows the run settled.
         state.verdict = kind.slice("control.run.".length)
@@ -1536,8 +1538,9 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
  * The trace {@link foldStep} has read so far, as the run with `status` would
  * show it.
  *
- * Nothing live is mutated. A settled run closes its open frame where the
- * journal ends, so that close is applied to the frozen copy only.
+ * Nothing live is mutated. A terminal run stops spans still running at its
+ * receipt, or where the journal ends when only its summary is terminal.
+ * A stop proves no success or failure, and is applied to the frozen copy only.
  */
 const foldModel = (
   state: FoldState,
@@ -1545,36 +1548,23 @@ const foldModel = (
   journal: ReadonlyArray<JournalRecord>,
   engine?: ReadonlyArray<Builder>
 ): TraceModel => {
-  const { root, frame, cell, lastAt } = state
-  const closed = new Map<Builder, { readonly status: SpanStatus; readonly endedAt: number }>()
-  const statusOf = (node: Builder): SpanStatus => closed.get(node)?.status ?? node.status
-  // A settled run leaves no frame open: the last frame ends where the journal does.
-  const terminal = TERMINAL_RUN.has(status)
-  if (terminal && frame !== undefined) {
-    if (cell !== undefined) {
-      closed.set(cell, {
-        status: cell.children.some((child) => child.status === "failed") ? "failed" : "completed",
-        endedAt: lastAt
-      })
-    }
-    closed.set(frame, {
-      status: frame.children.some((child) => statusOf(child) === "failed") ? "failed" : "completed",
-      endedAt: lastAt
-    })
-  }
+  const { root, lastAt } = state
+  const runStatus = state.verdict ?? status
+  const terminal = TERMINAL_RUN.has(runStatus)
+  const stoppedAt = terminal ? root.endedAt ?? lastAt : undefined
   if (engine === undefined && state.engineTrace === undefined) state.engineTrace = engineTraceFromJournal(state.engine)
   const children = [...root.children, ...(engine ?? state.engineTrace!)]
-  closed.set(root, {
-    status: state.verdict ?? status,
-    endedAt: root.endedAt ?? (terminal && state.count > 0 ? lastAt : Number.NaN)
-  })
 
   const freeze = (node: Builder, depth: number, members: ReadonlyArray<Builder>): TraceSpan =>
     freezeWith(node, depth, members.map((child) => freeze(child, depth + 1, child.children)))
   const freezeWith = (node: Builder, depth: number, frozenChildren: ReadonlyArray<TraceSpan>): TraceSpan => {
-    const override = closed.get(node)
-    const nodeStatus = override?.status ?? node.status
-    const endedAt = override === undefined || Number.isNaN(override.endedAt) ? node.endedAt : override.endedAt
+    const stopped = node !== root && terminal && node.status === "running"
+    const nodeStatus = node === root ? runStatus : stopped ? "stopped" : node.status
+    const endedAt = node === root
+      ? root.endedAt ?? (terminal && state.count > 0 ? lastAt : undefined)
+      : stopped
+      ? stoppedAt
+      : node.endedAt
     const held = state.frozen.get(node)
     if (
       held !== undefined && held.depth === depth && held.label === node.label && held.status === nodeStatus &&
@@ -1596,15 +1586,16 @@ const foldModel = (
     state.frozen.set(node, span)
     return span
   }
-  // A child no step touched since the last model is a closed subtree: its
-  // frozen span stands, and nothing under it is walked again.
+  // Reuse untouched subtrees only while the terminal overlay is unchanged.
+  // A resume must remove the previous model's stops, even without a new record.
   const settledChild = (child: Builder): TraceSpan | undefined => {
-    if (state.dirty.has(child) || closed.has(child)) return undefined
+    if (state.dirty.has(child) || state.stoppedAt !== stoppedAt) return undefined
     const held = state.frozen.get(child)
     return held?.depth === 1 ? held : undefined
   }
   const frozenChildren = children.map((child) => settledChild(child) ?? freeze(child, 1, child.children))
   state.dirty.clear()
+  state.stoppedAt = stoppedAt
   const frozenRoot = freezeWith(root, 0, frozenChildren)
   const rows: Array<TraceSpan> = []
   const walk = (span: TraceSpan): void => {

@@ -434,19 +434,23 @@ describe("the trace model", () => {
     )
   })
 
-  test("a settled run closes its last frame where the journal ends; a call the journal never settled stays open", () => {
+  test("a terminal run stops unclosed work without inventing a settlement", () => {
     const model = traceFromJournal({ ...RUN, status: "completed" }, [
       ...JOURNAL,
       at(15, "control.run.completed", {}, 7000)
     ])
     expect(model.root.endedAt).toBe(7000)
     const frame2 = model.root.children[2]
-    expect(frame2).toMatchObject({ endedAt: 7000, status: "completed" })
-    expect(model.rows.find((span) => span.id === "call-3")?.endedAt).toBeUndefined()
-    // Without the run's own terminal event, the card's terminal phase still closes the frame at the last stamp.
+    expect(frame2).toMatchObject({ endedAt: 7000, status: "stopped" })
+    const call = model.rows.find((span) => span.id === "call-3")!
+    expect(call).toMatchObject({ endedAt: 7000, status: "stopped" })
+    expect(spanMatches(call, "running")).toBe(false)
+    expect(model.counts.running).toBe(0)
+    // Without a terminal receipt, unclosed work stops at the last journal stamp.
     const byPhase = traceFromJournal({ ...RUN, status: "failed" }, JOURNAL)
-    expect(byPhase.root.children[2]).toMatchObject({ endedAt: 6000 })
+    expect(byPhase.root.children[2]).toMatchObject({ endedAt: 6000, status: "stopped" })
     expect(byPhase.root.status).toBe("failed")
+    expect(byPhase.counts.running).toBe(0)
   })
 
   test("no journal yet is the run root alone, wearing the run's status", () => {

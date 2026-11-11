@@ -22,7 +22,7 @@ import {
 import { moduleRunJournal } from "./fixtures/module-run-journal.ts"
 
 const run = { runId: "run", flowId: "agent" }
-const statuses = ["running", "completed", "failed"] as const
+const statuses = ["running", "completed", "failed", "cancelled", "no-capacity", "paused", "waiting-approval"] as const
 
 const step = (scope: string) => ({
   executionId: "execution",
@@ -193,16 +193,22 @@ const journalOf = (specs: ReadonlyArray<RecordSpec>): Array<JournalRecord> => {
 }
 
 /** Steps the fold one record at a time and checks every prefix against a refold of it. */
-const replay = (journal: ReadonlyArray<JournalRecord>, status: string): ReadonlyArray<TraceModel> => {
+const replay = (
+  journal: ReadonlyArray<JournalRecord>,
+  status: string | ReadonlyArray<string>
+): ReadonlyArray<TraceModel> => {
   const fold = traceFold(run)
   const models: Array<TraceModel> = []
   const frozen: Array<string> = []
   journal.forEach((record, index) => {
     traceFoldStep(fold, record)
-    const live = traceFoldModel(fold, status)
-    expect(live).toEqual(traceFromJournal({ ...run, status }, journal.slice(0, index + 1)))
-    models.push(live)
-    frozen.push(JSON.stringify(live))
+    for (const phase of typeof status === "string" ? [status] : status) {
+      const live = traceFoldModel(fold, phase)
+      expect(live).toEqual(traceFromJournal({ ...run, status: phase }, journal.slice(0, index + 1)))
+      expect(traceFoldModel(fold, phase)).toBe(live)
+      models.push(live)
+      frozen.push(JSON.stringify(live))
+    }
   })
   // A model taken earlier is a snapshot: stepping past it changed none of it.
   models.forEach((model, index) => expect(JSON.stringify(model)).toBe(frozen[index]))
@@ -229,7 +235,7 @@ describe("traceFoldStep", () => {
   })
 
   it.each(["success", "failure"] as const)(
-    "settles an open cell and frame after a %s call when the run ends",
+    "stops an open cell and frame without changing a settled %s call",
     (outcome) => {
       const journal: ReadonlyArray<JournalRecord> = [
         { sequence: 1, kind: "control.agent.turn-opened", payload: {} },
@@ -239,10 +245,163 @@ describe("traceFoldStep", () => {
       ]
       const status = outcome === "failure" ? "failed" : "completed"
       const model = replay(journal, status).at(-1)!
-      expect(model.rows.find((row) => row.kind === "cell")?.status).toBe(status)
-      expect(model.rows.find((row) => row.kind === "frame")?.status).toBe(status)
+      expect(model.rows.find((row) => row.kind === "cell")?.status).toBe("stopped")
+      expect(model.rows.find((row) => row.kind === "frame")?.status).toBe("stopped")
+      expect(model.rows.find((row) => row.kind === "call")?.status).toBe(status)
     }
   )
+
+  it("changes an empty trace's status without inventing a closing timestamp", () => {
+    const fold = traceFold(run)
+    for (const status of statuses) {
+      const model = traceFoldModel(fold, status)
+      expect(model).toEqual(traceFromJournal({ ...run, status }, []))
+      expect(model.rows).toEqual([model.root])
+      expect(model.root.endedAt).toBeUndefined()
+      expect(model.counts).toEqual({ spans: 0, running: 0, failed: 0 })
+    }
+  })
+
+  it("refreshes a stopped call in an untouched frame when the journal end advances", () => {
+    const journal: Array<JournalRecord> = [
+      { sequence: 1, kind: "control.agent.turn-opened", payload: { at: 100 } },
+      {
+        sequence: 2,
+        kind: "control.agent.cell-call-started",
+        payload: { at: 150, callId: "write-1", flowName: "write" }
+      },
+      { sequence: 3, kind: "control.agent.turn-opened", payload: { at: 200 } }
+    ]
+    const fold = traceFold(run, journal)
+    const earlier = traceFoldModel(fold, "failed")
+    const more: JournalRecord = { sequence: 4, kind: "control.agent.permission-required", payload: { at: 300 } }
+    journal.push(more)
+    traceFoldStep(fold, more)
+    const later = traceFoldModel(fold, "failed")
+    expect(later).toEqual(traceFromJournal({ ...run, status: "failed" }, journal))
+    expect(later.rows.find((row) => row.kind === "call")).toMatchObject({ status: "stopped", endedAt: 300 })
+    expect(earlier.rows.find((row) => row.kind === "call")).toMatchObject({ status: "stopped", endedAt: 200 })
+    const settled: JournalRecord = {
+      sequence: 5,
+      kind: "control.agent.cell-call-settled",
+      payload: { at: 400, callId: "write-1", outcome: "success", value: "saved" }
+    }
+    traceFoldStep(fold, settled)
+    const final = traceFoldModel(fold, "failed")
+    expect(final.rows.find((row) => row.kind === "call")).toMatchObject({
+      status: "completed",
+      endedAt: 400,
+      detail: { output: "saved" }
+    })
+    expect(later.rows.find((row) => row.kind === "call")).toMatchObject({ status: "stopped", endedAt: 300 })
+  })
+
+  it.each(["completed", "failed", "cancelled", "no-capacity"])(
+    "restores open spans when %s changes back to running without a new record",
+    (status) => {
+      const journal: ReadonlyArray<JournalRecord> = [
+        { sequence: 1, kind: "control.agent.turn-opened", payload: { at: 100 } },
+        { sequence: 2, kind: "control.agent.cell-produced", payload: { at: 150, text: "await write()" } }
+      ]
+      const models = replay(journal, [status, "running", status, "paused", "running"])
+      const live = models.at(-1)!
+      expect(live.rows.map((row) => row.status)).toEqual(["running", "running", "running"])
+      expect(live.rows.every((row) => row.endedAt === undefined)).toBe(true)
+      expect(live.counts.running).toBe(2)
+    }
+  )
+
+  it.each(["completed", "failed", "cancelled", "no-capacity"])(
+    "stops an unscoped open call when the run is %s",
+    (status) => {
+      for (const receipt of status === "no-capacity" ? [false] : [false, true]) {
+        for (const layout of ["cell", "frame", "root", "closed-frame"] as const) {
+          const journal: Array<JournalRecord> = [
+            ...(layout === "root" ? [] : [
+              { sequence: 1, kind: "control.agent.turn-opened", payload: { at: 100 } }
+            ]),
+            ...(layout === "cell" ?
+              [
+                { sequence: 2, kind: "control.agent.cell-produced", payload: { at: 150, text: "await bash()" } }
+              ] :
+              []),
+            {
+              sequence: 3,
+              kind: "control.agent.cell-call-started",
+              payload: { at: 160, callId: "bash-1", flowName: "bash" }
+            },
+            ...(layout === "closed-frame" ?
+              [
+                { sequence: 4, kind: "control.agent.turn-opened", payload: { at: 170 } }
+              ] :
+              []),
+            ...(receipt ? [{ sequence: 5, kind: `control.run.${status}`, payload: { at: 200 } }] : [])
+          ]
+          const model = replay(journal, receipt ? "running" : status).at(-1)!
+          expect(model.root.status).toBe(status)
+          expect(model.counts.running).toBe(0)
+          expect(model.rows.find((row) => row.kind === "call")).toMatchObject({
+            status: "stopped",
+            endedAt: receipt ? 200 : layout === "closed-frame" ? 170 : 160
+          })
+          for (const row of model.rows.filter((span) => span.kind === "frame" || span.kind === "cell")) {
+            const alreadyClosed = layout === "closed-frame" && row.id === "frame-1"
+            expect(row.status).toBe(alreadyClosed ? "completed" : "stopped")
+            expect(row.endedAt).toBe(alreadyClosed ? 170 : receipt ? 200 : layout === "closed-frame" ? 170 : 160)
+          }
+        }
+      }
+    }
+  )
+
+  it.each(["success", "failure"] as const)("preserves explicitly settled %s spans when the run ends", (outcome) => {
+    const journal: ReadonlyArray<JournalRecord> = [
+      { sequence: 1, kind: "control.agent.turn-opened", payload: { at: 100 } },
+      { sequence: 2, kind: "control.agent.cell-produced", payload: { at: 120 } },
+      {
+        sequence: 3,
+        kind: "control.agent.cell-call-started",
+        payload: { at: 140, callId: "write-1", flowName: "write" }
+      },
+      { sequence: 4, kind: "control.agent.cell-call-settled", payload: { at: 160, callId: "write-1", outcome } },
+      { sequence: 5, kind: "control.agent.cell-settled", payload: { at: 170, outcome } },
+      { sequence: 6, kind: "control.agent.turn-opened", payload: { at: 180 } },
+      { sequence: 7, kind: "control.run.cancelled", payload: { at: 200 } }
+    ]
+    const model = replay(journal, "cancelled").at(-1)!
+    const status = outcome === "failure" ? "failed" : "completed"
+    expect(model.rows.find((row) => row.id === "frame-1")).toMatchObject({ status, endedAt: 180 })
+    expect(model.rows.find((row) => row.kind === "cell")).toMatchObject({ status, endedAt: 170 })
+    expect(model.rows.find((row) => row.kind === "call")).toMatchObject({ status, endedAt: 160 })
+    expect(model.rows.find((row) => row.id === "frame-2")).toMatchObject({ status: "stopped", endedAt: 200 })
+    expect(model.counts.running).toBe(0)
+  })
+
+  it("equals a refold when statuses alternate without stepping records", () => {
+    FastCheck.assert(
+      FastCheck.property(
+        FastCheck.array(recordArbitrary, { maxLength: 40 }),
+        FastCheck.array(FastCheck.constantFrom(...statuses), { minLength: 2, maxLength: 8 }),
+        (specs, phases) => {
+          const journal = journalOf(specs)
+          for (let length = 1; length <= journal.length; length++) {
+            const prefix = journal.slice(0, length)
+            // Isolate status changes; the separate incremental property covers stepping records.
+            const fold = traceFold(run, prefix)
+            const snapshots: Array<readonly [TraceModel, string]> = []
+            for (const status of phases) {
+              const model = traceFoldModel(fold, status)
+              expect(model).toEqual(traceFromJournal({ ...run, status }, prefix))
+              expect(traceFoldModel(fold, status)).toBe(model)
+              snapshots.push([model, JSON.stringify(model)])
+            }
+            for (const [model, snapshot] of snapshots) expect(JSON.stringify(model)).toBe(snapshot)
+          }
+        }
+      ),
+      { numRuns: 300, seed: 4925 }
+    )
+  })
 
   it("equals a refold of every prefix of any journal", () => {
     FastCheck.assert(
