@@ -11,7 +11,9 @@ test double, and it needs no other Smithers package.
 
 By the end you will have seen a durable receipt, a lossy receipt, the flush
 barrier that makes the lossy entry readable, and a payload that arrives back
-redacted.
+redacted. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -135,6 +137,59 @@ Three things in those four lines are the journal's contract, not incidental:
 - **Both entries share one `seq` line.** `seq` is the run's canonical replay
   order across both channels, so the durable and lossy entries interleave in
   one history rather than in two.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) `writeAndReadBack` is an
+`effect` function: `try` runs each journal call where the TypeScript wrote
+`yield*`, and the caller provides `journalLayer`. Each write is built with
+`JournalEvent.Input.make`, so the argument is a real `Input` instance rather
+than an object literal checked against the class. The function returns the
+receipt and the page instead of printing them.
+
+This is `examples/vibelang/quickstart.vibe`. `test/quickstart.test.vibe` runs
+it, and the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Journal, JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
+
+/** A SQLite journal whose tables the migrations create before it is exposed. */
+export const journalLayer = (filename: string) =>
+  Layer.provide(
+    SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+    Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename })))
+  )
+
+const runId = "run-1" as JournalEvent.RunId
+const sourceId = "engine" as JournalEvent.SourceId
+
+/** Writes on both channels, flushes the lossy one, and reads the run back. */
+export effect function writeAndReadBack() {
+  const journal = try Journal.Journal
+
+  // Durable, unfenced: this program owns no run, so there is no fence to hold.
+  const created = try journal.emitDurableUnfenced(JournalEvent.Input.make({
+    runId,
+    sourceId,
+    eventType: "run.created",
+    payload: { flow: "build", token: "ghp_0123456789abcdefghijklmnopqrstuvwxyz" }
+  }))
+
+  // Lossy: readable only after `flush` drains the admission queue.
+  try journal.emitLossy(JournalEvent.Input.make({
+    runId,
+    sourceId,
+    eventType: "step.progress",
+    payload: { step: "compile", percent: 40 }
+  }))
+  try journal.flush
+
+  const page = try journal.entries({ runId, limit: 100 })
+  return { created, page }
+}
+```
 
 ## Next steps
 

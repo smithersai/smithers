@@ -1,0 +1,38 @@
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Journal, JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
+
+/** A SQLite journal whose tables the migrations create before it is exposed. */
+export const journalLayer = (filename: string) =>
+  Layer.provide(
+    SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+    Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename })))
+  )
+
+const runId = "run-1" as JournalEvent.RunId
+const sourceId = "engine" as JournalEvent.SourceId
+
+/** Writes on both channels, flushes the lossy one, and reads the run back. */
+export effect function writeAndReadBack() {
+  const journal = try Journal.Journal
+
+  // Durable, unfenced: this program owns no run, so there is no fence to hold.
+  const created = try journal.emitDurableUnfenced(JournalEvent.Input.make({
+    runId,
+    sourceId,
+    eventType: "run.created",
+    payload: { flow: "build", token: "ghp_0123456789abcdefghijklmnopqrstuvwxyz" }
+  }))
+
+  // Lossy: readable only after `flush` drains the admission queue.
+  try journal.emitLossy(JournalEvent.Input.make({
+    runId,
+    sourceId,
+    eventType: "step.progress",
+    payload: { step: "compile", percent: 40 }
+  }))
+  try journal.flush
+
+  const page = try journal.entries({ runId, limit: 100 })
+  return { created, page }
+}

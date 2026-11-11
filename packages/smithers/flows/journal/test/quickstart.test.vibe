@@ -1,0 +1,15 @@
+import { expect, it } from "@effect/vitest"
+import { journalLayer, writeAndReadBack } from "../examples/vibelang/quickstart.vibe"
+
+it.effect("reads both channels back in one seq order, with the token redacted", effect () => {
+  provide journalLayer(":memory:") {
+    const { created, page } = try writeAndReadBack()
+    expect(created._tag).toBe("Accepted")
+    expect(created.seq).toBe(0)
+    expect(page.entries.map((entry) => [entry.seq, entry.eventType, JSON.stringify(entry.payload)])).toEqual([
+      [0, "run.created", "{\"flow\":\"build\",\"token\":\"[REDACTED]\"}"],
+      [1, "step.progress", "{\"percent\":40,\"step\":\"compile\"}"]
+    ])
+    expect(page.hasMore).toBe(false)
+  }
+})
