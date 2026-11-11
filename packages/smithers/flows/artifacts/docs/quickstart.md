@@ -8,7 +8,9 @@ sidebar:
 This quickstart runs the filesystem store against a real directory. By the end
 you will have published an artifact, read it back, seen the address absorb a
 second identical put, and seen the store refuse and then repair a blob you
-corrupted on purpose.
+corrupted on purpose. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 ## Prerequisites
 
@@ -161,6 +163,57 @@ find .flows/objects -type f
 The two-hex directory is the digest's own prefix. It exists so a workspace that
 publishes hundreds of thousands of artifacts never puts them all in one
 directory.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the five snippets become
+one `effect` function: `try` replaces each `yield*`, and a `catch effect`
+handler with `match` replaces `Effect.catchTag`, rethrowing any other failure
+with `throw`. The function needs `ArtifactStore` and `FileSystem` and names no
+host, so the caller provides the store layer and Node's services once around
+it, as `test/quickstart.test.vibe` does with a temporary directory.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { ArtifactCorruption, ArtifactMissing, ArtifactStore } from "@smthrs/artifacts/ArtifactStore"
+
+/** The bytes a step produced. */
+export const payload = new TextEncoder().encode("the bytes a step produced")
+
+/** Publishes, deduplicates, misses, corrupts and heals one artifact in the store under `directory`. */
+export effect function quickstart(directory: string) {
+  const store = try ArtifactStore
+  const fs = try FileSystem.FileSystem
+
+  // `put` measures and publishes the bytes; `get` verifies them against the address.
+  const digest = try store.put(payload)
+  const readBack = try store.get(digest)
+
+  // The same bytes have the same address, so a second put stores no second copy.
+  const again = try store.put(payload)
+
+  // A well-formed address with nothing behind it is its own tag.
+  const absent = store.get("0".repeat(64)) catch effect (failure) =>
+    match (failure) {
+      when ArtifactMissing: failure.code;
+      default: throw failure;
+    }
+
+  // Overwrite the blob: the next read measures it and refuses, and a put heals it.
+  try fs.writeFile(`${directory}/${digest.slice(0, 2)}/${digest}`, new TextEncoder().encode("tampered"))
+  const measured = store.get(digest) catch effect (failure) =>
+    match (failure) {
+      when ArtifactCorruption: failure.measuredDigest;
+      default: throw failure;
+    }
+  try store.put(payload)
+  const healed = try store.get(digest)
+
+  return { digest, readBack, sameAddress: again === digest, absent, measured, healed }
+}
+```
 
 ## What just happened
 

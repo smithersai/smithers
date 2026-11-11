@@ -1,0 +1,26 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { payload, quickstart } from "../examples/quickstart.vibe"
+
+it.live("publishes, deduplicates, refuses a corrupted blob and heals it", effect () => {
+  const outcome = try scoped(effect {
+    provide NodeServices.layer, NodeCrypto.layer {
+      const fs = try FileSystem.FileSystem
+      const directory = `${try fs.makeTempDirectoryScoped()}/objects`
+      provide ArtifactStore.layerFileSystem({ directory }) {
+        return try quickstart(directory)
+      }
+    }
+  })
+  // The store reads back a Node Buffer, so compare the bytes rather than the view class.
+  expect(Array.from(outcome.readBack)).toEqual(Array.from(payload))
+  expect(Array.from(outcome.healed)).toEqual(Array.from(payload))
+  expect(outcome).toMatchObject({
+    digest: "077303668cf56af8d162bb5ccccd7127f2e8baff448bf5b649530a98e9c943da",
+    sameAddress: true,
+    absent: "artifact_missing",
+    measured: "d121be3103007b41edf96f8262925f8c7d61894afe9a041843b631f69445bc57"
+  })
+})

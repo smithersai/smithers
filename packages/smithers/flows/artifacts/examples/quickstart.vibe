@@ -1,0 +1,36 @@
+import { ArtifactCorruption, ArtifactMissing, ArtifactStore } from "@smthrs/artifacts/ArtifactStore"
+
+/** The bytes a step produced. */
+export const payload = new TextEncoder().encode("the bytes a step produced")
+
+/** Publishes, deduplicates, misses, corrupts and heals one artifact in the store under `directory`. */
+export effect function quickstart(directory: string) {
+  const store = try ArtifactStore
+  const fs = try FileSystem.FileSystem
+
+  // `put` measures and publishes the bytes; `get` verifies them against the address.
+  const digest = try store.put(payload)
+  const readBack = try store.get(digest)
+
+  // The same bytes have the same address, so a second put stores no second copy.
+  const again = try store.put(payload)
+
+  // A well-formed address with nothing behind it is its own tag.
+  const absent = store.get("0".repeat(64)) catch effect (failure) =>
+    match (failure) {
+      when ArtifactMissing: failure.code;
+      default: throw failure;
+    }
+
+  // Overwrite the blob: the next read measures it and refuses, and a put heals it.
+  try fs.writeFile(`${directory}/${digest.slice(0, 2)}/${digest}`, new TextEncoder().encode("tampered"))
+  const measured = store.get(digest) catch effect (failure) =>
+    match (failure) {
+      when ArtifactCorruption: failure.measuredDigest;
+      default: throw failure;
+    }
+  try store.put(payload)
+  const healed = try store.get(digest)
+
+  return { digest, readBack, sameAddress: again === digest, absent, measured, healed }
+}
