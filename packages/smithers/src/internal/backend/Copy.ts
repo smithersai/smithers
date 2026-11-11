@@ -8,7 +8,7 @@ import { lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from "node:fs/pr
 import { basename, dirname, join, posix, resolve } from "node:path"
 import { pipeline } from "node:stream/promises"
 import * as tar from "tar"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { str } from "./Client.ts"
 import { spawn } from "./Process.ts"
 import type { Handler } from "./Resources.ts"

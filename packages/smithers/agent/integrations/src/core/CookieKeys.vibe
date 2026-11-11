@@ -1,5 +1,5 @@
-import * as Pkce from "./Pkce.ts"
-import * as Signature from "./Signature.ts"
+import * as Pkce from "./Pkce.vibe"
+import * as Signature from "./Signature.vibe"
 
 /** An opaque value verified against one configured signing key. */
 export interface Verified { readonly value: string; readonly keyId: string }

@@ -69,6 +69,7 @@ export interface Unmoved {
  *
  * @category conversions
  * @since 0.1.0
+ * @throws {never}
  */
 export const find = (options: {
   /** The digest the run opened on; empty when the run never measured one. */
@@ -117,5 +118,6 @@ export const find = (options: {
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const demand = (found: Unmoved): string => DemandText.unmoved(found.opened, found.closed)

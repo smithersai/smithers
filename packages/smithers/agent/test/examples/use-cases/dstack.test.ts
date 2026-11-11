@@ -9,8 +9,8 @@ import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Dstack, endpointFromEnv, layer, liveLayer } from "../../../examples/use-cases/dstack.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { Dstack, endpointFromEnv, layer, liveLayer } from "../../../examples/use-cases/dstack.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "dstack-"))
 

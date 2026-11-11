@@ -24,19 +24,19 @@ import {
   stoppable,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
-import * as CloudRuns from "./CloudRuns.ts"
+import { type Actor, canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import * as CloudRuns from "#vibelang/emitted/worker/CloudRuns"
 import * as TodoSession from "./flows/TodoSession.ts"
-import { codeOf } from "./ErrorCode.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import * as RepoRuns from "./RepoRuns.ts"
 import { stillAdmitted } from "./RunAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { repositoryOf } from "./github/Config.ts"
-import { mayRead } from "./stack/Access.ts"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
+import { mayRead } from "#vibelang/emitted/worker/stack/Access"
 import * as SocketAccess from "./SocketAccess.ts"
-import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
+import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
 // a repository's runs (docs/features/actions.md), read and stopped with a role on their recorded repository.

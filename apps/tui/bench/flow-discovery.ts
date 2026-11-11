@@ -12,7 +12,7 @@ import { writeFileSync } from "node:fs"
 import { arch, cpus, platform } from "node:os"
 import { join, resolve } from "node:path"
 import * as Extension from "../src/extension.ts"
-import * as FlowControl from "../src/flow-control.ts"
+import * as FlowControl from "../src/flow-control.vibe"
 
 const cwd = resolve(process.argv[2] ?? ".")
 const output = process.argv[3]

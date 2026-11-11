@@ -1,4 +1,5 @@
-import * as Bridge from "../../src/cli/ControlBridge.ts"
+await import(import.meta.resolve("vibelang/register"))
+const Bridge = await import("../../src/cli/ControlBridge.ts")
 const controller = new AbortController()
 controller.abort(new Error("cancelled startup"))
 try {

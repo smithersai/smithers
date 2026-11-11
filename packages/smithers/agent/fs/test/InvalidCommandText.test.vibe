@@ -8,7 +8,9 @@ describe("malformed command text", () => {
   it.effect("refuses NUL and unpaired surrogates as parse errors", effect () => {
     const surface = try Command.make([])
     expect(try failureOf(surface.parse("plain\0x"))).toMatchObject({
-      code: "parse_failed", method: "CommandTree.resolve", path: "$[0]"
+      code: "parse_failed",
+      method: "CommandTree.resolve",
+      path: "$[0]"
     })
     for (const text of ["plain\0x", "plain\ud800", "plain\udc00"]) {
       expect(try failureOf(CommandTree.resolve(try CommandTree.make([]), [text]))).toMatchObject({

@@ -6,7 +6,7 @@
 import * as Effect from "effect/Effect"
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { UsageError } from "../../CliError.ts"
+import { UsageError } from "../../CliError.vibe"
 import { chunksOf, esc, pick, query, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 import { observeOrigin } from "./Session.ts"

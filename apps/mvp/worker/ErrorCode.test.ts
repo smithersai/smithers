@@ -2,7 +2,7 @@
 import { Cause, Data } from "effect"
 import { SqlError } from "effect/sql"
 import { describe, expect, test } from "vitest"
-import { codeOf } from "./ErrorCode.ts"
+import { codeOf } from "./ErrorCode.vibe"
 
 class Tagged extends Data.TaggedError("SomethingFailed")<{ readonly message: string }> {}
 

@@ -27,9 +27,9 @@
  */
 import { Flow } from "@smthrs/flow"
 import { Schema } from "effect"
-import { Decide, Decision, Request } from "./src/policy.ts"
+import { Decide, Decision, Request } from "./src/policy.vibe"
 
-export { layer } from "./src/policy.ts"
+export { layer } from "./src/policy.vibe"
 
 export default Flow.make("notification-policy", {
   description: "Decide who is told about a repository notification, among the people who can already read it.",

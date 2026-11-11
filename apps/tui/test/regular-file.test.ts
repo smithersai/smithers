@@ -2,7 +2,7 @@ import { expect, it } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Changes from "../src/changes.ts"
+import * as Changes from "../src/changes.vibe"
 
 it("refuses a FIFO without waiting for a writer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "tui-fifo-"))

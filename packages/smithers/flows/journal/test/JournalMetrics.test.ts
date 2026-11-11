@@ -9,9 +9,9 @@ import { Deferred, Effect, Fiber, Layer, Logger, Metric } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { Journal } from "../src/Journal.ts"
-import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
-import * as JournalMetrics from "../src/JournalMetrics.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
+import * as JournalMetrics from "../src/JournalMetrics.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = (value: string): RunId => value as RunId

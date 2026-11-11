@@ -11,6 +11,8 @@ const asCode = (value: unknown): string | undefined =>
  * A failure's code: `sql:<reason>` for a SQL failure, `http:<reason>` for an Effect HTTP client's (`TransportError`,
  * `StatusCodeError`, ...), else its `code` (such as a refusal's), else its `_tag`, else an error's name when it isn't
  * plain `Error`, else `unknown`. A value that isn't a short identifier is skipped.
+ *
+ * @throws {never}
  */
 export const codeOf = (failure: unknown): string => {
   if (typeof failure !== "object" || failure === null) return "unknown"

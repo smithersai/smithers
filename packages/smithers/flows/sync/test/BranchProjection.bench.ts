@@ -5,7 +5,7 @@
  * Run: `pnpm --filter @smthrs/sync bench`.
  */
 import { describe, test } from "vitest"
-import * as BranchProjection from "../src/BranchProjection.ts"
+import * as BranchProjection from "../src/BranchProjection.vibe"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as TestEntry from "./fixtures/entry.ts"
 

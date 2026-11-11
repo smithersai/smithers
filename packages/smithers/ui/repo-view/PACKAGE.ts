@@ -60,7 +60,7 @@ const unitTests = Smithers.NodeTest({
   srcs: [
     ...sources,
     Smithers.file("bunfig.toml"),
-    Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.ts"),
+    Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.{ts,vibe}"),
     Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.tsx"),
     Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.snap"),
     // test/docs-contracts.test.ts holds the docs' examples and stated contracts to the code.

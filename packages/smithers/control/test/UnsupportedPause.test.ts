@@ -31,9 +31,9 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { Control, layerNoop } from "../src/Control.ts"
-import { ControlRpcs } from "../src/ControlRpcs.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { Control, layerNoop } from "../src/Control.vibe"
+import { ControlRpcs } from "../src/ControlRpcs.vibe"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { memoryRuntime } from "./TestStack.ts"
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))

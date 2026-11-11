@@ -6,10 +6,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
-import * as Edit from "../src/Edit.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
+import * as Edit from "../src/Edit.vibe"
 import type { StdError } from "../src/StdError.ts"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 const patch = (path: string) =>
   ApplyPatch.run({ input: `*** Begin Patch\n*** Update File: ${path}\n@@\n-beta\n+BETA\n*** End Patch` })

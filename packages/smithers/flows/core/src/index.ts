@@ -14,14 +14,14 @@
  * @since 0.0.0
  * @slop
  */
-export * as Annotations from "./Annotations.ts"
+export * as Annotations from "./Annotations.vibe"
 
 /**
  * @category hashing
  * @since 0.1.0
  * @slop
  */
-export * as Digest from "./Digest.ts"
+export * as Digest from "./Digest.vibe"
 
 /**
  * @category effects
@@ -56,7 +56,7 @@ export * as KeyMaterial from "./KeyMaterial.ts"
  * @since 0.0.0
  * @slop
  */
-export * as Markdown from "./Markdown.ts"
+export * as Markdown from "./Markdown.vibe"
 
 /**
  * @category builders

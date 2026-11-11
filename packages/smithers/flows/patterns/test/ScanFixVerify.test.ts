@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as ScanFixVerify from "../src/ScanFixVerify.ts"
+import * as ScanFixVerify from "../src/ScanFixVerify.vibe"
 import { execute } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 

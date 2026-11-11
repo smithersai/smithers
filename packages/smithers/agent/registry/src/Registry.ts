@@ -20,14 +20,14 @@ import {
   projectFlowsDirectory,
   retiredProjectFlowsDirectory,
   type Source
-} from "./Descriptor.ts"
-import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.ts"
-import type * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
-import { readVerifiedBody } from "./internal/Body.ts"
-import * as MarkdownFlow from "./MarkdownFlow.ts"
-import * as Pack from "./Pack.ts"
-import type { DiscoveryError, RegistryError } from "./RegistryError.ts"
-import { registryError } from "./RegistryError.ts"
+} from "./Descriptor.vibe"
+import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.vibe"
+import type * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
+import { readVerifiedBody } from "./internal/Body.vibe"
+import * as MarkdownFlow from "./MarkdownFlow.vibe"
+import * as Pack from "./Pack.vibe"
+import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"
+import { registryError } from "./RegistryError.vibe"
 
 /**
  * Configuration for constructing a registry from ordered discovery sources.
@@ -719,6 +719,7 @@ export const layerFromPacks = (
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const makeNoop = (overrides: Partial<Registry> = {}): Registry => {
   const get = (name: string): Effect.Effect<FlowDescriptor, RegistryError> => Effect.fail(notFound(name, "get"))

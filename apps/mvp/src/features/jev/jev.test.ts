@@ -7,7 +7,7 @@ import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Str
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { build } from "../../../worker/test/flowHost.ts"
 import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { jev } from "../../flows/registrations"

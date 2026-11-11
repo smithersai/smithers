@@ -5,7 +5,7 @@
 
 import { randomBytes, timingSafeEqual } from "node:crypto"
 import { createServer, type IncomingMessage } from "node:http"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import * as Failure from "../Failure.ts"
 import { APIError, type Client, object, str, type Values, withCause } from "./Client.ts"
 import type { Handler } from "./Resources.ts"

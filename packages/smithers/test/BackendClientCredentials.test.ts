@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { Refused } from "../src/CliError.ts"
+import { Refused } from "../src/CliError.vibe"
 import { Client as BackendClient } from "../src/internal/backend/Client.ts"
 import { run } from "../src/internal/backend/Process.ts"
 import { CredentialProcess, Session as BackendSession } from "../src/internal/backend/Session.ts"

@@ -34,16 +34,40 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./BrowserChildProcessSpawner": {
+      "types": "./src/BrowserChildProcessSpawner/index.ts",
+      "vibelang-source": "./src/BrowserChildProcessSpawner/index.ts",
+      "default": "./.vibelang/js/src/BrowserChildProcessSpawner/index.js"
+    },
     "./BrowserChildProcessSpawner/*": null,
-    "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
+    "./BrowserFileSystem": {
+      "types": "./src/BrowserFileSystem/index.ts",
+      "vibelang-source": "./src/BrowserFileSystem/index.ts",
+      "default": "./.vibelang/js/src/BrowserFileSystem/index.js"
+    },
     "./BrowserFileSystem/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./BrowserHost": "./src/BrowserHost.ts",
-    "./BrowserServices": "./src/BrowserServices.ts",
-    "./index": "./src/index.ts"
+    "./BrowserHost": {
+      "types": "./src/BrowserHost.ts",
+      "vibelang-source": "./src/BrowserHost.ts",
+      "default": "./.vibelang/js/src/BrowserHost.js"
+    },
+    "./BrowserServices": {
+      "types": "./src/BrowserServices.ts",
+      "vibelang-source": "./src/BrowserServices.ts",
+      "default": "./.vibelang/js/src/BrowserServices.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "imports": {
     "#access-handle-pool-vfs": {
@@ -53,6 +77,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -61,7 +86,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -160,7 +187,8 @@
     "@smthrs/sandbox": "1.0.0-rc.17",
     "@smthrs/std": "1.0.0-rc.17",
     "@smthrs/database": "1.0.0-rc.17",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -178,8 +206,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
     "@smthrs/agent": "1.0.0-rc.17",

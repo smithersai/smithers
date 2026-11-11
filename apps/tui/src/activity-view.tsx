@@ -1,5 +1,5 @@
 /** One row over the current view while Ctrl+T inspection is open. */
-import type * as Activity from "./activity.ts"
+import type * as Activity from "./activity.vibe"
 import * as Scrubber from "./scrubber.ts"
 import { color } from "./theme.ts"
 

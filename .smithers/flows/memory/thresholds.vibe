@@ -1,0 +1,63 @@
+/**
+ * A repository's own memory thresholds: `.smithers/memory-thresholds.json`.
+ *
+ * A host passes {@link load}'s result as `Memory.Options.thresholds`. An
+ * absent file means the declared defaults (`MemoryCalibration.initial`); a
+ * present file that does not decode fails typed and is never replaced by the
+ * defaults, because a silently ignored fit is a silent regression.
+ */
+import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
+import { Fault } from "@smthrs/flow"
+import { readThresholds, thresholdsPath, writeThresholds } from "./thresholds.platform.ts"
+
+export { receiptFile } from "./thresholds.platform.ts"
+
+/** The thresholds file, relative to the repository root. */
+export const file = MemoryCalibration.file
+
+/** A thresholds file that exists but could not be read or decoded. */
+export class ThresholdsInvalid extends Schema.TaggedError<ThresholdsInvalid>()("flows/memory/ThresholdsInvalid", {
+  path: Schema.String,
+  message: Schema.String
+}) {}
+// The thresholds file is edited by people; one that does not decode is theirs to fix.
+Fault.register("flows/memory/ThresholdsInvalid", "user")
+
+const decode = Schema.decodeUnknownEffect(MemoryCalibration.Thresholds)
+
+/** Reads `root`'s thresholds; the declared defaults when the file is absent. */
+export effect function load(root: string): MemoryCalibration.Thresholds!ThresholdsInvalid {
+  const path = thresholdsPath(root)
+  const text = try tryPromise({
+    try: () => readThresholds(root),
+    catch: (cause) => new ThresholdsInvalid({ path, message: String(cause) })
+  })
+  if (text === undefined) return MemoryCalibration.initial
+  const json = try Effect.try({
+    try: () => JSON.parse(text) as unknown,
+    catch: (cause) => new ThresholdsInvalid({ path, message: `not JSON: ${String(cause)}` })
+  })
+  return decode(json) catch effect (error) => {
+    throw new ThresholdsInvalid({ path, message: error.message })
+  }
+}
+
+const sorted = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(sorted)
+    : value !== null && typeof value === "object"
+    ? Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, sorted((value as Record<string, unknown>)[key])])
+    )
+    : value
+
+/** Deterministic JSON: sorted keys, two-space indent, trailing newline. */
+export const stable = (value: unknown): string => `${JSON.stringify(sorted(value), null, 2)}\n`
+
+/** Writes `thresholds` and the fit's `receipt` under `root`. */
+export const write = (root: string, thresholds: MemoryCalibration.Thresholds, receipt: unknown) =>
+  tryPromise({
+    try: () => writeThresholds(root, stable(thresholds), stable(receipt)),
+    catch: (cause) =>
+      new ThresholdsInvalid({ path: thresholdsPath(root), message: `write failed: ${String(cause)}` })
+  })

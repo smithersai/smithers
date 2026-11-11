@@ -78,7 +78,7 @@ Will: "Do we have infra as code for everything including postgres? ... Since we 
 - Trade-off: a Container has no persistent disk, so a restarted Electric rebuilds its shapes from Postgres.
 - Still running at 21:29. On disk at 21:34, uncommitted, not yet reported:
   - `infra/Postgres.ts`: a Neon project on Postgres 17 in `aws-us-east-1` with logical replication on, kept by `alchemy destroy`; its direct URL passed as a `Redacted` value, without Neon's `channel_binding` parameter, which Electric's URL parser rejects;
-  - `infra/ChatDatabase.ts`, `infra/Electric.ts` (a random `ElectricSecret` and the `ElectricGateway` Worker) and `infra/ElectricGateway.ts` (Electric as a `Cloudflare.Container` that only the gateway reaches);
+  - `infra/ChatDatabase.ts`, `infra/Electric.vibe` (a random `ElectricSecret` and the `ElectricGateway` Worker) and `infra/ElectricGateway.ts` (Electric as a `Cloudflare.Container` that only the gateway reaches);
   - `alchemy.run.ts` and `docs/infrastructure.md` not yet changed. No `alchemy plan` result yet.
 
 - On disk at 21:44, uncommitted, not yet reported:
@@ -97,7 +97,7 @@ Will: "Do we have infra as code for everything including postgres? ... Since we 
   - Unset: `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` (Will's personal Neon key requires it). The agent found both values.
   - Not verified: the gateway Worker's bundle builds only during a real deploy. Electric's container disk is wiped on every stop, and clients refetch their shapes.
   - Library catalog: no entry covers infrastructure as code; it used the existing Alchemy and `db/Database.ts` and added no dependency.
-- About 21:45: the lead applied the ChatApi diff: `worker/ChatApi.ts` imports `infra/Electric.ts` and runs `yield* Electric.bind`, so the plan binds `ELECTRIC_URL` and `ELECTRIC_SECRET`. On disk at 21:54.
+- About 21:45: the lead applied the ChatApi diff: `worker/ChatApi.ts` imports `infra/Electric.vibe` and runs `yield* Electric.bind`, so the plan binds `ELECTRIC_URL` and `ELECTRIC_SECRET`. On disk at 21:54.
 - 21:45: the lead told Will the token needs Secrets Store read and Hyperdrive edit, or he can run `alchemy login`. No answer yet. Blocked on Will.
 - About 22:00: second of five asks on [decisions for Will](decisions-for-will.md), about a minute of Will's time. No answer at 22:04.
 - 22:06 to 22:08: the `alchemy login` route failed. Alchemy renamed it `alchemy profile edit`; it isn't installed globally (the project has v2.0.0-beta.83, run through `pnpm exec`), and its OAuth login needs an interactive terminal, so Will's `!` run failed. Will: "Why can't you just use my cloudflare api key that is already in env".
@@ -124,7 +124,7 @@ Will: "Do we have infra as code for everything including postgres? ... Since we 
 
 - **11:01 on 2026-10-20: [review round 4](review-round-4.md)'s R4-13 (P2, Claude Fable P2-2, source-verified against Cloudflare's Workers Logs docs): the Electric secret lands in Workers Logs.** `infra/ElectricGateway.ts:83` reads `?secret=` from the gateway's inbound URL and compares it with `!==`; `:59-72` declares the gateway with `observability.logs.invocationLogs: true, persist: true`, and a fetch invocation log records the request URL with its query string. So every shape request from ChatApi writes `…&secret=<ELECTRIC_SECRET>` into the gateway's persisted logs, and anyone with Workers Logs read access holds a secret that bypasses ChatApi's throttle, actor checks and column lists against everything Electric replicates. Rotation happens only when Alchemy's `Random` is replaced. ChatApi's logs also hold `GET /api/auth/callback?code=…&state=…`; that code is single-use and PKCE-bound, so low. Fix: between ChatApi and the gateway carry the secret in an `authorization` header, compare it with `Core.Signature.constantTimeEqual` as `worker/SignIn.ts:169-170` does, and add `secret=` only on the hop to the container; or turn invocation logs off for the gateway. Unrouted by 11:07.
 - Status stays done: a source-verified P2 waits for the lead's ruling (round 4 tracker rule). The production deploy still waits on Will's yes ([land and deploy](land-and-deploy-mvp.md)).
-- **13:38:27 on 2026-10-20: R4-13 fixed** (round 4's SDK fix agent): ChatApi sends the Electric secret as `authorization: Bearer`, and the gateway checks it in constant time (`infra/ElectricAccess.ts`, tested with a sentinel). Electric accepts its secret only in the URL, and Cloudflare traces record URLs, so the container runs with `ELECTRIC_INSECURE=true` and the gateway is its only way in; `infra/Electric.ts` sets `ELECTRIC_SECRET_AS=bearer`. Neither has run on a real deploy.
+- **13:38:27 on 2026-10-20: R4-13 fixed** (round 4's SDK fix agent): ChatApi sends the Electric secret as `authorization: Bearer`, and the gateway checks it in constant time (`infra/ElectricAccess.ts`, tested with a sentinel). Electric accepts its secret only in the URL, and Cloudflare traces record URLs, so the container runs with `ELECTRIC_INSECURE=true` and the gateway is its only way in; `infra/Electric.vibe` sets `ELECTRIC_SECRET_AS=bearer`. Neither has run on a real deploy.
 
 ## Next
 

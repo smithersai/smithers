@@ -192,7 +192,7 @@ describe("the outbound HTTP client shipped compositions install", () => {
     for (const path of [
       "packages/smithers/build/build-cli/src/internal/rules/FetchExecutor.ts",
       "packages/smithers/src/internal/NodeControlHost.ts",
-      ".smithers/flows/repository/jev-checks.ts"
+      ".smithers/flows/repository/jev-checks.vibe"
     ]) {
       assert.ok(found.includes(path), `${path} is shipped source this gate never read`)
     }

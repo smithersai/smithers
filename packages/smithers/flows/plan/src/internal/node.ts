@@ -31,9 +31,9 @@ import { identity } from "effect/Function"
 import { pipeArguments } from "effect/Pipeable"
 import * as Schema from "effect/Schema"
 import type { Node } from "../Node.ts"
-import type * as Planned from "../Planned.ts"
+import type * as Planned from "../Planned.vibe"
 import { jsonMirror } from "./JsonMirror.ts"
-import { schemaIdentity } from "./SchemaIdentity.ts"
+import { schemaIdentity } from "./SchemaIdentity.vibe"
 
 /**
  * The runtime type identifier every node carries.

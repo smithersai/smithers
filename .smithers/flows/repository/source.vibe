@@ -1,0 +1,98 @@
+/** Immutable native commit capture, without moving the editing checkout. */
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { ExportedTree, type ImmutableSourceOptions, runSourceProcess } from "../coding/immutable-source.vibe"
+import { CodingError, type Revision } from "../coding/schema.ts"
+import { contained, normalizePath, utf8 } from "./trusted.ts"
+const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+/** Check every ancestor before creating a directory or opening a destination. */
+export const admitSourcePath = (options: ImmutableSourceOptions, root: string, relative: string) =>
+  (effect {
+    if (normalizePath(relative) !== relative) throw invalid("A source path must be canonical and relative")
+    const fs = options.fs, path = try Path.Path, canonical = try fs.realPath(root)
+    let target = canonical
+    for (const part of relative.split("/")) {
+      target = path.join(target, part)
+      const link = try fs.readLink(target).pipe(Effect.result)
+      if (link._tag === "Success") throw invalid("A source path cannot cross a symbolic link")
+      const resolved = try fs.realPath(target).pipe(
+        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
+      )
+      if (resolved !== undefined && (resolved !== target || !contained(canonical, resolved, path))) {
+        throw invalid("A source path leaves its captured tree")
+      }
+    }
+    return target
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof CodingError ? error : invalid("The source destination could not be admitted")
+    )
+  )
+const Metadata = Schema.Struct({
+  commit_id: Schema.String,
+  change_id: Schema.String,
+  parents: Schema.Array(Schema.String)
+})
+export const withCapturedCommit = <A, E, R>(
+  options: ImmutableSourceOptions,
+  commitId: string,
+  operationId: string,
+  use: (root: string, revision: Revision) => (A!E!R)
+) =>
+  (effect {
+    if (!/^[0-9a-f]{40}$/.test(commitId) || !/^[0-9a-f]{128}$/.test(operationId)) {
+      throw invalid("Capture needs full immutable native commit and operation IDs")
+    }
+    const fs = options.fs, path = try Path.Path, spawner = try ChildProcessSpawner.ChildProcessSpawner
+    const scratch = try fs.makeTempDirectoryScoped({ prefix: "smithers-repository-source-" }),
+      canonical = try fs.realPath(scratch)
+    const exported = try runSourceProcess(
+      options,
+      [options.exporterPath ?? "/usr/local/bin/smithers-jj-export", options.repositoryPath, commitId, canonical],
+      options.repositoryPath,
+      60000
+    )
+    if (exported.exitCode !== 0 || exported.stdout.truncated) {
+      throw invalid("The selected source commit is unavailable on this repository host")
+    }
+    const tree = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExportedTree))(exported.stdout.text)
+    const root = try fs.realPath(tree.path)
+    if (tree.commitId !== commitId || root === canonical || !contained(canonical, root, path)) {
+      throw invalid("The native exporter returned another source or path")
+    }
+    // This is a fixed host-owned JJ read, never an event-provided command.
+    const command = try spawner.spawn(
+      ChildProcess.make("jj", [
+        "-R",
+        options.repositoryPath,
+        "--ignore-working-copy",
+        `--at-op=${operationId}`,
+        "log",
+        "--no-graph",
+        "-r",
+        `commit_id("${commitId}")`,
+        "-T",
+        "json(self)"
+      ], { cwd: options.repositoryPath, stdin: "ignore" })
+    )
+    const text = try Stream.runFoldEffect(command.stdout, () => "", (text, chunk) =>
+      text.length + chunk.length > 65536
+        ? Effect.fail(invalid("Native commit metadata exceeded its bound")) :
+        Effect.succeed(text + utf8(chunk)))
+    const exit = try command.exitCode
+    if (exit !== 0) throw invalid("The selected immutable commit has no native metadata")
+    const metadata = try Schema.decodeUnknownEffect(Schema.fromJsonString(Metadata))(text)
+    if (
+      metadata.commit_id !== tree.commitId || metadata.change_id !== tree.changeId ||
+      metadata.parents.some((id) => !/^[0-9a-f]{40}$/.test(id))
+    ) throw invalid("Native commit identity disagrees with its export")
+    return try use(root, {
+      changeId: tree.changeId,
+      commitId,
+      treeId: tree.treeId,
+      operationId,
+      parentCommitIds: metadata.parents
+    })
+  }).pipe(
+    Effect.scoped,
+    Effect.mapError((error) => error instanceof CodingError ? error : invalid("Immutable source capture failed"))
+  )

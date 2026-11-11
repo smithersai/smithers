@@ -33,4 +33,4 @@ export * as Capability from "./Capability.ts"
  */
 export * as Permission from "./Permission.ts"
 
-export { decodePermissionError } from "./decodePermissionError.ts"
+export { decodePermissionError } from "./decodePermissionError.vibe"

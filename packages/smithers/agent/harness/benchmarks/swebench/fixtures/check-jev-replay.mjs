@@ -248,7 +248,7 @@ try {
   // The snapshot encodes under the harness's own schema, which is what the
   // live path sends: a shape drift here would be `invalid_question` on the wire.
   const { Schema } = await import("effect")
-  const Supervisor = await import("../../../src/Supervisor.ts")
+  const Supervisor = await import("../../../src/Supervisor.vibe")
   for (const snapshot of built) Schema.encodeUnknownSync(Supervisor.Snapshot)(snapshot)
 
   // The dry run through the command surface: one journal, five offered frames, no ask.

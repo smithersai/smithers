@@ -26,7 +26,7 @@ import { join } from "node:path"
 import { afterAll } from "vitest"
 import * as Sandbox from "../src/Sandbox/index.ts"
 import * as SandboxMerge from "../src/SandboxMerge/index.ts"
-import { output } from "../src/SandboxMerge/Repository.ts"
+import { output } from "../src/SandboxMerge/Repository.vibe"
 import { rawPlatform } from "./helpers/containedPlatform.ts"
 import {
   advanceMain,

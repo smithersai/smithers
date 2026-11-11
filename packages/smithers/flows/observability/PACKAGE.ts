@@ -23,7 +23,7 @@ const securityReview = Smithers.SecurityReview({
         "isAbsoluteHttpUrl accepting a value with userinfo, query, fragment, backslash, or a code unit at or below 0x20 that new URL repairs.",
         "signalUrl or normalize producing a URL whose host differs from the decoded endpoint's host."
       ],
-      paths: ["src/Endpoint.ts", "src/Otlp.ts", "src/NodeOtel.ts"]
+      paths: ["src/Endpoint.vibe", "src/Otlp.ts", "src/NodeOtel.vibe"]
     },
     {
       id: "exporter-header-secrecy",
@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "The otlp_export_discarded warning or any refusal message including request headers, the request URL, or options.headers.",
         "InvalidExporterEndpoint or InvalidResourceConfiguration messages that embed the rejected raw value instead of only its path."
       ],
-      paths: ["src/Otlp.ts", "src/Endpoint.ts", "src/Resource.ts", "src/internal/schemaIssuePath.ts"]
+      paths: ["src/Otlp.ts", "src/Endpoint.vibe", "src/Resource.vibe", "src/internal/schemaIssuePath.ts"]
     },
     {
       id: "ambient-env-isolation",
@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
         "A new code path that reads process.env or Resource.layerFromEnv.",
         "NodeOtel's OTLP*Exporter constructors, which read OTEL_EXPORTER_OTLP_*_HEADERS, TIMEOUT, and CLIENT_CERTIFICATE/KEY straight from process.env and bypass the ConfigProvider isolation, left undocumented or without explicit overrides."
       ],
-      paths: ["src/Otlp.ts", "src/NodeOtel.ts", "src/BrowserOtel.ts", "src/Otel.ts", "src/Resource.ts"]
+      paths: ["src/Otlp.ts", "src/NodeOtel.vibe", "src/BrowserOtel.vibe", "src/Otel.vibe", "src/Resource.vibe"]
     },
     {
       id: "journal-log-redaction",
@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "snapshotValue copying accessor (getter) properties or invoking user toString/toJSON instead of reading data descriptors only.",
         "Error stack or cause fields projected without going through the redacted candidate."
       ],
-      paths: ["src/JournalLogger.ts"]
+      paths: ["src/JournalLogger.vibe"]
     },
     {
       id: "journal-logger-resource-bounds",
@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "The logger callback blocking or awaiting instead of refusing on a full queue.",
         "Key truncation via boundedText letting two keys collide or a record written on a non-null prototype."
       ],
-      paths: ["src/JournalLogger.ts"]
+      paths: ["src/JournalLogger.vibe"]
     },
     {
       id: "export-request-bounds",
@@ -83,7 +83,7 @@ const securityReview = Smithers.SecurityReview({
         "boundedClient forwarding a request over maxRequestBytes or queueing past maxInFlight instead of discarding.",
         "A request body type for which contentLength is undefined so the size check is skipped."
       ],
-      paths: ["src/Otlp.ts", "src/Resource.ts"]
+      paths: ["src/Otlp.ts", "src/Resource.vibe"]
     },
     {
       id: "docs-copyable-secrets",

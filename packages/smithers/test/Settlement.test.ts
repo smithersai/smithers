@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process"
 import { hostname } from "node:os"
 import { describe, expect, it } from "vitest"
 import * as Settlement from "../src/commands/Settlement.ts"
-import * as ExecutorOwnership from "../src/ExecutorOwnership.ts"
+import * as ExecutorOwnership from "../src/ExecutorOwnership.vibe"
 
 describe("Settlement", () => {
   it("settles on a park, a declined launch, and every terminal status", () => {

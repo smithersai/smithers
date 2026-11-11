@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { RpcSerialization } from "effect/rpc"
 import { createServer } from "node:http"
-import * as HostBranchPresence from "../src/HostBranchPresence.ts"
+import * as HostBranchPresence from "../src/HostBranchPresence.vibe"
 const server = HttpRouter.serve(
   HostBranchPresence.layer({
     runtimeArtifactDigest: "a".repeat(64),

@@ -11,8 +11,8 @@ import { Cause, Context, Effect, Exit, FileSystem, Layer, Schema } from "effect"
 import { createRequire } from "node:module"
 import { join } from "node:path"
 import { expect, it, vi } from "vitest"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
 
 class Unsupplied extends Context.Service<Unsupplied, string>()("test/module-deferred/Unsupplied") {}
 class Refused extends Schema.TaggedError<Refused>()("test/module-deferred/Refused", {}) {}

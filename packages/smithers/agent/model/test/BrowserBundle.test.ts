@@ -3,6 +3,7 @@ import { build } from "esbuild"
 import { createServer } from "node:http"
 import { fileURLToPath } from "node:url"
 import { createContext, runInContext } from "node:vm"
+import vibelang from "vibelang-unplugin/esbuild"
 import { expect, it } from "vitest"
 
 it.each([
@@ -22,6 +23,7 @@ it.each([
     const address = server.address() as { port: number }
     try {
       const result = await build({
+        plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
         stdin: {
           contents: `
           import { Route, RequestExecutor, ModelRequest } from "./src/index.ts"

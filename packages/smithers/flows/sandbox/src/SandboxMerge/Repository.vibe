@@ -1,0 +1,94 @@
+/**
+ * The host jj repository work is applied to.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { MergeError } from "./Outcome.vibe"
+
+/**
+ * A host jj repository, as a merge strategy sees it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Repository {
+  /** The repository's root directory on the host. */
+  readonly path: string
+  /**
+   * Runs `jj -R <path> --ignore-working-copy` with `args` and answers its
+   * standard output. Nothing here snapshots or rewrites a working copy, so
+   * the repository may be a checkout other people are editing.
+   */
+  readonly jj: (args: ReadonlyArray<string>) => string!MergeError
+}
+
+/** Options for one host command. */
+interface Run {
+  /** The directory the command runs in; `jj` prints paths relative to it. */
+  readonly cwd?: string | undefined
+  readonly env?: Record<string, string> | undefined
+  readonly stdin?: string | undefined
+}
+
+/**
+ * One host command's output, failing with `vcs_failed` when it exits non-zero
+ * or cannot start.
+ *
+ * @category utils
+ * @since 1.0.0
+ */
+export const output = (
+  spawner: ChildProcessSpawner["Service"],
+  command: string,
+  args: ReadonlyArray<string>,
+  options: Run = {}
+): string!MergeError =>
+  Effect.scoped(effect {
+    const handle = try spawner.spawn(ChildProcess.make(command, args, {
+      ...options.cwd === undefined ? {} : { cwd: options.cwd },
+      // Extends, never replaces, the host environment: `PATH` and the identity still apply.
+      ...options.env === undefined ? {} : { env: options.env, extendEnv: true },
+      ...options.stdin === undefined ? {} : { stdin: Stream.make(new TextEncoder().encode(options.stdin)) }
+    }))
+    const [stdout, stderr, code] = try Effect.all(
+      [
+        Stream.mkString(Stream.decodeText(handle.stdout)),
+        Stream.mkString(Stream.decodeText(handle.stderr)),
+        handle.exitCode
+      ],
+      { concurrency: "unbounded" }
+    )
+    if (code !== 0) {
+      throw new MergeError({
+        reason: "vcs_failed",
+        message: `${command} ${args.join(" ")} exited ${code}: ${stderr.trim().split("\n").slice(-3).join("\n")}`
+      })
+    }
+    return stdout
+  })
+  |> Effect.catchTag(
+    %,
+    "PlatformError",
+    (cause) => new MergeError({ reason: "vcs_failed", message: `${command} could not run: ${cause.message}`, cause })
+  )
+
+/**
+ * The {@link Repository} at `path`, running jj through the ambient spawner.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = effect (path: string): Repository!MergeError!ChildProcessSpawner => {
+  const spawner = try ChildProcessSpawner
+  return {
+    path,
+    jj: (args) =>
+      // From the repository's root, so the paths jj prints are repository-relative.
+      output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
+        cwd: path
+      })
+  }
+}

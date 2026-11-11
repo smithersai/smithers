@@ -14,38 +14,38 @@
 /**
  * @category constructors @since 0.1.0
  */
-export * as Bank from "./Bank.ts"
+export * as Bank from "./Bank.vibe"
 
 /**
  * @category database
  * @since 0.1.0
  */
-export * as Database from "./Database.ts"
+export * as Database from "./Database.vibe"
 
 /**
  * @category embeddings @since 0.1.0
  */
-export * as Embedding from "./Embedding.ts"
+export * as Embedding from "./Embedding.vibe"
 
 /**
  * @category flows @since 0.1.0
  */
-export * as Flows from "./Flows.ts"
+export * as Flows from "./Flows.vibe"
 
 /**
  * @category maintenance @since 0.1.0
  */
-export * as Maintenance from "./Maintenance.ts"
+export * as Maintenance from "./Maintenance.vibe"
 
 /**
  * @category errors @since 0.1.0
  */
-export * as MemoryError from "./MemoryError.ts"
+export * as MemoryError from "./MemoryError.vibe"
 
 /**
  * @category services @since 0.1.0
  */
-export * as MemoryStore from "./MemoryStore.ts"
+export * as MemoryStore from "./MemoryStore.vibe"
 
 /**
  * @category patterns
@@ -57,32 +57,32 @@ export * as MemoryTrellis from "./MemoryTrellis.ts"
  * @category migrations
  * @since 1.0.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * @category models @since 0.1.0
  */
-export * as Namespace from "./Namespace.ts"
+export * as Namespace from "./Namespace.vibe"
 
 /**
  * @category recall @since 0.1.0
  */
-export * as Recall from "./Recall.ts"
+export * as Recall from "./Recall.vibe"
 
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallFts from "./RecallFts.ts"
+export * as RecallFts from "./RecallFts.vibe"
 
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallKeyword from "./RecallKeyword.ts"
+export * as RecallKeyword from "./RecallKeyword.vibe"
 
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallSemantic from "./RecallSemantic.ts"
+export * as RecallSemantic from "./RecallSemantic.vibe"
 
 /**
  * @category assembly @since 0.1.0
@@ -92,16 +92,16 @@ export * as Source from "./Source.ts"
 /**
  * @category services @since 0.1.0
  */
-export * as SnapshotRecorder from "./SnapshotRecorder.ts"
+export * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as WithMemory from "./WithMemory.ts"
+export * as WithMemory from "./WithMemory.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as Opening from "./Opening.ts"
+export * as Opening from "./Opening.vibe"

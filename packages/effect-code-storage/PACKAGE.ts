@@ -7,7 +7,7 @@ const cwd = "packages/effect-code-storage"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("src/**/*.ts"),
+  sources: Input.glob("src/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -24,7 +24,7 @@ const securityReview = Smithers.SecurityReview({
         "The PEM key, the imported CryptoKey or a signed JWT in a span attribute, log annotation, metric attribute or error field.",
         "A token sent in a URL query parameter, where an HTTP client span records url.full, instead of the Authorization header."
       ],
-      paths: ["src/CodeStorage.ts", "src/internal/token.ts"]
+      paths: ["src/CodeStorage.vibe", "src/internal/token.ts"]
     },
     {
       id: "least-scope",
@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "A token without a repo claim, or with git:write or repo:write on a read.",
         "An exp more than 3,600 seconds after iat, or a lifetime a caller can raise past that."
       ],
-      paths: ["src/CodeStorage.ts", "src/internal/token.ts"]
+      paths: ["src/CodeStorage.vibe", "src/internal/token.ts"]
     },
     {
       id: "provider-text",
@@ -43,7 +43,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A problem body's detail, title or error field, or a response body, copied into CodeStorageError or GitRemoteError."
       ],
-      paths: ["src/CodeStorage.ts", "src/GitRemote.ts"]
+      paths: ["src/CodeStorage.vibe", "src/GitRemote.vibe"]
     },
     {
       id: "bounded-reads",
@@ -53,7 +53,7 @@ const securityReview = Smithers.SecurityReview({
         "readFile reading past maxBytes, or trusting a missing Content-Length.",
         "GitRemote.head reading the whole ref advertisement instead of stopping after the first ref line and a fixed byte cap."
       ],
-      paths: ["src/CodeStorage.ts", "src/GitRemote.ts"]
+      paths: ["src/CodeStorage.vibe", "src/GitRemote.vibe"]
     }
   ]
 })

@@ -6,7 +6,7 @@
  */
 
 import type { Cli } from "incur"
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 
 // Keep the actual discovery tree, rather than reconstructing it from the
 // descriptor allowlist. Help, MCP and skills all consume this same tree.

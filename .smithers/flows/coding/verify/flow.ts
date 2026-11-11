@@ -3,8 +3,8 @@ import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import { CodingError, type Receipt, type Revision } from "../schema.ts"
-import { AdmitVerifySource, verifyImplementation, VerifyInput, VerifyResult, verifySummary } from "../verify-schema.ts"
-import { RunCheck } from "../workflow.ts"
+import { AdmitVerifySource, verifyImplementation, VerifyInput, VerifyResult, verifySummary } from "../verify-schema.vibe"
+import { RunCheck } from "../workflow.vibe"
 
 /**
  * The stack service runs this on a lane when it had to rebase a candidate

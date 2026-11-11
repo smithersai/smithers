@@ -8,8 +8,8 @@ import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { digest, operations } from "./operations.ts"
-import { Evidence, Input, Receipt, Review, ReviewedPage, WikiError } from "./schema.ts"
-import { Collect, ReviewPage, validateOrRepairReview } from "./workflow.ts"
+import { Evidence, Input, Receipt, Review, ReviewedPage, WikiError } from "./schema.vibe"
+import { Collect, ReviewPage, validateOrRepairReview } from "./workflow.vibe"
 const { EngineEvent, Journal, JournalEvent } = JournalModules
 
 // These exact captured files define the model's task, output, evidence view and
@@ -17,11 +17,11 @@ const { EngineEvent, Journal, JournalEvent } = JournalModules
 // that task; every reused receipt still passes today's deterministic assessment.
 export const policySources = [
   ".smithers/flows/wiki/flow.ts",
-  ".smithers/flows/wiki/workflow.ts",
-  ".smithers/flows/wiki/schema.ts",
+  ".smithers/flows/wiki/workflow.vibe",
+  ".smithers/flows/wiki/schema.vibe",
   ".smithers/flows/wiki/evidence.ts",
   ".smithers/flows/wiki/runtime.ts",
-  ".smithers/flows/wiki/jev-citations.ts"
+  ".smithers/flows/wiki/jev-citations.vibe"
 ] as const
 const PolicySource = Schema.Struct({ path: Schema.String, digest: Schema.String })
 export const Provenance = Schema.Struct({

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { selectedSteps } from "../repository/execution.ts"
-import type { Draft } from "../repository/schema.ts"
+import { selectedSteps } from "../repository/execution.vibe"
+import type { Draft } from "../repository/schema.vibe"
 import { suggestedSetupDraft } from "../repository/setup.ts"
 
 const draft: Draft = {

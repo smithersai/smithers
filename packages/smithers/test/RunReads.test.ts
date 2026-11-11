@@ -1,7 +1,7 @@
 import type { ControlSchema } from "@smthrs/control"
 import { Effect, Stream } from "effect"
 import { expect, it } from "vitest"
-import { terminalFailure } from "../src/commands/RunReads.ts"
+import { terminalFailure } from "../src/commands/RunReads.vibe"
 
 const failure = {
   tag: "request/Unavailable",

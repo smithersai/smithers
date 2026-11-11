@@ -12,10 +12,10 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Clock, Context, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as AttemptStore from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/Ownership.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as RunStore from "../src/RunStore.vibe"
 
 const pgUrl = process.env.SMITHERS_TEST_PG_URL
 

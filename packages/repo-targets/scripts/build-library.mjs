@@ -28,7 +28,10 @@ const files = (directory) =>
 
 /** Input declarations are shipped beside generated declarations in every release. */
 export const copyInputDeclarations = (source, destination) => {
-  for (const file of files(source).filter((file) => file.endsWith(".d.ts"))) {
+  // x.d.ts beside x.vibe or x.vibex is the compiler's re-export shim for native .ts importers,
+  // not a hand-written declaration: the build emits x's real declarations into the destination.
+  const shim = (file) => [".vibe", ".vibex"].some((extension) => existsSync(file.slice(0, -".d.ts".length) + extension))
+  for (const file of files(source).filter((file) => file.endsWith(".d.ts") && !shim(file))) {
     const target = join(destination, relative(source, file))
     mkdirSync(dirname(target), { recursive: true })
     cpSync(file, target)
@@ -51,6 +54,27 @@ const commonJsImports = (target, types = false) => {
   ))
 }
 
+// Migration's private #vibelang/emitted/ routes serve tools that read
+// sources: a test's bundler or a plain Node child reaches a .vibe module's
+// emitted JavaScript through one. The VibeLang compiler names a routed module
+// by its own output, so no compiled file needs a route, and none may name one:
+// a consumer cannot resolve it, because its targets do not ship.
+const emittedRoutePrefix = "#vibelang/emitted/"
+const publishedModule = /\.(?:[cm]?js|d\.[cm]?ts)$/
+
+/** Fails when a published JavaScript or declaration file under dist names a private emitted route. */
+export const assertNoEmittedRoutes = (packageRoot) => {
+  const dist = join(packageRoot, "dist")
+  const named = existsSync(dist)
+    ? files(dist).filter((file) => publishedModule.test(file) && readFileSync(file, "utf8").includes(emittedRoutePrefix))
+    : []
+  if (named.length > 0) {
+    throw new Error(
+      `published output names a private ${emittedRoutePrefix} route: ${named.map((file) => relative(packageRoot, file).split(sep).join("/")).sort().join(", ")}. Build it with a VibeLang compiler that names a routed module by its own output.`
+    )
+  }
+}
+
 /** Each runtime branch needs declarations, module kind and its package imports. */
 export const copyCommonJsDeclarations = (packageRoot) => {
   const esm = join(packageRoot, "dist/esm")
@@ -63,7 +87,11 @@ export const copyCommonJsDeclarations = (packageRoot) => {
   mkdirSync(cjs, { recursive: true })
   const manifestPath = join(packageRoot, "package.json")
   const { imports } = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {}
-  const marker = { type: "commonjs", ...(imports === undefined ? {} : { imports: commonJsImports(imports) }) }
+  // A compiled branch names routed modules by their output and keeps no route.
+  const kept = imports === undefined || imports === null || typeof imports !== "object" ? imports
+    : Object.fromEntries(Object.entries(imports).filter(([key]) => !key.startsWith(emittedRoutePrefix)))
+  const routesOnly = kept !== imports && Object.keys(kept).length === 0 && Object.keys(imports).length > 0
+  const marker = { type: "commonjs", ...(kept === undefined || routesOnly ? {} : { imports: commonJsImports(kept) }) }
   writeFileSync(join(cjs, "package.json"), `${JSON.stringify(marker)}\n`)
 }
 
@@ -233,4 +261,5 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
   }
   copyCommonJsDeclarations(packageRoot)
   await buildPrivateEffectAdapters(packageRoot)
+  assertNoEmittedRoutes(packageRoot)
 }

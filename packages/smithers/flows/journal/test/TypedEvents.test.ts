@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
-import * as EngineEvent from "../src/EngineEvent.ts"
+import * as EngineEvent from "../src/EngineEvent.vibe"
 import * as Journal from "../src/Journal.ts"
-import * as Event from "../src/JournalEvent.ts"
-import * as TestJournal from "../src/test/TestJournal.ts"
+import * as Event from "../src/JournalEvent.vibe"
+import * as TestJournal from "../src/test/TestJournal.vibe"
 
 const scope: EngineEvent.Consumer = {
   runId: Event.RunId.make("run"),

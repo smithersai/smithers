@@ -8,8 +8,8 @@
  * hostile or merely older row only reaches the guards from here.
  */
 import { describe, expect, it } from "vitest"
-import type { ControlEvent } from "../src/ControlSchema.ts"
-import * as Lineage from "../src/Lineage.ts"
+import type { ControlEvent } from "../src/ControlSchema.vibe"
+import * as Lineage from "../src/Lineage.vibe"
 import * as Steering from "../src/Steering.ts"
 
 const event = (overrides: Partial<ControlEvent> = {}): ControlEvent => ({

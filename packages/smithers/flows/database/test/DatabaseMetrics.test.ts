@@ -8,7 +8,7 @@ import { Duration, Effect, Fiber, Metric } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as DatabaseMetrics from "../src/DatabaseMetrics.ts"
+import * as DatabaseMetrics from "../src/DatabaseMetrics.vibe"
 import * as DurableWriter from "../src/DurableWriter.ts"
 
 const sqliteError = (code: string): SqlError.SqlError =>

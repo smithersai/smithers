@@ -11,12 +11,12 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
-import { checkDelegate, checkLayers } from "../coding/checks.ts"
-import { correctionLayers, CorrectPlan } from "../coding/correction.ts"
-import { NativeCoding } from "../coding/native.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
+import { checkDelegate, checkLayers } from "../coding/checks.vibe"
+import { correctionLayers, CorrectPlan } from "../coding/correction.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { Implement, policyLayers, RunCheck } from "../coding/workflow.ts"
+import { Implement, policyLayers, RunCheck } from "../coding/workflow.vibe"
 
 const engineLayer = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
   layer.pipe(

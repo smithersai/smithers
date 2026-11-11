@@ -9,7 +9,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   // The shared builder declares the private Effect adapter validator as an
   // exact lib input; the test's lib dependency already keys its identity.
   cwd: "packages/smithers/migrate"
@@ -69,7 +69,7 @@ const securityReview = Smithers.SecurityReview({
         "src/flow/Layers.ts",
         "src/flow/Verify.ts",
         "src/flow/Transform.ts",
-        "src/Units.ts",
+        "src/Units.vibe",
         "src/internal/CliScripts.ts"
       ]
     },
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/flow/Transform.ts",
         "src/flow/Layers.ts",
-        "src/flow/Repair.ts",
+        "src/flow/Repair.vibe",
         "src/flow/Verify.ts",
         "src/Report.ts",
         "src/Detect.ts",
@@ -135,7 +135,7 @@ const securityReview = Smithers.SecurityReview({
         "A recursion with no depth cap or no visited-set on real paths.",
         "A run-state reader in `RunState.ts` that opens a database or file outside the project without the operator's acknowledgement."
       ],
-      paths: ["src/internal/Fs.ts", "src/Scan.ts", "src/flow/Checkpoint.ts", "src/RunState.ts", "src/Inventory.ts"]
+      paths: ["src/internal/Fs.ts", "src/Scan.ts", "src/flow/Checkpoint.ts", "src/RunState.ts", "src/Inventory.vibe"]
     },
     {
       id: "operator-gates",

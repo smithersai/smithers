@@ -9,9 +9,9 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import { forkWorkspaceName, layerWith, type Options, TimeTravel } from "../src/TimeTravel.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const row: RunStore.RunRow = {
   runId: "run",

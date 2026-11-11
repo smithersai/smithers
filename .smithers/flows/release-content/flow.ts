@@ -13,7 +13,7 @@ import {
   type Evidence,
   ReleaseError,
   type Review
-} from "../release-support/schema.ts"
+} from "../release-support/schema.vibe"
 import {
   Analyze,
   Check,
@@ -34,7 +34,7 @@ import {
   RecordUi,
   Revise,
   Score
-} from "./workflow.ts"
+} from "./workflow.vibe"
 
 const emptyCopy = { text: "", claimIds: [] }
 type Requirements = Action.Requirement<

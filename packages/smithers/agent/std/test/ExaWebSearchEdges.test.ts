@@ -5,8 +5,8 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as ExaWebSearch from "../src/ExaWebSearch.ts"
-import * as WebSearch from "../src/WebSearch.ts"
+import * as ExaWebSearch from "../src/ExaWebSearch.vibe"
+import * as WebSearch from "../src/WebSearch.vibe"
 
 const setup = (body: unknown, status = 200) => {
   const requests: Array<HttpClientRequest.HttpClientRequest> = []

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
  * included — fails here first.
  */
 import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 
 describe("browser bundle", () => {
@@ -16,6 +17,7 @@ describe("browser bundle", () => {
     ["BrowserHost", "../src/BrowserHost.ts"]
   ])("resolves the %s dependency graph without Node built-ins", async (_name, entry) => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
       external: ["effect", "effect/*"],
@@ -36,6 +38,7 @@ describe("browser bundle", () => {
    */
   it("a tab importing BrowserEngine and SharedSqlite carries no engine or SQLite", async () => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       splitting: true,
       metafile: true,

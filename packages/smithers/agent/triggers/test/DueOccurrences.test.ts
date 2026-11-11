@@ -2,8 +2,8 @@ import * as Effect from "effect/Effect"
 import * as Logger from "effect/Logger"
 import * as References from "effect/References"
 import { describe, expect, it } from "vitest"
-import * as DueOccurrences from "../src/internal/DueOccurrences.ts"
-import type { Registered } from "../src/TriggerStore.ts"
+import * as DueOccurrences from "../src/internal/DueOccurrences.vibe"
+import type { Registered } from "../src/TriggerStore.vibe"
 
 const hour = 60 * 60 * 1_000
 const now = 3.5 * hour

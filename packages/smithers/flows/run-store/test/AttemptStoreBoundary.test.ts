@@ -3,10 +3,10 @@ import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as AttemptStore from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/Ownership.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as RunStore from "../src/RunStore.vibe"
 
 const owner: OwnerId = { hostId: "boundary-host", pid: 1, nonce: "boundary-owner" }
 const base = Layer.provideMerge(

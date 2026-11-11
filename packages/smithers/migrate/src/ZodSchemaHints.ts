@@ -18,7 +18,7 @@ import * as ts from "typescript/unstable/ast"
 import type { Detection } from "./Detect.ts"
 import * as Sort from "./internal/Sort.ts"
 import * as Ts from "./internal/Ts.ts"
-import * as Inventory from "./Inventory.ts"
+import * as Inventory from "./Inventory.vibe"
 
 /**
  * Whether a zod chain converts on its own, and why it does not when it does

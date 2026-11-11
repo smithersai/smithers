@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import type * as Monitors from "../src/monitors.ts"
 import * as Session from "../src/session.ts"
 

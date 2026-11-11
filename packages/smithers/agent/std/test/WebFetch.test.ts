@@ -10,7 +10,7 @@ import { TestClock } from "effect/testing"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { toMarkdown, toText } from "../src/internal/Html.ts"
-import * as WebFetchModule from "../src/WebFetch.ts"
+import * as WebFetchModule from "../src/WebFetch.vibe"
 
 const WebFetch = {
   ...WebFetchModule,

@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path"
-import type { NativeOptions } from "./native.ts"
+import type { NativeOptions } from "./native.vibe"
 
 /** The packaging or owning host supplies one explicit executable path. */
 export const helperPath = (options: NativeOptions): string => {

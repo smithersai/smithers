@@ -6,8 +6,8 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Hex from "effect/encoding/Hex"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const testCrypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({

@@ -8,12 +8,12 @@
  * @since 0.1.0
  */
 
-import type { Baseline } from "./Baseline.ts"
+import type { Baseline } from "./Baseline.vibe"
 import { CanonicalJson } from "./internal/CanonicalJson.ts"
 import { isControlCodePoint } from "./internal/controlCharacters.ts"
 import { scorerLabel } from "./internal/scorerLabel.ts"
-import type { MissingObservation, Nondeterminism, Regression, Report as RegressionReport } from "./Regression.ts"
-import type { CaseResult, Observation, RunResult } from "./Runner.ts"
+import type { MissingObservation, Nondeterminism, Regression, Report as RegressionReport } from "./Regression.vibe"
+import type { CaseResult, Observation, RunResult } from "./Runner.vibe"
 
 /**
  * Current serialized report format version.
@@ -188,6 +188,7 @@ const section = (
  *
  * @category rendering
  * @since 0.1.0
+ * @throws {never}
  */
 export const markdown = (report: RegressionReport): string => {
   const lines = [

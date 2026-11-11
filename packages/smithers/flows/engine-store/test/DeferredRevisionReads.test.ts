@@ -18,7 +18,7 @@ import { Context, Duration, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as ExecutionSnapshot from "../src/ExecutionSnapshot.ts"
 import * as Migrations from "../src/Migrations.ts"
-import * as RunChangeFeed from "../src/RunChangeFeed.ts"
+import * as RunChangeFeed from "../src/RunChangeFeed.vibe"
 import { state } from "./ExecutionSnapshotFixture.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL

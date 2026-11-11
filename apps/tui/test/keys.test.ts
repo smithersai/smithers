@@ -8,7 +8,7 @@ import * as Tabs from "../src/tabs.ts"
 const read = (file: string) => readFileSync(join(import.meta.dir, "../src", file), "utf8")
 const app = read("app.tsx")
 /** The key layers the app dispatches through, and the composer's own bindings. */
-const dispatch = read("key-dispatch.ts")
+const dispatch = read("key-dispatch.vibe")
 const composer = read("composer.ts")
 
 /** A key literal a handler compares against, with whether Ctrl must be held. */
@@ -49,9 +49,9 @@ const helper = (file: string, parameter: string): ReadonlyArray<Handled> =>
 
 const handlerKeys = (source: string): ReadonlyArray<Handled> => [
   ...handled(source, "app.tsx"),
-  ...handled(dispatch, "key-dispatch.ts"),
+  ...handled(dispatch, "key-dispatch.vibe"),
   ...helper("approvals.ts", "name"),
-  ...helper("panels.ts", "key"),
+  ...helper("panels.vibe", "key"),
   ...helper("scrubber.ts", "name")
 ]
 

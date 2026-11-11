@@ -13,7 +13,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Hex from "effect/encoding/Hex"
 import * as Layer from "effect/Layer"
-import * as MemoryStore from "../MemoryStore.ts"
+import * as MemoryStore from "../MemoryStore.vibe"
 
 const random = Layer.sync(SecureRandom.SecureRandom)(() => {
   // A counter, not entropy: generated ids must stay distinct within one build.

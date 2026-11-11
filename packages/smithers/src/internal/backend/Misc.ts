@@ -4,7 +4,7 @@
  */
 
 import { createReadStream } from "node:fs"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { esc, list, object, query, str } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 /**

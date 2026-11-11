@@ -22,9 +22,9 @@ import {
   materializeProposal,
   probeCheckLocations,
   selectedComparison
-} from "../repository/checks.ts"
-import type { Work } from "../repository/jobs.ts"
-import type { Check } from "../repository/schema.ts"
+} from "../repository/checks.vibe"
+import type { Work } from "../repository/jobs.vibe"
+import type { Check } from "../repository/schema.vibe"
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 test("repository checks use a committed PR comparison and immutable executable source, including proposed edits", {

@@ -15,7 +15,7 @@ an unanswered timed question auto-proceeds. Replanning after feedback asks
 about the newly predicted plan.
 
 ```ts
-import { Request } from "./request.ts"
+import { Request } from "./request.vibe"
 
 // In the configured Effect runtime, using its existing journal and database:
 const result = yield* Request.execute({

@@ -12,11 +12,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { expect } from "vitest"
-import { ModelLike } from "../src/ModelLike.ts"
-import * as Plan from "../src/Plan.ts"
-import { expectPlan, expectPure } from "../src/PlanAssertions.ts"
-import { CapabilityContractError } from "../src/TestingError.ts"
-import * as TestLayers from "../src/TestLayers.ts"
+import { ModelLike } from "../src/ModelLike.vibe"
+import * as Plan from "../src/Plan.vibe"
+import { expectPlan, expectPure } from "../src/PlanAssertions.vibe"
+import { CapabilityContractError } from "../src/TestingError.vibe"
+import * as TestLayers from "../src/TestLayers.vibe"
 
 /** The defect a poisoned capability raises, or `undefined` when it did not. */
 const defect = (exit: Exit.Exit<unknown, unknown>): unknown =>

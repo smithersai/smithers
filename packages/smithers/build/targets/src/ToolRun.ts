@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { ExecIrreversible } from "./Changesets.ts"
+import { ExecIrreversible } from "./Changesets.vibe"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Secret from "./Secret.ts"
@@ -69,7 +69,7 @@ export type Attrs = typeof Attrs.Type
  * {@link import("./NpmPublish.ts").NpmPublish} and
  * {@link import("./JsrPublish.ts").JsrPublish} are examples) when the operation
  * has a stable identity; reach for `ToolRun` for a one-off external command.
- * Executing the plan requires {@link import("./Changesets.ts").ExecIrreversibleLive}.
+ * Executing the plan requires {@link import("./Changesets.vibe").ExecIrreversibleLive}.
  *
  * @category targets
  * @since 0.1.0

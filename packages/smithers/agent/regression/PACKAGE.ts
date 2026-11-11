@@ -20,10 +20,10 @@ import { Smithers } from "@smthrs/targets"
 const cwd = "packages/smithers/agent/regression"
 
 /** The suite, its subject, and the committed baseline it gates on. */
-const sources = [Smithers.glob("//packages/smithers/agent/regression/*.ts"), Smithers.file("//packages/smithers/agent/regression/baseline.json")]
+const sources = [Smithers.glob("//packages/smithers/agent/regression/*.{ts,vibe}"), Smithers.file("//packages/smithers/agent/regression/baseline.json")]
 
 /** The character runner and its example suite (world, profile, cases). */
-const characterSources = [Smithers.glob("//packages/smithers/agent/regression/character/*.ts"), Smithers.glob("//packages/smithers/agent/regression/character/example/**")]
+const characterSources = [Smithers.glob("//packages/smithers/agent/regression/character/*.{ts,vibe}"), Smithers.glob("//packages/smithers/agent/regression/character/example/**")]
 
 /**
  * Runs the evaluation suite and gates it on the committed baseline.
@@ -37,7 +37,7 @@ const characterSources = [Smithers.glob("//packages/smithers/agent/regression/ch
  */
 const test = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/agent/regression/run.ts")),
+  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/agent/regression/run.vibe")),
   srcs: sources,
   deps: [],
   cwd
@@ -96,7 +96,7 @@ const check = Smithers.Typecheck({
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["*.ts", "character/*.ts", "character/example/**"],
+  include: ["*.{ts,vibe}", "character/*.{ts,vibe}", "character/example/**"],
   checks: [
     {
       id: "live-seat-credentials",
@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Cause.pretty`, `CHARACTER_DEBUG` detail, or `--trace` output that prints request headers, env values, or `$CODEX_HOME/auth.json` contents.",
         "A results JSON or REGRESSION-LOG row that serializes the seat, route, or env rather than only usage counts."
       ],
-      paths: ["character/subject.ts", "character/run.ts", "character/rubric.ts"]
+      paths: ["character/subject.vibe", "character/run.ts", "character/rubric.ts"]
     },
     {
       id: "live-seat-grants",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A world tool handler in `world.ts` that touches the real filesystem, spawns a process, or performs a real fetch (e.g. `web_fetch` not answering from `world.data.web`).",
         "The `Workspace.layer(root)` root set to the repository or home directory in a way the QuickJS cell can write through."
       ],
-      paths: ["character/subject.ts", "character/world.ts", "subject.ts"]
+      paths: ["character/subject.vibe", "character/world.ts", "subject.vibe"]
     },
     {
       id: "judge-prompt-injection",
@@ -159,11 +159,11 @@ const securityReview = Smithers.SecurityReview({
       title: "The offline suite stays offline and its baseline gate cannot be silently bypassed",
       threat: "A change makes CI's agent eval spend real model calls with a checked-in key, or pass while scores regress.",
       lookFor: [
-        "`subject.ts` or `agent.eval.ts` resolving a real provider seat, route, or `EgressHttpClient` instead of the scripted `Model` and in-process route.",
-        "`run.ts` returning exit 0 when `Regression.compare` reports regressions, missing observations, or a case error.",
+        "`subject.vibe` or `agent.eval.vibe` resolving a real provider seat, route, or `EgressHttpClient` instead of the scripted `Model` and in-process route.",
+        "`run.vibe` returning exit 0 when `Regression.compare` reports regressions, missing observations, or a case error.",
         "`--update` writing `baseline.json` in a CI path, or an unbounded budget used outside the offline scripted seat."
       ],
-      paths: ["run.ts", "subject.ts", "agent.eval.ts"]
+      paths: ["run.vibe", "subject.vibe", "agent.eval.vibe"]
     },
     {
       id: "example-fixture-secrets",

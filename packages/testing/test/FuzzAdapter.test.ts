@@ -1,7 +1,7 @@
 import { Fuzz } from "@smthrs/fuzz"
 import { Arbitrary, Effect, Schema } from "effect"
 import * as Internal from "../src/internal/fuzz.ts"
-import { assert, it } from "../src/Vitest.ts"
+import { assert, it } from "../src/Vitest.vibe"
 
 // Exercise real Vitest registration with the session switch read at registration.
 const previous = { selector: process.env.EFFECT_FUZZ, executions: process.env.EFFECT_FUZZ_EXECUTIONS }

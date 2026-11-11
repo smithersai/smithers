@@ -3,9 +3,10 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { emitModule } from "vibelang/emit"
 import { describe, expect, it } from "vitest"
-import * as Manifest from "../src/Manifest.ts"
-import * as Resolve from "../src/Resolve.ts"
+import * as Manifest from "../src/Manifest.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
 const read = (file: string) => readFileSync(join(packageRoot, file), "utf8")
@@ -76,7 +77,7 @@ describe("reference documentation matches admission", () => {
   })
 
   it("bounds the nested-preset promise by the depth resolution enforces", async () => {
-    const jsdoc = /\/\*\*(?:[^*]|\*(?!\/))*\*\/(?=\s*export type PluginInput)/.exec(read("src/Plugin.ts"))
+    const jsdoc = /\/\*\*(?:[^*]|\*(?!\/))*\*\/(?=\s*export type PluginInput)/.exec(read("src/Plugin.vibe"))
     expect(jsdoc?.[0]).toContain("maximumPluginDepth")
     for (const prose of [jsdoc?.[0] ?? "", read("docs/api.md"), read("docs/concepts/resolution.md")]) {
       expect(prose).not.toMatch(/arbitrarily nested|nested arrays flatten to any depth/i)
@@ -110,8 +111,11 @@ describe("reference documentation matches admission", () => {
     }
     const imported = new Set<string>()
     for (const entry of readdirSync(join(packageRoot, "src"), { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".ts")) continue
-      const source = readFileSync(join(entry.parentPath, entry.name), "utf8")
+      if (!entry.isFile() || !/\.(?:ts|vibe)$/.test(entry.name)) continue
+      const path = join(entry.parentPath, entry.name)
+      // A .vibe module also imports what its compiled JavaScript imports, such
+      // as the VibeLang runtime its effect code compiles to.
+      const source = readFileSync(path, "utf8") + (path.endsWith(".vibe") ? `\n${emitModule(path).code}` : "")
       for (const match of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g)) {
         const specifier = match[1]!
         if (specifier.startsWith(".") || specifier.startsWith("node:")) continue

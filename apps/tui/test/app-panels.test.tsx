@@ -9,8 +9,8 @@ import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
 import type * as Extension from "../src/extension.ts"
-import type * as Host from "../src/host.ts"
-import type * as Panels from "../src/panels.ts"
+import type * as Host from "../src/host.vibe"
+import type * as Panels from "../src/panels.vibe"
 import * as Session from "../src/session.ts"
 
 // Headless component units: actual runtime projection, keys and session files;

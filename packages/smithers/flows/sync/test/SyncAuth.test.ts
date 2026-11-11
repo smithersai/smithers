@@ -17,12 +17,12 @@ import { TestClock } from "effect/testing"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as RunCatalog from "../src/RunCatalog.ts"
-import * as SyncAuth from "../src/SyncAuth.ts"
+import * as SyncAuth from "../src/SyncAuth.vibe"
 import { SyncError } from "../src/SyncError.ts"
 import { SyncRpcs } from "../src/SyncRpcs.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSync from "../src/test/TestSync.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 
 const engineRun = "flows/engine/run-1" as JournalEvent.RunId
 const branchId = "auth-branch" as BranchProtocol.BranchId

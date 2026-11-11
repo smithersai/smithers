@@ -34,44 +34,176 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Environment": "./src/Environment.ts",
-    "./core": "./src/core.ts",
-    "./core/AccessToken": "./src/core/AccessToken.ts",
-    "./core/ActionFailure": "./src/core/ActionFailure.ts",
-    "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
-    "./core/Channel": "./src/core/Channel.ts",
-    "./core/Connection": "./src/core/Connection.ts",
-    "./core/CursorStore": "./src/core/CursorStore.ts",
-    "./core/ExternalEvent": "./src/core/ExternalEvent.ts",
-    "./core/IntegrationError": "./src/core/IntegrationError.ts",
-    "./core/JsonPath": "./src/core/JsonPath.ts",
-    "./core/OAuthToken": "./src/core/OAuthToken.ts",
-    "./core/Pkce": "./src/core/Pkce.ts",
-    "./core/SignalName": "./src/core/SignalName.ts",
-    "./core/Signature": "./src/core/Signature.ts",
-    "./core/Source": "./src/core/Source.ts",
-    "./core/SourceRecord": "./src/core/SourceRecord.ts",
-    "./core/SourceStore": "./src/core/SourceStore.ts",
-    "./core/Sync": "./src/core/Sync.ts",
-    "./github": "./src/github.ts",
-    "./github/Actions": "./src/github/Actions.ts",
-    "./github/AppAuth": "./src/github/AppAuth.ts",
-    "./github/Config": "./src/github/Config.ts",
-    "./github/GitHubClient": "./src/github/GitHubClient.ts",
-    "./github/Issues": "./src/github/Issues.ts",
-    "./github/Payload": "./src/github/Payload.ts",
-    "./github/Proxy": "./src/github/Proxy.ts",
-    "./github/RateLimit": "./src/github/RateLimit.ts",
-    "./github/Repository": "./src/github/Repository.ts",
-    "./github/Sync": "./src/github/Sync.ts",
-    "./index": "./src/index.ts",
+    "./Environment": {
+      "types": "./src/Environment.ts",
+      "vibelang-source": "./src/Environment.ts",
+      "default": "./.vibelang/js/src/Environment.js"
+    },
+    "./core": {
+      "types": "./src/core.ts",
+      "vibelang-source": "./src/core.ts",
+      "default": "./.vibelang/js/src/core.js"
+    },
+    "./core/AccessToken": {
+      "types": "./.vibe/declarations/src/core/AccessToken.d.vibe.ts",
+      "vibelang-source": "./src/core/AccessToken.vibe",
+      "default": "./.vibelang/js/src/core/AccessToken.js"
+    },
+    "./core/ActionFailure": {
+      "types": "./.vibe/declarations/src/core/ActionFailure.d.vibe.ts",
+      "vibelang-source": "./src/core/ActionFailure.vibe",
+      "default": "./.vibelang/js/src/core/ActionFailure.js"
+    },
+    "./core/AuthorizationUrl": {
+      "types": "./src/core/AuthorizationUrl.ts",
+      "vibelang-source": "./src/core/AuthorizationUrl.ts",
+      "default": "./.vibelang/js/src/core/AuthorizationUrl.js"
+    },
+    "./core/Channel": {
+      "types": "./.vibe/declarations/src/core/Channel.d.vibe.ts",
+      "vibelang-source": "./src/core/Channel.vibe",
+      "default": "./.vibelang/js/src/core/Channel.js"
+    },
+    "./core/Connection": {
+      "types": "./.vibe/declarations/src/core/Connection.d.vibe.ts",
+      "vibelang-source": "./src/core/Connection.vibe",
+      "default": "./.vibelang/js/src/core/Connection.js"
+    },
+    "./core/CursorStore": {
+      "types": "./.vibe/declarations/src/core/CursorStore.d.vibe.ts",
+      "vibelang-source": "./src/core/CursorStore.vibe",
+      "default": "./.vibelang/js/src/core/CursorStore.js"
+    },
+    "./core/ExternalEvent": {
+      "types": "./.vibe/declarations/src/core/ExternalEvent.d.vibe.ts",
+      "vibelang-source": "./src/core/ExternalEvent.vibe",
+      "default": "./.vibelang/js/src/core/ExternalEvent.js"
+    },
+    "./core/IntegrationError": {
+      "types": "./src/core/IntegrationError.ts",
+      "vibelang-source": "./src/core/IntegrationError.ts",
+      "default": "./.vibelang/js/src/core/IntegrationError.js"
+    },
+    "./core/JsonPath": {
+      "types": "./src/core/JsonPath.ts",
+      "vibelang-source": "./src/core/JsonPath.ts",
+      "default": "./.vibelang/js/src/core/JsonPath.js"
+    },
+    "./core/OAuthToken": {
+      "types": "./.vibe/declarations/src/core/OAuthToken.d.vibe.ts",
+      "vibelang-source": "./src/core/OAuthToken.vibe",
+      "default": "./.vibelang/js/src/core/OAuthToken.js"
+    },
+    "./core/Pkce": {
+      "types": "./.vibe/declarations/src/core/Pkce.d.vibe.ts",
+      "vibelang-source": "./src/core/Pkce.vibe",
+      "default": "./.vibelang/js/src/core/Pkce.js"
+    },
+    "./core/SignalName": {
+      "types": "./src/core/SignalName.ts",
+      "vibelang-source": "./src/core/SignalName.ts",
+      "default": "./.vibelang/js/src/core/SignalName.js"
+    },
+    "./core/Signature": {
+      "types": "./.vibe/declarations/src/core/Signature.d.vibe.ts",
+      "vibelang-source": "./src/core/Signature.vibe",
+      "default": "./.vibelang/js/src/core/Signature.js"
+    },
+    "./core/Source": {
+      "types": "./.vibe/declarations/src/core/Source.d.vibe.ts",
+      "vibelang-source": "./src/core/Source.vibe",
+      "default": "./.vibelang/js/src/core/Source.js"
+    },
+    "./core/SourceRecord": {
+      "types": "./.vibe/declarations/src/core/SourceRecord.d.vibe.ts",
+      "vibelang-source": "./src/core/SourceRecord.vibe",
+      "default": "./.vibelang/js/src/core/SourceRecord.js"
+    },
+    "./core/SourceStore": {
+      "types": "./.vibe/declarations/src/core/SourceStore.d.vibe.ts",
+      "vibelang-source": "./src/core/SourceStore.vibe",
+      "default": "./.vibelang/js/src/core/SourceStore.js"
+    },
+    "./core/Sync": {
+      "types": "./.vibe/declarations/src/core/Sync.d.vibe.ts",
+      "vibelang-source": "./src/core/Sync.vibe",
+      "default": "./.vibelang/js/src/core/Sync.js"
+    },
+    "./github": {
+      "types": "./src/github.ts",
+      "vibelang-source": "./src/github.ts",
+      "default": "./.vibelang/js/src/github.js"
+    },
+    "./github/Actions": {
+      "types": "./.vibe/declarations/src/github/Actions.d.vibe.ts",
+      "vibelang-source": "./src/github/Actions.vibe",
+      "default": "./.vibelang/js/src/github/Actions.js"
+    },
+    "./github/AppAuth": {
+      "types": "./.vibe/declarations/src/github/AppAuth.d.vibe.ts",
+      "vibelang-source": "./src/github/AppAuth.vibe",
+      "default": "./.vibelang/js/src/github/AppAuth.js"
+    },
+    "./github/Config": {
+      "types": "./.vibe/declarations/src/github/Config.d.vibe.ts",
+      "vibelang-source": "./src/github/Config.vibe",
+      "default": "./.vibelang/js/src/github/Config.js"
+    },
+    "./github/GitHubClient": {
+      "types": "./.vibe/declarations/src/github/GitHubClient.d.vibe.ts",
+      "vibelang-source": "./src/github/GitHubClient.vibe",
+      "default": "./.vibelang/js/src/github/GitHubClient.js"
+    },
+    "./github/Issues": {
+      "types": "./.vibe/declarations/src/github/Issues.d.vibe.ts",
+      "vibelang-source": "./src/github/Issues.vibe",
+      "default": "./.vibelang/js/src/github/Issues.js"
+    },
+    "./github/Payload": {
+      "types": "./.vibe/declarations/src/github/Payload.d.vibe.ts",
+      "vibelang-source": "./src/github/Payload.vibe",
+      "default": "./.vibelang/js/src/github/Payload.js"
+    },
+    "./github/Proxy": {
+      "types": "./.vibe/declarations/src/github/Proxy.d.vibe.ts",
+      "vibelang-source": "./src/github/Proxy.vibe",
+      "default": "./.vibelang/js/src/github/Proxy.js"
+    },
+    "./github/RateLimit": {
+      "types": "./src/github/RateLimit.ts",
+      "vibelang-source": "./src/github/RateLimit.ts",
+      "default": "./.vibelang/js/src/github/RateLimit.js"
+    },
+    "./github/Repository": {
+      "types": "./.vibe/declarations/src/github/Repository.d.vibe.ts",
+      "vibelang-source": "./src/github/Repository.vibe",
+      "default": "./.vibelang/js/src/github/Repository.js"
+    },
+    "./github/Sync": {
+      "types": "./.vibe/declarations/src/github/Sync.d.vibe.ts",
+      "vibelang-source": "./src/github/Sync.vibe",
+      "default": "./.vibelang/js/src/github/Sync.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./core/migrations/0001_integration_cursors": null,
     "./github/Webhook": null,
     "./github/ListenerRegistry": null,
-    "./core/IssueSync": "./src/core/IssueSync.ts",
+    "./core/IssueSync": {
+      "types": "./src/core/IssueSync.ts",
+      "vibelang-source": "./src/core/IssueSync.ts",
+      "default": "./.vibelang/js/src/core/IssueSync.js"
+    },
     "./linear": null,
     "./linear/Actions": null,
     "./linear/Config": null,
@@ -450,6 +582,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -459,7 +592,9 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    "src/**/*.vibe"
+    "src/**/*.vibe",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "scripts": {
     "lint": "eslint src examples --max-warnings=0 && dprint check",
@@ -479,7 +614,8 @@
     "@smthrs/notifications": "1.0.0-rc.17",
     "@smthrs/canonical": "1.0.0-rc.17",
     "@smthrs/plan": "1.0.0-rc.17",
-    "vibelang-runtime": "0.0.12"
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -506,9 +642,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

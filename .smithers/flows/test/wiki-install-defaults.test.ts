@@ -169,15 +169,16 @@ test("300-entry install repository publishes overview and architecture summaries
   // engine and publish both pages, rather than only testing the collector.
   await mkdir(join(root, ".smithers"))
   await writeFile(join(root, ".smithers/coding-project.json"), JSON.stringify({ pages: specs }))
+  const register = `--import=${import.meta.resolve("vibelang/register")}`
   const cli = fileURLToPath(new URL("../wiki/main.ts", import.meta.url))
-  const generated = spawnSync("node", [cli, "--root", root, "--run", "wiki-large-install"], {
+  const generated = spawnSync("node", [register, cli, "--root", root, "--run", "wiki-large-install"], {
     encoding: "utf8",
     timeout: 180_000
   })
   assert.equal(generated.status, 0, generated.stderr + generated.stdout)
   assert.match(generated.stdout, /"pages":\s*2/)
   assert.match(generated.stdout, /"verification":\s*"unreviewed"/)
-  const checked = spawnSync("node", [cli, "--root", root, "--check"], { encoding: "utf8", timeout: 180_000 })
+  const checked = spawnSync("node", [register, cli, "--root", root, "--check"], { encoding: "utf8", timeout: 180_000 })
   assert.equal(checked.status, 0, checked.stderr)
   assert.deepEqual(JSON.parse(checked.stdout), { pages: 2, verification: "unreviewed" })
 })

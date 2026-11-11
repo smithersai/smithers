@@ -5,7 +5,7 @@ import { renewalOf } from "../../flows/bearer"
 import { held, OutboxWrites } from "../../outbox"
 import { IssuesClient, WriteNotTaken, type WriteRequest } from "./api"
 import { type NotSentReason, refusalOf, type WriteOp } from "./contract"
-import { sends } from "./metrics"
+import { sends } from "#vibelang/emitted/src/features/issues/metrics"
 import { Requested, Sending } from "./schema"
 
 // Issue writes in the device's one outbox (decision 0012 §4, decision 0002 §3). A write step's tab puts the write in

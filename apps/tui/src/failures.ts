@@ -29,7 +29,7 @@ import * as Log from "./log.ts"
 import type { Failure as MonitorFailure } from "./monitors.ts"
 import type { SearchFailed } from "./search.ts"
 import type { Corrupt, WriteFailed } from "./session.ts"
-import type { TabError } from "./tab-error.ts"
+import type { TabError } from "./tab-error.vibe"
 import type { AgentDepthExceeded } from "./workspace.ts"
 
 /** Every tagged failure the TUI presents. */

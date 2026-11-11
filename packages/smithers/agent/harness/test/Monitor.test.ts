@@ -2,8 +2,8 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Classifier from "@smthrs/model/Classifier"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Monitor from "../src/Monitor.ts"
-import * as Supervisor from "../src/Supervisor.ts"
+import * as Monitor from "../src/Monitor.vibe"
+import * as Supervisor from "../src/Supervisor.vibe"
 
 const reading = (overrides: Partial<Supervisor.Reading> = {}): Supervisor.Reading => ({
   thrashing: 0.1,

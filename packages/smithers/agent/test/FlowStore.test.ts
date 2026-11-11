@@ -25,7 +25,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as FlowStore from "../src/FlowStore.ts"
+import * as FlowStore from "../src/FlowStore.vibe"
 
 const platform = Layer.merge(AtomicFileSystem.layer, NodePath.layer)
 

@@ -12,7 +12,7 @@ import * as Editor from "./editor.ts"
 import * as External from "./external.ts"
 import type { FlowRuns } from "./flows.ts"
 import * as Log from "./log.ts"
-import type * as Models from "./models.ts"
+import type * as Models from "#vibelang/emitted/src/models"
 import * as Shell from "./shell.ts"
 
 export const keys: Array<KeyBinding> = [

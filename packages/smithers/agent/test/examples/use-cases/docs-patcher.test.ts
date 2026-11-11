@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { AffectedDoc, PullRequestRequest, SurfaceChange } from "../../../examples/use-cases/docs-patcher.ts"
-import { DocsPatcher, layer } from "../../../examples/use-cases/docs-patcher.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import type { AffectedDoc, PullRequestRequest, SurfaceChange } from "../../../examples/use-cases/docs-patcher.vibe"
+import { DocsPatcher, layer } from "../../../examples/use-cases/docs-patcher.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "docs-patcher-"))
 

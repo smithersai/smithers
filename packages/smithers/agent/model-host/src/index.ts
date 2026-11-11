@@ -24,10 +24,10 @@ export {
   toModel,
   type ToModelOptions,
   withRoute
-} from "./ConfiguredModelRoute.ts"
-export { type ContextPreflightAnswer, runContextPreflight } from "./ContextPreflight.ts"
-export { type DurableChatGrant, DurableChatProducer, runDurableChatTurn } from "./DurableChatProducer.ts"
-export { environmentModelResolver, type EnvironmentModelResolverOptions } from "./EnvironmentResolver.ts"
+} from "./ConfiguredModelRoute.vibe"
+export { type ContextPreflightAnswer, runContextPreflight } from "./ContextPreflight.vibe"
+export { type DurableChatGrant, DurableChatProducer, runDurableChatTurn } from "./DurableChatProducer.vibe"
+export { environmentModelResolver, type EnvironmentModelResolverOptions } from "./EnvironmentResolver.vibe"
 export {
   createHostDiagnostics,
   type HostDiagnosticFields,
@@ -35,8 +35,8 @@ export {
   type HostDiagnostics,
   type HostDiagnosticValue,
   makeHostDiagnostics
-} from "./HostDiagnostics.ts"
-export { HostModel, type HostModelOptions, type HostModelRecord, HostModelUnusable } from "./HostModel.ts"
+} from "./HostDiagnostics.vibe"
+export { HostModel, type HostModelOptions, type HostModelRecord, HostModelUnusable } from "./HostModel.vibe"
 export {
   bearerAuthorization,
   createModelTurnHandler,
@@ -49,7 +49,7 @@ export {
   type ModelTurnResolution,
   type ModelTurnResolver
 } from "./HostServer.ts"
-export { type LocalPlanned, type ModelCredentials, modelFailureOf, planOnLocal } from "./LocalModel.ts"
+export { type LocalPlanned, type ModelCredentials, modelFailureOf, planOnLocal } from "./LocalModel.vibe"
 export {
   CommitRefused,
   type ProducerError,
@@ -58,8 +58,8 @@ export {
   ReceiptMismatch,
   ResolveFailed,
   StreamTooLarge
-} from "./ModelHostError.ts"
-export { createModelProbe, type ModelProbe, type ModelProbeOptions } from "./ModelProbe.ts"
+} from "./ModelHostError.vibe"
+export { createModelProbe, type ModelProbe, type ModelProbeOptions } from "./ModelProbe.vibe"
 export {
   type FrameWriter,
   type HeldToolCall,
@@ -68,4 +68,4 @@ export {
   type ModelTurnOptions,
   runModelTurn,
   StreamingCredentialCutter
-} from "./ModelTurnHost.ts"
+} from "./ModelTurnHost.vibe"

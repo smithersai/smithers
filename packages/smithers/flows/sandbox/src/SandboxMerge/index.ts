@@ -23,9 +23,9 @@
 import type { Work } from "../Sandbox/Work.ts"
 
 export * from "./apply.ts"
-export * from "./Outcome.ts"
-export type { Repository } from "./Repository.ts"
-export * from "./Strategy.ts"
+export * from "./Outcome.vibe"
+export type { Repository } from "./Repository.vibe"
+export * from "./Strategy.vibe"
 export type { Work }
 
-export * from "./ApplyAction.ts"
+export * from "./ApplyAction.vibe"

@@ -6,16 +6,16 @@ const read = (path: string): string => readFileSync(new URL(path, import.meta.ur
 // The JSDoc scanner must not run past the end of a comment block, so the body
 // pattern excludes a closing delimiter rather than matching lazily.
 const documented =
-  /\/\*\*((?:[^*]|\*(?!\/))*)\*\/\s*export\s+(?:const|function|class|interface|type)\s+([A-Za-z0-9_$]+)/g
+  /\/\*\*((?:[^*]|\*(?!\/))*)\*\/\s*export\s+(?:effect\s+)?(?:const|function|class|interface|type)\s+([A-Za-z0-9_$]+)/g
 
 const namespaces = (): ReadonlyArray<readonly [string, string]> =>
-  [...read("../src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.ts"/g)]
-    .map(([, namespace, file]) => [namespace!, file!] as const)
+  [...read("../src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.(ts|vibe)"/g)]
+    .map(([, namespace, file, extension]) => [namespace!, `${file}.${extension}`] as const)
 
 const exported = (): ReadonlyArray<string> => {
   const names = new Set<string>()
   for (const [namespace, file] of namespaces()) {
-    for (const [, block, name] of read(`../src/${file}.ts`).matchAll(documented)) {
+    for (const [, block, name] of read(`../src/${file}`).matchAll(documented)) {
       if (block!.includes("@category")) names.add(`${namespace}.${name!}`)
     }
   }
@@ -121,7 +121,7 @@ describe("documentation", () => {
   })
 
   it("states that a declared case expected wins over binding groundTruth", () => {
-    for (const page of ["../src/Suite.ts", "../docs/api.md", "../docs/guides/author-a-suite.md"]) {
+    for (const page of ["../src/Suite.vibe", "../docs/api.md", "../docs/guides/author-a-suite.md"]) {
       expect(read(page).replace(/\s*\*?\s+/g, " "), page).toMatch(
         /only an absent (?:one|`expected`) defers to the binding/
       )

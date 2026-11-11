@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import type { Item } from "../../../examples/use-cases/triage.ts"
-import { layer, Triage } from "../../../examples/use-cases/triage.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import type { Item } from "../../../examples/use-cases/triage.vibe"
+import { layer, Triage } from "../../../examples/use-cases/triage.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "triage-"))
 

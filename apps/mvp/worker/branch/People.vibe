@@ -1,0 +1,52 @@
+
+// The people a branch can be shared with, by the GitHub login its owner types (docs/features/branch-workspace.md#sharing):
+// everyone who has signed in to this deployment (`people`), and, under `alchemy dev`, local development's own people.
+// A share keys the person by their id, never their login, so renaming on GitHub keeps it and a login someone else
+// claims later never inherits it.
+
+/** A person a branch may be shared with: their id, which every check reads, and their login, which the dialog shows. */
+export interface Person {
+  readonly id: string
+  readonly login: string
+}
+
+/** The people couldn't be read: Postgres is unreachable. */
+export class DirectoryUnavailable extends Schema.TaggedError<DirectoryUnavailable>()(
+  "@smthrs/mvp/branch/DirectoryUnavailable",
+  {},
+) {}
+
+/** Finds people by login, ignoring case as GitHub does. */
+export class Directory extends Context.Service<
+  Directory,
+  { readonly find: (login: string) => Option.Option<Person>!DirectoryUnavailable }
+>()("@smthrs/mvp/branch/Directory") {
+  /**
+   * The people who signed in to this deployment, over `database`, after `known`: local development's people, who have
+   * no row of their own. A deployment passes none.
+   */
+  static readonly layer = <E, R>(
+    database: Layer.Layer<SqlClient.SqlClient, E, R>,
+    known: ReadonlyArray<Person> = [],
+  ) =>
+    Layer.effect(
+      Directory,
+      Effect.map(Effect.context<R>(), (context) =>
+        Directory.of({
+          find: (login) => {
+            const wanted = login.toLowerCase()
+            const local = known.find((person) => person.login.toLowerCase() === wanted)
+            if (local !== undefined) return Effect.succeed(Option.some(local))
+            return (effect {
+              const sql = try SqlClient.SqlClient
+              const [row] = try sql<Person>`
+                SELECT id::text AS id, github_login AS login FROM people WHERE lower(github_login) = ${wanted}`
+              return Option.fromNullishOr(row)
+            })
+              |> Effect.provide(%, database)
+              |> Effect.provide(%, context)
+              |> Effect.mapError(%, () => new DirectoryUnavailable())
+          },
+        })),
+    )
+}

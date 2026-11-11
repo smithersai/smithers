@@ -1,7 +1,7 @@
 // What the Electric gateway (infra/ElectricGateway.ts) lets through to Electric's container: `GET /v1/shape`, and
 // nothing else.
 //
-// The gateway has no public URL: ChatApi reaches it only through its service binding (infra/Electric.ts), after it has
+// The gateway has no public URL: ChatApi reaches it only through its service binding (infra/Electric.vibe), after it has
 // authorized the person and fixed the shape. Electric runs without a secret of its own: its container has no way in but
 // this gateway (docs/infrastructure.md).
 import { HttpServerRequest } from "effect/http"

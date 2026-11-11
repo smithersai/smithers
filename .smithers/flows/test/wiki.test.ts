@@ -10,11 +10,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
-import { separateWikiOutput } from "../coding/wiki-output.ts"
+import { separateWikiOutput } from "../coding/wiki-output.vibe"
 import { reviewEvidence } from "../wiki/evidence.ts"
-import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wiki/jev-citations.ts"
+import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wiki/jev-citations.vibe"
 import { operations } from "../wiki/operations.ts"
-import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.ts"
+import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const fixture = async (t: TestContext) => {
@@ -552,7 +552,7 @@ test("independent page reviews finish before exact citation assessment can fail"
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { ReviewPage } = await import("../wiki/workflow.ts")
+  const { ReviewPage } = await import("../wiki/workflow.vibe")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), completed: string[] = []
   const layer = Layer.mergeAll(
@@ -603,7 +603,7 @@ test("one citation repair receives every bad citation and the same evidence, the
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { ReviewPage } = await import("../wiki/workflow.ts")
+  const { ReviewPage } = await import("../wiki/workflow.vibe")
   const { actionLayers } = await import("../wiki/runtime.ts")
   const f = await fixture(t), calls: string[] = []
   let initial: ReviewedPage["evidence"] | undefined
@@ -774,9 +774,10 @@ test("the wiki CLI refuses an output or database that a symlinked ancestor route
   t.after(() => rm(outside, { recursive: true, force: true }))
   await mkdir(join(f.root, ".smithers"))
   await writeFile(join(f.root, ".smithers/coding-project.json"), JSON.stringify({ pages: [f.spec] }))
+  const register = `--import=${import.meta.resolve("vibelang/register")}`
   const cli = fileURLToPath(new URL("../wiki/main.ts", import.meta.url))
   const invoke = (...args: Array<string>) =>
-    spawnSync("node", [cli, "--root", f.root, ...args], { cwd: f.root, encoding: "utf8", timeout: 25_000 })
+    spawnSync("node", [register, cli, "--root", f.root, ...args], { cwd: f.root, encoding: "utf8", timeout: 25_000 })
   await symlink(outside, join(f.root, ".flows"), "dir")
   const linked = invoke()
   assert.notEqual(linked.status, 0, linked.stdout)

@@ -2,10 +2,10 @@
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { Poc, PocResult } from "../poc.ts"
+import { Poc, PocResult } from "../poc.vibe"
 import { PrepareRequest } from "../preparation.ts"
 import { RequestInput } from "../schema.ts"
-import { AdmitSource } from "../source-admission.ts"
+import { AdmitSource } from "../source-admission.vibe"
 
 export default Flow.make("coding/Prototype", {
   description: "Create and retain a disposable source prototype without implementing or landing it.",

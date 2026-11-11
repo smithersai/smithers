@@ -3,7 +3,7 @@ import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
 import { held, OutboxWrites } from "../../outbox"
 import { type ChangeRequest, StackClient } from "./api"
 import { type NotSentReason, notSentOf } from "./contract"
-import { sends } from "./metrics"
+import { sends } from "#vibelang/emitted/src/features/todos/metrics"
 import { type Requested, Requested as RequestedRow, type Sending, Sending as SendingRow } from "./schema"
 
 // Changes to a stack in the device's one outbox (decision 0016 §1, decision 0002 §3). A TODO step's tab puts the change

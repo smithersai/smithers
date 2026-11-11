@@ -17,7 +17,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"
 import { acquireLock, type LandLease } from "../land/lock.mjs"
-import { awaitHostDisk, workspaceBytes } from "./disk.ts"
+import { awaitHostDisk, workspaceBytes } from "./disk.vibe"
 import { type Exited, type HostFailed, output, repository, ridingOutages, run, tail, workspaces } from "./host.ts"
 
 export class LandFailed extends Schema.TaggedError<LandFailed>()("issue-sweep/LandFailed", {

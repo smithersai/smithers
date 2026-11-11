@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest"
-import * as Selection from "../src/internal/PostgresSelection.ts"
-import { isUnsupportedDatabase } from "../src/internal/UnsupportedDatabase.ts"
+import * as Selection from "../src/internal/PostgresSelection.vibe"
+import { isUnsupportedDatabase } from "../src/internal/UnsupportedDatabase.vibe"
 
 /** The tagged refusal a selection throws, as its code and message; never its credentials. */
 const refusal = (select: () => unknown) => {

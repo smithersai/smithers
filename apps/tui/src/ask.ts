@@ -7,9 +7,9 @@
 import { appendFileSync, writeFileSync } from "node:fs"
 import * as Approvals from "./approvals.ts"
 import * as Budget from "./budget.ts"
-import * as Host from "./host.ts"
-import * as Models from "./models.ts"
-import * as Spend from "./spend.ts"
+import * as Host from "#vibelang/emitted/src/host"
+import * as Models from "#vibelang/emitted/src/models"
+import * as Spend from "#vibelang/emitted/src/spend"
 
 const prompt = process.argv[2]
 if (prompt === undefined) {

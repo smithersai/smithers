@@ -9,8 +9,8 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import { dirname } from "node:path"
 import * as BrowserFileSystem from "../../../flows/platform-browser/src/BrowserFileSystem/index.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as Search from "../src/Search.vibe"
 
 /**
  * Provides deterministic host services behind the permission-aware kernel.

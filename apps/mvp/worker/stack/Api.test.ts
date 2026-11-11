@@ -3,10 +3,10 @@ import { PostgresDatabase } from "@smthrs/database"
 import { FlowRuntime } from "@smthrs/flow"
 import { NodeHost } from "@smthrs/platform-node"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import * as Pause from "../flows/Pause.ts"
+import * as Pause from "../flows/Pause.vibe"
 import { build } from "../test/flowHost.ts"
 import * as TodoRuns from "./TodoRuns.ts"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 // The stack's routes (worker/stack/Api.ts, decision 0016 §1 and §5) through the real handler on this file's schema of
 // the compose Postgres and Electric (`pnpm db:up`): every refusal of `POST /api/repos/<owner>/<name>/stack`, a commit and
 // a drop end to end, repeated ops, the run host's seam, the shapes' access, and records free of titles and prompts.
@@ -23,7 +23,7 @@ import {
   TODO_REQUESTS_SHAPE_ROUTE,
   TODOS_SHAPE_ROUTE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import * as SessionStore from "../SessionStore.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.ts"

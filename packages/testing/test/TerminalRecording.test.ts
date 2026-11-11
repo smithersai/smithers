@@ -1,8 +1,8 @@
 import { NodeHost } from "@smthrs/platform-node"
 import { Effect, FileSystem, Path } from "effect"
 import { describe, expect, it } from "vitest"
-import { execute } from "../src/RealCliDriver.ts"
-import * as Recording from "../src/TerminalRecording.ts"
+import { execute } from "../src/RealCliDriver.vibe"
+import * as Recording from "../src/TerminalRecording.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, NodeHost.NodeHost>) =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeHost.layer)))
@@ -37,7 +37,7 @@ describe("reproducible terminal evidence", () => {
         "logged_in: false\ntoken_set: false"
       )
       // Decode with a second real process: a header alone cannot prove animation.
-      const { execute } = yield* Effect.promise(() => import("../src/RealCliDriver.ts"))
+      const { execute } = yield* Effect.promise(() => import("../src/RealCliDriver.vibe"))
       const decoded = yield* execute({
         executable: "ffprobe",
         args: [

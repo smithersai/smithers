@@ -1,0 +1,131 @@
+/**
+ * `smthrs bug`: preview, consent, and the post, behind both parsers.
+ *
+ * @since 1.0.0
+ */
+
+import { Control as ControlService, ControlError } from "@smthrs/control"
+import { Effect } from "effect"
+import * as Platform from "./Bug.platform.ts"
+import * as Bug from "../Bug.ts"
+import * as CliError from "../CliError.vibe"
+import * as Environment from "../Environment.ts"
+import * as Forensics from "../Forensics.vibe"
+import * as BoundedEvents from "../internal/BoundedEvents.vibe"
+import * as Ui from "../Ui.ts"
+import { packageVersion } from "../Version.ts"
+import * as Globals from "./Globals.vibe"
+
+/**
+ * The typed options both parsers produce.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /** The summary words, joined; an empty summary is a usage error. */
+  readonly summary: string
+  readonly runId?: string | undefined
+  readonly yes: boolean
+  readonly dryRun: boolean
+  /**
+   * Receives the endpoint and the already-redacted consent document before
+   * any confirmation, so the operator can inspect everything a subsequent
+   * POST will send. Each entry routes it to its own stderr, even under quiet.
+   */
+  readonly preview: (line: string) => void!!
+}
+
+/**
+ * The document the verb renders.
+ * @category models
+ * @since 1.0.0
+ */
+export type Outcome =
+  | { readonly reported: false; readonly endpoint: string; readonly payload: Bug.Report }
+  | { readonly reported: true; readonly endpoint: string }
+
+/**
+ * Builds the redacted report, previews it, asks, and posts.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const submit = effect (
+  options: Options,
+  globals: Globals.Options
+): Outcome!(| CliError.UsageError
+  | CliError.UnsupportedError
+  | CliError.Refused
+  | CliError.ResourceLimitError
+  | ControlError.ControlError)!ControlService.Control => {
+  try Globals.guard(globals)
+  const environment = globals.environment ??
+    (try Effect.orDie(Effect.try({ try: Platform.environment, catch: (error) => error })))
+  const host = try Effect.orDie(Effect.try({ try: Platform.identity, catch: (error) => error }))
+  const summary = options.summary.trim()
+  if (summary === "") {
+    throw new CliError.UsageError({ message: "A bug report needs a one-line summary" })
+  }
+  const control = try ControlService.Control
+  const runId = options.runId
+  const listed = runId === undefined ? undefined : try control.list({ _tag: "runs", filters: { runId } })
+  const digest = runId === undefined ? undefined : Forensics.digest(
+    BoundedEvents.collect(control.watch({ runId, follow: false }), {
+      operation: "event-history read",
+      subject: `run ${JSON.stringify(runId)}`
+    }) catch effect (error) => {
+      throw error instanceof CliError.ResourceLimitError ? error : new ControlError.TransportError({
+        message: `Control watch failed during event-history read for run ${JSON.stringify(runId)}. Retry the command.`,
+        retryable: error instanceof ControlError.TransportError ? error.retryable : true,
+        cause: error
+      })
+    },
+    runId
+  )
+  const body = try Effect.orDie(Effect.try({
+    try: () =>
+      Bug.report({
+        summary,
+        version: packageVersion,
+        platform: host.platform,
+        node: host.node,
+        runs: listed?._tag === "runs" ? listed.items.filter((run) => run.runId === runId) : [],
+        ...(digest === undefined ? {} : { digest })
+      }),
+    catch: (e) => e
+  }))
+  const endpoint = (try Effect.orDie(
+    Effect.try({ try: () => Environment.read(environment, "SMITHERS_BUG_ENDPOINT"), catch: (e) => e })
+  )) ?? Bug.defaultEndpoint
+  const payload = JSON.stringify(body)
+  try options.preview(endpoint)
+  try options.preview(payload)
+  if (options.dryRun) return { reported: false as const, endpoint, payload: body }
+  const ui = try Ui.current
+  const confirmed = options.yes || (ui.interactive && (try ui.confirm({
+    message: `Post this report to ${endpoint}?`,
+    initialValue: false,
+    nonInteractive: false
+  })))
+  if (!confirmed) {
+    throw new CliError.UsageError({
+      message: "Report not sent. Use --yes to post the previewed payload, or --dry-run to inspect it."
+    })
+  }
+  const posted = try Effect.tryPromise({
+    try: () => Platform.post(endpoint, payload),
+    catch: () =>
+      new CliError.Refused({
+        fault: "dependency",
+        code: "bug_report_unreachable",
+        message: `Could not confirm delivery to ${endpoint}. The report may have been sent.`
+      })
+  })
+  if (!posted.ok) {
+    throw new CliError.Refused({
+      fault: "dependency",
+      code: "bug_report_rejected",
+      message: `${endpoint} answered ${posted.status}`
+    })
+  }
+  return { reported: true as const, endpoint }
+}

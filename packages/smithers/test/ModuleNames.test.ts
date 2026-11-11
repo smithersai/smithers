@@ -8,7 +8,7 @@ describe("module names", () => {
     for (const reused of ["history/Legacy.ts", "internal/History.ts", "evaluation/Cli.ts"]) {
       expect(existsSync(source(reused)), reused).toBe(false)
     }
-    for (const renamed of ["history/ExecutionTarget.ts", "internal/BoundedEvents.ts", "evaluation/EvalCli.ts"]) {
+    for (const renamed of ["history/ExecutionTarget.vibe", "internal/BoundedEvents.vibe", "evaluation/EvalCli.ts"]) {
       expect(existsSync(source(renamed)), renamed).toBe(true)
     }
   })

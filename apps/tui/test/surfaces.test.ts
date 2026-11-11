@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Run } from "../src/flows.ts"
-import type { Panel } from "../src/panels.ts"
+import type { Panel } from "../src/panels.vibe"
 import * as Surfaces from "../src/surfaces.ts"
 import type { Tab } from "../src/workspace.ts"
 

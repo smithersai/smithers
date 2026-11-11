@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as TargetApprovals from "../src/target-approvals.ts"
+import * as TargetApprovals from "../src/target-approvals.vibe"
 
 const workspace = () => mkdtempSync(join(tmpdir(), "tui-target-approvals-"))
 

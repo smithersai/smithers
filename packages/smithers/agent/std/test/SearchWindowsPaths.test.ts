@@ -7,10 +7,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, win32 } from "node:path"
 import { expect, it } from "vitest"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as Search from "../src/Search.vibe"
 
 it.each([
   {

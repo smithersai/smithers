@@ -13,7 +13,7 @@ import type { Access } from "../src/BranchProtocol.ts"
 import { branchOfRunId, branchRunId, ShareCapability, ShareClaims } from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 import { died, refusalOf } from "./refusal.ts"
 
 const secret = "shared-hardening-secret-01234567"

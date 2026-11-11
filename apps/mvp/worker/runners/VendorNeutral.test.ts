@@ -18,7 +18,7 @@ const SEAM = [
   "apps/mvp/db/migrations/0078_agent_runners.ts",
   "packages/smithers/agent/src/AgentRunner.ts",
   "packages/smithers/agent/src/ExternalAgent.ts",
-  "packages/smithers/agent/src/Acp.ts",
+  "packages/smithers/agent/src/Acp.vibe",
   "packages/smithers/agent/test/AgentRunner.test.ts",
   "packages/smithers/agent/test/ExternalAgent.test.ts",
   "packages/smithers/agent/test/Acp.test.ts",

@@ -4,7 +4,7 @@ import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpaw
 import * as Scope from "effect/Scope"
 import { envPrefix } from "../src/internal/envPrefix.ts"
 import { execSession, type ExecSessionOptions } from "../src/internal/execSession.ts"
-import type { GatheredRun } from "../src/internal/localProcess.ts"
+import type { GatheredRun } from "../src/internal/localProcess.vibe"
 import { pidDirectory } from "../src/internal/pidDirectory.ts"
 
 const encoder = new TextEncoder()

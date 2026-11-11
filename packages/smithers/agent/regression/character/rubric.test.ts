@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import * as Rubric from "./rubric.ts"
-import type * as Subject from "./subject.ts"
+import type * as Subject from "./subject.vibe"
 import type * as Suite from "./suite.ts"
 
 const turn = (reply: string, actions: Array<{ tool: string; input: Record<string, unknown> }> = []): Subject.Turn => ({

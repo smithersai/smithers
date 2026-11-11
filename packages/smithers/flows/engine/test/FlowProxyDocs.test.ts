@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { readFileSync } from "node:fs"
-import { normalize } from "node:path"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import ts from "typescript"
+import { compileProjectSync, formatDiagnostic } from "vibelang/project"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 
@@ -13,48 +13,56 @@ const examples = [...read("../src/FlowProxy.ts").matchAll(/ \* ```ts\n([\s\S]*?)
 
 // One program compiles every example: each program re-checks the imported
 // source graph, so a program per example doubled the cost of the slowest
-// file in this suite under coverage on a loaded worker.
-const exampleFile = (index: number) => fileURLToPath(new URL(`./proxy-doc-example-${index}.ts`, import.meta.url))
-const key = (name: string) => normalize(name).toLowerCase()
+// file in this suite under coverage on a loaded worker. The VibeLang checker
+// compiles it, since the packages the examples import are .vibe sources that
+// a stock TypeScript program cannot read.
+const packageRoot = fileURLToPath(new URL("../", import.meta.url))
+const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
 
 let compiled: ReadonlyArray<string> | undefined
 const diagnostics = (): ReadonlyArray<string> => {
   if (compiled !== undefined) return compiled
-  const files = examples.map((_, index) => exampleFile(index))
-  const sources = new Map(files.map((file, index) => [key(file), examples[index]!]))
-  const options: ts.CompilerOptions = {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.NodeNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    strict: true,
-    exactOptionalPropertyTypes: true,
-    noUncheckedIndexedAccess: true,
-    skipLibCheck: true,
-    noEmit: true,
-    allowImportingTsExtensions: true,
-    types: ["node"]
-  }
-  const host = ts.createCompilerHost(options)
-  const getSourceFile = host.getSourceFile.bind(host)
-  host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) => {
-    const source = sources.get(key(name))
-    return source === undefined
-      ? getSourceFile(name, languageVersion, onError, shouldCreateNewSourceFile)
-      : ts.createSourceFile(name, source, languageVersion, true)
-  }
-  const fileExists = host.fileExists.bind(host)
-  host.fileExists = (name) => sources.has(key(name)) || fileExists(name)
-  const program = ts.createProgram(files, options, host)
-  const format = (found: ReadonlyArray<ts.Diagnostic>) =>
-    ts.formatDiagnostics(found, {
-      getCanonicalFileName: (name) => name,
-      getCurrentDirectory: () => process.cwd(),
-      getNewLine: () => "\n"
+  const directory = mkdtempSync(join(packageRoot, "test", ".proxy-doc-examples-"))
+  try {
+    const names = examples.map((_, index) => `proxy-doc-example-${index}.ts`)
+    names.forEach((name, index) => writeFileSync(join(directory, name), examples[index]!))
+    writeFileSync(
+      join(directory, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "es2022",
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          strict: true,
+          exactOptionalPropertyTypes: true,
+          noUncheckedIndexedAccess: true,
+          skipLibCheck: true,
+          noEmit: true,
+          allowImportingTsExtensions: true,
+          types: ["node"]
+        },
+        files: names
+      })
+    )
+    const { errors } = compileProjectSync({
+      project: join(directory, "tsconfig.json"),
+      root: repositoryRoot,
+      cache: false
     })
-  // Scoped to one example, pre-emit diagnostics still include the options
-  // and global ones, so a broken shared graph fails every example.
-  compiled = files.map((file) => format(ts.getPreEmitDiagnostics(program, program.getSourceFile(file))))
-  return compiled
+    // Scoped to one example, the options and global diagnostics still count,
+    // so a broken shared graph fails every example.
+    compiled = names.map((name) =>
+      errors
+        .filter((diagnostic) =>
+          diagnostic.file === undefined || resolve(repositoryRoot, diagnostic.file) === join(directory, name)
+        )
+        .map(formatDiagnostic)
+        .join("\n")
+    )
+    return compiled
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 }
 
 describe("FlowProxy documentation", () => {
@@ -75,7 +83,7 @@ describe("FlowProxy documentation", () => {
   })
 
   it("does not claim the define-and-run example requires an explicit id", () => {
-    const example = read("../examples/01-define-and-run.ts")
+    const example = read("../examples/01-define-and-run.vibe")
     expect(example).not.toContain("an explicit id is required")
     expect(example).toContain("fresh UUID")
   })

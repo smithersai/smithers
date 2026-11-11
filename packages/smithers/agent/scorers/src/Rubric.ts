@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Scorer from "./Scorer.ts"
-import { ScorerError } from "./ScorerError.ts"
+import { ScorerError } from "./ScorerError.vibe"
 
 /**
  * One judge request.

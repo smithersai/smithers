@@ -38,9 +38,9 @@ import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
-import { Consensus, sameOwner } from "./Consensus.ts"
-import * as EventTally from "./internal/EventTally.ts"
-import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
+import { Consensus, sameOwner } from "./Consensus.vibe"
+import * as EventTally from "./internal/EventTally.vibe"
+import { JournalInternalFault } from "./internal/JournalInternalFault.vibe"
 import {
   Checkpoint,
   CheckpointOptions,
@@ -67,13 +67,13 @@ import {
   type Seq,
   type SourceId,
   type SourceSeq
-} from "./JournalEvent.ts"
-import * as JournalGeneration from "./JournalGeneration.ts"
-import * as JournalMetrics from "./JournalMetrics.ts"
-import { OwnerId } from "./OwnerId.ts"
-import type { Projection } from "./Projection.ts"
-import * as Redaction from "./Redaction.ts"
-import * as SqlConsensus from "./SqlConsensus.ts"
+} from "./JournalEvent.vibe"
+import * as JournalGeneration from "./JournalGeneration.vibe"
+import * as JournalMetrics from "./JournalMetrics.vibe"
+import { OwnerId } from "./OwnerId.vibe"
+import type { Projection } from "./Projection.vibe"
+import * as Redaction from "./Redaction.vibe"
+import * as SqlConsensus from "./SqlConsensus.vibe"
 
 /** JSON text carrying an arbitrary decoded value. */
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown)

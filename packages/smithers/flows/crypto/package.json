@@ -34,12 +34,28 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Identity": "./src/Identity.ts",
-    "./Sha256": "./src/Sha256.ts",
-    "./index": "./src/index.ts"
+    "./Identity": {
+      "types": "./src/Identity.ts",
+      "vibelang-source": "./src/Identity.ts",
+      "default": "./.vibelang/js/src/Identity.js"
+    },
+    "./Sha256": {
+      "types": "./src/Sha256.ts",
+      "vibelang-source": "./src/Sha256.ts",
+      "default": "./.vibelang/js/src/Sha256.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -51,7 +67,11 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/Uuid.vibe",
+    "src/WebCrypto.vibe",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -130,12 +150,15 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"
+  },
+  "dependencies": {
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

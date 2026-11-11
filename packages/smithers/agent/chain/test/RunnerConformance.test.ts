@@ -1,12 +1,12 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Author from "../src/Author.ts"
-import * as Catalog from "../src/Catalog.ts"
+import * as Author from "../src/Author.vibe"
+import * as Catalog from "../src/Catalog.vibe"
 import * as JsonBoundary from "../src/JsonBoundary.ts"
-import type * as Outcome from "../src/Outcome.ts"
-import * as QuickJsRunner from "../src/QuickJsRunner.ts"
-import * as Script from "../src/Script.ts"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import type * as Outcome from "../src/Outcome.vibe"
+import * as QuickJsRunner from "../src/QuickJsRunner.vibe"
+import * as Script from "../src/Script.vibe"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import { flow, runChain } from "./harness.ts"
 
 const runners: ReadonlyArray<

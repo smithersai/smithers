@@ -17,8 +17,8 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import * as Application from "../src/Application.ts"
-import * as CliError from "../src/CliError.ts"
+import * as Application from "../src/Application.vibe"
+import * as CliError from "../src/CliError.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 interface Hit {

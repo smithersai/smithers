@@ -14,8 +14,8 @@ import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { vi } from "vitest"
 import { opaqueHandlerBody } from "../flows/engine-store/test/fixtures/OpaqueHandlerBody.ts"
-import * as ControlAffinity from "../src/internal/ControlAffinity.ts"
-import * as ReleasedChildResume from "../src/internal/ReleasedChildResume.ts"
+import * as ControlAffinity from "../src/internal/ControlAffinity.vibe"
+import * as ReleasedChildResume from "../src/internal/ReleasedChildResume.vibe"
 
 const owner: Ownership.OwnerId = { hostId: "host", pid: process.pid, nonce: "worker" }
 const setup = Effect.gen(function*() {

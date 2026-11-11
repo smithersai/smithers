@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 
 const troubleshooting = readFileSync(new URL("../docs/troubleshooting.md", import.meta.url), "utf8")
 const recovery = troubleshooting.split("## decode_failed: a stored row\n")[1]!

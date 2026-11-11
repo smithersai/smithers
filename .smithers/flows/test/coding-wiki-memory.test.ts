@@ -13,7 +13,7 @@ import { type PlanningWikiProvider, staleWikiNotes, wikiMemory } from "../coding
 import { CodingError } from "../coding/schema.ts"
 import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.ts"
 import { operations } from "../wiki/operations.ts"
-import type { PageSpec } from "../wiki/schema.ts"
+import type { PageSpec } from "../wiki/schema.vibe"
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | Path.Path>

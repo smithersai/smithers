@@ -28,7 +28,7 @@ import * as Data from "effect/Data"
 import { execFile } from "node:child_process"
 import { accessSync, closeSync, constants, fstatSync, openSync, readSync } from "node:fs"
 import { delimiter, join } from "node:path"
-import { Refused } from "./CliError.ts"
+import { Refused } from "./CliError.vibe"
 import * as Environment from "./Environment.ts"
 
 /**

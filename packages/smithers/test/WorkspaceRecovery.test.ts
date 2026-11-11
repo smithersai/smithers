@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { it } from "vitest"
-import { canExecute, workspaceFor } from "../src/history/Workspace.ts"
+import { canExecute, workspaceFor } from "../src/history/Workspace.vibe"
 
 const fixture = () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-workspace-independent-"))

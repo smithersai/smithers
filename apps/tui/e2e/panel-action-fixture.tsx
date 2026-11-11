@@ -9,7 +9,7 @@ import { appendFileSync } from "node:fs"
 import { join } from "node:path"
 import { App } from "../src/app.tsx"
 import type * as Approvals from "../src/approvals.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 const log = (line: string) => appendFileSync(join(process.cwd(), "host.log"), `${line}\n`)
 let pending = true

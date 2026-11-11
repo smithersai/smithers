@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { ScriptTarget, transpileModule } from "typescript"
 import { describe, expect, it } from "vitest"
 import * as ScoreGate from "../src/ScoreGate.ts"
-import { ScoreGateError } from "../src/TestingError.ts"
+import { ScoreGateError } from "../src/TestingError.vibe"
 
 const samples: ReadonlyArray<ScoreGate.ScoreSample> = [
   { case: "first", stepKey: "first-key", scorer: "quality", kind: "score", value: 0.9 },

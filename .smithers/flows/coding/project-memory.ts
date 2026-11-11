@@ -10,8 +10,8 @@
  * step does not need, and journals what it kept.
  */
 import * as MemorySource from "../../../packages/smithers/agent/memory/src/Source.ts"
-import { bank as factsBank } from "./learnings.ts"
-import type { PlanningContext } from "./planning.ts"
+import { bank as factsBank } from "./learnings.vibe"
+import type { PlanningContext } from "./planning.vibe"
 import type { MemoryRow, ProjectMemory } from "./schema.ts"
 
 /** The rendered block's UTF-8 budget: the size a native run's opening memory packs to. */

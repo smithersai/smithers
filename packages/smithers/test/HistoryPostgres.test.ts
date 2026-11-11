@@ -12,8 +12,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it, vi } from "vitest"
 import * as History from "../src/history/History.ts"
-import * as Workspace from "../src/history/Workspace.ts"
-import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.ts"
+import * as Workspace from "../src/history/Workspace.vibe"
+import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.vibe"
 import * as Needs from "./Needs.ts"
 
 it(

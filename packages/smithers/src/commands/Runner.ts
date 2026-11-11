@@ -18,10 +18,10 @@ import { join } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as Presentation from "../cli/Presentation.ts"
 import * as Config from "../runner/Config.ts"
-import * as Host from "../runner/Host.ts"
-import * as Job from "../runner/Job.ts"
+import * as Host from "../runner/Host.vibe"
+import * as Job from "../runner/Job.vibe"
 import type * as Machine from "../runner/Machine.ts"
-import * as Serve from "../runner/Serve.ts"
+import * as Serve from "../runner/Serve.vibe"
 import type * as Session from "../runner/Session.ts"
 
 /**

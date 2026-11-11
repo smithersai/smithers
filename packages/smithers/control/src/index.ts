@@ -18,25 +18,25 @@
  * @category services
  * @since 0.1.0
  */
-export * as Control from "./Control.ts"
+export * as Control from "./Control.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as ApprovalAuthority from "./ApprovalAuthority.ts"
+export * as ApprovalAuthority from "./ApprovalAuthority.vibe"
 
 /**
  * @category errors
  * @since 0.1.0
  */
-export * as ControlError from "./ControlError.ts"
+export * as ControlError from "./ControlError.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as ControlSchema from "./ControlSchema.ts"
+export * as ControlSchema from "./ControlSchema.vibe"
 
 /**
  * @category projections
@@ -48,13 +48,13 @@ export * as Cancellation from "./Cancellation.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Lineage from "./Lineage.ts"
+export * as Lineage from "./Lineage.vibe"
 
 /**
  * @category projections
  * @since 0.1.0
  */
-export * as Monitor from "./Monitor.ts"
+export * as Monitor from "./Monitor.vibe"
 
 /**
  * @category projections
@@ -66,19 +66,19 @@ export * as Steering from "./Steering.ts"
  * @category services
  * @since 0.1.0
  */
-export * as ControlRuntime from "./ControlRuntime.ts"
+export * as ControlRuntime from "./ControlRuntime.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as ControlExecutor from "./ControlExecutor.ts"
+export * as ControlExecutor from "./ControlExecutor.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as DispatchReader from "./DispatchReader.ts"
+export * as DispatchReader from "./DispatchReader.vibe"
 
 /**
  * @category layers
@@ -96,13 +96,13 @@ export * as SystemFlows from "./SystemFlows.ts"
  * @category rpc
  * @since 0.1.0
  */
-export * as ControlRpcs from "./ControlRpcs.ts"
+export * as ControlRpcs from "./ControlRpcs.vibe"
 
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as ControlServer from "./ControlServer.ts"
+export * as ControlServer from "./ControlServer.vibe"
 
 /**
  * @category layers
@@ -114,25 +114,25 @@ export * as ControlClient from "./ControlClient.ts"
  * @category services
  * @since 0.1.0
  */
-export * as Channels from "./Channels.ts"
+export * as Channels from "./Channels.vibe"
 
 /**
  * @category channels
  * @since 0.1.0
  */
-export * as WebhookChannel from "./WebhookChannel.ts"
+export * as WebhookChannel from "./WebhookChannel.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as Credential from "./Credential.ts"
+export * as Credential from "./Credential.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as CredentialCipher from "./CredentialCipher.ts"
+export * as CredentialCipher from "./CredentialCipher.vibe"
 
 /**
  * @category services
@@ -144,7 +144,7 @@ export * as CredentialStore from "./CredentialStore.ts"
  * @category layers
  * @since 0.1.0
  */
-export * as SqlCredentialStore from "./SqlCredentialStore.ts"
+export * as SqlCredentialStore from "./SqlCredentialStore.vibe"
 
 /**
  * @category layers
@@ -162,27 +162,27 @@ export * as SqlControlRuntime from "./SqlControlRuntime.ts"
  * @category authentication
  * @since 1.0.0
  */
-export * as ScopedToken from "./ScopedToken.ts"
+export * as ScopedToken from "./ScopedToken.vibe"
 
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * Observational health contracts.
  * @category health
  * @since 1.0.0
  */
-export * as Health from "./Health.ts"
+export * as Health from "./Health.vibe"
 
 /**
  * The Jev-decided session checker a host binds as `jev.session`.
  * @category health
  * @since 1.0.0
  */
-export * as JevSessionChecker from "./JevSessionChecker.ts"
+export * as JevSessionChecker from "./JevSessionChecker.vibe"
 
 /** Versioned control lifecycle producer and projection contract. */
 export * as ControlFacts from "./ControlFacts.ts"

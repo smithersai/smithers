@@ -38,16 +38,17 @@
     "release:status": "node --import vibelang/register .smithers/flows/release-support/main.ts status",
     "release:answer": "node --import vibelang/register .smithers/flows/release-support/main.ts answer",
     "browser": "node packages/repo-targets/browser/browser-check.mjs",
-    "check": "pnpm --recursive --if-present run check",
+    "check": "pnpm run sidecars && pnpm --recursive --if-present run check",
     "check:npm-dedupe": "node .smithers/flows/release/check-npm-dedupe.mjs",
     "circular": "pnpm --recursive --if-present run circular",
     "docs:check": "smthrs flow start docs-sync --data '{\"mode\":\"check\"}' --wait",
     "docs:sync": "pnpm --filter @smithers/site run sync:docs && smthrs flow start docs-sync --data '{\"mode\":\"write\"}' --wait",
-    "lint": "pnpm --recursive --if-present run lint",
+    "lint": "pnpm run sidecars && pnpm --recursive --if-present run lint",
     "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
-    "test": "pnpm --recursive --if-present run test",
+    "test": "pnpm run sidecars && pnpm --recursive --if-present run test",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
-    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
+    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
+    "sidecars": "node packages/repo-targets/scripts/prepare-sidecars.mjs"
   },
   "engines": {
     "node": ">=26.4.0",
@@ -94,8 +95,8 @@
     "tinyglobby": "0.2.17",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
     "vite": "^8.2.2",
     "ws": "8.22.0",
     "yaml": "2.9.0"
@@ -113,18 +114,20 @@
     "@effect/sql-sqlite-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "vitest@5.0.0>happy-dom": "20.13.2",
-    "vibelang": "0.0.12",
-    "vibelang-runtime": "0.0.12",
-    "vibelang-vite": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
+    "vibelang": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-runtime": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-runtime-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-vite": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-vite-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-unplugin": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-unplugin-0.0.14-pre.6279f9f9fbfc.tgz",
     "alchemy": "2.0.0-beta.85",
     "@alchemy.run/node-utils": "2.0.0-beta.85",
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.85",
     "@effect/sql-pg": "4.1.1"
   },
+  "dependencies": {
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
+  },
   "patchedDependencies": {
     "@opentelemetry/otlp-transformer@0.222.0": "patches/@opentelemetry__otlp-transformer@0.222.0.patch",
-    "vibelang-runtime@0.0.12": "patches/vibelang-runtime@0.0.12.patch",
     "alchemy@2.0.0-beta.85": "patches/alchemy@2.0.0-beta.85.patch",
     "@alchemy.run/cloudflare@2.0.0-beta.85": "patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch",
     "@tanstack/db@0.15.1": "patches/@tanstack__db@0.15.1.patch",

@@ -7,12 +7,12 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, wr
 import { tmpdir } from "node:os"
 import { dirname, join, sep } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
-import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
-import * as SearchConformance from "../src/SearchConformance.ts"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
+import * as NativeSearch from "../src/NativeSearch.vibe"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as Search from "../src/Search.vibe"
+import * as SearchConformance from "../src/SearchConformance.vibe"
 import * as StdError from "../src/StdError.ts"
 
 const root = mkdtempSync(join(tmpdir(), "flows-search-conformance-"))

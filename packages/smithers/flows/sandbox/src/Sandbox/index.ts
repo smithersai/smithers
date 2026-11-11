@@ -31,16 +31,16 @@
  * @since 0.1.0
  */
 
-export * from "./commandProvider.ts"
+export * from "./commandProvider.vibe"
 export * from "./fanOut.ts"
 export * from "./fileSystem.ts"
 export * from "./layerHost.ts"
 export type { NetworkPolicy } from "./NetworkPolicy.ts"
-export * from "./Provider.ts"
+export * from "./Provider.vibe"
 export type { ResourceLimits } from "./ResourceLimits.ts"
-export * from "./run.ts"
-export * from "./Session.ts"
-export * from "./TestSession.ts"
+export * from "./run.vibe"
+export * from "./Session.vibe"
+export * from "./TestSession.vibe"
 export * from "./TestSessionProvider.ts"
 export * from "./TestSessionState.ts"
 export * from "./Work.ts"

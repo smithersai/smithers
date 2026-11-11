@@ -8,6 +8,7 @@
  * bundled members instead of imported whole: importing `effect`'s index as a
  * namespace would pull every module it names into the executable.
  */
+import { existsSync, statSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { dirname, relative, resolve, sep } from "node:path"
@@ -75,6 +76,16 @@ const barrel = (text) => {
 }
 
 /**
+ * The file a barrel's relative re-export names, resolved as TypeScript does: as written, else with a source
+ * extension (an extensionless `../vault/KnowledgeGraph` is `KnowledgeGraph.tsx`), else its directory's index.
+ */
+const memberFile = (path) => {
+  const candidates = [path, ...[".ts", ".tsx", ".vibe", ".vibex", "/index.ts", "/index.tsx"].map(suffix => path + suffix)]
+  if (/\.[cm]?jsx?$/.test(path)) candidates.push(...[".ts", ".tsx", ".vibe"].map(suffix => path.replace(/\.[cm]?jsx?$/, suffix)))
+  return candidates.find(candidate => existsSync(candidate) && statSync(candidate).isFile()) ?? path
+}
+
+/**
  * Replaces host-modules.ts's empty map with the bundle's shared entry points.
  * `inputs` are the absolute files of a probe build of the same entry;
  * `alias` maps each workspace package specifier to its source file and
@@ -106,7 +117,7 @@ export const hostModulesSource = async (source, inputs, alias, roots) => {
     }
     const members = []
     for (const part of parts) {
-      const member = await emit(resolve(dirname(file), part.from))
+      const member = await emit(memberFile(resolve(dirname(file), part.from)))
       if (member === undefined) continue
       members.push(part.kind === "star" ? `...star(${member})`
         : part.kind === "as" ? `${JSON.stringify(part.name)}: ${member}`

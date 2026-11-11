@@ -264,7 +264,7 @@ const scriptFixture = () => {
     reads: new Map<string, string>(),
     commands: [] as string[]
   }
-  const session: import("../src/Sandbox/Session.ts").Session = {
+  const session: import("../src/Sandbox/Session.vibe").Session = {
     id: state.key,
     remoteId: "machine",
     workdir: "/checkout",

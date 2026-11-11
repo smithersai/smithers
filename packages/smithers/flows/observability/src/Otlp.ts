@@ -40,10 +40,10 @@ import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Tracer from "effect/Tracer"
-import * as Endpoint from "./Endpoint.ts"
+import * as Endpoint from "./Endpoint.vibe"
 import * as ExportRedaction from "./internal/exportRedaction.ts"
 import * as Split from "./internal/split.ts"
-import * as Resource from "./Resource.ts"
+import * as Resource from "./Resource.vibe"
 
 /**
  * The `service.name` resource attribute installed when the caller supplies

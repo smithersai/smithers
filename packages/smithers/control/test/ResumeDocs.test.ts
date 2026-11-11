@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 
 describe("resume ownership documentation", () => {
-  it.each(["docs/concepts/ownership.md", "docs/api.md", "src/ControlRuntime.ts"])(
+  it.each(["docs/concepts/ownership.md", "docs/api.md", "src/ControlRuntime.vibe"])(
     "%s reserves unrestricted claims for trusted runtime callers",
     (path) => {
       const text = read(path)

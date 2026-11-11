@@ -2,11 +2,11 @@ import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
 import { describe, expect, it } from "vitest"
-import * as Evaluator from "../src/Evaluator.ts"
-import * as EvaluatorBackup from "../src/EvaluatorBackup.ts"
-import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
-import type { ModelRequest } from "../src/ModelRequest.ts"
+import * as Evaluator from "../src/Evaluator.vibe"
+import * as EvaluatorBackup from "../src/EvaluatorBackup.vibe"
+import * as Model from "../src/Model.vibe"
+import { ModelError } from "../src/ModelError.vibe"
+import type { ModelRequest } from "../src/ModelRequest.vibe"
 
 const questions: Evaluator.Request["questions"] = {
   yes: { type: "boolean", instructions: "Is it ready?" },

@@ -2,12 +2,12 @@
 // registry entry lists; smithers.sh answers it with its App's installation token. No person, delegation, Durable Object
 // or write takes part, and the site never holds a token.
 import * as Policy from "./DelegationPolicy.vibe"
-import type * as AppAuth from "./AppAuth.ts"
-import * as GitHubClient from "./GitHubClient.ts"
+import type * as AppAuth from "./AppAuth.vibe"
+import * as GitHubClient from "./GitHubClient.vibe"
 import { rateLimited } from "./ReadCache.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
-import * as Signature from "../core/Signature.ts"
-import { forCredentials } from "../core/CredentialHttp.ts"
+import * as Signature from "../core/Signature.vibe"
+import { forCredentials } from "../core/CredentialHttp.vibe"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 
 export const ROUTE = "/api/auth/broker/public-read"

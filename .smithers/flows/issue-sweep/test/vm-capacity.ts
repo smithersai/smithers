@@ -9,7 +9,7 @@
  * Host load, memory and swap are sampled separately (see vm-capacity.sh).
  */
 import { Deferred, Effect } from "effect"
-import { make, sh } from "../vm.ts"
+import { make, sh } from "../vm.vibe"
 
 const n = Number(process.argv[2] ?? 8)
 const memoryMib = Number(process.argv[3] ?? 3072)

@@ -30,7 +30,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import * as HostRegistry from "../coding/host-registry.ts"
+import * as HostRegistry from "../coding/host-registry.vibe"
 import { repositoryFlowsServed } from "../coding/host.ts"
 import { composeRoot } from "../coding/serve-host.ts"
 import {
@@ -38,7 +38,7 @@ import {
   provisionBuiltins,
   repositoryCatalog,
   repositoryRegistration
-} from "../repository/registry.ts"
+} from "../repository/registry.vibe"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 const policy = "a".repeat(64)

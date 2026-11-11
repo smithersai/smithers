@@ -17,6 +17,7 @@
  *
  * @category accessors
  * @since 1.0.0
+ * @throws {never}
  */
 export const ambientEnvironment = (): Readonly<Record<string, string | undefined>> =>
   (globalThis as { readonly process?: { readonly env?: Record<string, string | undefined> } }).process?.env ?? {}

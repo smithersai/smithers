@@ -14,11 +14,11 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import type { LocalLanding } from "../coding/landing.ts"
-import { greenPrefix, make } from "../coding/local-landing.ts"
-import { NativeCoding } from "../coding/native.ts"
+import type { LocalLanding } from "../coding/landing.vibe"
+import { greenPrefix, make } from "../coding/local-landing.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError, type Receipt, type Revision } from "../coding/schema.ts"
-import type { VibeCleanup } from "../coding/vibe-schema.ts"
+import type { VibeCleanup } from "../coding/vibe-schema.vibe"
 
 const environment: Record<string, string> = {
   PATH: process.env.PATH ?? "/usr/bin:/bin",

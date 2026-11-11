@@ -1,0 +1,63 @@
+import { Core, GitHub } from "@smthrs/integrations"
+
+/**
+ * One GitHub delivery as a receiver sees it: the exact body bytes and the
+ * `X-Hub-Signature-256` header GitHub sent with them.
+ *
+ * @since 1.0.0
+ */
+export interface Delivery {
+  readonly body: string
+  readonly signature: string | undefined
+}
+
+/**
+ * What {@link readIssueComment} found in a verified `issue_comment` delivery.
+ *
+ * @since 1.0.0
+ */
+export interface IssueComment {
+  readonly repository: string
+  readonly issueNumber: number
+  readonly author: string
+  readonly body: string
+}
+
+const decodeIssueComment = Schema.decodeUnknownOption(GitHub.Payload.IssueCommentEvent)
+
+/**
+ * Verifies a GitHub `issue_comment` delivery, then reads the comment from it.
+ *
+ * The signature is checked over the raw body before anything parses it, so a
+ * forged delivery never reaches the decoder.
+ *
+ * @param delivery - The delivered bytes and their signature header.
+ * @param secret - The webhook secret configured on the GitHub repository.
+ * @returns An Effect that succeeds with the comment, or with `undefined` when
+ *   the signature does not verify or the body is not an `issue_comment`
+ *   payload.
+ * @since 1.0.0
+ */
+export const readIssueComment = (delivery: Delivery, secret: string): (IssueComment | undefined)!! =>
+  Core.Signature.verifySignature({
+    payload: delivery.body,
+    secret,
+    signature: delivery.signature,
+    prefix: Core.Signature.GITHUB_SIGNATURE_PREFIX
+  })
+  |> Effect.map(%, (verified) => {
+    if (!verified) return undefined
+    const event = decodeIssueComment($invoke(JSON,() => (delivery.body)))
+    if (Option.isNone(event)) return undefined
+    return {
+      repository: event.value.repository.full_name,
+      issueNumber: event.value.issue.number,
+      author: event.value.comment.user?.login ?? "unknown",
+      body: event.value.comment.body ?? ""
+    }
+  })
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

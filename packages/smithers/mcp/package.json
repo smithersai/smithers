@@ -35,17 +35,42 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Diagnostics": "./src/Diagnostics.ts",
-    "./McpClient": "./src/McpClient.ts",
-    "./McpError": "./src/McpError.ts",
-    "./McpFlows": "./src/McpFlows.ts",
-    "./index": "./src/index.ts"
+    "./Diagnostics": {
+      "types": "./.vibe/declarations/src/Diagnostics.d.vibe.ts",
+      "vibelang-source": "./src/Diagnostics.vibe",
+      "default": "./.vibelang/js/src/Diagnostics.js"
+    },
+    "./McpClient": {
+      "types": "./src/McpClient.ts",
+      "vibelang-source": "./src/McpClient.ts",
+      "default": "./.vibelang/js/src/McpClient.js"
+    },
+    "./McpError": {
+      "types": "./.vibe/declarations/src/McpError.d.vibe.ts",
+      "vibelang-source": "./src/McpError.vibe",
+      "default": "./.vibelang/js/src/McpError.js"
+    },
+    "./McpFlows": {
+      "types": "./.vibe/declarations/src/McpFlows.d.vibe.ts",
+      "vibelang-source": "./src/McpFlows.vibe",
+      "default": "./.vibelang/js/src/McpFlows.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -54,7 +79,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -141,7 +168,8 @@
     "@smthrs/core": "1.0.0-rc.17",
     "@smthrs/harness": "1.0.0-rc.17",
     "@smthrs/journal": "1.0.0-rc.17",
-    "@smthrs/kernel": "1.0.0-rc.17"
+    "@smthrs/kernel": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -166,8 +194,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "@smthrs/platform-node": "1.0.0-rc.17"
   },

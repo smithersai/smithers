@@ -11,7 +11,7 @@ import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore, make as makeGrantStore, type Service } from "../src/GrantStore.ts"
 import * as HttpClient from "../src/HttpClient.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const itEffect = <E>(name: string, effect: () => Effect.Effect<void, E>) => it.effect(name, () => effect())
 

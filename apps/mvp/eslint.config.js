@@ -1,11 +1,19 @@
 import tseslint from "typescript-eslint"
+import * as vibeParser from "vibelang/eslint"
 import { failureObserved } from "./eslint.frontend-failures.js"
 import { noSharedInflight } from "./eslint.worker-inflight.js"
 
-export default [{
+export default [{ ignores: ["**/*.d.vibe.ts"] }, {
   files: ["worker/**/*.ts"],
   ignores: ["worker/**/*.test.ts", "worker/**/test/**"],
   languageOptions: { parser: tseslint.parser },
+  plugins: { worker: { rules: { "request-owned-io": noSharedInflight } } },
+  rules: { "worker/request-owned-io": "error" },
+},
+{
+  files: ["worker/**/*.vibe"],
+  ignores: ["worker/**/*.test.vibe", "worker/**/test/**"],
+  languageOptions: { parser: vibeParser },
   plugins: { worker: { rules: { "request-owned-io": noSharedInflight } } },
   rules: { "worker/request-owned-io": "error" },
 }, {

@@ -19,12 +19,12 @@ import {
   PULL_RECEIPT_HEADER,
   REVIEWS_SHAPE_ROUTE,
 } from "../../src/features/pulls/contract.ts"
-import * as Actor from "../Actor.ts"
+import * as Actor from "../Actor.vibe"
 import * as RepoRuns from "../RepoRuns.ts"
 import * as Database from "../../db/Database.ts"
-import { FlowStarter, StartUnavailable } from "../Flows.ts"
+import { FlowStarter, StartUnavailable } from "../Flows.vibe"
 import * as PullRefresh from "./PullRefresh.ts"
-import { refreshingSource } from "../../src/features/pulls/refresh.ts"
+import { refreshingSource } from "../../src/features/pulls/refresh.vibe"
 import { PullsView, VIEW } from "../../src/features/pulls/schema.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"

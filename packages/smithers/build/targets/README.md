@@ -301,3 +301,5 @@ Generated CI concurrency groups use the pull request number, or the ref for
 other events. A pushed branch keeps one run in flight and its newest commit
 pending; each push replaces the pending run. Superseded PR runs cancel by
 default. Set `cancelInProgress: false` to disable cancellation.
+
+Native source exports keep their `types` conditions aligned with the declaration files produced by the pinned compiler, including the `src/` directory in its declaration output layout. The `targetDeclarationRoutes` repository contract checks physical files and TypeScript package resolution.

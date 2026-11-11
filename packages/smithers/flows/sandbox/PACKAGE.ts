@@ -51,7 +51,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Sandbox/NetworkPolicy.ts",
         "src/Sandbox/ResourceLimits.ts",
         "src/internal/rootedPath.ts",
-        "src/internal/environmentNames.ts"
+        "src/internal/environmentNames.vibe"
       ],
       service: ["src/MicrosandboxSandbox/make.ts", "src/Sandbox/layerHost.ts"],
       storageOrEgress: [
@@ -79,8 +79,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/execSession.ts",
         "src/internal/envPrefix.ts",
         "src/internal/environmentCommand.ts",
-        "src/internal/environmentInput.ts",
-        "src/internal/environmentNames.ts",
+        "src/internal/environmentInput.vibe",
+        "src/internal/environmentNames.vibe",
         "src/internal/killScript.ts",
         "src/internal/stdinRedirect.ts",
         "src/internal/linuxFileSystem.ts",
@@ -89,7 +89,7 @@ const securityReview = Smithers.SecurityReview({
         "src/CloudflareSandbox/make.ts",
         "src/DaytonaSandbox/make.ts",
         "src/MicrosandboxSandbox/make.ts",
-        "src/MicrosandboxSandbox/snapshots.ts"
+        "src/MicrosandboxSandbox/snapshots.vibe"
       ]
     },
     {
@@ -129,7 +129,7 @@ const securityReview = Smithers.SecurityReview({
         "src/KubernetesSandbox/make.ts",
         "src/AwsSandbox/make.ts",
         "src/MicrosandboxSandbox/make.ts",
-        "src/internal/configurationFingerprint.ts"
+        "src/internal/configurationFingerprint.vibe"
       ]
     },
     {
@@ -163,7 +163,7 @@ const securityReview = Smithers.SecurityReview({
         "A secret stored transformed (base64, URL-encoded, split) that the fixed-string longest-line search cannot find.",
         "A failed capture path that leaves the stopped machine or a partial snapshot undestroyed."
       ],
-      paths: ["src/MicrosandboxSandbox/snapshots.ts"]
+      paths: ["src/MicrosandboxSandbox/snapshots.vibe"]
     },
     {
       id: "signal-and-reap-targeting",
@@ -181,7 +181,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/pidDirectory.ts",
         "src/internal/execSession.ts",
         "src/internal/microsandboxProcess.ts",
-        "src/MicrosandboxSandbox/reap.ts",
+        "src/MicrosandboxSandbox/reap.vibe",
         "src/DirectorySandbox/make.ts",
         "src/AwsSandbox/make.ts"
       ]
@@ -232,7 +232,7 @@ const securityReview = Smithers.SecurityReview({
         "src/SandboxHealth/**",
         "src/SandboxSupervision/**",
         "src/RemoteChildProcessSpawner/ProviderError.ts",
-        "src/MicrosandboxSandbox/snapshots.ts"
+        "src/MicrosandboxSandbox/snapshots.vibe"
       ]
     }
   ]

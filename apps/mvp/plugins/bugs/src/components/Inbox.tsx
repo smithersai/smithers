@@ -1,6 +1,6 @@
 import { EmptyState, RelativeTime, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
-import type { BugsTab, ErrorItem, Report } from "../tab"
+import type { BugsTab, ErrorItem, Report } from "#vibelang/source/plugins/bugs/src/tab"
 import "./bugs.css"
 
 // The inbox (docs/features/bugs.md#the-inbox): the reports the viewer may see, newest first, every one for an

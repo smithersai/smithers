@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Changes from "../src/changes.ts"
+import * as Changes from "../src/changes.vibe"
 
 const sh = (cwd: string, ...command: string[]) => {
   const result = Bun.spawnSync(command, { cwd, stdout: "ignore", stderr: "ignore" })

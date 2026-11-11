@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { concat } from "../internal/concat.ts"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 
 /**
  * The session changed its checkout: `patch` is a `git diff --binary` from

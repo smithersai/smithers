@@ -34,22 +34,75 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./BrowserOtel": "./src/BrowserOtel.ts",
-    "./Endpoint": "./src/Endpoint.ts",
-    "./FetchFailures": "./src/FetchFailures.ts",
-    "./JournalLogger": "./src/JournalLogger.ts",
-    "./LogFailures": "./src/LogFailures.ts",
-    "./Logger": "./src/Logger.ts",
-    "./Metric": "./src/Metric.ts",
-    "./NodeOtel": "./src/NodeOtel.ts",
-    "./Otel": "./src/Otel.ts",
-    "./Otlp": "./src/Otlp.ts",
-    "./Resource": "./src/Resource.ts",
-    "./index": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./BrowserOtel": {
+      "types": "./.vibe/declarations/src/BrowserOtel.d.vibe.ts",
+      "vibelang-source": "./src/BrowserOtel.vibe",
+      "default": "./.vibelang/js/src/BrowserOtel.js"
+    },
+    "./Endpoint": {
+      "types": "./.vibe/declarations/src/Endpoint.d.vibe.ts",
+      "vibelang-source": "./src/Endpoint.vibe",
+      "default": "./.vibelang/js/src/Endpoint.js"
+    },
+    "./FetchFailures": {
+      "types": "./src/FetchFailures.ts",
+      "vibelang-source": "./src/FetchFailures.ts",
+      "default": "./.vibelang/js/src/FetchFailures.js"
+    },
+    "./JournalLogger": {
+      "types": "./.vibe/declarations/src/JournalLogger.d.vibe.ts",
+      "vibelang-source": "./src/JournalLogger.vibe",
+      "default": "./.vibelang/js/src/JournalLogger.js"
+    },
+    "./LogFailures": {
+      "types": "./.vibe/declarations/src/LogFailures.d.vibe.ts",
+      "vibelang-source": "./src/LogFailures.vibe",
+      "default": "./.vibelang/js/src/LogFailures.js"
+    },
+    "./Logger": {
+      "types": "./.vibe/declarations/src/Logger.d.vibe.ts",
+      "vibelang-source": "./src/Logger.vibe",
+      "default": "./.vibelang/js/src/Logger.js"
+    },
+    "./Metric": {
+      "types": "./.vibe/declarations/src/Metric.d.vibe.ts",
+      "vibelang-source": "./src/Metric.vibe",
+      "default": "./.vibelang/js/src/Metric.js"
+    },
+    "./NodeOtel": {
+      "types": "./.vibe/declarations/src/NodeOtel.d.vibe.ts",
+      "vibelang-source": "./src/NodeOtel.vibe",
+      "default": "./.vibelang/js/src/NodeOtel.js"
+    },
+    "./Otel": {
+      "types": "./.vibe/declarations/src/Otel.d.vibe.ts",
+      "vibelang-source": "./src/Otel.vibe",
+      "default": "./.vibelang/js/src/Otel.js"
+    },
+    "./Otlp": {
+      "types": "./src/Otlp.ts",
+      "vibelang-source": "./src/Otlp.ts",
+      "default": "./.vibelang/js/src/Otlp.js"
+    },
+    "./Resource": {
+      "types": "./.vibe/declarations/src/Resource.d.vibe.ts",
+      "vibelang-source": "./src/Resource.vibe",
+      "default": "./.vibelang/js/src/Resource.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -58,7 +111,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -211,7 +266,8 @@
     "@opentelemetry/sdk-logs": "0.222.0",
     "@opentelemetry/sdk-metrics": "2.11.0",
     "@smthrs/journal": "1.0.0-rc.17",
-    "@effect/opentelemetry": "4.1.1"
+    "@effect/opentelemetry": "4.1.1",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -238,8 +294,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

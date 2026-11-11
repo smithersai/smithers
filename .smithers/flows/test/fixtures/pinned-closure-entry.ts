@@ -9,7 +9,7 @@ import * as Executable from "@smthrs/registry/Executable"
 import * as Snapshot from "@smthrs/registry/ExecutionSnapshot"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer } from "effect"
-import { bindRepositoryRegistry } from "../../repository/registry.ts"
+import { bindRepositoryRegistry } from "../../repository/registry.vibe"
 
 const [root, selected] = process.argv.slice(2)
 const draft = selected === "draft"

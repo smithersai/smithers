@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto"
 import { lstat } from "node:fs/promises"
 import { resolve } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Project from "../Project.ts"
 import * as Evaluation from "./Evaluation.ts"
 

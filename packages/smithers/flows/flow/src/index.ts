@@ -16,22 +16,22 @@ export * as Action from "./Action/index.ts"
  *
  * @since 0.1.0
  */
-export * as Deadline from "./Deadline.ts"
-export * as DurableClock from "./DurableClock.ts"
+export * as Deadline from "./Deadline.vibe"
+export * as DurableClock from "./DurableClock.vibe"
 
 /**
  * Durable deferred values.
  *
  * @since 0.1.0
  */
-export * as DurableDeferred from "./DurableDeferred.ts"
+export * as DurableDeferred from "./DurableDeferred.vibe"
 
 /**
  * Durable queues.
  *
  * @since 0.1.0
  */
-export * as DurableQueue from "./DurableQueue.ts"
+export * as DurableQueue from "./DurableQueue.vibe"
 
 /**
  * Durable flow definitions.
@@ -94,14 +94,14 @@ export * as Poll from "./Poll.ts"
  *
  * @since 1.0.0
  */
-export * as Stall from "./Stall.ts"
+export * as Stall from "./Stall.vibe"
 
 /**
  * Retry policy models and constructors.
  *
  * @since 0.1.0
  */
-export * as RetryPolicy from "./RetryPolicy.ts"
+export * as RetryPolicy from "./RetryPolicy.vibe"
 
 /**
  * Usage metrics every flow run records: runs started and settled, durations,
@@ -109,14 +109,14 @@ export * as RetryPolicy from "./RetryPolicy.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as RunMetrics from "./RunMetrics.ts"
+export * as RunMetrics from "./RunMetrics.vibe"
 
 /**
  * The system timer action and its implementation layer.
  *
  * @since 0.1.0
  */
-export * as Sleep from "./Sleep.ts"
+export * as Sleep from "./Sleep.vibe"
 
 /**
  * Span failures with their text withheld: a failed span exports its failure's
@@ -124,7 +124,7 @@ export * as Sleep from "./Sleep.ts"
  *
  * @since 1.0.0
  */
-export * as SpanFailure from "./internal/SpanFailure.ts"
+export * as SpanFailure from "./internal/SpanFailure.vibe"
 
 /**
  * Stable step identity construction.
@@ -138,7 +138,7 @@ export * as StepIdentity from "./Action/StepIdentity.ts"
  *
  * @since 0.1.0
  */
-export * as WaitFor from "./WaitFor.ts"
+export * as WaitFor from "./WaitFor.vibe"
 
 /** Persisted-step decode failures and safe host identity.
  * @since 1.0.0

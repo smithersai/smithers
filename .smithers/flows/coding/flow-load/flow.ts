@@ -1,8 +1,8 @@
 /** The system flow-load: one main commit's flow versions (engineering spec §11.3.1). */
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { FlowLoadInput, FlowLoadResult, LoadFlows } from "../flow-load.ts"
-import { admitStackBase, PrepareStackBase } from "../stack.ts"
+import { FlowLoadInput, FlowLoadResult, LoadFlows } from "../flow-load.vibe"
+import { admitStackBase, PrepareStackBase } from "../stack.vibe"
 
 /**
  * The stack service runs this on an ephemeral machine after `main` moves: it

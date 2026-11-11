@@ -4,7 +4,7 @@ import { Effect, Logger, Metric, Stream } from "effect"
 import { HttpEffect } from "effect/http"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
-import { ResolveFailed } from "../src/ModelHostError.ts"
+import { ResolveFailed } from "../src/ModelHostError.vibe"
 import {
   bearerAuthorization,
   createModelTurnHandler,

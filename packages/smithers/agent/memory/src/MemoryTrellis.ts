@@ -16,8 +16,8 @@
  */
 
 import * as Trellis from "@smthrs/patterns/Trellis"
-import type * as WithMemoryModule from "./WithMemory.ts"
-import { withMemory } from "./WithMemory.ts"
+import type * as WithMemoryModule from "./WithMemory.vibe"
+import { withMemory } from "./WithMemory.vibe"
 
 /**
  * Configuration for {@link make}: everything `Trellis.make` accepts plus the

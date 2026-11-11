@@ -3,9 +3,9 @@ import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
-import * as Annotations from "../src/Annotations.ts"
+import * as Annotations from "../src/Annotations.vibe"
 import * as Flow from "../src/Flow.ts"
-import * as Markdown from "../src/Markdown.ts"
+import * as Markdown from "../src/Markdown.vibe"
 import * as Placement from "../src/Placement.ts"
 
 const placementOf = (flow: Flow.Any) =>

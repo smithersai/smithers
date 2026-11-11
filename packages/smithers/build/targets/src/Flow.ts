@@ -21,7 +21,7 @@
 
 import * as Schema from "effect/Schema"
 import * as NodeUtil from "node:util/types"
-import * as Home from "./Home.ts"
+import * as Home from "./Home.vibe"
 import * as Target from "./Target.ts"
 
 /**

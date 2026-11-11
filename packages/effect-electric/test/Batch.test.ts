@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { rowsIn } from "../src/internal/Batch.ts"
+import { rowsIn } from "../src/internal/Batch.vibe"
 
 // Pure wire-format validation, before Electric parses column types or advances its offset.
 test("counts inserts, partial updates and deletes while accepting every supported control and event", () => {

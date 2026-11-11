@@ -6,8 +6,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { hasSourceCommits, sourceRequest } from "../repository/retention.ts"
-import type { Event } from "../repository/schema.ts"
+import { hasSourceCommits, sourceRequest } from "../repository/retention.vibe"
+import type { Event } from "../repository/schema.vibe"
 
 test("retention selects canonical PR identities and original signed push identities without accepting event URLs", async () => {
   const head = "b".repeat(40), base = "a".repeat(40)

@@ -15,8 +15,8 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as bytes from "../src/internal/bytes.ts"
 import * as elide from "../src/internal/elide.ts"
-import * as printChannel from "../src/internal/printChannel.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as printChannel from "../src/internal/printChannel.vibe"
+import * as Sandbox from "../src/Sandbox.vibe"
 
 const statement = (text: string): printChannel.Statement => ({ text, bytes: bytes.size(text) })
 
@@ -26,8 +26,8 @@ describe("printChannel budgets", () => {
   it("owns the numbers it spends rather than importing them back from the port", () => {
     // The port is the public module; an internal one that reads its own
     // ceilings off it points the dependency the wrong way round.
-    const source = readFileSync(new URL("../src/internal/printChannel.ts", import.meta.url), "utf8")
-    expect(source).not.toContain("../Sandbox.ts")
+    const source = readFileSync(new URL("../src/internal/printChannel.vibe", import.meta.url), "utf8")
+    expect(source).not.toContain("../Sandbox.vibe")
     // A host still reads one number: the port re-exports what the channel owns.
     expect(Sandbox.printFrameBytes).toBe(printChannel.printFrameBytes)
     expect(Sandbox.printStatementFloor).toBe(printChannel.printStatementFloor)

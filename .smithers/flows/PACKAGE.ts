@@ -25,7 +25,7 @@ const vibelangFuzzSources = Smithers.Filegroup({
 })
 
 const cwd = ".smithers/flows"
-const sources = Smithers.glob("//.smithers/flows/**/*.ts")
+const sources = Smithers.glob("//.smithers/flows/**/*.{ts,vibe}")
 // The repository automation modules flows import and run (release, evidence,
 // issue claims, landing).
 const automationModules = Smithers.Filegroup({ cwd: ".smithers/flows", srcs: [Smithers.glob("**/*.mjs")] })
@@ -49,6 +49,7 @@ const suite = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/review-flow.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-wiki-relay.test.ts"),
     Smithers.file("//.smithers/flows/test/command-receipts.test.ts"),
+    Smithers.file("//.smithers/flows/test/declaration-dependencies.test.ts"),
     Smithers.file("//.smithers/flows/test/host-jev-routing.test.ts"),
     Smithers.file("//.smithers/flows/test/workflows.test.ts"),
     Smithers.file("//.smithers/flows/test/rollout.test.ts"),
@@ -68,7 +69,7 @@ const suite = Smithers.NodeTest({
 
 // Lints flow sources; suites and fixtures are formatted, not linted.
 const lint = Smithers.EsLint({
-  sources: [Smithers.glob("**/*.ts")],
+  sources: [Smithers.glob("**/*.{ts,vibe}")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
   deps: [],
   maxWarnings: 0,
@@ -76,7 +77,7 @@ const lint = Smithers.EsLint({
   cwd
 })
 const fmt = Smithers.Dprint({
-  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md}")],
+  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md,vibe}")],
   config: Smithers.file("dprint.json"),
   deps: [],
   fix: false,
@@ -213,7 +214,7 @@ const codingBackend = codingPackages.map((cwd) =>
   })
 )
 const codingScripts = automationModules
-const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.ts")] })
+const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.{ts,vibe}")] })
 const codingFiles = [
   sources,
   Smithers.glob("//.smithers/flows/**/*.mjs"),
@@ -698,7 +699,7 @@ const benchSources = [
 ]
 const gatewaySources = Smithers.Filegroup({
   cwd: "packages/smithers/gateway",
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts")]
 })
 
 /** Required fast behavioral mutation tier, including both exact-byte guards. */
@@ -1123,8 +1124,16 @@ const securityReview = Smithers.SecurityReview({
   include: [
     // The lane gates are bash; they were reviewed under scripts/ before.
     Smithers.glob("land/**/*.sh"),
-    Smithers.glob("**/*.{ts,mjs,js,mdx}", {
-      exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
+    Smithers.glob("**/*.{ts,mjs,js,mdx,vibe}", {
+      exclude: [
+        "wiki/**",
+        "test/**",
+        "node_modules/**",
+        "migrate-smithers-v1/test/**",
+        "**/*.test.ts",
+        "**/*.test.vibe",
+        "**/*.test.mjs"
+      ]
     }),
     Smithers.glob("checks/*.sh"),
     // The C-REL-05 credential soak recorder; it was reviewed under scripts/ before.
@@ -1137,7 +1146,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A prompt-injected agent or approved shell tool reads SMITHERS_JJHUB_TOKEN or the gateway credential and acts as the workspace on its repository.",
       lookFor: [
-        "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.ts, or read before it is deleted there.",
+        "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.vibe, or read before it is deleted there.",
         "A spawned process or check environment built from process.env instead of the PATH/HOME/proxy allowlist in coding/check-environment.ts.",
         "SMITHERS_CACHE_TOKEN or SMITHERS_CACHE_URL left in process.env after coding/check-environment.ts consumes them, or given to anything but repository checks (repositoryCheckEnvironment).",
         "A token or credential passed to a model prompt, a run output, a receipt, an error message, or Redacted.value outside the HTTP bearer header.",
@@ -1146,11 +1155,11 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "coding/serve.ts",
         "coding/check-environment.ts",
-        "coding/landing-config.ts",
-        "coding/landing.ts",
+        "coding/landing-config.vibe",
+        "coding/landing.vibe",
         "coding/host.ts",
         "invoke/**",
-        "repository/remote.ts",
+        "repository/remote.vibe",
         "repository/check-receipt.ts",
         "coding/check-detection.ts"
       ]
@@ -1166,7 +1175,7 @@ const securityReview = Smithers.SecurityReview({
         "apiBaseUrl accepted over plain http: outside a loopback test host while carrying a bearer token.",
         "A PR link parsed from comment text used to pick the repository whose source is retained or reviewed."
       ],
-      paths: ["repository/remote.ts", "repository/check-receipt.ts", "coding/landing.ts"]
+      paths: ["repository/remote.vibe", "repository/check-receipt.ts", "coding/landing.vibe"]
     },
     {
       id: "source-tree-confinement",
@@ -1181,14 +1190,14 @@ const securityReview = Smithers.SecurityReview({
         "release-support atomicWrite/inside accepting an absolute, backslash or .. path."
       ],
       paths: [
-        "repository/source.ts",
-        "repository/execution.ts",
-        "repository/inspection.ts",
-        "repository/checks.ts",
-        "repository/check-context.ts",
+        "repository/source.vibe",
+        "repository/execution.vibe",
+        "repository/inspection.vibe",
+        "repository/checks.vibe",
+        "repository/check-context.vibe",
         "coding/filesystem.ts",
-        "coding/immutable-source.ts",
-        "coding/snapshots.ts",
+        "coding/immutable-source.vibe",
+        "coding/snapshots.vibe",
         "release-support/io.ts",
         "coding/check-detection.ts"
       ]
@@ -1219,10 +1228,10 @@ const securityReview = Smithers.SecurityReview({
         "A command check run with no deadline, or outside the scoped immutable export root."
       ],
       paths: [
-        "repository/checks.ts",
+        "repository/checks.vibe",
         "repository/ci-policy.ts",
-        "repository/changes.ts",
-        "coding/immutable-source.ts",
+        "repository/changes.vibe",
+        "coding/immutable-source.vibe",
         "coding/host.ts",
         "coding/serve.ts"
       ]
@@ -1233,21 +1242,21 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "An outside GitHub user writes an issue or comment that makes an agent land code, publish a reply, approve a step or exfiltrate repository content.",
       lookFor: [
-        "Event author text concatenated into a prompt without the untrusted-content framing in repository/intake.ts.",
+        "Event author text concatenated into a prompt without the untrusted-content framing in repository/intake.vibe.",
         "A publish, land, approve or pause decision keyed on text the event author controls rather than a verified role or approved digest (approved-text.ts, reply-trust).",
         "A steering or correction message accepted from someone other than the run owner.",
         "Withheld or hidden fields from the intake screen still reaching a later model step."
       ],
       paths: [
-        "repository/intake.ts",
-        "repository/replies.ts",
+        "repository/intake.vibe",
+        "repository/replies.vibe",
         "repository/approved-text.ts",
-        "repository/triggers.ts",
-        "repository/delivery.ts",
-        "repository/jev-*.ts",
-        "coding/steering.ts",
-        "coding/correction.ts",
-        "coding/feedback.ts",
+        "repository/triggers.vibe",
+        "repository/delivery.vibe",
+        "repository/jev-*.{ts,vibe}",
+        "coding/steering.vibe",
+        "coding/correction.vibe",
+        "coding/feedback.vibe",
         "issue-triage/**",
         "pr-triage/**",
         "review/**"
@@ -1269,7 +1278,7 @@ const securityReview = Smithers.SecurityReview({
         "coding/host-modules.ts",
         "coding/host-modules-build.mjs",
         "coding/build.mjs",
-        "repository/registry.ts"
+        "repository/registry.vibe"
       ]
     },
     {
@@ -1284,12 +1293,12 @@ const securityReview = Smithers.SecurityReview({
         "vibe-cleanup deleting refs or files it did not create."
       ],
       paths: [
-        "coding/landing.ts",
-        "coding/vibe-*.ts",
-        "coding/source-*.ts",
-        "repository/delivery.ts",
-        "repository/changes.ts",
-        "repository/retention.ts"
+        "coding/landing.vibe",
+        "coding/vibe-*.{ts,vibe}",
+        "coding/source-*.{ts,vibe}",
+        "repository/delivery.vibe",
+        "repository/changes.vibe",
+        "repository/retention.vibe"
       ]
     },
     {
@@ -1522,7 +1531,7 @@ const issueClaim = Smithers.NodeTest({
   ],
   deps: [
     Smithers.Filegroup({ cwd: ".specs/engineering", srcs: [Smithers.glob("checks/*.md")] }),
-    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.ts")] })
+    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.{ts,vibe}")] })
   ],
   cwd
 })

@@ -28,6 +28,7 @@
     "@smthrs/model": "workspace:*",
     "@smthrs/patterns": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/plugin": "workspace:*",
     "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
@@ -44,7 +45,7 @@
     "@smthrs/platform-bun": "workspace:*",
     "@smthrs/jj": "workspace:*",
     "@smthrs/fs": "workspace:*",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -59,6 +60,6 @@
     "typescript-eslint": "8.69.0",
     "happy-dom": "20.13.2",
     "@types/bun": "1.4.4",
-    "vibelang": "0.0.12"
+    "vibelang": "0.0.14-pre.6279f9f9fbfc"
   }
 }

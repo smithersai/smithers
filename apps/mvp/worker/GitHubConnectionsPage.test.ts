@@ -2,7 +2,7 @@ import { Effect, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import * as Actor from "./Actor.ts"
+import * as Actor from "./Actor.vibe"
 import * as Page from "./GitHubConnectionsPage.vibe"
 import * as SessionStore from "./SessionStore.ts"
 

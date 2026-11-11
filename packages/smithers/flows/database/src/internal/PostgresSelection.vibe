@@ -1,0 +1,41 @@
+/** Native configuration selection shared by Node and Bun.
+ * @since 1.0.0
+ */
+
+import type { SqlClient } from "effect/sql/SqlClient"
+import * as PostgresDatabase from "../postgres/PostgresDatabase.ts"
+import * as $platform from "./PostgresSelection.platform.ts"
+
+/** Recognizes PostgreSQL connection strings.
+ * @since 1.0.0
+ * @private
+ */
+export const isUrl = (value: string): boolean => $platform.isUrl(value)
+/** Where a filename's store lives on PostgreSQL: the connection URL (without
+ * its `schema` parameter) and the schema the store's tables are in, or
+ * `undefined` for a store SQLite keeps.
+ * Explicit URLs select one schema; environment selection preserves each local store's identity.
+ * Only Smithers' own settings select PostgreSQL: `SMITHERS_POSTGRES_URL`, or the generic
+ * `DATABASE_URL` when `SMITHERS_BACKEND=postgres` asks for it.
+ * @since 1.0.0
+ * @private
+ */
+export const location = (filename: string): { readonly url: string; readonly schema: string } | undefined =>
+  $platform.location(filename)
+/** The PostgreSQL client for a filename {@link location} places on PostgreSQL.
+ * The driver loads only then: `@effect/sql-pg` is an optional peer, absent
+ * where every store stays on SQLite.
+ * @since 1.0.0
+ * @private
+ */
+export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient> | undefined => {
+  const selected = location(filename)
+  if (selected === undefined) return undefined
+  return Layer.unwrap(
+    Effect.promise(() => import("@effect/sql-pg"))
+      |> Effect.map(
+        %,
+        (driver) => PostgresDatabase.layer({ url: selected.url, schema: selected.schema, readOnly, driver })
+      )
+  )
+}

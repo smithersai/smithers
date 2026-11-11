@@ -6,8 +6,8 @@ import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as Panel from "../src/Panel.ts"
-import { PatternError } from "../src/PatternError.ts"
+import * as Panel from "../src/Panel.vibe"
+import { PatternError } from "../src/PatternError.vibe"
 import { callsTo, payloadOf } from "./Graphs.ts"
 
 // A panelist and the moderator are separate declarations, because a

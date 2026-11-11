@@ -22,8 +22,8 @@
  *
  * @since 0.1.0
  */
-import * as Checks from "../../scorers/src/Checks.ts"
-import type * as Subject from "./subject.ts"
+import * as Checks from "../../scorers/src/Checks.vibe"
+import type * as Subject from "./subject.vibe"
 import type * as Suite from "./suite.ts"
 import type * as World from "./world.ts"
 

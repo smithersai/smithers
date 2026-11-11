@@ -1,0 +1,243 @@
+/** Early slow-check feedback, recorded in the existing native deferred store. */
+import { DurableEngineState } from "@smthrs/engine-store"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { RunStore } from "@smthrs/run-store"
+import { atomError } from "./atoms.vibe"
+import { EarlyFeedback } from "./feedback-schema.vibe"
+import { canonical, digest, receiptMatches, recalled, runLifecycle } from "./feedback.trusted.ts"
+import {
+  Check,
+  CodingError,
+  type Finding,
+  Implementation,
+  Plan,
+  Receipt,
+  Result,
+  ValidatedChange
+} from "./schema.ts"
+import { Assess, FastGate, Implement, receiptFindings, RunCheck, ValidatePlan } from "./workflow.vibe"
+export { EarlyFeedback } from "./feedback-schema.vibe"
+
+export const FeedbackError = Schema.Union([atomError, EarlyFeedback])
+const Ready = DurableDeferred.make("coding/feedback/implementations-ready", { success: Schema.Boolean })
+const First = DurableDeferred.make("coding/feedback/first-actionable", { success: Receipt })
+const Invalid = DurableDeferred.make("coding/feedback/invalid-receipt", { success: CodingError })
+const gated = (index: number) => DurableDeferred.make(`coding/feedback/gated/${index}`, { success: ValidatedChange })
+const checked = (index: number, id: string) =>
+  DurableDeferred.make(`coding/feedback/check/${index}/${digest(id)}`, { success: Receipt })
+const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+
+export const RecordGate = Action.make("coding/record-fast-gated-progress", {
+  payload: { plan: Plan, index: Schema.Int, group: ValidatedChange },
+  success: ValidatedChange,
+  error: FeedbackError,
+  nondeterministic: true
+})
+export const RecordSlow = Action.make("coding/record-slow-feedback", {
+  payload: { plan: Plan, index: Schema.Int, implementation: Implementation, check: Check, receipt: Receipt },
+  success: Receipt,
+  error: FeedbackError,
+  nondeterministic: true
+})
+
+effect function record<S extends Schema.Constraint>(deferred: DurableDeferred.DurableDeferred<S>, value: S["Type"]) {
+  const instance = try FlowRuntime.FlowInstance
+  return try (try FlowRuntime.FlowRuntime).deferredDone(deferred, {
+    flowName: instance.flow._tag,
+    executionId: instance.executionId,
+    deferredName: deferred.name,
+    exit: Exit.succeed(value)
+  })
+}
+
+/** The findings of one recorded receipt; a receipt naming an unplanned check, or a finding that cannot be read, is an invalid receipt. */
+effect function recordedFindings(plan: Plan, index: number, group: ValidatedChange, receipt: Receipt) {
+  const check = plan.changes[index]!.checks.find((check) => check.id === receipt.checkId)
+  if (!check) throw invalid("Recorded feedback names an unplanned check")
+  return try Effect.try({
+    try: () => receiptFindings(plan, index, group.implementation, check, receipt),
+    catch: (error) => error instanceof CodingError ? error : invalid(String(error))
+  })
+}
+
+/** Both writers check after their own committed write; the pair cannot be missed. */
+effect function interruptOnFeedback(plan: Plan) {
+  const runtime = try FlowRuntime.FlowRuntime
+  const ready = try runtime.deferredResult(Ready)
+  if (Option.isNone(ready)) return
+  try ready.value
+  // Invalid evidence is never actionable feedback. Delay its typed refusal
+  // until all native writers finish, even when a valid finding arrived first.
+  const rejected = try runtime.deferredResult(Invalid)
+  if (Option.isSome(rejected)) throw try rejected.value
+  const first = try runtime.deferredResult(First)
+  if (Option.isNone(first)) return
+  const trigger = try first.value
+  const changes: Array<ValidatedChange> = []
+  for (const [index, change] of plan.changes.entries()) {
+    const saved = try runtime.deferredResult(gated(index))
+    if (Option.isNone(saved)) {
+      throw invalid("The implementation-ready marker has no corresponding native implementation")
+    }
+    const group = try saved.value
+    if (group.implementation.change !== change.id) {
+      throw invalid("Recorded implementations reordered the mythical progression")
+    }
+    const receipts = [...group.receipts]
+    for (const check of change.checks.filter((check) => check.tier === "slow")) {
+      const saved = try runtime.deferredResult(checked(index, check.id))
+      if (Option.isSome(saved)) receipts.push(try saved.value)
+    }
+    changes.push({ implementation: group.implementation, receipts })
+  }
+  const findings: Array<Finding> = []
+  for (const [index, group] of changes.entries()) {
+    for (const receipt of group.receipts) findings.push(...try recordedFindings(plan, index, group, receipt))
+  }
+  if (
+    !findings.length || !changes.some((group) =>
+      group.receipts.some((receipt) => canonical(receipt) === canonical(trigger))
+    )
+  ) {
+    throw invalid("The first actionable feedback has no corresponding exact check receipt")
+  }
+  throw new EarlyFeedback({ result: { status: "changes-requested", changes, findings } })
+}
+
+type Stages = Node.Node<
+  ReadonlyArray<ValidatedChange>,
+  typeof FeedbackError.Type,
+  Action.Requirement<
+    (typeof Implement | typeof RunCheck | typeof FastGate | typeof RecordGate | typeof RecordSlow)["name"]
+  >
+>
+const stages = (plan: Plan, index: number, parent: Parameters<typeof Implement.call>[0]["parent"]): Stages => {
+  const change = plan.changes[index]
+  if (!change) return Node.succeed([])
+  return Implement.call({ change, parent, ...recalled(plan) }).pipe(
+    Node.bindPlanned(Node.capture({}, (implementation) =>
+      Node.all(Object.fromEntries(
+        change.checks.filter((check) => check.tier === "fast")
+          .map((check) => [check.id, RunCheck.call({ implementation, check })])
+      )).pipe(
+        Node.bindPlanned(Node.capture({}, (receipts) => FastGate.call({ change, parent, implementation, receipts }))),
+        Node.bindPlanned(Node.capture({}, (group) => RecordGate.call({ plan, index, group }))),
+        Node.bindPlanned(Node.capture({}, (group) =>
+          Node.all({
+            current: Node.succeed(group),
+            slow: Node.all(
+              Object.fromEntries(
+                change.checks.filter((check) => check.tier === "slow").map(
+                  (check) => [
+                    check.id,
+                    RunCheck.call({ implementation: group.implementation, check }).pipe(
+                      Node.bindPlanned(
+                        Node.capture(
+                          {},
+                          (receipt) =>
+                            RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })
+                        )
+                      )
+                    )
+                  ]
+                )
+              )
+            ),
+            next: stages(plan, index + 1, group.implementation.head)
+          }).pipe(
+            Node.map(Node.capture({}, (
+              { current, slow, next }
+            ) => [
+              { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(slow)] },
+              ...next
+            ]))
+          )))
+      )))
+  )
+}
+
+/** Opt-in correction pass; the existing public/manual ImplementPlan is unchanged. */
+export const ObservePlan = Flow.make("coding/ObservePlan", {
+  payload: { plan: Plan },
+  success: Result,
+  error: FeedbackError,
+  body: Node.capture({}, ({ plan }) =>
+    ValidatePlan.call({ plan }).pipe(Node.andThen(
+      stages(plan, 0, plan.base).pipe(Node.bindPlanned(Node.capture({}, (changes) => Assess.call({ plan, changes }))))
+    )))
+})
+
+// A cancellation request is not acknowledgement. Reuse the engine's native
+// lineage/DAG read, including handoffs, before permitting a new JJ writer.
+const ChildrenStopped = Action.make("coding/read-feedback-cancellation", {
+  payload: { executionId: Schema.String, attempt: Schema.Number },
+  success: Poll.CheckResult(Schema.Boolean),
+  nondeterministic: true
+})
+const AwaitStopped = Poll.make("coding/AwaitObsoleteChecksStopped", {
+  input: { executionId: Schema.String },
+  result: Schema.Boolean,
+  intervalMs: 100,
+  maxAttempts: 300,
+  onTimeout: "fail",
+  check: Node.capture({}, (input) => ChildrenStopped.call(input))
+})
+export effect function acknowledgeFeedback(flow: Flow.Any, executionId: string) {
+  const runtime = try FlowRuntime.FlowRuntime
+  try runtime.interrupt(flow, executionId)
+  return try runtime.execute(AwaitStopped, {
+    payload: { executionId },
+    executionId: digest(canonical(["coding/feedback-stop/v1", executionId]))
+  })
+}
+
+export const feedbackLayers = Layer.mergeAll(
+  Interpreter.layer(ObservePlan),
+  Interpreter.layer(AwaitStopped),
+  Poll.layer,
+  Sleep.layer,
+  RecordGate.toLayer(({ plan, index, group }) =>
+    effect {
+      try record(gated(index), group)
+      if (index === plan.changes.length - 1) try record(Ready, true)
+      try interruptOnFeedback(plan)
+      return group
+    }
+  ),
+  RecordSlow.toLayer(({ plan, index, implementation, check, receipt }) =>
+    effect {
+      const validation = try Effect.try({
+        try: () => receiptFindings(plan, index, implementation, check, receipt),
+        catch: (error) => error instanceof CodingError ? error : invalid(String(error))
+      }).pipe(
+        Effect.flatMap((findings) =>
+          check.tier !== "slow" || !receiptMatches(implementation, check, receipt)
+            ? Effect.fail(invalid("Only exact slow-check receipts can trigger early feedback"))
+            : Effect.succeed(findings)
+        ),
+        Effect.match({ onFailure: (error) => ({ error }), onSuccess: (findings) => ({ findings }) })
+      )
+      if ("error" in validation) try record(Invalid, validation.error)
+      else {
+        try record(checked(index, check.id), receipt)
+        if (validation.findings.length) try record(First, receipt)
+      }
+      try interruptOnFeedback(plan)
+      // This is the check's recorded output, not an assertion that it is valid.
+      // Ready or final Assess must expose a retained invalid-receipt refusal.
+      return receipt
+    }
+  ),
+  ChildrenStopped.toLayer(({ executionId }) =>
+    effect {
+      const store = try RunStore.RunStore, state = try DurableEngineState.DurableEngineState
+      const ids = [executionId, ...try runLifecycle(store, state).descendants(executionId).pipe(Effect.orDie)]
+      const rows = try Effect.forEach(ids, (id) => store.get(id).pipe(Effect.orDie))
+      const stopped = rows.every((row) =>
+        row.status === "completed" || row.status === "failed" || row.status === "cancelled"
+      )
+      return { satisfied: stopped, output: stopped }
+    }
+  )
+)

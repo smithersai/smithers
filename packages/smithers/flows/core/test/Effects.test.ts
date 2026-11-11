@@ -2,7 +2,7 @@ import * as PlanEffects from "@smthrs/plan/Effects"
 import * as PlanKeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Annotations from "../src/Annotations.ts"
+import * as Annotations from "../src/Annotations.vibe"
 import * as Effects from "../src/Effects.ts"
 import type * as KeyMaterial from "../src/KeyMaterial.ts"
 

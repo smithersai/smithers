@@ -14,7 +14,7 @@ import { LivenessEvidence } from "@smthrs/journal/Consensus"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import { Cause, Clock, Duration, Effect, Semaphore } from "effect"
 import { heartbeatInterval, heartbeatStaleAfter, heartbeatWriteTolerance } from "./Heartbeat.ts"
-import { RunStore } from "./RunStore.ts"
+import { RunStore } from "./RunStore.vibe"
 
 export {
   /**

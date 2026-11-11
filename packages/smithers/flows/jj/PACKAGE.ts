@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "String interpolation of a revision into a revset expression such as `--revision=parents(${pinned})` without validating it as a hex commit id or reverse-hex change id.",
         "requireRevision accepting anything beyond non-empty, so `x) | all() | (x` or `root()` reaches jj restore --from."
       ],
-      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-binary-resolution",
@@ -149,7 +149,7 @@ const securityReview = Smithers.SecurityReview({
         "path_symlink writing a guest-controlled absolute target that the backend later follows outside the root when the shim itself does not walk it.",
         "fd-addressed operations resolved through a path captured at open time, so a rename plus symlink redirects a later mutation."
       ],
-      paths: ["src/browser/WasiPreview1.ts", "src/browser/WasiFs.ts"]
+      paths: ["src/browser/WasiPreview1.vibe", "src/browser/WasiFs.ts"]
     },
     {
       id: "wasi-memory-bounds",
@@ -161,7 +161,7 @@ const securityReview = Smithers.SecurityReview({
         "A RangeError path not mapped to Errno.fault, letting an exception unwind through the wasm stack.",
         "fd_read/fd_readdir/path_readlink sizing a host buffer from a guest-supplied length without a cap."
       ],
-      paths: ["src/browser/WasiPreview1.ts"]
+      paths: ["src/browser/WasiPreview1.vibe"]
     },
     {
       id: "jj-abi-response-trust",
@@ -174,7 +174,7 @@ const securityReview = Smithers.SecurityReview({
         "settle treating exit code 0 as success while stderr reports refused snapshot files.",
         "snapshot using an empty commitId from a malformed jj log line as a restore target."
       ],
-      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-error-leakage",
@@ -185,7 +185,7 @@ const securityReview = Smithers.SecurityReview({
         "A JjError constructed with an unbounded message or command instead of commandOf/jjErrorCause truncation.",
         "A cause projection that copies an Error's stack, env, or spawnargs into the journal."
       ],
-      paths: ["src/Jj.ts", "src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/Jj.vibe", "src/node/NodeJj.ts", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-lock-and-restore-safety",

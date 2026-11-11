@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Context from "../src/context.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import { Workspace } from "../src/workspace.ts"
 import * as Wrapped from "../src/wrapped.ts"
 

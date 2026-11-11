@@ -180,6 +180,7 @@ export const admit = (input: unknown, limits: Limits = defaultLimits): Admission
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const record = (
   input: unknown,

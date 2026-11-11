@@ -17,15 +17,15 @@ import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Diagnosis from "../src/Diagnosis.ts"
-import * as GatewayError from "../src/GatewayError.ts"
-import * as GatewayProjection from "../src/GatewayProjection.ts"
-import * as GatewayRpcs from "../src/GatewayRpcs.ts"
-import * as GatewaySchema from "../src/GatewaySchema.ts"
-import * as GatewayServer from "../src/GatewayServer.ts"
-import * as NodeGateway from "../src/node/NodeGateway.ts"
+import * as Diagnosis from "../src/Diagnosis.vibe"
+import * as GatewayError from "../src/GatewayError.vibe"
+import * as GatewayProjection from "../src/GatewayProjection.vibe"
+import * as GatewayRpcs from "../src/GatewayRpcs.vibe"
+import * as GatewaySchema from "../src/GatewaySchema.vibe"
+import * as GatewayServer from "../src/GatewayServer.vibe"
+import * as NodeGateway from "../src/node/NodeGateway.vibe"
 import * as Projections from "../src/Projections.ts"
-import * as RunHistory from "../src/RunHistory.ts"
+import * as RunHistory from "../src/RunHistory.vibe"
 import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -46,16 +46,16 @@ const documented = (module: string): ReadonlyArray<string> => {
 }
 
 const modules = [
-  ["GatewayError", GatewayError, declaredTypes("GatewayError.ts")],
-  ["GatewaySchema", GatewaySchema, declaredTypes("GatewaySchema.ts")],
-  ["Diagnosis", Diagnosis, declaredTypes("Diagnosis.ts")],
-  ["GatewayProjection", GatewayProjection, declaredTypes("GatewayProjection.ts")],
-  ["GatewayRpcs", GatewayRpcs, declaredTypes("GatewayRpcs.ts")],
-  ["GatewayServer", GatewayServer, declaredTypes("GatewayServer.ts")],
+  ["GatewayError", GatewayError, declaredTypes("GatewayError.vibe")],
+  ["GatewaySchema", GatewaySchema, declaredTypes("GatewaySchema.vibe")],
+  ["Diagnosis", Diagnosis, declaredTypes("Diagnosis.vibe")],
+  ["GatewayProjection", GatewayProjection, declaredTypes("GatewayProjection.vibe")],
+  ["GatewayRpcs", GatewayRpcs, declaredTypes("GatewayRpcs.vibe")],
+  ["GatewayServer", GatewayServer, declaredTypes("GatewayServer.vibe")],
   ["Projections", Projections, declaredTypes("Projections.ts")],
-  ["RunHistory", RunHistory, declaredTypes("RunHistory.ts")],
+  ["RunHistory", RunHistory, declaredTypes("RunHistory.vibe")],
   ["RuntimeBridge", RuntimeBridge, declaredTypes("RuntimeBridge.ts")],
-  ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.ts")]
+  ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.vibe")]
 ] as const
 
 describe("the README export table", () => {

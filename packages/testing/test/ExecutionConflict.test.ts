@@ -7,11 +7,11 @@
  */
 import { FlowEngine } from "@smthrs/engine"
 import * as Effect from "effect/Effect"
-import type { FlowSpec } from "../src/EngineSubject.ts"
-import * as EngineSubject from "../src/EngineSubject.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as MemoryEngine from "../src/MemoryEngine.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import type { FlowSpec } from "../src/EngineSubject.vibe"
+import * as EngineSubject from "../src/EngineSubject.vibe"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
+import * as MemoryEngine from "../src/MemoryEngine.vibe"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 const echo = (name: string): FlowSpec => ({
   name,

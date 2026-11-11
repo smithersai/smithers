@@ -18,4 +18,4 @@
  * @since 0.1.0
  */
 
-export * from "./Jj.ts"
+export * from "./Jj.vibe"

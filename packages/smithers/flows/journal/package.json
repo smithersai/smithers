@@ -34,30 +34,103 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
-    "./Journal": "./src/Journal.ts",
-    "./JournalEvent": "./src/JournalEvent.ts",
-    "./EngineEvent": "./src/EngineEvent.ts",
-    "./JournalMetrics": "./src/JournalMetrics.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./OwnerId": "./src/OwnerId.ts",
-    "./Projection": "./src/Projection.ts",
-    "./RedactedLogger": "./src/RedactedLogger.ts",
-    "./Redaction": "./src/Redaction.ts",
-    "./SqlJournal": "./src/SqlJournal.ts",
-    "./TelemetryLog": "./src/TelemetryLog.ts",
-    "./index": "./src/index.ts",
-    "./test/Notifying": "./src/test/Notifying.ts",
-    "./test/TestJournal": "./src/test/TestJournal.ts",
-    "./JournalGeneration": "./src/JournalGeneration.ts",
-    "./Consensus": "./src/Consensus.ts",
-    "./SqlConsensus": "./src/SqlConsensus.ts"
+    "./Journal": {
+      "types": "./src/Journal.ts",
+      "vibelang-source": "./src/Journal.ts",
+      "default": "./.vibelang/js/src/Journal.js"
+    },
+    "./JournalEvent": {
+      "types": "./.vibe/declarations/src/JournalEvent.d.vibe.ts",
+      "vibelang-source": "./src/JournalEvent.vibe",
+      "default": "./.vibelang/js/src/JournalEvent.js"
+    },
+    "./EngineEvent": {
+      "types": "./.vibe/declarations/src/EngineEvent.d.vibe.ts",
+      "vibelang-source": "./src/EngineEvent.vibe",
+      "default": "./.vibelang/js/src/EngineEvent.js"
+    },
+    "./JournalMetrics": {
+      "types": "./.vibe/declarations/src/JournalMetrics.d.vibe.ts",
+      "vibelang-source": "./src/JournalMetrics.vibe",
+      "default": "./.vibelang/js/src/JournalMetrics.js"
+    },
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./OwnerId": {
+      "types": "./.vibe/declarations/src/OwnerId.d.vibe.ts",
+      "vibelang-source": "./src/OwnerId.vibe",
+      "default": "./.vibelang/js/src/OwnerId.js"
+    },
+    "./Projection": {
+      "types": "./.vibe/declarations/src/Projection.d.vibe.ts",
+      "vibelang-source": "./src/Projection.vibe",
+      "default": "./.vibelang/js/src/Projection.js"
+    },
+    "./RedactedLogger": {
+      "types": "./.vibe/declarations/src/RedactedLogger.d.vibe.ts",
+      "vibelang-source": "./src/RedactedLogger.vibe",
+      "default": "./.vibelang/js/src/RedactedLogger.js"
+    },
+    "./Redaction": {
+      "types": "./.vibe/declarations/src/Redaction.d.vibe.ts",
+      "vibelang-source": "./src/Redaction.vibe",
+      "default": "./.vibelang/js/src/Redaction.js"
+    },
+    "./SqlJournal": {
+      "types": "./src/SqlJournal.ts",
+      "vibelang-source": "./src/SqlJournal.ts",
+      "default": "./.vibelang/js/src/SqlJournal.js"
+    },
+    "./TelemetryLog": {
+      "types": "./.vibe/declarations/src/TelemetryLog.d.vibe.ts",
+      "vibelang-source": "./src/TelemetryLog.vibe",
+      "default": "./.vibelang/js/src/TelemetryLog.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/Notifying": {
+      "types": "./src/test/Notifying.ts",
+      "vibelang-source": "./src/test/Notifying.ts",
+      "default": "./.vibelang/js/src/test/Notifying.js"
+    },
+    "./test/TestJournal": {
+      "types": "./.vibe/declarations/src/test/TestJournal.d.vibe.ts",
+      "vibelang-source": "./src/test/TestJournal.vibe",
+      "default": "./.vibelang/js/src/test/TestJournal.js"
+    },
+    "./JournalGeneration": {
+      "types": "./.vibe/declarations/src/JournalGeneration.d.vibe.ts",
+      "vibelang-source": "./src/JournalGeneration.vibe",
+      "default": "./.vibelang/js/src/JournalGeneration.js"
+    },
+    "./Consensus": {
+      "types": "./.vibe/declarations/src/Consensus.d.vibe.ts",
+      "vibelang-source": "./src/Consensus.vibe",
+      "default": "./.vibelang/js/src/Consensus.js"
+    },
+    "./SqlConsensus": {
+      "types": "./.vibe/declarations/src/SqlConsensus.d.vibe.ts",
+      "vibelang-source": "./src/SqlConsensus.vibe",
+      "default": "./.vibelang/js/src/SqlConsensus.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -66,7 +139,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -270,7 +345,8 @@
     "test:matrix": "node ../database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/database": "1.0.0-rc.17"
+    "@smthrs/database": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -291,8 +367,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },

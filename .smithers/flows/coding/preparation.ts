@@ -3,7 +3,7 @@
  * The stack service refreshes it with `coding/wiki` after every fold. */
 import { Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { PlanningInput, PreparePlan } from "./planning.ts"
+import { PlanningInput, PreparePlan } from "./planning.vibe"
 import { Plan } from "./schema.ts"
 
 export const PrepareRequest = Flow.make("coding/PrepareRequest", {

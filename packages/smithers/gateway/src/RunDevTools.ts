@@ -15,7 +15,7 @@
  * @since 1.0.0
  */
 
-import { clip, firstLine } from "./Diagnosis.ts"
+import { clip, firstLine } from "./Diagnosis.vibe"
 import {
   durationWords,
   type JournalRecord,
@@ -24,7 +24,7 @@ import {
   type SpanStatus,
   type TraceModel,
   type TraceSpan
-} from "./RunTrace.ts"
+} from "./RunTrace.vibe"
 
 /**
  * One node of the tree: a trace span with its measured timing.

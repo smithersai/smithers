@@ -1,6 +1,7 @@
 // Stays .ts: Istanbul's untyped CJS packages load through createRequire behind local interfaces, and workerd
 // evidence collection is plain CDP over a WebSocket; the VibeLang pipeline imports this from workerd.vibe.
 import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { normalizeEndColumns, type FileCoverageJSON } from "./coverageUnion.ts"
 
@@ -56,6 +57,10 @@ export function instrumentModules<P extends EsbuildPlugin>(plugin: P, instrument
         if (map === null) throw new Error(`workerd coverage: ${args.path} compiled without a source map`)
         const code = result.contents.slice(0, map.index)
         const sourceMap = JSON.parse(Buffer.from(map[1]!, "base64").toString("utf8")) as Record<string, unknown>
+        if (Array.isArray(sourceMap.sources)) {
+          sourceMap.sources = sourceMap.sources.map((source) =>
+            typeof source === "string" && source.startsWith("file:") ? fileURLToPath(source) : source)
+        }
         return { ...result, contents: instrumenter.instrumentSync(code, args.path, sourceMap) }
       }),
     } as never),

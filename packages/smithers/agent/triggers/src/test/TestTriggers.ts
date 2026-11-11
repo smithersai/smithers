@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema"
 import * as ClaimDecision from "../ClaimDecision.ts"
 import * as Overlap from "../Overlap.ts"
 import * as Schedule from "../Schedule.ts"
-import * as Trigger from "../Trigger.ts"
+import * as Trigger from "../Trigger.vibe"
 import { fromSchemaError, TriggerError } from "../TriggerError.ts"
 import {
   type Claim,
@@ -32,7 +32,7 @@ import {
   resultRefusal,
   type Service,
   TriggerStore
-} from "../TriggerStore.ts"
+} from "../TriggerStore.vibe"
 
 /**
  * The columns the SQL store keeps on `flows_triggers` and `flows_trigger_fires`,

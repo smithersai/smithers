@@ -6,7 +6,7 @@ import {
   spanMatches,
   traceFromJournal,
   turnNarratives
-} from "../src/RunTrace.js"
+} from "../src/RunTrace.vibe"
 
 const run = { runId: "run", flowId: "test", status: "running" }
 const event = (kind: string, payload: Record<string, unknown> = {}, sequence?: number): JournalRecord => ({

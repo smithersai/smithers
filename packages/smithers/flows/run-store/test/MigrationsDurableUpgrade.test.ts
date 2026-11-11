@@ -11,10 +11,10 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as AttemptStore from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
-import { initial } from "../src/migrations/0001_initial.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import { initial } from "../src/migrations/0001_initial.vibe"
+import * as RunStore from "../src/RunStore.vibe"
 
 const database = (filename: string) => Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
 

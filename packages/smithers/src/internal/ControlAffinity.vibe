@@ -1,0 +1,109 @@
+/**
+ * Control ownership admission before the native engine takes an execution.
+ * @since 1.0.0
+ */
+
+import { RunState } from "@smthrs/engine-store/RunState"
+import { Ownership, type RunStore } from "@smthrs/run-store"
+import { Effect } from "effect"
+
+interface Options {
+  readonly runs: RunStore.Service
+  readonly engineRuns?: RunStore.Service | undefined
+  readonly canRetryReleased?: ((executionId: string, ancestorId: string) => boolean!unknown) | undefined
+  readonly claimant: Ownership.OwnerId
+  readonly isAlive?: Ownership.LivenessCheck | undefined
+}
+
+const ParkedOwner = Schema.Struct({ parkedBy: Schema.optionalKey(Schema.String), updatedAt: Schema.Number })
+const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(RunState))
+const decodePark = Schema.decodeUnknownOption(Schema.fromJsonString(ParkedOwner))
+const decodeOwner = Schema.decodeUnknownOption(Schema.fromJsonString(Ownership.OwnerId))
+
+/**
+ * A released engine row does not release its separate control claim.
+ * Read that claim before engine recovery; the control runtime still performs
+ * the authoritative fenced takeover when the handler enters.
+ * @since 1.0.0
+ * @private
+ */
+export const make =
+  ({ runs, engineRuns, claimant, canRetryReleased, isAlive = Ownership.sameHostPidProbe }: Options) =>
+  (runId: string): boolean!! =>
+    effect {
+      const readControl = (id: string) =>
+        do {
+          const catchProgram = runs.get(id)
+          effect {
+            return catchProgram catch effect (error) =>
+              try (error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.fail(error))
+          }
+        }
+      const sameProcess = (owner: Ownership.OwnerId) => owner.hostId === claimant.hostId && owner.pid === claimant.pid
+      const nowMs = try Clock.currentTimeMillis
+      const stale = (at: number | null) => at !== null && at < nowMs - Duration.toMillis(Ownership.heartbeatStaleAfter)
+      const admitsRunning = effect (row: RunStore.RunRow) => {
+        if (row.status !== "running") return true
+        if (row.owner === null) return false
+        if (sameProcess(row.owner)) return true
+        if (!stale(row.heartbeatAtMs)) return false
+        return !(try isAlive(row.owner, { claimant, heartbeatAtMs: row.heartbeatAtMs, nowMs }))
+      }
+      const exact = try readControl(runId)
+      // Ownership recovery is not permission to repeat a released root's
+      // unfinished effects. Roots use the same keyed/explicit-grant policy.
+      if (exact !== undefined) {
+        if (!(try admitsRunning(exact))) return false
+        if (engineRuns === undefined) return true
+        const native = engineRuns.get(runId) catch effect (error) =>
+          try (error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.fail(error))
+        if (native === undefined || native.cancelRequestedAtMs !== null || native.status !== "suspended") return true
+        const state = try decodeState(native.stateJson)
+        if (state.cancellation !== undefined || state.result !== undefined) return true
+        return try (canRetryReleased?.(runId, runId) ?? Effect.succeed(false))
+      }
+      if (engineRuns === undefined) return true
+      let native = try engineRuns.get(runId)
+      if (native.cancelRequestedAtMs !== null) return true
+      let state = try decodeState(native.stateJson)
+      if (state.cancellation !== undefined) return true
+      const released = native.status === "suspended" && state.result === undefined
+      const seen = new Set([runId])
+      for (;;) {
+        const parent = state.parentExecutionId ?? native.parentRunId
+        if (parent === undefined || parent === null) {
+          return released ? try (canRetryReleased?.(runId, runId) ?? Effect.succeed(false)) : true
+        }
+        if (seen.has(parent)) return false
+        seen.add(parent)
+        const control = try readControl(parent)
+        if (control !== undefined) {
+          if (control.status !== "suspended") {
+            if (!(try admitsRunning(control))) return false
+            return released ? try (canRetryReleased?.(runId, parent) ?? Effect.succeed(false)) : true
+          }
+          const park = Option.getOrUndefined(decodePark(control.stateJson))
+          if (park?.parkedBy === undefined) return false
+          const owner = Option.getOrUndefined(decodeOwner(park.parkedBy))
+          if (owner === undefined) return false
+          // A lease interruption releases the child, not its external effect.
+          // The release policy admits keyed effects; unfinished unkeyed effects
+          // still require explicit resume, even after owner death.
+          if (sameProcess(owner)) {
+            return released
+              ? try (canRetryReleased?.(runId, parent) ?? Effect.succeed(false))
+              : true
+          }
+          // A remote process table cannot prove a parked host dead.
+          if (owner.hostId !== claimant.hostId || !stale(park.updatedAt)) return false
+          if (try isAlive(owner, { claimant, heartbeatAtMs: park.updatedAt, nowMs })) return false
+          return released ? try (canRetryReleased?.(runId, parent) ?? Effect.succeed(false)) : true
+        }
+        native = try engineRuns.get(parent)
+        state = try decodeState(native.stateJson)
+      }
+    } |> Effect.catchCause(%, (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : (Effect.logWarning("Control ownership admission failed; leaving the execution parked", { runId })
+          |> Effect.as(%, false)))

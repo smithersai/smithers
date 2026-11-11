@@ -5,7 +5,7 @@ import * as StepKey from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 
 // `Plan.keys` derives two different identities, and the reference documents
 // both. Sealed material is keyed the way the persisted plan keys it. Every

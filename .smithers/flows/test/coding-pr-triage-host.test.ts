@@ -18,7 +18,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { bindRepositoryRegistry, provisionBuiltins } from "../repository/registry.ts"
+import { bindRepositoryRegistry, provisionBuiltins } from "../repository/registry.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer

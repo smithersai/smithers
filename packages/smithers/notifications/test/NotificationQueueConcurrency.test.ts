@@ -19,8 +19,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
-import * as NotificationQueue from "../src/NotificationQueue.ts"
+import type { Notification } from "../src/Notification.vibe"
+import * as NotificationQueue from "../src/NotificationQueue.vibe"
 
 const item = (id: string): Notification => ({
   _tag: "human-steer",

@@ -1,0 +1,302 @@
+/**
+ * Note, status, and supersession operations of the SQL memory store.
+ *
+ * @since 0.1.0
+ */
+
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import type { DatabaseService } from "../Database.vibe"
+import type { MemoryError } from "../MemoryError.vibe"
+import type { ListNotesInput, Note, Service, StatusFilter } from "../MemoryStore.vibe"
+import type * as Namespace from "../Namespace.vibe"
+import { canonicalJson, compareText } from "./Canonical.ts"
+import * as Fts from "./Fts.vibe"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
+import {
+  changed,
+  collectUntil,
+  decodeJson,
+  decodeNote,
+  encodeJson,
+  error,
+  type Fragment,
+  MIN_NOTE_PAGE_SIZE,
+  NOTE_PAGE_SIZE,
+  type NoteRow,
+  storeError,
+  tagMatcher,
+  validateLimit,
+  validateNonEmpty,
+  validateTags
+} from "./Store.vibe"
+
+// canonicalJson only meets values the JSON boundary already admitted, so a
+// failure here is a defect.
+const canonical = (value: unknown) => Effect.sync(() => canonicalJson(value))
+
+const CREATION_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms"
+
+const NOTE_COLUMNS = `${CREATION_COLUMNS}, status_at_ms, accepted_todo`
+
+type ReadNotes = (
+  input: ListNotesInput & { readonly ids?: ReadonlyArray<string> | undefined },
+  recentFirst?: boolean
+) => Effect.Effect<ReadonlyArray<Note>, MemoryError>
+
+/**
+ * Builds the note operations, plus the filtered reader search pages through.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (database: DatabaseService): {
+  readonly readNotes: ReadNotes
+  readonly service: Pick<Service, "putNote" | "getNote" | "setNoteStatus" | "supersede" | "listNotes">
+} => {
+  const { sql } = database
+  const columns = sql.literal(NOTE_COLUMNS)
+
+  // Status and supersession are answered in SQL, which is what makes `limit`
+  // mean "at most N rows that pass every filter". A `LIMIT` applied before
+  // the filters silently under-fills: `listNotes({status:"accepted",limit:1})`
+  // over a namespace whose oldest note is `pending` used to return nothing.
+  // An absent status filter selects `accepted`; `"any"` selects everything;
+  // an array selects its members, and an empty array selects nothing.
+  const statusCondition = (filter: StatusFilter | undefined): Fragment | undefined => {
+    const selected = filter ?? "accepted"
+    if (selected === "any") return undefined
+    if (!Array.isArray(selected)) return sql`notes.status = ${selected}`
+    return selected.length === 0 ? sql.literal("1 = 0") : sql.in("notes.status", selected)
+  }
+
+  const notSupersededCondition = sql.literal(`NOT EXISTS (
+    SELECT 1 FROM memory_note_supersedes edges
+    JOIN memory_notes superseder ON superseder.id = edges.superseder_id
+    WHERE edges.target_id = notes.id AND superseder.status = 'accepted')`)
+
+  const readNotes: ReadNotes = (input, recentFirst = false) =>
+    effect {
+      const { namespace } = try resolveNamespace(input.namespace)
+      const limit = try validateLimit(input.limit, "listNotes")
+      if (limit === 0) return []
+      const order = sql.literal(recentFirst ? "created_at_ms DESC, id" : "created_at_ms, id")
+      const conditions: Array<Fragment> = [
+        sql`notes.namespace_kind = ${namespace.kind}`,
+        sql`notes.namespace_id = ${namespace.id}`
+      ]
+      if (input.prefix !== undefined) {
+        conditions.push(sql`substr(notes.id, 1, length(${input.prefix})) = ${input.prefix}`)
+      }
+      if (input.ids !== undefined) {
+        conditions.push(input.ids.length === 0 ? sql.literal("1 = 0") : sql.in("notes.id", input.ids))
+      }
+      const status = statusCondition(input.status)
+      if (status !== undefined) conditions.push(status)
+      if (input.includeSuperseded !== true) conditions.push(notSupersededCondition)
+      const page = (rowLimit: number | undefined, after?: Note) => {
+        const continuation = after === undefined ? [] : [
+          recentFirst
+            ? sql`(notes.created_at_ms < ${after.createdAtMs}
+              OR (notes.created_at_ms = ${after.createdAtMs} AND notes.id > ${after.id}))`
+            : sql`(notes.created_at_ms, notes.id) > (${after.createdAtMs}, ${after.id})`
+        ]
+        const where = sql.and([...conditions, ...continuation])
+        return (rowLimit === undefined
+          ? sql<NoteRow>`SELECT ${columns} FROM memory_notes notes WHERE ${where} ORDER BY ${order}`
+          : sql<NoteRow>`SELECT ${columns} FROM memory_notes notes WHERE ${where} ORDER BY ${order} LIMIT ${rowLimit}`)
+          .pipe(
+            Effect.mapError(storeError("could not list memory notes")),
+            Effect.flatMap((rows) => Effect.forEach(rows, decodeNote))
+          )
+      }
+
+      // Tags stay in JS so Namespace.matches owns all five match modes.
+      const tagFiltered = input.tagGroups !== undefined
+      const matchesTags = tagMatcher(input)
+      const keep = (notes: ReadonlyArray<Note>) => notes.filter((note) => matchesTags(note.tags))
+      if (limit === undefined || !tagFiltered) {
+        const notes = try page(limit)
+        return tagFiltered ? keep(notes) : notes
+      }
+      const pageSize = Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
+      return try collectUntil(limit, pageSize, page, (notes) => Effect.succeed(keep(notes)))
+    }
+
+  const putNote: Service["putNote"] = (input) =>
+    effect {
+      const { namespace } = try resolveNamespace(input.namespace)
+      try validateNonEmpty(input.id, "note id", ["id"])
+      const status = input.status ?? "accepted"
+      const tags = try validateTags(input.tags)
+      const tagsJson = try canonical(tags)
+      const encodedProvenance = try encodeJson(input.provenance, "note provenance", ["provenance"])
+      const provenanceJson = try canonical(try decodeJson(encodedProvenance, "note provenance"))
+      const supersedes = Array.from(new Set(input.supersedes ?? [])).sort(compareText)
+      if (supersedes.includes(input.id)) {
+        throw error("supersede_conflict", "a note cannot supersede itself")
+      }
+      const now = try Clock.currentTimeMillis
+      const row = try database.write(
+        effect {
+          const inserted = try sql`INSERT INTO memory_notes (${sql.literal(CREATION_COLUMNS)}) VALUES (
+            ${namespace.kind}, ${namespace.id}, ${input.id}, ${input.text}, ${tagsJson},
+            ${provenanceJson}, ${status}, ${now}
+            ) ON CONFLICT (id) DO NOTHING`.raw
+          const created = changed(inserted) > 0
+          const persisted = try sql<NoteRow>`SELECT ${columns}
+            FROM memory_notes WHERE id = ${input.id} LIMIT 1`
+          if (persisted.length === 0) {
+            throw error("store", "inserted note could not be read back")
+          }
+          const existing = persisted[0]!
+          if (!created) {
+            const existingProvenance = try canonical(
+              try decodeJson(existing.provenance_json, "note provenance")
+            )
+            if (
+              existing.namespace_kind !== namespace.kind || existing.namespace_id !== namespace.id ||
+              existing.text !== input.text || existing.tags_json !== tagsJson ||
+              existingProvenance !== provenanceJson
+            ) {
+              return try Effect.fail(
+                error("supersede_conflict", `note id "${input.id}" already exists with different creation data`)
+              )
+            }
+            const persistedEdges = try sql<{ readonly target_id: string }>`SELECT target_id
+              FROM memory_note_supersedes
+              WHERE superseder_id = ${input.id}
+              ORDER BY target_id`
+            const targets = persistedEdges.map((edge) => edge.target_id).sort(compareText)
+            if (
+              targets.length !== supersedes.length ||
+              targets.some((target, index) => target !== supersedes[index])
+            ) {
+              return try Effect.fail(
+                error("supersede_conflict", `note id "${input.id}" already exists with different supersession data`)
+              )
+            }
+          } else {
+            for (const targetId of supersedes) {
+              const target = try sql<{ readonly id: string }>`
+                SELECT id FROM memory_notes
+                WHERE id = ${targetId}
+                  AND namespace_kind = ${namespace.kind}
+                  AND namespace_id = ${namespace.id}
+                LIMIT 1
+              `
+              if (target.length === 0) {
+                return try Effect.fail(
+                  error("supersede_conflict", `superseded note "${targetId}" does not exist`)
+                )
+              }
+              try sql`INSERT INTO memory_note_supersedes (superseder_id, target_id, created_at_ms)
+                VALUES (${input.id}, ${targetId}, ${now})
+                ON CONFLICT (superseder_id, target_id) DO NOTHING`
+            }
+            try Fts.replaceFtsRecord(database, namespace.kind, {
+              recordId: input.id,
+              recordKind: "note",
+              namespaceId: namespace.id,
+              key: input.id,
+              text: input.text
+            })
+          }
+          return existing
+        }
+      ).pipe(Effect.mapError(storeError("could not insert memory note")))
+      return try decodeNote(row)
+    }
+
+  const getNote: Service["getNote"] = (input) =>
+    effect {
+      try validateNonEmpty(input.id, "note id", ["id"])
+      const rows = try sql<NoteRow>`SELECT ${columns}
+        FROM memory_notes WHERE id = ${input.id} LIMIT 1`.pipe(
+        Effect.mapError(storeError("could not read memory note"))
+      )
+      return rows[0] === undefined ? undefined : try decodeNote(rows[0])
+    }
+
+  const setNoteStatus: Service["setNoteStatus"] = (input) =>
+    effect {
+      try validateNonEmpty(input.id, "note id", ["id"])
+      if (input.acceptedTodo !== undefined) {
+        try validateNonEmpty(input.acceptedTodo, "accepted TODO", ["acceptedTodo"])
+        if (input.status !== "accepted") {
+          throw error("invalid_argument", "a TODO reference requires accepted status")
+        }
+      }
+      const now = try Clock.currentTimeMillis
+      try database.write(effect {
+        // A no-op update acquires the row lock on PostgreSQL as well as the
+        // serialized SQLite writer, before reading the lifecycle binding.
+        const locked = try sql`UPDATE memory_notes SET status = status WHERE id = ${input.id}`.raw
+        if (changed(locked) === 0) {
+          throw error("not_found", `memory note "${input.id}" was not found`)
+        }
+        const rows = try sql<NoteRow>`SELECT ${columns} FROM memory_notes WHERE id = ${input.id}`
+        const row = rows[0]!
+        if (
+          row.accepted_todo !== null &&
+          (input.status !== "accepted" || input.acceptedTodo !== undefined && input.acceptedTodo !== row.accepted_todo)
+        ) {
+          return try Effect.fail(
+            error(
+              "idempotency_conflict",
+              "learning note is already accepted for a TODO; its acceptance cannot be changed"
+            )
+          )
+        }
+        if (
+          row.status === input.status && (input.acceptedTodo === undefined || input.acceptedTodo === row.accepted_todo)
+        ) return
+        try sql`UPDATE memory_notes SET status = ${input.status},
+          status_at_ms = ${row.status === input.status ? row.status_at_ms : now},
+          accepted_todo = ${input.acceptedTodo ?? row.accepted_todo}
+          WHERE id = ${input.id}`.raw
+      }).pipe(Effect.mapError(storeError("could not update memory note status")))
+    }
+
+  const supersede: Service["supersede"] = (input) =>
+    effect {
+      try validateNonEmpty(input.supersederId, "supersederId", ["supersederId"])
+      try validateNonEmpty(input.targetId, "targetId", ["targetId"])
+      if (input.supersederId === input.targetId) {
+        throw error("supersede_conflict", "a note cannot supersede itself")
+      }
+      const now = try Clock.currentTimeMillis
+      try database.write(
+        effect {
+          const rows = try sql<{
+            readonly id: string
+            readonly namespace_kind: Namespace.Kind
+            readonly namespace_id: string
+          }>`SELECT id, namespace_kind, namespace_id FROM memory_notes
+            WHERE id = ${input.supersederId} OR id = ${input.targetId}`
+          const found = new Set(rows.map((row) => row.id))
+          if (!found.has(input.supersederId) || !found.has(input.targetId)) {
+            return try Effect.fail(
+              error("supersede_conflict", "both superseder and target notes must exist")
+            )
+          }
+          const superseder = rows.find((row) => row.id === input.supersederId)!
+          const target = rows.find((row) => row.id === input.targetId)!
+          if (
+            superseder.namespace_kind !== target.namespace_kind ||
+            superseder.namespace_id !== target.namespace_id
+          ) {
+            throw error("supersede_conflict", "superseder and target must share a namespace")
+          }
+          try sql`INSERT INTO memory_note_supersedes (superseder_id, target_id, created_at_ms)
+            VALUES (${input.supersederId}, ${input.targetId}, ${now})
+            ON CONFLICT (superseder_id, target_id) DO NOTHING`
+        }
+      ).pipe(Effect.mapError(storeError("could not write memory supersession edge")))
+    }
+
+  return {
+    readNotes,
+    service: { putNote, getNote, setNoteStatus, supersede, listNotes: (input) => readNotes(input) }
+  }
+}

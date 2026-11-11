@@ -24,12 +24,12 @@ import {
   type Refusal,
 } from "../../src/features/feeds/contract.ts"
 import { AnswerRequest, type FeedAnswer, IngestRequest } from "../../src/features/feeds/schema.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 
 // Repository feeds' routes (decision 0128, docs/features/feeds.md):
 //

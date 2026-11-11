@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { isDeepStrictEqual } from "node:util"
 import { contentInput, releaseInput } from "../release-support/input.ts"
-import { StoredRun } from "../release-support/schema.ts"
+import { StoredRun } from "../release-support/schema.vibe"
 import { evidence } from "./fixtures.ts"
 
 const settings = { schemaVersion: 1 as const, id: "release-content-1", model: "openai:gpt-5.6-sol", maxTokens: 250_000 }

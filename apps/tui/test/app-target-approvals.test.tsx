@@ -6,8 +6,8 @@ import { join } from "node:path"
 import { setImmediate, setTimeout } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
-import type * as TargetApprovals from "../src/target-approvals.ts"
+import type * as Host from "../src/host.vibe"
+import type * as TargetApprovals from "../src/target-approvals.vibe"
 
 // App boundary units: the target port is the seam (its database side is
 // covered by target-approvals.test.ts); rendering, keys and focus are real.

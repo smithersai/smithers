@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it, vi } from "vitest"
-import * as Baseline from "../src/Baseline.ts"
-import type { EvalError } from "../src/EvalError.ts"
+import * as Baseline from "../src/Baseline.vibe"
+import type { EvalError } from "../src/EvalError.vibe"
 
 /** Runs an effect that must fail and returns the typed failure it raised. */
 const failure = (effect: Effect.Effect<unknown, EvalError>): Promise<EvalError> =>

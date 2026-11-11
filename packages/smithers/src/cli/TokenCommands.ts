@@ -15,8 +15,8 @@ import * as ScopedToken from "@smthrs/control/ScopedToken"
 import { Effect } from "effect"
 import { Cli, z } from "incur"
 import type * as Bridge from "../cli/ControlBridge.ts"
-import * as CliError from "../CliError.ts"
-import { duration } from "../Gc.ts"
+import * as CliError from "../CliError.vibe"
+import { duration } from "../Gc.vibe"
 import * as Presentation from "./Presentation.ts"
 
 /**

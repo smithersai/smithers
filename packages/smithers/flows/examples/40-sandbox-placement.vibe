@@ -1,0 +1,97 @@
+/**
+ * Place an action's host operations in a provisioned session.
+ *
+ * The engine and journal remain local. `Sandbox.layerHost` supplies filesystem
+ * and process services from one session, so a process can read the file written
+ * through that session's filesystem.
+ *
+ * The example uses a scratch directory as its provisioned environment. Closing
+ * the action scope releases the session and removes its workspace; the action's
+ * JavaScript still executes in the engine host.
+ */
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import * as NodeHost from "@smthrs/platform-node/NodeHost"
+import { DirectorySandbox, Sandbox } from "@smthrs/sandbox"
+import * as Schema from "effect/Schema"
+
+module platform {
+  /** @throws {never} */
+  export function $process_pid() {
+    return process.pid
+  }
+}
+
+import { $process_pid } from platform
+
+/** The bytes the placed action writes and asks the sandboxed process to count. */
+export const contents = "the action body ran in its sandbox\n"
+/** The declared atom whose implementation is placed on the sandbox machine. */
+export const CountBytes = Action.make("examples/SandboxPlacement/CountBytes", {
+  payload: { contents: Schema.String },
+  success: Schema.Number
+})
+/** A durable flow whose graph is independent of the action's placement. */
+export const SandboxPlacement = Flow.make("examples/SandboxPlacement", {
+  payload: { contents: Schema.String },
+  success: Schema.Number,
+  body: (payload) => CountBytes.call(payload)
+})
+/** The unchanged host-shaped body that writes a file and executes a process. */
+const writeAndCount = ({ contents }: { readonly contents: string }) =>
+  effect {
+    const fs = try FileSystem.FileSystem
+    const spawner = try ChildProcessSpawner.ChildProcessSpawner
+    try fs.makeDirectory("example-40", { recursive: true })
+    try fs.writeFileString("example-40/placed.txt", contents)
+    const printed = try spawner.string(ChildProcess.make("wc", ["-c", "example-40/placed.txt"]))
+    const count = Number.parseInt(printed.trim(), 10)
+    if (!Number.isSafeInteger(count)) {
+      return try Effect.die(new Error(`wc printed an invalid byte count: ${printed}`))
+    }
+    return count
+  } |> Effect.orDie(%)
+export interface MainOptions {
+  /** The local SQLite file that holds the engine and journal. */
+  readonly filename: string
+  /** The local parent under which the provider provisions its scratch machine. */
+  readonly root: string
+}
+/** Runs the placed action once and closes every acquired layer before resolving. */
+export const main = (options: MainOptions): Promise<number> =>
+  Effect.runPromise(
+    effect {
+      const fs = try FileSystem.FileSystem
+      const spawner = try ChildProcessSpawner.ChildProcessSpawner
+      const placedHost = Sandbox.layerHost(
+        try Effect.sync(() => DirectorySandbox.make({ fs, spawner, root: options.root })),
+        { session: "examples/sandbox-placement" }
+      )
+      const stack = Layer.mergeAll(
+        CountBytes.toLayer((payload) =>
+          writeAndCount(payload)
+          |> Effect.provide(%, placedHost)
+          |> Effect.orDie(%)
+        ),
+        Interpreter.layer(SandboxPlacement)
+      ).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(TestNodeRuntime.durableEngine(options.filename, "examples-sandbox-placement"))
+      )
+
+      return try (SandboxPlacement.execute(
+        { contents },
+        { executionId: "sandbox-placement" }
+      )
+        |> Effect.provide(%, stack)
+        |> Effect.scoped(%))
+    }
+      |> Effect.provide(
+        %,
+        NodeHost.layerContained().pipe(
+          Layer.provide(ProcessLedger.layerMemory({ hostId: "examples-sandbox-placement", ownerPid: $process_pid() }))
+        )
+      )
+      |> Effect.orDie(%)
+  )

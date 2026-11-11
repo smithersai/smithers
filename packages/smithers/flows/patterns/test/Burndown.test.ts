@@ -12,7 +12,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Burndown from "../src/Burndown.ts"
-import { PatternError } from "../src/PatternError.ts"
+import { PatternError } from "../src/PatternError.vibe"
 
 interface Issue {
   readonly id: string

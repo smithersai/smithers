@@ -8,7 +8,7 @@ import {
   type ModelCredentials,
   modelFailureOf,
   planOnLocal
-} from "../src/LocalModel.ts"
+} from "../src/LocalModel.vibe"
 
 const ORIGIN = "http://127.0.0.1:9"
 const binding = { protocol: "openai-chat", baseUrl: ORIGIN, modelId: "lab", credential: "LAB" } as const

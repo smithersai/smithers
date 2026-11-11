@@ -1,5 +1,5 @@
 // Extracted from apps/mvp/worker/github/Calls.ts: the explicit token always wins over the environment.
-import * as GitHubClient from "./GitHubClient.ts"
+import * as GitHubClient from "./GitHubClient.vibe"
 import { HttpClient } from "effect/http"
 
 /** Provide a GitHub client for exactly this credential. Never reads an ambient token. */

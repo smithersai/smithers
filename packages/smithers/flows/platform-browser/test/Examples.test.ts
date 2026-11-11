@@ -9,7 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import * as NodeFsPromises from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as WorkWithFiles from "../examples/work-with-files.ts"
+import * as WorkWithFiles from "../examples/work-with-files.vibe"
 
 let scratch = ""
 

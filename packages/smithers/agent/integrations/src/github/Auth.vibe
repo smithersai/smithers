@@ -1,5 +1,5 @@
 import * as Core from "../core.ts"
-import * as GitHubClient from "./GitHubClient.ts"
+import * as GitHubClient from "./GitHubClient.vibe"
 import type { HttpClient } from "effect/http"
 import { HttpClient as Client } from "effect/http"
 

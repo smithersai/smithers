@@ -35,14 +35,14 @@
  *
  * @since 1.0.0
  */
-export * as CloudflareHost from "./CloudflareHost.ts"
+export * as CloudflareHost from "./CloudflareHost.vibe"
 
 /**
  * The durable engine for one execution on Cloudflare.
  *
  * @since 1.0.0
  */
-export * as CloudflareRuntime from "./CloudflareRuntime.ts"
+export * as CloudflareRuntime from "./CloudflareRuntime.vibe"
 
 /**
  * The per-execution Durable Object, as functions.
@@ -56,14 +56,14 @@ export * as ExecutionObject from "./ExecutionObject.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as ObjectDatabase from "./ObjectDatabase.ts"
+export * as ObjectDatabase from "./ObjectDatabase.vibe"
 
 /**
  * The immutable cache over the Workers Cache API.
  *
  * @since 1.0.0
  */
-export * as EdgeCache from "./EdgeCache.ts"
+export * as EdgeCache from "./EdgeCache.vibe"
 
 /**
  * A browser terminal attached to a tmux session in a Durable Object's
@@ -78,7 +78,7 @@ export * as ContainerTerminal from "./ContainerTerminal.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as ContainerSession from "./ContainerSession.ts"
+export * as ContainerSession from "./ContainerSession.vibe"
 
 /**
  * The container Durable Object's wake: start, inactivity timeout and outbound
@@ -86,7 +86,7 @@ export * as ContainerSession from "./ContainerSession.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as SandboxObject from "./SandboxObject.ts"
+export * as SandboxObject from "./SandboxObject.vibe"
 
 /** Read the durable engine this host already provides. @since 1.0.0 */
 export { RunInspection } from "@smthrs/engine-store"

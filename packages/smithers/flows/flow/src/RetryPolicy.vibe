@@ -1,0 +1,646 @@
+// Deep reviewed and polished by a human on 2026-08-10.
+
+/**
+ * Defines data-shaped retry policies for durable action retries.
+ *
+ * A `RetryPolicy` is a plain value — initial interval, backoff factor, cap,
+ * optional maximum attempts, optional jitter, and optional non-retryable
+ * error tags — so the next retry delay can be derived from a persisted
+ * attempt count instead of fiber-local `Schedule` state. `nextDelay` mirrors
+ * Temporal's `ExponentialRetryPolicy.ComputeNextDelay` formula, and `decide`
+ * is the engine's single retry decision point: the core default a pluggable
+ * `resolveRetry` resolution can later dispatch in front of.
+ *
+ * The historical terminal-failure schemas below use the `@smthrs/flow/` tags settled for
+ * 1.0.0-rc.0. The release candidate makes no compatibility promise to 0.x
+ * journals, and these tags freeze at the RC. Current action dispatch preserves
+ * the final declared failure when a retry policy is spent.
+ *
+ * See `docs/guides/retry-a-failing-action.md`; its "Infrastructure
+ * interrupts" section covers the interrupt retry schedule.
+ *
+ * @since 0.1.0
+ */
+
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Schedule from "effect/Schedule"
+import * as Schema from "effect/Schema"
+
+/**
+ * Data-shaped retry policy schema.
+ *
+ * The delay before attempt `n + 1` is
+ * `min(initialMs * factor^(n - 1), maxMs)`, where `n` is the attempt that
+ * just failed. `maxAttempts` bounds the total number of attempts;
+ * `expirationMs` bounds the total wall-clock retry duration
+ * (schedule-to-close, mirroring Temporal's `expirationInterval`);
+ * `jitterRatio` spreads the final portion of each delay uniformly;
+ * `nonRetryable` lists error tags that must never be retried; `retryable`,
+ * when present, lists the only failures that retry, each an error tag and
+ * optionally the `code` it carries, so one tag shared by transient and
+ * terminal failures (a provider's `ModelError`) can retry only the transient
+ * codes. `nonRetryable` still wins over `retryable`.
+ *
+ * The bounds are per STEP KEY, which is what makes them the provider-retry
+ * budget for one agent ask rather than a budget for the exchange the ask
+ * belongs to. A structured-output correction re-prompts under a NEW session,
+ * so the corrected ask is a different sealed step with its own attempt
+ * sequence: `maxAttempts` bounds the provider retries inside one correction
+ * session and does not bound the correction ladder, which `AgentAction`
+ * bounds separately with its own `corrections` budget.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+schema RetryPolicyFields {
+  readonly initialMs: number
+  readonly factor: number
+  readonly maxMs: number
+  readonly maxAttempts?: number | undefined
+  readonly expirationMs?: number | undefined
+  readonly jitterRatio?: number | undefined
+  readonly nonRetryable?: ReadonlyArray<string> | undefined
+  readonly retryable?: ReadonlyArray<{
+    readonly tag: string
+    readonly code?: string | undefined
+  }> | undefined
+}
+
+/** Returns the first contract violation shared by decoding and construction. */
+const validationIssue = (policy: RetryPolicyFields): string | undefined => {
+  // Zero is refused rather than read as "retry immediately": every computed
+  // delay would be zero, so such a policy would give up on its first failure
+  // no matter what `maxAttempts` promised. Use `initialMs: 1` for a
+  // near-immediate retry.
+  if (!Number.isFinite(policy.initialMs) || policy.initialMs <= 0) {
+    return `"initialMs" must be a finite number of milliseconds greater than zero, and was ${policy.initialMs}.`
+  }
+  if (!Number.isFinite(policy.factor) || policy.factor <= 0) {
+    return `"factor" must be a finite number greater than zero, and was ${policy.factor}.`
+  }
+  if (!Number.isFinite(policy.maxMs) || policy.maxMs < policy.initialMs) {
+    return `"maxMs" must be a finite number of milliseconds at least as large as initialMs, and was ${policy.maxMs}.`
+  }
+  if (
+    policy.maxAttempts !== undefined &&
+    (!Number.isSafeInteger(policy.maxAttempts) || policy.maxAttempts < 1)
+  ) {
+    return `"maxAttempts" must be a safe integer of at least one, and was ${policy.maxAttempts}.`
+  }
+  if (
+    policy.expirationMs !== undefined &&
+    (!Number.isFinite(policy.expirationMs) || policy.expirationMs <= 0)
+  ) {
+    return `"expirationMs" must be a finite number of milliseconds greater than zero, and was ${policy.expirationMs}.`
+  }
+  if (
+    policy.jitterRatio !== undefined &&
+    (!Number.isFinite(policy.jitterRatio) || policy.jitterRatio < 0 || policy.jitterRatio > 1)
+  ) {
+    return `"jitterRatio" must be a finite number between zero and one, inclusive, and was ${policy.jitterRatio}.`
+  }
+  const blank = policy.retryable?.find((entry) => entry.tag.length === 0 || entry.code === "")
+  if (blank !== undefined) {
+    return `"retryable" entries name a non-empty tag and, when present, a non-empty code.`
+  }
+  return undefined
+}
+
+/**
+ * Data-shaped retry policy schema. Decoding enforces the same relational
+ * contract as {@link make}; persisted data cannot bypass constructor checks.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export const RetryPolicy = RetryPolicyFields.check(
+  Schema.makeFilter(
+    (policy) => validationIssue(policy) ?? true,
+    { title: "validRetryPolicy" }
+  )
+)
+
+/**
+ * The value form of a {@link RetryPolicy}.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RetryPolicy = typeof RetryPolicy.Type
+
+/**
+ * Creates a `RetryPolicy` value after checking every numeric bound.
+ * `initialMs` must be greater than zero: a zero initial interval would
+ * compute a zero delay for every attempt, which {@link nextDelay} reads as
+ * exhausted, so the policy would never retry. `jitterRatio` must be between
+ * zero and one, inclusive, and `jitterRatio: 0` disables jitter.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (options: {
+  readonly initialMs: number
+  readonly factor: number
+  readonly maxMs: number
+  readonly maxAttempts?: number | undefined
+  readonly expirationMs?: number | undefined
+  readonly jitterRatio?: number | undefined
+  readonly nonRetryable?: ReadonlyArray<string> | undefined
+  readonly retryable?: ReadonlyArray<{ readonly tag: string; readonly code?: string | undefined }> | undefined
+}): RetryPolicy => {
+  const issue = validationIssue(options)
+  if (issue !== undefined) $raise(new RangeError(`RetryPolicy.make: ${issue}`))
+  return Object.freeze({
+    initialMs: options.initialMs,
+    factor: options.factor,
+    maxMs: options.maxMs,
+    ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
+    ...(options.expirationMs !== undefined ? { expirationMs: options.expirationMs } : {}),
+    ...(options.jitterRatio !== undefined ? { jitterRatio: options.jitterRatio } : {}),
+    ...(options.nonRetryable !== undefined
+      ? { nonRetryable: Object.freeze([...options.nonRetryable]) }
+      : {}),
+    ...(options.retryable !== undefined
+      ? {
+        retryable: Object.freeze(
+          options.retryable.map((entry) =>
+            Object.freeze(entry.code === undefined ? { tag: entry.tag } : { tag: entry.tag, code: entry.code })
+          )
+        )
+      }
+      : {})
+  })
+}
+
+/**
+ * The default engine retry policy.
+ *
+ * Uses a 200ms initial delay growing by 1.5x, capped at 30s, and never gives
+ * up: it declares neither `maxAttempts` nor `expirationMs`. Bound long-lived
+ * retries with `make({ ..., expirationMs })` when a wall-clock give-up is
+ * required.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const defaultRetryPolicy: RetryPolicy = Object.freeze(
+  make({
+    initialMs: 200,
+    factor: 1.5,
+    maxMs: 30000
+  })
+)
+
+/**
+ * Bounded infrastructure retry: 5 seconds doubling to 5 minutes, for 2 hours.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const transient: RetryPolicy = make({
+  initialMs: 5000,
+  factor: 2,
+  maxMs: 300000,
+  expirationMs: 7200000
+})
+
+/**
+ * A retry decision: wait `delayMs` before the next attempt.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface RetryAfter {
+  readonly _tag: "RetryAfter"
+  readonly delayMs: number
+}
+
+/**
+ * A retry decision: stop retrying.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface GiveUp {
+  readonly _tag: "GiveUp"
+  readonly reason: "nonRetryable" | "exhausted" | "expired"
+}
+
+/**
+ * The outcome of the engine's retry decision point.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RetryDecision = RetryAfter | GiveUp
+
+/**
+ * Creates a `RetryAfter` decision.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const retryAfter = (delayMs: number): RetryDecision => ({
+  _tag: "RetryAfter",
+  delayMs
+})
+
+/**
+ * Creates a `GiveUp` decision.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const giveUp = (reason: GiveUp["reason"]): RetryDecision => ({
+  _tag: "GiveUp",
+  reason
+})
+
+/**
+ * A historical retry sequence crossed its `expirationMs` wall-clock bound.
+ * Current dispatch preserves the final declared failure instead of emitting this defect.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class RetryPolicyExpired extends Schema.TaggedError<RetryPolicyExpired>()(
+  "@smthrs/flow/RetryPolicyExpired",
+  {
+    code: Schema.Literal("retry_policy_expired").pipe(
+      Schema.withConstructorDefault(Effect.succeed("retry_policy_expired"))
+    ),
+    actionName: Schema.String,
+    attempt: Schema.Number,
+    expirationMs: Schema.Number,
+    lastError: Schema.optional(Schema.Unknown)
+  }
+) {}
+
+/**
+ * A historical retry sequence exhausted its `maxAttempts` bound.
+ * Current dispatch preserves the final declared failure instead of emitting this defect.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class RetryAttemptsExhausted extends Schema.TaggedError<RetryAttemptsExhausted>()(
+  "@smthrs/flow/RetryAttemptsExhausted",
+  {
+    code: Schema.Literal("retry_attempts_exhausted").pipe(
+      Schema.withConstructorDefault(Effect.succeed("retry_attempts_exhausted"))
+    ),
+    actionName: Schema.String,
+    attempt: Schema.Number,
+    maxAttempts: Schema.Number,
+    lastError: Schema.optional(Schema.Unknown)
+  }
+) {}
+
+/**
+ * Computes the delay before attempt `attempt + 1` from the persisted attempt
+ * count, mirroring Temporal's `ComputeNextDelay`
+ * (`common/backoff/retrypolicy.go`).
+ *
+ * `attempt` is the 1-based attempt that just failed. Returns `None` when the
+ * policy gives up: `maxAttempts` reached, a non-positive computed interval,
+ * a cap below the initial interval, or — when the policy declares
+ * `expirationMs` and the caller supplies `elapsedMs` — an elapsed duration
+ * past the expiration bound. Otherwise the delay is capped to the remaining
+ * expiration window, expiring only when that window cannot fit the smaller of the
+ * initial interval and the computed interval.
+ *
+ * Jitter is deterministic-friendly: `options.random` is a `[0, 1]` sample
+ * supplied by the caller and defaults to `1`, which leaves the delay at its
+ * un-jittered value. Use {@link nextDelayEffect} to sample the `Random`
+ * service instead. A sample outside `[0, 1]`, or a persisted `jitterRatio`
+ * above one, gives up rather than returning a delay the policy never
+ * declared. A sample of zero under `jitterRatio: 1` is a delay of zero, which
+ * retries immediately.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const nextDelay = (
+  policy: RetryPolicy,
+  attempt: number,
+  options?: {
+    readonly random?: number | undefined
+    readonly elapsedMs?: number | undefined
+  }
+): Option.Option<number> => {
+  // Persisted policies can be decoded without `make`, so these guards treat a
+  // corrupt row as terminal instead of sending an invalid delay to the engine.
+  if (validationIssue(policy) !== undefined || !Number.isSafeInteger(attempt) || attempt < 1) {
+    return Option.none()
+  }
+  if (
+    options?.elapsedMs !== undefined &&
+    (!Number.isFinite(options.elapsedMs) || options.elapsedMs < 0)
+  ) {
+    return Option.none()
+  }
+  if (policy.maxAttempts !== undefined && attempt >= policy.maxAttempts) {
+    return Option.none()
+  }
+  if (
+    policy.expirationMs !== undefined &&
+    options?.elapsedMs !== undefined &&
+    options.elapsedMs > policy.expirationMs
+  ) {
+    return Option.none()
+  }
+  const raw = policy.initialMs * Math.pow(policy.factor, attempt - 1)
+  if (!(raw > 0)) {
+    return Option.none()
+  }
+  let delay = Math.min(raw, policy.maxMs)
+  // Temporal caps the delay to the remaining expiration window rather than
+  // refusing outright; the below-initial check then expires sequences whose
+  // remaining window cannot fit the smaller of the initial and computed intervals.
+  if (policy.expirationMs !== undefined && options?.elapsedMs !== undefined) {
+    delay = Math.min(delay, Math.max(0, policy.expirationMs - options.elapsedMs))
+  }
+  if (delay < Math.min(raw, policy.initialMs)) {
+    return Option.none()
+  }
+  // `validationIssue` established finite `maxMs`, so `Math.min` made the
+  // un-jittered delay finite even when the exponential itself overflowed.
+  // This check belongs before jitter conceptually: a full-jitter sample of
+  // zero is a legitimate immediate retry rather than a give-up.
+  if (policy.jitterRatio !== undefined && policy.jitterRatio > 0) {
+    // Both jitter inputs are bounded to [0, 1] where they are accepted --
+    // `make` for `jitterRatio` and this function's contract for `random` --
+    // while `random` is a public option that still needs checking here.
+    const random = options?.random ?? 1
+    if (!(random >= 0 && random <= 1)) {
+      return Option.none()
+    }
+    // In range, the result is between `delay * (1 - jitterRatio)` and `delay`,
+    // so it is finite and never negative. A jittered value of zero retries
+    // immediately; it does not exhaust the sequence.
+    //
+    // The two terms do not sum to exactly `delay` at `random: 1`: at
+    // `jitterRatio: 0.000002` a delay of 100 rounds up to 100.00000000000001,
+    // above the policy's own cap and above the remaining expiration window.
+    // Clamping down to the un-jittered delay is what makes the upper bound
+    // stated above exact rather than approximate.
+    const jittered = delay * (1 - policy.jitterRatio) + random * delay * policy.jitterRatio
+    delay = Math.min(delay, jittered)
+  }
+  return Option.some(delay)
+}
+
+/**
+ * Computes the next retry delay, sampling the `Random` service for jitter.
+ *
+ * Deterministic under `Random.withSeed`. Policies without a `jitterRatio`
+ * never touch the service.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const nextDelayEffect = (
+  policy: RetryPolicy,
+  attempt: number,
+  options?: { readonly elapsedMs?: number | undefined }
+): Option.Option<number>!! =>
+  policy.jitterRatio === undefined || policy.jitterRatio <= 0
+    ? effect {
+      return nextDelay(policy, attempt, { elapsedMs: options?.elapsedMs })
+    }
+    : Effect.map(Random.next, (random) => nextDelay(policy, attempt, { random, elapsedMs: options?.elapsedMs }))
+
+/**
+ * Extracts the stable identity tag of an error for non-retryable matching:
+ * an own string `_tag` when present, otherwise the first own `name` descriptor
+ * found while walking a bounded prototype chain. That first descriptor decides
+ * the result: only a string data value is a tag.
+ *
+ * Descriptors keep accessors inert instead of running author code through a
+ * property read. A bounded walk also terminates when a hostile proxy reports a
+ * cyclic prototype chain; any proxy trap that throws leaves the error untagged.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const errorTag = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined
+  try {
+    const tag = Object.getOwnPropertyDescriptor(error, "_tag")
+    if (tag !== undefined && "value" in tag && typeof tag.value === "string") return tag.value
+
+    let current: object | null = error
+    for (let depth = 0; current !== null && depth < 64; depth++) {
+      const name = Object.getOwnPropertyDescriptor(current, "name")
+      if (name !== undefined) {
+        return "value" in name && typeof name.value === "string" ? name.value : undefined
+      }
+      current = Object.getPrototypeOf(current)
+    }
+  } catch {
+    // Proxies and hostile accessors are untrusted failure payloads. An error
+    // that cannot be inspected inertly simply has no stable retry tag.
+  }
+  return undefined
+}
+
+/**
+ * Classifies a cause for host diagnostics using only its squashed error's
+ * stable tag or name, falling back to `unknown` when neither is available.
+ * Messages, stacks and other payload fields are never included.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const failureType = (cause: Cause.Cause<unknown>): string => errorTag(Cause.squash(cause)) ?? "unknown"
+
+/**
+ * Error tags that are non-retryable by type, under every policy (issue #156).
+ *
+ * These failures are integrity verdicts that must reach the driver without an
+ * action-level retry hiding the first detection. Their persistence seams
+ * take a quarantine state action before raising them, so a later dispatch can
+ * heal, but the detecting dispatch remains a non-retryable failure. No
+ * per-callsite or per-policy opt-out exists; the tags are matched by string so
+ * the classification does not invert the package dependency direction.
+ *
+ * `AttemptEvidenceQuarantined` (issue #171) is the succeeded-attempt-row
+ * counterpart: the corrupt boundary evidence is removed while the completed
+ * outcome stays durable. It reaches the driver unretried, which parks the
+ * first detection in the `quarantine` waiting state; the next explicit resume
+ * returns the recorded outcome without re-executing the action.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const defaultNonRetryable: ReadonlyArray<string> = [
+  "@smthrs/engine-store/CacheCorruptionDetected",
+  "@smthrs/engine-store/AttemptEvidenceQuarantined"
+]
+
+/**
+ * The string `code` an error carries as an own data property, read inertly as
+ * {@link errorTag} reads `_tag`, or `undefined`.
+ */
+const errorCode = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined
+  try {
+    const code = Object.getOwnPropertyDescriptor(error, "code")
+    return code !== undefined && "value" in code && typeof code.value === "string" ? code.value : undefined
+  } catch {
+    // An uninspectable failure carries no code.
+    return undefined
+  }
+}
+
+/**
+ * Whether an error is classified non-retryable: by type (see
+ * {@link defaultNonRetryable}), by the policy's `nonRetryable` tags, or, when
+ * the policy declares `retryable`, by matching none of its entries. An entry
+ * matches an error with its tag and, when the entry names one, its `code`.
+ * Without `retryable`, an error the first two do not name retries.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const isNonRetryable = (policy: RetryPolicy, error: unknown): boolean => {
+  const tag = errorTag(error)
+  if (tag !== undefined && (defaultNonRetryable.includes(tag) || policy.nonRetryable?.includes(tag) === true)) {
+    return true
+  }
+  if (policy.retryable === undefined) return false
+  const code = errorCode(error)
+  return !policy.retryable.some((entry) => entry.tag === tag && (entry.code === undefined || entry.code === code))
+}
+
+/**
+ * The pure core of the engine's single retry decision point.
+ *
+ * Non-retryable classification is evaluated here and nowhere else. This is
+ * the default a pluggable `resolveRetry` resolution falls back to when no
+ * plugin claims the decision.
+ *
+ * A failure that carries its own `retryAfterMillis`, a finite non-negative
+ * number of milliseconds such as a provider's `Retry-After` on a
+ * `ModelError`, retries after that delay instead of the policy's backoff,
+ * capped by `maxMs` and by what remains of `expirationMs`.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const decide = (
+  policy: RetryPolicy,
+  options: {
+    readonly attempt: number
+    readonly error: unknown
+    readonly random?: number | undefined
+    readonly elapsedMs?: number | undefined
+  }
+): RetryDecision => {
+  if (isNonRetryable(policy, options.error)) {
+    return giveUp("nonRetryable")
+  }
+  return do {
+    const $optionSubject = nextDelay(policy, options.attempt, { random: options.random, elapsedMs: options.elapsedMs })
+    const $optionHandlers: { onNone: () => RetryDecision; onSome: (delay: number) => RetryDecision } = {
+      onNone: () =>
+        // A policy can report `expired` only when it declares an expiration
+        // bound and dropping elapsed time would have allowed another attempt.
+        // A malformed elapsed value gives up as exhausted: it supplies no
+        // trustworthy evidence that the expiration bound elapsed.
+        policy.expirationMs !== undefined &&
+          options.elapsedMs !== undefined && Number.isFinite(options.elapsedMs) && options.elapsedMs >= 0 &&
+          Option.isSome(nextDelay(policy, options.attempt, { random: options.random }))
+          ? giveUp("expired")
+          : giveUp("exhausted"),
+      onSome: (delay) => {
+        // A failure may supply a delay instead of the policy backoff, under
+        // the name `@smthrs/model`'s `ModelError` carries a provider's
+        // Retry-After in. Inspect only an own data property: failure payloads
+        // can be untrusted.
+        let hint: unknown
+        if (typeof options.error === "object" && options.error !== null) {
+          try {
+            const descriptor = Object.getOwnPropertyDescriptor(options.error, "retryAfterMillis")
+            if (descriptor !== undefined && "value" in descriptor) hint = descriptor.value
+          } catch {
+            // An uninspectable failure falls back to the policy delay.
+          }
+        }
+        if (typeof hint !== "number" || !Number.isFinite(hint) || hint < 0) {
+          return retryAfter(delay)
+        }
+        return retryAfter(Math.min(
+          hint,
+          policy.maxMs,
+          policy.expirationMs !== undefined && options.elapsedMs !== undefined
+            ? Math.max(0, policy.expirationMs - options.elapsedMs)
+            : policy.maxMs
+        ))
+      }
+    }
+    const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers
+    match ($optionSubject) {
+      when Option.Some(let $optionValue): $optionSome($optionValue);
+      default: $optionNone();
+    }
+  }
+}
+
+/**
+ * Effect form of {@link decide}, sampling the `Random` service for jitter.
+ *
+ * This is the engine-facing decision function: keep calls to it behind a
+ * single decision point so a plugin hook dispatch can later be inserted in
+ * front of it without touching call sites.
+ *
+ * @category attempts
+ * @since 0.1.0
+ */
+export const decideEffect = (
+  policy: RetryPolicy,
+  options: {
+    readonly attempt: number
+    readonly error: unknown
+    readonly elapsedMs?: number | undefined
+  }
+): RetryDecision!! =>
+  policy.jitterRatio === undefined || policy.jitterRatio <= 0
+    ? effect {
+      return decide(policy, options)
+    }
+    : Effect.map(Random.next, (random) => decide(policy, { ...options, random }))
+
+/**
+ * The engine's retry decision as an Effect `Schedule`, for work that no
+ * durable step can hold because it is bound to its caller's scope, such as a
+ * connection a page keeps open: `Effect.retry` and `Stream.retry` take it.
+ *
+ * Each failure is the schedule's input and is decided by {@link decideEffect},
+ * as the engine decides an action's: the schedule waits the decided delay, or
+ * ends when the policy gives up, so the retry fails with that failure. Its
+ * output is the attempt that just failed, one for the first. `elapsedMs`
+ * counts from the first failure. Nothing is persisted: the count lives as
+ * long as the retry, and `Stream.retry` starts it over once the stream emits
+ * again.
+ *
+ * @category attempts
+ * @since 1.0.0
+ */
+export const schedule = <E>(policy: RetryPolicy): Schedule.Schedule<number, E> =>
+  Schedule.fromStepWithMetadata(Effect.succeed((meta: Schedule.InputMetadata<E>) =>
+    Effect.flatMap(
+      decideEffect(policy, { attempt: meta.attempt, error: meta.input, elapsedMs: meta.elapsed }),
+      (decision) =>
+        decision._tag === "GiveUp"
+          ? Cause.done(meta.attempt)
+          : Effect.succeed([meta.attempt, Duration.millis(decision.delayMs)] as [number, Duration.Duration])
+    )
+  ))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

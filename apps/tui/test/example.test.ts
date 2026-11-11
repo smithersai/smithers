@@ -5,8 +5,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Contributions from "../src/contributions.ts"
 import * as Extension from "../src/extension.ts"
-import * as FlowControl from "../src/flow-control.ts"
-import * as Host from "../src/host.ts"
+import * as FlowControl from "../src/flow-control.vibe"
+import * as Host from "../src/host.vibe"
 import * as Keys from "../src/keys.ts"
 
 const root = join(import.meta.dir, "..", "examples", "custom-ui")

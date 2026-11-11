@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 it.effect("the deferred revision migration preserves SQLite triggers and revisions before commit", () =>
   Effect.gen(function*() {

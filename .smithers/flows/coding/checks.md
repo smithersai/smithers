@@ -1,6 +1,6 @@
 # Checks against immutable source
 
-`checks.ts` is a private repository recipe. It registers `coding/CommandCheck`
+`checks.vibe` is a private repository recipe. It registers `coding/CommandCheck`
 with the existing executable catalog and `checkLayers(options)` with the
 existing native action table. There is no additional executor or database.
 
@@ -148,7 +148,7 @@ and optional `environment`). The process result is converted into the existing
 
 ## Review wiki prose through the same check protocol
 
-The configured `coding/WikiCheck` delegate shares `immutable-source.ts` with
+The configured `coding/WikiCheck` delegate shares `immutable-source.vibe` with
 command checks. It captures the exact implemented source before asynchronous
 review, then invokes existing wiki review and assessment actions in the native
 runtime. Unsupported or uncertain prose produces ordinary owner findings; an
@@ -161,7 +161,7 @@ The deployed coding host explicitly selects `concurrency: 1` to run one revision
 
 ## Lint on Jev
 
-`jev-check.ts` registers `coding/JevCheck`. Its body's first line declares up to
+`jev-check.vibe` registers `coding/JevCheck`. Its body's first line declares up to
 eight rules, `{"rules":[{"id","rule","paths"}]}`. The check reads only the
 unified diff between the implementation's immutable parent and head, skips
 private repository-job paths, and asks Jev whether each in-scope hunk violates
@@ -172,7 +172,7 @@ no other model answers in its place. See `.smithers/flows/checks/lint/flow.mdx`.
 
 ## Review on a second provider
 
-`review-check.ts` registers `coding/ReviewCheck`. Its body's first line declares
+`review-check.vibe` registers `coding/ReviewCheck`. Its body's first line declares
 up to eight lenses, `{"lenses":[{"id","focus"}]}`; `.smithers/flows/checks/review/flow.mdx`
 declares this repository's. The check reads the same immutable parent..head
 diff as the Jev check, drops private repository-job paths, and asks one
@@ -190,7 +190,7 @@ change the check's execution digest, so a plan replans when they change.
 
 ## Security review on subscription seats
 
-`security-review-check.ts` registers `coding/SecurityReviewCheck`. Its body's
+`security-review-check.vibe` registers `coding/SecurityReviewCheck`. Its body's
 first line names the review targets it applies, `{"patterns":["//...:security"]}`
 (`.smithers/flows/checks/security/flow.mdx`). The check exports the Change's immutable
 head and the commit it applies to (the implementation's parent, or the tip a

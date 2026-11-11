@@ -12,10 +12,10 @@ import {
   MAX_ALERT_CHANNEL_BODY_BYTES,
   MAX_DESTINATIONS,
 } from "../src/features/spend/contract.ts"
-import { refusesPersonOnly, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
-import { codeOf } from "./ErrorCode.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 
 // Where spend alerts go outside the app (docs/features/spend-alerts.md#channels). Will, 2026-10-20: "configurable but
 // atm i think alerts to email make sense but telegram too would be useful".

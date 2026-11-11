@@ -16,7 +16,7 @@ import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { isControlError } from "../src/ControlClient.ts"
-import * as ControlError from "../src/ControlError.ts"
+import * as ControlError from "../src/ControlError.vibe"
 
 /** One constructed instance per member of `ControlErrorSchema`, with its frozen strings. */
 const table: ReadonlyArray<{

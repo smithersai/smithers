@@ -13,8 +13,8 @@ import { Cli, z } from "incur"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
-import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
+import * as CliError from "../CliError.vibe"
+import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.vibe"
 
 /** An operator request this command refuses; the operator fixes the input or the host setup. */
 const refused = (message: string, fault: CliError.Fault = "user"): CliError.Refused =>

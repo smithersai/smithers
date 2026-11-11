@@ -5,13 +5,13 @@ import { CiJob } from "@smthrs/sandbox"
 import { Cause, Config, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { codeOf } from "../ErrorCode.ts"
-import { withToken } from "../github/Calls.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { withToken } from "#vibelang/emitted/worker/github/Calls"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import type { GitHubTokens } from "../github/Tokens.ts"
 import * as RepoRuns from "../RepoRuns.ts"
-import * as RepoFlow from "./RepoFlow.ts"
-import * as Triggers from "./Triggers.ts"
+import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow"
+import * as Triggers from "#vibelang/emitted/worker/ci/Triggers"
 
 // GitHub's events start a repository's flows (docs/features/ci.md#triggers): the webhook route starts one
 // `triggers/Dispatch` per push or pull request delivery (`triggers/dispatch:<delivery>`), and it starts each active flow whose

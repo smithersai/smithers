@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const engineAvailable = spawnSync("docker", ["info"], { stdio: "ignore", timeout: 20_000 }).status === 0

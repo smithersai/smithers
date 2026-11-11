@@ -18,7 +18,7 @@ import {
   parsePool,
   pickAgent,
   type Pool
-} from "../accounts.ts"
+} from "../accounts.vibe"
 import {
   ChoosePlacement,
   Input,

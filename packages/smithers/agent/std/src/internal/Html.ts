@@ -55,6 +55,7 @@ const source = (html: string): string => dropSkipped(html.replace(comments, ""))
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const toText = (html: string): string =>
   decode(source(html).replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\b[^>]*>/gi, "\n").replace(/<[^>]*>/g, " "))
@@ -65,6 +66,7 @@ export const toText = (html: string): string =>
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const toMarkdown = (html: string): string => {
   const markdown = source(html)

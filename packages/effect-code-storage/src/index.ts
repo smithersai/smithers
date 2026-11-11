@@ -11,16 +11,16 @@
  * @category client
  * @since 0.1.0
  */
-export * as CodeStorage from "./CodeStorage.ts"
+export * as CodeStorage from "./CodeStorage.vibe"
 
 /**
  * @category git
  * @since 0.1.0
  */
-export * as GitRemote from "./GitRemote.ts"
+export * as GitRemote from "./GitRemote.vibe"
 
 /**
  * @category git
  * @since 0.2.0
  */
-export * as GitProxy from "./GitProxy.ts"
+export * as GitProxy from "./GitProxy.vibe"

@@ -2,7 +2,7 @@ import { afterAll, expect, it } from "@effect/vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { main, maxEntryBytes, startSharedTier } from "../../examples/35-remote-cache.ts"
+import { main, maxEntryBytes, startSharedTier } from "../../examples/35-remote-cache.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-remote-cache-"))
 

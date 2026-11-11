@@ -9,7 +9,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { isReady, openOf, type Row, type Stack as Rules, violations } from "../../src/features/todos/stack.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as Stack from "./Stack.ts"
-import { foldCommit } from "./StackFeed.ts"
+import { foldCommit } from "./StackFeed.vibe"
 import { workStatusOf } from "../../src/features/issues/work.ts"
 
 const runtime = testFile("stack_writer")

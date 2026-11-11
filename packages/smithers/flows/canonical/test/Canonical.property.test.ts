@@ -3,7 +3,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
-import { Canonical } from "../src/index.ts"
+import { Canonical } from "../src/index.vibe"
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),

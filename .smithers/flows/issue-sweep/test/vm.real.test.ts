@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { guestCheckout, guestHome, latestImage, make, sh } from "../vm.ts"
+import { guestCheckout, guestHome, latestImage, make, sh } from "../vm.vibe"
 import { adoptWork } from "../work/flow.ts"
 import { fixRemotely } from "./remote-capture.ts"
 

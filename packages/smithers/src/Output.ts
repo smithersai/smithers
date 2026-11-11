@@ -7,7 +7,7 @@
 import { ControlSchema } from "@smthrs/control"
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { isProxy } from "node:util/types"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import { terminalSafeLines } from "./internal/Failure.ts"
 
 /**

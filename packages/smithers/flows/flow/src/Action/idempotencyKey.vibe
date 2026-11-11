@@ -1,0 +1,68 @@
+// Deep reviewed and polished by a human on 2026-08-10.
+
+/**
+ * Derives run-local keys for internal durable operations.
+ *
+ * @since 0.1.0
+ */
+
+import type * as EffectDigest from "effect/crypto/Digest"
+import * as Effect from "effect/Effect"
+import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
+import { CurrentAttempt } from "./Context.vibe"
+import * as StepIdentity from "./StepIdentity.ts"
+
+/**
+ * Computes a run-local invocation key for an internal durable operation.
+ *
+ * The caller name separates durable declarations that share a parent scope.
+ * An explicit parent scope takes precedence over `includeAttempt`; changing
+ * that precedence would change persisted keys and their ordinal allocation.
+ *
+ * @category idempotency
+ * @since 0.1.0
+ */
+export const idempotencyKey: (
+  name: string,
+  options?: {
+    readonly includeAttempt?: boolean | undefined
+    readonly parentScope?: string | undefined
+  } | undefined
+) => string!never!(FlowInstance | EffectDigest.Digest) =
+  // Untraced because action-key allocation is on every action attempt.
+  effect (name: string, options?: {
+    readonly includeAttempt?: boolean | undefined
+    readonly parentScope?: string | undefined
+  }) => {
+    const instance = try FlowInstance
+    const attempt = try CurrentAttempt
+    // Internal durable operations are scoped by the caller's declaration name
+    // and declared `parentScope` through the canonical `StepIdentity` derivation (issue
+    // #98): a run-global counter numbered concurrent offers in fiber-arrival
+    // order, so a replay with a permuted interleaving handed one payload's
+    // ordinal to another and its await watched a deferred nothing resolves.
+    // With the counter scoped per declared parent, each scope numbers its
+    // own allocations deterministically; only allocations *within* one
+    // scope remain arrival-ordered — they carry no input that orders them
+    // by.
+    const parentScope = options?.parentScope !== undefined
+      ? options.parentScope
+      : options?.includeAttempt
+      ? `attempt:${attempt}`
+      : undefined
+    // Invalid identity material is a defect at this internal-operation boundary;
+    // injected cryptography keeps key construction platform-independent.
+    const scope = try (StepIdentity.allocationScope({
+      kind: "internal",
+      name,
+      idempotency: parentScope
+    }) |> Effect.orDie(%))
+    const ordinal = try Effect.sync(() => instance.actionState.nextOrdinal(scope))
+    const identityScope = JSON.stringify([name, parentScope ?? null])
+    return try (StepIdentity.invocationKey({
+      runId: instance.executionId,
+      ordinal,
+      tier: "unsealed",
+      parentScope: identityScope
+    }) |> Effect.orDie(%))
+  }

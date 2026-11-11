@@ -1,0 +1,38 @@
+import * as CacheStore from "@smthrs/step-cache/CacheStore"
+import * as TestCacheStore from "@smthrs/step-cache/test/TestCacheStore"
+
+/**
+ * Records a replacement head while preserving the original result for replay.
+ * Uses the real SQL store in an isolated in-memory database.
+ *
+ * @returns An effect yielding publication outcomes, the current head and the original recording.
+ * Storage failures remain in the effect's typed error channel.
+ * @since 1.0.0
+ */
+export const replayRecordedResult = (effect {
+  const cache = try CacheStore.CacheStore
+  const original: CacheStore.CacheEntry = {
+    keyDigest: "example-replay",
+    result: { value: "original" },
+    meta: {},
+    createdAtMs: 1,
+    recordedRunId: "first-run",
+    recordedEventSeq: 1
+  }
+  const first = try cache.put(original)
+  // Eviction removes only the head. Recorded provenance remains immutable.
+  const evicted = try cache.evict(original.keyDigest, {
+    ifRecordedBy: { runId: original.recordedRunId, eventSeq: original.recordedEventSeq }
+  })
+  const replacement = try cache.put({
+    ...original,
+    result: { value: "replacement" },
+    createdAtMs: 2,
+    recordedRunId: "second-run"
+  })
+  const head = try cache.get(original.keyDigest)
+  const recorded = try cache.get(original.keyDigest, {
+    recordedBy: { runId: original.recordedRunId, eventSeq: original.recordedEventSeq }
+  })
+  return { first, evicted, replacement, head, recorded }
+}) |> Effect.provide(%, TestCacheStore.layer) |> Effect.scoped(%)

@@ -1,0 +1,75 @@
+/**
+ * The quickstart end to end: write two markdown flows into a scratch
+ * project, build the registry from one ordered source, read the catalog and
+ * its warnings, render the model-facing catalog, and render the prompt a
+ * model receives. Runs over the real filesystem in a temporary directory.
+ */
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as Disclosure from "../src/Disclosure.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Registry from "../src/Registry.ts"
+
+/** Discovery is portable, so the host supplies the filesystem it walks. */
+const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+const discovery = Discovery.layer.pipe(Layer.provide(platform))
+
+const review = `---
+description: Reviews a proposed change and reports concrete correctness and maintainability risks.
+capabilities: ["fs:read:**"]
+---
+
+Review the supplied change. Report only findings you can point at a line for.
+`
+
+// No description, so discovery refuses it with a warning instead of failing.
+const draft = `---
+name: draft
+---
+
+This flow is missing the description discovery requires.
+`
+
+/** Discovers a scratch project's flows and answers what the registry reports. */
+export const quickstart = (): Promise<{
+  readonly root: string
+  readonly catalog: ReadonlyArray<{ readonly name: string; readonly tier: string; readonly invocable: boolean }>
+  readonly warnings: ReadonlyArray<{ readonly code: string; readonly path: string }>
+  readonly xml: string
+  readonly prompt: string
+}> =>
+  effect {
+    const fs = try FileSystem.FileSystem
+    const root = try fs.makeTempDirectoryScoped({ prefix: "registry-quickstart-" })
+    try fs.makeDirectory(`${root}/.smithers/flows/review`, { recursive: true })
+    try fs.makeDirectory(`${root}/.smithers/flows/draft`, { recursive: true })
+    try fs.writeFileString(`${root}/.smithers/flows/review/flow.mdx`, review)
+    try fs.writeFileString(`${root}/.smithers/flows/draft/flow.mdx`, draft)
+
+    // One source: the project's own flows, named by their path below the root.
+    const registry = Registry.layer({
+      sources: [{ source: "project", root: `${root}/.smithers/flows`, naming: "path" }]
+    }).pipe(Layer.provide([discovery, platform]))
+
+    return try effect { provide registry { return try ((effect {
+      const catalog = try Registry.Registry
+      // `list`, `visible` and `warnings` answer from one snapshot and touch no files.
+      const entries = try catalog.list()
+      const warnings = try catalog.warnings()
+      // `runPrompt` rereads the body, checks it against the digest discovery
+      // recorded, and renders it the way an agent host does.
+      const prompt = try catalog.runPrompt("review", { args: "the staged diff" })
+      const entries2 = try catalog.visible()
+      return {
+        root,
+        catalog: entries.map((entry) => ({
+          name: entry.name,
+          tier: entry.effects.tier,
+          invocable: entry.modelInvocable
+        })),
+        warnings: warnings.map(({ code, path }) => ({ code, path })),
+        xml: try Effect.sync(() => Disclosure.toXml(entries2)),
+        prompt
+      }
+    })) } }
+  } |> Effect.scoped(%) |> Effect.provide(%, platform) |> Effect.runPromise(%)

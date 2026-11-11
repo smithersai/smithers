@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { UsageError } from "../../CliError.ts"
+import { UsageError } from "../../CliError.vibe"
 
 /**
  * @private

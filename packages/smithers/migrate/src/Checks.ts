@@ -20,7 +20,7 @@ import * as Detect from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
 import * as Ts from "./internal/Ts.ts"
 import { io, type MigrateError } from "./MigrateError.ts"
-import { defaultFlowsDir, type UnitPlan } from "./Units.ts"
+import { defaultFlowsDir, type UnitPlan } from "./Units.vibe"
 
 /**
  * One check's verdict.

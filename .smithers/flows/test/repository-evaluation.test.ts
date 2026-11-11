@@ -3,9 +3,9 @@ import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { CodingError } from "../coding/schema.ts"
-import { assessScore } from "../repository/evaluation.ts"
-import { retainedStepError } from "../repository/jobs.ts"
-import type { JobResult } from "../repository/schema.ts"
+import { assessScore } from "../repository/evaluation.vibe"
+import { retainedStepError } from "../repository/jobs.vibe"
+import type { JobResult } from "../repository/schema.vibe"
 import { SuggestedCaseInput } from "../repository/setup.ts"
 
 const observedCheck = (policy: "report" | "required", status: "passed" | "failed" | "error"): JobResult => {

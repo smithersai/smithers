@@ -17,7 +17,7 @@
  */
 
 import * as Argv from "./cli/Argv.ts"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 
 /**
  * The documentation base every removal message points at.

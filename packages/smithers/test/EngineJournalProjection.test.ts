@@ -14,7 +14,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Projection from "../src/internal/EngineJournalProjection.ts"
+import * as Projection from "../src/internal/EngineJournalProjection.vibe"
 
 const setup = Effect.gen(function*() {
   const native = yield* Layer.build(Layer.fresh(TestStores.layerAt(":memory:")))

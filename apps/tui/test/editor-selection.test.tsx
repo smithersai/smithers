@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { act, useState } from "react"
 import * as AppView from "../src/app-view.tsx"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined

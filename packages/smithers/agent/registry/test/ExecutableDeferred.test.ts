@@ -6,7 +6,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, FileSystem, Layer } from "effect"
 import { fileURLToPath } from "node:url"
-import * as Executable from "../src/Executable.ts"
+import * as Executable from "../src/Executable.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)

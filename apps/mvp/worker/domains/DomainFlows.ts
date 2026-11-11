@@ -3,8 +3,8 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { DomainState } from "../../src/features/domains/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { DomainProvider, type Registration } from "./Provider.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { DomainProvider, type Registration } from "#vibelang/emitted/worker/domains/Provider"
 import * as Store from "./Store.ts"
 
 // The custom-domain flows (decision 0039 §4, docs/features/domains.md#flows). The route admits the write (signed in;

@@ -7,7 +7,7 @@
  */
 import { lines } from "@smthrs/gateway/RunDevTools"
 import { type JournalRecord, traceFromJournal, type TraceModel } from "@smthrs/gateway/RunTrace"
-import * as Activity from "./activity.ts"
+import * as Activity from "#vibelang/emitted/src/activity"
 import type * as Flows from "./flows.ts"
 
 /** The trace status of a flow run's lifecycle word: the run card's words for settled and waiting, else its own. */

@@ -1,0 +1,58 @@
+/** Durable workspace routing shared by the CLI and every engine host.
+ * @since 1.0.0
+ */
+
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { resolve } from "./Workspace.platform.ts"
+import { databasePath } from "../internal/ControlDatabasePath.ts"
+import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
+import * as WorkspaceRouting from "../internal/WorkspaceRouting.vibe"
+
+const routing = effect (root: string) => {
+  const engine = Context.get(
+    try Layer.build(NodeDatabase.layer({
+      filename: try Effect.orDie(Effect.try({ try: () => executionDatabasePath(root), catch: (e) => e })),
+      readOnly: true
+    })),
+    SqlClient.SqlClient
+  )
+  const control =
+    (try Effect.orDie(Effect.try({ try: () => DatabaseLocation.exists(databasePath(root)), catch: (e) => e })))
+      ? Context.get(
+        try Layer.build(NodeDatabase.layer({
+          filename: try Effect.orDie(Effect.try({ try: () => databasePath(root), catch: (e) => e })),
+          readOnly: true
+        })),
+        SqlClient.SqlClient
+      )
+      : undefined
+  return try WorkspaceRouting.make({ root, engine, control })
+}
+
+/** Undefined means a fork has not finished linking its retained workspace.
+ * @category getters
+ * @since 1.0.0
+ */
+export const workspaceFor = async (root: string, runId: string): Promise<string | undefined> => {
+  if (!DatabaseLocation.exists(executionDatabasePath(root))) return resolve(root)
+  return Effect.runPromise(
+    Effect.scoped(effect {
+      return try (try routing(root)).workspaceFor(runId)
+    }) |> Effect.provide(%, NodeServices.layer)
+  )
+}
+
+/** Only the host bound to a committed workspace identity may execute its run.
+ * @category guards
+ * @since 1.0.0
+ */
+export const canExecute = async (root: string, workspace: string, runId: string): Promise<boolean> => {
+  if (!DatabaseLocation.exists(executionDatabasePath(root))) return resolve(root) === resolve(workspace)
+  return Effect.runPromise(
+    Effect.scoped(effect {
+      return try (try routing(root)).canExecute(workspace, runId)
+    }) |> Effect.provide(%, NodeServices.layer)
+  )
+}

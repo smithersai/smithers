@@ -7,7 +7,7 @@
  * sequences and transcript steps.
  */
 import type { FrameLine, TraceNote } from "@smthrs/gateway/RunTrace"
-import * as Activity from "./activity.ts"
+import * as Activity from "#vibelang/emitted/src/activity"
 import type * as Transcript from "./transcript.ts"
 
 type Cell = Extract<Transcript.Item, { kind: "cell" }>

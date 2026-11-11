@@ -5,7 +5,7 @@ import { vi } from "vitest"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 import { died, refusalOf } from "./refusal.ts"
 
 const branchId = "live-branch" as BranchProtocol.BranchId

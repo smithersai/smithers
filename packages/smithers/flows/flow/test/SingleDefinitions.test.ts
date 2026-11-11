@@ -13,10 +13,10 @@ import * as Node from "@smthrs/plan/Node"
 import * as Plan from "@smthrs/plan/Plan"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { Tier } from "../src/Action/Action.ts"
+import { Tier } from "../src/Action/Action.vibe"
 import { BoundaryMode } from "../src/Action/BoundaryMode.ts"
-import * as CacheEnvironment from "../src/Action/CacheEnvironment.ts"
-import * as Annotations from "../src/Flow/Annotations.ts"
+import * as CacheEnvironment from "../src/Action/CacheEnvironment.vibe"
+import * as Annotations from "../src/Flow/Annotations.vibe"
 import * as Flow from "../src/Flow/index.ts"
 
 describe("single definitions", () => {

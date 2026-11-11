@@ -52,7 +52,7 @@ import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as UrlParams from "effect/http/UrlParams"
 import { GrantStore, type Service as GrantService } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability } from "./internal/makeCapability.vibe"
 
 const snapshotRawBody = (value: unknown): unknown => {
   if (value instanceof globalThis.Uint8Array) return value.slice()
@@ -149,6 +149,7 @@ export const ModelCall: Context.Reference<string | undefined> = Context.Referenc
  *
  * @category references
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, ModelCall, modelId)
@@ -190,6 +191,7 @@ export const toHttpClientError = (options: {
  *
  * @category refinements
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const fromHttpClientError = (
   error: HttpClientError.HttpClientError
@@ -405,6 +407,7 @@ export const withDestinationPinning = <A extends EffectHttpClient.HttpClient>(cl
  * Whether this exact client implements the Destination transport contract.
  * @category predicates
  * @since 1.0.0
+ * @throws {never}
  */
 export const supportsDestinationPinning = (client: EffectHttpClient.HttpClient): boolean => pinnedClients.has(client)
 

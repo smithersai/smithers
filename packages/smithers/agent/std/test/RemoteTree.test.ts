@@ -10,7 +10,7 @@ import { NodePath } from "@effect/platform-node"
 import * as Rooted from "@smthrs/kernel/Rooted"
 import { Effect, Path, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as RemoteTree from "../src/internal/RemoteTree.ts"
+import * as RemoteTree from "../src/internal/RemoteTree.vibe"
 
 const path = Rooted.path(
   Effect.runSync(

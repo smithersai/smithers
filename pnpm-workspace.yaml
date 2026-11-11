@@ -48,6 +48,13 @@ linkWorkspacePackages: true
 ignoreWorkspaceCycles: true
 verifyDepsBeforeRun: false
 
+# Until npm has VibeLang 0.0.14, its platform compiler packages are local file: tarballs (overrides below).
+# pnpm cannot skip a file: optional dependency for another platform (ENOTDIR while linking vibelang's bins),
+# so it installs all of them; drop this with the overrides when the npm release lands.
+supportedArchitectures:
+  os: [current, darwin, linux, win32]
+  cpu: [current, x64, arm64]
+
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
   # One Vitest 5.0.0 peer runtime: optional happy-dom must not create two copies
@@ -55,10 +62,16 @@ overrides:
   "vitest@5.0.0>happy-dom": "20.13.2"
   "@types/bun": "1.4.4"
   "effect": "4.1.1"
-  "vibelang": "0.0.12"
-  "vibelang-runtime": "0.0.12"
-  "vibelang-vite": "0.0.12"
-  "vibelang-unplugin": "0.0.12"
+  "vibelang": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-runtime": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-runtime-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-vite": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-vite-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-unplugin": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-unplugin-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-linux-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-linux-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-linux-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-linux-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-darwin-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-darwin-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "vibelang-darwin-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-darwin-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "@smthrs/cli-win32-x64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/smthrs-cli-win32-x64-0.0.14-pre.6279f9f9fbfc.tgz"
+  "@smthrs/cli-win32-arm64": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/smthrs-cli-win32-arm64-0.0.14-pre.6279f9f9fbfc.tgz"
   "alchemy": "2.0.0-beta.85"
   "@alchemy.run/node-utils": "2.0.0-beta.85"
   "@alchemy.run/frontend-frameworks": "2.0.0-beta.85"
@@ -80,10 +93,6 @@ patchedDependencies:
   # The patch sends integers outside int64 as doubleValue, as Effect 4.1's OTLP exporter does, and unsafe ones inside
   # it as decimal strings (observability/test/NodeOtelBudget.test.ts). Delete it when OpenTelemetry bounds intValue.
   '@opentelemetry/otlp-transformer@0.222.0': patches/@opentelemetry__otlp-transformer@0.222.0.patch
-  # vibelang-runtime 0.0.12 matches a schema error class by its own _tag only, so a family base rejects its real
-  # subclasses (packages/errors/test/TaggedFailures.test.vibe). This patch mirrors the upstream VibeLang fix;
-  # delete it when vibelang 0.0.13 is published.
-  vibelang-runtime@0.0.12: patches/vibelang-runtime@0.0.12.patch
   # beta.85 lib/Local/LocalProvider.js still strips build plugins in diff/reconcile;
   # lib/Local/RpcSerialization.js still drops functions and has no deferred-module rehydration.
   # Port the existing local-dev fix after inspecting both beta.85 sources.
@@ -102,7 +111,7 @@ patchedDependencies:
   # Audited 5.0.0: native-loader filtering needs moduleExecutionInfo; subprocess/source merging duplicates open-ended columns.
   # Remove when upstream preserves both contracts; apps/vibelang/test/coverageProvider.test.vibe checks JS/Vibe positives and gaps.
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
-  # VibeLang 0.0.12 uses inline-source-map.mjs with a split sourceMappingURL directive; the 0.0.8 loader patch is upstream.
+  # VibeLang 0.0.13 uses inline-source-map.mjs with a split sourceMappingURL directive; the 0.0.8 loader patch is upstream.
   # TanStack DB's SQLite persistence sends every statement on its own, about 35 to restore one collection, and each is
   # a round trip to the engine worker over SharedSqlite (~2 ms). The patches give its driver `batch` and
   # `transactionBatch` over the database's `executeBatch`, and restore a collection in about five batches: schema once
@@ -140,8 +149,8 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
-  - '@smthrs/cli-win32-arm64@0.0.12'
-  - '@smthrs/cli-win32-x64@0.0.12'
+  - '@smthrs/cli-win32-arm64@0.0.14-pre.6279f9f9fbfc'
+  - '@smthrs/cli-win32-x64@0.0.14-pre.6279f9f9fbfc'
 
 # Alchemy publishes declarations importing workers-types but declares it only for development.
 # Give its declarations the same exact type dependency as the app, independent of hoisting.

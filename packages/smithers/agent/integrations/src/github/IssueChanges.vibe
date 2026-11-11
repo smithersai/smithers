@@ -1,8 +1,8 @@
 // Missing issue mutation endpoints over the same validated Effect client used by smithers.sh.
 import { IntegrationError } from "../core/IntegrationError.ts"
-import { GitHubClient } from "./GitHubClient.ts"
-import { Issue, IssueUser } from "./Issues.ts"
-import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
+import { Issue, IssueUser } from "./Issues.vibe"
+import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
 
 const WithAssignees = Schema.Struct({ ...Issue.fields, assignees: Schema.Array(IssueUser).pipe(Schema.withDecodingDefault(Effect.succeed([]))) })
 export { WithAssignees }

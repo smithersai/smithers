@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Context, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { connect } from "node:net"
-import { PostgresDatabase } from "../src/index.ts"
+import { PostgresDatabase } from "../src/index.vibe"
 import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import { listening } from "./harness/listening.ts"
 

@@ -27,25 +27,25 @@
  *
  * @since 0.1.0
  */
-export * as Binding from "./Binding.ts"
+export * as Binding from "./Binding.vibe"
 
 /**
  * The egress: substitution, refusal, audit and scrubbing.
  *
  * @since 0.1.0
  */
-export * as Egress from "./Egress.ts"
+export * as Egress from "./Egress.vibe"
 
 /**
  * Placeholders: derived, recognized and found.
  *
  * @since 0.1.0
  */
-export * as Placeholder from "./Placeholder.ts"
+export * as Placeholder from "./Placeholder.vibe"
 
 /**
  * Scrubbing a value's echoes from text and streams.
  *
  * @since 0.1.0
  */
-export * as Scrub from "./Scrub.ts"
+export * as Scrub from "./Scrub.vibe"

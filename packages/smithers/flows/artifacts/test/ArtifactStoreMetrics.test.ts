@@ -8,9 +8,9 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Metric from "effect/Metric"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
-import * as ArtifactStoreMetrics from "../src/ArtifactStoreMetrics.ts"
+import * as ArtifactStoreMetrics from "../src/ArtifactStoreMetrics.vibe"
 import * as CombinedArtifacts from "../src/CombinedArtifacts.ts"
-import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"
+import * as RemoteArtifacts from "../src/RemoteArtifacts.vibe"
 import { bytes, sha256, withCrypto } from "./Crypto.ts"
 
 const count = (metric: Metric.Metric<number, Metric.CounterState<number>>) =>

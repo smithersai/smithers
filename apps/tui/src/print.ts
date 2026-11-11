@@ -10,9 +10,9 @@
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import * as Approvals from "./approvals.ts"
 import * as Asks from "./asks.ts"
-import type * as Host from "./host.ts"
+import type * as Host from "#vibelang/emitted/src/host"
 import * as Lifecycle from "./lifecycle.ts"
-import type { DelegateModel } from "./models.ts"
+import type { DelegateModel } from "#vibelang/emitted/src/models"
 import { Workspace } from "./workspace.ts"
 
 /** The root worker's id; its children are `print/<id>`. */

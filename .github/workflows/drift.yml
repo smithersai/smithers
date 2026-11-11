@@ -47,6 +47,9 @@ jobs:
             printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
           esac
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --verbose"
       - name: "Formatting"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//...:fmt' --known-red '.github/ci-known-red.json' --verbose"

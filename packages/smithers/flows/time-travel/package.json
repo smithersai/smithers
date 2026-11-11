@@ -34,22 +34,73 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "default": {
+        "types": "./.vibe/declarations/src/index.d.vibe.ts",
+        "vibelang-source": "./src/index.vibe",
+        "default": "./.vibelang/js/src/index.js"
+      }
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./CompensationHandlers": "./src/CompensationHandlers.ts",
-    "./EffectBoundary": "./src/EffectBoundary.ts",
-    "./Frame": "./src/Frame.ts",
-    "./MemoryTimeTravelStore": "./src/MemoryTimeTravelStore.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",
-    "./TimeTravel": "./src/TimeTravel.ts",
-    "./TimeTravelError": "./src/TimeTravelError.ts",
-    "./TimeTravelStore": "./src/TimeTravelStore.ts",
-    "./index": "./src/index.ts"
+    "./CompensationHandlers": {
+      "types": "./.vibe/declarations/src/CompensationHandlers.d.vibe.ts",
+      "vibelang-source": "./src/CompensationHandlers.vibe",
+      "default": "./.vibelang/js/src/CompensationHandlers.js"
+    },
+    "./EffectBoundary": {
+      "types": "./src/EffectBoundary.ts",
+      "vibelang-source": "./src/EffectBoundary.ts",
+      "default": "./.vibelang/js/src/EffectBoundary.js"
+    },
+    "./Frame": {
+      "types": "./.vibe/declarations/src/Frame.d.vibe.ts",
+      "vibelang-source": "./src/Frame.vibe",
+      "default": "./.vibelang/js/src/Frame.js"
+    },
+    "./MemoryTimeTravelStore": {
+      "types": "./.vibe/declarations/src/MemoryTimeTravelStore.d.vibe.ts",
+      "vibelang-source": "./src/MemoryTimeTravelStore.vibe",
+      "default": "./.vibelang/js/src/MemoryTimeTravelStore.js"
+    },
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./SqlTimeTravelStore": {
+      "types": "./src/SqlTimeTravelStore.ts",
+      "vibelang-source": "./src/SqlTimeTravelStore.ts",
+      "default": "./.vibelang/js/src/SqlTimeTravelStore.js"
+    },
+    "./TimeTravel": {
+      "types": "./src/TimeTravel.ts",
+      "vibelang-source": "./src/TimeTravel.ts",
+      "default": "./.vibelang/js/src/TimeTravel.js"
+    },
+    "./TimeTravelError": {
+      "types": "./.vibe/declarations/src/TimeTravelError.d.vibe.ts",
+      "vibelang-source": "./src/TimeTravelError.vibe",
+      "default": "./.vibelang/js/src/TimeTravelError.js"
+    },
+    "./TimeTravelStore": {
+      "types": "./.vibe/declarations/src/TimeTravelStore.d.vibe.ts",
+      "vibelang-source": "./src/TimeTravelStore.vibe",
+      "default": "./.vibelang/js/src/TimeTravelStore.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "default": {
+        "types": "./.vibe/declarations/src/index.d.vibe.ts",
+        "vibelang-source": "./src/index.vibe",
+        "default": "./.vibelang/js/src/index.js"
+      }
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -58,7 +109,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -196,7 +249,8 @@
     "@smthrs/jj": "1.0.0-rc.17",
     "@smthrs/journal": "1.0.0-rc.17",
     "@smthrs/run-store": "1.0.0-rc.17",
-    "@smthrs/step-cache": "1.0.0-rc.17"
+    "@smthrs/step-cache": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -222,8 +276,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

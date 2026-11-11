@@ -26,8 +26,8 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as ArtifactStore from "./ArtifactStore.ts"
-import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.ts"
-import * as RemoteArtifacts from "./RemoteArtifacts.ts"
+import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
+import * as RemoteArtifacts from "./RemoteArtifacts.vibe"
 
 /**
  * The two tiers to compose.

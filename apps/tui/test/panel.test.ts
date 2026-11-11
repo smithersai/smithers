@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type * as Agents from "../src/agents.ts"
-import * as Host from "../src/host.ts"
+import * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 import { seats as poolSize, Workspace } from "../src/workspace.ts"
 

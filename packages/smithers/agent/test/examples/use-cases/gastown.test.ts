@@ -11,8 +11,8 @@ import {
   WriteBead,
   WriteConvoy,
   WriteMergeRequest
-} from "../../../examples/use-cases/gastown.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+} from "../../../examples/use-cases/gastown.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "gastown-"))
 

@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it } from "vitest"
 import { appendHistoryCommands } from "../src/cli/HistoryCommands.ts"
 import * as History from "../src/history/History.ts"
-import * as Workspace from "../src/history/Workspace.ts"
+import * as Workspace from "../src/history/Workspace.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const directories: Array<string> = []

@@ -9,7 +9,7 @@
  *
  * @since 1.0.0
  */
-import type { PlantedBugLabel, SeededBugLabel, SeededBugSeverity } from "./labels.ts";
+import type { PlantedBugLabel, SeededBugLabel, SeededBugSeverity } from "./labels.vibe";
 import type { CorpusScore, MatchedFinding } from "./score.ts";
 
 /** One fixture's run, reduced to the fields the baseline records. */

@@ -15,8 +15,8 @@ import { TriggerError } from "@smthrs/triggers/TriggerError"
 import { Clock, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { join } from "node:path"
-import { triggerDeclaration } from "../internal/ApprovalScope.ts"
-import { databaseLayer } from "./Store.ts"
+import { triggerDeclaration } from "../internal/ApprovalScope.vibe"
+import { databaseLayer } from "./Store.vibe"
 
 const prefix = "trigger-plan:"
 const states = Schema.Literals([

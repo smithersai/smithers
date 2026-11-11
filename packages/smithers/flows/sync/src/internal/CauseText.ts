@@ -42,6 +42,7 @@ export const boundedText = (text: string): string =>
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const causeText = (cause: unknown): string =>
   boundedText(

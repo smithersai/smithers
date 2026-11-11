@@ -23,7 +23,7 @@ import {
 import { homedir, userInfo } from "node:os"
 import { basename, dirname, join, resolve as resolvePath } from "node:path"
 import { parse, stringify } from "yaml"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { NotFound, type Result, run } from "./Process.ts"
 
 /** Native command boundary, injectable for storage failures and cancellation tests.

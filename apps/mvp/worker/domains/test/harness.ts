@@ -10,14 +10,14 @@ import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { DOMAINS_TABLE } from "../../../src/features/domains/contract.ts"
-import * as Actor from "../../Actor.ts"
-import * as Flows from "../../Flows.ts"
+import * as Actor from "../../Actor.vibe"
+import * as Flows from "../../Flows.vibe"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as DomainsApi from "../Api.ts"
 import * as Dns from "../Dns.ts"
 import * as DomainFlows from "../DomainFlows.ts"
-import { DomainProvider, type Provider } from "../Provider.ts"
+import { DomainProvider, type Provider } from "../Provider.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

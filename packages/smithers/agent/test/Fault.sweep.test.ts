@@ -15,9 +15,9 @@ import * as ModelError from "@smthrs/model/ModelError"
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import * as Budget from "../src/Budget.ts"
-import * as RunawayGuard from "../src/RunawayGuard.ts"
-import * as Seat from "../src/Seat.ts"
+import * as Budget from "../src/Budget.vibe"
+import * as RunawayGuard from "../src/RunawayGuard.vibe"
+import * as Seat from "../src/Seat.vibe"
 
 const smithers = fileURLToPath(new URL("../..", import.meta.url))
 const owners = ["flows/flow/src", "agent/model/src", "agent/harness/src", "agent/src", "control/src"]
@@ -26,7 +26,7 @@ const files = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? files(join(directory, entry.name))
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")
+      : (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) || entry.name.endsWith(".vibe")
       ? [join(directory, entry.name)]
       : []
   )

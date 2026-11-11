@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Sampling from "../src/Sampling.ts"
+import * as Sampling from "../src/Sampling.vibe"
 
 const decide = (sampling: Sampling.Sampling, target: string, scorer: string) =>
   Effect.runPromise(Sampling.decide(sampling, target, scorer))

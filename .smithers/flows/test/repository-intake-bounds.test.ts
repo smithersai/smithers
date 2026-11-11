@@ -5,8 +5,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
 import { CodingError } from "../coding/schema.ts"
-import { intakeScreenedEvent, maximumStateBytes, maximumStates, screenEvent } from "../repository/intake.ts"
-import type { JobInput } from "../repository/schema.ts"
+import { intakeScreenedEvent, maximumStateBytes, maximumStates, screenEvent } from "../repository/intake.vibe"
+import type { JobInput } from "../repository/schema.vibe"
 
 const repo = "example/repo"
 const encoder = new TextEncoder()

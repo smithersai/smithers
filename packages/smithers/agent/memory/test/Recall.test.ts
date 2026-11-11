@@ -1,9 +1,9 @@
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import * as Bank from "../src/Bank.ts"
-import * as BankInternal from "../src/internal/ResolveNamespace.ts"
-import * as Namespace from "../src/Namespace.ts"
-import * as Recall from "../src/Recall.ts"
+import * as Bank from "../src/Bank.vibe"
+import * as BankInternal from "../src/internal/ResolveNamespace.vibe"
+import * as Namespace from "../src/Namespace.vibe"
+import * as Recall from "../src/Recall.vibe"
 
 describe("Recall", () => {
   it("ranks by score, newest update, key, then bank for every binding", () => {

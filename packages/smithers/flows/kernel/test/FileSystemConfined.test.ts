@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem as EffectFileSystem, Option, Path as EffectPath, PlatformError, Stream } from "effect"
 import { Base64 } from "effect/encoding"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const allowAll = GrantStore.of({
   policy: closedPolicy,

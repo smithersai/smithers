@@ -6,8 +6,8 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
 import { Journal, JournalError } from "../src/Journal.ts"
-import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = (value: string): RunId => value as RunId

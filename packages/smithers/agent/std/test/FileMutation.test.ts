@@ -1,7 +1,7 @@
 import { Cause, Effect, Exit, FileSystem, Option, Path, PlatformError } from "effect"
 import { win32 } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as FileMutation from "../src/internal/FileMutation.ts"
+import * as FileMutation from "../src/internal/FileMutation.vibe"
 
 // Fault injection tests exercise portable host failures without depending on
 // OS permissions or root privileges. Real host/process races live separately.

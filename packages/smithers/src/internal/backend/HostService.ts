@@ -28,7 +28,7 @@ import { isIP } from "node:net"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 
 /**
  * The launchd label of the per-user host agent.

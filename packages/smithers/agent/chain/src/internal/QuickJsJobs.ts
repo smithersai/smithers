@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import type { ExecutePendingJobsResult } from "quickjs-emscripten-core"
 import * as JsonBoundary from "../JsonBoundary.ts"
-import * as ScriptRunner from "../ScriptRunner.ts"
+import * as ScriptRunner from "../ScriptRunner.vibe"
 
 /**
  * Disposes a pending-job result and translates its live error handle before

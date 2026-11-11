@@ -34,7 +34,7 @@ import {
   FLOW_AUTHORING_PACK,
   FLOW_AUTHORING_STAGES
 } from "../../../packages/rpc/src/FlowAuthoring.ts"
-import { authoringBodies, bindRepositoryRegistry, provisionBuiltins } from "../repository/registry.ts"
+import { authoringBodies, bindRepositoryRegistry, provisionBuiltins } from "../repository/registry.vibe"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 

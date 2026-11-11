@@ -1,0 +1,50 @@
+/**
+ * Fingerprint the review task the running host asks the reviewer to perform,
+ * independently of target-repo copies and of the rest of the host build.
+ */
+import { policySources } from "../wiki/reuse.ts"
+import { maximumBytes, wikiPolicyIdentity } from "./wiki-policy-identity.ts"
+import { policySourcePath } from "./wiki-policy.platform.ts"
+import { decodeStrict } from "./wiki-policy.trusted.ts"
+
+export { wikiPolicyIdentity } from "./wiki-policy-identity.ts"
+
+// The deployment bundler (build.mjs) injects wikiPolicyIdentity over these
+// same files, read at bundle time. Source mode reads them beside this module.
+declare const __SMITHERS_CODING_WIKI_POLICY__: string | undefined
+
+export const runningWikiPolicy = effect {
+  if (typeof __SMITHERS_CODING_WIKI_POLICY__ !== "undefined") {
+    if (!/^policy:[a-f0-9]{64}$/.test(__SMITHERS_CODING_WIKI_POLICY__)) {
+      throw new Error("Invalid coding host wiki policy fingerprint")
+    }
+    return __SMITHERS_CODING_WIKI_POLICY__
+  }
+  const fs = try FileSystem.FileSystem
+  const texts = new Map<string, string>()
+  for (const source of policySources) {
+    const data = try Stream.runFoldEffect(
+      fs.stream(policySourcePath(source), {
+        bytesToRead: maximumBytes + 1,
+        chunkSize: 64 * 1024
+      }),
+      () => ({ chunks: [] as Array<Uint8Array>, bytes: 0 }),
+      (state, chunk) => {
+        if (state.bytes + chunk.length > maximumBytes) {
+          return Effect.fail(new Error("Coding reviewer policy source exceeds 2 MiB"))
+        }
+        state.chunks.push(chunk)
+        state.bytes += chunk.length
+        return Effect.succeed(state)
+      }
+    )
+    const bytes = new Uint8Array(data.bytes)
+    let offset = 0
+    for (const chunk of data.chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.length
+    }
+    texts.set(source, decodeStrict(bytes))
+  }
+  return try Effect.try({ try: () => wikiPolicyIdentity(texts), catch: (error) => error as Error })
+}

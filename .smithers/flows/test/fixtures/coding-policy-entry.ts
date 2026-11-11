@@ -1,5 +1,5 @@
 import { Effect, FileSystem, Stream } from "effect"
-import { runningWikiPolicy } from "../../coding/wiki-policy.ts"
+import { runningWikiPolicy } from "../../coding/wiki-policy.vibe"
 
 // A deployed artifact must identify itself without reading source files from
 // either the installed host or the target repository.

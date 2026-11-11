@@ -8,9 +8,9 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { Schema } from "effect"
 import { App } from "../src/app.tsx"
-import * as FlowControl from "../src/flow-control.ts"
+import * as FlowControl from "../src/flow-control.vibe"
 import type * as Flows from "../src/flows.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 let settle = (_: Flows.Settled) => {}
 const host: Host.Host = {

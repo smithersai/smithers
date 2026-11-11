@@ -1,7 +1,7 @@
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 const host: Host.Host = {
   cwd: process.cwd(),

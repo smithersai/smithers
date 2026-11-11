@@ -15,8 +15,8 @@ import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
 import * as CommandLine from "../src/CommandLine.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { emptyPolicy, GrantStore } from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * The kernel spawner over an absolute POSIX workspace. Effect's `Path.layer` is

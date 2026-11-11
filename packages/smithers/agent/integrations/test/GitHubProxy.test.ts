@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import { type Credential, layer, make, type ProxyOptions, repositoryOf } from "../src/github/Proxy.ts"
+import { type Credential, layer, make, type ProxyOptions, repositoryOf } from "../src/github/Proxy.vibe"
 import { DEFAULT_LIMITS } from "../src/github/RateLimit.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { fetchLayer, gitHubClient as client } from "./Http.ts"
@@ -221,7 +221,7 @@ describe("GitHub proxy rate limit", () => {
   it("spaces the writes of two concurrent client processes as one queue", async () => {
     const upstream = await github((_request, response) => json(response, 201, {}))
     const origin = await proxy(upstream, { limits: { ...DEFAULT_LIMITS, writeSpacingMs: 250 } })
-    const source = new URL("../src/github/GitHubClient.ts", import.meta.url).href
+    const source = new URL("../src/github/GitHubClient.vibe", import.meta.url).href
     const writer = `
       import { Effect } from "effect"
       import { FetchHttpClient } from "effect/http"

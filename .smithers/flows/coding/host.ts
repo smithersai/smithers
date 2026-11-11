@@ -14,21 +14,21 @@ import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, FileSystem, Layer, Option, Schema } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { join, resolve } from "node:path"
-import type * as Application from "../../../packages/smithers/src/Application.ts"
+import type * as Application from "../../../packages/smithers/src/Application.vibe"
 import * as NativeControl from "../../../packages/smithers/src/internal/NativeControl.ts"
 import * as NativeEquipment from "../../../packages/smithers/src/internal/NativeEquipment.ts"
 import { expandSeat, seatAliases, seatRefusal } from "../../../packages/smithers/src/Providers.ts"
-import * as Serve from "../../../packages/smithers/src/Serve.ts"
+import * as Serve from "../../../packages/smithers/src/Serve.vibe"
 import { layer as learningLayer, LearningFailed, machineBinding } from "../learning/flow.ts"
-import { activationLayers } from "../repository/activation.ts"
-import { changeLayers, changeModelLayers, changeModelNames } from "../repository/changes.ts"
-import { checkLayers as repositoryCheckLayers } from "../repository/checks.ts"
-import { deliveryLayers } from "../repository/delivery.ts"
-import { evaluationLayers, ScoreCase } from "../repository/evaluation.ts"
-import { executionLayers } from "../repository/execution.ts"
-import { inspectionLayers } from "../repository/inspection.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
-import { failureLayer, jobFlows, modelLayers, modelNames } from "../repository/jobs.ts"
+import { activationLayers } from "../repository/activation.vibe"
+import { changeLayers, changeModelLayers, changeModelNames } from "../repository/changes.vibe"
+import { checkLayers as repositoryCheckLayers } from "../repository/checks.vibe"
+import { deliveryLayers } from "../repository/delivery.vibe"
+import { evaluationLayers, ScoreCase } from "../repository/evaluation.vibe"
+import { executionLayers } from "../repository/execution.vibe"
+import { inspectionLayers } from "../repository/inspection.vibe"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
+import { failureLayer, jobFlows, modelLayers, modelNames } from "../repository/jobs.vibe"
 import {
   bindRepositoryRegistry,
   type CodingRoute,
@@ -36,63 +36,63 @@ import {
   repositoryCatalog,
   repositoryRegistration,
   runningRepositoryPolicy
-} from "../repository/registry.ts"
-import type { RepositoryRemote } from "../repository/remote.ts"
-import { replyLayers } from "../repository/replies.ts"
+} from "../repository/registry.vibe"
+import type { RepositoryRemote } from "../repository/remote.vibe"
+import { replyLayers } from "../repository/replies.vibe"
 import { RunJob, RunSetup, setupLayers, SuggestSetup } from "../repository/setup.ts"
-import { RunTrigger, triggerLayers } from "../repository/triggers.ts"
-import { ReviewPage } from "../wiki/workflow.ts"
+import { RunTrigger, triggerLayers } from "../repository/triggers.vibe"
+import { ReviewPage } from "../wiki/workflow.vibe"
 import * as CodingTerminal from "./agentTerminal.ts"
-import { atomOperations, EditAtom } from "./atoms.ts"
+import { atomOperations, EditAtom } from "./atoms.vibe"
 import { repositoryCheckEnvironment } from "./check-environment.ts"
-import { checkDelegate, checkLayers } from "./checks.ts"
-import { commandReceipts } from "./command-receipts.ts"
-import { correctionLayers, SelectRepair } from "./correction.ts"
-import { dispatchModels } from "./dispatch.ts"
+import { checkDelegate, checkLayers } from "./checks.vibe"
+import { commandReceipts } from "./command-receipts.vibe"
+import { correctionLayers, SelectRepair } from "./correction.vibe"
+import { dispatchModels } from "./dispatch.vibe"
 import { dispatchRegistration } from "./dispatch/flow.ts"
 import * as CodingFileSystem from "./filesystem.ts"
-import { loadFlowsLayer } from "./flow-load.ts"
+import { loadFlowsLayer } from "./flow-load.vibe"
 import FlowLoad from "./flow-load/flow.ts"
-import * as HostRegistry from "./host-registry.ts"
+import * as HostRegistry from "./host-registry.vibe"
 import { atomFlows } from "./implementation/flow.ts"
-import { jevCheckDelegate, jevCheckLayers } from "./jev-check.ts"
-import type { Landing } from "./landing.ts"
-import * as LocalLanding from "./local-landing.ts"
-import { nativeActions, NativeCoding, nativeLayer, type NativeOptions, NativeTransport } from "./native.ts"
-import * as OutsideStacks from "./outside-stack.ts"
-import { evidenceOnly } from "./planning-authority.ts"
+import { jevCheckDelegate, jevCheckLayers } from "./jev-check.vibe"
+import type { Landing } from "./landing.vibe"
+import * as LocalLanding from "./local-landing.vibe"
+import { nativeActions, NativeCoding, nativeLayer, type NativeOptions, NativeTransport } from "./native.vibe"
+import * as OutsideStacks from "./outside-stack.vibe"
+import { evidenceOnly } from "./planning-authority.vibe"
 import { memoryLayer, type MemoryOptions } from "./planning-memory.ts"
-import { planningWikiLayers } from "./planning-wiki.ts"
-import { declineLayer, DraftPlan, planningPolicy, preparePlanLayer, ReviewRequest } from "./planning.ts"
-import { pocSource } from "./poc-source.ts"
-import { pocModels, pocPolicy } from "./poc.ts"
+import { planningWikiLayers } from "./planning-wiki.vibe"
+import { declineLayer, DraftPlan, planningPolicy, preparePlanLayer, ReviewRequest } from "./planning.vibe"
+import { pocSource } from "./poc-source.vibe"
+import { pocModels, pocPolicy } from "./poc.vibe"
 import { preparationLayers } from "./preparation.ts"
-import { type ProjectConfig, roleSeatRefusal } from "./project-config.ts"
+import { type ProjectConfig, roleSeatRefusal } from "./project-config.vibe"
 import { prototypeRegistration } from "./prototype.ts"
-import { registration } from "./registration.ts"
-import { requestRegistration } from "./request.ts"
-import { reviewCheckDelegate, reviewCheckLayers, ReviewLens, reviewRole } from "./review-check.ts"
+import { registration } from "./registration.vibe"
+import { requestRegistration } from "./request.vibe"
+import { reviewCheckDelegate, reviewCheckLayers, ReviewLens, reviewRole } from "./review-check.vibe"
 import {
   securityAuditDelegate,
   securityReviewCheckDelegate,
   securityReviewCheckLayers
-} from "./security-review-check.ts"
-import * as Snapshots from "./snapshots.ts"
-import { sourceAdmission } from "./source-admission.ts"
-import { stackBaseLayer } from "./stack.ts"
+} from "./security-review-check.vibe"
+import * as Snapshots from "./snapshots.vibe"
+import { sourceAdmission } from "./source-admission.vibe"
+import { stackBaseLayer } from "./stack.vibe"
 import * as CodingState from "./state.ts"
-import { feedbackLayer, routeMessages } from "./steering.ts"
-import { todoConflictLayer } from "./todo-conflict.ts"
-import { TodoBoundary, todoBringBoundary, todoPauseLayer } from "./todo-pause.ts"
-import { todoDeliveryLayer, todoLayers, todoReviewLayer } from "./todo.ts"
-import { verifyRegistration } from "./verify.ts"
-import { cleanupModels } from "./vibe-cleanup.ts"
-import { installVibeRegistration, vibeRegistration } from "./vibe.ts"
+import { feedbackLayer, routeMessages } from "./steering.vibe"
+import { todoConflictLayer } from "./todo-conflict.vibe"
+import { TodoBoundary, todoBringBoundary, todoPauseLayer } from "./todo-pause.vibe"
+import { todoDeliveryLayer, todoLayers, todoReviewLayer } from "./todo.vibe"
+import { verifyRegistration } from "./verify.vibe"
+import { cleanupModels } from "./vibe-cleanup.vibe"
+import { installVibeRegistration, vibeRegistration } from "./vibe.vibe"
 import { wikiCheckDelegate, wikiCheckLayers, wikiCheckPolicy } from "./wiki-check.ts"
-import { separateWikiOutput } from "./wiki-output.ts"
-import { runningWikiPolicy } from "./wiki-policy.ts"
-import { bindWikiRegistry } from "./wiki-registry.ts"
-import { dependencyPagesLayer, wikiRefreshRegistration } from "./wiki-route.ts"
+import { separateWikiOutput } from "./wiki-output.vibe"
+import { runningWikiPolicy } from "./wiki-policy.vibe"
+import { bindWikiRegistry } from "./wiki-registry.vibe"
+import { dependencyPagesLayer, wikiRefreshRegistration } from "./wiki-route.vibe"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
@@ -159,7 +159,7 @@ export interface Options extends NativeOptions {
    * Deployment-owned landing adapter over the reserved repository credential.
    * Repository automation uses it on its own; TODO delivery is registered only
    * when `planning` configures the prompt route as well. Without it, the
-   * project's `landing` selects a local lander (`local-landing.ts`).
+   * project's `landing` selects a local lander (`local-landing.vibe`).
    */
   readonly landing?: Layer.Layer<Landing> | undefined
   /** What a local lander's `jj`, `git` and `gh` processes see; defaults to `checkEnvironment`. */
@@ -200,7 +200,7 @@ export const repositoryJobsServed = (
 ): boolean => options.retainedRepositoryJobs !== false && options.fixedFlowCatalog !== true
 
 /**
- * Whether this host serves `coding/AppendOutsideStack` (outside-stack.ts). It
+ * Whether this host serves `coding/AppendOutsideStack` (outside-stack.vibe). It
  * moves the stack's bookmark, so only a host that lands locally serves it:
  * never one with the backend's landing adapter, and never an installed host.
  */

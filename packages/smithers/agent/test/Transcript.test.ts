@@ -2,7 +2,7 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as AgentRunner from "../src/AgentRunner.ts"
-import * as Transcript from "../src/Transcript.ts"
+import * as Transcript from "../src/Transcript.vibe"
 
 const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length
 const shapes = () => Transcript.scrubber()

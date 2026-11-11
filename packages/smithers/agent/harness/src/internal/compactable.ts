@@ -34,6 +34,7 @@ export const defaultKeepRecent = 20_000
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const compactable = (
   segments: ReadonlyArray<ContextWindow.Segment>
@@ -49,6 +50,7 @@ export const compactable = (
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const pairBoundaries = (segments: ReadonlyArray<ContextWindow.Segment>): ReadonlySet<number> => {
   const calls = new Map<string, number>()

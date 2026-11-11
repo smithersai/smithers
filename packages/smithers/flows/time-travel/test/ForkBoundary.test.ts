@@ -24,12 +24,12 @@ import * as Layer from "effect/Layer"
 import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
-import * as Fork from "../src/internal/Fork.ts"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
+import * as Fork from "../src/internal/Fork.vibe"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const frame = { lineageId: "parent/root", seq: 0 } as const
 

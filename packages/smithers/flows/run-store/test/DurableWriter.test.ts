@@ -7,9 +7,9 @@ import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import { Clock, Effect, Exit, Metric, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import * as AttemptStore from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import * as RunStore from "../src/RunStore.vibe"
 
 const owner = { hostId: "host", pid: 1, nonce: "owner" }
 const retryOptions = { maxAttempts: 3, baseDelayMs: 1, maxDelayMs: 1 }

@@ -5,7 +5,7 @@ import type { Outbox } from "../src/index.ts"
 import { Collection, Persistence } from "../src/index.ts"
 import { databaseFile, id, Note, persistenceOn, sqlite, webLocks } from "./fixtures.ts"
 
-// What a program logs about its persisted synced collections' writer elections (src/internal/elections.ts): one
+// What a program logs about its persisted synced collections' writer elections (src/internal/elections.vibe): one
 // Info line once their first roles are taken (`Persistence.reportRoles`), each first role at Debug, and every role
 // after it, such as a watcher taking the lock when the writing program closes, at Info. A browser tab made 23 such
 // collections and logged 23 Info lines per load before. Programs share one SQLite file, coordinator and lock, as a

@@ -7,12 +7,12 @@
  */
 import { Cause, Effect, Exit, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
-import * as Edit from "../src/Edit.ts"
-import * as Diagnostics from "../src/internal/Diagnostics.ts"
-import * as LanguageServer from "../src/LanguageServer.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
+import * as Edit from "../src/Edit.vibe"
+import * as Diagnostics from "../src/internal/Diagnostics.vibe"
+import * as LanguageServer from "../src/LanguageServer.vibe"
 import * as StdError from "../src/StdError.ts"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 import { layer } from "./TestLayers.ts"
 
 /** One error per line of `text` that contains `ERROR`. */

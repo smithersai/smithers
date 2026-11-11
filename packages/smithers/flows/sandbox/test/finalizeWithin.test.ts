@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { finalizeWithin } from "../src/internal/finalizeWithin.ts"
+import { finalizeWithin } from "../src/internal/finalizeWithin.vibe"
 import { stalledFinalizer } from "./stalledFinalizer.ts"
 
 describe("provider finalizer deadline", () => {

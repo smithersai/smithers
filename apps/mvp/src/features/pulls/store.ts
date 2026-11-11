@@ -19,8 +19,8 @@ import {
   viewQuery,
 } from "./queries"
 import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema"
-import { observePullShape } from "./shapeSync"
-import { refreshingSource } from "./refresh"
+import { observePullShape } from "#vibelang/emitted/src/features/pulls/shapeSync"
+import { refreshingSource } from "#vibelang/emitted/src/features/pulls/refresh"
 
 // Pull requests on this tab (decision 0012 §6, docs/features/pulls.md#the-browser): each repository's pull requests,
 // their commits, reviews and checks in Postgres, synced by Electric per repository (`?repo=`, decision 0079 slice 1b)

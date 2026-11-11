@@ -10,7 +10,7 @@ import { type Duration, Effect, Layer, type ManagedRuntime, Metric, Option } fro
 import type { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { leaks, VALUE } from "../../../worker/secrets/test/harness.ts"
 import {
   asPerson,

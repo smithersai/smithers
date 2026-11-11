@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Budget from "../src/budget.ts"
-import * as Host from "../src/host.ts"
+import * as Host from "../src/host.vibe"
 import { Workspace } from "../src/workspace.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))

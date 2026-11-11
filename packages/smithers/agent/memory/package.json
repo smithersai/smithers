@@ -34,33 +34,118 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Bank": "./src/Bank.ts",
-    "./Database": "./src/Database.ts",
-    "./Embedding": "./src/Embedding.ts",
-    "./Flows": "./src/Flows.ts",
-    "./Maintenance": "./src/Maintenance.ts",
-    "./MemoryError": "./src/MemoryError.ts",
-    "./MemoryStore": "./src/MemoryStore.ts",
-    "./MemoryTrellis": "./src/MemoryTrellis.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./Namespace": "./src/Namespace.ts",
-    "./Opening": "./src/Opening.ts",
-    "./Recall": "./src/Recall.ts",
-    "./RecallFts": "./src/RecallFts.ts",
-    "./RecallKeyword": "./src/RecallKeyword.ts",
-    "./RecallSemantic": "./src/RecallSemantic.ts",
-    "./SnapshotRecorder": "./src/SnapshotRecorder.ts",
-    "./Source": "./src/Source.ts",
-    "./WithMemory": "./src/WithMemory.ts",
-    "./index": "./src/index.ts",
-    "./test/TestMemory": "./src/test/TestMemory.ts",
+    "./Bank": {
+      "types": "./.vibe/declarations/src/Bank.d.vibe.ts",
+      "vibelang-source": "./src/Bank.vibe",
+      "default": "./.vibelang/js/src/Bank.js"
+    },
+    "./Database": {
+      "types": "./.vibe/declarations/src/Database.d.vibe.ts",
+      "vibelang-source": "./src/Database.vibe",
+      "default": "./.vibelang/js/src/Database.js"
+    },
+    "./Embedding": {
+      "types": "./.vibe/declarations/src/Embedding.d.vibe.ts",
+      "vibelang-source": "./src/Embedding.vibe",
+      "default": "./.vibelang/js/src/Embedding.js"
+    },
+    "./Flows": {
+      "types": "./.vibe/declarations/src/Flows.d.vibe.ts",
+      "vibelang-source": "./src/Flows.vibe",
+      "default": "./.vibelang/js/src/Flows.js"
+    },
+    "./Maintenance": {
+      "types": "./.vibe/declarations/src/Maintenance.d.vibe.ts",
+      "vibelang-source": "./src/Maintenance.vibe",
+      "default": "./.vibelang/js/src/Maintenance.js"
+    },
+    "./MemoryError": {
+      "types": "./.vibe/declarations/src/MemoryError.d.vibe.ts",
+      "vibelang-source": "./src/MemoryError.vibe",
+      "default": "./.vibelang/js/src/MemoryError.js"
+    },
+    "./MemoryStore": {
+      "types": "./.vibe/declarations/src/MemoryStore.d.vibe.ts",
+      "vibelang-source": "./src/MemoryStore.vibe",
+      "default": "./.vibelang/js/src/MemoryStore.js"
+    },
+    "./MemoryTrellis": {
+      "types": "./src/MemoryTrellis.ts",
+      "vibelang-source": "./src/MemoryTrellis.ts",
+      "default": "./.vibelang/js/src/MemoryTrellis.js"
+    },
+    "./Migrations": {
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./Namespace": {
+      "types": "./.vibe/declarations/src/Namespace.d.vibe.ts",
+      "vibelang-source": "./src/Namespace.vibe",
+      "default": "./.vibelang/js/src/Namespace.js"
+    },
+    "./Opening": {
+      "types": "./.vibe/declarations/src/Opening.d.vibe.ts",
+      "vibelang-source": "./src/Opening.vibe",
+      "default": "./.vibelang/js/src/Opening.js"
+    },
+    "./Recall": {
+      "types": "./.vibe/declarations/src/Recall.d.vibe.ts",
+      "vibelang-source": "./src/Recall.vibe",
+      "default": "./.vibelang/js/src/Recall.js"
+    },
+    "./RecallFts": {
+      "types": "./.vibe/declarations/src/RecallFts.d.vibe.ts",
+      "vibelang-source": "./src/RecallFts.vibe",
+      "default": "./.vibelang/js/src/RecallFts.js"
+    },
+    "./RecallKeyword": {
+      "types": "./.vibe/declarations/src/RecallKeyword.d.vibe.ts",
+      "vibelang-source": "./src/RecallKeyword.vibe",
+      "default": "./.vibelang/js/src/RecallKeyword.js"
+    },
+    "./RecallSemantic": {
+      "types": "./.vibe/declarations/src/RecallSemantic.d.vibe.ts",
+      "vibelang-source": "./src/RecallSemantic.vibe",
+      "default": "./.vibelang/js/src/RecallSemantic.js"
+    },
+    "./SnapshotRecorder": {
+      "types": "./.vibe/declarations/src/SnapshotRecorder.d.vibe.ts",
+      "vibelang-source": "./src/SnapshotRecorder.vibe",
+      "default": "./.vibelang/js/src/SnapshotRecorder.js"
+    },
+    "./Source": {
+      "types": "./src/Source.ts",
+      "vibelang-source": "./src/Source.ts",
+      "default": "./.vibelang/js/src/Source.js"
+    },
+    "./WithMemory": {
+      "types": "./.vibe/declarations/src/WithMemory.d.vibe.ts",
+      "vibelang-source": "./src/WithMemory.vibe",
+      "default": "./.vibelang/js/src/WithMemory.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/TestMemory": {
+      "types": "./src/test/TestMemory.ts",
+      "vibelang-source": "./src/test/TestMemory.ts",
+      "default": "./.vibelang/js/src/test/TestMemory.js"
+    },
     "./migrations/*": null
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -69,7 +154,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -306,7 +393,8 @@
     "@smthrs/core": "1.0.0-rc.17",
     "@smthrs/database": "1.0.0-rc.17",
     "@smthrs/flow": "1.0.0-rc.17",
-    "@smthrs/patterns": "1.0.0-rc.17"
+    "@smthrs/patterns": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -326,8 +414,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

@@ -1,6 +1,6 @@
 import { Badge, Button } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
-import type { QueueTab } from "../tab"
+import type { QueueTab } from "#vibelang/source/plugins/queue/src/tab"
 
 // The queue's place in the header's nav: Queue, with how many items wait on you.
 export function NavCount({ tab }: { readonly tab: QueueTab }) {

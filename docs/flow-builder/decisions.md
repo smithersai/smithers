@@ -586,7 +586,7 @@ measurements per page rather than one per item.
 The original ruling kept nodes and incoming edges together and refused any
 node that could not fit alone. Review 3 measured what that costs: a flat
 `Node.all` was accepted at 130 members and refused at 140 under the in-memory
-measure, lower on a durable host, while `.smithers/flows/wiki/workflow.ts:66` fans out
+measure, lower on a durable host, while `.smithers/flows/wiki/workflow.vibe:66` fans out
 over `input.pages` — a caller-sized width. A plan-time refusal that depends on
 the caller's input size is not a bound anyone can design against, so the width
 is paged instead. `InterpreterError {code: "node_record_too_large"}` is left
@@ -915,7 +915,7 @@ product runs on: it serves `create-flow`, so it is where an agent's
 repository's own tree with the verified loader, the reserved job declarations
 out of the measured bundle it shipped as — so it serves that catalog through
 `Executable.layerRefreshable` and names which half may be rebuilt.
-`refreshableEntry` in `.smithers/flows/repository/registry.ts` is that rule, shared with
+`refreshableEntry` in `.smithers/flows/repository/registry.vibe` is that rule, shared with
 `.smithers/flows/test/coding-catalog-refresh.test.ts` rather than restated there: a
 reserved declaration is held `Fixed`, because a run this host is serving can
 write anything into the tree and must not be able to replace an admitted

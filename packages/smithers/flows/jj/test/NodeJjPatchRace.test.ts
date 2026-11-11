@@ -13,7 +13,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Jj } from "../src/Jj.ts"
+import { Jj } from "../src/Jj.vibe"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { resolveJjBinary } from "../src/node/resolveJjBinary.ts"
 import { budgeted } from "./budgeted.ts"

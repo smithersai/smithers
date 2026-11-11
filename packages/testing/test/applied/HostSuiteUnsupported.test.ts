@@ -10,8 +10,8 @@
 import * as TestHost from "@smthrs/testing/TestHost"
 import { Cause, Effect, Exit, FileSystem } from "effect"
 import { describe, expect, it } from "vitest"
-import * as HostSuite from "../../src/HostSuite.ts"
-import * as TestLayers from "../../src/TestLayers.ts"
+import * as HostSuite from "../../src/HostSuite.vibe"
+import * as TestLayers from "../../src/TestLayers.vibe"
 
 /** Every capability declared unsupported, with the code TestHost really raises. */
 const declaredUnsupported: HostSuite.HostProfile = {

@@ -15,7 +15,7 @@ import { ShapeSource } from "@smthrs/effect-electric"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import {
   CHATAPI_ORIGIN,
   failingWorker,

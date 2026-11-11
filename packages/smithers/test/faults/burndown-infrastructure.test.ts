@@ -982,7 +982,7 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
         floor: config.floor,
         pressure,
         after,
-        source: ".smithers/flows/issue-sweep/disk.ts",
+        source: ".smithers/flows/issue-sweep/disk.vibe",
         gate: "makeDiskGate",
         filesystem: "real bounded guest tmpfs",
         cpus: 1,

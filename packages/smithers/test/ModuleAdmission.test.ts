@@ -12,7 +12,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Executable from "@smthrs/registry/Executable"
 import { Effect, Option } from "effect"
-import * as ModuleAdmission from "../src/internal/ModuleAdmission.ts"
+import * as ModuleAdmission from "../src/internal/ModuleAdmission.vibe"
 
 const flowId = "agents/build"
 const runId = "run-1"

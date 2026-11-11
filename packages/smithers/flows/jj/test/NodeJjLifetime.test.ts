@@ -26,7 +26,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
-import { Jj } from "../src/Jj.ts"
+import { Jj } from "../src/Jj.vibe"
 import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 

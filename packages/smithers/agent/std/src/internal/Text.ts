@@ -93,6 +93,7 @@ const fatalDecoder = new TextDecoder("utf-8", { fatal: true })
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const truncateBytes = (
   text: string,
@@ -133,6 +134,7 @@ export const truncateBytes = (
  *
  * @category rendering
  * @since 1.0.0-rc.5
+ * @throws {never}
  */
 export const elideMiddle = (start: string, droppedBytes: number, end: string): string =>
   `${start}${start === "" || start.endsWith("\n") ? "" : "\n"}[${droppedBytes} ${
@@ -158,6 +160,7 @@ export const sourceLines = (text: string): ReadonlyArray<string> => {
  *
  * @category paging
  * @since 1.0.0
+ * @throws {never}
  */
 export const slice = (
   text: string,
@@ -180,6 +183,7 @@ export const slice = (
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const notice = (unit: string, shown: number, total: number): string =>
   `Showing ${shown} of ${total} ${unit}; output was truncated.`

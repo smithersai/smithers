@@ -15,6 +15,7 @@ const manifestPath = new URL('../../../package.json', import.meta.url)
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const runFile = promisify(execFile)
 const gateCommands = [
+  "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//...:fmt' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --verbose",
   // factory.json drift once surfaced only in the Release gates (#3770).

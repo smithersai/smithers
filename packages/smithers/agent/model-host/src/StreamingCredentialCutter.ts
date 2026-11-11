@@ -20,6 +20,7 @@ export class StreamingCredentialCutter {
   /** The end of the returned text, one character shorter than the longest secret part. */
   private returned = ""
   private readonly parts: ReadonlyArray<string>
+  /** @throws {never} */
   constructor(secret: string | undefined, additional: ReadonlyArray<string> = []) {
     this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts)
   }
@@ -32,6 +33,12 @@ export class StreamingCredentialCutter {
     } while (previous !== kept)
     return kept
   }
+  /**
+   * Returns the part of `value` that can be released without exposing a
+   * credential, holding back a possible credential prefix for the next chunk.
+   *
+   * @throws {never}
+   */
   push(value: string): string {
     if (this.parts.length === 0) return value
     this.pending = this.cut(this.pending + value)
@@ -48,6 +55,7 @@ export class StreamingCredentialCutter {
     this.pending = this.pending.slice(this.pending.length - held)
     return this.release(emitted)
   }
+  /** @throws {never} */
   finish(): string {
     const emitted = this.cut(this.pending)
     this.pending = ""

@@ -7,11 +7,11 @@
  */
 import { Action } from "@smthrs/flow"
 import { Effect, FileSystem, Path, Schema } from "effect"
-import { publishedPages } from "../memory/deps.ts"
+import { publishedPages } from "../memory/deps.vibe"
 import { operations } from "../wiki/operations.ts"
 import { Pool, reuseOperations } from "../wiki/reuse.ts"
-import { type PageSpec, Receipt, WikiError } from "../wiki/schema.ts"
-import { Refreshed } from "./planning-wiki.ts"
+import { type PageSpec, Receipt, WikiError } from "../wiki/schema.vibe"
+import { Refreshed } from "./planning-wiki.vibe"
 import { CodingError, StackBase } from "./schema.ts"
 
 export const WikiRefreshInput = Schema.Struct({

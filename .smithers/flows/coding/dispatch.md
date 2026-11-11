@@ -4,7 +4,7 @@
 person typed a message, the agent should answer it, and it may read and edit
 the workspace while doing so. Its module IS the `coding/Dispatch` flow, in
 [dispatch/flow.ts](dispatch/flow.ts), over the actions in
-[dispatch.ts](dispatch.ts).
+[dispatch.vibe](dispatch.vibe).
 
 It exists because every other door in this package runs a programme.
 `coding/ImplementPlan` implements a validated plan. `coding/Request` plans, then

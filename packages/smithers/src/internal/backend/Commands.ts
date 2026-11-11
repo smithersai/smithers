@@ -6,7 +6,7 @@
 import { Cli, Completions, z } from "incur"
 import type { Runtime } from "../../cli/ControlBridge.ts"
 import * as Presentation from "../../cli/Presentation.ts"
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 import * as Failure from "../Failure.ts"
 import { admin } from "./Admin.ts"
 import { ask } from "./AgentDocs.ts"

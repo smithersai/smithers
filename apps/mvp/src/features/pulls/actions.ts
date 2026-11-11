@@ -5,7 +5,7 @@ import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../
 import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
 import { PullsClient } from "./api"
-import { readComparison } from "./comparison"
+import { readComparison } from "#vibelang/emitted/src/features/pulls/comparison"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
 import { VIEW } from "./schema"
 import { PullsStore } from "./store"

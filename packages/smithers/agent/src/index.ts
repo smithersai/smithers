@@ -16,49 +16,49 @@
  * @category services
  * @since 0.1.0
  */
-export * as FlowEngineLike from "./FlowEngineLike.ts"
+export * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /**
  * @category execution
  * @since 1.0.0-rc.16
  */
-export * as ModelStep from "./ModelStep.ts"
+export * as ModelStep from "./ModelStep.vibe"
 
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as MemorySnapshotRecorder from "./MemorySnapshotRecorder.ts"
+export * as MemorySnapshotRecorder from "./MemorySnapshotRecorder.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as Agent from "./Agent.ts"
+export * as Agent from "./Agent.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Seat from "./Seat.ts"
+export * as Seat from "./Seat.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as SeatResolver from "./SeatResolver.ts"
+export * as SeatResolver from "./SeatResolver.vibe"
 
 /**
  * @category services
  * @since 1.0.0-rc.0
  */
-export * as SeatRouter from "./SeatRouter.ts"
+export * as SeatRouter from "./SeatRouter.vibe"
 
 /**
  * @category plugins
  * @since 0.1.0
  */
-export * as CellPlugin from "./CellPlugin.ts"
+export * as CellPlugin from "./CellPlugin.vibe"
 
 /**
  * @category plugins
@@ -82,25 +82,25 @@ export * as AgentSession from "./AgentSession.ts"
  * @category constructors
  * @since 0.1.0
  */
-export * as ChildFlows from "./ChildFlows.ts"
+export * as ChildFlows from "./ChildFlows.vibe"
 
 /**
  * @category constructors
  * @since 0.1.0
  */
-export * as PromoteFlows from "./PromoteFlows.ts"
+export * as PromoteFlows from "./PromoteFlows.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as FlowStore from "./FlowStore.ts"
+export * as FlowStore from "./FlowStore.vibe"
 
 /**
  * @category constructors
  * @since 0.1.0
  */
-export * as EngineChildren from "./EngineChildren.ts"
+export * as EngineChildren from "./EngineChildren.vibe"
 
 /**
  * @category services
@@ -112,13 +112,13 @@ export * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
  * @category services
  * @since 0.1.0
  */
-export * as WorkspaceObservation from "./WorkspaceObservation.ts"
+export * as WorkspaceObservation from "./WorkspaceObservation.vibe"
 
 /**
  * @category constructors
  * @since 0.1.0
  */
-export * as Checkpointed from "./Checkpointed.ts"
+export * as Checkpointed from "./Checkpointed.vibe"
 
 /**
  * @category constructors
@@ -136,31 +136,31 @@ export * as AgentAction from "./AgentAction.ts"
  * @category services
  * @since 0.1.0
  */
-export * as EventSink from "./EventSink.ts"
+export * as EventSink from "./EventSink.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as QuotaPolicy from "./QuotaPolicy.ts"
+export * as QuotaPolicy from "./QuotaPolicy.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as Budget from "./Budget.ts"
+export * as Budget from "./Budget.vibe"
 
 /**
  * @category services
  * @since 1.0.0-rc.1
  */
-export * as RunawayGuard from "./RunawayGuard.ts"
+export * as RunawayGuard from "./RunawayGuard.vibe"
 
 /**
  * @category testing
  * @since 1.0.0-rc.0
  */
-export * as ScriptedJudge from "./ScriptedJudge.ts"
+export * as ScriptedJudge from "./ScriptedJudge.vibe"
 
 /**
  * @category constructors
@@ -172,7 +172,7 @@ export * as Memory from "./Memory.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as MemoryCalibration from "./MemoryCalibration.ts"
+export * as MemoryCalibration from "./MemoryCalibration.vibe"
 
 /**
  * @category constructors
@@ -196,10 +196,10 @@ export * as ExternalAgent from "./ExternalAgent.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Acp from "./Acp.ts"
+export * as Acp from "./Acp.vibe"
 
 /**
  * @category models
  * @since 1.0.0
  */
-export * as Transcript from "./Transcript.ts"
+export * as Transcript from "./Transcript.vibe"

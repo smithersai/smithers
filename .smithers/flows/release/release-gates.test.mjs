@@ -483,11 +483,12 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   // Dropping an inventory gate a mirrored CI job carries is a CI gap too.
   const mutated = releaseGates.filter((gate) => gate.target !== "//packages/smithers/flows/jj-wasm:buildScript")
   assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --verbose"])
-  const workspaceCommand = workflowGateSteps(ci, "test")[0].command
+  const workspaceCommand = workflowGateSteps(ci, "test").find(step => step.name === "Workspace targets").command
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: [workspaceCommand], reason: "stale" }]), [
     `test excludes ${workspaceCommand}, which the inventory runs`
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust-ffi", reason: "whole job" }]), [
+    "rust-ffi excludes pnpm exec smthrs build '//packages/repo-targets:sidecars' --verbose, which the inventory runs",
     "rust-ffi excludes pnpm exec smthrs build '//:nativeFfi' --verbose, which the inventory runs"
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "gone", reason: "stale" }]), ["gone is not a ci.yml job"])

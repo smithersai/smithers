@@ -16,10 +16,10 @@ import {
   type Seq,
   type SourceId,
   type SourceSeq
-} from "../src/JournalEvent.ts"
-import * as Migrations from "../src/Migrations.ts"
-import type { OwnerId } from "../src/OwnerId.ts"
-import * as Projection from "../src/Projection.ts"
+} from "../src/JournalEvent.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import type { OwnerId } from "../src/OwnerId.vibe"
+import * as Projection from "../src/Projection.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = (value: string): RunId => value as RunId

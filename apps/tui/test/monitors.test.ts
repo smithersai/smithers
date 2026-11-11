@@ -2,7 +2,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { describe, expect, it } from "bun:test"
 import { Effect, Layer } from "effect"
 import * as Monitors from "../src/monitors.ts"
-import * as Runtime from "../src/runtime.ts"
+import * as Runtime from "../src/runtime.vibe"
 import * as Session from "../src/session.ts"
 
 /** A fake world: the source says what `values` holds next, Jev and Luna answer from scripts. */

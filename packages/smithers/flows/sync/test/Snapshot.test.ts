@@ -6,7 +6,7 @@ import { TestClock } from "effect/testing"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import * as RunCatalog from "../src/RunCatalog.ts"
-import * as SyncAuth from "../src/SyncAuth.ts"
+import * as SyncAuth from "../src/SyncAuth.vibe"
 import * as SyncClient from "../src/SyncClient.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as SyncPrincipal from "../src/SyncPrincipal.ts"
@@ -14,7 +14,7 @@ import * as Protocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
 import * as TestSync from "../src/test/TestSync.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 
 const request: Protocol.SnapshotRequest = {
   protocolVersion: 1,

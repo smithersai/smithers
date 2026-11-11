@@ -4,7 +4,7 @@ import { build } from "esbuild"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-unplugin/esbuild"
-import { main } from "../../examples/09-browser-use.ts"
+import { main } from "../../examples/09-browser-use.vibe"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -19,10 +19,10 @@ it.effect("runs on the in-memory engine", () =>
 
 it("bundles for the browser with no node: imports", async () => {
   const result = await build({
-    entryPoints: [join(here, "../../examples/09-browser-use.ts")],
+    plugins: [vibelang({ root: join(here, "..", ".."), project: "tsconfig.test.json" })],
+    entryPoints: [join(here, "../../examples/09-browser-use.vibe")],
     absWorkingDir: join(here, ".."),
     bundle: true,
-    plugins: [vibelang({ root: join(here, "../.."), project: "tsconfig.json" })],
     write: false,
     platform: "browser",
     format: "esm",

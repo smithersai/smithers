@@ -7,7 +7,7 @@ import { Deferred, Effect, Latch, Layer, type ManagedRuntime, Metric, Redacted, 
 import { ShapeSource } from "@smthrs/effect-electric"
 import { SqlClient } from "effect/sql"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import * as SpendAlert from "../../../worker/flows/SpendAlert.ts"
 import { type AlertProviders, startAlertProviders } from "../../../worker/test/alertProviders.ts"
 import { asPerson, member, nodeDevice, type NodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"

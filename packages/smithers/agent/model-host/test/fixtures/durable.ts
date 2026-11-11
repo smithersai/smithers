@@ -7,20 +7,20 @@ import { ModelRequest, Route, type Model } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import type { ContextPreflight, NativeAgent } from "@smthrs/rpc"
 import { Cause, Effect, Exit, Layer, Option, Redacted, Result, Schedule, Schema, Stream } from "effect"
-import * as Turn from "../../src/ModelTurnHost.ts"
-import * as Context from "../../src/ContextPreflight.ts"
-import * as Producer from "../../src/DurableChatProducer.ts"
-import * as Tools from "../../src/HostTools.ts"
+import * as Turn from "../../src/ModelTurnHost.vibe"
+import * as Context from "../../src/ContextPreflight.vibe"
+import * as Producer from "../../src/DurableChatProducer.vibe"
+import * as Tools from "../../src/HostTools.vibe"
 import * as Server from "../../src/HostServer.ts"
-import * as Probe from "../../src/ModelProbe.ts"
-import * as Fallback from "../../src/FastModelFallback.ts"
+import * as Probe from "../../src/ModelProbe.vibe"
+import * as Fallback from "../../src/FastModelFallback.vibe"
 
-export * from "../../src/ModelTurnHost.ts"
-export * from "../../src/ContextPreflight.ts"
-export * from "../../src/DurableChatProducer.ts"
-export * from "../../src/HostTools.ts"
+export * from "../../src/ModelTurnHost.vibe"
+export * from "../../src/ContextPreflight.vibe"
+export * from "../../src/DurableChatProducer.vibe"
+export * from "../../src/HostTools.vibe"
 export * from "../../src/HostServer.ts"
-export * from "../../src/ModelProbe.ts"
+export * from "../../src/ModelProbe.vibe"
 
 const route = Result.getOrThrow(Route.openaiChatCompatible({
   id: "behavioral-fixture", providerName: "fixture", baseUrl: "http://127.0.0.1:1", apiKey: Redacted.make("fixture")
@@ -92,7 +92,7 @@ export type ModelTurnResolution = Omit<Server.ModelTurnResolution, "options" | "
 }
 export type ModelTurnResolver = (
   ...args: Parameters<Server.ModelTurnResolver>
-) => Effect.Effect<ModelTurnResolution, import("../../src/ModelHostError.ts").ResolveFailed>
+) => Effect.Effect<ModelTurnResolution, import("../../src/ModelHostError.vibe").ResolveFailed>
 export type ModelTurnHandlerOptions = Omit<Server.ModelTurnHandlerOptions, "resolve"> & { readonly resolve: ModelTurnResolver }
 export const createModelTurnHandler = (options: ModelTurnHandlerOptions) => Effect.uninterruptible(inFlow(Server.createModelTurnHandler({
   ...options,

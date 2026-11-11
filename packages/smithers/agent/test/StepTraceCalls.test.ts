@@ -5,6 +5,7 @@ import { TestClock } from "effect/testing"
 import { execFile, spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -20,6 +21,8 @@ describe("queued cell-call trace replay on SQLite", () => {
       const filename = join(directory, "engine.sqlite")
       const runId = "queued-calls"
       const child = spawn(process.execPath, [
+        "--import",
+        createRequire(import.meta.url).resolve("vibelang/register"),
         fileURLToPath(new URL("./fixtures/step-trace-calls-child.ts", import.meta.url)),
         filename,
         runId,
@@ -91,6 +94,8 @@ describe("queued cell-call trace replay on SQLite", () => {
             // the exact callback source included in the recorded plan.
             const recovered = yield* Effect.promise(() =>
               promisify(execFile)(process.execPath, [
+                "--import",
+                createRequire(import.meta.url).resolve("vibelang/register"),
                 fileURLToPath(new URL("./fixtures/step-trace-calls-child.ts", import.meta.url)),
                 filename,
                 runId,

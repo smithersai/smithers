@@ -2,7 +2,7 @@
 import { type Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Plan, Result, type ValidatedChange } from "./schema.ts"
-import { Assess, FastGate, Implement, recalled, RunCheck, ValidatePlan } from "./workflow.ts"
+import { Assess, FastGate, Implement, recalled, RunCheck, ValidatePlan } from "./workflow.vibe"
 
 type Requirements = Action.Requirement<
   (typeof ValidatePlan | typeof Implement | typeof RunCheck | typeof FastGate | typeof Assess)["name"]

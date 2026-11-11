@@ -1,0 +1,67 @@
+/** Consume the existing provisioned repository credential at the executable boundary. */
+import type { Options } from "./landing.vibe"
+import { SourcePublication } from "./native-schema.ts"
+import { CodingError } from "./schema.ts"
+
+const Binding = Schema.Struct({
+  version: Schema.Literal(1),
+  repositoryPath: Schema.NonEmptyString,
+  repositorySlug: Schema.NonEmptyString,
+  apiBaseUrl: Schema.NonEmptyString,
+  repositoryId: SourcePublication.fields.repositoryId,
+  workspaceId: SourcePublication.fields.workspaceId
+})
+const unavailable = () =>
+  new CodingError({
+    code: "unavailable",
+    message:
+      "Cloud finalization requires the existing provisioned workspace binding and its reserved repository API credential"
+  })
+
+/** The mutable record is the executable's environment, not a workflow value.
+ * Consume before any host/model/process layers start. Checks already use their
+ * explicit environment; ordinary approved shell tools must not inherit this token.
+ */
+export effect function load(
+  root: string,
+  environment: Record<string, string | undefined>,
+  filename = "/etc/smithers/workspace-coding.json"
+): (Options | undefined)!CodingError!FileSystem.FileSystem {
+  const provider = try sync(() => {
+    const selected = {
+      SMITHERS_JJHUB_TOKEN: environment.SMITHERS_JJHUB_TOKEN,
+      SMITHERS_JJHUB_API_URL: environment.SMITHERS_JJHUB_API_URL
+    }
+    delete environment.SMITHERS_JJHUB_TOKEN
+    return ConfigProvider.fromEnvRecord(selected, { preserveEmptyStrings: true })
+  })
+  const token = try Config.option(Config.Redacted("SMITHERS_JJHUB_TOKEN")).parse(provider).pipe(
+    Effect.mapError(unavailable)
+  )
+  const api = try Config.option(Config.String("SMITHERS_JJHUB_API_URL")).parse(provider).pipe(
+    Effect.mapError(unavailable)
+  )
+  if (Option.isNone(token) && Option.isNone(api)) return undefined
+  if (Option.isNone(token) || Option.isNone(api)) throw unavailable()
+  const fs = try FileSystem.FileSystem
+  const stat = try fs.stat(filename).pipe(Effect.mapError(unavailable))
+  if (stat.type !== "File" || stat.size > 16_384n) throw unavailable()
+  const binding = try fs.readFileString(filename).pipe(
+    Effect.flatMap((value) => Schema.decodeUnknownEffect(Schema.fromJsonString(Binding))(value)),
+    Effect.mapError(unavailable)
+  )
+  if (
+    binding.apiBaseUrl !== api.value || binding.repositoryPath !== root ||
+    (try fs.realPath(binding.repositoryPath).pipe(Effect.mapError(unavailable))) !==
+      (try fs.realPath(root).pipe(Effect.mapError(unavailable)))
+  ) {
+    throw unavailable()
+  }
+  return {
+    apiBaseUrl: api.value,
+    token: token.value,
+    repositorySlug: binding.repositorySlug,
+    repositoryId: binding.repositoryId,
+    workspaceId: binding.workspaceId
+  }
+}

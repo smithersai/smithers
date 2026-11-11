@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as CellPrompt from "../src/internal/cellPrompt.ts"
+import * as CellPrompt from "../src/internal/cellPrompt.vibe"
 import * as DemandText from "../src/internal/demandText.ts"
 
 const contract = () => CellPrompt.make({}).find((section) => section.id === "cell-contract")!.text

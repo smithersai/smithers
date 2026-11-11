@@ -13,7 +13,7 @@ import {
 } from "../../rpc/src/Mythical.ts"
 import { issueGroupOf } from "../../rpc/src/StackIssues.ts"
 import { accountLabel as cardAccountLabel, itemStateLabel, settled } from "../../rpc/src/StackView.ts"
-import { main } from "../src/cli/Entry.ts"
+import { main } from "../src/cli/Entry.vibe"
 import { Client } from "../src/internal/backend/Client.ts"
 import {
   accountLabel,

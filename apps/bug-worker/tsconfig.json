@@ -1,5 +1,9 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
+    "allowArbitraryExtensions": true,
     // DOM as well as ESNext: the contract test reaches @smthrs/control, whose
     // WebCrypto sources are typed against DOM, as the module that owns them
     // declares.
@@ -16,5 +20,5 @@
     "skipLibCheck": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "tests/**/*", "alchemy.run.ts"]
+  "include": ["src/**/*", "tests/**/*", "alchemy.run.ts", "alchemy.run.vibe"]
 }

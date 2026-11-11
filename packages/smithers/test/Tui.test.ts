@@ -10,9 +10,9 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Tui from "../src/commands/Tui.ts"
 
 const staged: Array<string> = []
@@ -151,7 +151,11 @@ describe("smthrs tui runtime choice", () => {
     expect(Tui.checkout(workspace)).toBe(true)
     expect(Tui.launch({ SMITHERS_BUN: "/opt/bun" }, workspace, here)).toMatchObject({
       runtime: "bun",
-      args: [expect.stringMatching(/apps\/tui\/src\/main\.tsx$/)]
+      args: [
+        "--preload",
+        fileURLToPath(import.meta.resolve("vibelang/bun")),
+        expect.stringMatching(/apps\/tui\/src\/main\.tsx$/)
+      ]
     })
     expect(Tui.launch({}, workspace, here)).toMatchObject({
       runtime: "node",

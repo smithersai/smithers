@@ -8,8 +8,8 @@ import {
   SHARE_ACCESSES,
   type ShareAccess,
 } from "../../src/features/branch/contract.ts"
-import { type Actor, canAsk, type Role } from "../Actor.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { type Actor, canAsk, type Role } from "#vibelang/emitted/worker/Actor"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "../github/RepoRoles.ts"
 
 // Who may do what on a branch's live workspace (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):

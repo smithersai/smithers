@@ -384,6 +384,7 @@ const walk = (
  *
  * @category validation
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const admit = (
   input: unknown,

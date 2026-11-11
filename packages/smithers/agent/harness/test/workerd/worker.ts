@@ -16,8 +16,8 @@
 import { Effect, Layer, Option } from "effect"
 import * as Cell from "../../src/Cell.ts"
 import * as QuickJSSandbox from "../../src/QuickJSSandbox.ts"
-import * as QuickJSWorkerd from "../../src/QuickJSWorkerd.ts"
-import * as Sandbox from "../../src/Sandbox.ts"
+import * as QuickJSWorkerd from "../../src/QuickJSWorkerd.vibe"
+import * as Sandbox from "../../src/Sandbox.vibe"
 
 const flows: Readonly<Record<string, Cell.FlowProjection>> = {
   "fs/list": new Cell.FlowProjection({

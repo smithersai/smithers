@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect"
 import { expect, test } from "vitest"
 import { CASES, caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
-import { judgeScorer } from "./judge"
+import { judgeScorer } from "./judge.ts"
 import { FLOW_CASES } from "./flowCases"
 
 const judge = NodeControl.layerSeatEvaluator(process.env).pipe(

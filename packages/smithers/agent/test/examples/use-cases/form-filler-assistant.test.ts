@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FormFillerAssistant, layer } from "../../../examples/use-cases/form-filler-assistant.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { FormFillerAssistant, layer } from "../../../examples/use-cases/form-filler-assistant.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "form-filler-assistant-"))
 

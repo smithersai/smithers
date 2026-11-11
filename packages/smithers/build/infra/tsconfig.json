@@ -1,5 +1,9 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
+    "allowArbitraryExtensions": true,
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
     "exactOptionalPropertyTypes": true,

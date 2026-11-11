@@ -1,7 +1,7 @@
 /** Unit contracts for local repository declarations and Repo.Target attrs. */
 import { describe, expect, it } from "vitest"
 import { Smithers as S } from "../src/index.ts"
-import * as LocalRepository from "../src/LocalRepository.ts"
+import * as LocalRepository from "../src/LocalRepository.vibe"
 import * as RepoTarget from "../src/RepoTarget.ts"
 import * as Target from "../src/Target.ts"
 

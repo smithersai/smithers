@@ -3,7 +3,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * `issue-sweep`: works every open GitHub issue that no other machine holds,
  * as a `Burndown` from `@smthrs/patterns`. Each round asks the Codex and
  * Claude account pools for capacity, lists the open issues, claims the ones
- * that are ours, triages each (`triage.ts`) so only an issue that needs a code
+ * that are ours, triages each (`triage.vibe`) so only an issue that needs a code
  * change is claimed, fixes each in its own jj workspace (`issue-sweep/work`), lands
  * each result on `main` as its fix finishes, checking up to `landers` changes
  * at once and pushing one at a time, and releases every claim. A finished fix
@@ -20,11 +20,11 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import { randomUUID } from "node:crypto"
 import { appendFile, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { capacity, perAccount, type Pools, readPools } from "./accounts.ts"
-import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.ts"
-import { api, issue as readIssue, openIssues } from "./github.ts"
+import { capacity, perAccount, type Pools, readPools } from "./accounts.vibe"
+import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.vibe"
+import { api, issue as readIssue, openIssues } from "./github.vibe"
 import { HostFailed, repository, run, tail, workspaces } from "./host.ts"
-import { terminalIdentityConflict } from "./identity.ts"
+import { terminalIdentityConflict } from "./identity.vibe"
 import { landChange, LandFailed } from "./land.ts"
 import {
   cachePath,
@@ -35,10 +35,10 @@ import {
   type Seams,
   type Text,
   type TriageFailed
-} from "./triage.ts"
-import { infraCaused, noChangeLabel, recordVerdict, requalified } from "./verdict.ts"
-import { vmFields, vmOptions } from "./vm-options.ts"
-import { statfsFree } from "./vm.ts"
+} from "./triage.vibe"
+import { infraCaused, noChangeLabel, recordVerdict, requalified } from "./verdict.vibe"
+import { vmFields, vmOptions } from "./vm-options.vibe"
+import { statfsFree } from "./vm.vibe"
 import Work, { AgentFailed, checkoutIssue, type NoChange, removeWorkspace, type Report, requeue } from "./work/flow.ts"
 
 // The most landings one round runs at once; `landers` picks fewer.

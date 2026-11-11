@@ -10,7 +10,7 @@
  */
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import * as Failures from "./failures.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 
 /** Where a repository lives on Cloud: `owner/name`. */
 export type Repository = string

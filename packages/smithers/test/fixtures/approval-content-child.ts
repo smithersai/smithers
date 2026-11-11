@@ -7,7 +7,7 @@ import { RequestExecutor } from "@smthrs/model/RequestExecutor"
 import { Cause, Deferred, Effect, Exit, Layer } from "effect"
 import { RpcSerialization } from "effect/rpc"
 import { readFileSync } from "node:fs"
-import * as Application from "../../src/Application.ts"
+import * as Application from "../../src/Application.vibe"
 import * as NodeControl from "../../src/NodeControl.ts"
 
 const [action, root, cardFile] = process.argv.slice(2)

@@ -13,8 +13,8 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
-import * as CliError from "../CliError.ts"
-import * as Forensics from "../Forensics.ts"
+import * as CliError from "../CliError.vibe"
+import * as Forensics from "../Forensics.vibe"
 import * as Failure from "../internal/Failure.ts"
 
 interface Session {

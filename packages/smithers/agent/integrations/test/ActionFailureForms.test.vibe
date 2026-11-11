@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "@effect/vitest"
-import { IntegrationFailure as Persisted, MessageId, Reason, RetryAfterMillis } from "../src/core/ActionFailure.ts"
+import { IntegrationFailure as Persisted, MessageId, Reason, RetryAfterMillis } from "../src/core/ActionFailure.vibe"
 import { type Reason as ReasonType, reasons } from "../src/core/IntegrationError.ts"
 
 // The class's fields, tagged with the bare class name.

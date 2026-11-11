@@ -9,13 +9,13 @@
  */
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Bash from "../src/Bash.ts"
-import type * as Checkpoints from "../src/Checkpoints.ts"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
-import * as Ls from "../src/Ls.ts"
-import * as Read from "../src/Read.ts"
-import * as Relocate from "../src/Relocate.ts"
+import * as Bash from "../src/Bash.vibe"
+import type * as Checkpoints from "../src/Checkpoints.vibe"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
+import * as Ls from "../src/Ls.vibe"
+import * as Read from "../src/Read.vibe"
+import * as Relocate from "../src/Relocate.vibe"
 
 const materialized: Checkpoints.Materialized = {
   id: "cp-0-1",

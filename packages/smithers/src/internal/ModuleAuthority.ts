@@ -25,7 +25,7 @@ import type * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Option, RcMap, Schema } from "effect"
-import { ModuleOwner } from "./ModuleOwner.ts"
+import { ModuleOwner } from "./ModuleOwner.vibe"
 
 /**
  * Composes existing host authority services without another run ledger.

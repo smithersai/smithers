@@ -50,11 +50,11 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { canonicalJson } from "./internal/Canonical.ts"
 import { digest } from "./internal/Digest.ts"
-import { resolveBanks } from "./internal/ResolveNamespace.ts"
-import type { MemoryError } from "./MemoryError.ts"
-import * as MemoryStore from "./MemoryStore.ts"
-import * as Recall from "./Recall.ts"
-import * as SnapshotRecorder from "./SnapshotRecorder.ts"
+import { resolveBanks } from "./internal/ResolveNamespace.vibe"
+import type { MemoryError } from "./MemoryError.vibe"
+import * as MemoryStore from "./MemoryStore.vibe"
+import * as Recall from "./Recall.vibe"
+import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * Source input and retry identity.
@@ -166,6 +166,7 @@ const bounded = (
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const render = (rows: ReadonlyArray<SnapshotRecorder.Row>): string =>
   rows.length === 0

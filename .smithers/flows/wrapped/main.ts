@@ -1,7 +1,7 @@
 /**
  * Runs `wrapped` through the flow runtime:
  *
- *   node --experimental-strip-types .smithers/flows/wrapped/main.ts --harness claude-code|codex \
+ *   node --import vibelang/register .smithers/flows/wrapped/main.ts --harness claude-code|codex \
  *     --cwd <dir> --task "<text>" [--session <id>] [--permission plan|acceptEdits] [--dry-run]
  *
  * Prints one JSON line per fact: the memory Output, the exact argv, then the
@@ -22,10 +22,10 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { realpath } from "node:fs/promises"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
 import Wrapped, { grants, make, recallSession, selectMemory, writePrompt } from "./flow.ts"
-import { type Command, commandFor } from "./launch.ts"
-import { defaultPermission, Harness, Permission } from "./prompt.ts"
+import { type Command, commandFor } from "./launch.vibe"
+import { defaultPermission, Harness, Permission } from "./prompt.vibe"
 
 const { values } = parseArgs({
   options: {
@@ -42,7 +42,7 @@ const argv = (command: Command) => [command.executable, ...command.args]
 
 if (values.task === undefined || values.cwd === undefined) {
   process.stderr.write(
-    "usage: node --experimental-strip-types .smithers/flows/wrapped/main.ts --harness claude-code|codex --cwd <dir> --task <text> [--session <id>] [--permission plan|acceptEdits] [--dry-run]\n"
+    "usage: node --import vibelang/register .smithers/flows/wrapped/main.ts --harness claude-code|codex --cwd <dir> --task <text> [--session <id>] [--permission plan|acceptEdits] [--dry-run]\n"
   )
   process.exit(2)
 }
@@ -57,7 +57,7 @@ const key = process.env.AI_GATEWAY_API_KEY
 const evaluator = key === undefined || key === "" ? hostJudge : (() => {
   const gateway = Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(
     Layer.provide(KernelHttpClient.layer),
-    // eslint-disable-next-line no-restricted-syntax -- Jev HTTP only, as apps/tui/src/host.ts; no filesystem or shell sits above it
+    // eslint-disable-next-line no-restricted-syntax -- Jev HTTP only, as apps/tui/src/host.vibe; no filesystem or shell sits above it
     Layer.provide(GrantStore.layerNoop),
     Layer.provide(FetchHttpClient.layer)
   )

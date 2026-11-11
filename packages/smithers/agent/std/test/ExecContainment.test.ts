@@ -47,7 +47,7 @@ import { fileURLToPath } from "node:url"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as ProcessReaper from "../../../flows/platform-node/src/ProcessReaper.ts"
 import { collectSources, fileBindsSpawningModule } from "../../../flows/test/SpawnSpecifiers.ts"
-import * as Exec from "../src/internal/Exec.ts"
+import * as Exec from "../src/internal/Exec.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-exec-containment-"))
 

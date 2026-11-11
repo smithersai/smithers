@@ -12,10 +12,11 @@ import {
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
-const sources = Input.glob("{src,examples}/**/*.ts")
+const sources = Input.glob("{src,examples}/**/*.{ts,vibe}")
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  entry: Input.file("src/index.vibe"),
   sources,
   cwd: "packages/smithers/flows/canonical"
 })
@@ -91,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "The loneSurrogates \"escape\" mode reachable from a digest path that expects strict RFC 8785 output.",
         "A toJSON result or boxed primitive whose bytes depend on overridable toString/valueOf rather than the internal slot."
       ],
-      paths: ["src/internal/canonicalize.ts", "src/Canonical.ts", "src/Serializer.ts"]
+      paths: ["src/internal/canonicalize.ts", "src/Canonical.vibe", "src/Serializer.ts"]
     },
     {
       id: "canonical-resource-bounds",
@@ -144,10 +145,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/describe.ts",
-        "src/IssuePath.ts",
+        "src/IssuePath.vibe",
         "src/BoundedJson.ts",
         "src/internal/canonicalize.ts",
-        "src/Canonical.ts"
+        "src/Canonical.vibe"
       ]
     },
     {

@@ -34,11 +34,11 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "./EffectBoundary.ts"
-import { forkCreatedEventType, Frame, type LineageEdge, LineageEdgeKind } from "./Frame.ts"
+import { forkCreatedEventType, Frame, type LineageEdge, LineageEdgeKind } from "./Frame.vibe"
 import * as LineageTree from "./internal/LineageTree.ts"
-import * as Migrations from "./Migrations.ts"
-import { error, TimeTravelError } from "./TimeTravelError.ts"
-import * as TimeTravelStore from "./TimeTravelStore.ts"
+import * as Migrations from "./Migrations.vibe"
+import { error, TimeTravelError } from "./TimeTravelError.vibe"
+import * as TimeTravelStore from "./TimeTravelStore.vibe"
 
 /**
  * Applies pending time-travel migration rungs and records them in

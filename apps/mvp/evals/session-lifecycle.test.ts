@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { expect, test } from "vitest"
-import { openProviderResource, waitForDispatch } from "./session-lifecycle"
+import { openProviderResource, waitForDispatch } from "./session-lifecycle.ts"
 
 test("closing the provider runs its scope finalizers exactly once", async () => {
   let closed = 0

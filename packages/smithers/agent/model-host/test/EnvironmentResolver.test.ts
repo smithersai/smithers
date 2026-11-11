@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
+import { environmentModelResolver } from "../src/EnvironmentResolver.vibe"
 import type { DurableChatGrant } from "./fixtures/durable.ts"
 import { runModelTurn } from "./fixtures/durable.ts"
 

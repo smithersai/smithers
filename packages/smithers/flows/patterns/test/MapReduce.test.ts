@@ -6,8 +6,8 @@ import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect, expectTypeOf } from "vitest"
-import * as MapReduce from "../src/MapReduce.ts"
-import { PatternError } from "../src/PatternError.ts"
+import * as MapReduce from "../src/MapReduce.vibe"
+import { PatternError } from "../src/PatternError.vibe"
 import { callsTo } from "./Graphs.ts"
 
 // One member per phase, because a `@smthrs/flow` flow declares the payload it

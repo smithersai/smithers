@@ -127,7 +127,7 @@ test("a moved deployment is refused without overwriting another rollout", async 
 test("the public Smithers flow fails with the deterministic recovery receipt", async () => {
   const [{ default: Flow }, { executionLayer }, { FlowEngine }, NodeCrypto, { Effect, Layer }] = await Promise.all([
     import("../rollout/flow.ts"),
-    import("../rollout/host.ts"),
+    import("../rollout/host.vibe"),
     import("@smthrs/engine"),
     import("@effect/platform-node/NodeCrypto"),
     import("effect")

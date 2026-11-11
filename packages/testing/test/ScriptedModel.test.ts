@@ -3,9 +3,9 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Fiber, Stream } from "effect"
-import * as ScriptedModel from "../src/ScriptedModel.ts"
-import * as TurnGate from "../src/TurnGate.ts"
-import * as TurnLog from "../src/TurnLog.ts"
+import * as ScriptedModel from "../src/ScriptedModel.vibe"
+import * as TurnGate from "../src/TurnGate.vibe"
+import * as TurnLog from "../src/TurnLog.vibe"
 
 const request = (text: string, system = "Teach.") =>
   ModelRequest.make({

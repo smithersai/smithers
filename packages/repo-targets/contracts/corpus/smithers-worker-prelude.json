@@ -1,0 +1,33 @@
+{
+  "factories": [
+    {
+      "owner": "Cache",
+      "method": "make"
+    },
+    {
+      "owner": "Deferred",
+      "method": "make"
+    },
+    {
+      "owner": "Queue",
+      "method": "unbounded"
+    },
+    {
+      "owner": "Effect",
+      "method": "cached"
+    },
+    {
+      "owner": "Semaphore",
+      "method": "make"
+    },
+    {
+      "owner": "ScopedCache",
+      "method": "makeWith"
+    }
+  ],
+  "contexts": [
+    "module",
+    "effect-block",
+    "effect-function"
+  ]
+}

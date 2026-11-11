@@ -1,0 +1,430 @@
+/**
+ * A docs site's index, in the `llms.txt` format (https://llmstxt.org): read
+ * it, find a page in it, search it, and fetch it or one of its pages from a
+ * server, guarded.
+ *
+ * A repository names its docs index in its home (`Home.read`'s `docs`), such
+ * as `https://vibelang.sh/llms.txt`. The index is a Markdown file: a `#`
+ * title, a `>` summary, then `##` sections listing pages as
+ * `- [Title](url): description`. {@link parse} keeps the pages on the
+ * index's own origin, so a server that fetches a page of the index fetches
+ * only from the host the repository named. Every string is bounded, and the
+ * index is someone else's content: a page draws it as text, never as markup.
+ *
+ * {@link search} ranks pages by the words of a query in their titles,
+ * descriptions, sections and paths, a rare word counting for more than one
+ * every page has. {@link fetchText} requests the index or a page from a
+ * server through the same guard `WebPage.check` uses.
+ *
+ * @since 0.1.0
+ */
+
+import type * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpClient from "effect/http/HttpClient"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
+import type * as HttpClientResponse from "effect/http/HttpClientResponse"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import { decodeUtf8 } from "./Docs.platform.ts"
+import { refusal } from "./internal/hosts.ts"
+
+/**
+ * Maximum number of pages one index lists; the rest are dropped.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumPages = 1000
+
+/**
+ * Maximum length of a page's title, and of the index's title; longer ones
+ * are cut.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumTitleLength = 200
+
+/**
+ * Maximum length of a page's description, and of the index's summary;
+ * longer ones are cut.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maximumDescriptionLength = 300
+
+/**
+ * How many pages {@link search} answers unless told otherwise.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const defaultLimit = 5
+
+/**
+ * One page an index lists: its title, its absolute URL (no query or
+ * fragment), its path on the index's origin, which names it, and the
+ * description and section the index gives it.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Page = Schema.Struct({
+  title: Schema.String,
+  url: Schema.String,
+  path: Schema.String,
+  description: Schema.optionalKey(Schema.String),
+  section: Schema.optionalKey(Schema.String)
+})
+
+/**
+ * One page an index lists.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Page = typeof Page.Type
+
+/**
+ * A docs index: its title, `""` when it has none, its summary, and its pages
+ * in order.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Index = Schema.Struct({
+  title: Schema.String,
+  summary: Schema.optionalKey(Schema.String),
+  pages: Schema.Array(Page)
+})
+
+/**
+ * A docs index.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Index = typeof Index.Type
+
+const cut = (text: string, length: number) => text.trim().slice(0, length)
+
+const LINK = /^[-*+]\s+\[([^\]]+)\]\(([^)\s]+)\)(?:\s*:\s*(.*))?$/
+
+/**
+ * Reads an `llms.txt` index served at `indexUrl`. A page's URL is resolved
+ * against `indexUrl` and kept only on its origin, `http` or `https`, once per
+ * path, in order, up to {@link maximumPages}; anything inside a fenced code
+ * block is skipped. Text that lists no pages is an empty index, never a
+ * failure.
+ *
+ * @example
+ * ```ts
+ * import { Docs } from "@smthrs/views"
+ *
+ * const index = Docs.parse("# Example\n\n## Start\n\n- [Install](/install.md): Get it running", "https://docs.example.com/llms.txt")
+ * // { title: "Example", pages: [{ title: "Install", url: "https://docs.example.com/install.md",
+ * //   path: "/install.md", description: "Get it running", section: "Start" }] }
+ * ```
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const parse = (text: string, indexUrl: string): Index => {
+  const base = URL.parse(indexUrl)
+  const origin = base !== null && (base.protocol === "https:" || base.protocol === "http:") ? base.origin : undefined
+  let title = ""
+  let summary: string | undefined
+  let section: string | undefined
+  let fenced = false
+  const pages: Array<Page> = []
+  const paths = new Set<string>()
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (/^(```|~~~)/.test(line)) {
+      fenced = !fenced
+      continue
+    }
+    if (fenced) continue
+    if (title === "" && /^#\s/.test(line)) {
+      title = cut(line.slice(2), maximumTitleLength)
+      continue
+    }
+    if (summary === undefined && line.startsWith(">") && section === undefined) {
+      summary = cut(line.slice(1), maximumDescriptionLength)
+      continue
+    }
+    if (/^##\s/.test(line)) {
+      section = cut(line.slice(3), maximumTitleLength)
+      continue
+    }
+    const link = LINK.exec(line)
+    if (link === null || origin === undefined || pages.length === maximumPages) continue
+    const url = URL.parse(link[2]!, base!)
+    // `blob:https://host/…` has the host's origin too: only the index's own scheme names a page.
+    if (url === null || url.protocol !== base!.protocol || url.origin !== origin) continue
+    if (paths.has(url.pathname)) continue
+    paths.add(url.pathname)
+    const description = cut(link[3] ?? "", maximumDescriptionLength)
+    pages.push({
+      title: cut(link[1]!, maximumTitleLength),
+      url: `${url.origin}${url.pathname}`,
+      path: url.pathname,
+      ...(description === "" ? {} : { description }),
+      ...(section === undefined ? {} : { section })
+    })
+  }
+  return summary === undefined || summary === "" ? { title, pages } : { title, summary, pages }
+}
+
+/**
+ * The page of `index` at `path`, or `undefined`.
+ *
+ * @category reading
+ * @since 0.1.0
+ */
+export const find = (index: Index, path: string): Page | undefined => index.pages.find((page) => page.path === path)
+
+/** A text's words: lowercase letters and digits, two or more of them. */
+const wordsOf = (text: string): ReadonlyArray<string> => text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? []
+
+/** How well one field of a page matches `token`: `word` when a word starts with it, `part` when it appears in one. */
+const points = (words: ReadonlyArray<string>, token: string, word: number, part: number) =>
+  words.some((each) => each.startsWith(token)) ? word : words.some((each) => each.includes(token)) ? part : 0
+
+/**
+ * The pages of `index` that match `query`'s words, best first, at most
+ * `limit`. Each word counts in a page's title most, then its description,
+ * then its section and path, and a word few pages hold counts for more than
+ * one most do, so a docs site's own name ranks nothing. Pages that match no
+ * word are left out; ties keep the index's order.
+ *
+ * @example
+ * ```ts
+ * import { Docs } from "@smthrs/views"
+ *
+ * declare const index: Docs.Index
+ * Docs.search(index, "retry a request", 3) // the three pages that best match
+ * ```
+ *
+ * @category searching
+ * @since 0.1.0
+ */
+export const search = (index: Index, query: string, limit: number = defaultLimit): ReadonlyArray<Page> => {
+  const tokens = [...new Set(wordsOf(query))]
+  if (tokens.length === 0) return []
+  const fields = index.pages.map((page) => ({
+    page,
+    title: wordsOf(page.title),
+    description: wordsOf(page.description ?? ""),
+    section: wordsOf(page.section ?? ""),
+    path: wordsOf(page.path)
+  }))
+  const weights = tokens.map((token) => {
+    const holding = fields.filter((field) =>
+      [field.title, field.description, field.section, field.path].some((words) =>
+        words.some((word) =>
+          word.includes(token)
+        )
+      )
+    ).length
+    return Math.log(1 + fields.length / (1 + holding))
+  })
+  return fields
+    .map((field, order) => ({
+      page: field.page,
+      order,
+      score: tokens.reduce(
+        (total, token, n) =>
+          total + weights[n]! * (
+              points(field.title, token, 4, 2) + points(field.description, token, 2, 1) +
+              points(field.section, token, 1, 1) + points(field.path, token, 1, 1)
+            ),
+        0
+      )
+    }))
+    .filter((scored) => scored.score > 0)
+    .sort((left, right) => right.score - left.score || left.order - right.order)
+    .slice(0, Math.max(0, limit))
+    .map((scored) => scored.page)
+}
+
+/**
+ * Why {@link fetchText} answered no text:
+ *
+ * - `invalid_url`: not an absolute `http` or `https` URL, or one with a user
+ *   or a password;
+ * - `private_host`: an IP address literal, a single-label name or a local
+ *   name, as `WebPage.check` refuses;
+ * - `redirects`: too many redirects, or one to a URL it won't request;
+ * - `unreachable`, `timeout`: no answer, or none in time;
+ * - `status`: an answer of 400 or above;
+ * - `content`: a body that isn't text;
+ * - `too_large`: a body over the cap.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type FetchRefusal =
+  | "invalid_url"
+  | "private_host"
+  | "redirects"
+  | "unreachable"
+  | "timeout"
+  | "status"
+  | "content"
+  | "too_large"
+
+/**
+ * What {@link fetchText} answers: the text, its media type and the URL it
+ * ended on after redirects; or why there is none.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Fetched =
+  | { readonly _tag: "Text"; readonly text: string; readonly type: string; readonly url: string }
+  | { readonly _tag: "Refused"; readonly reason: FetchRefusal; readonly status?: number }
+
+/**
+ * How {@link fetchText} requests:
+ *
+ * - `privateHosts`: hosts the guard lets through, such as a test's
+ *   `127.0.0.1`; none by default;
+ * - `maxRedirects`: 5 by default;
+ * - `timeout`: for the whole request and body, 8 seconds by default;
+ * - `maxBytes`: the body's cap, 1 MiB by default;
+ * - `userAgent`: the `User-Agent` header.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface FetchOptions {
+  readonly privateHosts?: ReadonlyArray<string> | undefined
+  readonly maxRedirects?: number | undefined
+  readonly timeout?: Duration.Input | undefined
+  readonly maxBytes?: number | undefined
+  readonly userAgent?: string | undefined
+}
+
+const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308])
+
+const header = (response: HttpClientResponse.HttpClientResponse, name: string): string | undefined => {
+  const value = response.headers[name]
+  return typeof value === "string" ? value : undefined
+}
+
+/** A media type is text when it is `text/*`, or when the server names none. */
+const textual = (type: string) => type === "" || type.startsWith("text/")
+
+/** The body, up to `maxBytes`: its bytes, or `undefined` when it is longer. */
+const readBody = (response: HttpClientResponse.HttpClientResponse, maxBytes: number) =>
+  Effect.suspend(() => {
+    const chunks: Array<Uint8Array> = []
+    let bytes = 0
+    return Stream.runForEachWhile(response.stream, (chunk) =>
+      Effect.sync(() => {
+        bytes += chunk.byteLength
+        if (bytes <= maxBytes) chunks.push(chunk)
+        return bytes <= maxBytes
+      })).pipe(Effect.map(() => {
+        if (bytes > maxBytes) return undefined
+        const body = new Uint8Array(bytes)
+        let at = 0
+        for (const chunk of chunks) {
+          body.set(chunk, at)
+          at += chunk.byteLength
+        }
+        return body
+      }))
+  })
+
+type Followed =
+  | { readonly refused: FetchRefusal }
+  | { readonly response: HttpClientResponse.HttpClientResponse; readonly url: URL }
+
+/**
+ * Requests `url` from a server and answers its text: the docs index, or one
+ * of its pages. Every URL, the redirects' included, passes the guard
+ * `WebPage.check` uses before anything is sent; the request carries no
+ * cookie or credential, and asks for Markdown or plain text. A body that
+ * isn't text (`text/*`, or untyped), holds a NUL or isn't UTF-8, or is over
+ * the cap is refused, and so is an answer of 400 or above.
+ *
+ * It never fails: each refusal is an answer, by why. The span
+ * `Docs.fetchText` carries the outcome and the status, never the URL; the
+ * request records no client span and sends no trace context.
+ *
+ * @category fetching
+ * @since 0.1.0
+ */
+export const fetchText = (
+  url: string,
+  options: FetchOptions = {}
+): Effect.Effect<Fetched, never, HttpClient.HttpClient> =>
+  (effect {
+    const client = try HttpClient.HttpClient
+    const init = Option.getOrElse(try Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
+    const privateHosts = (options.privateHosts ?? []).map((host) => host.toLowerCase())
+    const maxRedirects = options.maxRedirects ?? 5
+    const request = (href: string) =>
+      client.execute(HttpClientRequest.get(href, {
+        headers: {
+          accept: "text/markdown, text/plain;q=0.9, text/*;q=0.8",
+          "user-agent": options.userAgent ?? "Mozilla/5.0 (compatible; docs-fetch)"
+        }
+      })).pipe(
+        Effect.provideService(FetchHttpClient.RequestInit, { ...init, redirect: "manual" }),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+        Effect.provideService(HttpClient.TracerPropagationEnabled, false)
+      )
+    const follow = (current: URL, hop: number): Effect.Effect<Followed, never, HttpClient.HttpClient> =>
+      effect {
+        const refused = refusal(current, privateHosts)
+        if (refused !== undefined) return { refused: hop > 0 && refused === "invalid_url" ? "redirects" : refused }
+        const answered = try Effect.result(request(current.href))
+        if (answered._tag === "Failure") return { refused: "unreachable" }
+        const response = answered.success
+        const location = header(response, "location")
+        if (!REDIRECTS.has(response.status) || location === undefined) return { response, url: current }
+        const next = URL.parse(location, current)
+        if (hop === maxRedirects || next === null) return { refused: "redirects" }
+        return try follow(next, hop + 1)
+      }
+    const start = URL.parse(url)
+    if (start === null) return { _tag: "Refused", reason: "invalid_url" } as const
+    const read: Effect.Effect<Fetched, never, HttpClient.HttpClient> = effect {
+      const followed = try follow(start, 0)
+      if ("refused" in followed) return { _tag: "Refused", reason: followed.refused }
+      const { response, url: ended } = followed
+      if (response.status >= 400) return { _tag: "Refused", reason: "status", status: response.status } as const
+      const type = (header(response, "content-type") ?? "").split(";")[0]!.trim().toLowerCase()
+      if (!textual(type)) return { _tag: "Refused", reason: "content" } as const
+      const body = try Effect.orElseSucceed(readBody(response, options.maxBytes ?? 1024 * 1024), () => null)
+      if (body === null) return { _tag: "Refused", reason: "unreachable" } as const
+      if (body === undefined) return { _tag: "Refused", reason: "too_large" } as const
+      if (body.includes(0)) return { _tag: "Refused", reason: "content" } as const
+      const text = decodeUtf8(body)
+      if (text === undefined) return { _tag: "Refused", reason: "content" } as const
+      return { _tag: "Text", text, type: type === "" ? "text/plain" : type, url: ended.href } as const
+    }
+    return try read.pipe(
+      Effect.timeoutOrElse({
+        duration: options.timeout ?? "8 seconds",
+        orElse: () => Effect.succeed<Fetched>({ _tag: "Refused", reason: "timeout" })
+      })
+    )
+  }).pipe(
+    Effect.tap((fetched) =>
+      Effect.annotateCurrentSpan({
+        "docs.outcome": fetched._tag === "Text" ? "text" : fetched.reason,
+        ...(fetched._tag === "Refused" && fetched.status !== undefined
+          ? { "http.response.status_code": fetched.status }
+          : {})
+      })
+    ),
+    Effect.withSpan("Docs.fetchText")
+  )

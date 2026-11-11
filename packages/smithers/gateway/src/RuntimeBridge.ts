@@ -23,9 +23,9 @@ import {
 import * as Fault from "@smthrs/flow/Fault"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { RunSummaryRow } from "./GatewayProjection.ts"
+import { RunSummaryRow } from "./GatewayProjection.vibe"
 import * as Projections from "./Projections.ts"
-import { monitorFromJournal } from "./RunTrace.ts"
+import { monitorFromJournal } from "./RunTrace.vibe"
 
 /**
  * The only protocol version accepted by this host.

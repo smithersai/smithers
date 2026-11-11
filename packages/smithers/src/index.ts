@@ -22,12 +22,12 @@ export * as Agents from "./Agents.ts"
  * @category layers
  * @since 1.0.0
  */
-export * as Application from "./Application.ts"
+export * as Application from "./Application.vibe"
 /**
  * @category layers
  * @since 1.0.0
  */
-export * as BunControl from "./BunControl.ts"
+export * as BunControl from "./BunControl.vibe"
 /**
  * @category reporting
  * @since 1.0.0
@@ -53,7 +53,7 @@ export * as CloudSandbox from "./CloudSandbox.ts"
  * @category errors
  * @since 1.0.0
  */
-export * as CliError from "./CliError.ts"
+export * as CliError from "./CliError.vibe"
 /**
  * @category node
  * @since 1.0.0
@@ -93,17 +93,17 @@ export * as ExecutionEnvironment from "./ExecutionEnvironment.ts"
  * @category execution
  * @since 1.0.0
  */
-export * as ExecutorOwnership from "./ExecutorOwnership.ts"
+export * as ExecutorOwnership from "./ExecutorOwnership.vibe"
 /**
  * @category diagnostics
  * @since 1.0.0
  */
-export * as Forensics from "./Forensics.ts"
+export * as Forensics from "./Forensics.vibe"
 /**
  * @category retention
  * @since 1.0.0
  */
-export * as Gc from "./Gc.ts"
+export * as Gc from "./Gc.vibe"
 /**
  * @category scaffolding
  * @since 1.0.0
@@ -143,7 +143,7 @@ export * as Providers from "./Providers.ts"
  * @category serve
  * @since 1.0.0
  */
-export * as Serve from "./Serve.ts"
+export * as Serve from "./Serve.vibe"
 /**
  * @category suggestions
  * @since 1.0.0-rc.0

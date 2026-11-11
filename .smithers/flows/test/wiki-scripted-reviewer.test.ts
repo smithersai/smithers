@@ -15,7 +15,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import type { PageSpec } from "../wiki/schema.ts"
+import type { PageSpec } from "../wiki/schema.vibe"
 
 /** A repository shaped like the install's real target (codeplanesmithers/canary-sandbox) plus the source shapes real repositories carry. */
 const repository = async (t: TestContext, files: Readonly<Record<string, string>>) => {

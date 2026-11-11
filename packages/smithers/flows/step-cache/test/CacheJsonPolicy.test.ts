@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 
 /** A tree one level deeper than the cache admits. */
 const overDeep = (): unknown => {

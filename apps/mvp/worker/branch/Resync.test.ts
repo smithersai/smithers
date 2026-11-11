@@ -26,10 +26,10 @@ import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Conversations from "./Conversations.ts"
 import { CreateRefused, Forge } from "./Forge.ts"
-import { Machines } from "./Machines.ts"
+import { Machines } from "./Machines.vibe"
 import * as Publish from "./Publish.ts"
 import * as Resync from "./Resync.ts"
-import { CheckoutFailed, SandboxUnavailable } from "./Sandboxes.ts"
+import { CheckoutFailed, SandboxUnavailable } from "./Sandboxes.vibe"
 import * as Store from "../github/Store.ts"
 
 const runtime = testFile("branch_resync")

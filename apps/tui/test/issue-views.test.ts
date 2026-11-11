@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as IssueViews from "../src/issue-views.ts"
 import * as Log from "../src/log.ts"
-import * as Panels from "../src/panels.ts"
+import * as Panels from "../src/panels.vibe"
 
 const views = [
   { id: "bugs", title: "Open bugs", state: "open", labels: ["bug", "p1"] },

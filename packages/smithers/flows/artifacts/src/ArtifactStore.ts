@@ -24,23 +24,23 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
-import type { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./ArtifactStoreError.ts"
+import type { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./ArtifactStoreError.vibe"
 import { type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
-import { makeMemory } from "./MemoryArtifactStore.ts"
-import { makeNoop } from "./NoopArtifactStore.ts"
+import { makeMemory } from "./MemoryArtifactStore.vibe"
+import { makeNoop } from "./NoopArtifactStore.vibe"
 
 export {
   ArtifactCorruption,
   ArtifactMissing,
   ArtifactStoreError,
   ArtifactStoreErrorCode
-} from "./ArtifactStoreError.ts"
+} from "./ArtifactStoreError.vibe"
 export { defaultDirectory, type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
-export { measureBytes } from "./measureBytes.ts"
-export { makeMemory } from "./MemoryArtifactStore.ts"
-export { makeNoop } from "./NoopArtifactStore.ts"
-export { snapshotBytes } from "./snapshotBytes.ts"
-export { validateDigest } from "./validateDigest.ts"
+export { measureBytes } from "./measureBytes.vibe"
+export { makeMemory } from "./MemoryArtifactStore.vibe"
+export { makeNoop } from "./NoopArtifactStore.vibe"
+export { snapshotBytes } from "./snapshotBytes.vibe"
+export { validateDigest } from "./validateDigest.vibe"
 
 /**
  * Schema for a content address: exactly 64 lowercase hexadecimal SHA-256

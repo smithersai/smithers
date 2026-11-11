@@ -9,7 +9,7 @@
  * `capabilities` and `budget`. There is no second agent or graph model.
  */
 import { Schema } from "effect"
-import * as Panels from "./panels.ts"
+import * as Panels from "#vibelang/emitted/src/panels"
 
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240))
 const line = (max: number) =>

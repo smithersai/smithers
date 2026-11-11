@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Effects from "../src/Effects.ts"
+import * as Effects from "../src/Effects.vibe"
 
 const declaration = (input: Partial<Effects.MakeOptions> = {}): Effects.Declaration =>
   Effects.make({

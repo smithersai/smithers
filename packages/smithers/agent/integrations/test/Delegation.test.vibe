@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { Core, GitHub } from "../src/index.ts"
 import * as Delegation from "../src/github/Delegation.vibe"
 import type * as Policy from "../src/github/DelegationPolicy.vibe"
-import { GitHubClient } from "../src/github/GitHubClient.ts"
+import { GitHubClient } from "../src/github/GitHubClient.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { WebCryptoCipher } from "@smthrs/control"
 

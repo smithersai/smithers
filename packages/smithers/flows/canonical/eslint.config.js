@@ -8,6 +8,7 @@ import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from 
 import { jsdocConvention } from "../../../../eslint.jsdoc.js"
 
 export default tseslint.config(
+  { ignores: ["**/*.d.vibe.ts"] },
   { ignores: ["**/dist", "**/coverage"] },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,

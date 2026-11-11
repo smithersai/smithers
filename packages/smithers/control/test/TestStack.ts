@@ -15,11 +15,11 @@ import { Registry } from "@smthrs/registry"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
-import type { Control } from "../src/Control.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+import type { Control } from "../src/Control.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import * as ControlRuntime from "../src/ControlRuntime.ts"
-import * as DispatchReader from "../src/DispatchReader.ts"
+import * as ControlRuntime from "../src/ControlRuntime.vibe"
+import * as DispatchReader from "../src/DispatchReader.vibe"
 
 /** The same host-free crypto `TestControl` uses, without a Node import. */
 export const browserCrypto = Layer.succeed(

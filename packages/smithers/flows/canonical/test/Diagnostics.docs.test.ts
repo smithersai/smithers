@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { inspect } from "node:util"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
-import { Canonical, CanonicalError, canonicalize } from "../src/index.ts"
+import { Canonical, CanonicalError, canonicalize } from "../src/index.vibe"
 
 const guide = readFileSync(new URL("../docs/guides/use-the-schema.md", import.meta.url), "utf8")
 

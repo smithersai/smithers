@@ -1,4 +1,4 @@
-import { describe, it } from "../src/Vitest.ts"
+import { describe, it } from "../src/Vitest.vibe"
 import { Data, Effect, Schema } from "effect"
 
 // A tiny container format: three magic bytes, a length byte, `length` bytes of payload, then a 16-bit checksum.

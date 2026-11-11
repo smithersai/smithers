@@ -33,7 +33,7 @@ provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
 does a project `landing` of `fast-forward` or `pull-request` on a host without
 that binding, landing with `jj`, `git` and `gh` from `PATH`
 (see [finalization.md](finalization.md)).
-With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.ts](todo.ts)), and `coding/verify`, which runs the required checks on a rebased stack
+With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.vibe](todo.vibe)), and `coding/verify`, which runs the required checks on a rebased stack
 candidate, and `coding/wiki` when the project enables its wiki, which refreshes
 and reviews the declared pages.
 These routes ship as host built-ins beside `coding` and `coding/implementation`,
@@ -160,7 +160,7 @@ publication.
 The configured executable is staged separately from the general Smithers CLI.
 General CLI pack setup and interactive commands retain their existing executable.
 
-Engine compensation uses the private `snapshots.ts` configuration of the existing
+Engine compensation uses the private `snapshots.vibe` configuration of the existing
 Jj service. Its opaque preimage is an immutable full commit ID; snapshots never
 create or describe another planned JJ change. Privileged snapshot subprocesses
 use the existing contained spawner and Control journal process ledger. Standard

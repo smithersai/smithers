@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 
 const read = (init: RequestInit & { duplex?: "half" }, maxBytes = 8) => {
   let bytes = -1

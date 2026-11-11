@@ -4,10 +4,10 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/Ownership.ts"
-import { type RunRow, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type RunRow, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const ownerA: OwnerId = { hostId: "boundary-host", pid: 1, nonce: "owner-a" }
 const ownerB: OwnerId = { hostId: "boundary-host", pid: 2, nonce: "owner-b" }

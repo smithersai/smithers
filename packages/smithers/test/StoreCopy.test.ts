@@ -13,8 +13,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
-import * as StoreCopy from "../src/history/StoreCopy.ts"
-import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.ts"
+import * as StoreCopy from "../src/history/StoreCopy.vibe"
+import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.vibe"
 import * as Needs from "./Needs.ts"
 
 const url = process.env.SMITHERS_HISTORY_TEST_PG_URL ?? process.env.SMITHERS_TEST_DATABASE_URL!

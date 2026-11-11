@@ -17,8 +17,8 @@ import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as ModuleClosure from "../src/internal/ModuleClosure.ts"
-import { tokenize } from "../src/internal/ModuleMetadata.ts"
+import * as ModuleClosure from "../src/internal/ModuleClosure.vibe"
+import { tokenize } from "../src/internal/ModuleMetadata.vibe"
 
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

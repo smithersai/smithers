@@ -24,8 +24,8 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Stream from "effect/Stream"
-import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
-import * as ModelStep from "../../src/ModelStep.ts"
+import * as FlowEngineLike from "../../src/FlowEngineLike.vibe"
+import * as ModelStep from "../../src/ModelStep.vibe"
 
 /**
  * A dedicated loopback PostgreSQL endpoint. The target supplies its isolated

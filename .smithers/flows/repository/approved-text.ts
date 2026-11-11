@@ -8,38 +8,41 @@
  * drift rather than followed.
  */
 import { createHash } from "node:crypto"
-import type { Event, Record, SourceStatus } from "./schema.ts"
+import type { Event, Record, SourceStatus } from "./schema.vibe"
 
 type Approved = NonNullable<typeof Event.Type["approvedText"]>
 const DRIFT = "Live text differs from the approved text; the approved text is used"
 
-/** The event's snapshot, or nothing when its revision does not name its text. */
-export const approvedText = (event: typeof Event.Type): Approved | undefined => {
+/** The event's snapshot, or nothing when its revision does not name its text.
+ * @throws {never} */
+export function approvedText(event: typeof Event.Type): Approved | undefined {
   const approved = event.approvedText
   if (approved === undefined) return undefined
   const revision = `sha256:${createHash("sha256").update(`${approved.title}\u0000${approved.body}`).digest("hex")}`
   return approved.revision === revision ? approved : undefined
 }
 
-/** The subject with its title and body replaced by the snapshot. */
-export const pinApprovedSubject = (
+/** The subject with its title and body replaced by the snapshot.
+ * @throws {never} */
+export function pinApprovedSubject(
   approved: Approved | undefined,
   live: Readonly<globalThis.Record<string, unknown>>
-): globalThis.Record<string, unknown> => {
+): globalThis.Record<string, unknown> {
   if (approved === undefined) return { ...live }
   const drift = live.title !== approved.title || (typeof live.body === "string" ? live.body : "") !== approved.body
   return { ...live, title: approved.title, body: approved.body, ...(drift ? { approvedTextDrift: true } : {}) }
 }
 
-/** History records with the subject's record pinned to the snapshot. */
-export const pinApprovedRecords = (
+/** History records with the subject's record pinned to the snapshot.
+ * @throws {never} */
+export function pinApprovedRecords(
   event: typeof Event.Type,
   records: ReadonlyArray<typeof Record.Type>
 ): {
   readonly records: ReadonlyArray<typeof Record.Type>
   readonly sources: ReadonlyArray<typeof SourceStatus.Type>
   readonly drift: boolean
-} => {
+} {
   const approved = approvedText(event)
   if (approved === undefined || event.issueNumber === undefined) return { records, sources: [], drift: false }
   const title = approved.title.slice(0, 1000), body = approved.body.slice(0, 16000)

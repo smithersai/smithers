@@ -18,7 +18,7 @@ The private `WorkspaceRouting` reader uses captured existing SQL clients. It ref
 
 ## Preserve native revision ownership
 
-The generic factory obtains the existing `Jj` service from its injected platform. The configured coding host supplies `.smithers/flows/coding/snapshots.ts`: the private Plue adapter implements snapshot, restore and diff through the contained spawner. A snapshot retains an exact immutable commit ID in the existing receipt's `changeId` field while remaining on the same native JJ Change. Its label belongs to the journal. Restore validates ownership and the recorded parent before applying that preimage; a stable Change ID alone is not a snapshot receipt.
+The generic factory obtains the existing `Jj` service from its injected platform. The configured coding host supplies `.smithers/flows/coding/snapshots.vibe`: the private Plue adapter implements snapshot, restore and diff through the contained spawner. A snapshot retains an exact immutable commit ID in the existing receipt's `changeId` field while remaining on the same native JJ Change. Its label belongs to the journal. Restore validates ownership and the recorded parent before applying that preimage; a stable Change ID alone is not a snapshot receipt.
 
 Compensable standard file tools use this existing snapshot contract. The coding host also wraps the already guarded filesystem with native path eligibility checks, including the final destination of a Preserve rename. Newly ignored or otherwise untrackable writes are refused before mutation; ignored tracked paths use native eligibility. This does not make arbitrary shell execution rollback-safe. Native coding flow actions remain the explicit owners of new Changes and restacking.
 

@@ -20,7 +20,7 @@ import {
   staleWorkspaces,
   urgent
 } from "../flow.ts"
-import { vmOptions } from "../vm-options.ts"
+import { vmOptions } from "../vm-options.vibe"
 import Work, { RemoteFix } from "../work/flow.ts"
 
 const claim = (host: string, expires: string) =>

@@ -5,7 +5,7 @@ import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { HttpServer } from "effect/http"
 import { createServer } from "node:http"
 import { beforeEach, expect, it, vi } from "vitest"
-import * as BunGateway from "../src/bun/BunGateway.ts"
+import * as BunGateway from "../src/bun/BunGateway.vibe"
 import { stack } from "./GatewayStack.ts"
 
 vi.mock("@effect/platform-bun/BunHttpServer", () => ({ layerServer: vi.fn() }))

@@ -1,8 +1,8 @@
 import { Capability, decodePermissionError, Permission } from "@smthrs/capability"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Grant from "../examples/grant.ts"
-import * as Quickstart from "../examples/quickstart.ts"
+import * as Grant from "../examples/grant.vibe"
+import * as Quickstart from "../examples/quickstart.vibe"
 
 describe("quickstart example", () => {
   it("allows covered requests and asks for the unmatched one", () => {

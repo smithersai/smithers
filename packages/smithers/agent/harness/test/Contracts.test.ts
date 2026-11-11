@@ -6,11 +6,11 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Option, Schema, Stream } from "effect"
 import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as AgentEvent from "../src/AgentEvent.ts"
+import * as AgentEvent from "../src/AgentEvent.vibe"
 import * as Cell from "../src/Cell.ts"
-import * as EngineLike from "../src/EngineLike.ts"
-import { HarnessError, HarnessErrorCode } from "../src/HarnessError.ts"
-import * as Plan from "../src/Plan.ts"
+import * as EngineLike from "../src/EngineLike.vibe"
+import { HarnessError, HarnessErrorCode } from "../src/HarnessError.vibe"
+import * as Plan from "../src/Plan.vibe"
 
 const assistantMessage = ModelRequest.Message.assistant("done", { stopReason: "stop" })
 const cellSource = Cell.source("return { intent: \"complete\", state: null, output: \"done\" }")
@@ -1000,7 +1000,7 @@ describe("HarnessError", () => {
     // and every such site must name a member.
     const constructed = new Set<string>()
     for (const file of readdirSync(new URL("../src/", import.meta.url), { recursive: true })) {
-      if (!String(file).endsWith(".ts")) continue
+      if (!/\.(?:ts|vibe)$/.test(String(file))) continue
       const text = readFileSync(new URL(`../src/${String(file)}`, import.meta.url), "utf8")
       for (const match of text.matchAll(/new HarnessError\(\{\s*code: "([a-z_]+)"/g)) constructed.add(match[1]!)
     }

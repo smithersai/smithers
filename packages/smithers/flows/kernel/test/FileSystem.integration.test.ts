@@ -7,9 +7,9 @@ import { Effect, Fiber, FileSystem as EffectFileSystem, Layer } from "effect"
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const directories = new Set<string>()
 

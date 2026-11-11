@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as GrantStore from "../src/GrantStore.ts"
 import * as JournalGrantStore from "../src/JournalGrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const directories = new Set<string>()
 const journalOptions: SqlJournal.SqlJournalOptions = { capacity: 64, overflow: "reject" }

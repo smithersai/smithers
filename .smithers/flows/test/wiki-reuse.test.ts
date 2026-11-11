@@ -17,8 +17,8 @@ import { fileURLToPath } from "node:url"
 import Wiki from "../wiki/flow.ts"
 import { IncrementalWiki, Load, policySources, reuseLayers, Select } from "../wiki/reuse.ts"
 import { actionLayers, agentLayers } from "../wiki/runtime.ts"
-import { type Input, PageSpec, WikiError } from "../wiki/schema.ts"
-import { Collect } from "../wiki/workflow.ts"
+import { type Input, PageSpec, WikiError } from "../wiki/schema.vibe"
+import { Collect } from "../wiki/workflow.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 /** One evidence judge dispatches citation and completion questions for this host. */
@@ -44,9 +44,11 @@ test(
     await writeFile(join(root, ".smithers/coding-project.json"), JSON.stringify({ pages: [spec] }))
     await writeFile(join(root, "page.md"), "# Answer\n\nThe answer is 42.\n")
     await writeFile(join(root, "answer.ts"), "export const answer = 42\n")
+    const register = `--import=${import.meta.resolve("vibelang/register")}`
     const cli = fileURLToPath(new URL("../wiki/main.ts", import.meta.url))
     const invoke = (run: string, reuse = true) => {
       const result = spawnSync("node", [
+        register,
         cli,
         "--root",
         root,

@@ -1,0 +1,98 @@
+/**
+ * The deciding action of `notification-policy`: a repository's own answer to
+ * "who is told about this?", as one deterministic routing rule.
+ *
+ * The rule is the repository's to change — this module is the shape an
+ * ordinary maintainer copies — and it calls no model and reads no file. A
+ * routing rule is a declaration, not a judgment: a policy that asked a model
+ * who to notify would make a notification nondeterministic and would need the
+ * work's words to ask with.
+ *
+ * COPYABLE ON PURPOSE: everything this file needs is `@smthrs/flow` and
+ * `effect`, both published, so dropping the directory into another repository
+ * and naming it on `notification.route` compiles there. It deliberately does
+ * NOT import `packages/rpc/src/NotificationPolicy.ts` — `@smthrs/rpc` is
+ * private to this monorepo, so a copy that reached into it would not resolve
+ * in the repository that copied it. The three values restated below are the
+ * app's, and `.smithers/flows/test/repository-notification-policy.test.ts` fails if
+ * either side moves.
+ *
+ * The wire shape is the app's own contract: the request carries identity
+ * only — repository, notice kind, entry id, TODO number, the login the work
+ * belongs to, and the people who already can read it — and the answer carries
+ * bounded typed recipient ids. The app checks access again after this
+ * decides, so naming someone who cannot read the work withholds them rather
+ * than granting anything.
+ */
+import { Action } from "@smthrs/flow"
+
+/** The deciding action's tag, the app's `NOTIFICATION_POLICY_DECIDE_ACTION`. */
+export const NOTIFICATION_POLICY_DECIDE_ACTION = "notification-policy/decide"
+
+/** The routable notices, the app's `NOTIFICATION_POLICY_KINDS`. */
+export const NOTIFICATION_POLICY_KINDS = ["needs_you", "approval", "conflict", "in_review", "failed", "merged"] as const
+
+/** How many recipients one decision may name, the app's `NOTIFICATION_RECIPIENT_LIMIT`. */
+export const NOTIFICATION_RECIPIENT_LIMIT = 50
+
+/** A GitHub login, the same bound the app's contract puts on a recipient. */
+const Recipient = Schema.String.check(Schema.isPattern(/^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/))
+
+/** One routable notice, by identity alone. */
+export const Event = Schema.Struct({
+  kind: Schema.Literals(NOTIFICATION_POLICY_KINDS),
+  entryId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  todo: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0)))
+})
+
+/**
+ * The request the app sends. `candidates` is everyone who already can read the
+ * notice; `defaults` is who the app's built-in audience would tell.
+ */
+export const Request = Schema.Struct({
+  repo: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/)),
+  event: Event,
+  owner: Recipient,
+  candidates: Schema.Array(Recipient).check(Schema.isMinLength(1), Schema.isMaxLength(NOTIFICATION_RECIPIENT_LIMIT)),
+  defaults: Schema.Array(Recipient).check(Schema.isMaxLength(NOTIFICATION_RECIPIENT_LIMIT))
+})
+
+/** How a notice is handled beside who gets it; the whole allowed surface. */
+export const Handling = Schema.Struct({ quiet: Schema.optional(Schema.Boolean) })
+
+/** The answer: recipient ids, and optionally how to handle them. */
+export const Decision = Schema.Struct({
+  recipients: Schema.Array(Recipient).check(Schema.isMaxLength(NOTIFICATION_RECIPIENT_LIMIT)),
+  handling: Schema.optional(Handling)
+})
+
+/**
+ * This repository's example rule, and a sensible default for any repository
+ * that copies it:
+ *
+ * - A question, an approval or a branch conflict is the owner's to answer, so
+ *   only the owner is told; the branch stops being a broadcast channel for
+ *   someone else's question.
+ * - A review, a failure or a merge is told to everyone who can read the work,
+ *   because those are the states a team watches together.
+ *
+ * Both directions differ from the built-in audience, which is the reverse, so
+ * a repository running this flow visibly owns the decision.
+ */
+export const decide = (request: typeof Request.Type): typeof Decision.Type =>
+  request.event.kind === "needs_you" || request.event.kind === "approval" || request.event.kind === "conflict"
+    ? { recipients: [request.owner] }
+    : { recipients: [...request.candidates] }
+
+/** The decision as one action, so the run carries it as a node with a schema. */
+export const Decide = Action.make(NOTIFICATION_POLICY_DECIDE_ACTION, {
+  payload: Request,
+  success: Decision,
+  error: Schema.Never,
+  implementationVersion: "notification-policy/v1"
+})
+
+/** The host's implementation: the rule above, and nothing else. */
+export const layer = Decide.toLayer((request) => Effect.succeed(decide(request)), {
+  implementationVersion: "notification-policy/v1"
+})

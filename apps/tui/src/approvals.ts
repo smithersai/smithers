@@ -26,7 +26,7 @@ import { Effect, Layer, Option } from "effect"
 import { createHash } from "node:crypto"
 import { accessSync, constants, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs"
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import * as Changes from "./changes.ts"
+import * as Changes from "#vibelang/emitted/src/changes"
 import type * as Monitors from "./monitors.ts"
 
 /** `ask` waits for y/n, `all` asks nothing, `deny` refuses every consequential call. */

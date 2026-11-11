@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import type { Rule } from "@smthrs/capability/Permission"
 import { Effect, Fiber } from "effect"
-import type { GrantEvent } from "../src/GrantEvent.ts"
+import type { GrantEvent } from "../src/GrantEvent.vibe"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * The two pattern validators are the only thing standing between an approver's

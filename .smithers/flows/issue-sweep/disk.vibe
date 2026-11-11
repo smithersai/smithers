@@ -1,0 +1,112 @@
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { issueSweepGoCache, statfsFree } from "./disk.platform.ts"
+import { HostFailed, run } from "./host.ts"
+
+export { statfsFree } from "./disk.platform.ts"
+
+export const diskFloor = 25 * 1024 ** 3
+export const workspaceBytes = 3 * 1024 ** 3
+
+export interface DiskOptions {
+  readonly freeBytes?: (() => number) | undefined
+  readonly minimum?: number | undefined
+  readonly interval?: Duration.Input | undefined
+  readonly cleanupTimeout?: Duration.Input | undefined
+  readonly cleanGo?: (unknown!unknown) | undefined
+  readonly prunePnpm?: (unknown!unknown) | undefined
+  /** Deletes only workspaces with durable settlement and no live holder. */
+  readonly reapSettled?: (unknown!unknown) | undefined
+}
+
+let reapSettled: unknown!unknown = Effect.void
+export const configureDiskReaper = (reap: (unknown!unknown)) => {
+  reapSettled = reap
+}
+const turn = Semaphore.makeUnsafe(1)
+const bounded = (effect: (unknown!unknown), duration: Duration.Input = "2 minutes") =>
+  effect.pipe(
+    Effect.timeoutOrElse({ duration, orElse: () => Effect.void }),
+    Effect.ignore
+  )
+
+/** Reads the free bytes once; a probe that throws, or reports a non-finite or negative count, fails as `HostFailed`. */
+effect function freeBytes(options: DiskOptions) {
+  const bytes = try Effect.try({
+    try: () => options.freeBytes === undefined ? statfsFree() : options.freeBytes(),
+    catch: (cause) => new HostFailed({ message: `disk probe: ${String(cause)}` })
+  })
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    throw new HostFailed({ message: "disk probe: Error: invalid free-space reading" })
+  }
+  return bytes
+}
+
+/** Cleanup once per admission attempt, recheck, then wait without repeating destructive work. */
+export const makeDiskGate = (options: DiskOptions = {}) => (reserveBytes = 0) =>
+  turn.withPermits(1)(effect {
+    const required = (options.minimum ?? diskFloor) + reserveBytes
+    const clean = (effect: (unknown!unknown)) => bounded(effect, options.cleanupTimeout)
+    if ((try freeBytes(options)) >= required) return
+    if (options.cleanGo !== undefined) {
+      try clean(options.cleanGo)
+    } else {
+      try clean(run("go", ["clean", "-cache"]))
+      try clean(run("go", ["clean", "-cache"], {
+        env: { GOCACHE: issueSweepGoCache() }
+      }))
+    }
+    try clean(options.prunePnpm ?? run("pnpm", ["store", "prune"]))
+    try clean(options.reapSettled ?? Effect.suspend(() => reapSettled))
+    while ((try freeBytes(options)) < required) try sleep(options.interval ?? "30 seconds")
+  })
+
+export const awaitHostDisk = makeDiskGate()
+export const EnsureDisk = Action.make("issue-sweep/ensure-disk", {
+  payload: Schema.Struct({ reserveBytes: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)) }),
+  success: Schema.Void,
+  error: HostFailed,
+  nondeterministic: true,
+  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize" }
+})
+export const DiskAdmission = Flow.make("issue-sweep/disk-admission", {
+  description: "Reclaims bounded host caches and waits for safe disk admission.",
+  capabilities: [],
+  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize" },
+  modelInvocable: false,
+  payload: EnsureDisk.payloadSchema,
+  success: Schema.Void,
+  error: HostFailed,
+  body: (input) => EnsureDisk.call(input)
+})
+export const makeDiskLayer = (gate = awaitHostDisk) =>
+  Layer.mergeAll(
+    EnsureDisk.toLayer(({ reserveBytes }) => gate(reserveBytes)),
+    Interpreter.layer(DiskAdmission)
+  )
+export const diskLayer = makeDiskLayer()
+
+/** Durable final rows nominate candidates; current ownership must independently prove free. */
+export const makeSettledWorkspaceReaper = (options: {
+  readonly check: (repo: string, issue: number) => (boolean!unknown)
+  readonly remove: (issue: number) => (unknown!unknown)
+}) => {
+  const candidates = new Map<number, string>()
+  return {
+    remember: (repo: string, rows: ReadonlyArray<{ readonly id: string; readonly status: string }>) => {
+      for (const row of rows) {
+        const issue = Number(row.id)
+        if (!Number.isSafeInteger(issue) || issue <= 0) continue
+        if (row.status === "landed" || row.status === "failed") candidates.set(issue, repo)
+        else candidates.delete(issue)
+      }
+    },
+    reap: effect {
+      for (const [issue, repo] of candidates) {
+        const free = options.check(repo, issue) catch () => false
+        if (!free || candidates.get(issue) !== repo) continue
+        try options.remove(issue)
+        candidates.delete(issue)
+      }
+    }
+  }
+}

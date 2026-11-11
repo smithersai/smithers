@@ -477,7 +477,7 @@ export function subscriptions(window: Window) {
               Stream.make(loaded),
               mythical.events(outline.seq).pipe(
                 Stream.map((event) => HistoryMessage.ReceivedEvent({ event })),
-                Stream.catchTag("Unavailable", () => Stream.make(HistoryMessage.FailedEvents())),
+                Stream.catchTag("Unavailable", () => Stream.fromEffect(message(() => HistoryMessage.FailedEvents()))),
               ),
             )
             return followed

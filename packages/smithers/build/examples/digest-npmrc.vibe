@@ -1,0 +1,7 @@
+import * as $platform from "./digest-npmrc.platform.ts"
+
+/**
+ * Writes `npmrc` as the `.npmrc` of a fresh temporary project and resolves
+ * with its digest, or with the refusal's code.
+ */
+export const digestNpmrc = (npmrc: string) => $platform.digestNpmrc(npmrc)

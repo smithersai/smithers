@@ -4,8 +4,8 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Clock, Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
-import * as Migrations from "../src/Migrations.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import * as RunStore from "../src/RunStore.vibe"
 
 const layer = RunStore.layer.pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
 

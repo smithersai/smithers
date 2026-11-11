@@ -9,13 +9,13 @@ import { type BudgetOnExceeded, deadlineMillis } from "@smthrs/registry/Descript
 import { Effect, Option } from "effect"
 import { randomUUID } from "node:crypto"
 import { resolve } from "node:path"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Detached from "../Detached.ts"
 import * as Environment from "../Environment.ts"
 import * as Project from "../Project.ts"
 import * as Unsupported from "../Unsupported.ts"
 import { approval, decodeInput, selectedFlow } from "./RunControl.ts"
-import * as RunReads from "./RunReads.ts"
+import * as RunReads from "./RunReads.vibe"
 import * as Settlement from "./Settlement.ts"
 /**
  * Resume a parked run and return its settled receipt.

@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Discrepancy, PullRequestRequest } from "../../../examples/use-cases/doc-sync.ts"
-import { DocSync, layer } from "../../../examples/use-cases/doc-sync.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import type { Discrepancy, PullRequestRequest } from "../../../examples/use-cases/doc-sync.vibe"
+import { DocSync, layer } from "../../../examples/use-cases/doc-sync.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "doc-sync-"))
 

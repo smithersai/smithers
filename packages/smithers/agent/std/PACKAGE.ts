@@ -21,7 +21,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 /**
@@ -73,7 +73,7 @@ const securityReview = Smithers.SecurityReview({
         "A cwd, relative path, or dot-dot segment that resolves outside the envelope after path.resolve yet passes withinEnvelope.",
         "The /dev/ exemption or the cwd === base shortcut admitting a path that is not process plumbing or the workspace root."
       ],
-      paths: ["src/Bash.ts", "src/internal/EnvelopePrecheck.ts", "src/internal/Paths.ts"]
+      paths: ["src/Bash.vibe", "src/internal/EnvelopePrecheck.ts", "src/internal/Paths.ts"]
     },
     {
       id: "effect-envelope-honesty",
@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A static envelope declared sealed or hermetic for a flow that mutates or spawns (Fetch, WebFetch, TestRun, ShellCommand).",
         "A path normalized differently in the envelope than in the handler, so the approved name and the written name diverge."
       ],
-      paths: ["src/*.ts", "src/Manifest.ts", "src/internal/Declaration.ts"]
+      paths: ["src/*.{ts,vibe}", "src/Manifest.ts", "src/internal/Declaration.ts"]
     },
     {
       id: "symlink-write-escape",
@@ -98,11 +98,11 @@ const securityReview = Smithers.SecurityReview({
         "ApplyPatch or Edit creating parent directories through a symlinked directory."
       ],
       paths: [
-        "src/internal/Preserve.ts",
-        "src/Write.ts",
-        "src/Edit.ts",
-        "src/ApplyPatch.ts",
-        "src/internal/ApplyPatch.ts"
+        "src/internal/Preserve.vibe",
+        "src/Write.vibe",
+        "src/Edit.vibe",
+        "src/ApplyPatch.vibe",
+        "src/internal/ApplyPatch.vibe"
       ]
     },
     {
@@ -117,14 +117,14 @@ const securityReview = Smithers.SecurityReview({
         "Exec.exec called without args so the command string is parsed by the platform shell for a value the caller did not intend as shell."
       ],
       paths: [
-        "src/Container.ts",
-        "src/Bash.ts",
-        "src/TestRun.ts",
-        "src/internal/Exec.ts",
-        "src/internal/GitWorktree.ts",
-        "src/Checkpoints.ts",
-        "src/NativeSearch.ts",
-        "src/PortableSearch.ts"
+        "src/Container.vibe",
+        "src/Bash.vibe",
+        "src/TestRun.vibe",
+        "src/internal/Exec.vibe",
+        "src/internal/GitWorktree.vibe",
+        "src/Checkpoints.vibe",
+        "src/NativeSearch.vibe",
+        "src/PortableSearch.vibe"
       ]
     },
     {
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "Checkpoint ids or config keys written with git config that could alter keys outside the checkpoint section.",
         "A scratch checkout path built from caller text that could land outside the repository root."
       ],
-      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.ts"]
+      paths: ["src/Checkpoints.vibe", "src/internal/GitWorktree.vibe", "src/Relocate.vibe"]
     },
     {
       id: "child-env-secret-leak",
@@ -150,11 +150,11 @@ const securityReview = Smithers.SecurityReview({
         "Error or diagnostic text (quoted invocation, StdError message) that includes env values or transport credentials."
       ],
       paths: [
-        "src/internal/Exec.ts",
-        "src/Container.ts",
-        "src/NativeSearch.ts",
-        "src/TestRun.ts",
-        "src/Bash.ts"
+        "src/internal/Exec.vibe",
+        "src/Container.vibe",
+        "src/NativeSearch.vibe",
+        "src/TestRun.vibe",
+        "src/Bash.vibe"
       ]
     },
     {
@@ -167,7 +167,7 @@ const securityReview = Smithers.SecurityReview({
         "parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.",
         "Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target."
       ],
-      paths: ["src/Fetch.ts", "src/HttpPost.ts", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
+      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.vibe", "src/internal/Http.vibe", "src/internal/Url.ts"]
     },
     {
       id: "exa-credential-handling",
@@ -178,7 +178,7 @@ const securityReview = Smithers.SecurityReview({
         "Error messages or logs that include the request, headers, or credential reference.",
         "An unbounded response.json read that a hostile or compromised endpoint can use to exhaust memory."
       ],
-      paths: ["src/ExaWebSearch.ts", "src/WebSearch.ts"]
+      paths: ["src/ExaWebSearch.vibe", "src/WebSearch.vibe"]
     },
     {
       id: "untrusted-output-bounds",
@@ -190,12 +190,12 @@ const securityReview = Smithers.SecurityReview({
         "A regex over untrusted text (grep pattern, HTML conversion, test report parsing) with catastrophic backtracking outside LinearRegex."
       ],
       paths: [
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/internal/Html.ts",
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",
-        "src/Grep.ts",
-        "src/PortableSearch.ts"
+        "src/Grep.vibe",
+        "src/PortableSearch.vibe"
       ]
     },
     {
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "Lsp.run forwarding any absolute path to the language server with only an isAbsolutePath check, so documentSymbols, hover, or diagnostics reveal an out-of-workspace file.",
         "The host language server loading workspace-controlled code (tsconfig plugins, a workspace-local typescript or node_modules binary) outside any sandbox."
       ],
-      paths: ["src/NativeSearch.ts", "src/Grep.ts", "src/Glob.ts", "src/Lsp.ts"]
+      paths: ["src/NativeSearch.vibe", "src/Grep.vibe", "src/Glob.vibe", "src/Lsp.vibe"]
     },
     {
       id: "container-seal",
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.ts", "src/Container.ts"]
+      paths: ["src/Bash.vibe", "src/TestRun.vibe", "src/Relocate.vibe", "src/Container.vibe"]
     }
   ]
 })

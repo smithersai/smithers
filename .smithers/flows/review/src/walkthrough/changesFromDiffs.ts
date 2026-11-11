@@ -9,6 +9,7 @@ import type { Changes } from "./changesSchema.ts"
  *
  * Pure over the records it is handed, so the walkthrough describes exactly the
  * change set the preview and the review prompts were built from.
+ * @throws {never}
  */
 export function changesFromDiffs(diffs: Array<DiffRecord>, preview: PreviewOutput): Changes {
   const previewByPath = new Map(preview.entries.map((entry) => [entry.path, entry]))

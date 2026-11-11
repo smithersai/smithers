@@ -17,7 +17,7 @@ import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
 
 const standard = BuildAndCheckTypeScriptPackage({
-  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/build"
 })
 
@@ -62,9 +62,9 @@ const docsFiles = standard.docsFiles
  */
 const lint = Smithers.EsLint({
   sources: [
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.glob("terraform/modules/cache/service/**/*.js")
   ],
   deps: [],
@@ -100,8 +100,8 @@ const lint = Smithers.EsLint({
 const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts")],
   sources: [
-    Smithers.glob("src/**/*.ts"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.file("package.json"),
     Smithers.file("../flows/platform-node/src/ProcessSandbox.ts"),
     Smithers.file("README.md"),
@@ -402,7 +402,7 @@ const securityReview = Smithers.SecurityReview({
         "A .pnpmfile.cjs hook admitted into the install without being declared as executed repository code.",
         "pnpmInvocation resolving a relative Windows PATH component against projectRoot, so a repository-planted pnpm.cmd picks the JavaScript entry the runtime executes."
       ],
-      paths: ["src/PackageManager.ts", "src/Install.ts"]
+      paths: ["src/PackageManager.ts", "src/Install.vibe"]
     },
     {
       id: "install-file-confinement",
@@ -414,7 +414,7 @@ const securityReview = Smithers.SecurityReview({
         "An error message that embeds file contents rather than only the path.",
         "A literal credential in .npmrc (userinfo URL or credential-named key) digested instead of refused."
       ],
-      paths: ["src/PackageManager.ts", "src/Install.ts"]
+      paths: ["src/PackageManager.ts", "src/Install.vibe"]
     },
     {
       id: "install-store-attestation",
@@ -426,7 +426,7 @@ const securityReview = Smithers.SecurityReview({
         "A pnpm or Node version mismatch that warns instead of failing with environment_mismatch.",
         "An .npmrc or pnpm-workspace.yaml key (pnpmfile, global-pnpmfile, hooks) that loads a hook file other than .pnpmfile.cjs, whose bytes are then outside the store digest."
       ],
-      paths: ["src/Install.ts", "src/PackageManager.ts", "src/Runtime.ts"]
+      paths: ["src/Install.vibe", "src/PackageManager.ts", "src/Runtime.ts"]
     }
   ]
 })

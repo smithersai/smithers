@@ -54,7 +54,7 @@ A deployment declares job machines beside its default one ([decision 0145](../de
 | Machine | Container class | Durable Object | Image | Instance type | Declared when |
 |---|---|---|---|---|---|
 | default | `BranchSandbox` | `SandboxObject` | built from `infra/sandbox/Dockerfile` | `SANDBOX_INSTANCE` (`standard-1`) | always |
-| `gate` | `GateMachine` (`infra/GateMachine.ts`) | `GateObject` | `GATE_IMAGE`, a prebuilt registry reference by digest | `GATE_INSTANCE` (`standard-4`) | `GATE_IMAGE` is set |
+| `gate` | `GateMachine` (`infra/GateMachine.vibe`) | `GateObject` | `GATE_IMAGE`, a prebuilt registry reference by digest | `GATE_INSTANCE` (`standard-4`) | `GATE_IMAGE` is set |
 
 ```
 Machines.tool / commands ─┐                         machine absent ─▶ SandboxObject namespace
@@ -69,7 +69,7 @@ box request (props)      ─┘                         anything else  ─▶ Sa
 
 ## Artifacts
 
-A job box reads and writes its run's artifacts at `http://artifacts.smithers.internal/<name>` ([decision 0145](../decisions/0145-gates-on-cloudflare-job-machines.md#artifacts)). The host is an intercept, like the forge proxy's; the box's own object answers it (`worker/branch/Artifacts.ts`) from the `CiArtifacts` R2 bucket (`infra/GateMachine.ts`), declared with the gate machine. No credential enters the box.
+A job box reads and writes its run's artifacts at `http://artifacts.smithers.internal/<name>` ([decision 0145](../decisions/0145-gates-on-cloudflare-job-machines.md#artifacts)). The host is an intercept, like the forge proxy's; the box's own object answers it (`worker/branch/Artifacts.ts`) from the `CiArtifacts` R2 bucket (`infra/GateMachine.vibe`), declared with the gate machine. No credential enters the box.
 
 | Request | Answer |
 |---|---|

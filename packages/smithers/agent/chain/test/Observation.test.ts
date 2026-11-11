@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Observation from "../src/Observation.ts"
+import * as Observation from "../src/Observation.vibe"
 
 describe("Observation", () => {
   it("builds a typed observation", () => {

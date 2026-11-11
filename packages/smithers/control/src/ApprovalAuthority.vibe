@@ -1,0 +1,153 @@
+/**
+ * Host-owned approval authority, separate from principal attribution and from
+ * the permissions a workflow receives after approval.
+ *
+ * @since 1.0.0
+ */
+
+import { InvalidInput, type PersistenceError, Unauthorized } from "./ControlError.vibe"
+import { type ApprovalTarget, GrantScope, type Principal } from "./ControlSchema.vibe"
+
+/**
+ * An approval decision whose caller has already been authenticated by its host.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Request {
+  readonly principal: Principal
+  readonly target: ApprovalTarget
+  readonly decision: "approved" | "denied"
+  readonly scope: GrantScope
+}
+
+/**
+ * A trusted host policy. Both refusals and unavailable policy storage fail
+ * closed. Implementations must be bounded and safe inside a write transaction;
+ * they must not recursively invoke Control or perform the gated work.
+ * @category services
+ * @since 1.0.0
+ */
+export interface Service {
+  readonly authorize: (
+    request: Request,
+    context?: TargetContext
+  ) => void!(Unauthorized | PersistenceError)
+}
+
+/** Trusted, lazily read target identity; never supplied by a command caller.
+ * @category models
+ * @since 1.0.0
+ */
+export interface TargetContext {
+  readonly flowId: (string | undefined)!PersistenceError
+}
+
+/** Host-owned proof verification. The verifier binds proof to the principal
+ * and the exact target (including its wait token), and checks expiry/replay.
+ * Only the requirement's name is configuration; no credential is a delegation.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  readonly verifyProof?: (
+    requirement: string,
+    request: Request
+  ) => void!(Unauthorized | PersistenceError)
+}
+
+const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024))
+
+/**
+ * An explicit delegation to one authenticated identity, not everyone whose
+ * kind resembles a role. Scopes are exact, not implicitly hierarchical. A
+ * delegation may approve only its listed scopes and may deny either target
+ * kind it names (denial installs no grant).
+ * Delegation is reusable: `scopes: ["once"]` permits once-scoped grants, not
+ * one lifetime decision. Use a host policy for expiry or one-use delegation.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Delegation = Schema.Struct({
+  principal: Schema.Struct({ id: IdentityPart, kind: IdentityPart }),
+  scopes: Schema.Array(GrantScope).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
+  targets: Schema.Array(Schema.Literals(["Plan", "Node"])).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+  flowId: Schema.optional(IdentityPart),
+  waitName: Schema.optional(IdentityPart),
+  requiredProof: Schema.optional(IdentityPart)
+})
+
+/**
+ * One explicit host-owned approval delegation.
+ * @category models
+ * @since 1.0.0
+ */
+export type Delegation = typeof Delegation.Type
+
+const identity = (principal: Pick<Principal, "id" | "kind">): string => JSON.stringify([principal.id, principal.kind])
+
+const compile = (delegations: ReadonlyArray<Delegation>, options: Options = {}): Service => {
+  const entries = delegations.map((entry) => ({
+    ...entry,
+    principal: identity(entry.principal),
+    scopes: [...entry.scopes],
+    targets: [...entry.targets]
+  }))
+  const verifyProof = options.verifyProof
+  const refused = () => new Unauthorized({ message: "This caller has no authority to make this approval decision" })
+  return Object.freeze({
+    authorize: (request: Request, context?: TargetContext) =>
+      effect {
+        // Check identity and scope before reading target metadata. Keep every
+        // entry intact: combining dimensions would grant their cross product.
+        const candidates = entries.filter((entry) =>
+          entry.principal === identity(request.principal) && entry.targets.includes(request.target._tag) &&
+          (request.decision === "denied" || entry.scopes.includes(request.scope)) &&
+          (entry.waitName === undefined ||
+            (request.target._tag === "Node" && entry.waitName === request.target.requestId))
+        )
+        if (candidates.length === 0) throw refused()
+        const flowId = candidates.some((entry) => entry.flowId !== undefined)
+          ? try (context?.flowId ?? Effect.succeed(undefined))
+          : undefined
+        for (const entry of candidates) {
+          if (entry.flowId !== undefined && entry.flowId !== flowId) continue
+          if (entry.requiredProof !== undefined) {
+            if (verifyProof === undefined) continue
+            try verifyProof(entry.requiredProof, request)
+          }
+          return
+        }
+        throw refused()
+      }
+  })
+}
+
+/**
+ * Builds an immutable policy from explicit host configuration. Invalid
+ * configuration is refused without including its contents in the error.
+ * The caller's arrays and objects are not retained after acquisition.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (
+  delegations: ReadonlyArray<Delegation>,
+  options: Options = {}
+): Service!InvalidInput =>
+  Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
+    onExcessProperty: "error"
+  })
+  |> Effect.mapError(%, () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" }))
+  |> Effect.map(%, (entries) => compile(entries, options))
+
+/**
+ * Default trusted-local policy. Only the local operator identity is an
+ * approver. A custom actor, gateway identity, or agent needs explicit host
+ * delegation; setting Principal.kind is not itself an authorization. The
+ * in-memory test adapter's `memory`/`test` identity is delegated only by that
+ * adapter's own default policy, never here.
+ * @category policies
+ * @since 1.0.0
+ */
+export const local: Service = compile([
+  { principal: { id: "local", kind: "operator" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
+])

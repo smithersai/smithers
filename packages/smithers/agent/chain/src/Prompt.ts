@@ -21,7 +21,7 @@
  */
 
 import * as AuthorDeclaration from "./AuthorDeclaration.ts"
-import type * as Catalog from "./Catalog.ts"
+import type * as Catalog from "./Catalog.vibe"
 import * as sections from "./internal/prompts.ts"
 
 /**

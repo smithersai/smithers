@@ -7,8 +7,8 @@ import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import type { ImmutableSourceOptions } from "../coding/immutable-source.vibe"
 import { CodingError } from "../coding/schema.ts"
 import {
   CaptureChecks,
@@ -19,10 +19,10 @@ import {
   RunChecks,
   type SemanticVerdict,
   verifyTrialChecks
-} from "../repository/checks.ts"
-import { assessScore } from "../repository/evaluation.ts"
-import type { Work } from "../repository/jobs.ts"
-import type { Check, EvalCase, JobResult, Step, StepResult } from "../repository/schema.ts"
+} from "../repository/checks.vibe"
+import { assessScore } from "../repository/evaluation.vibe"
+import type { Work } from "../repository/jobs.vibe"
+import type { Check, EvalCase, JobResult, Step, StepResult } from "../repository/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const base = "fb8c7b08f0d0feb5887cabbec5650e28dae2e6c1", candidate = "989b1f1c0c4c153d3917d89de00f2caee95292d0"

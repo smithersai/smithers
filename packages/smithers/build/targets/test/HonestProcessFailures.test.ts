@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, it } from "vitest"
 import * as Exec from "../src/Exec.ts"
-import { Process } from "../src/internal/Process.ts"
+import { Process } from "../src/internal/Process.vibe"
 import * as Review from "../src/LlmLint.ts"
 
 let root: string

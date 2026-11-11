@@ -7,7 +7,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { databaseLayer } from "../src/operator/Store.ts"
+import { databaseLayer } from "../src/operator/Store.vibe"
 import { createTriggersCli, withTriggers } from "../src/operator/Triggers.ts"
 
 const directories: Array<string> = []

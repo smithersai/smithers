@@ -44,6 +44,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Test kernel on Windows
         run: pnpm --dir packages/smithers/flows/kernel exec vitest run
   filesystem:
@@ -79,6 +80,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
       - name: Install Node workspace dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Expose the built Windows helper
         id: atomic_helper
         run: |

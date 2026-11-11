@@ -7,7 +7,7 @@ import { ConfigProvider, Duration, Effect, Exit, Layer, Logger, Option, Redacted
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
-import { CloneUnavailable } from "./flows/RepoClone.ts"
+import { CloneUnavailable } from "./flows/RepoClone.vibe"
 import * as RepoConfig from "./RepoConfig.ts"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */

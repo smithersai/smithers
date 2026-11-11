@@ -1,8 +1,8 @@
 import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
 import { Cause, Clock, Duration, Effect, Metric } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "#vibelang/source/worker/branch/Machines"
 import { provisionArgv, userOf } from "./Users.ts"
 
 // What a branch's machine does for its tools and its lifecycle, over any host (decision 0005 §2-§3,

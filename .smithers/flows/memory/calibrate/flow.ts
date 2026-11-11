@@ -8,7 +8,7 @@ import { Effect, Schema } from "effect"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import * as Calibrate from "../calibrate.ts"
 import { LandedFailed } from "../landed.ts"
-import { ThresholdsInvalid } from "../thresholds.ts"
+import { ThresholdsInvalid } from "../thresholds.vibe"
 
 const Payload = {
   journals: Schema.optionalKey(Schema.String).annotate({ description: "Directory of *.jsonl run journals" }),

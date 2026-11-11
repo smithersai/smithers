@@ -5,10 +5,10 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Agents from "../src/agents.ts"
-import * as FlowControl from "../src/flow-control.ts"
+import * as FlowControl from "../src/flow-control.vibe"
 import { FlowError } from "../src/flows.ts"
 import { FlowRuns } from "../src/flows.ts"
-import * as Host from "../src/host.ts"
+import * as Host from "../src/host.vibe"
 
 const root = join(import.meta.dir, "fixtures", "flows-project")
 const stateRoot = mkdtempSync(join(tmpdir(), "tui-flows-"))

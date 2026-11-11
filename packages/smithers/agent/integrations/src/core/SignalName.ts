@@ -13,7 +13,7 @@
 import type { SignalPayload } from "@smthrs/control/ControlSchema"
 import { SmithersError } from "@smthrs/errors/SmithersError"
 import type { Notification } from "@smthrs/notifications/Notification"
-import type { ExternalEvent } from "./ExternalEvent.ts"
+import type { ExternalEvent } from "./ExternalEvent.vibe"
 
 /**
  * The reserved prefix. A workflow's own signals must not use it.
@@ -127,6 +127,7 @@ export const receivedBy = (service: string): string =>
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const toSignalPayload = (event: ExternalEvent): SignalPayload => ({
   name: event.eventName,

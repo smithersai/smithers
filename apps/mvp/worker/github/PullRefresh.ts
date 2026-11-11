@@ -1,10 +1,10 @@
 import { Cause, Clock, type Duration, Effect, type Layer, Metric, Option, Ref } from "effect"
 import { SqlClient } from "effect/sql"
 import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.ts"
-import { FlowStarter } from "../Flows.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { Apply } from "./Apply.ts"
-import type { Repository } from "./Config.ts"
+import { FlowStarter } from "#vibelang/emitted/worker/Flows"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { Apply } from "#vibelang/emitted/worker/github/Apply"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })
 export const receipts = Metric.counter("smithers_pull_absence_receipts", { incremental: true })

@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { requireCodingBinding } from "../coding/host.ts"
-import { NativeCoding, NativeCodingError, type ReadResult } from "../coding/native.ts"
+import { NativeCoding, NativeCodingError, type ReadResult } from "../coding/native.vibe"
 
 const head = {
   kind: "resolved" as const,

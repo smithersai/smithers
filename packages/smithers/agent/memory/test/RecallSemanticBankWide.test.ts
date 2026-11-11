@@ -3,10 +3,10 @@ import { Effect, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Embedding from "../src/Embedding.ts"
+import * as Embedding from "../src/Embedding.vibe"
 import { digest } from "../src/internal/Digest.ts"
-import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Semantic from "../src/RecallSemantic.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
+import * as Semantic from "../src/RecallSemantic.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const queryVector = Embedding.make(() => Effect.succeed([[1, 0]]))

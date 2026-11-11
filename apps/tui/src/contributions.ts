@@ -13,7 +13,7 @@
  */
 import { Data } from "effect"
 import * as Extension from "./extension.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 
 export const limits = { keysPerOwner: 8, status: 24, shownStatus: 3 } as const
 

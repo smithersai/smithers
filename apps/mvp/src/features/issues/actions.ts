@@ -17,7 +17,7 @@ import {
   WRITE_ID_NAMESPACE,
   type TriageDecision,
 } from "./contract"
-import { admissions, pendingActions, reads, submissionFailures } from "./metrics"
+import { admissions, pendingActions, reads, submissionFailures } from "#vibelang/emitted/src/features/issues/metrics"
 import { recordShapeRetry } from "./shapeSync"
 import { type Draft, type QueuedWrite, SEARCHED, VIEW } from "./schema"
 import { IssuesStore } from "./store"

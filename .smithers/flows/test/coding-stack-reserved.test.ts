@@ -4,9 +4,9 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { NativeCoding, NativeCodingError, StackCandidate, StackProposal } from "../coding/native.ts"
+import { NativeCoding, NativeCodingError, StackCandidate, StackProposal } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { Candidate, captureStackCandidate, Propose, proposeStackCandidate, stackBaseLayer } from "../coding/stack.ts"
+import { Candidate, captureStackCandidate, Propose, proposeStackCandidate, stackBaseLayer } from "../coding/stack.vibe"
 
 const candidate = { generation: 3, base: "a".repeat(40), head: "b".repeat(40) }
 const proposal = { generation: 3, head: "c".repeat(40) }

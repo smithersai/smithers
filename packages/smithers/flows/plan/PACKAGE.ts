@@ -55,7 +55,7 @@ const securityReview = Smithers.SecurityReview({
         "An InputRef variant (Literal, Ref, Pending) whose tag, from, or path is not folded into the hashed body.",
         "undefined, NaN, -0 or key order collapsing two different payloads into one canonical form."
       ],
-      paths: ["src/StepKey.ts", "src/KeyMaterial.ts", "src/internal/JsonMirror.ts"]
+      paths: ["src/StepKey.vibe", "src/KeyMaterial.vibe", "src/internal/JsonMirror.ts"]
     },
     {
       id: "function-identity-cache-hit",
@@ -91,7 +91,7 @@ const securityReview = Smithers.SecurityReview({
         "TreeArtifact or Glob paths that skip the Pattern schema.",
         "A drive-relative first segment such as 'C:foo', or Windows trailing-dot/space segments, passing workspaceRelative."
       ],
-      paths: ["src/FileSet.ts"]
+      paths: ["src/FileSet.vibe"]
     },
     {
       id: "write-conflict-false-negative",
@@ -105,10 +105,10 @@ const securityReview = Smithers.SecurityReview({
         "Exact-path comparison that is case-sensitive, so 'A.txt' and 'a.txt' are disjoint although a case-insensitive filesystem (default macOS APFS) maps them to one file."
       ],
       paths: [
-        "src/FileSet.ts",
+        "src/FileSet.vibe",
         "src/internal/EffectCandidates.ts",
         "src/internal/ConflictAnnotation.ts",
-        "src/Effects.ts",
+        "src/Effects.vibe",
         "src/internal/effects.ts"
       ]
     },
@@ -122,7 +122,7 @@ const securityReview = Smithers.SecurityReview({
         "Glob matching that backtracks exponentially on repeated '*' or '**' segments.",
         "toJSON or getter evaluation during mirroring that can loop, throw arbitrary objects, or mutate input."
       ],
-      paths: ["src/internal/JsonMirror.ts", "src/FileSet.ts", "src/GraphBuildError.ts", "src/internal/node.ts"]
+      paths: ["src/internal/JsonMirror.ts", "src/FileSet.vibe", "src/GraphBuildError.vibe", "src/internal/node.ts"]
     }
   ]
 })

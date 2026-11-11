@@ -1,7 +1,7 @@
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { expect, it } from "vitest"
-import * as EvaluationHost from "../src/evaluation/EvaluationHost.ts"
+import * as EvaluationHost from "../src/evaluation/EvaluationHost.vibe"
 
 it("selects the real Bun adapter from an injected host identity under Node", async () => {
   expect("Bun" in globalThis).toBe(false)

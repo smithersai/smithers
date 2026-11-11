@@ -14,7 +14,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import * as Changes from "../src/changes.ts"
+import * as Changes from "../src/changes.vibe"
 import * as Context from "../src/context.ts"
 import * as Session from "../src/session.ts"
 import * as Summary from "../src/summary.ts"

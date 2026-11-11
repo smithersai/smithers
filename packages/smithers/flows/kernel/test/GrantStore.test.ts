@@ -3,9 +3,9 @@ import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import { GrantStoreError, PermissionDenied, PermissionRequired, Rule } from "@smthrs/capability/Permission"
 import { Deferred, Effect, Fiber } from "effect"
 import { attenuate } from "../src/CapabilitySet.ts"
-import type { GrantEvent } from "../src/GrantEvent.ts"
+import type { GrantEvent } from "../src/GrantEvent.vibe"
 import { make as makeGrantStore, type MakeOptions, type PendingRequest, type Service } from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const readme = new Capability({
   action: "fs:read",

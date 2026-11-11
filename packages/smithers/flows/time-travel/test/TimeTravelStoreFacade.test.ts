@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as TimeTravelStore from "../src/TimeTravelStore.ts"
+import * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 
 const frame = { lineageId: "main", seq: 1 } as const
 

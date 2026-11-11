@@ -11,27 +11,27 @@
 /**
  * @since 0.1.0 @category errors
  */
-export * as GatewayError from "./GatewayError.ts"
+export * as GatewayError from "./GatewayError.vibe"
 
 /**
  * @since 0.1.0 @category models
  */
-export * as GatewaySchema from "./GatewaySchema.ts"
+export * as GatewaySchema from "./GatewaySchema.vibe"
 
 /**
  * @since 1.0.0 @category projections
  */
-export * as Diagnosis from "./Diagnosis.ts"
+export * as Diagnosis from "./Diagnosis.vibe"
 
 /**
  * @since 1.0.0 @category projections
  */
-export * as RunTrace from "./RunTrace.ts"
+export * as RunTrace from "./RunTrace.vibe"
 
 /**
  * @since 1.0.0 @category projections
  */
-export * as EngineTrace from "./EngineTrace.ts"
+export * as EngineTrace from "./EngineTrace.vibe"
 
 /**
  * @since 1.0.0 @category projections
@@ -41,17 +41,17 @@ export * as RunDevTools from "./RunDevTools.ts"
 /**
  * @since 1.0.0 @category projections
  */
-export * as GatewayProjection from "./GatewayProjection.ts"
+export * as GatewayProjection from "./GatewayProjection.vibe"
 
 /**
  * @since 1.0.0 @category rpc
  */
-export * as GatewayRpcs from "./GatewayRpcs.ts"
+export * as GatewayRpcs from "./GatewayRpcs.vibe"
 
 /**
  * @since 1.0.0 @category layers
  */
-export * as GatewayServer from "./GatewayServer.ts"
+export * as GatewayServer from "./GatewayServer.vibe"
 
 /**
  * @since 1.0.0 @category services
@@ -61,7 +61,7 @@ export * as Projections from "./Projections.ts"
 /**
  * @since 1.0.0 @category rpc
  */
-export * as RunHistory from "./RunHistory.ts"
+export * as RunHistory from "./RunHistory.vibe"
 
 /**
  * @since 1.0.0 @category runtime bridge
@@ -78,4 +78,4 @@ export * as Sync from "@smthrs/sync"
 /**
  * @since 1.0.0 @category projections
  */
-export * as InspectionJournal from "./InspectionJournal.ts"
+export * as InspectionJournal from "./InspectionJournal.vibe"

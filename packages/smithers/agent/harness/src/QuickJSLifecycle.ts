@@ -85,6 +85,7 @@ export const interruptBudget = (now: () => number) => {
  *
  * @category conversions
  * @since 1.0.0-rc.16
+ * @throws {never}
  */
 export const utf8Length = (text: string): number => {
   let bytes = 0

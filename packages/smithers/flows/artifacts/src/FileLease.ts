@@ -104,7 +104,7 @@ export const defaultAcquireWithin: Duration.Input = "2 minutes"
  */
 export const defaultStaleAfterMs = 60_000
 
-import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
 
 const isReason = (cause: unknown, tag: PlatformError.SystemErrorTag): boolean =>
   cause instanceof PlatformError.PlatformError && cause.reason._tag === tag

@@ -26,6 +26,7 @@ export const append = (path: string, segment: PropertyKey): string =>
  *
  * @private
  * @since 1.1.0
+ * @throws {never}
  */
 export const join = (segments: ReadonlyArray<PropertyKey>): string =>
   segments.reduce<string>((path, segment) => append(path, segment), "")

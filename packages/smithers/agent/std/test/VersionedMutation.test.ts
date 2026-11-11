@@ -4,13 +4,13 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
-import * as Edit from "../src/Edit.ts"
-import * as FileMutation from "../src/internal/FileMutation.ts"
-import * as LanguageServer from "../src/LanguageServer.ts"
-import * as Read from "../src/Read.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
+import * as Edit from "../src/Edit.vibe"
+import * as FileMutation from "../src/internal/FileMutation.vibe"
+import * as LanguageServer from "../src/LanguageServer.vibe"
+import * as Read from "../src/Read.vibe"
 import { StdError } from "../src/StdError.ts"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 // This deliberately substitutes only the provider seam to prove tool batching,
 // ordering and refusal behavior against real files. It does not qualify guest

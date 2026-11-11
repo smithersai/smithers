@@ -22,7 +22,7 @@ The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
 version instead of the tag, then approve `esbuild`'s install script:
 
 ```bash
-pnpm add @smthrs/platform-node@1.0.0-rc.17 @smthrs/flows@1.0.0-rc.17 effect
+pnpm add @smthrs/platform-node@1.0.0-rc.17 @smthrs/flows@1.0.0-rc.17 effect@4.0.5
 pnpm approve-builds esbuild
 ```
 
@@ -79,7 +79,7 @@ import { Action, Engine, Flow, Interpreter, Journal, Kernel } from "@smthrs/flow
 ```
 
 The runtime core, `Runtime`, consumes injected services. In the published
-`1.0.0-rc.16`, import the Node runtime and sandbox composition from
+`1.0.0-rc.17`, import the Node runtime and sandbox composition from
 these subpaths:
 
 ```ts

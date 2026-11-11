@@ -32,15 +32,15 @@ import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { Context, Duration, Effect, Exit, Layer, Option, Schema, Scope } from "effect"
 import type { QuickJSContext, QuickJSHandle, QuickJSRuntime, QuickJSWASMModule } from "quickjs-emscripten-core"
 import * as Cell from "./Cell.ts"
-import type { HarnessError } from "./HarnessError.ts"
+import type { HarnessError } from "./HarnessError.vibe"
 import * as bytes from "./internal/bytes.ts"
 import * as elide from "./internal/elide.ts"
-import * as printChannel from "./internal/printChannel.ts"
-import { refusal } from "./internal/refusal.ts"
+import * as printChannel from "./internal/printChannel.vibe"
+import { refusal } from "./internal/refusal.vibe"
 import * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
-import * as QuickJSVariant from "./QuickJSVariant.ts"
-import * as Sandbox from "./Sandbox.ts"
-import * as VariablesPanel from "./VariablesPanel.ts"
+import * as QuickJSVariant from "./QuickJSVariant.vibe"
+import * as Sandbox from "./Sandbox.vibe"
+import * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**
  * Every intrinsic the host's own realm-side code reads, bound before a cell runs.
@@ -453,7 +453,7 @@ export {
    * @since 0.1.0
    */
   type VariantService
-} from "./QuickJSVariant.ts"
+} from "./QuickJSVariant.vibe"
 
 /**
  * Provides the single-file build, which Node and a browser both compile.

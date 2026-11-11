@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { EvalError } from "../src/EvalError.ts"
+import { EvalError } from "../src/EvalError.vibe"
 import * as Trials from "../src/Trials.ts"
 
 const failure = (run: () => unknown): EvalError => {

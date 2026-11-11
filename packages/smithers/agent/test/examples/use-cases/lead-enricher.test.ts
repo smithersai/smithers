@@ -4,8 +4,8 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, LeadEnricher } from "../../../examples/use-cases/lead-enricher.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { layer, LeadEnricher } from "../../../examples/use-cases/lead-enricher.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "lead-enricher-"))
 

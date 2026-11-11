@@ -10,7 +10,7 @@ import { Node } from "@smthrs/plan"
 import { Cause, Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
-import * as EventSink from "../src/EventSink.ts"
+import * as EventSink from "../src/EventSink.vibe"
 import { facts, stores } from "./fixtures/step-trace-stack.ts"
 
 const TraceFlow = Flow.make("test/trace-source-identity", {

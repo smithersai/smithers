@@ -16,12 +16,12 @@ import {
   TRIAGE_LABEL_COLORS,
   type WriteFailure,
 } from "../../src/features/issues/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import type { Services } from "./Apply.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import type { Services } from "#vibelang/source/worker/github/Apply"
 import { roleOf } from "../GitHubAuth.ts"
-import { classify, withToken } from "./Calls.ts"
-import { repositoryOf } from "./Config.ts"
-import * as Metrics from "./Metrics.ts"
+import { classify, withToken } from "#vibelang/emitted/worker/github/Calls"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import { fetchIssue, project } from "./Project.ts"
 import { CANT_ACT, permissionOf, RoleRefused } from "./RepoRoles.ts"
 import * as Store from "./Store.ts"

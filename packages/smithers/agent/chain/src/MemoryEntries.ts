@@ -33,7 +33,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as WithMemory from "@smthrs/memory/WithMemory"
 import { Effect, Layer, Schema } from "effect"
-import * as Catalog from "./Catalog.ts"
+import * as Catalog from "./Catalog.vibe"
 import { failureCode } from "./internal/failureCode.ts"
 import * as JsonBoundary from "./JsonBoundary.ts"
 

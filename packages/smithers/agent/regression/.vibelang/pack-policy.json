@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "files": [],
+  "ignores": [
+    {
+      "path": ".npmignore",
+      "block": "\n# BEGIN VibeLang emitted runtime packing\n!/.vibelang/\n/.vibelang/*\n!/.vibelang/js/\n!/.vibelang/js/**\n# END VibeLang emitted runtime packing\n",
+      "created": true,
+      "hash": "ec4b54f2a3097c1ac1415aecb91e17455159b4685598e6cc3c146de63fd1dd0b"
+    }
+  ]
+}

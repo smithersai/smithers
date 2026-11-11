@@ -23,7 +23,7 @@ import * as CliScripts from "./internal/CliScripts.ts"
 import * as FlowNames from "./internal/FlowNames.ts"
 import * as Sort from "./internal/Sort.ts"
 import * as Ts from "./internal/Ts.ts"
-import type { InventoryEntry } from "./Inventory.ts"
+import type { InventoryEntry } from "./Inventory.vibe"
 import * as PromptHints from "./PromptHints.ts"
 import * as ZodSchemaHints from "./ZodSchemaHints.ts"
 

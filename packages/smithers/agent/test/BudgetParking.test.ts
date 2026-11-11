@@ -19,8 +19,8 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Context, Effect, Layer, Schema, type Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
-import * as Budget from "../src/Budget.ts"
-import * as RunawayGuard from "../src/RunawayGuard.ts"
+import * as Budget from "../src/Budget.vibe"
+import * as RunawayGuard from "../src/RunawayGuard.vibe"
 
 type Runtime = ControlRuntime.ControlRuntime["Service"]
 type RequestFact = typeof ControlFacts.ApprovalRequestFact.Type

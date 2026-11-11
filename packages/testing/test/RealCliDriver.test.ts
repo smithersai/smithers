@@ -2,7 +2,7 @@ import { NodeHost } from "@smthrs/platform-node"
 import { Effect, FileSystem } from "effect"
 import { describe, expect, it } from "vitest"
 import * as ProcessTable from "../src/ProcessTable.ts"
-import * as Driver from "../src/RealCliDriver.ts"
+import * as Driver from "../src/RealCliDriver.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, NodeHost.NodeHost>) =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeHost.layer)))

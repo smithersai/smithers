@@ -3,8 +3,8 @@ import { Cause, type Context, Effect, Exit, type Layer, ManagedRuntime, Option, 
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
 import { expect, it } from "vitest"
-import * as MemoryError from "../src/MemoryError.ts"
-import * as Semantic from "../src/RecallSemantic.ts"
+import * as MemoryError from "../src/MemoryError.vibe"
+import * as Semantic from "../src/RecallSemantic.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 type Services = Layer.Success<typeof TestMemory.layerWithDatabase>

@@ -31,7 +31,7 @@ import { createRequire } from "node:module"
 import { constants } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Environment from "../ExecutionEnvironment.ts"
 
 /**
@@ -227,7 +227,14 @@ export const launch = (
   }
   const bun = environment["SMITHERS_BUN"] ?? (machine.versions.bun === undefined ? undefined : machine.execPath)
   if (bun !== undefined && bun !== "") {
-    return { command: bun, args: [entry(packageRoot, true, machine)], runtime: "bun" }
+    return {
+      command: bun,
+      args: [
+        ...(checkout(packageRoot, machine) ? ["--preload", fileURLToPath(import.meta.resolve("vibelang/bun"))] : []),
+        entry(packageRoot, true, machine)
+      ],
+      runtime: "bun"
+    }
   }
   if (ffi(machine.versions.node)) {
     return {

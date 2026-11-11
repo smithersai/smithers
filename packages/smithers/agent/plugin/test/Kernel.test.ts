@@ -1,13 +1,13 @@
 import { Context, Effect } from "effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
-import * as Config from "../src/Config.ts"
-import type { ResolvedConfig } from "../src/Config.ts"
-import type { HookCatalog, ParallelHook, WaterfallHook } from "../src/Hooks.ts"
-import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
-import * as Kernel from "../src/Kernel.ts"
-import type { PluginError } from "../src/PluginError.ts"
-import * as Plugins from "../src/Plugins.ts"
-import * as Resolve from "../src/Resolve.ts"
+import * as Config from "../src/Config.vibe"
+import type { ResolvedConfig } from "../src/Config.vibe"
+import type { HookCatalog, ParallelHook, WaterfallHook } from "../src/Hooks.vibe"
+import type { FlowsHooks, FlowsPlugin } from "../src/index.vibe"
+import * as Kernel from "../src/Kernel.vibe"
+import type { PluginError } from "../src/PluginError.vibe"
+import * as Plugins from "../src/Plugins.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 

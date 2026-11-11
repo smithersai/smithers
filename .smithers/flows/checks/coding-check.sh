@@ -9,7 +9,8 @@ export HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
 # `driftCi` steps in PACKAGE.ts, which packages/repo-targets/contracts/drift-job.test.mjs enforces.
 drift=0
 [ "${1:-}" = drift ] && drift=1
-drift_gates="lint //...:fmt
+drift_gates="build //packages/repo-targets:sidecars
+lint //...:fmt
 lint //:targetIndex
 lint //:factoryProjection
 lint //:docsDrift

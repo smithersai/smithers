@@ -8,16 +8,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { adoptChange, CorrectChange, correctionLayers, Repair, SelectRepair } from "../coding/correction.ts"
+import { adoptChange, CorrectChange, correctionLayers, Repair, SelectRepair } from "../coding/correction.vibe"
 import {
   nativeActions,
   NativeCoding,
   NativeCodingError,
   type NativeRevision,
   type ReadResult
-} from "../coding/native.ts"
+} from "../coding/native.vibe"
 import {
   type Change,
   checkInputDigest,
@@ -26,7 +26,7 @@ import {
   type Receipt,
   type Revision
 } from "../coding/schema.ts"
-import { Implement, policyLayers, RunCheck } from "../coding/workflow.ts"
+import { Implement, policyLayers, RunCheck } from "../coding/workflow.vibe"
 
 // A real JJ stack: base, then the Changes owner, mid and tip, one atom each.
 // owner.txt carries the defect; every Change's slow check reads it, so the red

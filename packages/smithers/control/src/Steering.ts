@@ -16,7 +16,7 @@
  * @since 0.1.0
  */
 
-import type { ControlEvent } from "./ControlSchema.ts"
+import type { ControlEvent } from "./ControlSchema.vibe"
 
 /**
  * The journal event type the notification queue records a promotion under.

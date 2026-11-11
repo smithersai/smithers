@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { MAX_STATES } from "../repository/jev-checks.ts"
+import { MAX_STATES } from "../repository/jev-checks.vibe"
 import Wiki from "../wiki/flow.ts"
 import {
   checkCitations,
@@ -20,11 +20,11 @@ import {
   MAX_CLAIM_BYTES,
   MAX_STATE_BYTES,
   UNSUPPORTED_CONFIDENCE
-} from "../wiki/jev-citations.ts"
+} from "../wiki/jev-citations.vibe"
 import { operations } from "../wiki/operations.ts"
 import { actionLayers } from "../wiki/runtime.ts"
-import type { Evidence, PageSpec, Review } from "../wiki/schema.ts"
-import { ReviewPage } from "../wiki/workflow.ts"
+import type { Evidence, PageSpec, Review } from "../wiki/schema.vibe"
+import { ReviewPage } from "../wiki/workflow.vibe"
 
 const run = <A, E>(
   effect: Effect.Effect<

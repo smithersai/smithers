@@ -15,12 +15,12 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Approval from "./internal/Approval.ts"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import * as Decorate from "./internal/Decorate.ts"
-import * as Failure from "./internal/Failure.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import * as Pattern from "./Pattern.ts"
-import { PatternError } from "./PatternError.ts"
+import * as Failure from "./internal/Failure.vibe"
+import { OpaqueInput } from "./internal/Payload.vibe"
+import * as Pattern from "./Pattern.vibe"
+import { PatternError } from "./PatternError.vibe"
 
 const ApprovalInput = Schema.Struct({ input: Schema.Unknown, reason: Schema.String, scope: Schema.String })
 

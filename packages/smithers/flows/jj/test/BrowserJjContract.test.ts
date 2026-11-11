@@ -17,8 +17,8 @@ import * as fsModule from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as BrowserJj from "../src/browser/BrowserJj.ts"
-import { Jj } from "../src/Jj.ts"
+import * as BrowserJj from "../src/browser/BrowserJj.vibe"
+import { Jj } from "../src/Jj.vibe"
 import { rootedSyncFs } from "./RootedSyncFs.ts"
 
 const wasmPath = fileURLToPath(new URL("../wasm/flows_jj.wasm", import.meta.url))

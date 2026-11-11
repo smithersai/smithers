@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Manifest from "../src/Manifest.ts"
+import * as Manifest from "../src/Manifest.vibe"
 import { minimal, queueManifest } from "./support/hostFacts.ts"
 
 const refusal = (effect: Effect.Effect<unknown, unknown>) => Effect.runPromise(Effect.flip(effect))

@@ -62,11 +62,11 @@ import {
   Stream
 } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Agent from "../src/Agent.ts"
+import * as Agent from "../src/Agent.vibe"
 import * as AgentSession from "../src/AgentSession.ts"
-import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import type * as FlowEngineLike from "../src/FlowEngineLike.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as Safety from "./Safety.ts"
 
 const route: FlowEngineLike.RouteResolver = {

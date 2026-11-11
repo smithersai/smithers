@@ -6,8 +6,8 @@
  * frame block can print.
  */
 import { describe, expect, it } from "vitest"
-import * as CallLedger from "../src/CallLedger.ts"
-import * as VariablesPanel from "../src/VariablesPanel.ts"
+import * as CallLedger from "../src/CallLedger.vibe"
+import * as VariablesPanel from "../src/VariablesPanel.vibe"
 
 const binding = (name: string, type: string, size: string): VariablesPanel.Binding =>
   new VariablesPanel.Binding({ name, type, size })

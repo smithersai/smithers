@@ -1,0 +1,190 @@
+/**
+ * The wiki as `memory` reads it: the repository's page catalog, its skills,
+ * and the dependency documentation a wiki refresh imported.
+ *
+ * - Pages are the `pages` of `.smithers/coding-project.json`, each read from
+ *   its owning `document`.
+ * - Skills are `.agents/skills/<name>/SKILL.md`, read where they live, so
+ *   nothing is copied and nothing drifts.
+ * - Dependency pages are the Markdown a wiki refresh imported under
+ *   `.flows/wiki/deps/<name>/`, from the `docs` the workspace declares.
+ * - Decisions pages are `.smithers/wiki/decisions/<item>.md`, the steering a
+ *   person gave runs on one item, which `memory/mine` appends. They are
+ *   pages; one the catalog already lists is read once, as its catalog page.
+ *
+ * Every read is best effort: a missing catalog is an empty wiki. A link, a
+ * file a linked parent directory leads outside the root to, or a catalog
+ * document outside the root or in a private tree, is never read.
+ *
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Path from "effect/Path"
+import { headOf, inside, linked, normalizePath, unreadable } from "./repo.vibe"
+
+/**
+ * One wiki candidate.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export interface Page {
+  readonly kind: "page" | "skill" | "dep"
+  readonly id: string
+  readonly title: string
+  readonly text: string
+  /** A page whose inputs no longer hash to the source; omitted as `stale`. */
+  readonly stale?: boolean | undefined
+  /** The repository files the page explains, from its catalog spec. */
+  readonly inputs?: ReadonlyArray<string> | undefined
+}
+
+/**
+ * The most of one page a candidate carries.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const pageBytes = 32 * 1024
+
+/**
+ * Where a wiki refresh imports declared dependency documentation.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const depsDirectory = ".flows/wiki/deps"
+
+/**
+ * Where `memory/mine` appends each item's decisions page.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const decisionsDirectory = ".smithers/wiki/decisions"
+
+const catalogPath = ".smithers/coding-project.json"
+const skillsDirectory = ".agents/skills"
+
+// A link is never read, nor a file a linked parent directory leads outside
+// `root` to: its target may lie anywhere.
+const text = (root: string, file: string, limit: number | null = pageBytes) =>
+  effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    if (try linked(fs, file)) return undefined
+    const real = try (inside(fs, path, try fs.realPath(root), file)
+      |> Effect.catch(%, unreadable<string | undefined>(undefined)))
+    if (real === undefined) return undefined
+    // A catalog entry naming a directory, or anything but a file, is skipped.
+    const info = try (fs.stat(real) |> Effect.catch(%, unreadable<FileSystem.File.Info | undefined>(undefined)))
+    if (info?.type !== "File") return undefined
+    // Catalog JSON must be complete before parsing. Page bodies, in contrast,
+    // are bounded at the filesystem boundary, before allocating their text.
+    const decoder = new TextDecoder()
+    return try ((limit === null ? fs.readFileString(real) : (Stream.runFold(
+      fs.stream(real, { bytesToRead: limit, chunkSize: limit }),
+      () => "",
+      (value, chunk) => value + $invoke(decoder,() => (chunk), () => ({ stream: true }))
+    )
+      // Drop a code point cut by the page budget, flush a complete file.
+      |> Effect.map(%, (value) => headOf(value + (info.size <= limit ? $invoke2(decoder) : ""), limit))))
+      |> Effect.catch(%, unreadable(undefined)))
+  }
+
+const pages = effect (root: string) => {
+  const path = try Path.Path
+  const found: Array<Page> = []
+  const documents = new Set<string>()
+  const raw = try text(root, path.join(root, catalogPath), null)
+  if (raw === undefined) return { found, documents }
+  // Any JSON value parses, `null` included; only an object's `pages` array counts.
+  const parsed = try (Effect.try(() => JSON.parse(raw) as { pages?: unknown } | null) |> Effect.option(%))
+  const specs = parsed._tag === "Some" && Array.isArray(parsed.value?.pages) ? parsed.value.pages : []
+  for (const spec of specs as ReadonlyArray<Record<string, unknown>>) {
+    if (spec === null || typeof spec !== "object" || Array.isArray(spec)) continue
+    // A document outside the root, or in a private tree, is never read.
+    const document = typeof spec.document === "string" ? normalizePath(spec.document) : null
+    if (typeof spec.id !== "string" || document === null) continue
+    const body = try text(root, path.join(root, document))
+    if (body === undefined) continue
+    documents.add(document)
+    found.push({
+      kind: "page",
+      id: spec.id,
+      title: typeof spec.title === "string" ? spec.title : spec.id,
+      text: body,
+      inputs: Array.isArray(spec.inputs) ? spec.inputs.filter((input) => typeof input === "string") : []
+    })
+  }
+  return { found, documents }
+}
+
+const decisions = effect (root: string, listed: ReadonlySet<string>) => {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const names = try (fs.readDirectory(path.join(root, decisionsDirectory))
+    |> Effect.catch(%, unreadable<Array<string>>([])))
+  const found: Array<Page> = []
+  for (const name of names.filter((file) => file.endsWith(".md")).sort()) {
+    const relative = path.join(decisionsDirectory, name)
+    if (listed.has(relative)) continue
+    const body = try text(root, path.join(root, relative))
+    if (body === undefined) continue
+    const item = name.slice(0, -".md".length)
+    found.push({ kind: "page", id: `decisions/${item}`, title: `Decisions: ${item}`, text: body })
+  }
+  return found
+}
+
+const directory = effect (root: string, relative: string, kind: "skill" | "dep") => {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const base = path.join(root, relative)
+  const names = try (fs.readDirectory(base) |> Effect.catch(%, unreadable<Array<string>>([])))
+  const found: Array<Page> = []
+  for (const name of names.sort()) {
+    // Each entry is a directory of pages; a stray file is not a source.
+    const info = try (fs.stat(path.join(base, name)) |> Effect.catch(%, unreadable(undefined)))
+    if (info?.type !== "Directory") continue
+    const files = kind === "skill"
+      ? ["SKILL.md"]
+      : (try (fs.readDirectory(path.join(base, name)) |> Effect.catch(%, unreadable<Array<string>>([])))).filter((file) => /\.mdx?$/i.test(file)).sort()
+    for (const file of files) {
+      const body = try text(root, path.join(base, name, file))
+      if (body === undefined) continue
+      const id = kind === "skill" ? name : `${name}/${file}`
+      found.push({ kind, id, title: id, text: body })
+    }
+  }
+  return found
+}
+
+/**
+ * Every catalog page, decisions page, skill and dependency page of `root`,
+ * in that order.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const catalog = effect (root: string) => {
+  const listed = try pages(root)
+  const groups = try Effect.all([
+    decisions(root, listed.documents),
+    directory(root, skillsDirectory, "skill"),
+    directory(root, depsDirectory, "dep")
+  ])
+  return [...listed.found, ...groups.flat()] satisfies ReadonlyArray<Page>
+}
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0],arg1:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[1]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0(),arg1()) }
+}
+import { invoke as $invoke } from $call$ts
+
+module $call$ts2 {
+export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+}
+import { invoke as $invoke2 } from $call$ts2

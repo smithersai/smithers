@@ -1,0 +1,50 @@
+/**
+ * Runs a host with one hook of its own, end to end: two plugins contribute
+ * configuration and tool names, the kernel resolves and freezes the
+ * configuration, and the host dispatches its `tools` waterfall. This is the
+ * quickstart's host as one runnable file; `test/examples.test.ts` runs it.
+ *
+ * The hook interface is passed explicitly as `HostHooks` instead of augmenting
+ * `FlowsHooks`, so the example declares nothing global.
+ */
+import { engineHooks, type FlowsHooks, Kernel, make, type WaterfallHook } from "@smthrs/plugin"
+import * as Effect from "effect/Effect"
+
+/** The kernel's config lifecycle plus this host's `tools` waterfall. */
+export interface HostHooks extends FlowsHooks {
+  readonly tools: WaterfallHook<(tools: ReadonlyArray<string>) => (ReadonlyArray<string> | void)!!>
+}
+
+/** The runtime catalog; it must agree with `HostHooks`. */
+export const hooks = Object.freeze({ ...engineHooks, tools: "waterfall" } as const)
+
+const editor = make<HostHooks>({
+  name: "flows-plugin-editor",
+  hooks: {
+    config: () => Effect.succeed({ editor: { readOnly: false } }),
+    tools: (tools) => Effect.succeed([...tools, "read", "write"])
+  }
+})
+
+// `enforce: "pre"` runs this plugin's `tools` handler before the editor's.
+const search = make<HostHooks>({
+  name: "flows-plugin-search",
+  enforce: "pre",
+  hooks: {
+    tools: (tools) => Effect.succeed([...tools, "grep"])
+  }
+})
+
+/** Starts the kernel, dispatches `tools`, and resolves with what the host saw. */
+export const hostAHook = () =>
+  Effect.runPromise(
+    effect {
+      const kernel = try Kernel.make<HostHooks>(
+        [editor, search],
+        { host: { name: "example" } },
+        { target: "harness", hooks }
+      )
+      const tools = try kernel.plugins.waterfall("tools", [], (_previous, next) => next)
+      return { config: kernel.config, tools, observerErrors: kernel.observerErrors }
+    }
+  )

@@ -6,9 +6,9 @@ import { join } from "node:path"
 import { setImmediate, setTimeout } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
-import * as FlowControl from "../src/flow-control.ts"
+import * as FlowControl from "../src/flow-control.vibe"
 import type { Settled } from "../src/flows.ts"
-import * as Host from "../src/host.ts"
+import * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 // Real module -> engine-store -> control watch -> FlowRuns -> native App card.

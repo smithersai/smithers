@@ -26,7 +26,7 @@ import {
 } from "./schema"
 import { deliveredOf } from "./view"
 import { keep, StackWrites, TODO_OP } from "./writes"
-import { admissions } from "./metrics"
+import { admissions } from "#vibelang/emitted/src/features/todos/metrics"
 
 // TODOs on this tab (decision 0016 §1, docs/features/todos.md#the-browser): each repository's TODOs and their prompts
 // in Postgres, synced by Electric while a page shows that repository's stack and kept on the device; this device's own

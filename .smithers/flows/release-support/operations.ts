@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { chooseTemplate } from "../release-content/jev-template.ts"
-import * as Content from "../release-content/workflow.ts"
+import { chooseTemplate } from "../release-content/jev-template.vibe"
+import * as Content from "../release-content/workflow.vibe"
 import { readWorkspaceManifests } from "../release/pack-release.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../release/publish-release.mjs"
 import { releaseGateArgs, releaseGateSetForHost } from "../release/release-gates.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../release/set-release-version.mjs"
-import * as Release from "../release/workflow.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import * as Release from "../release/workflow.vibe"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
 import { changelogNarrative, checkContent, digest, renderCard } from "./content.ts"
 import { atomicWrite, commandRunner, inside, json, maybeRead, postTweet, type RunCommand } from "./io.ts"
 import { recordUi } from "./recording.ts"
@@ -28,7 +28,7 @@ import {
   ReleaseError,
   type ReleaseInput,
   type Review
-} from "./schema.ts"
+} from "./schema.vibe"
 
 interface Write {
   readonly path: string

@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 import { type Client, esc, list, object, pick, positive, query, str } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 /**

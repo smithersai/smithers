@@ -34,20 +34,57 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./ArtifactBackupLease": "./src/ArtifactBackupLease.ts",
-    "./ArtifactStore": "./src/ArtifactStore.ts",
-    "./ArtifactStoreMetrics": "./src/ArtifactStoreMetrics.ts",
-    "./ArtifactSweep": "./src/ArtifactSweep.ts",
-    "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
-    "./FileLease": "./src/FileLease.ts",
-    "./RemoteArtifacts": "./src/RemoteArtifacts.ts",
-    "./index": "./src/index.ts"
+    "./ArtifactBackupLease": {
+      "types": "./.vibe/declarations/src/ArtifactBackupLease.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactBackupLease.vibe",
+      "default": "./.vibelang/js/src/ArtifactBackupLease.js"
+    },
+    "./ArtifactStore": {
+      "types": "./src/ArtifactStore.ts",
+      "vibelang-source": "./src/ArtifactStore.ts",
+      "default": "./.vibelang/js/src/ArtifactStore.js"
+    },
+    "./ArtifactStoreMetrics": {
+      "types": "./.vibe/declarations/src/ArtifactStoreMetrics.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactStoreMetrics.vibe",
+      "default": "./.vibelang/js/src/ArtifactStoreMetrics.js"
+    },
+    "./ArtifactSweep": {
+      "types": "./src/ArtifactSweep.ts",
+      "vibelang-source": "./src/ArtifactSweep.ts",
+      "default": "./.vibelang/js/src/ArtifactSweep.js"
+    },
+    "./CombinedArtifacts": {
+      "types": "./src/CombinedArtifacts.ts",
+      "vibelang-source": "./src/CombinedArtifacts.ts",
+      "default": "./.vibelang/js/src/CombinedArtifacts.js"
+    },
+    "./FileLease": {
+      "types": "./src/FileLease.ts",
+      "vibelang-source": "./src/FileLease.ts",
+      "default": "./.vibelang/js/src/FileLease.js"
+    },
+    "./RemoteArtifacts": {
+      "types": "./.vibe/declarations/src/RemoteArtifacts.d.vibe.ts",
+      "vibelang-source": "./src/RemoteArtifacts.vibe",
+      "default": "./.vibelang/js/src/RemoteArtifacts.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -56,7 +93,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -168,7 +207,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/crypto": "1.0.0-rc.17"
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -188,8 +228,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

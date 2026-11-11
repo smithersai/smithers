@@ -7,8 +7,8 @@ import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { describe, expect, it } from "vitest"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
-import * as Classifier from "../src/Classifier.ts"
-import * as Evaluator from "../src/Evaluator.ts"
+import * as Classifier from "../src/Classifier.vibe"
+import * as Evaluator from "../src/Evaluator.vibe"
 
 const Relevance = Classifier.make("triage/relevance", {
   description: "Whether a file must change for the task, and its role.",

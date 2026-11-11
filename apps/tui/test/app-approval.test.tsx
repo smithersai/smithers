@@ -8,7 +8,7 @@ import { setImmediate, setTimeout } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
 import type * as Approvals from "../src/approvals.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 // Headless component units over the public Host approval boundary; the store
 // double controls replies. Actual native focus, timers, and session storage run.

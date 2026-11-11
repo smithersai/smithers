@@ -5,7 +5,7 @@ import { chmodSync, existsSync, readFileSync, rmSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isJjError, Jj } from "../src/Jj.ts"
+import { isJjError, Jj } from "../src/Jj.vibe"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
 const jjInstalled = (() => {

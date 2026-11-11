@@ -113,8 +113,12 @@ describe("ExternalTranscript", () => {
       const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
         exports: Record<string, unknown>
       }
-      expect(manifest.exports["./ExternalTranscript"]).toBe("./src/ExternalTranscript.ts")
-      const subpath = await import("../src/ExternalTranscript.ts")
+      expect(manifest.exports["./ExternalTranscript"]).toEqual({
+        types: "./.vibe/declarations/src/ExternalTranscript.d.vibe.ts",
+        "vibelang-source": "./src/ExternalTranscript.vibe",
+        default: "./.vibelang/js/src/ExternalTranscript.js"
+      })
+      const subpath = await import("../src/ExternalTranscript.vibe")
       expect(subpath.decodeCodex).toBe(ExternalTranscript.decodeCodex)
     })
 
@@ -133,7 +137,7 @@ describe("ExternalTranscript", () => {
         "decodeClaude",
         "decodeCodex"
       ])
-      const source = readFileSync(new URL("../src/ExternalTranscript.ts", import.meta.url), "utf8")
+      const source = readFileSync(new URL("../src/ExternalTranscript.vibe", import.meta.url), "utf8")
       expect([...source.matchAll(/^import .* from "([^"]+)"$/gm)].map((match) => match[1])).toEqual([
         "@smthrs/flow/Fault",
         "effect"

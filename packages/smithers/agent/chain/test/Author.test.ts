@@ -1,8 +1,8 @@
 import { Context, Effect } from "effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
-import * as Author from "../src/Author.ts"
-import * as QuickJsRunner from "../src/QuickJsRunner.ts"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import * as Author from "../src/Author.vibe"
+import * as QuickJsRunner from "../src/QuickJsRunner.vibe"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import { flow, runChain, runOn } from "./harness.ts"
 
 const jsonContext: ReadonlyArray<unknown> = [

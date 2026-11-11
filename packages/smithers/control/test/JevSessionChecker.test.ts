@@ -1,8 +1,8 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as Health from "../src/Health.ts"
-import * as Jev from "../src/JevSessionChecker.ts"
+import * as Health from "../src/Health.vibe"
+import * as Jev from "../src/JevSessionChecker.vibe"
 
 const context = (outputTail: string | undefined = "Continue?", alive = true): Health.ProbeContext => ({
   subjectId: "session:one",

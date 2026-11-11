@@ -9,7 +9,7 @@ import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
 import * as Files from "../src/files.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 // Actual App, native parser/editor and session IO; offline controlled Host.
 // Completion uses its existing seam, never a Git command.

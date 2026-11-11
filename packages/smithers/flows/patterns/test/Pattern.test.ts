@@ -16,8 +16,8 @@ import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Decorate from "../src/internal/Decorate.ts"
-import * as Pattern from "../src/Pattern.ts"
-import { PatternError } from "../src/PatternError.ts"
+import * as Pattern from "../src/Pattern.vibe"
+import { PatternError } from "../src/PatternError.vibe"
 import { execute } from "./Execute.ts"
 
 const effect = (

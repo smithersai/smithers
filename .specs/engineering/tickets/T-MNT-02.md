@@ -11,7 +11,7 @@ A maintainer-requested triage returns classification, cited duplicate candidates
 ## Scope
 
 In:
-- Reuse repository research, Jev duplicate judgments, reproduction proposal, review and observation retention from .smithers/flows/repository/jobs.ts.
+- Reuse repository research, Jev duplicate judgments, reproduction proposal, review and observation retention from .smithers/flows/repository/jobs.vibe.
 - Capture a bounded candidate list from synced issues with their revisions. A duplicate judgment links evidence; it never closes or relabels an issue.
 - Bug reproduction runs on the captured trusted base in an ephemeral background machine under existing capacity admission. Proposals are data until the requesting maintainer approves the exact fixture, argv and source digest.
 - Issue evidence section records expected/actual behavior, command, exit status, source revision and reproduced/needs-author/not-applicable. Infrastructure failure is failed, never evidence that a report is invalid.
@@ -23,8 +23,8 @@ Out:
 
 ## Changes
 
-- Reuse `.smithers/flows/repository/jobs.ts:219-265` duplicate, execution and reproduction-review actions and its investigation composition at `:347`. Reshape `.smithers/flows/repository/execution.ts:299-354` to execute through the machine executor; delete this slice's host execution path in the same change. Reuse the shared Flow runtime and pinning.
-- Correct the host-execution wording in `.smithers/flows/repository/jobs.ts:197`. Validate argv, cwd and fixture paths; bind the requesting maintainer's approval to fixture bytes, argv, cwd and captured trusted-main source digest. Recheck role, expiry and digest at execution; deny drift before any command. Mount only captured source and fixture inside the machine (C-MNT-02, C-MNT-06).
+- Reuse `.smithers/flows/repository/jobs.vibe:219-265` duplicate, execution and reproduction-review actions and its investigation composition at `:347`. Reshape `.smithers/flows/repository/execution.vibe:299-354` to execute through the machine executor; delete this slice's host execution path in the same change. Reuse the shared Flow runtime and pinning.
+- Correct the host-execution wording in `.smithers/flows/repository/jobs.vibe:197`. Validate argv, cwd and fixture paths; bind the requesting maintainer's approval to fixture bytes, argv, cwd and captured trusted-main source digest. Recheck role, expiry and digest at execution; deny drift before any command. Mount only captured source and fixture inside the machine (C-MNT-02, C-MNT-06).
 - Use the existing budget, machine request, run and evidence stores. Release the machine at terminal state and while waiting for a person when safely idle.
 - Reshape the existing Issue card (`apps/app/src/mainview/cards/IssueCards.tsx:246`) and issue payload (`packages/rpc/src/Cards.ts:1563`) to show retained evidence and monitor receipts. smithers-06 owns the View in `apps/app/src/mainview/cards/views/`; engineering owns its Container and the per-module `packages/rpc/src/IssueCard.ts` contract (new extraction from Cards.ts, not a second schema). Containers use `cardActions` → `flowAction`; Views call `onAction(action.tag)` with `data-flow` (§14.2.1). Reuse existing approval routes and evidence stores. No new table or parallel triage implementation. No GitHub write credential, personal login seed or repository secret enters a triage machine (C-MNT-02, C-MNT-06).
 

@@ -21,8 +21,8 @@ import * as NativePath from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
-import * as BunFileSystem from "../src/BunFileSystem.ts"
-import * as BunGarbageCollector from "../src/BunGarbageCollector.ts"
+import * as BunFileSystem from "../src/BunFileSystem.vibe"
+import * as BunGarbageCollector from "../src/BunGarbageCollector.vibe"
 import * as BunHost from "../src/BunHost.ts"
 import * as BunRuntime from "../src/BunRuntime.ts"
 import * as Index from "../src/index.ts"
@@ -149,11 +149,11 @@ describe("@smthrs/platform-bun barrel", () => {
 describe("@smthrs/platform-bun module graph", () => {
   it("never resolves @smthrs/platform-browser", async () => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       // Bun's own built-ins (the SQLite driver BunRuntime opens) resolve only on Bun.
       external: ["effect", "effect/*", "@effect/*", "node:*", "bun:*", "#electrobun"],
-      plugins: [vibelang({ project: "tsconfig.test.json" })],
       format: "esm",
       logLevel: "silent",
       metafile: true,

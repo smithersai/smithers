@@ -4,7 +4,7 @@ import { GrantStoreError, PermissionDenied } from "@smthrs/capability/Permission
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect"
 import { attenuate } from "../src/CapabilitySet.ts"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const readme = new Capability({ action: "fs:read", resource: "/workspace/readme.md" })
 const notes = new Capability({ action: "fs:read", resource: "/workspace/notes.md" })

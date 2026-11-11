@@ -7,10 +7,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import * as TestMemory from "../../../packages/smithers/agent/memory/src/test/TestMemory.ts"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { correctionLayers, CorrectPlan } from "../coding/correction.ts"
+import { correctionLayers, CorrectPlan } from "../coding/correction.vibe"
 import {
   acceptedLearnings,
   failureSignatures,
@@ -18,8 +18,8 @@ import {
   learningNotes,
   namespace,
   recordLearning
-} from "../coding/learnings.ts"
-import { NativeCoding } from "../coding/native.ts"
+} from "../coding/learnings.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import {
   checkInputDigest,
   type Implementation,
@@ -28,7 +28,7 @@ import {
   type Result,
   type Revision
 } from "../coding/schema.ts"
-import { Implement, policyLayers, RunCheck } from "../coding/workflow.ts"
+import { Implement, policyLayers, RunCheck } from "../coding/workflow.vibe"
 
 const revision = (name: string, parent?: string): Revision => ({
   changeId: `jj-${name}`,

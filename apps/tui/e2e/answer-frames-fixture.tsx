@@ -7,7 +7,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { appendFileSync, existsSync, watch } from "node:fs"
 import { join } from "node:path"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 const root = process.env.SMITHERS_TUI_ANSWER_FRAMES_DIR
 if (!root) throw new Error("SMITHERS_TUI_ANSWER_FRAMES_DIR is required")

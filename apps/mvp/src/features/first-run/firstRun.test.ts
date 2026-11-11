@@ -7,7 +7,7 @@
 import { Effect, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { OPENAI_ORIGIN } from "../../../worker/personal/test/provider.ts"
 import { member, nodeDevice, openTab, openTestApi, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"

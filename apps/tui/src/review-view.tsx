@@ -4,7 +4,7 @@
  */
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { type RefObject, useRef } from "react"
-import * as Changes from "./changes.ts"
+import * as Changes from "#vibelang/emitted/src/changes"
 import { PatchView } from "./panel-view.tsx"
 import { color } from "./theme.ts"
 import * as Undo from "./undo.ts"

@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Grep from "../src/Grep.ts"
+import * as Grep from "../src/Grep.vibe"
 import { layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

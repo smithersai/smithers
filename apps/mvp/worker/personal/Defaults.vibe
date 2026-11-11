@@ -1,0 +1,14 @@
+import { DEFAULTS, type Defaults } from "../../src/features/personal-model/contract.ts"
+
+// What a connection kind fills in for the person (decision 0132). Choices are configuration (SDK-9), named for what they
+// are: another deployment points Kimi at a regional endpoint, or a later model, with no code change.
+
+/**
+ * `MOONSHOT_BASE_URL` and `MOONSHOT_MODEL`: the endpoint a `moonshot` connection goes to and the model its tiers use,
+ * Moonshot's international endpoint and Kimi K3 unless set (platform.moonshot.ai/docs/api/chat, read 2026-10-31).
+ */
+export const connectionDefaults: Defaults!! = effect {
+  const baseUrl = try Config.String("MOONSHOT_BASE_URL").pipe(Config.withDefault(DEFAULTS.moonshot.baseUrl))
+  const modelId = try Config.String("MOONSHOT_MODEL").pipe(Config.withDefault(DEFAULTS.moonshot.modelId))
+  return { moonshot: { baseUrl, modelId } }
+} |> Effect.orDie(%)

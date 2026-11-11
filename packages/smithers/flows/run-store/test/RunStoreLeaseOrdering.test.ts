@@ -5,10 +5,10 @@ import { Clock, Duration, Effect, Exit } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { heartbeatSkewAllowance, heartbeatStaleAfter } from "../src/Heartbeat.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import type { LivenessEvidence, OwnerId } from "../src/Ownership.ts"
-import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const owner: OwnerId = { hostId: "lease-host", pid: 17, nonce: "lease-owner" }
 const peer: OwnerId = { hostId: "lease-host", pid: 18, nonce: "lease-peer" }

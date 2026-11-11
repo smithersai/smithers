@@ -4,9 +4,9 @@ import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
-import { Machines } from "../branch/Machines.ts"
-import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { Machines } from "#vibelang/emitted/worker/branch/Machines"
+import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "#vibelang/emitted/worker/branch/Sandboxes"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { Command, ToolCall } from "./SandboxCommand.ts"
 
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):

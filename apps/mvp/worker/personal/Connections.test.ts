@@ -21,7 +21,7 @@ import {
   PERSONAL_MODEL_ROUTE,
   PERSONAL_MODEL_TEST_ROUTE,
 } from "../../src/features/personal-model/contract.ts"
-import * as Flows from "../Flows.ts"
+import * as Flows from "../Flows.vibe"
 import { SecretKeys } from "../secrets/Keys.ts"
 import { harness, PERSONAL_KEYS, testFile } from "../test/harness.ts"
 import * as Agents from "./Agents.ts"

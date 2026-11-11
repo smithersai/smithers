@@ -35,9 +35,20 @@
   "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./Directive": "./src/Directive.ts",
-    "./*": "./src/*.vibe",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Directive": {
+      "types": "./src/Directive.ts",
+      "vibelang-source": "./src/Directive.ts",
+      "default": "./.vibelang/js/src/Directive.js"
+    },
+    "./*": {
+      "vibelang-source": "./src/*.vibe",
+      "default": "./.vibelang/js/src/*.js"
+    },
     "./internal/*": null,
     "./*/index": null
   },
@@ -51,7 +62,9 @@
     "dist/**/package.json",
     "LICENSE",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -94,7 +107,7 @@
     "@smthrs/registry": "workspace:*",
     "effect": "4.1.1",
     "incur": "0.5.1",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -113,8 +126,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

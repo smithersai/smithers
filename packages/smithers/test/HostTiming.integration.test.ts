@@ -23,7 +23,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as Telemetry from "../src/internal/Telemetry.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 

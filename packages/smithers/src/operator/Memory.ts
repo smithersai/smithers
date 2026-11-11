@@ -14,11 +14,11 @@ import { Effect, Layer, Schema } from "effect"
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as ControlDatabase from "../internal/ControlDatabase.ts"
 import * as SupervisorMemory from "../internal/SupervisorMemory.ts"
 import * as NodeControl from "../NodeControl.ts"
-import { localFields, type LocalOptions, localRoot } from "./Store.ts"
+import { localFields, type LocalOptions, localRoot } from "./Store.vibe"
 
 /** An operator request this command refuses; the operator fixes the input or the host setup. */
 const refused = (message: string, fault: CliError.Fault = "user"): CliError.Refused =>

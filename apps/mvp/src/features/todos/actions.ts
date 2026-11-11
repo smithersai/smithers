@@ -8,7 +8,7 @@ import { startOperation } from "../commands/admission"
 import { followRun } from "../../resumeAdmissions"
 import { repoId } from "../repo/contract"
 import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract"
-import { pendingActions } from "./metrics"
+import { pendingActions } from "#vibelang/emitted/src/features/todos/metrics"
 import { type Draft, type QueuedOp, type Requested, VIEW } from "./schema"
 import { TodosStore } from "./store"
 

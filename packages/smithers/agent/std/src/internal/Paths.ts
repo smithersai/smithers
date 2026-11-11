@@ -38,5 +38,6 @@ export const withinEnvelope = (declared: ReadonlyArray<string>, path: string): b
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const withoutTrailingSlash = (path: string): string => path.replace(/\/+$/, "")

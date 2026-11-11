@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
+import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.vibe"
 import * as IssueSync from "../src/core/IssueSync.ts"
 
 const delivery = (overrides: Partial<typeof IssueSync.Delivery.Type> = {}): typeof IssueSync.Delivery.Type => ({

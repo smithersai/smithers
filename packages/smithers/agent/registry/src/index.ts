@@ -21,37 +21,37 @@
  * @category errors
  * @since 0.1.0
  */
-export * as RegistryError from "./RegistryError.ts"
+export * as RegistryError from "./RegistryError.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Descriptor from "./Descriptor.ts"
+export * as Descriptor from "./Descriptor.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as Discovery from "./Discovery.ts"
+export * as Discovery from "./Discovery.vibe"
 
 /**
  * @category markdown
  * @since 0.1.0
  */
-export * as MarkdownFlow from "./MarkdownFlow.ts"
+export * as MarkdownFlow from "./MarkdownFlow.vibe"
 
 /**
  * @category modules
  * @since 1.0.0-rc.16
  */
-export * as ModuleFlow from "./ModuleFlow.ts"
+export * as ModuleFlow from "./ModuleFlow.vibe"
 
 /**
  * @category markdown
  * @since 1.0.0-rc.1
  */
-export * as Prompt from "./Prompt.ts"
+export * as Prompt from "./Prompt.vibe"
 
 /**
  * @category conversions
@@ -63,13 +63,13 @@ export * as Disclosure from "./Disclosure.ts"
  * @category constructors
  * @since 0.1.0
  */
-export * as Executable from "./Executable.ts"
+export * as Executable from "./Executable.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Pack from "./Pack.ts"
+export * as Pack from "./Pack.vibe"
 
 /**
  * @category services
@@ -78,7 +78,7 @@ export * as Pack from "./Pack.ts"
 export * as Registry from "./Registry.ts"
 
 /** @category services @since 1.0.0-rc.1 */
-export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
+export * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
 
 /** Bundled host declarations without filesystem discovery. @since 1.0.0 */
 export * as Bundled from "./Bundled.vibe"

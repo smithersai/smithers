@@ -5,12 +5,14 @@
 import { build } from "esbuild"
 import { builtinModules } from "node:module"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 
 const node = new Set(builtinModules)
 
 const bundleOf = async (contents: string, conditions: Array<string>) => {
   const result = await build({
+    plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
     stdin: { contents, resolveDir: fileURLToPath(new URL(".", import.meta.url)), loader: "ts" },
     bundle: true,
     write: false,

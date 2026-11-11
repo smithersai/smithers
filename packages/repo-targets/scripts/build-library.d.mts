@@ -9,6 +9,7 @@ export declare const nodeCommonJsOptions: {
 export declare const copyInputDeclarations: (source: string, destination: string) => void
 /** Copies declarations to `dist/cjs` and writes its CommonJS boundary with rebased package imports. */
 export declare const copyCommonJsDeclarations: (packageRoot: string) => void
+export declare const assertNoEmittedRoutes: (packageRoot: string) => void
 /** Whether a source tree holds a `.vibe` module, outside `node_modules` and `dist`. */
 export declare const hasVibeSources: (directory: string) => boolean
 /** A package whose `src` holds VibeLang sources, by manifest name and real path. */

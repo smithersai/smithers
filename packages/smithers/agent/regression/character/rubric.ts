@@ -28,7 +28,7 @@ import { parse as parseYaml } from "yaml"
 import { ModelRequest } from "../../model/src/index.ts"
 import * as Rubric from "../../scorers/src/Rubric.ts"
 import * as Score from "./score.ts"
-import * as Subject from "./subject.ts"
+import * as Subject from "./subject.vibe"
 import type * as Suite from "./suite.ts"
 
 /** The rubric version: bump it when a criterion or the instructions change, and re-run every suite's calibration. */

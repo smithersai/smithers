@@ -19,25 +19,60 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Canonical": "./src/Canonical.ts",
-    "./index": "./src/index.ts",
-    "./Record": "./src/Record.ts",
-    "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": "./src/IssuePath.ts",
+    "./Canonical": {
+      "types": "./.vibe/declarations/src/Canonical.d.vibe.ts",
+      "vibelang-source": "./src/Canonical.vibe",
+      "default": "./.vibelang/js/src/Canonical.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Record": {
+      "types": "./src/Record.ts",
+      "vibelang-source": "./src/Record.ts",
+      "default": "./.vibelang/js/src/Record.js"
+    },
+    "./BoundedJson": {
+      "types": "./src/BoundedJson.ts",
+      "vibelang-source": "./src/BoundedJson.ts",
+      "default": "./.vibelang/js/src/BoundedJson.js"
+    },
+    "./IssuePath": {
+      "types": "./.vibe/declarations/src/IssuePath.d.vibe.ts",
+      "vibelang-source": "./src/IssuePath.vibe",
+      "default": "./.vibelang/js/src/IssuePath.js"
+    },
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
-    "./Serializer": "./src/Serializer.ts",
-    "./sortCollections": "./src/sortCollections.ts"
+    "./Serializer": {
+      "types": "./src/Serializer.ts",
+      "vibelang-source": "./src/Serializer.ts",
+      "default": "./.vibelang/js/src/Serializer.js"
+    },
+    "./sortCollections": {
+      "types": "./src/sortCollections.ts",
+      "vibelang-source": "./src/sortCollections.ts",
+      "default": "./.vibelang/js/src/sortCollections.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*",
     "LICENSE",
     "README.md",
     "docs/",
-    "examples/"
+    "examples/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -166,12 +201,15 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {
     "effect": "4.1.1"
+  },
+  "dependencies": {
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

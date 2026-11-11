@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
-import * as LocalRepository from "../src/LocalRepository.ts"
+import * as LocalRepository from "../src/LocalRepository.vibe"
 import * as Nix from "../src/Nix.ts"
 import * as RustToolchain from "../src/RustToolchain.ts"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"

@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as Forensics from "../src/Forensics.ts"
+import * as Forensics from "../src/Forensics.vibe"
 
 const staged: Array<string> = []
 

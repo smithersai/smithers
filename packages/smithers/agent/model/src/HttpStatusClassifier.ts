@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./ModelError.ts"
+import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./ModelError.vibe"
 
 /**
  * Where a failure's words came from.
@@ -34,6 +34,7 @@ export type MessageSource = "provider" | "opaque"
  *
  * @category utilities
  * @since 0.1.0
+ * @throws {never}
  */
 export const classifyHttpStatus = (
   status: number | undefined,

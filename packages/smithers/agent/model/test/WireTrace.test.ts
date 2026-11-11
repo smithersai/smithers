@@ -11,7 +11,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { WireTrace as Sink } from "../src/index.ts"
-import * as WireTrace from "../src/internal/WireTrace.ts"
+import * as WireTrace from "../src/internal/WireTrace.vibe"
 
 const prepared = (body: Record<string, unknown>, key?: string) => ({
   routeId: "openai-chatgpt",

@@ -34,23 +34,68 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./DatabaseMetrics": "./src/DatabaseMetrics.ts",
-    "./DurableWriter": "./src/DurableWriter.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
-    "./index": "./src/index.ts",
-    "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
-    "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./DatabaseMetrics": {
+      "types": "./.vibe/declarations/src/DatabaseMetrics.d.vibe.ts",
+      "vibelang-source": "./src/DatabaseMetrics.vibe",
+      "default": "./.vibelang/js/src/DatabaseMetrics.js"
+    },
+    "./DurableWriter": {
+      "types": "./src/DurableWriter.ts",
+      "vibelang-source": "./src/DurableWriter.ts",
+      "default": "./.vibelang/js/src/DurableWriter.js"
+    },
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./UnsupportedBackend": {
+      "types": "./src/UnsupportedBackend.ts",
+      "vibelang-source": "./src/UnsupportedBackend.ts",
+      "default": "./.vibelang/js/src/UnsupportedBackend.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./node/NodeDatabase": {
+      "types": "./src/node/NodeDatabase.ts",
+      "vibelang-source": "./src/node/NodeDatabase.ts",
+      "default": "./.vibelang/js/src/node/NodeDatabase.js"
+    },
+    "./test/TestDatabase": {
+      "types": "./src/test/TestDatabase.ts",
+      "vibelang-source": "./src/test/TestDatabase.ts",
+      "default": "./.vibelang/js/src/test/TestDatabase.js"
+    },
     "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
-    "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
-    "./Dialect": "./src/Dialect.ts",
-    "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
+    "./bun/BunDatabase": {
+      "types": "./src/bun/BunDatabase.ts",
+      "vibelang-source": "./src/bun/BunDatabase.ts",
+      "default": "./.vibelang/js/src/bun/BunDatabase.js"
+    },
+    "./Dialect": {
+      "types": "./.vibe/declarations/src/Dialect.d.vibe.ts",
+      "vibelang-source": "./src/Dialect.vibe",
+      "default": "./.vibelang/js/src/Dialect.js"
+    },
+    "./postgres/PostgresDatabase": {
+      "types": "./src/postgres/PostgresDatabase.ts",
+      "vibelang-source": "./src/postgres/PostgresDatabase.ts",
+      "default": "./.vibelang/js/src/postgres/PostgresDatabase.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -59,7 +104,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -223,9 +270,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-runtime": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependencies": {
@@ -242,5 +288,8 @@
     "@effect/sql-pg": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   }
 }

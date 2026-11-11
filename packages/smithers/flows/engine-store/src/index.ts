@@ -8,7 +8,7 @@
  * @since 0.1.0
  * @category services
  */
-export * as ArtifactGc from "./ArtifactGc.ts"
+export * as ArtifactGc from "./ArtifactGc.vibe"
 
 /**
  * @since 0.1.0
@@ -60,7 +60,7 @@ export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
  * @since 1.0.0
  * @category services
  */
-export * as RunChangeFeed from "./RunChangeFeed.ts"
+export * as RunChangeFeed from "./RunChangeFeed.vibe"
 
 /**
  * One run as a person debugging it reads it: redacted, bounded values, steps,
@@ -69,7 +69,7 @@ export * as RunChangeFeed from "./RunChangeFeed.ts"
  * @since 1.0.0
  * @category services
  */
-export * as RunInspection from "./RunInspection.ts"
+export * as RunInspection from "./RunInspection.vibe"
 
 /**
  * @since 0.1.0
@@ -97,19 +97,19 @@ export * as PlanScheduler from "./PlanScheduler.ts"
  * @since 0.1.0
  * @category services
  */
-export * as Reconciliation from "./Reconciliation.ts"
+export * as Reconciliation from "./Reconciliation.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as Selection from "./Selection.ts"
+export * as Selection from "./Selection.vibe"
 
 /**
  * @since 0.1.0
  * @category services
  */
-export * as SelectionStore from "./SelectionStore.ts"
+export * as SelectionStore from "./SelectionStore.vibe"
 
 /**
  * @since 0.1.0
@@ -127,7 +127,7 @@ export * as DeferredClockFold from "./DeferredClockFold.ts"
  * @category folds
  * @since 1.0.0
  */
-export * as StepCacheFold from "./StepCacheFold.ts"
+export * as StepCacheFold from "./StepCacheFold.vibe"
 
 /**
  * @since 0.1.0

@@ -9,8 +9,8 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Scheduler from "effect/Scheduler"
 import * as Schema from "effect/Schema"
-import * as KeyMaterial from "../src/KeyMaterial.ts"
-import * as StepKey from "../src/StepKey.ts"
+import * as KeyMaterial from "../src/KeyMaterial.vibe"
+import * as StepKey from "../src/StepKey.vibe"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"
 
 const material = (overrides: Partial<KeyMaterial.KeyMaterial> = {}): KeyMaterial.KeyMaterial => ({

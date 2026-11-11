@@ -1,6 +1,6 @@
 import * as Result from "effect/Result"
 import { describe, expect, it } from "vitest"
-import * as Markdown from "../src/Markdown.ts"
+import * as Markdown from "../src/Markdown.vibe"
 
 const parse = (text: string): Markdown.SkillDocument => Result.getOrThrow(Markdown.parseSkill(text))
 

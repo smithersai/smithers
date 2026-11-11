@@ -12,7 +12,7 @@ import { syncBuiltinESMExports } from "node:module"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.ts"
-import * as Fetch from "../src/Fetch.ts"
+import * as Fetch from "../src/Fetch.vibe"
 
 const servers: Array<Server> = []
 

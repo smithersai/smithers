@@ -17,8 +17,8 @@ import {
   MAX_REPORT_BODY_BYTES,
 } from "../../src/features/bugs/contract.ts"
 import { Listed } from "../../src/features/bugs/schema.ts"
-import * as Actor from "../Actor.ts"
-import * as Flows from "../Flows.ts"
+import * as Actor from "../Actor.vibe"
+import * as Flows from "../Flows.vibe"
 import { recorded, signedIn, signedOut, testFile } from "../test/harness.ts"
 import * as BugsApi from "./Api.ts"
 

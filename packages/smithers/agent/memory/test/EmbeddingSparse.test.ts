@@ -2,8 +2,8 @@ import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Effect, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import * as Embedding from "../src/Embedding.ts"
-import * as Semantic from "../src/RecallSemantic.ts"
+import * as Embedding from "../src/Embedding.vibe"
+import * as Semantic from "../src/RecallSemantic.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 describe("Embedding provider sparse responses", () => {

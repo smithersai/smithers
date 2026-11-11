@@ -15,8 +15,8 @@ import {
   IncidentRunbookMemory,
   layer,
   namespace
-} from "../../../examples/use-cases/incident-runbook-memory.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+} from "../../../examples/use-cases/incident-runbook-memory.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "incident-runbook-memory-"))
 

@@ -14,7 +14,7 @@ const workspaceFiles = async (patterns: ReadonlyArray<string>) =>
     packageScoped: false
   })))).flat().sort().map((path) => Smithers.file(`//${path}`))
 const workspaceSources = await workspaceFiles([
-  "packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"
+  "packages/*/src/**/*.{ts,vibe}", "packages/*/*/src/**/*.{ts,vibe}", "packages/*/*/*/src/**/*.{ts,vibe}"
 ])
 const workspaceReviewSources = await workspaceFiles([
   "packages/*/src/**", "packages/*/*/src/**", "packages/*/*/*/src/**"
@@ -51,6 +51,7 @@ const tsconfig = Smithers.Tsconfig({
   extends: rootTsconfig,
   compilerOptions: {
     noEmit: true,
+    customConditions: ["vibelang-source"],
     lib: ["ES2024"],
     module: "NodeNext",
     moduleResolution: "NodeNext",
@@ -373,6 +374,16 @@ const driftJob = {
   ]
 } as const
 
+// The source condition lets the CLI load the graph before generated types exist.
+// The declared preparation target then supplies types to ordinary source tools.
+type CiJob = NonNullable<Parameters<typeof Smithers.GithubCiGen>[0]["jobs"]>[number]
+const withSourceDeclarations = (job: CiJob): CiJob => job.toolchain.install
+  ? { ...job, steps: [
+    { name: "Generate source declarations", verb: Smithers.Verb.Build, pattern: "//packages/repo-targets:sidecars" },
+    ...job.steps
+  ] }
+  : job
+
 const driftCi = Smithers.GithubCiGen({
   workflowName: "Drift",
   output: ".github/workflows/drift.yml",
@@ -381,7 +392,7 @@ const driftCi = Smithers.GithubCiGen({
   knownRed: ".github/ci-known-red.json",
   mode: "check",
   requiredJobs: ["drift"],
-  jobs: [driftJob]
+  jobs: [driftJob].map(withSourceDeclarations)
 })
 
 const ci = Smithers.GithubCiGen({
@@ -746,7 +757,7 @@ const ci = Smithers.GithubCiGen({
       // so host-sized package concurrency multiplies process and memory load.
       steps: [{ name: "Package test targets", verb: Smithers.Verb.Test, ...shardStep(index) }]
     }))
-  ]
+  ].map(withSourceDeclarations)
 })
 
 // The two workspace-wide model reviews. They cover every package's sources

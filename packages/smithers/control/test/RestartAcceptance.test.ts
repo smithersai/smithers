@@ -19,9 +19,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { Cancellation, Principal, RunSummary, SteerMessage } from "../src/ControlSchema.ts"
+import { Control } from "../src/Control.vibe"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { Cancellation, Principal, RunSummary, SteerMessage } from "../src/ControlSchema.vibe"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-control-restart-"))

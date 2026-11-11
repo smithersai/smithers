@@ -1,6 +1,6 @@
 import { Button, Card, Textarea } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
-import { type BugsTab, MAX_WHAT, reasonOf } from "../tab"
+import { type BugsTab, MAX_WHAT, reasonOf } from "#vibelang/emitted/plugins/bugs/src/tab"
 import "./bugs.css"
 
 // The form (docs/features/bugs.md#the-form): one field and Send. The report also carries the page before this

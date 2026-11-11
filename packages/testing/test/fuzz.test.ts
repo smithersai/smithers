@@ -1,4 +1,4 @@
-import { assert, describe, it } from "../src/Vitest.ts"
+import { assert, describe, it } from "../src/Vitest.vibe"
 import * as InternalFuzz from "../src/internal/fuzz.ts"
 import { makeMethods } from "../src/internal/FuzzRegistration.ts"
 import { Arbitrary, Clock, Effect, Ref, Schema } from "effect"

@@ -1,0 +1,78 @@
+/**
+ * GitHub through the machine's GitHub proxy (`.smithers/flows/issue-claim/github-proxy.mjs`).
+ *
+ * Every GitHub call the sweep makes, listing issues and reading claim
+ * comments as much as claiming and releasing, spends the one budget per
+ * principal the proxy enforces, so 32 agents and the flow host never trip
+ * GitHub's limits on one another. `gh api` given an absolute proxy URL sends
+ * no token: the proxy injects the operator's.
+ */
+import { proxyTool } from "./github.platform.ts"
+import { HostFailed, output } from "./host.ts"
+
+export { proxyTool } from "./github.platform.ts"
+
+const Ensured = Schema.fromJsonString(Schema.Struct({ proxy: Schema.String }))
+
+/** The proxy's base URL, starting the proxy first when it is not running. */
+export const proxy = Effect.mapError(
+  effect {
+    const ensured = try Schema.decodeEffect(Ensured)(try output("node", [proxyTool, "--ensure"]))
+    return ensured.proxy
+  },
+  (cause) => cause instanceof HostFailed ? cause : new HostFailed({ message: String(cause) })
+)
+
+/** `gh api` for a REST `path` such as `repos/o/r/issues`, through the proxy. */
+export effect function api(path: string, flags: ReadonlyArray<string> = []) {
+  const base = try proxy
+  return try output("gh", ["api", ...flags, `${base}/${path}`])
+}
+
+// One page of `GET /repos/{owner}/{repo}/issues`; pull requests carry `pull_request`.
+const IssuePages = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Struct({
+  number: Schema.Number,
+  title: Schema.String,
+  labels: Schema.Array(Schema.Struct({ name: Schema.String })),
+  updated_at: Schema.String,
+  pull_request: Schema.optional(Schema.Unknown)
+}))))
+
+/** Every open issue of `repo`, without pull requests, with when it last changed. */
+export effect function openIssues(repo: string) {
+  const text = try api(`repos/${repo}/issues?state=open&per_page=100`, ["--paginate", "--slurp"])
+  const pages = try Schema.decodeEffect(IssuePages)(text)
+  return pages.flat().filter((issue) => issue.pull_request === undefined).map((issue) => ({
+    number: issue.number,
+    title: issue.title,
+    labels: issue.labels.map((label) => label.name),
+    updatedAt: issue.updated_at
+  }))
+}
+
+const Issue = Schema.fromJsonString(Schema.Struct({
+  title: Schema.String,
+  body: Schema.NullOr(Schema.String),
+  state: Schema.String
+}))
+const CommentPages = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.Struct({
+  user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
+  body: Schema.String
+}))))
+
+/** One issue's title, body, state, and comments, oldest first. */
+export effect function issue(repo: string, number: number) {
+  const [found, pages] = try all([
+    Effect.flatMap(api(`repos/${repo}/issues/${number}`), Schema.decodeEffect(Issue)),
+    Effect.flatMap(
+      api(`repos/${repo}/issues/${number}/comments?per_page=100`, ["--paginate", "--slurp"]),
+      Schema.decodeEffect(CommentPages)
+    )
+  ])
+  return {
+    title: found.title,
+    body: found.body ?? "",
+    state: found.state,
+    comments: pages.flat().map((comment) => ({ author: { login: comment.user?.login ?? "ghost" }, body: comment.body }))
+  }
+}

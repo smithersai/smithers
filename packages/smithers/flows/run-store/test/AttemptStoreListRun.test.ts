@@ -12,9 +12,9 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
-import { AttemptStore } from "../src/AttemptStore.ts"
-import * as AttemptStoreLive from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { AttemptStore } from "../src/AttemptStore.vibe"
+import * as AttemptStoreLive from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const owner = { hostId: "host-a", pid: 42, nonce: "nonce-a" }
 

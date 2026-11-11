@@ -1,7 +1,7 @@
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect } from "effect"
-import { statusOf } from "./Calls.ts"
-import type { Repository } from "./Config.ts"
+import { statusOf } from "#vibelang/emitted/worker/github/Calls"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 import * as Store from "./Store.ts"
 
 // Re-reading one issue from GitHub into the projection (decision 0012 §2): a webhook only names its subject, and a write

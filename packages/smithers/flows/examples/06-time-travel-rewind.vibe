@@ -1,0 +1,161 @@
+/**
+ * Inspect a run at a frame, then rewind its persistent state.
+ *
+ * `inspect` folds the committed prefix through a reducer without running
+ * actions. `rewind` claims the run, assesses recorded effects, restores the
+ * workspace, and archives the suffix after the frame.
+ *
+ * The example parks the run on a durable deferred before rewinding, because a
+ * live run cannot be taken over for a rewind. Frame lineage metadata comes from
+ * engine-written records.
+ */
+import { FlowEngine } from "@smthrs/engine"
+import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
+import { Journal, JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { parkRun } from "./park-run.vibe"
+
+/** The declared step the flow's body names; the wait lives in its implementation. */
+export const Post = Action.make("examples/Post", {
+  payload: {},
+  success: Schema.String
+})
+
+export const Ledger = Flow.make("examples/Ledger", {
+  payload: {},
+  success: Schema.String,
+  body: (payload) => Post.call(payload)
+})
+
+export const Settlement = DurableDeferred.make("examples/settlement", {
+  success: Schema.String
+})
+
+/**
+ * The run's root lineage, built by the constructor that mints it.
+ *
+ * A journal lineage id is an opaque versioned encoding, not a path a caller
+ * assembles. `FlowEngine.Lineage.root` is the one place it is minted, and the
+ * engine stamps the result on every record the run writes, so building the
+ * frame's address through it is what makes the frame addressable at all.
+ */
+const lineageId = FlowEngine.Lineage.root("ledger-1")
+
+/**
+ * `TimeTravel.layer` asks only for injectable contracts (the store plus the
+ * journal, run, cache, and jj services) so it can use storage-only layers
+ * after the execution engine closes. Building it also resolves any rewind a
+ * crash left half-finished, which is why recovery never appears as a call below.
+ */
+const layer = (filename: string) =>
+  TimeTravel.layer.pipe(
+    Layer.provideMerge(SqlTimeTravelStore.layer),
+    Layer.provideMerge(TestNodeRuntime.requirements(filename))
+  )
+
+export interface Summary {
+  readonly derivedAttempts: number
+  /** The frame the rewind addressed. Everything after it is the archived suffix. */
+  readonly frameSeq: number
+  /** Every journal seq the run had recorded before the rewind, in order. */
+  readonly beforeSeqs: ReadonlyArray<number>
+  readonly archivedCount: number
+  /** The seqs the journal still holds: the committed prefix through the frame. */
+  readonly remainingSeqs: ReadonlyArray<number>
+  /** The same prefix, read from a database opened after the rewind committed. */
+  readonly persistedSeqs: ReadonlyArray<number>
+  readonly auditStatus: string
+}
+
+const Credit = Action.make({
+  name: "examples/Credit",
+  success: Schema.Number,
+  tier: "sealed",
+  idempotencyKey: "examples/credit/v1",
+  execute: Effect.succeed(30)
+})
+
+const post = effect () => {
+  const amount = try Credit
+  const settlement = try DurableDeferred.await(Settlement)
+  return `${amount}:${settlement}`
+}
+
+/** The run id both passes below read, typed once. */
+const runId = "ledger-1" as JournalEvent.RunId
+
+/** Executes the run, inspects the middle frame, and rewinds to it. */
+const rewindAtMidpoint = (filename: string) =>
+  (effect {
+    // Close the private engine and its admitted retries before reading the
+    // frame. Only storage and time travel remain open during inspection.
+    try parkRun(
+      "ledger-1",
+      Ledger.execute({}, { executionId: "ledger-1" }),
+      Layer.mergeAll(Post.toLayer(post), Interpreter.layer(Ledger)).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "ledger"))
+      )
+    )
+
+    const journal = try Journal.Journal
+    try journal.flush
+    const before = try journal.entries({ runId, limit: 200 })
+    // Rewind to the middle of what the run recorded.
+    const seq = before.entries[Math.floor(before.entries.length / 2)]!.seq
+    const position = { runId: "ledger-1", frame: { lineageId, seq } }
+
+    // Read-only: count the action attempts the frame covers, folding the
+    // engine's own records.
+    const derivedAttempts = try (TimeTravel
+      |> Effect.flatMap(%, (timeTravel) =>
+        timeTravel.inspect(position, {
+          initial: 0,
+          reduce: (state: number, committed) =>
+            committed.eventType === "flows.engine.attempt-started" ? state + 1 : state
+        })))
+
+    // Mutating: drop everything after the frame.
+    const timeTravel = try TimeTravel
+    const result = try timeTravel.rewind(position)
+
+    const remaining = try journal.entries({ runId, limit: 200 })
+    const sql = try Effect.service(SqlClient.SqlClient)
+    const audits = try sql<{ readonly status: string }>`
+      SELECT status FROM flows_time_travel_audits WHERE id = ${result.auditId}
+    `
+
+    return {
+      derivedAttempts,
+      frameSeq: seq,
+      beforeSeqs: before.entries.map((committed) => committed.seq),
+      archivedCount: result.archive.archived,
+      remainingSeqs: remaining.entries.map((committed) => committed.seq),
+      auditStatus: audits[0]?.status ?? "missing"
+    }
+  })
+  |> Effect.provide(%, layer(filename))
+  |> Effect.scoped(%)
+
+/**
+ * Reads the journal back over the same file, from stores opened after the
+ * rewind committed. The truncation is a database write, not an in-memory view,
+ * so the prefix a later process reads is the one the rewind left behind.
+ */
+const reopen = (filename: string) =>
+  (effect {
+    const journal = try Journal.Journal
+    const entries = try journal.entries({ runId, limit: 200 })
+    return entries.entries.map((committed) => committed.seq)
+  })
+  |> Effect.provide(%, TestNodeRuntime.requirements(filename))
+  |> Effect.scoped(%)
+
+export const main = (filename: string): Summary!! =>
+  effect {
+    const rewound = try rewindAtMidpoint(filename)
+    return { ...rewound, persistedSeqs: try reopen(filename) }
+  } |> Effect.orDie(%)

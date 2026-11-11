@@ -9,7 +9,7 @@ import * as Logger from "effect/Logger"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import * as ArtifactBackupLease from "../src/ArtifactBackupLease.ts"
+import * as ArtifactBackupLease from "../src/ArtifactBackupLease.vibe"
 
 const directory = ".objects"
 const marker = `${directory}/.backup-lease`

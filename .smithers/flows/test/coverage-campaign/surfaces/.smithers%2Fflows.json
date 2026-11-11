@@ -602,7 +602,7 @@
       "text": "t.skip(`host load ${currentLoad} exceeds ${threshold}`)"
     },
     {
-      "path": ".smithers/flows/issue-sweep/triage.ts",
+      "path": ".smithers/flows/issue-sweep/triage.vibe",
       "line": 284,
       "text": "Burndown.skip(`triage: ${triaged.need}: ${triaged.reason}`)"
     },
@@ -853,7 +853,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -936,7 +936,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         }
       ],
       "dependencies": []
@@ -974,7 +974,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -1039,7 +1039,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -1075,7 +1075,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -1571,11 +1571,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -1603,7 +1603,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -1619,7 +1619,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -1647,7 +1647,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -1679,7 +1679,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -2243,11 +2243,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -2275,7 +2275,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -2291,7 +2291,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -2319,7 +2319,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -2351,7 +2351,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -2765,11 +2765,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -2797,7 +2797,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -2813,7 +2813,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -2841,7 +2841,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -2873,7 +2873,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -3477,7 +3477,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         }
       ],
       "dependencies": [
@@ -3503,7 +3503,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         }
       ],
       "dependencies": []
@@ -3702,11 +3702,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -3734,7 +3734,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -3750,7 +3750,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -3778,7 +3778,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -3810,7 +3810,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -3945,7 +3945,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -3973,7 +3973,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -4005,7 +4005,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8478,7 +8478,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8606,7 +8606,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8646,7 +8646,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8678,7 +8678,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8756,7 +8756,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8839,7 +8839,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8911,7 +8911,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -8975,7 +8975,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",
@@ -9366,7 +9366,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/automation/run-module.ts"
+          "path": ".smithers/flows/automation/run-module.vibe"
         },
         {
           "kind": "file",

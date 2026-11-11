@@ -6,6 +6,7 @@ import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from 
 import { jsdocConvention } from "../../eslint.jsdoc.js"
 
 export default tseslint.config(
+  { ignores: ["**/*.d.vibe.ts"] },
   {
     // ProductApi.ts is a generated client; its generator was removed with the Go backend.
     ignores: ["**/dist", "**/build", "**/coverage", "src/internal/backend/ProductApi.ts"]

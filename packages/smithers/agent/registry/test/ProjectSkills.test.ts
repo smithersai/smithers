@@ -5,7 +5,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const roots: Array<string> = []

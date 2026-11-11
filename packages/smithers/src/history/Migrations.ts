@@ -9,7 +9,7 @@
  */
 
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
-import { appliedAudits } from "./migrations/0001_applied_audits.ts"
+import { appliedAudits } from "./migrations/0001_applied_audits.vibe"
 
 /**
  * History's namespaced migration set, the block above `@smthrs/memory`.

@@ -7,7 +7,7 @@
  */
 import { Effect, Redacted } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Output from "../src/Output.ts"
 
 const render = (value: unknown, format: Output.Format) => Effect.runSync(Output.make().render(value, format))

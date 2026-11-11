@@ -16,7 +16,7 @@ import { readdir, readFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import * as Labels from "./labels.ts"
 import * as Landed from "./landed.ts"
-import * as Thresholds from "./thresholds.ts"
+import * as Thresholds from "./thresholds.vibe"
 
 type Decision = MemoryCalibration.Decision
 

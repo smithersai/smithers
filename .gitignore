@@ -257,3 +257,14 @@ __pycache__/
 
 # Backend SSH host keys from a dev run at the repository root (ssh.host_key_dir defaults to ./data/ssh).
 /data/ssh/
+# Portable loader records are derived compile caches; `pnpm run sidecars` writes them.
+**/.vibelang/js/.loader/
+
+# Compiler declarations and the temporary configurations used to generate them.
+*.d.vibe.ts
+.tsconfig.vibelang-sidecars-*.json
+
+*.vibe.*.d.ts
+
+# Local VibeLang release tarballs that package.json overrides name until npm has the release; never committed.
+.vibelang-toolchain/

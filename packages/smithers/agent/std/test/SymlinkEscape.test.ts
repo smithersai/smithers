@@ -18,10 +18,10 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSy
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
-import * as Edit from "../src/Edit.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
+import * as Edit from "../src/Edit.vibe"
 import type * as StdError from "../src/StdError.ts"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 const guarded = (workspace: string) =>
   KernelFileSystem.layer.pipe(

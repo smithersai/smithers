@@ -8,7 +8,7 @@ import { Projection as JournalProjection } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Replay from "./internal/replay.ts"
-import * as NotificationEvent from "./NotificationEvent.ts"
+import * as NotificationEvent from "./NotificationEvent.vibe"
 import * as NotificationState from "./NotificationState.ts"
 
 /**

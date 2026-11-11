@@ -13,7 +13,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { bundle } from "../coding/build.mjs"
-import type { FlowVersion } from "../coding/flow-load.ts"
+import type { FlowVersion } from "../coding/flow-load.vibe"
 
 // Keep literal loader oracles independent of later edits to the shipped TODO.
 // The composed guest/browser rehearsal separately loads today's shipped source.

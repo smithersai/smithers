@@ -6,8 +6,8 @@ import { Effect, FileSystem, Layer, Result } from "effect"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Discovery from "../src/Discovery.ts"
-import * as MarkdownFlow from "../src/MarkdownFlow.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const foreignRoot = fileURLToPath(new URL("./fixtures/foreign", import.meta.url))

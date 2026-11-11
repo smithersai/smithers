@@ -34,27 +34,88 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./migrations/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./CatchUp": "./src/CatchUp.ts",
-    "./Channel": "./src/Channel.ts",
-    "./Cron": "./src/Cron.ts",
-    "./DispatchReader": "./src/DispatchReader.ts",
-    "./Overlap": "./src/Overlap.ts",
-    "./Schedule": "./src/Schedule.ts",
-    "./Scheduler": "./src/Scheduler.ts",
-    "./SqlTriggerStore": "./src/SqlTriggerStore.ts",
-    "./Trigger": "./src/Trigger.ts",
-    "./TriggerError": "./src/TriggerError.ts",
-    "./TriggerStore": "./src/TriggerStore.ts",
-    "./Webhook": "./src/Webhook.ts",
-    "./index": "./src/index.ts",
-    "./test/TestTriggers": "./src/test/TestTriggers.ts"
+    "./CatchUp": {
+      "types": "./.vibe/declarations/src/CatchUp.d.vibe.ts",
+      "vibelang-source": "./src/CatchUp.vibe",
+      "default": "./.vibelang/js/src/CatchUp.js"
+    },
+    "./Channel": {
+      "types": "./.vibe/declarations/src/Channel.d.vibe.ts",
+      "vibelang-source": "./src/Channel.vibe",
+      "default": "./.vibelang/js/src/Channel.js"
+    },
+    "./Cron": {
+      "types": "./src/Cron.ts",
+      "vibelang-source": "./src/Cron.ts",
+      "default": "./.vibelang/js/src/Cron.js"
+    },
+    "./DispatchReader": {
+      "types": "./src/DispatchReader.ts",
+      "vibelang-source": "./src/DispatchReader.ts",
+      "default": "./.vibelang/js/src/DispatchReader.js"
+    },
+    "./Overlap": {
+      "types": "./src/Overlap.ts",
+      "vibelang-source": "./src/Overlap.ts",
+      "default": "./.vibelang/js/src/Overlap.js"
+    },
+    "./Schedule": {
+      "types": "./src/Schedule.ts",
+      "vibelang-source": "./src/Schedule.ts",
+      "default": "./.vibelang/js/src/Schedule.js"
+    },
+    "./Scheduler": {
+      "types": "./.vibe/declarations/src/Scheduler.d.vibe.ts",
+      "vibelang-source": "./src/Scheduler.vibe",
+      "default": "./.vibelang/js/src/Scheduler.js"
+    },
+    "./SqlTriggerStore": {
+      "types": "./.vibe/declarations/src/SqlTriggerStore.d.vibe.ts",
+      "vibelang-source": "./src/SqlTriggerStore.vibe",
+      "default": "./.vibelang/js/src/SqlTriggerStore.js"
+    },
+    "./Trigger": {
+      "types": "./.vibe/declarations/src/Trigger.d.vibe.ts",
+      "vibelang-source": "./src/Trigger.vibe",
+      "default": "./.vibelang/js/src/Trigger.js"
+    },
+    "./TriggerError": {
+      "types": "./src/TriggerError.ts",
+      "vibelang-source": "./src/TriggerError.ts",
+      "default": "./.vibelang/js/src/TriggerError.js"
+    },
+    "./TriggerStore": {
+      "types": "./.vibe/declarations/src/TriggerStore.d.vibe.ts",
+      "vibelang-source": "./src/TriggerStore.vibe",
+      "default": "./.vibelang/js/src/TriggerStore.js"
+    },
+    "./Webhook": {
+      "types": "./.vibe/declarations/src/Webhook.d.vibe.ts",
+      "vibelang-source": "./src/Webhook.vibe",
+      "default": "./.vibelang/js/src/Webhook.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/TestTriggers": {
+      "types": "./src/test/TestTriggers.ts",
+      "vibelang-source": "./src/test/TestTriggers.ts",
+      "default": "./.vibelang/js/src/test/TestTriggers.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -63,7 +124,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -238,7 +301,8 @@
   },
   "dependencies": {
     "@smthrs/control": "1.0.0-rc.17",
-    "@smthrs/database": "1.0.0-rc.17"
+    "@smthrs/database": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -260,8 +324,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

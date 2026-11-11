@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Http from "../src/internal/Http.ts"
+import * as Http from "../src/internal/Http.vibe"
 import * as StdError from "../src/StdError.ts"
 
 describe("bounded HTTP helpers", () => {

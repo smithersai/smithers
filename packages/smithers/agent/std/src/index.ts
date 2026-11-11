@@ -9,64 +9,64 @@
  * @category flows
  * @since 1.0.0
  */
-export * as Read from "./Read.ts"
+export * as Read from "./Read.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Write from "./Write.ts"
+export * as Write from "./Write.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Edit from "./Edit.ts"
+export * as Edit from "./Edit.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Ls from "./Ls.ts"
+export * as Ls from "./Ls.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Glob from "./Glob.ts"
+export * as Glob from "./Glob.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Grep from "./Grep.ts"
+export * as Grep from "./Grep.vibe"
 
 /** @category services @since 1.0.0 */
-export * as Search from "./Search.ts"
+export * as Search from "./Search.vibe"
 
 /** @category services @since 1.0.0 */
-export * as SearchContract from "./SearchContract.ts"
+export * as SearchContract from "./SearchContract.vibe"
 
 /** @category conformance @since 1.0.0 */
-export * as SearchConformance from "./SearchConformance.ts"
+export * as SearchConformance from "./SearchConformance.vibe"
 
 /** @category layers @since 1.0.0 */
-export * as PortableSearch from "./PortableSearch.ts"
+export * as PortableSearch from "./PortableSearch.vibe"
 
 /** @category layers @since 1.0.0 */
-export * as NativeSearch from "./NativeSearch.ts"
+export * as NativeSearch from "./NativeSearch.vibe"
 
 /** @category layers @since 1.0.0-rc.8 */
-export * as RemoteSearch from "./RemoteSearch.ts"
+export * as RemoteSearch from "./RemoteSearch.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Bash from "./Bash.ts"
+export * as Bash from "./Bash.vibe"
 
 /** @category services @since 1.0.0 */
-export * as Container from "./Container.ts"
+export * as Container from "./Container.vibe"
 
 /**
  * @category measurement
@@ -75,72 +75,72 @@ export * as Container from "./Container.ts"
 export * as TreeFingerprint from "./TreeFingerprint.ts"
 
 /** @category services @since 1.0.0 */
-export * as Checkpoints from "./Checkpoints.ts"
+export * as Checkpoints from "./Checkpoints.vibe"
 
 /** @category conversions @since 1.0.0 */
-export * as Relocate from "./Relocate.ts"
+export * as Relocate from "./Relocate.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as TestRun from "./TestRun.ts"
+export * as TestRun from "./TestRun.vibe"
 
 /** @category services @since 1.0.0 */
-export * as TestRunner from "./TestRunner.ts"
+export * as TestRunner from "./TestRunner.vibe"
 
 /**
  * @category classification
  * @since 1.0.0
  */
-export * as Probe from "./Probe.ts"
+export * as Probe from "./Probe.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as ApplyPatch from "./ApplyPatch.ts"
+export * as ApplyPatch from "./ApplyPatch.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as ShellCommand from "./ShellCommand.ts"
+export * as ShellCommand from "./ShellCommand.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as UpdatePlan from "./UpdatePlan.ts"
+export * as UpdatePlan from "./UpdatePlan.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Fetch from "./Fetch.ts"
+export * as Fetch from "./Fetch.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as HttpPost from "./HttpPost.ts"
+export * as HttpPost from "./HttpPost.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Explore from "./Explore.ts"
+export * as Explore from "./Explore.vibe"
 
 /** @category flows @since 1.0.0 */
-export * as WebFetch from "./WebFetch.ts"
+export * as WebFetch from "./WebFetch.vibe"
 /** @category flows @since 1.0.0 */
-export * as WebSearch from "./WebSearch.ts"
+export * as WebSearch from "./WebSearch.vibe"
 /** @category services @since 1.0.0 */
-export * as ExaWebSearch from "./ExaWebSearch.ts"
+export * as ExaWebSearch from "./ExaWebSearch.vibe"
 /** @category services @since 1.0.0 */
-export * as LanguageServer from "./LanguageServer.ts"
+export * as LanguageServer from "./LanguageServer.vibe"
 /** @category flows @since 1.0.0 */
-export * as Lsp from "./Lsp.ts"
+export * as Lsp from "./Lsp.vibe"
 
 /**
  * @category registries

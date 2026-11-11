@@ -22,8 +22,8 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Effect, Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
-import type { Envelope } from "../src/ControlSchema.ts"
-import { planCard, type PlanSource } from "../src/internal/planning.ts"
+import type { Envelope } from "../src/ControlSchema.vibe"
+import { planCard, type PlanSource } from "../src/internal/planning.vibe"
 
 const crypto = Layer.succeed(EffectDigest.Digest, Sha256.syncCrypto)
 

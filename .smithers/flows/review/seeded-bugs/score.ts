@@ -1,4 +1,4 @@
-import type { PlantedBugLabel, SeededBugLabel, SeededBugSeverity } from "./labels.ts";
+import type { PlantedBugLabel, SeededBugLabel, SeededBugSeverity } from "./labels.vibe";
 
 export type ReviewFinding = {
   path: string;

@@ -1,7 +1,7 @@
 import type { ConfiguredModel } from "@smthrs/rpc"
 import { Deferred, Effect, Fiber, Redacted } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import type { ModelCredentials } from "../src/LocalModel.ts"
+import type { ModelCredentials } from "../src/LocalModel.vibe"
 import { createModelProbe, type ModelProbeOptions } from "./fixtures/durable.ts"
 
 /** The probe as a host's boundary runs it: each Test settled as a Promise. */

@@ -3,8 +3,8 @@ import { Effect } from "effect"
 import * as FastCheck from "fast-check"
 import { effectProperty } from "../../../../repo-targets/test-utils/effect-property.mjs"
 import { type EntriesPage, Journal } from "../src/Journal.ts"
-import type { Entry, RunId, Seq, SourceId } from "../src/JournalEvent.ts"
-import * as TestJournal from "../src/test/TestJournal.ts"
+import type { Entry, RunId, Seq, SourceId } from "../src/JournalEvent.vibe"
+import * as TestJournal from "../src/test/TestJournal.vibe"
 
 const prop = effectProperty(it.effect)
 

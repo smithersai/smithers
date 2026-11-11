@@ -9,17 +9,17 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 
 const owners: Readonly<Record<keyof typeof BuiltinScript.teachings, string>> = {
-  "coding/review-request": "coding/planning.ts",
-  "coding/draft-plan": "coding/planning.ts",
-  "coding/edit-atom": "coding/atoms.ts",
-  "coding/select-owner-repair": "coding/correction.ts",
-  "coding/review-final-history": "coding/vibe-cleanup.ts",
-  "coding/review-lens": "coding/review-check.ts",
+  "coding/review-request": "coding/planning.vibe",
+  "coding/draft-plan": "coding/planning.vibe",
+  "coding/edit-atom": "coding/atoms.vibe",
+  "coding/select-owner-repair": "coding/correction.vibe",
+  "coding/review-final-history": "coding/vibe-cleanup.vibe",
+  "coding/review-lens": "coding/review-check.vibe",
   "review/change": "review/change/flow.mdx",
   "review/file": "review/src/workflow/reviewAgentActions.ts",
   "review/verify": "review/src/workflow/reviewAgentActions.ts",
-  "wiki/review-page": "wiki/workflow.ts",
-  conflict: "coding/todo-conflict-schema.ts"
+  "wiki/review-page": "wiki/workflow.vibe",
+  conflict: "coding/todo-conflict-schema.vibe"
 }
 
 test("every BuiltinScript teaching is still in the flow that sends it", () => {

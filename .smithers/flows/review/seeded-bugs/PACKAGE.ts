@@ -24,7 +24,7 @@ const cwd = ".smithers/flows/review/seeded-bugs"
 
 /** The suite's own sources, the corpus it reads, and the baseline it gates on. */
 const sources = [
-  Smithers.glob("//.smithers/flows/review/seeded-bugs/*.ts"),
+  Smithers.glob("//.smithers/flows/review/seeded-bugs/*.{ts,vibe}"),
   Smithers.glob("//.smithers/flows/review/seeded-bugs/corpus/**/*"),
   Smithers.file("//.smithers/flows/review/seeded-bugs/baseline.json")
 ]
@@ -34,14 +34,14 @@ const sources = [
  *
  * A red run means the pipeline moved: diff ingestion, per-file fan-out,
  * scoping, anchoring, de-duplication, or the scorer's matching. The model's own
- * score is what `run.ts --live` measures, and it is never a gate.
+ * score is what `run.vibe --live` measures, and it is never a gate.
  *
  * @since 1.0.0
  * @category test
  */
 const suite = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/review/seeded-bugs/run.ts")),
+  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/review/seeded-bugs/run.vibe")),
   srcs: sources,
   deps: [],
   cwd
@@ -55,7 +55,7 @@ const suite = Smithers.NodeTest({
  */
 const test = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["score.test.ts", "deterministicReviewer.test.ts", "fixtureRepo.test.ts"]),
+  runner: Smithers.testSuite(["score.test.ts", "deterministicReviewer.test.ts", "fixtureRepo.test.ts", "security-completion-score.test.ts", "review-implementation-scope.test.ts"]),
   srcs: sources,
   deps: [],
   cwd
@@ -86,12 +86,12 @@ const check = Smithers.Typecheck({
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["*.ts", "corpus/**", "baseline.json", ".gitignore"],
+  include: ["*.{ts,vibe}", "corpus/**", "baseline.json", ".gitignore"],
   checks: [
     {
       id: "fixture-git-isolation",
       title: "Materializing a fixture never lets corpus content configure or run git",
-      threat: "A contributor who adds a corpus fixture runs arbitrary commands on the maintainer's or CI machine when run.ts materializes it.",
+      threat: "A contributor who adds a corpus fixture runs arbitrary commands on the maintainer's or CI machine when run.vibe materializes it.",
       lookFor: [
         "fixtureRepo.ts copyDirectoryContents copying a base/ or head/ entry named .git, .gitattributes, or .gitmodules, in any letter case, into the fixture repository after git init.",
         "fixtureRepo.ts clearWorktree skipping .git while head/ is copied over it, so a head/.git/config (core.fsmonitor, core.hooksPath, filter drivers) is honored by later git calls in the review flow.",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "existingCode or content in reviewDiff carrying a ``` sequence from the diff that terminates the cell fence early.",
         "readPrompt trusting a 'Current file path:' line that diff content, not the prompt template, supplies."
       ],
-      paths: ["scriptedSeats.ts", "deterministicReviewer.ts"]
+      paths: ["scriptedSeats.vibe", "deterministicReviewer.ts"]
     },
     {
       id: "live-report-leak",
@@ -129,18 +129,18 @@ const securityReview = Smithers.SecurityReview({
         ".report/ missing from .gitignore.",
         "An error path in main that prints a resolved provider credential or request header."
       ],
-      paths: ["run.ts", ".gitignore"]
+      paths: ["run.vibe", "run.platform.ts", ".gitignore"]
     },
     {
       id: "live-cell-authority",
       title: "Under --live, a model steered by corpus text can only answer, never act on the host",
       threat: "A fixture whose diff carries prompt-injection text makes a live review seat run a cell that reads the maintainer's files, calls a tool, or dials a non-model host with the maintainer's provider keys.",
       lookFor: [
-        "run.ts building the --live layer with anything other than layerMemory over reviewSeatResolver, so the tool-less agentHost (empty registry, calls limit, model-only capabilityEnvelope) is bypassed.",
-        "run.ts passing layerMemory an environment other than process.env's seat settings, which widens the model-host capability envelope.",
+        "run.vibe building the --live layer with anything other than layerMemory over reviewSeatResolver, so the tool-less agentHost (empty registry, calls limit, model-only capabilityEnvelope) is bypassed.",
+        "run.vibe passing layerMemory an environment other than process.env's seat settings, which widens the model-host capability envelope.",
         "The Review.execute payload in runFixture enabling verification or narration aliases that are not bound by the same host."
       ],
-      paths: ["run.ts"]
+      paths: ["run.vibe", "run.platform.ts"]
     },
     {
       id: "gate-integrity",
@@ -149,9 +149,9 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "deterministicReviewer.ts reading label.json or any corpus ground truth.",
         "loadCorpus accepting a label whose fixture field differs from its directory or whose schema is loosened.",
-        "drift in baseline.ts ignoring a changed per-fixture record, or run.ts treating an unreadable baseline as a pass."
+        "drift in baseline.ts ignoring a changed per-fixture record, or run.vibe treating an unreadable baseline as a pass."
       ],
-      paths: ["deterministicReviewer.ts", "labels.ts", "baseline.ts", "run.ts", "baseline.json"]
+      paths: ["deterministicReviewer.ts", "labels.vibe", "labels.platform.ts", "baseline.ts", "run.vibe", "run.platform.ts", "baseline.json"]
     }
   ]
 })

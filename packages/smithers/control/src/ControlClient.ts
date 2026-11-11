@@ -8,9 +8,9 @@ import { Cause, Effect, Layer, Result, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { RpcClient, RpcClientError, type RpcSerialization } from "effect/rpc"
 import type { Socket } from "effect/socket"
-import { Control, make } from "./Control.ts"
-import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.ts"
-import { ControlRpcs } from "./ControlRpcs.ts"
+import { Control, make } from "./Control.vibe"
+import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.vibe"
+import { ControlRpcs } from "./ControlRpcs.vibe"
 import {
   ApprovalInputSchema,
   CancelInputSchema,
@@ -21,7 +21,7 @@ import {
   SignalInputSchema,
   SteerInputSchema,
   WatchFilter
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 
 /**
  * Whether a value is one of the control plane's declared failures, as opposed

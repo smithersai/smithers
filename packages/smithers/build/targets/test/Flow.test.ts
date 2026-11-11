@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Flow from "../src/Flow.ts"
-import * as FlowCatalog from "../src/FlowCatalog.ts"
+import * as FlowCatalog from "../src/FlowCatalog.vibe"
 
 const discovered = (
   id: string,

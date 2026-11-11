@@ -15,7 +15,7 @@
  * @since 1.0.0
  */
 
-import type * as Search from "../Search.ts"
+import type * as Search from "../Search.vibe"
 import * as Symbols from "./Symbols.ts"
 import * as Text from "./Text.ts"
 
@@ -30,6 +30,7 @@ import * as Text from "./Text.ts"
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const sourceLines: (content: string) => ReadonlyArray<string> = Text.sourceLines
 
@@ -52,6 +53,7 @@ const owner = (matches: ReadonlyArray<number>, line: number): number => {
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const group = (
   lines: ReadonlyArray<Search.GrepLine>
@@ -94,6 +96,7 @@ export const group = (
  *
  * @category search
  * @since 1.0.0
+ * @throws {never}
  */
 export const annotate = (
   matches: ReadonlyArray<Search.GrepMatch>,

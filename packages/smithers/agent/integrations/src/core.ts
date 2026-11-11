@@ -8,13 +8,13 @@
  * @category constructors
  * @since 1.0.0
  */
-export * as AccessToken from "./core/AccessToken.ts"
+export * as AccessToken from "./core/AccessToken.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as ActionFailure from "./core/ActionFailure.ts"
+export * as ActionFailure from "./core/ActionFailure.vibe"
 
 /**
  * @category constructors
@@ -26,25 +26,25 @@ export * as AuthorizationUrl from "./core/AuthorizationUrl.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Channel from "./core/Channel.ts"
+export * as Channel from "./core/Channel.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as Connection from "./core/Connection.ts"
+export * as Connection from "./core/Connection.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as CursorStore from "./core/CursorStore.ts"
+export * as CursorStore from "./core/CursorStore.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as ExternalEvent from "./core/ExternalEvent.ts"
+export * as ExternalEvent from "./core/ExternalEvent.vibe"
 
 /**
  * @category errors
@@ -62,25 +62,25 @@ export * as JsonPath from "./core/JsonPath.ts"
  * @category migrations
  * @since 1.0.0
  */
-export * as Migrations from "./core/Migrations.ts"
+export * as Migrations from "./core/Migrations.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as OAuthToken from "./core/OAuthToken.ts"
+export * as OAuthToken from "./core/OAuthToken.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Pkce from "./core/Pkce.ts"
+export * as Pkce from "./core/Pkce.vibe"
 
 /**
  * @category verification
  * @since 1.0.0
  */
-export * as Signature from "./core/Signature.ts"
+export * as Signature from "./core/Signature.vibe"
 
 /**
  * @category constructors
@@ -92,25 +92,25 @@ export * as SignalName from "./core/SignalName.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Source from "./core/Source.ts"
+export * as Source from "./core/Source.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as SourceRecord from "./core/SourceRecord.ts"
+export * as SourceRecord from "./core/SourceRecord.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as SourceStore from "./core/SourceStore.ts"
+export * as SourceStore from "./core/SourceStore.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Sync from "./core/Sync.ts"
+export * as Sync from "./core/Sync.vibe"
 
 /** Purpose-bound rotating session signatures. @since 1.0.0 @category services */
 export * as CookieKeys from "./core/CookieKeys.vibe"

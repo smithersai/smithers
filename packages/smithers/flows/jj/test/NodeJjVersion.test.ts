@@ -11,7 +11,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
-import { Jj } from "../src/Jj.ts"
+import { Jj } from "../src/Jj.vibe"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
 // Observe cleanup at the real spawn boundary. Every invocation still starts

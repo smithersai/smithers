@@ -34,11 +34,11 @@ import { createServer } from "node:http"
 
 import type { ListenOptions } from "node:net"
 
-import * as Application from "./Application.ts"
+import * as Application from "./Application.vibe"
 
 import * as Argv from "./cli/Argv.ts"
 
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 
 import * as Environment_ from "./Environment.ts"
 
@@ -61,7 +61,7 @@ import * as RegistryWorkspace from "./internal/RegistryWorkspace.ts"
 import * as SupervisorMemory from "./internal/SupervisorMemory.ts"
 import * as Output from "./Output.ts"
 import * as Project from "./Project.ts"
-import * as Serve from "./Serve.ts"
+import * as Serve from "./Serve.vibe"
 
 /**
  * The environment subset consulted while resolving Node application

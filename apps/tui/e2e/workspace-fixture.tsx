@@ -7,10 +7,10 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Schema } from "effect"
 import { readFileSync, writeFileSync } from "node:fs"
 import { App } from "../src/app.tsx"
-import * as Changes from "../src/changes.ts"
+import * as Changes from "../src/changes.vibe"
 import type * as Flows from "../src/flows.ts"
-import type * as Host from "../src/host.ts"
-import * as Runtime from "../src/runtime.ts"
+import type * as Host from "../src/host.vibe"
+import * as Runtime from "../src/runtime.vibe"
 
 let fixFrame = 0
 const host: Host.Host = {

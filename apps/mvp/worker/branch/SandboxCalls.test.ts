@@ -12,8 +12,8 @@ import {
   MAX_CALL_BODY_BYTES,
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
-import * as Flows from "../Flows.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
+import * as Flows from "../Flows.vibe"
 import { settle } from "../flows/SandboxCall.ts"
 import * as Messages from "../Messages.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"

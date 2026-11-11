@@ -22,11 +22,11 @@ import { Effect, Layer, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import * as Relevance from "../../../packages/smithers/agent/harness/src/Relevance.ts"
-import * as MemorySnapshot from "../../../packages/smithers/agent/memory/src/SnapshotRecorder.ts"
+import * as Relevance from "../../../packages/smithers/agent/harness/src/Relevance.vibe"
+import * as MemorySnapshot from "../../../packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
 import * as MemorySource from "../../../packages/smithers/agent/memory/src/Source.ts"
-import { launch, type LaunchOptions, WrappedFailed } from "./launch.ts"
-import { defaultPermission, extraPrompt, Harness, maxExtraBytes, Permission, promptPath, sha256 } from "./prompt.ts"
+import { launch, type LaunchOptions, WrappedFailed } from "./launch.vibe"
+import { defaultPermission, extraPrompt, Harness, maxExtraBytes, Permission, promptPath, sha256 } from "./prompt.vibe"
 
 export { WrappedFailed }
 

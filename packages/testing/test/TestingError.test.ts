@@ -5,7 +5,7 @@
 import { CancelRequestFailed, FlowCycleDetected } from "@smthrs/flow/FlowRuntime"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as TestingError from "../src/TestingError.ts"
+import * as TestingError from "../src/TestingError.vibe"
 
 describe("TestingError.Code", () => {
   const errors = {

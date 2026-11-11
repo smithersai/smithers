@@ -1,6 +1,6 @@
 # Coordinator-owned request feedback
 
-`steering.ts` is private repository configuration over the existing notification
+`steering.vibe` is private repository configuration over the existing notification
 queue. It adds no coding table, event type, or message transport. The two small
 public library extensions used by this recipe are called out below.
 The gateway keeps its existing `Control.steer` operation and actor attribution.

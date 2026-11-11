@@ -54,7 +54,7 @@ const { importRules, jevRules } = SdkRules({
   role: "app-library",
   knownDeepImports: {
     packages: ["@smthrs/cli"],
-    because: "src/HostTools.ts reads the command catalog from @smthrs/cli/Catalog and @smthrs/cli/CatalogRequest. " +
+    because: "src/HostTools.vibe reads the command catalog from @smthrs/cli/Catalog and @smthrs/cli/CatalogRequest. " +
       "The @smthrs/cli root carries the whole CLI, which this platform-neutral host cannot load, so the catalog " +
       "has to leave the CLI before the import can use a root."
   }
@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.",
         "An expired or unparseable expiresAt that still yields a grant."
       ],
-      paths: ["src/HostServer.ts", "src/DurableChatProducer.ts"]
+      paths: ["src/HostServer.ts", "src/DurableChatProducer.vibe"]
     },
     {
       id: "stream-path-owner-trust",
@@ -97,7 +97,7 @@ const securityReview = Smithers.SecurityReview({
         "environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.",
         "A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant."
       ],
-      paths: ["src/HostServer.ts", "src/EnvironmentResolver.ts"]
+      paths: ["src/HostServer.ts", "src/EnvironmentResolver.vibe"]
     },
     {
       id: "credential-egress-pinning",
@@ -109,7 +109,7 @@ const securityReview = Smithers.SecurityReview({
         "A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.",
         "A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan."
       ],
-      paths: ["src/EnvironmentResolver.ts", "src/LocalModel.ts", "src/ConfiguredModelRoute.ts", "src/ModelProbe.ts"]
+      paths: ["src/EnvironmentResolver.vibe", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe", "src/ModelProbe.vibe"]
     },
     {
       id: "credential-output-redaction",
@@ -122,11 +122,11 @@ const securityReview = Smithers.SecurityReview({
         "A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL."
       ],
       paths: [
-        "src/ModelTurnHost.ts",
-        "src/ModelProbe.ts",
-        "src/LocalModel.ts",
+        "src/ModelTurnHost.vibe",
+        "src/ModelProbe.vibe",
+        "src/LocalModel.vibe",
         "src/HostServer.ts",
-        "src/ModelHostError.ts"
+        "src/ModelHostError.vibe"
       ]
     },
     {
@@ -139,7 +139,7 @@ const securityReview = Smithers.SecurityReview({
         "A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.",
         "Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds."
       ],
-      paths: ["src/ModelProbe.ts", "src/LocalModel.ts", "src/ConfiguredModelRoute.ts"]
+      paths: ["src/ModelProbe.vibe", "src/LocalModel.vibe", "src/ConfiguredModelRoute.vibe"]
     },
     {
       id: "journal-receipt-fencing",
@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.",
         "A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss."
       ],
-      paths: ["src/DurableChatProducer.ts"]
+      paths: ["src/DurableChatProducer.vibe"]
     },
     {
       id: "untrusted-turn-shape",
@@ -162,7 +162,7 @@ const securityReview = Smithers.SecurityReview({
         "appendWireMessage mapping an unknown role or item type to a system or tool message.",
         "Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding."
       ],
-      paths: ["src/HostServer.ts", "src/ModelTurnHost.ts", "src/DurableChatProducer.ts"]
+      paths: ["src/HostServer.ts", "src/ModelTurnHost.vibe", "src/DurableChatProducer.vibe"]
     }
   ]
 })

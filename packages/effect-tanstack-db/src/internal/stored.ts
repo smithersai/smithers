@@ -116,5 +116,6 @@ export const encodeKey = (key: string | number): string => (typeof key === "numb
  *
  * @category stored rows
  * @since 0.3.0
+ * @throws {never}
  */
 export const quote = (identifier: string): string => `"${identifier.replaceAll("\"", "\"\"")}"`

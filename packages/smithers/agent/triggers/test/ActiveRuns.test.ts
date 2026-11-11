@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as ActiveRuns from "../src/internal/ActiveRuns.ts"
+import * as ActiveRuns from "../src/internal/ActiveRuns.vibe"
 
 const run = <A>(body: (active: ActiveRuns.ActiveRuns) => Effect.Effect<A>): Promise<A> =>
   Effect.runPromise(Effect.flatMap(ActiveRuns.make, body))

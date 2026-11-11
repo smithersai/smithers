@@ -17,15 +17,15 @@ import {
   PlanDigestMismatch,
   PlanNotFound,
   RunNotFound
-} from "../src/ControlError.ts"
+} from "../src/ControlError.vibe"
 import {
   ControlRuntime,
   type IdPage,
   type IdPageRequest,
   type MemoryOptions,
   type Service
-} from "../src/ControlRuntime.ts"
-import type { Envelope, Principal } from "../src/ControlSchema.ts"
+} from "../src/ControlRuntime.vibe"
+import type { Envelope, Principal } from "../src/ControlSchema.vibe"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { browserCrypto, memoryRuntime } from "./TestStack.ts"
 

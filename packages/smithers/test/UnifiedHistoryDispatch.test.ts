@@ -5,7 +5,7 @@ import { join, relative, resolve } from "node:path"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as Bridge from "../src/cli/ControlBridge.ts"
 import { appendHistoryCommands, prepareHistoryRun, reconcileHistory } from "../src/cli/HistoryCommands.ts"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Failure from "../src/internal/Failure.ts"
 
 const ports = vi.hoisted(() => ({

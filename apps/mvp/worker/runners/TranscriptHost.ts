@@ -2,7 +2,7 @@ import type { Transcript } from "@smthrs/agent"
 import { Clock, Effect, Option, Schema, Semaphore } from "effect"
 import { RETENTION_MS } from "../../src/features/transcript/contract.ts"
 import type { Frame } from "../../src/features/transcript/schema.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as SocketAccess from "../SocketAccess.ts"
 import * as Store from "./RunContent.ts"
 

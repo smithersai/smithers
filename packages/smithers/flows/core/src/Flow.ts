@@ -4,5 +4,5 @@
  * @since 1.0.0
  */
 
-export { annotate, isFlow, TypeId, withFlows, within } from "./internal/Signature.ts"
-export type { Any, Error, Flow, Input, Output, Payload, Reference, Seat } from "./internal/Signature.ts"
+export { annotate, isFlow, TypeId, withFlows, within } from "./internal/Signature.vibe"
+export type { Any, Error, Flow, Input, Output, Payload, Reference, Seat } from "./internal/Signature.vibe"

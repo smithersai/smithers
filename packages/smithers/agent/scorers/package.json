@@ -34,22 +34,74 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
-    "./Binding": "./src/Binding.ts",
-    "./Checks": "./src/Checks.ts",
-    "./Rubric": "./src/Rubric.ts",
-    "./Sampling": "./src/Sampling.ts",
-    "./ScoreGate": "./src/ScoreGate.ts",
-    "./ScoreStore": "./src/ScoreStore.ts",
-    "./Scorer": "./src/Scorer.ts",
-    "./ScorerError": "./src/ScorerError.ts",
-    "./SqlScoreStore": "./src/SqlScoreStore.ts",
-    "./index": "./src/index.ts",
-    "./Scorers": "./src/Scorers.ts",
-    "./Scoring": "./src/Scoring.ts",
+    "./Binding": {
+      "types": "./src/Binding.ts",
+      "vibelang-source": "./src/Binding.ts",
+      "default": "./.vibelang/js/src/Binding.js"
+    },
+    "./Checks": {
+      "types": "./.vibe/declarations/src/Checks.d.vibe.ts",
+      "vibelang-source": "./src/Checks.vibe",
+      "default": "./.vibelang/js/src/Checks.js"
+    },
+    "./Rubric": {
+      "types": "./src/Rubric.ts",
+      "vibelang-source": "./src/Rubric.ts",
+      "default": "./.vibelang/js/src/Rubric.js"
+    },
+    "./Sampling": {
+      "types": "./.vibe/declarations/src/Sampling.d.vibe.ts",
+      "vibelang-source": "./src/Sampling.vibe",
+      "default": "./.vibelang/js/src/Sampling.js"
+    },
+    "./ScoreGate": {
+      "types": "./.vibe/declarations/src/ScoreGate.d.vibe.ts",
+      "vibelang-source": "./src/ScoreGate.vibe",
+      "default": "./.vibelang/js/src/ScoreGate.js"
+    },
+    "./ScoreStore": {
+      "types": "./.vibe/declarations/src/ScoreStore.d.vibe.ts",
+      "vibelang-source": "./src/ScoreStore.vibe",
+      "default": "./.vibelang/js/src/ScoreStore.js"
+    },
+    "./Scorer": {
+      "types": "./src/Scorer.ts",
+      "vibelang-source": "./src/Scorer.ts",
+      "default": "./.vibelang/js/src/Scorer.js"
+    },
+    "./ScorerError": {
+      "types": "./.vibe/declarations/src/ScorerError.d.vibe.ts",
+      "vibelang-source": "./src/ScorerError.vibe",
+      "default": "./.vibelang/js/src/ScorerError.js"
+    },
+    "./SqlScoreStore": {
+      "types": "./.vibe/declarations/src/SqlScoreStore.d.vibe.ts",
+      "vibelang-source": "./src/SqlScoreStore.vibe",
+      "default": "./.vibelang/js/src/SqlScoreStore.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Scorers": {
+      "types": "./src/Scorers.ts",
+      "vibelang-source": "./src/Scorers.ts",
+      "default": "./.vibelang/js/src/Scorers.js"
+    },
+    "./Scoring": {
+      "types": "./.vibe/declarations/src/Scoring.d.vibe.ts",
+      "vibelang-source": "./src/Scoring.vibe",
+      "default": "./.vibelang/js/src/Scoring.js"
+    },
     "./Runner": null,
     "./RunnerLive": null
   },
@@ -63,7 +115,21 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/Migrations.vibe",
+    "src/Sampling.vibe",
+    "src/ScorerError.vibe",
+    "src/migrations/0001_scores.vibe",
+    "src/migrations/0002_score_jobs.vibe",
+    "src/migrations/0003_score_failure_codes.vibe",
+    "src/migrations/0004_require_failure_codes.vibe",
+    ".vibelang/js",
+    "!.vibelang/js/.loader",
+    "src/SqlScoreStore.vibe",
+    "src/Scoring.vibe",
+    "src/Checks.vibe",
+    "src/ScoreGate.vibe",
+    "src/ScoreStore.vibe"
   ],
   "publishConfig": {
     "access": "public",
@@ -222,7 +288,8 @@
     "@smthrs/core": "1.0.0-rc.17",
     "@smthrs/database": "1.0.0-rc.17",
     "@smthrs/journal": "1.0.0-rc.17",
-    "@smthrs/sandbox": "1.0.0-rc.17"
+    "@smthrs/sandbox": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -244,8 +311,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
     "@smthrs/kernel": "1.0.0-rc.17",

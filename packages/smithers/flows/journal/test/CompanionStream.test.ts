@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as JournalEvent from "../src/JournalEvent.ts"
+import * as JournalEvent from "../src/JournalEvent.vibe"
 
 describe("companion stream ids", () => {
   it("keeps companion ids distinct per run and per stream, within the identifier bound", () => {

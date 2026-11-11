@@ -1,0 +1,682 @@
+/**
+ * Issue and issue-comment REST operations, and the hidden write marker that
+ * lets a step adopt its own earlier write.
+ *
+ * These are plain operations over the {@link GitHubClient} in context, not
+ * durable actions: the flow step that calls them chooses the token (a
+ * person's user token or an App installation token) by providing the client,
+ * and settles its own projection from the result.
+ *
+ * **Writing once.** A POST whose answer is lost (a 5xx, a dropped connection,
+ * a timeout) fails with `outcomeUnknown: true`: GitHub may have created the
+ * issue or comment. Repeating the POST risks a second one, so every created
+ * issue and comment carries a hidden `<!-- smithers:write=<id> -->` marker
+ * ({@link withWriteMarker}), where the id is the step's write id. A step
+ * writes like this:
+ *
+ * 1. On its first attempt, POST once with the marked body.
+ * 2. On an attempt after `outcomeUnknown`, look first:
+ *    {@link findIssueByWrite} or {@link findCommentByWrite}, with `since` a
+ *    little before the first attempt started. Adopt what it finds.
+ * 3. Only when nothing carries the marker, POST again.
+ *
+ * A write id should be unguessable and come from the step that writes, such
+ * as `Action.effectKey` from `@smthrs/flow`; `GitHub.Once` does all three
+ * steps for you through `Action.once`. The finders return the
+ * earliest-created match, so a copy someone posts after seeing the marker
+ * never wins over the original. They read at most {@link RECONCILE_PAGES}
+ * pages, and a search that runs out of pages without a match fails
+ * (`poll-failed`, `incomplete: true`) rather than answer none: none would let
+ * the caller write a second time.
+ *
+ * **Labels.** {@link addLabels}, {@link removeLabel} and {@link createLabel}
+ * are idempotent at GitHub: adding a label the issue has, removing one it
+ * lacks, or creating one the repository has changes nothing. So they classify
+ * a 5xx or a dropped connection as `retryable` while retaining `outcomeUnknown`, and a
+ * step's retry policy repeats them without looking first.
+ *
+ * Every coordinate is validated before it becomes a request path, as
+ * `Repository.repositoryPath` does, so a hostile owner, repository, number or
+ * label name cannot walk the token-bearing request to another endpoint.
+ *
+ * @since 1.0.0
+ */
+
+import { IntegrationError } from "../core/IntegrationError.ts"
+import { LabelName, RECONCILE_PAGES } from "./Actions.vibe"
+import { GitHubClient } from "./GitHubClient.vibe"
+import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
+
+/**
+ * The account on an issue or comment. GitHub sends `null` for a deleted
+ * account.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const IssueUser = Schema.NullOr(Schema.Struct({ id: Schema.Number, login: Schema.String }))
+
+/**
+ * A label on an issue, narrowed to its name. GitHub's other label fields are
+ * dropped.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const IssueLabel = Schema.Struct({ name: Schema.String })
+
+/**
+ * A decoded {@link IssueLabel}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type IssueLabel = typeof IssueLabel.Type
+
+/**
+ * An issue as GitHub's REST API returns it, narrowed to the fields Smithers
+ * reads. GitHub's other fields are dropped. `pull_request` is present when the
+ * issue is a pull request. A missing `state_reason` decodes as `null` and
+ * missing `labels` as none.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Issue = Schema.Struct({
+  id: Schema.Number,
+  node_id: Schema.String,
+  number: Schema.Number,
+  title: Schema.String,
+  body: Schema.NullOr(Schema.String),
+  state: Schema.Literals(["open", "closed"]),
+  state_reason: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  user: IssueUser,
+  labels: Schema.Array(IssueLabel).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  comments: Schema.Number,
+  created_at: Schema.String,
+  updated_at: Schema.String,
+  closed_at: Schema.NullOr(Schema.String),
+  pull_request: Schema.optionalKey(Schema.Unknown),
+  /** The parent's API URL. A listing leaves it out when there is none; one issue says `null`. */
+  parent_issue_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** GitHub's count of its children. `null` on a pull request, which states no relation. */
+  sub_issues_summary: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ total: Schema.Number, completed: Schema.Number }))
+  ),
+  /** The issue's repository's API URL: a sub-issue listing can hold another repository's. */
+  repository_url: Schema.optionalKey(Schema.String)
+})
+
+/**
+ * A decoded {@link Issue}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Issue = typeof Issue.Type
+
+/**
+ * An issue comment as GitHub's REST API returns it, narrowed to the fields
+ * Smithers reads.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const IssueComment = Schema.Struct({
+  id: Schema.Number,
+  node_id: Schema.String,
+  body: Schema.NullOr(Schema.String),
+  user: IssueUser,
+  created_at: Schema.String,
+  updated_at: Schema.String,
+  issue_url: Schema.String
+})
+
+/**
+ * A decoded {@link IssueComment}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type IssueComment = typeof IssueComment.Type
+
+/**
+ * What a write id may be: 1 to 100 letters, digits and hyphens, such as a
+ * UUID.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const WRITE_ID_PATTERN = /^[A-Za-z0-9-]{1,100}$/
+
+// Tolerant of whitespace inside the comment delimiters, as a person's edit
+// may leave it.
+const MARKER = /<!--\s*smithers:write=([A-Za-z0-9-]{1,100})\s*-->/g
+// The marker with the blank line `withWriteMarker` puts before it, CRLF
+// included, since github.com's editor saves CRLF line ends.
+const MARKER_WITH_BREAK = /(?:\r?\n){0,2}<!--\s*smithers:write=[A-Za-z0-9-]{1,100}\s*-->/g
+
+const invalidWriteId = (writeId: unknown): IntegrationError =>
+  new IntegrationError(
+    "invalid-config",
+    "A write id must be 1 to 100 letters, digits and hyphens.",
+    {
+      field: "writeId",
+      writeId: typeof writeId === "string" ? writeId.slice(0, 100) : typeof writeId,
+      retryable: false
+    }
+  )
+
+/**
+ * The hidden marker for `writeId`: `<!-- smithers:write=<id> -->`, which
+ * GitHub renders as nothing.
+ *
+ * Throws an `IntegrationError` `invalid-config` when `writeId` is not 1 to 100
+ * letters, digits and hyphens.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const writeMarker = (writeId: string): string => {
+  if (typeof writeId !== "string" || !WRITE_ID_PATTERN.test(writeId)) $raise(invalidWriteId(writeId))
+  return `<!-- smithers:write=${writeId} -->`
+}
+
+/**
+ * `body`, then a blank line and {@link writeMarker}. An empty body is the
+ * marker alone.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const withWriteMarker = (body: string, writeId: string): string => {
+  const marker = writeMarker(writeId)
+  return body.length === 0 ? marker : `${body}\n\n${marker}`
+}
+
+/**
+ * The write id the body's marker names, or `undefined`. Whitespace around the
+ * marker and inside its delimiters is tolerated; with several markers, the
+ * last one wins.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const writeIdOf = (body: string | null | undefined): string | undefined => {
+  if (typeof body !== "string") return undefined
+  let writeId: string | undefined
+  for (const match of body.matchAll(MARKER)) writeId = match[1]
+  return writeId
+}
+
+/**
+ * `body` with every write marker, and the blank line before each, removed, for
+ * display. `withoutWriteMarker(withWriteMarker(body, id))` is `body`.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const withoutWriteMarker = (body: string): string => body.replace(MARKER_WITH_BREAK, "")
+
+const requireIssueNumber = (number: number): number!IntegrationError =>
+  Schema.is(IssueNumber)(number) ? Effect.succeed(number) : Effect.fail(
+    new IntegrationError("invalid-config", "A GitHub issue number must be a positive integer.", {
+      field: "number",
+      number: typeof number === "number" ? number : typeof number,
+      retryable: false
+    })
+  )
+
+const requireWriteId = (writeId: string): string!IntegrationError =>
+  typeof writeId === "string" && WRITE_ID_PATTERN.test(writeId)
+    ? Effect.succeed(writeId)
+    : Effect.fail(invalidWriteId(writeId))
+
+const requireSince = (since: string | undefined): (string | undefined)!IntegrationError =>
+  since === undefined || (typeof since === "string" && Number.isFinite(Date.parse(since)))
+    ? Effect.succeed(since)
+    : Effect.fail(
+      new IntegrationError("invalid-config", "`since` must be an ISO 8601 timestamp.", {
+        field: "since",
+        retryable: false
+      })
+    )
+
+// A finder that ran out of pages without a match cannot say the write was never made: answering none would let the
+// caller write again. It fails instead, and the step stops rather than duplicate.
+const incomplete = (operation: string): IntegrationError =>
+  new IntegrationError(
+    "poll-failed",
+    `${operation}: the search ran out of its ${RECONCILE_PAGES}-page budget before it could rule the write out.`,
+    { operation, incomplete: true, retryable: false }
+  )
+
+const requireLabelName = (name: unknown): string!IntegrationError =>
+  Schema.is(LabelName)(name) ? Effect.succeed(name) : Effect.fail(
+    new IntegrationError("invalid-config", "A GitHub label name must be 1 to 50 characters.", {
+      field: "name",
+      name: typeof name === "string" ? name.slice(0, 64) : typeof name,
+      retryable: false
+    })
+  )
+
+const requireLabelNames = (
+  names: ReadonlyArray<string>
+): ReadonlyArray<string>!IntegrationError =>
+  Array.isArray(names) && names.length > 0
+    ? Effect.forEach(names, requireLabelName)
+    : Effect.fail(
+      new IntegrationError("invalid-config", "Name at least one GitHub label to add.", {
+        field: "names",
+        retryable: false
+      })
+    )
+
+// `encodeURIComponent` leaves dots alone and the URL parser resolves `.` and
+// `..` segments, so a label named either would address the issue itself.
+const requireLabelSegment = (name: string): string!IntegrationError =>
+  Effect.flatMap(requireLabelName(name), (valid) =>
+    valid === "." || valid === ".."
+      ? Effect.fail(
+        new IntegrationError("invalid-config", "A GitHub label named `.` or `..` cannot be part of a request path.", {
+          field: "name",
+          name: valid,
+          retryable: false
+        })
+      )
+      : Effect.succeed(encodeURIComponent(valid)))
+
+/**
+ * What a label color may be: six hex digits, without `#`.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const LABEL_COLOR_PATTERN = /^[0-9A-Fa-f]{6}$/
+
+/**
+ * The longest label description GitHub accepts.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_LABEL_DESCRIPTION = 100
+
+const requireNewLabel = effect (
+  input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
+): { readonly name: string; readonly color: string; readonly description?: string }!IntegrationError => {
+  const name = try requireLabelName(input.name)
+  if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
+    throw new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
+      field: "color",
+      color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
+      retryable: false
+    })
+  }
+  const description = input.description
+  if (
+    description !== undefined &&
+    (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)
+  ) {
+    throw new IntegrationError(
+      "invalid-config",
+      `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`,
+      { field: "description", retryable: false }
+    )
+  }
+  return description === undefined ? { name, color: input.color } : { name, color: input.color, description }
+}
+
+const hasStatus = (status: number) => (error: IntegrationError): boolean => error.details?.["status"] === status
+
+const decodeFailed = (path: string, cause: unknown): IntegrationError =>
+  new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
+    method: "GET",
+    path
+  }, { cause })
+
+const decodeAll = <A>(
+  schema: Schema.Decoder<A>,
+  items: ReadonlyArray<unknown>,
+  path: string
+): ReadonlyArray<A>!IntegrationError =>
+  Schema.decodeUnknownEffect(Schema.Array(schema))(items) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
+
+const decodeOne = <A>(
+  schema: Schema.Decoder<A>,
+  item: unknown,
+  path: string
+): A!IntegrationError =>
+  Schema.decodeUnknownEffect(schema)(item) |> Effect.mapError(%, (cause) => decodeFailed(path, cause))
+
+// Whether a listed item, not yet decoded, carries `writeId`'s marker. Only the
+// match is decoded, so an unrelated item GitHub shapes differently never
+// blocks the reconciliation.
+const markedWith = (item: unknown, writeId: string): boolean => {
+  const body = typeof item === "object" && item !== null ? (item as { readonly body?: unknown }).body : undefined
+  return typeof body === "string" && writeIdOf(body) === writeId
+}
+
+// Whether a listed item, not yet decoded, is by `author`, when one is named.
+// A caller that knows who wrote its own items names it, so a marker someone
+// copied into an item of theirs is never the match.
+const byAuthor = (item: unknown, author: string | undefined): boolean => {
+  if (author === undefined) return true
+  // Only called behind markedWith, which established an object with a body.
+  const user = (item as { readonly user?: unknown }).user
+  return typeof user === "object" && user !== null && (user as { readonly login?: unknown }).login === author
+}
+
+const isPullRequest = (item: unknown): boolean =>
+  (item as { readonly pull_request?: unknown }).pull_request !== undefined
+
+const spanAttributes = (owner: string, repo: string, number?: number): Record<string, unknown> => ({
+  "github.owner": owner,
+  "github.repo": repo,
+  ...(number === undefined ? {} : { "github.number": number })
+})
+
+const query = (parameters: Record<string, string | undefined>): string => {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(parameters)) if (value !== undefined) search.set(key, value)
+  const text = search.toString()
+  return text.length === 0 ? "" : `?${text}`
+}
+
+/**
+ * The issue (or pull request, which GitHub numbers in the same sequence):
+ * `GET /repos/{owner}/{repo}/issues/{number}`.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const getIssue = (
+  owner: string,
+  repo: string,
+  number: number
+): Issue!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    return try client.request("GET", `/repos/${repository}/issues/${issue}`, undefined, { schema: Issue })
+  }) |> withSpan(%, "GitHub.Issues.getIssue", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * The comments on issue `number`, oldest first:
+ * `GET /repos/{owner}/{repo}/issues/{number}/comments`, optionally only those
+ * updated since `since` (ISO 8601), within `maxPages` pages of 100 (default
+ * 10). `truncated` is true when pages remained.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listComments = (
+  owner: string,
+  repo: string,
+  number: number,
+  options?: { readonly since?: string | undefined; readonly maxPages?: number | undefined }
+): { readonly items: ReadonlyArray<IssueComment>; readonly truncated: boolean }!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const since = try requireSince(options?.since)
+    const path = `/repos/${repository}/issues/${issue}/comments`
+    const page = try client.paginate(`${path}${query({ since })}`, { maxPages: options?.maxPages })
+    const items = try decodeAll(IssueComment, page.items, path)
+    return { items, truncated: page.truncated }
+  }) |> withSpan(%, "GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * One page of every issue and pull request of the repository, oldest first, as GitHub sent it:
+ * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=asc`. `next` is the query of GitHub's own next
+ * link, GitHub's cursor; pass it back as `cursor`, and `null` is the last page. A page number would skip issues when
+ * an earlier one is deleted between pages.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listAllIssuesPage = (
+  owner: string,
+  repo: string,
+  options?: { readonly cursor?: string | null | undefined }
+): { readonly items: ReadonlyArray<unknown>; readonly next: string | null }!IntegrationError!GitHubClient =>
+  effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const query = options?.cursor ?? "state=all&sort=created&direction=asc"
+    const page = try client.paginate(`/repos/${repository}/issues?${query}`, { maxPages: 1, withNext: true })
+    const next = page.next ?? null
+    return { items: page.items, next: next === null ? null : new URL(next).search.slice(1) }
+  } |> withSpan(%, "GitHub.Issues.listAllIssuesPage")
+
+/**
+ * Issue `number`'s sub-issues, as GitHub sent them: `GET /repos/{owner}/{repo}/issues/{number}/sub_issues`. GitHub allows
+ * at most 100 per parent, so one page of 100 is all of them.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listSubIssues = (
+  owner: string,
+  repo: string,
+  number: number
+): ReadonlyArray<unknown>!IntegrationError!GitHubClient =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const issue = yield* requireIssueNumber(number)
+    const page = yield* client.paginate(`/repos/${repository}/issues/${issue}/sub_issues`, { maxPages: 1 })
+    return page.items
+  }).pipe(withSpan("GitHub.Issues.listSubIssues", { attributes: spanAttributes(owner, repo, number) }))
+
+/**
+ * Opens an issue: `POST /repos/{owner}/{repo}/issues`. Mark `body` with
+ * {@link withWriteMarker} so a retry can find it.
+ *
+ * A lost answer fails `outcomeUnknown`; see the module notes before writing
+ * again.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createIssue = (
+  owner: string,
+  repo: string,
+  input: { readonly title: string; readonly body: string }
+): Issue!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    return try client.request("POST", `/repos/${repository}/issues`, { title: input.title, body: input.body }, {
+      schema: Issue
+    })
+  }) |> withSpan(%, "GitHub.Issues.createIssue", { attributes: spanAttributes(owner, repo) })
+
+/**
+ * Comments on issue or pull request `number`:
+ * `POST /repos/{owner}/{repo}/issues/{number}/comments`. Mark `body` with
+ * {@link withWriteMarker} so a retry can find it.
+ *
+ * A lost answer fails `outcomeUnknown`; see the module notes before writing
+ * again.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createComment = (
+  owner: string,
+  repo: string,
+  number: number,
+  body: string
+): IssueComment!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    return try client.request("POST", `/repos/${repository}/issues/${issue}/comments`, { body }, {
+      schema: IssueComment
+    })
+  }) |> withSpan(%, "GitHub.Issues.createComment", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * The issue whose body carries `writeId`'s marker, among issues updated since
+ * `since` (ISO 8601), walking at most {@link RECONCILE_PAGES} pages of
+ * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&since=…`.
+ * Pull requests are skipped.
+ *
+ * With more than one match, the earliest created wins. With `author`, only
+ * items that login wrote match, so a copied marker never does. A search that
+ * runs out of pages fails `poll-failed` with `incomplete: true`, even with a match:
+ * an older original may lie beyond the page budget.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const findIssueByWrite = (
+  owner: string,
+  repo: string,
+  options: { readonly writeId: string; readonly since: string; readonly author?: string | undefined }
+): Option.Option<Issue>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const writeId = try requireWriteId(options.writeId)
+    const since = try requireSince(options.since)
+    const path = `/repos/${repository}/issues`
+    const page = try client.paginate(
+      `${path}${query({ state: "all", sort: "created", direction: "desc", since })}`,
+      { maxPages: RECONCILE_PAGES }
+    )
+    // Newest first, so the last match is the earliest created.
+    let found: unknown
+    for (const item of page.items) {
+      if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item)) found = item
+    }
+    if (page.truncated) throw incomplete("findIssueByWrite")
+    return found === undefined ? Option.none() : Option.some(try decodeOne(Issue, found, path))
+  }) |> withSpan(%, "GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) })
+
+/**
+ * The comment on issue `number` whose body carries `writeId`'s marker, among
+ * all its comments or those updated since `since` (ISO 8601), walking at most
+ * {@link RECONCILE_PAGES} pages.
+ *
+ * With more than one match, the earliest created wins. A search that runs out
+ * of pages without a match fails `poll-failed` with `incomplete: true`.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const findCommentByWrite = (
+  owner: string,
+  repo: string,
+  number: number,
+  options: { readonly writeId: string; readonly since?: string | undefined; readonly author?: string | undefined }
+): Option.Option<IssueComment>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const writeId = try requireWriteId(options.writeId)
+    const since = try requireSince(options.since)
+    const path = `/repos/${repository}/issues/${issue}/comments`
+    const page = try client.paginate(`${path}${query({ since })}`, { maxPages: RECONCILE_PAGES })
+    // Oldest first, so the first match is the earliest created.
+    const found = page.items.find((item) => markedWith(item, writeId) && byAuthor(item, options.author))
+    if (found === undefined && page.truncated) throw incomplete("findCommentByWrite")
+    return found === undefined ? Option.none() : Option.some(try decodeOne(IssueComment, found, path))
+  }) |> withSpan(%, "GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * Adds labels to issue or pull request `number`, keeping the ones it has:
+ * `POST /repos/{owner}/{repo}/issues/{number}/labels`. Answers every label
+ * the issue carries afterwards.
+ *
+ * Each name is 1 to 50 characters. GitHub creates a label the repository
+ * lacks. Adding a label the issue already has changes nothing, so a lost
+ * answer fails `retryable` and the step repeats the call.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const addLabels = (
+  owner: string,
+  repo: string,
+  number: number,
+  names: readonly [string, ...Array<string>]
+): ReadonlyArray<IssueLabel>!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const labels = try requireLabelNames(names)
+    return try client.request("POST", `/repos/${repository}/issues/${issue}/labels`, { labels }, {
+      schema: Schema.Array(IssueLabel),
+      retryUnsafeWrites: true
+    })
+  }) |> withSpan(%, "GitHub.Issues.addLabels", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * Removes label `name` from issue or pull request `number`:
+ * `DELETE /repos/{owner}/{repo}/issues/{number}/labels/{name}`. Answers
+ * `true` when GitHub removed it and `false` when GitHub answers 404, which it
+ * does for a label the issue lacks, and also for an issue or repository the
+ * token cannot see.
+ *
+ * `name` is 1 to 50 characters and not `.` or `..`, which no request path
+ * can address. Removing twice changes nothing, so a lost answer fails
+ * `retryable`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const removeLabel = (
+  owner: string,
+  repo: string,
+  number: number,
+  name: string
+): boolean!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const issue = try requireIssueNumber(number)
+    const label = try requireLabelSegment(name)
+    return try (client.request("DELETE", `/repos/${repository}/issues/${issue}/labels/${label}`, undefined, {
+      retryUnsafeWrites: true
+    })
+      |> Effect.as(%, true)
+      |> Effect.catchIf(%, hasStatus(404), () => Effect.succeed(false)))
+  }) |> withSpan(%, "GitHub.Issues.removeLabel", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * Creates a repository label: `POST /repos/{owner}/{repo}/labels`. Answers
+ * `true` when GitHub created it and `false` when GitHub answers 422, which,
+ * with the input validated first, means a label of that name exists.
+ *
+ * `name` is 1 to 50 characters, `color` six hex digits without `#`, and
+ * `description` at most {@link MAX_LABEL_DESCRIPTION} characters. A repeat
+ * finds the label made, so a lost answer fails `retryable`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const createLabel = (
+  owner: string,
+  repo: string,
+  input: { readonly name: string; readonly color: string; readonly description?: string | undefined }
+): boolean!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const label = try requireNewLabel(input)
+    return try (client.request("POST", `/repos/${repository}/labels`, label, { retryUnsafeWrites: true })
+      |> Effect.as(%, true)
+      |> Effect.catchIf(%, hasStatus(422), () => Effect.succeed(false)))
+  }) |> withSpan(%, "GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

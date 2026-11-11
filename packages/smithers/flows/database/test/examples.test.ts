@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { quickstart } from "../examples/quickstart.ts"
+import { quickstart } from "../examples/quickstart.vibe"
 import * as DurableWriter from "../src/DurableWriter.ts"
 
 describe("examples", () => {

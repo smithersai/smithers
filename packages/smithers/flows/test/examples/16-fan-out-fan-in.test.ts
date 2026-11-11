@@ -12,7 +12,7 @@ import {
   discoveredFlow,
   main,
   specs
-} from "../../examples/16-fan-out-fan-in.ts"
+} from "../../examples/16-fan-out-fan-in.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

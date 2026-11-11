@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import * as Dialect from "../src/Dialect.ts"
+import * as Dialect from "../src/Dialect.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 
 const run = <A, E>(body: Effect.Effect<A, E, SqlClient>) => body.pipe(Effect.provide(TestDatabase.layer))

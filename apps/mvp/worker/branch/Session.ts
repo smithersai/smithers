@@ -1,7 +1,7 @@
 import { Cause, Clock, Config, Effect, Schema, type Scope } from "effect"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { SandboxUnavailable } from "./Sandboxes.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { SandboxUnavailable } from "#vibelang/emitted/worker/branch/Sandboxes"
 import { envOf, idOf, provisionArgv, userOf } from "./Users.ts"
 
 /** The command boundary session provisioning needs; the host owns the scoped process. */

@@ -18,7 +18,7 @@ import test from "node:test"
 import { promisify } from "node:util"
 import { HostFailed } from "../host.ts"
 import { goCache } from "../land.ts"
-import { sh, toolchainEnv } from "../vm.ts"
+import { sh, toolchainEnv } from "../vm.vibe"
 import {
   Adopt,
   adoptAt,

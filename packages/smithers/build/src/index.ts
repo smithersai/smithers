@@ -14,7 +14,7 @@
  * @category namespace exports
  * @since 0.1.0
  */
-export * as Install from "./Install.ts"
+export * as Install from "./Install.vibe"
 
 /**
  * The package-manager layer seam, its pnpm implementation, and the typed Bun

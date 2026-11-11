@@ -11,9 +11,9 @@
  */
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import type { JournalEntryLike } from "../src/EngineSubject.ts"
-import { expectJournal } from "../src/JournalAssertions.ts"
-import type { JournalAssertionError } from "../src/TestingError.ts"
+import type { JournalEntryLike } from "../src/EngineSubject.vibe"
+import { expectJournal } from "../src/JournalAssertions.vibe"
+import type { JournalAssertionError } from "../src/TestingError.vibe"
 
 const codeOf = (effect: Effect.Effect<void, JournalAssertionError>) =>
   Effect.runPromise(Effect.flip(effect)).then((error) => error.code)

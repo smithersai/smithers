@@ -37,9 +37,9 @@
  *
  * @since 0.1.0
  */
-import * as NarrowedCheck from "../../../src/NarrowedCheck.ts"
-import * as Sufficiency from "../../../src/Sufficiency.ts"
-import * as UnresolvedFailure from "../../../src/UnresolvedFailure.ts"
+import * as NarrowedCheck from "../../../src/NarrowedCheck.vibe"
+import * as Sufficiency from "../../../src/Sufficiency.vibe"
+import * as UnresolvedFailure from "../../../src/UnresolvedFailure.vibe"
 import { journalRows } from "./journal-rows.mjs"
 
 /** Flows whose calls change the workspace, so they are never checks. */

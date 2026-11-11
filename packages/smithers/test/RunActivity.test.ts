@@ -7,7 +7,7 @@ import { ExecutionFact } from "@smthrs/journal"
 import { Schema } from "effect"
 import { Writable } from "node:stream"
 import { describe, expect, it } from "vitest"
-import * as RunActivity from "../src/cli/RunActivity.ts"
+import * as RunActivity from "../src/cli/RunActivity.vibe"
 import * as RunProgress from "../src/cli/RunProgress.ts"
 
 const runId = "run-7"

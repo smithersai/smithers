@@ -1,0 +1,695 @@
+/**
+ * Portable discovery of markdown and module-backed flows.
+ *
+ * Governing contract: `packages/smithers/agent/registry/docs/api.md`, published as
+ * https://smithers.sh/docs/reference/api/registry.
+ *
+ * Discovery follows symbolic links when the host `FileSystem.stat` does,
+ * confined to `Source.confinementRoot`; an unresolved configured root refuses discovery. A
+ * visited-directory identity set stops cycles and aliases, while a 32-segment
+ * depth ceiling bounds hosts that cannot supply stable directory identities.
+ *
+ * @since 0.1.0
+ */
+
+import { identity as keepDefect } from "effect/Function"
+import { Markdown as CoreMarkdown } from "@smthrs/core"
+import * as Digest from "@smthrs/core/Digest"
+import * as ByteSize from "effect/ByteSize"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as Result from "effect/Result"
+import * as Stream from "effect/Stream"
+import {
+  DiscoveryWarning,
+  FlowDescriptor,
+  type ModuleImport,
+  Provenance,
+  retiredRootMessage,
+  type Source,
+  SourceScan
+} from "./Descriptor.vibe"
+import * as Frontmatter from "./internal/Frontmatter.vibe"
+import { measureLockfiles } from "./internal/Lockfiles.vibe"
+import * as ModuleClosure from "./internal/ModuleClosure.vibe"
+import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
+import * as Names from "./internal/Names.vibe"
+import * as MarkdownFlow from "./MarkdownFlow.vibe"
+import * as ModuleFlow from "./ModuleFlow.vibe"
+import type { DiscoveryError } from "./RegistryError.vibe"
+import { discoveryError } from "./RegistryError.vibe"
+
+/**
+ * Discovers flow descriptors from a configured source without loading their
+ * bodies into the returned scan.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export interface Discovery {
+  readonly scan: (source: Source | SkillSource) => Effect.Effect<SourceScan, DiscoveryError>
+}
+
+/**
+ * Service tag for portable flow discovery.
+ *
+ * @category services
+ * @since 0.1.0
+ */
+export const Discovery: Context.Service<Discovery, Discovery> = Context.Service("flows/registry/Discovery")
+
+/** A declared skill library reads only validated SKILL.md entries.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SkillSource extends Source {
+  readonly skills: true
+}
+
+const entryPrecedence = ["flow.ts", "flow.mdx", "SKILL.md"] as const
+
+/**
+ * Root directories a path-named source never reads as flows.
+ *
+ * At a project root `channels` and `connections` are the host's own
+ * directories rather than flow directories, so a path-named scan skips them.
+ * See `docs/concepts/sources.md`.
+ */
+const hostReservedRootDirectories = new Set(["channels", "connections"])
+
+/**
+ * Directory entries whose `stat` is in flight at once.
+ *
+ * Every entry costs one host round trip, so statting them one at a time makes
+ * a scan pay a full round trip per file, including every resource file under a
+ * skill directory that can never be an entry. Sixteen overlaps a directory's
+ * round trips without spending a deep tree's descriptor budget; the results are
+ * folded in sorted order, so what the scan reports is unchanged.
+ */
+const statConcurrency = 16
+
+// A scan's own warnings name a path, never a flow: the entry warnings that name one come from
+// `MarkdownFlow.fromMarkdown` and `ModuleFlow.fromModule`.
+const warning = (
+  code: DiscoveryWarning["code"],
+  path: string,
+  message: string,
+  cause?: unknown
+): DiscoveryWarning =>
+  new DiscoveryWarning({
+    code,
+    path,
+    message,
+    ...(cause === undefined ? {} : { cause })
+  })
+
+const metadataReadLimit = 64 * 1024
+const markdownMetadataChunkSize = 512
+const moduleMetadataChunkSize = 8 * 1024
+
+/**
+ * Maximum complete entry size admitted to discovery and content hashing.
+ *
+ * Four MiB leaves ample room for authored metadata and bodies while refusing
+ * build artifacts or hostile entries before allocating their complete bytes.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const entrySizeLimit = 4 * 1024 * 1024
+
+/**
+ * Maximum number of entry-name segments traversed below a source root.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const maximumTraversalDepth = 32
+
+/** The one wording both entry-size refusals use, so a consumer sees one message. */
+const oversizedEntry = (location: string, size: bigint | number): string =>
+  `Entry "${location}" is at least ${size} bytes, exceeding the ${entrySizeLimit}-byte discovery input ceiling`
+
+/**
+ * Either an entry's metadata, or the reason it was refused unread.
+ *
+ * `Oversized` carries the measured lower bound: reading stops at the first
+ * byte past the ceiling even when a host's reported size was wrong.
+ */
+type EntryMetadata =
+  | { readonly _tag: "Oversized"; readonly size: number }
+  | {
+    readonly _tag: "Metadata"
+    readonly contentDigest: string
+    /** The decoded prefix the metadata parsers read. */
+    readonly text: string
+    /**
+     * The complete decoded source, for a module entry only.
+     *
+     * The metadata parsers stop at the default declaration, but an import can
+     * sit anywhere in the file, so pinning what a module loads beside itself
+     * needs the whole text rather than the prefix.
+     */
+    readonly source: string | undefined
+  }
+
+/**
+ * Reads just enough of an entry file to decide its metadata.
+ *
+ * The complete admitted file is read because discovery also hashes every body.
+ * The reported-size check in `visit` is a fast path. This bounded stream reads
+ * at most one byte past the ceiling, so inaccurate sizes cannot cause an
+ * unbounded allocation. Oversized entries are never hashed, decoded, or parsed.
+ * `metadataReadLimit` separately bounds how much of an admitted entry's bytes
+ * is decoded and parsed. Module prefixes use larger chunks to avoid repeatedly
+ * tokenizing hundreds of nearly identical 512-byte prefixes.
+ */
+const readMetadata = (
+  fs: FileSystem.FileSystem,
+  location: string,
+  kind: "markdown" | "module"
+) =>
+  fs.stream(location, { bytesToRead: entrySizeLimit + 1 }).pipe(
+    Stream.runCollect,
+    Effect.flatMap(effect (chunks): Effect.Effect<EntryMetadata> => {
+      const size = chunks.reduce((total, chunk) => total + chunk.length, 0)
+      if (size > entrySizeLimit) {
+        return { _tag: "Oversized", size }
+      }
+      const bytes = new Uint8Array(size)
+      let position = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, position)
+        position += chunk.length
+      }
+      const contentDigest = try Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }))
+      const decoder = new TextDecoder()
+      const chunkSize = kind === "module" ? moduleMetadataChunkSize : markdownMetadataChunkSize
+      const parseLimit = Math.min(bytes.length, metadataReadLimit)
+      let text = ""
+      for (let offset = 0; offset < parseLimit; offset += chunkSize) {
+        text += try Effect.orDie(Effect.try({ try: () => decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true }), catch: keepDefect }))
+        const complete = kind === "markdown"
+          ? Frontmatter.isMetadataComplete(text)
+          : ModuleMetadata.isComplete(text)
+        if (complete) break
+      }
+      return {
+        _tag: "Metadata",
+        contentDigest,
+        text: text + (try Effect.orDie(Effect.try({ try: () => decoder.decode(), catch: keepDefect }))),
+        source: kind === "module" ? try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes), catch: keepDefect })) : undefined
+      }
+    })
+  )
+
+const compareWarnings = (left: DiscoveryWarning, right: DiscoveryWarning): number => {
+  if (left.path !== right.path) {
+    return left.path < right.path ? -1 : 1
+  }
+  if (left.code !== right.code) {
+    return left.code < right.code ? -1 : 1
+  }
+  return left.message < right.message ? -1 : left.message > right.message ? 1 : 0
+}
+
+const directoryIdentity = (info: FileSystem.File.Info, location: string): string =>
+  `${info.dev}:${Option.getOrElse(info.ino, () => location)}`
+
+/**
+ * Whether a retired root still holds an entry file a scan would select.
+ *
+ * The walk skips what a path-named scan skips (`node_modules`, dot
+ * directories, reserved root directories), stops at the first entry, and
+ * stays within {@link maximumTraversalDepth}. Anything it cannot read counts
+ * as holding nothing: the probe only decides whether to warn.
+ */
+const holdsEntry = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  directory: string,
+  depth: number,
+  visited: Map<string, number> = new Map()
+): Effect.Effect<boolean> =>
+  effect {
+    if (depth > maximumTraversalDepth) return false
+    const info = try Effect.result(fs.stat(directory))
+    if (Result.isFailure(info) || info.success.type !== "Directory") return false
+    const identity = directoryIdentity(info.success, directory)
+    const priorDepth = visited.get(identity)
+    if (priorDepth !== undefined && priorDepth <= depth) return false
+    // A shallower alias can expose entries previously hidden by the depth limit.
+    visited.set(identity, depth)
+    const listed = try Effect.result(fs.readDirectory(directory))
+    if (Result.isFailure(listed)) return false
+    const stats = try Effect.forEach(
+      [...listed.success].sort().filter((entry) =>
+        entry !== "node_modules" && !entry.startsWith(".") &&
+        !(depth === 0 && hostReservedRootDirectories.has(entry))
+      ),
+      (entry) => Effect.map(Effect.result(fs.stat(path.join(directory, entry))), (info) => [entry, info] as const),
+      { concurrency: statConcurrency }
+    )
+    const children: Array<string> = []
+    for (const [entry, info] of stats) {
+      if (Result.isFailure(info)) continue
+      if (info.success.type === "File" && (entryPrecedence as ReadonlyArray<string>).includes(entry)) return true
+      if (info.success.type === "Directory") children.push(path.join(directory, entry))
+    }
+    for (const child of children) {
+      if (try holdsEntry(fs, path, child, depth + 1, visited)) return true
+    }
+    return false
+  }
+
+/**
+ * Creates a discovery service from portable file-system and path services.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
+  Discovery.of({
+    scan: Effect.fn("Discovery.scan")((source) =>
+      effect {
+        const skills = "skills" in source && source.skills === true
+        const provenance = new Provenance({ source: source.source, root: source.root })
+        // Sibling flows in one project share most of their imports, so the
+        // closure walk reads and tokenizes each reached module once per scan.
+        const closures = ModuleClosure.cache()
+        const entries: Array<FlowDescriptor> = []
+        const warnings: Array<DiscoveryWarning> = []
+
+        const realRoot = source.confinementRoot === undefined
+          ? undefined
+          : try Effect.result(fs.realPath(source.confinementRoot))
+        // An explicit confinement boundary must be provable before reading it.
+        const withinRoot = effect (location: string) => {
+          if (realRoot === undefined) return true
+          if (Result.isFailure(realRoot)) {
+            warnings.push(warning(
+              "outside_root",
+              location,
+              `Confinement root "${source.confinementRoot}" could not be resolved; refusing path "${location}"`,
+              realRoot.failure
+            ))
+            return false
+          }
+          const realLocation = try Effect.result(fs.realPath(location))
+          if (Result.isFailure(realLocation)) {
+            warnings.push(warning(
+              "outside_root",
+              location,
+              `Path "${location}" could not be resolved inside confinement root "${realRoot.success}"`,
+              realLocation.failure
+            ))
+            return false
+          }
+          const root = path.resolve(realRoot.success)
+          const candidate = path.resolve(realLocation.success)
+          if (candidate !== root && !candidate.startsWith(path.join(root, path.sep))) {
+            warnings.push(warning(
+              "outside_root",
+              location,
+              `Path "${location}" resolves outside confinement root "${realRoot.success}"`
+            ))
+            return false
+          }
+          return true
+        }
+
+        if (source.retiredRoot !== undefined && (try holdsEntry(fs, path, source.retiredRoot, 0))) {
+          warnings.push(warning("retired_root", source.retiredRoot, retiredRootMessage))
+        }
+
+        const exists = try fs.exists(source.root).pipe(
+          Effect.mapError((cause) =>
+            discoveryError({
+              code: "read_failed",
+              method: "scan",
+              path: source.root,
+              description: `could not access source root "${source.root}"`,
+              cause
+            })
+          )
+        )
+        if (!exists) {
+          if (source.optionalRoot === true) return new SourceScan({ entries, warnings })
+          return try Effect.fail(
+            discoveryError({
+              code: "root_missing",
+              method: "scan",
+              path: source.root,
+              description: `source root "${source.root}" does not exist`
+            })
+          )
+        }
+
+        const rootInfo = try fs.stat(source.root).pipe(
+          Effect.mapError((cause) =>
+            discoveryError({
+              code: "read_failed",
+              method: "scan",
+              path: source.root,
+              description: `could not inspect source root "${source.root}"`,
+              cause
+            })
+          )
+        )
+        if (rootInfo.type !== "Directory") {
+          return try Effect.fail(
+            discoveryError({
+              code: "invalid_root",
+              method: "scan",
+              path: source.root,
+              description: `source root "${source.root}" is not a directory`
+            })
+          )
+        }
+
+        if (!(try withinRoot(source.root))) {
+          return new SourceScan({ entries, warnings })
+        }
+
+        const lockfiles = source.lockfileRoot === undefined ? undefined : {
+          root: path.relative(source.root, source.lockfileRoot).split(path.sep).join("/"),
+          digest: try measureLockfiles(source.lockfileRoot).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path),
+            Effect.mapError((cause) =>
+              discoveryError({
+                code: "read_failed",
+                method: "scan",
+                path: source.lockfileRoot,
+                description: "Could not measure repository lockfiles",
+                cause
+              })
+            )
+          )
+        }
+
+        const rootEntries = try fs.readDirectory(source.root).pipe(
+          Effect.mapError((cause) =>
+            discoveryError({
+              code: "read_failed",
+              method: "scan",
+              path: source.root,
+              description: `could not read source root "${source.root}"`,
+              cause
+            })
+          )
+        )
+
+        /**
+         * Projects one selected entry file's already-read metadata into a
+         * descriptor, or into the warnings that refuse it.
+         *
+         * Reading the bytes, refusing an oversized entry, and confinement stay
+         * with the caller, so what is left here is the naming and metadata
+         * rules of the two entry kinds. Both spell the path-derived name as
+         * `Names.deriveFromPath`, so the naming rule lives in one place.
+         */
+        const projectEntry = (
+          directory: string,
+          location: string,
+          selected: (typeof entryPrecedence)[number],
+          contents: Extract<EntryMetadata, { readonly _tag: "Metadata" }>,
+          segments: ReadonlyArray<string>,
+          imports: ReadonlyArray<ModuleImport>,
+          hostImports: ReadonlyArray<string>
+        ): {
+          readonly descriptor: Option.Option<FlowDescriptor>
+          readonly warnings: ReadonlyArray<DiscoveryWarning>
+        } => {
+          const pathName = Names.deriveFromPath(segments)
+          if (selected !== "flow.ts") {
+            if (skills) {
+              const parsed = CoreMarkdown.parseSkill(contents.text)
+              if (Result.isFailure(parsed) || parsed.success.name !== path.basename(directory)) {
+                return {
+                  descriptor: Option.none(),
+                  warnings: [
+                    warning(
+                      "frontmatter_parse_error",
+                      location,
+                      Result.isFailure(parsed)
+                        ? `SKILL.md frontmatter is invalid (${parsed.failure.code})`
+                        : "SKILL.md name must equal its directory name"
+                    )
+                  ]
+                }
+              }
+            }
+            return MarkdownFlow.fromMarkdown({
+              text: contents.text,
+              contentDigest: contents.contentDigest,
+              path: location,
+              baseDirectory: directory,
+              naming: source.naming,
+              name: pathName,
+              dirBasename: path.basename(directory),
+              provenance
+            })
+          }
+
+          const projected = ModuleFlow.fromModule({
+            text: contents.text,
+            contentDigest: contents.contentDigest,
+            path: location,
+            naming: source.naming,
+            name: pathName,
+            dirBasename: path.basename(directory),
+            provenance,
+            imports,
+            hostImports
+          })
+          return { descriptor: projected.descriptor, warnings: projected.warnings }
+        }
+
+        const visit: (
+          directory: string,
+          segments: ReadonlyArray<string>,
+          directoryOrigins: Map<string, string>,
+          initialEntries?: ReadonlyArray<string>
+        ) => Effect.Effect<void> =
+          // Untraced because recursive directory traversal is a scan hot path.
+          effect (
+            directory,
+            segments,
+            directoryOrigins,
+            initialEntries
+          ) => {
+            if (segments.length > maximumTraversalDepth) {
+              warnings.push(
+                warning(
+                  "max_depth_exceeded",
+                  directory,
+                  `Directory "${directory}" exceeds the maximum discovery depth of ${maximumTraversalDepth} entry-name segments`
+                )
+              )
+              return
+            }
+
+            const directoryEntries = initialEntries === undefined
+              ? try Effect.result(fs.readDirectory(directory))
+              : Result.succeed(initialEntries)
+
+            if (Result.isFailure(directoryEntries)) {
+              warnings.push(
+                warning(
+                  "unreadable",
+                  directory,
+                  `Could not read directory "${directory}"`,
+                  directoryEntries.failure
+                )
+              )
+              return
+            }
+
+            const stats = try Effect.forEach(
+              [...directoryEntries.success].sort(),
+              (entry) =>
+                Effect.map(
+                  Effect.result(fs.stat(path.join(directory, entry))),
+                  (info) => [entry, info] as const
+                ),
+              { concurrency: statConcurrency }
+            )
+
+            const files = new Map<string, FileSystem.File.Info>()
+            const directories: Array<{
+              readonly name: string
+              readonly location: string
+              readonly identity: string
+            }> = []
+            for (const [entry, info] of stats) {
+              const location = path.join(directory, entry)
+              if (Result.isFailure(info)) {
+                warnings.push(
+                  warning("unreadable", location, `Could not inspect "${location}"`, info.failure)
+                )
+                continue
+              }
+              if (info.success.type === "File") {
+                files.set(entry, info.success)
+                continue
+              }
+              if (info.success.type !== "Directory") {
+                continue
+              }
+              if (
+                entry === "node_modules" ||
+                entry.startsWith(".") ||
+                (segments.length === 0 &&
+                  source.naming === "path" &&
+                  hostReservedRootDirectories.has(entry))
+              ) {
+                continue
+              }
+              directories.push({ name: entry, location, identity: directoryIdentity(info.success, location) })
+            }
+
+            const candidates = entryPrecedence.filter((entry) => files.has(entry) && (!skills || entry === "SKILL.md"))
+            const selected = candidates[0]
+            if (selected !== undefined && (try withinRoot(path.join(directory, selected)))) {
+              const location = path.join(directory, selected)
+              const selectedInfo = files.get(selected)!
+              if (candidates.length > 1) {
+                warnings.push(
+                  warning(
+                    "multiple_entry_files",
+                    directory,
+                    `Multiple entry files found (${candidates.join(", ")}); using ${selected}`
+                  )
+                )
+              }
+
+              if (segments.length === 0 && source.naming === "path") {
+                warnings.push(
+                  warning(
+                    "root_level_entry",
+                    location,
+                    "Path-named sources cannot contain a root-level entry"
+                  )
+                )
+              } else if (selectedInfo.size > ByteSize.bytes(entrySizeLimit)) {
+                warnings.push(
+                  warning("entry_too_large", location, oversizedEntry(location, selectedInfo.size))
+                )
+              } else {
+                const contents = try Effect.result(
+                  readMetadata(fs, location, selected === "flow.ts" ? "module" : "markdown")
+                )
+                if (Result.isFailure(contents)) {
+                  warnings.push(
+                    warning(
+                      "unreadable",
+                      location,
+                      `Could not read entry metadata from "${location}"`,
+                      contents.failure
+                    )
+                  )
+                } else if (contents.success._tag === "Oversized") {
+                  // The reported size was wrong. The bytes are the authority,
+                  // so the entry is refused with the same code and wording the
+                  // stat path uses, before anything hashes or parses them.
+                  warnings.push(
+                    warning("entry_too_large", location, oversizedEntry(location, contents.success.size))
+                  )
+                } else {
+                  const { imports, hostImports } = contents.success.source === undefined
+                    ? { imports: [], hostImports: [] }
+                    : try ModuleClosure.analyze(fs, path, location, contents.success.source, closures)
+                  const projected = projectEntry(
+                    directory,
+                    location,
+                    selected,
+                    contents.success,
+                    segments,
+                    imports,
+                    hostImports
+                  )
+                  warnings.push(...projected.warnings)
+                  Option.match(projected.descriptor, {
+                    onNone: () => undefined,
+                    onSome: (descriptor) =>
+                      entries.push(
+                        lockfiles === undefined ? descriptor : new FlowDescriptor({ ...descriptor, lockfiles })
+                      )
+                  })
+                }
+              }
+            }
+
+            for (const child of directories) {
+              if (!(try withinRoot(child.location))) continue
+              const ancestor = directoryOrigins.get(child.identity)
+              if (ancestor !== undefined) {
+                warnings.push(
+                  warning(
+                    "symlink_cycle",
+                    child.location,
+                    `Directory "${child.location}" resolves to already visited directory "${ancestor}"; skipping recursive traversal`
+                  )
+                )
+                continue
+              }
+              directoryOrigins.set(child.identity, child.location)
+              try visit(child.location, [...segments, child.name], directoryOrigins)
+            }
+          }
+
+        const rootIdentity = directoryIdentity(rootInfo, source.root)
+        try visit(
+          source.root,
+          [],
+          new Map([[rootIdentity, source.root]]),
+          rootEntries
+        )
+        entries.sort((left, right) => Number(left.path > right.path) - Number(left.path < right.path))
+        warnings.sort(compareWarnings)
+        return new SourceScan({ entries, warnings })
+      }
+    )
+  })
+
+/**
+ * Provides portable flow discovery from the current file-system and path
+ * services.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layer: Layer.Layer<Discovery, never, FileSystem.FileSystem | Path.Path> = Layer.effect(
+  Discovery,
+  effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    return make(fs, path)
+  }
+)
+
+/**
+ * Creates an empty discovery stub with optional method overrides.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeNoop = (overrides: Partial<Discovery> = {}): Discovery =>
+  Discovery.of({
+    scan: Effect.fn("Discovery.scan")(() => Effect.succeed(new SourceScan({ entries: [], warnings: [] }))),
+    ...overrides
+  })
+
+/**
+ * Provides an empty discovery stub with optional method overrides.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerNoop = (overrides: Partial<Discovery> = {}): Layer.Layer<Discovery> =>
+  Layer.succeed(Discovery)(makeNoop(overrides))

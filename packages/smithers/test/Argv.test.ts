@@ -10,7 +10,7 @@ import * as Argv from "../src/cli/Argv.ts"
 import { agentArguments, legacyArguments } from "../src/cli/Compatibility.ts"
 import { connectionOptions } from "../src/cli/ControlBridge.ts"
 import { cli } from "../src/Command.ts"
-import { executionRunId } from "../src/history/ExecutionTarget.ts"
+import { executionRunId } from "../src/history/ExecutionTarget.vibe"
 import * as Output from "../src/Output.ts"
 
 /** Every shared flag the root command advertises, with a sample spelling. */

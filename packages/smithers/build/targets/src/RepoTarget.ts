@@ -10,7 +10,7 @@
 
 import * as Schema from "effect/Schema"
 import * as Attr from "./Attr.ts"
-import * as LocalRepository from "./LocalRepository.ts"
+import * as LocalRepository from "./LocalRepository.vibe"
 import * as TargetDeclaration from "./Target.ts"
 
 /**

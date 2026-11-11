@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { defaultFrameLimit, devTools, framesOf, inspect, lines } from "../src/RunDevTools.js"
-import { type JournalRecord, traceFromJournal } from "../src/RunTrace.js"
+import { type JournalRecord, traceFromJournal } from "../src/RunTrace.vibe"
 
 /*
  * The DevTools projection is a view over the trace model: one node per span

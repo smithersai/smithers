@@ -1,0 +1,67 @@
+/** Host-local durable job handles and collection receipts; values contain no credentials. */
+import { KeyValueStore } from "effect/persistence"
+import * as Files from "./receipts.platform.ts"
+
+// Effect 4.1 enumerates original keys. Keep them atomically with each value;
+// legacy raw values remain readable through get and the value-only recovery API.
+const Receipt = Schema.Struct({ receiptVersion: Schema.Literal(1), key: Schema.String, value: Schema.String })
+const decodeReceipt = Schema.decodeUnknownOption(Schema.fromJsonString(Receipt))
+const decode: Files.Decode = (text) => {
+  const decoded = decodeReceipt(text)
+  return decoded._tag === "None" ? undefined : { key: decoded.value.key, value: decoded.value.value }
+}
+
+export effect function make(directory: string) {
+  const operation = <A>(method: string, key: string | undefined, run: () => Promise<A>) =>
+    tryPromise({
+      try: run,
+      catch: (cause) =>
+        new KeyValueStore.KeyValueStoreError({
+          method,
+          ...(key === undefined ? {} : { key }),
+          message: `Job receipt ${method} failed`,
+          cause
+        })
+    })
+  try operation("initialize", undefined, () => Files.initialize(directory))
+  return KeyValueStore.makeStringOnly({
+    get: (key) => operation("get", key, () => Files.get(directory, decode, key)),
+    set: (key, value) =>
+      Effect.uninterruptible(
+        operation("set", key, () => Files.set(directory, key, JSON.stringify({ receiptVersion: 1, key, value })))
+      ),
+    remove: (key) => Effect.uninterruptible(operation("remove", key, () => Files.remove(directory, key))),
+    clear: Effect.uninterruptible(operation("clear", undefined, () => Files.clear(directory))),
+    keys: operation("keys", undefined, () => Files.keys(directory, decode)),
+    size: operation("size", undefined, () => Files.size(directory))
+  })
+}
+
+/** All sweep hosts in this checkout share the same receipt directory. */
+export const layer = (repository: string) =>
+  Layer.effect(KeyValueStore.KeyValueStore)(make(Files.receiptsDirectory(repository)))
+
+/** Rebuild account holds before admitting work on a newly started host. */
+export const values = (repository: string) =>
+  tryPromise({
+    try: () => Files.values(Files.receiptsDirectory(repository), decode),
+    catch: (cause) =>
+      new KeyValueStore.KeyValueStoreError({ method: "values", message: "Job receipts could not be read", cause })
+  })
+
+export const Assignment = Schema.Struct({
+  key: Schema.String,
+  agent: Schema.Literals(["codex", "claude"]),
+  account: Schema.String
+})
+
+/** Reestablish parked jobs' account holds before any new reservation. */
+export effect function restoreAssignments(
+  repository: string,
+  restore: (key: string, agent: "codex" | "claude", account: string) => void
+) {
+  for (const value of try values(repository)) {
+    const assigned = Schema.decodeUnknownOption(Schema.fromJsonString(Assignment))(value)
+    if (assigned._tag === "Some") restore(assigned.value.key, assigned.value.agent, assigned.value.account)
+  }
+}

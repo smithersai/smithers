@@ -32,6 +32,8 @@ export const checkFlowTypes = (repository: string, entries: ReadonlyArray<string
     noUncheckedIndexedAccess: true,
     exactOptionalPropertyTypes: true,
     allowImportingTsExtensions: true,
+    // A workspace `.vibe` module's declaration ships beside its source as `X.d.vibe.ts` (flow-typecheck-build.mjs).
+    allowArbitraryExtensions: true,
     skipLibCheck: true,
     noEmit: true,
     types: [],

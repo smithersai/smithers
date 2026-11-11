@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { Refused } from "../src/CliError.ts"
+import { Refused } from "../src/CliError.vibe"
 import * as CloudSession from "../src/CloudSession.ts"
 
 const servers: Array<() => void> = []

@@ -41,12 +41,12 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidHostModules",
-      files: ["src/ControlSchema.ts", "src/ControlServer.ts"],
+      files: ["src/ControlSchema.vibe", "src/ControlServer.vibe"],
       because: "sdk.platform-neutral: control boundary validation uses injected HTTP services."
     },
     {
       kind: "forbidCalls",
-      files: ["src/ControlSchema.ts", "src/ControlServer.ts"],
+      files: ["src/ControlSchema.vibe", "src/ControlServer.vibe"],
       callees: ["*.runPromise", "*.runSync", "*.runFork"],
       because: "effect.boundary-only: the control boundary returns Effects to its host."
     },
@@ -69,7 +69,7 @@ const postgresInventory = Smithers.Shell.Test({
     "cd packages/smithers/control && node ../flows/database/scripts/test-matrix.mjs --maxWorkers=2 test/SqlControlRuntimePostgres.test.ts --coverage.enabled=false",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.file("test/SqlControlRuntimePostgres.test.ts"),
     Smithers.file("test/DurableStack.ts"),
     Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
@@ -96,12 +96,12 @@ const securityReview = Smithers.SecurityReview({
         "The fingerprint or mutationKey dropping principal id/kind so one principal replays another principal's receipt."
       ],
       paths: [
-        "src/ControlServer.ts",
-        "src/ControlRpcs.ts",
+        "src/ControlServer.vibe",
+        "src/ControlRpcs.vibe",
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
-        "src/ControlRuntime.ts",
-        "src/Channels.ts"
+        "src/ControlRuntime.vibe",
+        "src/Channels.vibe"
       ]
     },
     {
@@ -116,11 +116,11 @@ const securityReview = Smithers.SecurityReview({
         "answerableWait treating a caller-chosen Node digest as a HumanTask wait token so an approval for one wait answers another run's wait."
       ],
       paths: [
-        "src/ApprovalAuthority.ts",
+        "src/ApprovalAuthority.vibe",
         "src/ControlLive.ts",
-        "src/ControlRuntime.ts",
+        "src/ControlRuntime.vibe",
         "src/SqlControlRuntime.ts",
-        "src/ControlExecutor.ts"
+        "src/ControlExecutor.vibe"
       ]
     },
     {
@@ -134,7 +134,7 @@ const securityReview = Smithers.SecurityReview({
         "A reserved system flow with plannable false reaching plan or run, or a system/* id accepted from a client without the SystemFlows catalog lookup.",
         "Resume or steer waking a run outside launched scope, so a client restarts an engine-owned run the plane never admitted."
       ],
-      paths: ["src/ControlLive.ts", "src/SqlControlRuntime.ts", "src/ControlRuntime.ts", "src/SystemFlows.ts"]
+      paths: ["src/ControlLive.ts", "src/SqlControlRuntime.ts", "src/ControlRuntime.vibe", "src/SystemFlows.ts"]
     },
     {
       id: "signal-approval-bypass",
@@ -148,10 +148,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ControlLive.ts",
-        "src/ControlExecutor.ts",
+        "src/ControlExecutor.vibe",
         "src/SqlControlRuntime.ts",
-        "src/Channels.ts",
-        "src/migrations/0003_signal_commands.ts"
+        "src/Channels.vibe",
+        "src/migrations/0003_signal_commands.vibe"
       ]
     },
     {
@@ -165,7 +165,7 @@ const securityReview = Smithers.SecurityReview({
         "fingerprintHeaders accepting authorization, signature, or cookie headers so a secret reaches the durable idempotency fingerprint.",
         "scopedKey/mutationKey letting two channel names or external keys collide (missing length prefix or separator ambiguity)."
       ],
-      paths: ["src/WebhookChannel.ts", "src/Channels.ts"]
+      paths: ["src/WebhookChannel.vibe", "src/Channels.vibe"]
     },
     {
       id: "credential-confidentiality",
@@ -181,11 +181,11 @@ const securityReview = Smithers.SecurityReview({
         "SqlCredentialStore.write committing without the version compare-and-set in the same DurableWriter transaction."
       ],
       paths: [
-        "src/Credential.ts",
-        "src/CredentialCipher.ts",
+        "src/Credential.vibe",
+        "src/CredentialCipher.vibe",
         "src/WebCryptoCipher.ts",
         "src/CredentialStore.ts",
-        "src/SqlCredentialStore.ts"
+        "src/SqlCredentialStore.vibe"
       ]
     },
     {
@@ -198,7 +198,7 @@ const securityReview = Smithers.SecurityReview({
         "The /rpc/ws watch stream served without ControlAuth, or without an Origin check when a proxy injects the credential (cross-site WebSocket hijacking).",
         "ControlClient attaching the credential to a URL, query string, or log instead of only the Authorization header."
       ],
-      paths: ["src/ControlRpcs.ts", "src/ControlServer.ts", "src/ControlClient.ts"]
+      paths: ["src/ControlRpcs.vibe", "src/ControlServer.vibe", "src/ControlClient.ts"]
     },
     {
       id: "sql-parameterization",
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.literal, sql.unsafe, or string concatenation in SqlControlRuntime or the migrations carrying any value derived from ListRequest, WatchFilter, or a cursor.",
         "A column or ORDER BY fragment chosen from request text rather than from a fixed branch."
       ],
-      paths: ["src/SqlControlRuntime.ts", "src/SqlCredentialStore.ts", "src/migrations/**"]
+      paths: ["src/SqlControlRuntime.ts", "src/SqlCredentialStore.vibe", "src/migrations/**"]
     },
     {
       id: "mutation-input-bounds",
@@ -225,8 +225,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/MutationBoundary.ts",
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
-        "src/ControlExecutor.ts",
-        "src/ControlSchema.ts"
+        "src/ControlExecutor.vibe",
+        "src/ControlSchema.vibe"
       ]
     },
     {
@@ -239,7 +239,7 @@ const securityReview = Smithers.SecurityReview({
         "Health exposing a session outputTail when the binding did not set exposeOutput: true.",
         "A ControlError or Unauthorized message that echoes input values, credential ids, or tokens."
       ],
-      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.ts", "src/Monitor.ts", "src/ControlError.ts"]
+      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.vibe", "src/Monitor.vibe", "src/ControlError.vibe"]
     },
     {
       id: "jev-output-injection",
@@ -250,7 +250,7 @@ const securityReview = Smithers.SecurityReview({
         "JevSessionChecker passing more than jevStateTailCharacters, or passing the tail as instructions rather than as state data.",
         "A health report from the evaluator that changes run state, approvals, or cancellations rather than only an advisory activity label."
       ],
-      paths: ["src/JevSessionChecker.ts", "src/Health.ts", "src/Monitor.ts"]
+      paths: ["src/JevSessionChecker.vibe", "src/Health.vibe", "src/Monitor.vibe"]
     }
   ]
 })

@@ -25,7 +25,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as CiToolchain from "./CiToolchain.ts"
 import { DriftError, generateFile, resolveOutputPath, WriteFileError } from "./GeneratedFile.ts"
-import { independentGateCondition } from "./GithubWorkflow.ts"
+import { independentGateCondition } from "./GithubWorkflow.vibe"
 import * as Input from "./Input.ts"
 import * as Nix from "./Nix.ts"
 import * as PackageManager from "./PackageManager.ts"
@@ -33,7 +33,7 @@ import * as RemoteCache from "./RemoteCache.ts"
 import * as RustToolchain from "./RustToolchain.ts"
 import * as Secret from "./Secret.ts"
 import * as Target from "./Target.ts"
-import * as Verb from "./Verb.ts"
+import * as Verb from "./Verb.vibe"
 
 /**
  * How a CI workflow target treats its output file.

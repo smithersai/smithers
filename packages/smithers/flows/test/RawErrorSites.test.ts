@@ -32,15 +32,15 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
   ["engine-store/src/internal/ExecutionSnapshotRead.ts", 1, wrappedCause],
   ["engine-store/src/internal/RunDriver.ts", 1, invariantDefect],
   ["engine/src/FlowEngine/Placed.ts", 1, invariantDefect],
-  ["engine/src/PlacedAction.ts", 1, invariantDefect],
+  ["engine/src/PlacedAction.vibe", 1, invariantDefect],
   [
     "flow/src/Fault.ts",
     1,
     "a conflicting Fault registration while modules load; a programming error, never at run time"
   ],
-  ["flow/src/Flow/internal.ts", 1, "a comment naming the throw payloadSchema.make performs"],
+  ["flow/src/Flow/internal.vibe", 1, "a comment naming the throw payloadSchema.make performs"],
   ["flow/src/internal/DeclarationSite.ts", 1, "captures a stack to locate a declaration; never thrown"],
-  ["journal/src/RedactedLogger.ts", 1, "an empty Error clone that receives redacted fields; never thrown"],
+  ["journal/src/RedactedLogger.vibe", 1, "an empty Error clone that receives redacted fields; never thrown"],
   ["kernel/src/HttpClient.ts", 1, wrappedCause],
   ["kernel/src/test/HostContract.ts", 1, testSupport],
   [
@@ -64,7 +64,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number, why: string
     1,
     "replacement-network refusal immediately wrapped by attempt into a typed ProviderError"
   ],
-  ["step-cache/src/RemoteCacheStore.ts", 1, "unreachable namespace escape (KeyDigest excludes separators); a defect"],
+  ["step-cache/src/RemoteCacheStore.vibe", 1, "unreachable namespace escape (KeyDigest excludes separators); a defect"],
   ["sync/src/test/TestSocket.ts", 1, testSupport]
 ]
 
@@ -82,7 +82,7 @@ const sources = (directory: string): ReadonlyArray<string> => {
   return entries.flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$/.test(entry.name) ? [path] : []
   })
 }
 
@@ -111,7 +111,7 @@ describe("raw failure sites in the flow engine's packages", () => {
     expect(packages).toEqual(expect.arrayContaining(["database", "engine-store", "flow", "platform-node", "sync"]))
     expect(scanned.map((path) => relative(root, path).split(sep).join("/"))).toEqual(
       expect.arrayContaining([
-        "database/src/internal/PostgresSelection.ts",
+        "database/src/internal/PostgresSelection.vibe",
         "src/Runtime.ts",
         "platform-node/src/SandboxedFlow.ts"
       ])

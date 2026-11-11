@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { Kernel, make, type PluginError, type PluginInput } from "../src/index.ts"
+import { Kernel, make, type PluginError, type PluginInput } from "../src/index.vibe"
 
 const refusal = (input: PluginInput, options: Parameters<typeof Kernel.make>[2] = {}): Promise<PluginError> =>
   Effect.runPromise(Kernel.make(input, {}, options).pipe(Effect.flip))

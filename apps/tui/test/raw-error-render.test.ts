@@ -8,7 +8,7 @@ import { join } from "node:path"
  * `Failures` (`src/failures.ts`) as one sentence, with the raw text in
  * `tui.log`. The same lexical check as the app's (`RawErrorRender.test.ts`).
  *
- * The allowlist holds the sites that never reach a person, per file and by
+ * The allowlist holds the sites that never reach a person, per file (.ts, .tsx or .vibe) and by
  * count: text for the model or a plugin cell, the log itself, and a probe that
  * classifies an error without showing it. A new site fails; a file that drops
  * one fails until its entry shrinks.
@@ -30,25 +30,25 @@ const ALLOWED: Readonly<Record<string, number>> = {
   // `unreadable`: the model's refusal text for an agent body read.
   "agents.ts": 2,
   // The worker's provider error for the model; the person sees `FailureCopy`.
-  "box.ts": 2,
+  "box.vibe": 2,
   // The refusal text a publishing plugin cell reads.
   "contributions.ts": 2,
   // A plugin manifest's decode problem, for the plugin author.
   "extension.ts": 2,
   // Control-plane text kept on `FlowError.message` for the model and the log.
-  "flow-control.ts": 3,
+  "flow-control.vibe": 3,
   // A suspended flow's own question, and the run's persisted message field.
   "flows.ts": 2,
   // Cell and model-facing results.
-  "host.ts": 4,
+  "host.vibe": 4,
   // The log, including nested causes.
   "log.ts": 6,
   // `MonitorError` and `message`: the model's monitor context.
   "monitors.ts": 11,
   // Gateway history refusal: designed, redacted copy rendered by /verify-run.
-  "run-history.ts": 1,
+  "run-history.vibe": 1,
   // The model's tool errors.
-  "runtime.ts": 3,
+  "runtime.vibe": 3,
   // The model's grep tool.
   "search.ts": 2,
   // `SessionWriteFailed.message`, presented through `Failures`.
@@ -66,7 +66,7 @@ const countSites = (source: string): number => source.match(RAW_ERROR_RENDER)?.l
 const offenders = (): Record<string, number> =>
   Object.fromEntries(
     readdirSync(SOURCE)
-      .filter((name) => /\.tsx?$/.test(name))
+      .filter((name) => /\.(?:tsx?|vibe)$/.test(name))
       .map((name) => [name, countSites(readFileSync(join(SOURCE, name), "utf8"))] as const)
       .filter(([, count]) => count > 0)
       .sort(([a], [b]) => a.localeCompare(b))

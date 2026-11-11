@@ -7,9 +7,9 @@ import { Layer, Schema } from "effect"
 // literal `export default Flow.make(` without importing the file, so the flow
 // cannot also be a named const; the registration beside it reads the value
 // back through this self-import, which resolves after this module evaluates.
-import { ApplyNative, atomError as Error, EditAtom, Entry, Observe, Prepare } from "../atoms.ts"
+import { ApplyNative, atomError as Error, EditAtom, Entry, Observe, Prepare } from "../atoms.vibe"
 import { AtomicPlan, Change, CodingError, Implementation, ProjectMemory, Revision } from "../schema.ts"
-import { ReceiveFeedback, renderFeedback } from "../steering.ts"
+import { ReceiveFeedback, renderFeedback } from "../steering.vibe"
 import ImplementAtoms from "./flow.ts"
 
 const Atom = Flow.make("coding/ImplementAtom", {

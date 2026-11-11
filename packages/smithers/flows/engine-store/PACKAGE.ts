@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
   deps: [],
   // Examples are type-checked, linted and run by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/engine-store"
 })
 
@@ -222,7 +222,7 @@ const securityReview = Smithers.SecurityReview({
         "src/DurableEngineState.ts",
         "src/OwnerIdentity.ts",
         "src/internal/RunDriver.ts",
-        "src/internal/AttemptLifecycle.ts",
+        "src/internal/AttemptLifecycle.vibe",
         "src/internal/RunCoordinator.ts",
         "src/DisasterRecovery.ts"
       ]
@@ -239,8 +239,8 @@ const securityReview = Smithers.SecurityReview({
         "src/migrations/**",
         "src/internal/EngineStateSchema.ts",
         "src/internal/RunListing.ts",
-        "src/Selection.ts",
-        "src/SelectionStore.ts",
+        "src/Selection.vibe",
+        "src/SelectionStore.vibe",
         "src/internal/RetentionOps.ts",
         "src/PlanInputStore.ts",
         "src/PlanMergeStore.ts"
@@ -259,7 +259,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/ArtifactRoots.ts",
         "src/internal/ExitEncoding.ts",
-        "src/internal/ResultEnvelope.ts",
+        "src/internal/ResultEnvelope.vibe",
         "src/internal/JournalRecords.ts",
         "src/internal/CopiedRecord.ts",
         "src/internal/ExecutionSnapshotRead.ts"
@@ -275,7 +275,7 @@ const securityReview = Smithers.SecurityReview({
         "A root enumeration that skips a table or checkpoint column holding digests.",
         "Retention deleting a run that is still running, parked, or referenced by a child run."
       ],
-      paths: ["src/ArtifactGc.ts", "src/Retention.ts", "src/internal/RetentionOps.ts", "src/internal/ArtifactRoots.ts"]
+      paths: ["src/ArtifactGc.vibe", "src/Retention.ts", "src/internal/RetentionOps.ts", "src/internal/ArtifactRoots.ts"]
     },
     {
       id: "wait-token-exposure",
@@ -293,7 +293,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/ExecutionSnapshotRead.ts",
         "src/DurableEngineState.ts",
         "src/RunCatalogRead.ts",
-        "src/RunChangeFeed.ts",
+        "src/RunChangeFeed.vibe",
         "src/internal/TypedEvents.ts",
         "src/EngineStore.ts"
       ]

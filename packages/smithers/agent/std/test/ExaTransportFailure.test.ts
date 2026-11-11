@@ -4,8 +4,8 @@ import { Effect, Layer, Redacted } from "effect"
 import * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { expect, it } from "vitest"
-import * as ExaWebSearch from "../src/ExaWebSearch.ts"
-import * as WebSearch from "../src/WebSearch.ts"
+import * as ExaWebSearch from "../src/ExaWebSearch.vibe"
+import * as WebSearch from "../src/WebSearch.vibe"
 
 it("maps a transport failure without retrying or leaking details and allows a subsequent search", async () => {
   const reference = { id: "test-exa", name: "Test Exa" }

@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import { QuickJSVariant } from "../src/index.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
 
 /**
  * The separate-file build.

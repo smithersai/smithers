@@ -21,11 +21,11 @@ import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smt
 import type {} from "effect"
 import { Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
-import type * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
-import type { Control } from "../src/Control.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+import type * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
+import type { Control } from "../src/Control.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import type { ControlRuntime } from "../src/ControlRuntime.ts"
+import type { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 
 /**

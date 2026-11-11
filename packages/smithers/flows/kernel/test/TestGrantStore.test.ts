@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Capability } from "@smthrs/capability/Capability"
 import { Effect } from "effect"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as TestGrantStore from "../src/test/TestGrantStore.ts"
+import * as TestGrantStore from "../src/test/TestGrantStore.vibe"
 
 const read = new Capability({ action: "fs:read", resource: "/workspace/readme.md" })
 

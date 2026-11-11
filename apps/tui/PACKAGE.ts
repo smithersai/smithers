@@ -15,7 +15,7 @@ const cwd = "apps/tui"
 
 /** The app, its recorded fixture, and the suite beside them. */
 const sources = [
-  Smithers.glob("//apps/tui/src/**/*.ts"),
+  Smithers.glob("//apps/tui/src/**/*.{ts,vibe}"),
   Smithers.glob("//apps/tui/src/**/*.tsx"),
   Smithers.glob("//apps/tui/test/**/*"),
   Smithers.glob("//apps/tui/e2e/**/*"),
@@ -76,7 +76,7 @@ const e2eTests = Smithers.NodeTest({
  * @category lint
  */
 const lint = Smithers.EsLint({
-  sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")],
+  sources: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("src/**/*.tsx")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
   deps: [],
   maxWarnings: 0,
@@ -91,7 +91,7 @@ const lint = Smithers.EsLint({
  * @category lint
  */
 const fmt = Smithers.Dprint({
-  sources: [Smithers.glob("**/*.{ts,tsx,json,md}")],
+  sources: [Smithers.glob("**/*.{ts,tsx,vibe,json,md}")],
   config: Smithers.file("dprint.json"),
   deps: [],
   fix: false,
@@ -124,8 +124,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/approvals.ts",
-        "src/host.ts",
-        "src/flow-control.ts",
+        "src/host.vibe",
+        "src/flow-control.vibe",
         "src/monitors.ts",
         "src/workspace.ts",
         "src/run.tsx",
@@ -142,7 +142,7 @@ const securityReview = Smithers.SecurityReview({
         "`Changes.touched` returning fewer paths than an edit, write or apply_patch input writes, so a named path escapes the request list.",
         "`project` granting a literal fs:write resource without `real`, or a glob resource narrower than `/**`."
       ],
-      paths: ["src/approvals.ts", "src/changes.ts"]
+      paths: ["src/approvals.ts", "src/changes.vibe"]
     },
     {
       id: "shell-secret-redaction",
@@ -180,7 +180,7 @@ const securityReview = Smithers.SecurityReview({
         "`plan` writing any file when one path conflicts, or `commit` leaving a partial restore after a write error.",
         "A bash receipt, whose diff is repository-wide, being reversed and clobbering another worker's edits."
       ],
-      paths: ["src/undo.ts", "src/changes.ts"]
+      paths: ["src/undo.ts", "src/changes.vibe"]
     },
     {
       id: "contributed-action-authority",
@@ -193,7 +193,7 @@ const securityReview = Smithers.SecurityReview({
         "`Contributions` letting a runtime or repo owner override a built-in or plugin key, or exceed `limits`.",
         "`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call."
       ],
-      paths: ["src/extension.ts", "src/panels.ts", "src/contributions.ts", "src/app.tsx", "src/surfaces.ts"]
+      paths: ["src/extension.ts", "src/panels.vibe", "src/contributions.ts", "src/app.tsx", "src/surfaces.ts"]
     },
     {
       id: "child-process-argv",
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "src/external.ts",
         "src/clipboard.ts",
         "src/files.ts",
-        "src/changes.ts",
+        "src/changes.vibe",
         "src/subprocess.ts",
         "src/shell.ts",
         "src/search.ts"
@@ -230,7 +230,7 @@ const securityReview = Smithers.SecurityReview({
         "src/view.tsx",
         "src/app-view.tsx",
         "src/subagent-view.tsx",
-        "src/panels.ts"
+        "src/panels.vibe"
       ]
     },
     {
@@ -247,12 +247,12 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/flows.ts",
-        "src/flow-control.ts",
+        "src/flow-control.vibe",
         "src/home.ts",
-        "src/smithers.ts",
+        "src/smithers.vibe",
         "src/context.ts",
         "src/agents.ts",
-        "src/host.ts"
+        "src/host.vibe"
       ]
     },
     {
@@ -265,7 +265,7 @@ const securityReview = Smithers.SecurityReview({
         "SMITHERS_TUI_SEAT or worker seat overrides routing an Anthropic or OpenAI key to an arbitrary endpoint.",
         "`Log.write` or a toast including an Error whose message holds a request header."
       ],
-      paths: ["src/models.ts", "src/host.ts", "src/log.ts", "src/runtime.ts"]
+      paths: ["src/models.vibe", "src/host.vibe", "src/log.ts", "src/runtime.vibe"]
     }
   ]
 })

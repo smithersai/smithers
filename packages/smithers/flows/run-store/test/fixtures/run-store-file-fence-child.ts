@@ -1,10 +1,10 @@
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Clock, Effect, Layer } from "effect"
-import * as AttemptStore from "../../src/AttemptStore.ts"
-import * as Migrations from "../../src/Migrations.ts"
+import * as AttemptStore from "../../src/AttemptStore.vibe"
+import * as Migrations from "../../src/Migrations.vibe"
 import type { OwnerId } from "../../src/Ownership.ts"
-import * as RunStore from "../../src/RunStore.ts"
+import * as RunStore from "../../src/RunStore.vibe"
 
 const role = process.argv[2]
 const filename = process.argv[3]

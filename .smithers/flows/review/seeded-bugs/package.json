@@ -6,8 +6,8 @@
   "description": "Seeded-bug corpus for the review flow, its deterministic reviewing seat, and the scorer that grades them",
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
-    "test": "bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts",
-    "test:suite": "bun run.ts"
+    "test": "bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts review-implementation-scope.test.ts",
+    "test:suite": "bun run.vibe"
   },
   "dependencies": {
     "@smthrs/agent": "workspace:*",
@@ -21,13 +21,14 @@
     "@smthrs/flow": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "@effect/platform-node": "4.1.1"
+    "@effect/platform-node": "4.1.1",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "0.0.12"
+    "vibelang": "0.0.14-pre.6279f9f9fbfc"
   }
 }

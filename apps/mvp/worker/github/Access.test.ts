@@ -4,7 +4,7 @@ import { Effect, Layer, Option, Redacted } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { type Actor, Sessions } from "../Actor.ts"
+import { type Actor, Sessions } from "../Actor.vibe"
 import * as Access from "./Access.ts"
 import type { RepoRoles } from "./RepoRoles.ts"
 

@@ -1,0 +1,670 @@
+/** Repository CI runs cheap commands first and records semantic checks on exact source. */
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import type * as Evaluator from "@smthrs/model/Evaluator"
+import { Node } from "@smthrs/plan"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import { type ImmutableSourceOptions, runSourceProcess, withImmutableSource } from "../coding/immutable-source.vibe"
+import { Source } from "../coding/planning-sources.vibe"
+import { CodingError } from "../coding/schema.ts"
+import { captureCheckContext, CheckContext, contextFailure, rulePaths } from "./check-context.vibe"
+import {
+  CheckOutput,
+  CheckPlan,
+  CheckResult,
+  CheckSource,
+  Comparison,
+  DecidedBy,
+  diffPaths,
+  inconclusiveCheck,
+  refusedComparison,
+  selectedComparison,
+  SemanticVerdict
+} from "./check-results.ts"
+import { currentExecutionId } from "./inspection.vibe"
+import { jevSemanticCheck } from "./jev-checks.vibe"
+import { retainedStepError, Work } from "./jobs.vibe"
+import { canonicalDigest as canonicalSha256, contained, json, normalizePath, digest as sha256 } from "./trusted.ts"
+import { Check, Proposal, StepResult } from "./schema.vibe"
+import { admitSourcePath, withCapturedCommit } from "./source.vibe"
+
+const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+const object = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+export {
+  checkExecutionFailed,
+  checkExecutionFailure,
+  CheckOutput,
+  CheckPlan,
+  CheckResult,
+  CheckSource,
+  Comparison,
+  DecidedBy,
+  diffPaths,
+  inconclusiveCheck,
+  type RecordedCheck,
+  recordedChecks,
+  refusedComparison,
+  reviewCheck,
+  reviewCheckId,
+  selectedComparison,
+  SemanticVerdict,
+  unavailableCheck,
+  verifyTrialChecks
+} from "./check-results.ts"
+export const CaptureChecks = Action.make("repository/capture-checks", {
+  payload: { work: Work },
+  success: CheckPlan,
+  error: CodingError,
+  nondeterministic: true
+})
+export const ExecuteCommand = Action.make("repository/execute-command-check", {
+  payload: { plan: CheckPlan, check: Check },
+  success: CheckResult,
+  error: CodingError,
+  nondeterministic: true
+})
+export const RetainSemantic = Action.make("repository/retain-semantic-check", {
+  payload: {
+    plan: CheckPlan,
+    check: Check,
+    comparison: Comparison,
+    verdict: SemanticVerdict,
+    decidedBy: Schema.optionalKey(DecidedBy)
+  },
+  success: CheckResult,
+  error: CodingError
+})
+/** Jev judges the maintainer's rule one changed hunk at a time. An answer
+ * between the two thresholds is Jev deciding it is unsure, and comes back
+ * `uncertain`; an evaluation it could not make at all — a missing subscription, a
+ * refused call, a timeout, a malformed answer — fails this action with the
+ * evaluator's typed error. There is no second model behind it. */
+export const JevSemanticCheck = Action.make("repository/jev-semantic-check", {
+  payload: { check: Check, comparison: Comparison },
+  success: SemanticVerdict,
+  error: CodingError,
+  nondeterministic: true
+})
+export const CommandCheck = Flow.make("repository/CommandCheck", {
+  payload: ExecuteCommand.payloadSchema,
+  success: CheckResult,
+  error: CodingError,
+  body: (input) => ExecuteCommand.call(input)
+})
+/** Jev decides, and its verdict is the check's verdict — `uncertain`
+ * included, which `assessSemantic` records as an errored check rather than a
+ * pass. When Jev cannot answer, the flow fails with its typed error and
+ * `RunChecks` retains that as the check's error row. Nothing falls back to a
+ * frontier seat. */
+export const AICheck = Flow.make("repository/AICheck", {
+  payload: {
+    plan: CheckPlan,
+    check: Check,
+    comparison: Comparison,
+    context: CheckContext,
+    baseContext: Schema.optionalKey(CheckContext)
+  },
+  success: CheckResult,
+  error: CodingError,
+  body: (input) =>
+    JevSemanticCheck.call({ check: input.check, comparison: input.comparison }).pipe(
+      Node.bindPlanned((verdict) => RetainSemantic.call({ ...input, verdict, decidedBy: "jev" as const }))
+    )
+})
+export const RunChecks = Action.make("repository/run-checks", {
+  payload: CheckPlan,
+  success: StepResult,
+  error: CodingError
+})
+export const CheckStep = Flow.make("repository/CheckStep", {
+  payload: { work: Work },
+  success: StepResult,
+  error: CodingError,
+  body: (input) => CaptureChecks.call(input).pipe(Node.bindPlanned((plan) => RunChecks.call(plan)))
+})
+
+/** Full-file proposals alter only the private exported tree and name their exact preimages. */
+export const materializeProposal = (options: ImmutableSourceOptions, root: string, proposal: typeof Proposal.Type) =>
+  (effect {
+    const path = try Path.Path, fs = options.fs
+    const changes: Array<typeof Comparison.Type["changes"][number]> = []
+    if (new Set(proposal.map((file) => file.path)).size !== proposal.length) {
+      throw invalid("A proposal names the same path twice")
+    }
+    let bytes = 0
+    for (const file of proposal) {
+      if (
+        normalizePath(file.path) !== file.path || file.path === ".jj" || file.path.startsWith(".jj/") ||
+        file.path === ".git" || file.path.startsWith(".git/")
+      ) throw invalid("A proposal cannot alter repository metadata or escape its source tree")
+      const target = try admitSourcePath(options, root, file.path)
+      const exists = try fs.exists(target)
+      let before: string | null = null
+      if (exists) {
+        const resolved = try fs.realPath(target)
+        if (!contained(root, resolved, path) || resolved !== target) {
+          throw invalid("A proposal cannot write through a symbolic link or escape its source")
+        }
+        const stat = try fs.stat(target)
+        if (stat.type !== "File" || stat.size > 512_000n) {
+          throw invalid("A proposal needs a bounded regular source file")
+        }
+        before = try fs.readFileString(target)
+      }
+      if ((before === null ? null : sha256(before)) !== file.beforeDigest) {
+        throw invalid("The proposal preimage differs from the captured source")
+      }
+      bytes += new TextEncoder().encode((before ?? "") + (file.content ?? "")).length
+      if (bytes > 256_000) throw invalid("The proposal exceeds the bounded source review size")
+      if (file.content === null) {
+        if (!exists) throw invalid("A proposal cannot delete a missing file")
+        try fs.remove(target)
+      } else {
+        try fs.makeDirectory(path.dirname(target), { recursive: true })
+        if (!contained(root, try fs.realPath(path.dirname(target)), path)) {
+          throw invalid("The proposal directory escapes its source tree")
+        }
+        try fs.writeFileString(target, file.content)
+      }
+      changes.push({ path: file.path, before, after: file.content })
+    }
+    return changes
+  }).pipe(
+    Effect.mapError((error) =>
+      error instanceof CodingError ? error : invalid("The proposal could not be materialized on its exact source")
+    )
+  )
+
+/** A repository configures checks in workflow files, manifests and task
+ * scripts. The step probes those locations on its own immutable source, so its
+ * report never borrows the paths a triggering event happened to mention. */
+export const checkLocations = [
+  ".github/workflows",
+  "package.json",
+  "Makefile",
+  "tox.ini",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod"
+]
+export effect function probeCheckLocations(options: ImmutableSourceOptions, root: string) {
+  const path = try Path.Path, fs = options.fs
+  const searched: Array<typeof CheckSource.Type> = []
+  for (const name of checkLocations) {
+    const resolved = try fs.realPath(path.join(root, name)).pipe(Effect.orElseSucceed(() => ""))
+    searched.push({ path: name, present: resolved !== "" && contained(root, resolved, path) })
+  }
+  return searched
+}
+
+export const captureChecks = (options: ImmutableSourceOptions, work: typeof Work.Type) =>
+  (effect {
+    if (!work.checks.length) throw invalid("Configure at least one repository check before running CI")
+    if (Date.now() >= work.deadlineAt) throw invalid("The configured check deadline expired")
+    const payload = object(work.event.payload), pr = object(payload.pull_request)
+    const candidate = object(pr.head).sha ?? payload.head_commit_id ?? payload.candidateCommitId
+    const base = object(pr.base).sha ?? payload.base_commit_id ?? payload.baseCommitId
+    const isPR = work.event.type === "pull_request" || Object.keys(pr).length > 0
+    if (isPR && (typeof candidate !== "string" || typeof base !== "string")) {
+      throw invalid("A PR check requires the actual immutable base and candidate")
+    }
+    if (candidate !== undefined && candidate !== work.evidence.source.commitId) {
+      throw invalid("The workspace source is not the event's candidate revision")
+    }
+    const proposal = work.proposal ?? []
+    let comparisonBase = proposal.length
+      ? work.evidence.source.commitId
+      : typeof base === "string"
+      ? base
+      : work.evidence.source.parentCommitIds[0]
+    if (!comparisonBase || !/^[0-9a-f]{40}$/.test(comparisonBase)) {
+      throw invalid("The check needs an immutable comparison base")
+    }
+    if (isPR && !proposal.length) {
+      const mergeBase = try runSourceProcess(
+        options,
+        [
+          "jj",
+          "log",
+          "--ignore-working-copy",
+          "--no-graph",
+          "-r",
+          `heads(::commit_id("${comparisonBase}") & ::commit_id("${work.evidence.source.commitId}"))`,
+          "-T",
+          "commit_id"
+        ],
+        options.repositoryPath,
+        Math.min(30_000, work.deadlineAt - Date.now())
+      )
+      if (
+        mergeBase.exitCode !== 0 || mergeBase.stdout.truncated || !/^[0-9a-f]{40}$/.test(mergeBase.stdout.text.trim())
+      ) throw invalid("The PR has no single captured merge base")
+      comparisonBase = mergeBase.stdout.text.trim()
+    }
+    const semantic = work.checks.filter((check) => check.kind === "ai")
+    const entireDiff = proposal.length || !semantic.length
+      ? ""
+      : try (try Jj.Jj).diff(comparisonBase, work.evidence.source.commitId)
+    const paths = proposal.length
+      ? proposal.map((file) => file.path)
+      : try Effect.try({
+        try: () => diffPaths(entireDiff),
+        catch: (error) => error instanceof CodingError ? error : invalid("Invalid comparison paths")
+      })
+    const selected = new Set<string>()
+    for (const check of semantic) {
+      const scoped = try Effect.try({
+        try: () =>
+          selectedComparison({
+            base: comparisonBase,
+            candidate: work.evidence.source.commitId,
+            diff: "",
+            paths,
+            files: [],
+            changes: []
+          }, check),
+        catch: (error) => error instanceof CodingError ? error : invalid("Invalid configured scope")
+      })
+      for (const name of scoped.paths) selected.add(name)
+    }
+    // A lockfile outside the AI rule's scope must not prevent ordinary command
+    // checks. Complete diff metadata determines scope before content is bounded.
+    const diff = try orDie(Effect.try({
+      try: () =>
+        entireDiff.split(/(?=^diff --git )/m).filter((part) =>
+          part.trim() && diffPaths(part).some((path) => selected.has(path))
+        ).join(""),
+      catch: (cause) => cause
+    }))
+    if (new TextEncoder().encode(diff).length > 256_000) {
+      throw invalid("The selected comparison is too large for a complete semantic check")
+    }
+    return try withImmutableSource(options, work.evidence.source, (_tree, root) =>
+      effect {
+        const path = try Path.Path, fs = options.fs
+        const changes = proposal.length ? try materializeProposal(options, root, proposal) : []
+        const files: Array<typeof Source.Type> = [], deleted = new Set<string>()
+        let bytes = 0
+        for (const name of selected) {
+          const target = path.join(root, name)
+          if (!(try fs.exists(target))) {
+            deleted.add(name)
+            continue
+          }
+          if (!contained(root, try fs.realPath(target), path)) {
+            throw invalid("Changed source escapes the immutable tree")
+          }
+          const stat = try fs.stat(target)
+          if (stat.type !== "File" || stat.size > 32_768n) {
+            throw invalid("A changed file cannot be completely reviewed within the check source bound")
+          }
+          const text = try fs.readFileString(target)
+          bytes += new TextEncoder().encode(text).length
+          if (text.includes("\u0000") || bytes > 128_000) {
+            throw invalid("Changed source is binary or exceeds the complete review bound")
+          }
+          files.push({ path: name, text, digest: sha256(text), truncated: false })
+        }
+        const comparison = {
+          base: comparisonBase,
+          candidate: proposal.length
+            ? `${work.evidence.source.commitId}+${canonicalSha256(proposal)}` :
+            work.evidence.source.commitId,
+          diff,
+          paths,
+          files,
+          changes
+        }
+        // A rule can explicitly name a removed file outside its changed-path
+        // scope. Only actual diff/proposal paths may use historical rule evidence.
+        for (const name of new Set(semantic.flatMap((check) => rulePaths(check.rule)))) {
+          if (paths.includes(name) && !(try fs.exists(path.join(root, name)))) deleted.add(name)
+        }
+        // Each semantic check's scope on the final comparison. Every configured
+        // scope was admitted above, so this selection cannot refuse.
+        const scopes = new Map<typeof Check.Type, ReadonlyArray<string>>()
+        for (const check of semantic) {
+          scopes.set(check, try orDie(Effect.try({ try: () => selectedComparison(comparison, check).paths, catch: (cause) => cause })))
+        }
+        const scopeOf = (check: typeof Check.Type) => scopes.get(check) ?? []
+        const contexts = try Effect.forEach(semantic, (check) =>
+          captureCheckContext(options, root, {
+            source: comparison.candidate,
+            check,
+            paths: scopeOf(check).filter((name) => !deleted.has(name)),
+            ruleInputs: rulePaths(check.rule).filter((name) => !deleted.has(name)),
+            conventionPaths: scopeOf(check),
+            refusedPaths: refusedComparison(comparison, check),
+            deadlineAt: work.deadlineAt
+          }))
+        const baseChecks = semantic.filter((check) => {
+          const scoped = scopeOf(check)
+          return scoped.length &&
+            (scoped.some((name) => deleted.has(name)) || rulePaths(check.rule).some((name) => deleted.has(name)))
+        })
+        const baseContexts = baseChecks.length ?
+          try withCapturedCommit(options, comparison.base, work.evidence.source.operationId, (baseRoot) =>
+            Effect.forEach(baseChecks, (check) =>
+              captureCheckContext(options, baseRoot, {
+                source: comparison.base,
+                check,
+                paths: scopeOf(check).filter((name) => deleted.has(name)),
+                ruleInputs: rulePaths(check.rule).filter((name) =>
+                  deleted.has(name)
+                ),
+                deadlineAt: work.deadlineAt
+              }))) :
+          []
+        // Real committed deletions need the same complete preimage evidence as
+        // materialized proposals. An absent/refused historical file is not a deletion proof.
+        for (const name of selected) {
+          if (deleted.has(name)) {
+            const before = baseContexts.flatMap((context) =>
+              context.files
+            ).find((file) => file.path === name)
+            if (!before || before.truncated || (sha256(before.text)) !== before.digest) {
+              throw invalid("A deleted source has no complete captured base preimage")
+            }
+            const proposed = changes.find((change) => change.path === name)
+            if (proposed && (proposed.after !== null || proposed.before !== before.text)) {
+              throw invalid("The deleted proposal disagrees with its captured base")
+            }
+            if (!proposed) changes.push({ path: name, before: before.text, after: null })
+          }
+        }
+        return { work, comparison, contexts, baseContexts, searched: try probeCheckLocations(options, root) }
+      })
+  }).pipe(Effect.mapError((error) =>
+    error instanceof CodingError ? error : invalid("The check comparison could not be captured")
+  ))
+
+export const executeCommand = (
+  options: ImmutableSourceOptions,
+  plan: typeof CheckPlan.Type,
+  check: typeof Check.Type,
+  executionId: string
+) =>
+  (effect {
+    const remaining = plan.work.deadlineAt - Date.now()
+    if (!check.rule.trim() || remaining <= 0) {
+      throw invalid("The configured command or its time budget is missing")
+    }
+    return try withImmutableSource(options, plan.work.evidence.source, (_tree, root) =>
+      effect {
+        try materializeProposal(options, root, plan.work.proposal ?? [])
+        const measured = try runSourceProcess(
+          options,
+          ["/bin/sh", "-eu", "-c", check.rule],
+          root,
+          Math.min(remaining, 600_000)
+        )
+        return {
+          checkId: check.id,
+          policy: check.policy,
+          executionId,
+          status: measured.exitCode === 0
+            ? "passed" as const
+            : measured.exitCode === 126 || measured.exitCode === 127
+            ? "error" as const
+            : "failed" as const,
+          summary: `Exit ${measured.exitCode}`,
+          evidence: [`execution:${executionId}`, `source:${plan.comparison.candidate}`],
+          detail: json({
+            base: plan.comparison.base,
+            candidate: plan.comparison.candidate,
+            command: check.rule,
+            exitCode: measured.exitCode,
+            stdout: measured.stdout.text,
+            stderr: measured.stderr.text,
+            truncated: measured.stdout.truncated || measured.stderr.truncated
+          })
+        }
+      })
+  }).pipe(Effect.mapError((error) =>
+    error instanceof CodingError
+      ? error
+      : new CodingError({ code: "execution", message: "The configured check could not execute" })
+  ))
+
+/** Candidate and historical reads each prove their own source; helpers never
+ * substitute across trees. Only verified deletion preimages use old line numbers. */
+const comparisonContextFailure = (
+  comparison: typeof Comparison.Type,
+  checkId: string,
+  context: CheckContext | undefined,
+  baseContext?: CheckContext
+): string | undefined => {
+  if (!context) return "The AI check has no captured supporting context"
+  const deleted = comparison.paths.filter((path) =>
+    comparison.changes.some((change) => change.path === path && change.after === null && change.before !== null) &&
+    !comparison.files.some((file) => file.path === path)
+  )
+  const incomplete = contextFailure(
+    context,
+    comparison.candidate,
+    checkId,
+    comparison.paths.filter((path) => !deleted.includes(path))
+  )
+  if (incomplete) return incomplete
+  if (deleted.length && !baseContext) return "Deleted source has no captured base context"
+  if (baseContext) {
+    const missing = contextFailure(baseContext, comparison.base, checkId, deleted)
+    if (missing) return missing
+    if (
+      deleted.some((path) =>
+        baseContext.files.find((file) => file.path === path)?.text !==
+          comparison.changes.find((change) => change.path === path)?.before
+      )
+    ) return "Deleted source differs from its captured base preimage"
+  }
+  return undefined
+}
+export const assessSemantic = (
+  comparison: typeof Comparison.Type,
+  verdict: typeof SemanticVerdict.Type,
+  context?: CheckContext,
+  baseContext?: CheckContext
+) => {
+  const incomplete = context === undefined && baseContext === undefined
+    ? undefined
+    : comparisonContextFailure(comparison, context?.checkId ?? baseContext!.checkId, context, baseContext)
+  if (incomplete) return { status: "error" as const, summary: incomplete }
+  const examined = new Set(verdict.examinedPaths)
+  if (
+    verdict.verdict === "uncertain" || comparison.paths.some((path) => !examined.has(path)) ||
+    verdict.examinedPaths.some((path) => !comparison.paths.includes(path))
+  ) return { status: "error" as const, summary: inconclusiveCheck }
+  if (
+    (verdict.verdict === "pass" && verdict.findings.length) || (verdict.verdict === "fail" && !verdict.findings.length)
+  ) return { status: "error" as const, summary: "The AI verdict contradicts its recorded findings" }
+  for (const finding of verdict.findings) {
+    const file = comparison.files.find((file) => file.path === finding.path)
+    const deleted = comparison.changes.find((file) => file.path === finding.path && file.after === null)
+    if (
+      !comparison.paths.includes(finding.path) || (!file && !deleted) ||
+      finding.line > (file?.text ?? deleted?.before ?? "").split("\n").length
+    ) return { status: "error" as const, summary: "The AI check cited source outside its captured evidence" }
+  }
+  return { status: verdict.verdict === "pass" ? "passed" as const : "failed" as const, summary: verdict.summary }
+}
+
+/** A configured check that never ran is not a measured pass, so a run that
+ * measured nothing says so and names the locations this step probed. */
+export const checksSummary = (plan: typeof CheckPlan.Type, results: ReadonlyArray<typeof CheckResult.Type>): string => {
+  const blocking = results.filter((result) =>
+    result.policy === "required" && (result.status === "failed" || result.status === "error")
+  )
+  if (blocking.length) return `${blocking.length} required checks blocked`
+  const ran = results.filter((result) => result.status !== "skipped")
+  const skipped = results.filter((result) => result.status === "skipped")
+  if (ran.length) {
+    return `${ran.filter((result) => result.status === "passed").length} of ${ran.length} checks passed${
+      skipped.length ? `, ${skipped.length} skipped` : ""
+    }`
+  }
+  const kinds = [
+    ...new Set(
+      skipped.flatMap((result) =>
+        plan.work.checks.filter((check) => check.id === result.checkId).map((check) => check.kind)
+      )
+    )
+  ].sort()
+  const searched = plan.searched ?? []
+  const found = searched.filter((source) => source.present).map((source) => source.path)
+  return `No checks ran${
+    skipped.length
+      ? ` (${skipped.length} configured ${kinds.length ? `${kinds.join("/")} ` : ""}check${
+        skipped.length === 1 ? "" : "s"
+      } skipped)`
+      : ""
+  }.${
+    searched.length
+      ? ` Searched for workflow files, manifests and scripts in ${searched.map((source) => source.path).join(", ")}: ${
+        found.length ? `found ${found.join(", ")}` : "none present"
+      }.` :
+      ""
+  }`
+}
+
+/** Every composition must supply its judge. Omitting it is a type error;
+ * an offline fixture supplies an evidence-based script, never a gateway key. */
+export const checkLayers = (
+  options: ImmutableSourceOptions & { readonly evaluator: Layer.Layer<Evaluator.Evaluator> }
+) =>
+  Layer.mergeAll(
+    Interpreter.layer(CheckStep),
+    Interpreter.layer(CommandCheck),
+    Interpreter.layer(AICheck),
+    JevSemanticCheck.toLayer(({ check, comparison }) => jevSemanticCheck(comparison, check)).pipe(
+      Layer.provide(options.evaluator)
+    ),
+    CaptureChecks.toLayer(({ work }) => captureChecks(options, work)),
+    ExecuteCommand.toLayer(({ plan, check }) =>
+      currentExecutionId.pipe(Effect.flatMap((id) => executeCommand(options, plan, check, id)))
+    ),
+    RetainSemantic.toLayer(({ plan, check, comparison, verdict, decidedBy }) =>
+      effect {
+        const executionId = try currentExecutionId
+        const context = plan.contexts.find((value) => value.checkId === check.id),
+          baseContext = plan.baseContexts?.find((value) => value.checkId === check.id)
+        if (comparisonContextFailure(comparison, check.id, context, baseContext)) {
+          throw invalid("The semantic check has no complete supporting context")
+        }
+        return {
+          checkId: check.id,
+          policy: check.policy,
+          ...assessSemantic(comparison, verdict, context, baseContext),
+          executionId,
+          evidence: [`execution:${executionId}`, `source:${plan.comparison.candidate}`, `base:${plan.comparison.base}`],
+          detail: json({
+            ...verdict,
+            ...(decidedBy === undefined ? {} : { decidedBy }),
+            context,
+            ...(baseContext ? { baseContext } : {})
+          })
+        }
+      }
+    ),
+    RunChecks.toLayer((plan) =>
+      effect {
+        const runtime = try FlowRuntime.FlowRuntime, executionId = try currentExecutionId
+        const results: Array<typeof CheckResult.Type> = []
+        const ordered = [...plan.work.checks].sort((a, b) => Number(a.kind === "ai") - Number(b.kind === "ai"))
+        for (const check of ordered) {
+          const id = canonicalSha256(["repository/check/v1", executionId, plan.comparison.candidate, check])
+          const base = {
+            checkId: check.id,
+            policy: check.policy,
+            executionId: id,
+            evidence: [] as Array<string>,
+            detail: null
+          }
+          if (Date.now() >= plan.work.deadlineAt) {
+            results.push({ ...base, status: "error", summary: "The configured check deadline expired" })
+            continue
+          }
+          if (
+            check.kind === "ai" &&
+            results.some((result) =>
+              result.policy === "required" && (result.status === "error" || result.status === "failed")
+            )
+          ) {
+            results.push({ ...base, status: "skipped", summary: "An earlier required check blocked this AI check" })
+            continue
+          }
+          const comparison = try Effect.try({
+            try: () => selectedComparison(plan.comparison, check),
+            catch: (error) => error instanceof CodingError ? error : invalid("Invalid configured paths")
+          })
+          if (check.kind === "ai" && !comparison.paths.length) {
+            results.push({
+              ...base,
+              status: "skipped",
+              summary: "No changed paths match this check",
+              evidence: [`source:${plan.comparison.candidate}`]
+            })
+            continue
+          }
+          const context = plan.contexts.find((value) => value.checkId === check.id),
+            baseContext = plan.baseContexts?.find((value) => value.checkId === check.id)
+          if (check.kind === "ai") {
+            const incomplete = comparisonContextFailure(comparison, check.id, context, baseContext)
+            if (incomplete) {
+              results.push({
+                ...base,
+                status: "error",
+                summary: incomplete,
+                detail: json({ context: context ?? null, ...(baseContext ? { baseContext } : {}) }),
+                evidence: [`source:${plan.comparison.candidate}`, `base:${plan.comparison.base}`]
+              })
+              continue
+            }
+          }
+          const executed = try (check.kind === "command"
+            ? runtime.execute(CommandCheck, { executionId: id, payload: { plan, check } })
+            : runtime.execute(AICheck, {
+              executionId: id,
+              payload: { plan, check, comparison, context: context!, ...(baseContext ? { baseContext } : {}) }
+            })).pipe(
+              Effect.timeoutOrElse({
+                duration: Math.max(1, plan.work.deadlineAt - Date.now()),
+                orElse: () => Effect.fail(invalid("The check timed out"))
+              }),
+              Effect.result
+            )
+          // A check whose flow failed is an errored row, never a pass, and it
+          // carries the typed failure it stands for: an unreachable or refused
+          // evaluator is named in `detail` the way a command check that could not
+          // run names its exit code there.
+          results.push(
+            executed._tag === "Success" ?
+              executed.success
+              : {
+                ...base,
+                status: "error",
+                summary: "The check could not finish; inspect its execution",
+                evidence: [`execution:${id}`],
+                detail: retainedStepError(executed.failure)
+              }
+          )
+        }
+        const required = results.filter((result) => result.policy === "required")
+        const blocking = required.filter((result) => result.status === "failed" || result.status === "error")
+        return {
+          stepId: plan.work.step.id,
+          executionId,
+          status: blocking.length ? "error" as const : "completed" as const,
+          summary: checksSummary(plan, results),
+          evidence: [...new Set(results.flatMap((result) => result.evidence))],
+          output: json(
+            {
+              base: plan.comparison.base,
+              candidate: plan.comparison.candidate,
+              gate: blocking.length ? "blocked" : "passed",
+              results
+            } satisfies typeof CheckOutput.Type
+          )
+        }
+      }
+    )
+  )

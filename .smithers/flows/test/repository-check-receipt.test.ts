@@ -12,12 +12,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net"
 import { test, type TestContext } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { type BackendLanding, Landing } from "../coding/landing.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
+import { type BackendLanding, Landing } from "../coding/landing.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
 import { make, pinnedPolicy, RepositoryCheckReceipts, verifiedCheckStep } from "../repository/check-receipt.ts"
-import { CheckStep } from "../repository/checks.ts"
+import { CheckStep } from "../repository/checks.vibe"
 import {
   type CiPolicy,
   composeCiChecks,
@@ -25,11 +25,11 @@ import {
   readCiPolicy,
   revalidateCiPolicy
 } from "../repository/ci-policy.ts"
-import * as Delivery from "../repository/delivery.ts"
-import { finalCheckWork } from "../repository/jobs.ts"
-import { completedJob } from "../repository/receipts.ts"
-import { RepositoryRemote } from "../repository/remote.ts"
-import { StepResult } from "../repository/schema.ts"
+import * as Delivery from "../repository/delivery.vibe"
+import { finalCheckWork } from "../repository/jobs.vibe"
+import { completedJob } from "../repository/receipts.vibe"
+import { RepositoryRemote } from "../repository/remote.vibe"
+import { StepResult } from "../repository/schema.vibe"
 
 const changeId = "k".repeat(31) + "m"
 const mainCommit = "a1".repeat(20), mainTree = "a2".repeat(20)

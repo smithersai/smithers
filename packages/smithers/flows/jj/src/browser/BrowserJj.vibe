@@ -1,0 +1,148 @@
+/**
+ * Browser `Jj` layer.
+ *
+ * jj is a native binary, but jj-lib compiles to wasm32-wasip1: the
+ * `flows_jj.wasm` reactor (built by `packages/smithers/flows/jj-wasm`, shipped in this
+ * package's `wasm/` directory) exposes the six `Jj` contract operations over a
+ * tiny JSON ABI, and runs against the {@link WasiPreview1} host shim over the
+ * same virtual-filesystem slice `BrowserFileSystem` mounts on. {@link layer}
+ * wires the two together.
+ *
+ * The module is an argument, never a fetch: the page decides how the bytes
+ * arrive (bundler asset, `fetch` + `WebAssembly.compileStreaming`, cache), the
+ * same way it decides which ZenFS backend is mounted. Likewise persistence is
+ * the page's concern — with an async-mirror ZenFS mount, call the mount's
+ * `sync` after operations that must survive a reload; this layer does not own
+ * the mount.
+ *
+ * Hosts without a wasm module keep {@link layerUnsupported}: the service stays
+ * present and every operation fails `not_installed` in the error channel — an
+ * absent capability is a capability with an answer, never a missing tag.
+ *
+ * @since 0.1.0
+ */
+
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import type * as Scope from "effect/Scope"
+import { Jj } from "../Jj.vibe"
+import type { SyncFsLike } from "./WasiFs.ts"
+import { create as create$platform, fail as fail$platform } from "./BrowserJj.platform.ts"
+
+/**
+ * What the browser `Jj` layer needs to run jj in a page: the wasm reactor, and
+ * the synchronous filesystem the repository lives on.
+ *
+ * The layer never fetches the module itself — a page decides when and how to
+ * load bytes, and passing an already-compiled `WebAssembly.Module` lets it
+ * share one across layers.
+ *
+ * Read semantics, so a caller knows what it still owns: `root`, `fs`,
+ * `onStdout`, and `onStderr` are read once, when `make` is called, and
+ * replacing them on the options object afterwards changes nothing. `wasm` is
+ * read once too, but LATER — at the first operation, which is what lets a page
+ * hand over bytes it is still loading. `fs` itself stays a live service the
+ * page continues to own.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface BrowserJjOptions {
+  /**
+   * The `flows_jj.wasm` reactor, precompiled or as raw bytes. The layer never
+   * fetches; hand it the module the page already loaded.
+   */
+  readonly wasm: WebAssembly.Module | BufferSource
+  /**
+   * The synchronous filesystem the repository lives on — ZenFS's sync surface
+   * in a page, `node:fs` behind a rooted adapter in tests. The slice's
+   * namespace is the wasm module's namespace: its `"/"` is preopened as WASI
+   * `"/"`.
+   */
+  readonly fs: SyncFsLike
+  /**
+   * The jj workspace root inside the slice namespace, defaulting to `"/"`.
+   * Prefer a dedicated directory (`"/repo"`) that already exists so the
+   * repository's `.jj` does not share the mount root with unrelated state.
+   */
+  readonly root?: string
+  /** Receives anything jj-lib writes to stdout. Unset drops it. */
+  readonly onStdout?: (text: string) => void
+  /** Receives anything jj-lib writes to stderr — Rust panics arrive here. */
+  readonly onStderr?: (text: string) => void
+}
+/**
+ * Creates a `Jj` backed by a `flows_jj.wasm` module over a synchronous
+ * filesystem slice.
+ *
+ * Instantiation is lazy — the first operation pays for it — and every
+ * operation runs under a single-permit semaphore: the wasm instance is
+ * single-threaded mutable state, so concurrent fibers serialize rather than
+ * interleave inside it.
+ *
+ * A reactor that traps is discarded, not reused: its host descriptors are
+ * closed at once and the next operation instantiates a fresh one. A `Jj` from
+ * `make` has no explicit end of life beyond that; {@link layerScoped} closes
+ * the live reactor when its scope closes.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (options: BrowserJjOptions): Jj => create(options).jj
+const create = create$platform
+/**
+ * Provides the `Jj` service backed by a `flows_jj.wasm` module.
+ *
+ * The service outlives whatever consumed the layer: a reactor that is still
+ * live when the program ends keeps its host descriptors until the page does.
+ * {@link layerScoped} is the layer to use when that matters.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layer = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.succeed(Jj)(make(options))
+/**
+ * Provides the `Jj` service backed by a `flows_jj.wasm` module, and closes
+ * the live reactor's host descriptors when the layer's scope closes. Every
+ * operation after that fails in the error channel, so a service that escaped
+ * its scope answers rather than reviving a reactor nobody will close.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerScoped = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.effect(Jj)(makeScoped(options))
+/**
+ * The scoped form of {@link make}: the `Jj` is released, closing the live
+ * reactor's host descriptors, when the scope it was acquired in closes.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeScoped = (options: BrowserJjOptions): Jj!never!Scope.Scope =>
+  Effect.map(
+    Effect.acquireRelease(Effect.sync(() => create(options)), (created) => created.dispose),
+    (created) => created.jj
+  )
+const fail: typeof fail$platform = fail$platform
+/**
+ * Provides a `Jj` service whose every operation fails with `not_installed`:
+ * the layer for hosts that have no `flows_jj.wasm` to hand to {@link layer}.
+ * It is the same code the node implementation reports when the binary is
+ * absent, which keeps callers from needing a browser-specific branch.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerUnsupported: Layer.Layer<Jj> = Layer.succeed(Jj)({
+  // The commands named are the ones `layer` reports for the same operation,
+  // so a refused operation journals the same command with or without wasm.
+  snapshot: () => fail("snapshot", "jj snapshot"),
+  restore: () => fail("restore", "jj restore"),
+  diff: () => fail("diff", "jj diff"),
+  workspaceAdd: () => fail("workspaceAdd", "jj workspace add"),
+  workspaceForget: () => fail("workspaceForget", "jj workspace forget"),
+  status: () => fail("status", "jj status"),
+  root: () => fail("root", "jj root"),
+  revert: () => fail("revert", "jj revert"),
+  opRestore: () => fail("opRestore", "jj op restore")
+})

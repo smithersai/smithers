@@ -13,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
-import * as RunEventStream from "../src/cli/RunEventStream.ts"
+import * as RunEventStream from "../src/cli/RunEventStream.vibe"
 import * as ControlDatabase from "../src/internal/ControlDatabase.ts"
 import { childEnvironment } from "./support/node-child.ts"
 

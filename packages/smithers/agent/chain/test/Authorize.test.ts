@@ -2,7 +2,7 @@ import { CapabilityPattern, format, parse } from "@smthrs/capability/Capability"
 import { evaluate, Rule } from "@smthrs/capability/Permission"
 import { Effect, Layer, Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as Event from "../src/Event.ts"
+import * as Event from "../src/Event.vibe"
 // The barrel is the advertised surface: the seam's own suite reaches the
 // author claim the way a host must, not through the `./*` deep subpath.
 import { Author, AuthorDeclaration, Authorize, Catalog } from "../src/index.ts"
@@ -540,7 +540,7 @@ describe("Authorize", () => {
       mayOverlap: () => false
     }))
     try {
-      const reloaded = await import("../src/Authorize.ts")
+      const reloaded = await import("../src/Authorize.vibe")
       const verdict = await Effect.runPromise(
         Effect.flatMap(
           reloaded.Authorize,

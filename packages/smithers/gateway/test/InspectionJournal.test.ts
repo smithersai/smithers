@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { type InspectionEvent, inspectionJournal, monitorFromInspection } from "../src/InspectionJournal.ts"
+import { type InspectionEvent, inspectionJournal, monitorFromInspection } from "../src/InspectionJournal.vibe"
 const event = (seq: number, eventType: string, payload: unknown): InspectionEvent => ({
   seq,
   eventType,
@@ -53,7 +53,7 @@ describe("inspection journal adapter", () => {
 })
 
 test("forest preserves native identity, orders ties and supplies the same canonical graph", async () => {
-  const { inspectionForest } = await import("../src/InspectionJournal.ts")
+  const { inspectionForest } = await import("../src/InspectionJournal.vibe")
   const forest = inspectionForest([{ runId: "b", events: events.slice(0, 2) }, {
     runId: "a",
     events: events.slice(0, 2)
@@ -107,7 +107,7 @@ test("native checkpoint and cell-call source coordinates survive adaptation", ()
 })
 
 test("forest ordering uses native sequence when one execution records several events in a millisecond", async () => {
-  const { inspectionForest } = await import("../src/InspectionJournal.ts")
+  const { inspectionForest } = await import("../src/InspectionJournal.vibe")
   const simultaneous = events.map((e) => ({ ...e, emittedAtMs: 1000 }))
   const forest = inspectionForest([{ runId: "b", events: [...simultaneous].reverse() }, {
     runId: "a",
@@ -126,7 +126,7 @@ test("forest ordering uses native sequence when one execution records several ev
 })
 
 test("child boundaries are opt-in and never expose the root flow as a step", async () => {
-  const { monitorFromJournal } = await import("../src/RunTrace.ts")
+  const { monitorFromJournal } = await import("../src/RunTrace.vibe")
   const recorded = inspectionJournal("test", [
     event(1, "flows.engine.plan-recorded", {
       graph: {

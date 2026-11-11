@@ -14,8 +14,9 @@ those two values into `allow`, `deny`, or `ask`, and three typed failures carry
 the answer back to a caller.
 
 The package holds no state. It reads no files, opens no sockets, and enforces
-nothing. Its one runtime dependency is
-[`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs), and
+nothing. Its runtime dependencies are
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
+`vibelang-runtime`, which the modules written in VibeLang import, and
 [`effect`](https://effect.website) is a peer in the range `effect@4.1.1`.
 It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in

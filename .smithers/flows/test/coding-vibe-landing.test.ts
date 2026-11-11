@@ -14,23 +14,23 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/index.ts"
-import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.ts"
-import type { AppendObservation, AppendPreparation } from "../coding/landing-schema.ts"
-import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.ts"
-import { NativeCoding, NativeCodingError } from "../coding/native.ts"
+import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.vibe"
+import type { AppendObservation, AppendPreparation } from "../coding/landing-schema.vibe"
+import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.vibe"
+import { NativeCoding, NativeCodingError } from "../coding/native.vibe"
 import { checkInputDigest, CodingError, type Implementation, type Plan, type Revision } from "../coding/schema.ts"
-import { stackBaseLayer } from "../coding/stack.ts"
-import { landerLayer } from "../coding/vibe-lander.ts"
+import { stackBaseLayer } from "../coding/stack.vibe"
+import { landerLayer } from "../coding/vibe-lander.vibe"
 import {
   AdvanceGreenPrefix,
   backendLandingLayers,
   InstallLandVibe,
   landingLayers,
   LandVibe
-} from "../coding/vibe-landing.ts"
-import { publicationLayers } from "../coding/vibe-publication.ts"
-import type { VibeCleanup } from "../coding/vibe-schema.ts"
-import { RunCheck } from "../coding/workflow.ts"
+} from "../coding/vibe-landing.vibe"
+import { publicationLayers } from "../coding/vibe-publication.vibe"
+import type { VibeCleanup } from "../coding/vibe-schema.vibe"
+import { RunCheck } from "../coding/workflow.vibe"
 
 /** Native ID patterns: 32 letters k..z for changes, 40 hex for commits and trees. */
 const ids: Record<string, [letter: string, hex: string]> = {

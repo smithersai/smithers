@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import * as Subject from "./subject.ts"
+import * as Subject from "./subject.vibe"
 
 // Split so the repository's machine-path gate does not read a real home.
 const home = ["", "home", "will"].join("/")

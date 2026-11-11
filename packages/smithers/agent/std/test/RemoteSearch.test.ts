@@ -20,10 +20,10 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, w
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as RemoteSearch from "../src/RemoteSearch.ts"
-import type * as Search from "../src/Search.ts"
-import * as SearchConformance from "../src/SearchConformance.ts"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as RemoteSearch from "../src/RemoteSearch.vibe"
+import type * as Search from "../src/Search.vibe"
+import * as SearchConformance from "../src/SearchConformance.vibe"
 import type * as StdError from "../src/StdError.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "flows-remote-search-")))

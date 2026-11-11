@@ -22,7 +22,7 @@ const flow = flowPackage.lib
 const standard = BuildAndCheckTypeScriptPackage({
   deps: [flow, capabilityPackage.lib],
   // Examples are type-checked, linted and run by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/engine"
 })
 
@@ -37,7 +37,7 @@ const docsFiles = standard.docsFiles
 
 const dependencyPolicy = Smithers.DepsLint({
   packageJson: Smithers.file("package.json"),
-  sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")],
+  sources: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts")],
   deps: [lib],
   tool: "knip",
   ignoreDependencies: [
@@ -65,7 +65,7 @@ const engineCwd = "packages/smithers/flows/engine"
 
 /** Everything the reference writer may read: sources, README, package docs. */
 const docsSources = Smithers.Filegroup({
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.file("README.md"), Smithers.glob("docs/*.md")],
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.file("README.md"), Smithers.glob("docs/*.md")],
   cwd: engineCwd
 })
 
@@ -177,7 +177,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FlowEngine/layerMemory.ts",
         "src/FlowEngine/make.ts",
-        "src/FlowEngine/Round.ts",
+        "src/FlowEngine/Round.vibe",
         "src/FlowEngine/Trampoline.ts"
       ]
     },
@@ -191,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
         "A cache-kind key that omits the environment, declaration digest, boundary digest, implementationVersion, or nondeterministic flag it is documented to include.",
         "A WeakMap cache in ActionKey.ts that returns a digest for mutated metadata without re-checking the JSON snapshot."
       ],
-      paths: ["src/FlowEngine/ActionKey.ts", "src/FlowEngine/Dispatch.ts"]
+      paths: ["src/FlowEngine/ActionKey.vibe", "src/FlowEngine/Dispatch.ts"]
     },
     {
       id: "replay-decode-before-trust",
@@ -206,8 +206,8 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FlowEngine/make.ts",
         "src/FlowEngine/Dispatch.ts",
-        "src/FlowEngine/Encoded.ts",
-        "src/FlowEngine/SnapshotBoundary.ts"
+        "src/FlowEngine/Encoded.vibe",
+        "src/FlowEngine/SnapshotBoundary.vibe"
       ]
     },
     {

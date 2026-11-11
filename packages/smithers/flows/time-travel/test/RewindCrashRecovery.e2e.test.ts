@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import { TimeTravel } from "../src/TimeTravel.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 import { awaitCheckpoint, jjInstalled, killHard, runReal, runState, withRealFixture } from "./RealTimeTravelHarness.ts"
 
 const childFixture = fileURLToPath(new URL("./fixtures/rewind-crash-child.ts", import.meta.url))

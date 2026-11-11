@@ -1,6 +1,18 @@
-import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs"
+import { Arbitrary, Effect, Schema } from "effect"
+import {
+  type Dirent,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { join, relative as relativePath, sep } from "node:path"
 import { fileURLToPath } from "node:url"
+import { resolveSource } from "vibelang/source"
 import { describe, expect, it } from "vitest"
 
 const PACKAGES_DIR = fileURLToPath(new URL("../../../../", import.meta.url))
@@ -87,7 +99,7 @@ const withoutLiterals = (source: string): string => {
 /**
  * The file whose `console.log` is data rather than a call.
  *
- * `cellPrompt.ts` is the contract a model is taught, and the contract's worked
+ * `cellPrompt.vibe` is the contract a model is taught, and the contract's worked
  * example is JavaScript for a *different* realm: `console.log` is how a cell
  * talks to its next turn, so the example has to spell it. Models imitate the
  * example, so spelling it any other way to satisfy a text match would teach a
@@ -98,7 +110,7 @@ const withoutLiterals = (source: string): string => {
  * exact text below: editing the worked example requires updating that list,
  * with the same deliberateness the contract's own digest and token ceiling ask for.
  */
-const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.ts"
+const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.vibe"
 
 /**
  * Sandbox output is model-visible cell data, not host telemetry (OBS-1/OBS-5).
@@ -117,12 +129,14 @@ const TEACHING_LINES = [
 /**
  * The one file the guard still skips whole.
  *
- * `Sandbox.ts` teaches the same cell realm from a JSDoc block, and a comment is
+ * `Sandbox` teaches the same cell realm from a JSDoc block, and a comment is
  * not a literal, so `withoutLiterals` leaves it in place. The exception stays
  * tied to that single worked example, pinned by the test below, rather than
  * widening the pattern over comments and losing a commented-out debugging call.
  */
-const SANDBOX_TEACHING = "smithers/agent/harness/src/Sandbox.ts"
+const sandboxTeaching = resolveSource(join(PACKAGES_DIR, "smithers/agent/harness/src/Sandbox.ts"))
+if (sandboxTeaching === undefined) throw new Error("Console guard could not find the Sandbox source module")
+const SANDBOX_TEACHING = relativePath(PACKAGES_DIR, sandboxTeaching).split(sep).join("/")
 
 /**
  * Source files under every package's `src`. Walked in-process rather than
@@ -142,7 +156,9 @@ function* sourceFiles(dir: string): Generator<string> {
     if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name === "dist" || entry.name === ".git") continue
       yield* sourceFiles(path)
-    } else if (/\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+    } else if (
+      /\.(?:ts|tsx|js|jsx|mjs|cjs|vibe|vibex)$/.test(entry.name) && !/\.d\.(?:[a-z]+\.)?tsx?$/.test(entry.name)
+    ) {
       yield path
     }
   }
@@ -238,4 +254,34 @@ describe("console guard", () => {
     const scanned = packageSourceRoots().flatMap((root) => Array.from(sourceFiles(root)))
     expect(scanned.length).toBeGreaterThan(0)
   })
+})
+
+it("console source discovery covers mixed native and TypeScript package layouts", async () => {
+  const layouts = Arbitrary.schema(Schema.Struct({
+    extensions: Schema.Array(Schema.Literals(["ts", "tsx", "js", "jsx", "mjs", "cjs", "vibe", "vibex"]))
+      .check(Schema.isMinLength(1), Schema.isMaxLength(12)),
+    directory: Schema.Literals(["", "nested", "nested/deeper"])
+  }))
+  const report = await Effect.runPromise(Arbitrary.checkEffect(layouts, (layout) =>
+    Effect.sync(() => {
+      const temporary = mkdtempSync(join(tmpdir(), "console-source-layout-"))
+      try {
+        const directory = join(temporary, layout.directory)
+        mkdirSync(directory, { recursive: true })
+        const expected = layout.extensions.map((extension, index) =>
+          join(directory, "source-" + index + "." + extension)
+        )
+        for (const file of expected) writeFileSync(file, "console.log(1)\n")
+        for (const extension of ["d.ts", "d.vibe.ts", "d.vibex.ts", "json", "md"]) {
+          writeFileSync(join(directory, "not-runtime." + extension), "console.log(1)\n")
+        }
+        const scanned = Array.from(sourceFiles(temporary)).sort()
+        expect(scanned).toEqual(expected.sort())
+        for (const file of scanned) expect(CONSOLE_CALL.test(withoutLiterals(readFileSync(file, "utf8")))).toBe(true)
+        return true
+      } finally {
+        rmSync(temporary, { recursive: true, force: true })
+      }
+    }), { runs: 48, seed: 48531 }))
+  expect(Arbitrary.formatCheckFailure(report)).toBeUndefined()
 })

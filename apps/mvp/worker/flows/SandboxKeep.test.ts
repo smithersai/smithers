@@ -9,13 +9,13 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DEFAULT_IDLE_SECONDS, keepExecutionId } from "../../src/features/sandbox/contract.ts"
-import { Machines, type SleepOutcome } from "../branch/Machines.ts"
+import { Machines, type SleepOutcome } from "../branch/Machines.vibe"
 import { noCommands } from "../test/commands.ts"
-import { SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { SandboxUnavailable } from "../branch/Sandboxes.vibe"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
-import * as SandboxKeep from "./SandboxKeep.ts"
+import * as SandboxKeep from "./SandboxKeep.vibe"
 
 const runtime = testFile("sandbox_keep")
 beforeEach(() => resetBranches(runtime))

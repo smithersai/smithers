@@ -41,11 +41,11 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as CompensationHandlers from "../src/CompensationHandlers.ts"
+import * as CompensationHandlers from "../src/CompensationHandlers.vibe"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravel } from "../src/TimeTravel.ts"
-import type { TimeTravelError } from "../src/TimeTravelError.ts"
+import type { TimeTravelError } from "../src/TimeTravelError.vibe"
 import { joinDrive } from "./JoinDrive.ts"
 
 /**

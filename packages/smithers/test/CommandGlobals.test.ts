@@ -11,7 +11,7 @@
 import * as UnsupportedBackend from "@smthrs/database/UnsupportedBackend"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import * as Globals from "../src/commands/Globals.ts"
+import * as Globals from "../src/commands/Globals.vibe"
 import * as Environment from "../src/Environment.ts"
 import * as Project from "../src/Project.ts"
 

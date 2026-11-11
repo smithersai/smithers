@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { selectedSteps } from "../repository/execution.ts"
-import type { JobInput } from "../repository/schema.ts"
+import { selectedSteps } from "../repository/execution.vibe"
+import type { JobInput } from "../repository/schema.vibe"
 
 const input = (job: JobInput["job"]): Pick<JobInput, "job" | "configuration" | "event"> => ({
   job,

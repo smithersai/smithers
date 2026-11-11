@@ -1,6 +1,6 @@
 import { Effect, Metric } from "effect"
 import { describe, expect, it } from "vitest"
-import * as FlowsMetric from "../src/Metric.ts"
+import * as FlowsMetric from "../src/Metric.vibe"
 
 describe("Metric registry", () => {
   it("declares the run, seat, and quota metrics updated by producer seams", async () => {

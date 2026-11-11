@@ -812,7 +812,7 @@
     "sha256": "67a8469bbb7d06742a0b8c375f37bf8cad71f1565794f651306aad95811b8c84"
   },
   {
-    "path": ".smithers/flows/rollout/host.ts",
+    "path": ".smithers/flows/rollout/host.vibe",
     "sha256": "9bbd5ff2ce05ce9d468ac66cb8cf28c2d8943655e5d29212c7d0c77f59d1f7ab"
   },
   {
@@ -1584,7 +1584,7 @@
     "sha256": "8e536d91eaeb1707802516a20fe28a3d2c47146bfe942188d51cc4e77a1091d8"
   },
   {
-    "path": ".smithers/flows/wiki/jev-citations.ts",
+    "path": ".smithers/flows/wiki/jev-citations.vibe",
     "sha256": "f4f02a8fae72dcc43bac4288aebd75fe4e61f0016fa4a320c32fa9a517772d48"
   },
   {
@@ -1608,11 +1608,11 @@
     "sha256": "cb2eb10c4d8e88ad4dd93edd6917801884e812a7d7df00bc00053775bbb460a0"
   },
   {
-    "path": ".smithers/flows/wiki/schema.ts",
+    "path": ".smithers/flows/wiki/schema.vibe",
     "sha256": "9ce3d3927ffa81fe87f43a189c8ef08ec0b51f740484a3bc872679b09716fafb"
   },
   {
-    "path": ".smithers/flows/wiki/workflow.ts",
+    "path": ".smithers/flows/wiki/workflow.vibe",
     "sha256": "c8e6525609ad5513dae16835ade8c8ea76ced4ba25290778510acf72890958ed"
   },
   {
@@ -1620,7 +1620,7 @@
     "sha256": "34d299d6b5f49ba7884bc9d8158a804222a9c6a05894464ca63e726b5883a56e"
   },
   {
-    "path": ".smithers/flows/wrapped/launch.ts",
+    "path": ".smithers/flows/wrapped/launch.vibe",
     "sha256": "c3f68f2ef7275db607b9fc7d5e140ac70ca9408e78bd3434915c01384a1ec007"
   },
   {
@@ -1628,7 +1628,7 @@
     "sha256": "54638a568cb23f6731b6d9cbebb2b862c50e16446c41205d0d9b4b9ae1dec461"
   },
   {
-    "path": ".smithers/flows/wrapped/prompt.ts",
+    "path": ".smithers/flows/wrapped/prompt.vibe",
     "sha256": "d9e21b5fd09511252d91ea0d7bb4d836d501beba3ff3396171d712346bbd06e3"
   },
   {

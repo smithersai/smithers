@@ -5,7 +5,7 @@
 // it. A person's click or key never reaches Node, so a device's `openTab` answers for the browser.
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { framable, markdown, refusing } from "../../../worker/test/pages.ts"
 import { CHATAPI_ORIGIN, member, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { FlowDispatch } from "../../flows/dispatch"

@@ -4,6 +4,7 @@ import { Miniflare } from "miniflare"
 import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 
 const require = createRequire(import.meta.url)
 
@@ -26,7 +27,7 @@ const worker = async (): Promise<string> => {
           external: true
         }))
       }
-    }],
+    }, vibelang({ root: fileURLToPath(new URL("../..", import.meta.url)) })],
     logLevel: "silent"
   })
   return result.outputFiles[0]!.text

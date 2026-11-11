@@ -54,9 +54,9 @@ import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
-import * as ApprovalAuthority from "./ApprovalAuthority.ts"
+import * as ApprovalAuthority from "./ApprovalAuthority.vibe"
 import * as Attribution from "./Cancellation.ts"
-import type { PlanInput } from "./Control.ts"
+import type { PlanInput } from "./Control.vibe"
 import {
   AlreadyResolved,
   ClaimLost,
@@ -70,8 +70,8 @@ import {
   PlanNotFound,
   RunNotFound,
   Unauthorized
-} from "./ControlError.ts"
-import * as ControlExecutor from "./ControlExecutor.ts"
+} from "./ControlError.vibe"
+import * as ControlExecutor from "./ControlExecutor.vibe"
 import type {
   ApprovalToken,
   BulkGrant,
@@ -88,8 +88,8 @@ import type {
   SignalQuery,
   SignalReceipt,
   StoredPlan
-} from "./ControlRuntime.ts"
-import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.ts"
+} from "./ControlRuntime.vibe"
+import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.vibe"
 import {
   ApprovalTarget,
   type Cancellation,
@@ -105,8 +105,8 @@ import {
   type RunStatus,
   RunSummary,
   SignalPayload
-} from "./ControlSchema.ts"
-import * as ActiveFibers from "./internal/activeFibers.ts"
+} from "./ControlSchema.vibe"
+import * as ActiveFibers from "./internal/activeFibers.vibe"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
 import {
   accepted,
@@ -120,10 +120,10 @@ import {
   planFingerprint,
   sameEnvelope,
   signalCommandFingerprint
-} from "./internal/planning.ts"
+} from "./internal/planning.vibe"
 import { causeMessages, missingTable } from "./internal/sqlSchemaErrors.ts"
-import * as Lineage from "./Lineage.ts"
-import * as Migrations from "./Migrations.ts"
+import * as Lineage from "./Lineage.vibe"
+import * as Migrations from "./Migrations.vibe"
 import { plannable } from "./SystemFlows.ts"
 
 /**

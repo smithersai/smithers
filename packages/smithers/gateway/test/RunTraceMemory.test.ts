@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { type JournalRecord, runMemoryOf } from "../src/RunTrace.js"
+import { type JournalRecord, runMemoryOf } from "../src/RunTrace.vibe"
 
 type Verdict = readonly [id: string, p: number, kind?: string]
 

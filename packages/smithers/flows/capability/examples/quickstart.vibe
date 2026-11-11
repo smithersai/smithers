@@ -1,0 +1,87 @@
+/**
+ * The quickstart as one runnable program: parse operator text into a policy,
+ * decide requests, and turn an `ask` into a typed failure a host raises.
+ *
+ * @since 1.0.0
+ */
+import { Capability, Permission } from "@smthrs/capability"
+
+/**
+ * Reads one configured pattern into a rule, refusing text the grammar rejects
+ * instead of guessing a default. Throws an `Error` when `declared` is not a
+ * capability pattern.
+ *
+ * @param effect - The decision the rule contributes when it matches.
+ * @param declared - Operator text in `action:resource` form.
+ * @returns The rule for `declared`.
+ * @since 1.0.0
+ */
+export const ruleFor = (effect: Permission.RuleEffect, declared: string): Permission.Rule => {
+  const pattern = Capability.parsePattern(declared)
+  if (Option.isNone(pattern)) {
+    $raise(new Error(`Not a capability pattern: ${declared}`))
+  }
+  return new Permission.Rule({ effect, pattern: pattern.value })
+}
+
+/**
+ * The configured policy: read and write inside the workspace, and run one
+ * exact command.
+ *
+ * @since 1.0.0
+ */
+export const policy: ReadonlyArray<Permission.Rule> = [
+  "fs:read:/workspace/**",
+  "fs:write:/workspace/**",
+  "proc:spawn:npm install"
+].map((declared) => ruleFor("allow", declared))
+
+/**
+ * Decides each request against {@link policy} and pairs it with its text form.
+ *
+ * @param requests - Exact capabilities to decide.
+ * @returns One `[text, decision]` pair per request, in order.
+ * @since 1.0.0
+ */
+export const decide = (
+  requests: ReadonlyArray<Capability.Capability>
+): ReadonlyArray<readonly [string, Permission.RuleEffect]> =>
+  requests.map((request) => [Capability.format(request), Permission.evaluate([policy], request)] as const)
+
+/**
+ * Classifies an undecided request and builds the failure a host raises while
+ * a person answers it.
+ *
+ * @param request - The capability that evaluated to `ask`.
+ * @param requestId - The approval request this failure suspends on.
+ * @returns The failure and the one-line text an approval surface shows.
+ * @since 1.0.0
+ */
+export const suspend = (
+  request: Capability.Capability,
+  requestId: string
+): { readonly failure: Permission.PermissionRequired; readonly display: string } => {
+  const tier = Capability.tierOf(request, { workspaceRoot: "/workspace" })
+  const failure = Permission.permissionRequired({ requestId, capability: request, tier, meta: { flow: "deploy" } })
+  return { failure, display: Permission.formatError(failure) }
+}
+
+/**
+ * Decides one request under configured policy plus a session's grants. A
+ * configured `deny` stays final whatever the session later allows.
+ *
+ * @param session - Rules a session accumulated after configuration.
+ * @param request - The capability to decide.
+ * @returns The decision.
+ * @since 1.0.0
+ */
+export const decideWithSession = (
+  session: ReadonlyArray<Permission.Rule>,
+  request: Capability.Capability
+): Permission.RuleEffect =>
+  Permission.evaluate([[...policy, ruleFor("deny", "fs:write:/workspace/.git/**")], session], request)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

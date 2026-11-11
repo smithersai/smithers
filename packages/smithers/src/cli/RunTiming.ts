@@ -36,7 +36,7 @@ import {
   uniqueCallEvents
 } from "@smthrs/gateway/Diagnosis"
 import { terminalSafe } from "../internal/Failure.ts"
-import { observational } from "./RunActivity.ts"
+import { observational } from "./RunActivity.vibe"
 
 /**
  * When one model call's stream reached each stage as the harness saw it, in

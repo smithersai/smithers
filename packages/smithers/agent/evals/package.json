@@ -34,19 +34,63 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Baseline": "./src/Baseline.ts",
-    "./CaseExecutor": "./src/CaseExecutor.ts",
-    "./EvalError": "./src/EvalError.ts",
-    "./Gate": "./src/Gate.ts",
-    "./Regression": "./src/Regression.ts",
-    "./Report": "./src/Report.ts",
-    "./Runner": "./src/Runner.ts",
-    "./Suite": "./src/Suite.ts",
-    "./Trials": "./src/Trials.ts",
-    "./index": "./src/index.ts"
+    "./Baseline": {
+      "types": "./.vibe/declarations/src/Baseline.d.vibe.ts",
+      "vibelang-source": "./src/Baseline.vibe",
+      "default": "./.vibelang/js/src/Baseline.js"
+    },
+    "./CaseExecutor": {
+      "types": "./src/CaseExecutor.ts",
+      "vibelang-source": "./src/CaseExecutor.ts",
+      "default": "./.vibelang/js/src/CaseExecutor.js"
+    },
+    "./EvalError": {
+      "types": "./.vibe/declarations/src/EvalError.d.vibe.ts",
+      "vibelang-source": "./src/EvalError.vibe",
+      "default": "./.vibelang/js/src/EvalError.js"
+    },
+    "./Gate": {
+      "types": "./.vibe/declarations/src/Gate.d.vibe.ts",
+      "vibelang-source": "./src/Gate.vibe",
+      "default": "./.vibelang/js/src/Gate.js"
+    },
+    "./Regression": {
+      "types": "./.vibe/declarations/src/Regression.d.vibe.ts",
+      "vibelang-source": "./src/Regression.vibe",
+      "default": "./.vibelang/js/src/Regression.js"
+    },
+    "./Report": {
+      "types": "./src/Report.ts",
+      "vibelang-source": "./src/Report.ts",
+      "default": "./.vibelang/js/src/Report.js"
+    },
+    "./Runner": {
+      "types": "./.vibe/declarations/src/Runner.d.vibe.ts",
+      "vibelang-source": "./src/Runner.vibe",
+      "default": "./.vibelang/js/src/Runner.js"
+    },
+    "./Suite": {
+      "types": "./.vibe/declarations/src/Suite.d.vibe.ts",
+      "vibelang-source": "./src/Suite.vibe",
+      "default": "./.vibelang/js/src/Suite.js"
+    },
+    "./Trials": {
+      "types": "./src/Trials.ts",
+      "vibelang-source": "./src/Trials.ts",
+      "default": "./.vibelang/js/src/Trials.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -58,7 +102,15 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/EvalError.vibe",
+    "src/Suite.vibe",
+    ".vibelang/js",
+    "!.vibelang/js/.loader",
+    "src/Baseline.vibe",
+    "src/Regression.vibe",
+    "src/Runner.vibe",
+    "src/Gate.vibe"
   ],
   "publishConfig": {
     "access": "public",
@@ -181,7 +233,7 @@
     }
   },
   "scripts": {
-    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "lint": "eslint --no-error-on-unmatched-pattern src examples --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
@@ -192,7 +244,8 @@
   "dependencies": {
     "@smthrs/core": "1.0.0-rc.17",
     "@smthrs/scorers": "1.0.0-rc.17",
-    "devalue": "5.9.2"
+    "devalue": "5.9.2",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -213,8 +266,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

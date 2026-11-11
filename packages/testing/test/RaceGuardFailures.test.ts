@@ -8,13 +8,13 @@
  */
 import * as Effect from "effect/Effect"
 import * as Ref from "effect/Ref"
-import type { EngineSubject as Subject, FlowSpec, JournalEntryLike, StepSpec } from "../src/EngineSubject.ts"
-import * as EngineSubject from "../src/EngineSubject.ts"
-import * as MemoryEngine from "../src/MemoryEngine.ts"
-import * as Race from "../src/pins/Race.ts"
-import * as Replay from "../src/pins/Replay.ts"
-import { EngineUnavailableError } from "../src/TestingError.ts"
-import { expect, it } from "../src/Vitest.ts"
+import type { EngineSubject as Subject, FlowSpec, JournalEntryLike, StepSpec } from "../src/EngineSubject.vibe"
+import * as EngineSubject from "../src/EngineSubject.vibe"
+import * as MemoryEngine from "../src/MemoryEngine.vibe"
+import * as Race from "../src/pins/Race.vibe"
+import * as Replay from "../src/pins/Replay.vibe"
+import { EngineUnavailableError } from "../src/TestingError.vibe"
+import { expect, it } from "../src/Vitest.vibe"
 
 const failingRaceSubject: Subject = EngineSubject.make({
   name: "failing-race-subject",

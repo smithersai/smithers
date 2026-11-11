@@ -12,11 +12,11 @@
  */
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AlertPolicy from "../src/AlertPolicy.ts"
-import * as AlertRuntime from "../src/AlertRuntime.ts"
+import * as AlertPolicy from "../src/AlertPolicy.vibe"
+import * as AlertRuntime from "../src/AlertRuntime.vibe"
 import * as Alerts from "../src/Alerts.ts"
-import * as AlertSink from "../src/AlertSink.ts"
-import * as layerWebhook from "../src/layerWebhook.ts"
+import * as AlertSink from "../src/AlertSink.vibe"
+import * as layerWebhook from "../src/layerWebhook.vibe"
 
 /** The module each published name is declared in, and the only one it may come from. */
 const owners: ReadonlyArray<readonly [string, Readonly<Record<string, unknown>>, ReadonlyArray<string>]> = [

@@ -11,10 +11,10 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, onTestFinished } from "vitest"
-import * as Credential from "../src/Credential.ts"
+import * as Credential from "../src/Credential.vibe"
 import type * as CredentialStore from "../src/CredentialStore.ts"
-import * as ControlMigrations from "../src/Migrations.ts"
-import * as SqlCredentialStore from "../src/SqlCredentialStore.ts"
+import * as ControlMigrations from "../src/Migrations.vibe"
+import * as SqlCredentialStore from "../src/SqlCredentialStore.vibe"
 import * as WebCryptoCipher from "../src/WebCryptoCipher.ts"
 
 const hostKey = Redacted.make(btoa("0123456789abcdef0123456789abcdef"))

@@ -26,7 +26,7 @@ export * as BranchProtocol from "./BranchProtocol.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as BranchProjection from "./BranchProjection.ts"
+export * as BranchProjection from "./BranchProjection.vibe"
 
 /**
  * @category rpc
@@ -68,7 +68,7 @@ export * as BranchShare from "./BranchShare.ts"
  * @category services
  * @since 0.1.0
  */
-export * as WorkspaceShare from "./WorkspaceShare.ts"
+export * as WorkspaceShare from "./WorkspaceShare.vibe"
 
 /**
  * @category services
@@ -80,7 +80,7 @@ export * as SyncPrincipal from "./SyncPrincipal.ts"
  * @category rpc
  * @since 0.1.0
  */
-export * as SyncAuth from "./SyncAuth.ts"
+export * as SyncAuth from "./SyncAuth.vibe"
 
 /**
  * @category services
@@ -110,7 +110,7 @@ export * as BranchIds from "./BranchIds.ts"
  * @category protocol
  * @since 1.0.0-rc.17
  */
-export * as PresenceProtocol from "./PresenceProtocol.ts"
+export * as PresenceProtocol from "./PresenceProtocol.vibe"
 
 /**
  * @category services
@@ -128,4 +128,4 @@ export * as PresenceSocket from "./PresenceSocket.ts"
  * @category services
  * @since 1.0.0-rc.17
  */
-export * as SharedText from "./SharedText.ts"
+export * as SharedText from "./SharedText.vibe"

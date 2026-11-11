@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { withImmutableCommit, withPinnedSource } from "../coding/immutable-source.ts"
-import { nativeLayer } from "../coding/native.ts"
+import { withImmutableCommit, withPinnedSource } from "../coding/immutable-source.vibe"
+import { nativeLayer } from "../coding/native.vibe"
 
 for (
   const mode of [
@@ -179,7 +179,7 @@ for (
       mode: 0o700
     })
     const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
-    const { prepareFlowDependencies } = await import("../coding/immutable-source.ts")
+    const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
     await Effect.runPromise(
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
@@ -201,7 +201,7 @@ test("a failed pinned dependency install refuses before repository loading", asy
   await writeFile(join(temporary, "pnpm-lock.yaml"), "pinned lockfile")
   await writeFile(join(temporary, "pnpm"), "#!/bin/sh\nexit 1\n", { mode: 0o700 })
   const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
-  const { prepareFlowDependencies } = await import("../coding/immutable-source.ts")
+  const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
   let imports = 0
   const result = await Effect.runPromise(
     Effect.gen(function*() {
@@ -230,7 +230,7 @@ test("the repository host admits only its pinned TODO descriptor before loading 
   const Registry = await import("@smthrs/registry/Registry")
   const Discovery = await import("@smthrs/registry/Discovery")
   const Descriptor = await import("@smthrs/registry/Descriptor")
-  const { bindRepositoryRegistry } = await import("../repository/registry.ts")
+  const { bindRepositoryRegistry } = await import("../repository/registry.vibe")
   await Effect.runPromise(
     Effect.gen(function*() {
       const source = yield* Registry.make({
@@ -280,7 +280,7 @@ test("an installer cannot replace the approved lockfile before flow imports", as
   await writeFile(join(temporary, "pnpm-lock.yaml"), "approved lockfile")
   await writeFile(join(temporary, "pnpm"), "#!/bin/sh\nprintf changed > pnpm-lock.yaml\n", { mode: 0o700 })
   const { platform } = await import("../../../packages/smithers/src/internal/NodeControlHost.ts")
-  const { prepareFlowDependencies } = await import("../coding/immutable-source.ts")
+  const { prepareFlowDependencies } = await import("../coding/immutable-source.vibe")
   let imports = 0
   const result = await Effect.runPromise(
     Effect.gen(function*() {

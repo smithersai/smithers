@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { setImmediate, setTimeout as timerPhase } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 // Real App rendering and journal restore; host execution is outside this chrome test.

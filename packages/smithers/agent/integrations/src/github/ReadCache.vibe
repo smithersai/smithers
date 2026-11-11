@@ -4,7 +4,7 @@
 // reader and is shared by every reader of its URL, so a reader that stops waiting (its patience spent, or its own
 // deadline) still leaves GitHub's answer stored for the next.
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
-import * as Signature from "../core/Signature.ts"
+import * as Signature from "../core/Signature.vibe"
 
 /** How long a copy answers without asking GitHub. */
 export const FRESH_FOR = 30_000

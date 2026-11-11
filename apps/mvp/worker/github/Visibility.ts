@@ -1,9 +1,9 @@
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import { classify, isRateLimited, statusOf } from "./Calls.ts"
-import type { Repository } from "./Config.ts"
-import * as Metrics from "./Metrics.ts"
+import { classify, isRateLimited, statusOf } from "#vibelang/emitted/worker/github/Calls"
+import type { Repository } from "#vibelang/source/worker/github/Config"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import type { ReadToken } from "./ReadToken.ts"
 
 /** Only bounded diagnostics leave the metadata transport; no headers or provider text are logged. */

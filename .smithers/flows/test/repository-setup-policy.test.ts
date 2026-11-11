@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import type { Check } from "../repository/schema.ts"
+import type { Check } from "../repository/schema.vibe"
 import { suggestedChecks } from "../repository/setup.ts"
 
 const ai: typeof Check.Type = {

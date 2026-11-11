@@ -1,7 +1,7 @@
 import { JournalEvent } from "@smthrs/journal"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as BranchProjection from "../src/BranchProjection.ts"
+import * as BranchProjection from "../src/BranchProjection.vibe"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as TestEntry from "./fixtures/entry.ts"
 

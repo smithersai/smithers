@@ -14,10 +14,12 @@
  * argv; rc.0 publishes one package with one bin, takes no workflow-path
  * argument, and `bin/smithers.mjs` selects `dist` or `src` and nothing else.
  */
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import { spawnNodeSync } from "./support/node-child.ts"
 // @ts-expect-error the shim and its helpers are plain ESM, deliberately buildless
 import { danglingWorkspaceLinkHint } from "../bin/dangling-workspace-links.mjs"
 
@@ -34,6 +36,38 @@ afterEach(() => {
 })
 
 describe("the dangling workspace link diagnosis", () => {
+  it("keeps the repair diagnosis when a source bootstrap dependency cannot load", () => {
+    const directory = root()
+    mkdirSync(join(directory, "bin"), { recursive: true })
+    mkdirSync(join(directory, "src", "internal"), { recursive: true })
+    mkdirSync(join(directory, "node_modules", "@smthrs"), { recursive: true })
+    writeFileSync(join(directory, "package.json"), JSON.stringify({ type: "module" }))
+    for (const name of ["smithers.mjs", "dangling-workspace-links.mjs"]) {
+      cpSync(new URL(`../bin/${name}`, import.meta.url), join(directory, "bin", name))
+    }
+    cpSync(new URL("../src/bin.ts", import.meta.url), join(directory, "src", "bin.ts"))
+    cpSync(
+      new URL("../src/internal/NodeVersion.ts", import.meta.url),
+      join(directory, "src", "internal", "NodeVersion.ts")
+    )
+    symlinkSync(
+      fileURLToPath(new URL("../node_modules/vibelang", import.meta.url)),
+      join(directory, "node_modules", "vibelang"),
+      "dir"
+    )
+    symlinkSync(join(directory, "removed", "build-cli"), join(directory, "node_modules", "@smthrs", "build-cli"))
+    const result = spawnNodeSync([join(directory, "bin", "smithers.mjs"), "--help"], {
+      cwd: directory,
+      env: { ...process.env, NODE_OPTIONS: "" },
+      encoding: "utf8",
+      timeout: 30_000
+    })
+    expect(result.status, result.stderr).toBe(1)
+    expect(result.stderr).toContain("dangling workspace link")
+    expect(result.stderr).toContain("build-cli")
+    expect(result.stderr).toContain("pnpm install")
+  })
+
   it("names the broken scoped link, its dead target, and the repair", () => {
     const directory = root()
     const scope = join(directory, "node_modules", "@smthrs")

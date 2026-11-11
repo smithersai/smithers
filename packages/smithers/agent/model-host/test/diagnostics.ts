@@ -1,6 +1,6 @@
 import { Clock, Effect, Exit, Scope } from "effect"
 import { afterEach } from "vitest"
-import { createHostDiagnostics as create, type HostDiagnosticOptions } from "../src/HostDiagnostics.ts"
+import { createHostDiagnostics as create, type HostDiagnosticOptions } from "../src/HostDiagnostics.vibe"
 
 const scopes = new Set<Scope.Closeable>()
 afterEach(async () => {

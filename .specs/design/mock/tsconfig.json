@@ -11,7 +11,6 @@
     "isolatedModules": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "baseUrl": ".",
     "paths": {
       "@smthrs/ui": ["../../../packages/smithers/ui/src"],
       "react": ["../../../apps/app/node_modules/@types/react"],

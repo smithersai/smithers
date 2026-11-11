@@ -224,6 +224,8 @@ jobs:
         with:
           bun-version: 1.4.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate source declarations
+        run: pnpm exec smthrs build '//packages/repo-targets:sidecars' --verbose
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install native smithers-jj-export
         run: |

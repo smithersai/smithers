@@ -1,0 +1,12 @@
+{
+  "migratedSources": [
+    "@smthrs/jj/browser/BrowserJj",
+    "@smthrs/jj/node/NodeJj",
+    "@smthrs/jj/bun/BunJj"
+  ],
+  "browserBundleSources": [
+    "@smthrs/jj/browser/BrowserJj",
+    "@smthrs/canonical",
+    "@smthrs/capability"
+  ]
+}

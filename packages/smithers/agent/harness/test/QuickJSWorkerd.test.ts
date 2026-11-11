@@ -8,8 +8,8 @@ import { readFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import * as Cell from "../src/Cell.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as QuickJSWorkerd from "../src/QuickJSWorkerd.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as QuickJSWorkerd from "../src/QuickJSWorkerd.vibe"
+import * as Sandbox from "../src/Sandbox.vibe"
 
 /** The compiled module of the file this package's `#quickjs.wasm` import maps to. */
 const compiled = async () => {

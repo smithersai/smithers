@@ -1,8 +1,8 @@
 import { describe, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { expect } from "vitest"
-import * as Plan from "../src/Plan.ts"
-import { expectKeyGoldens, expectPlan, expectPlans, expectPure } from "../src/PlanAssertions.ts"
+import * as Plan from "../src/Plan.vibe"
+import { expectKeyGoldens, expectPlan, expectPlans, expectPure } from "../src/PlanAssertions.vibe"
 import type { PlanLike } from "../src/PlanLike.ts"
 
 // Structural unit fixture; the applied suite covers Plan.fromGraph over

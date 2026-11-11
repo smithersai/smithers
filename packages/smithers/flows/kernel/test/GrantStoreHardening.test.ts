@@ -5,7 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const safe = new Capability({ action: "fs:read", resource: "/workspace/safe.txt" })
 const other = new Capability({ action: "fs:read", resource: "/workspace/other.txt" })

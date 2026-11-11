@@ -18,7 +18,7 @@ import * as fs from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, vi } from "vitest"
-import type { RecordedCall } from "../src/Fixture.ts"
+import type { RecordedCall } from "../src/Fixture.vibe"
 import * as FixtureStore from "../src/FixtureStore.ts"
 
 // Exercise the Windows contract on every host: O_NOFOLLOW is unavailable.

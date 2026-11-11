@@ -33,7 +33,7 @@ import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schedule, Scop
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Projection from "../src/internal/EngineJournalProjection.ts"
+import * as Projection from "../src/internal/EngineJournalProjection.vibe"
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import * as Supervisor from "../src/internal/EngineJournalSupervisor.ts"
 

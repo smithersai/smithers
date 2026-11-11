@@ -14,18 +14,18 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as Notifications from "../../../packages/smithers/agent/harness/src/Notifications.ts"
+import * as Notifications from "../../../packages/smithers/agent/harness/src/Notifications.vibe"
 import * as DurableWriter from "../../../packages/smithers/flows/database/src/DurableWriter.ts"
 import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
-import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.ts"
-import * as Migrations from "../../../packages/smithers/flows/journal/src/Migrations.ts"
+import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
+import * as Migrations from "../../../packages/smithers/flows/journal/src/Migrations.vibe"
 import * as SqlJournal from "../../../packages/smithers/flows/journal/src/SqlJournal.ts"
-import type { Notification } from "../../../packages/smithers/notifications/src/Notification.ts"
-import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.ts"
-import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
-import * as LocalControl from "../../../packages/smithers/src/internal/LocalControl.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { ApplyNative, EditAtom, Entry, Observe, Prepare } from "../coding/atoms.ts"
+import type { Notification } from "../../../packages/smithers/notifications/src/Notification.vibe"
+import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.vibe"
+import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
+import * as LocalControl from "../../../packages/smithers/src/internal/LocalControl.vibe"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
+import { ApplyNative, EditAtom, Entry, Observe, Prepare } from "../coding/atoms.vibe"
 import ImplementAtoms, { atomFlows } from "../coding/implementation/flow.ts"
 import {
   declineLayer,
@@ -37,7 +37,7 @@ import {
   PreparePlan,
   ReviewRequest,
   VerifyContext
-} from "../coding/planning.ts"
+} from "../coding/planning.vibe"
 import { CodingError } from "../coding/schema.ts"
 import {
   appendFeedback,
@@ -46,8 +46,8 @@ import {
   FeedbackReceipt,
   ReceiveFeedback,
   routeMessages
-} from "../coding/steering.ts"
-import { TodoReviewInput, todoReviewLayer } from "../coding/todo.ts"
+} from "../coding/steering.vibe"
+import { TodoReviewInput, todoReviewLayer } from "../coding/todo.vibe"
 
 const controlLayer = ControlRuntime.layerMemory({
   flows: ["coding/request", "todo", "other"].map((flowId) => ({

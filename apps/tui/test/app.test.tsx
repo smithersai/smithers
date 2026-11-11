@@ -10,7 +10,7 @@ import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App, type AppProps } from "../src/app.tsx"
 import { FlowError, type Port, type Settled } from "../src/flows.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 // Headless component units: explicit Host boundary doubles and real session

@@ -1,0 +1,203 @@
+/**
+ * A model that answers from a script, for the turns a recording cannot make.
+ *
+ * Record and replay (`CachedModel`) is the default double: it answers with
+ * what a real model said. Some tests need an answer no real model gives on
+ * demand: a planner that asks a question, an edit that breaks the build once
+ * and then repairs it, a turn that waits until the test releases it. A script
+ * gives those answers on purpose. `ScriptedModel.make` runs one: each request
+ * is offered to the script, a matched request is answered with the script's
+ * text, and an unmatched one goes to `fallback`, which is usually a
+ * `CachedModel`, so scripted turns and recorded turns serve one run.
+ *
+ * A script that throws refuses the request with an `invalid_request`
+ * `ModelError` naming the reason, which `ModelServer` answers `400`.
+ *
+ * A reply may name a hold key. The turn then waits on the `TurnGate` until the
+ * test releases the key, exactly as `TurnGate.model` holds a turn.
+ *
+ * @since 1.0.0
+ */
+
+import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
+import type { ModelEvent } from "@smthrs/model/ModelEvent"
+import type { ModelRequest } from "@smthrs/model/ModelRequest"
+import { UnscriptedModelError } from "./TestingError.vibe"
+import type * as TurnGate from "./TurnGate.vibe"
+import type * as TurnLog from "./TurnLog.vibe"
+
+/**
+ * One scripted answer.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Reply {
+  /** The turn's name, which the turn log counts and traces. */
+  readonly name: string
+  /** The assistant's whole answer. */
+  readonly text: string
+  /** A key the turn waits on before it answers; see `TurnGate`. */
+  readonly hold?: string | undefined
+  /** Extra fields for this turn's trace entry. */
+  readonly detail?: Readonly<Record<string, unknown>> | undefined
+}
+
+/**
+ * A script: the reply for a request, or `undefined` when the script does not
+ * answer it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Script = (request: ModelRequest) => Reply | undefined
+
+/**
+ * One rule of a script built with {@link fromTurns}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Turn {
+  readonly name: string
+  /** Whether this turn answers the request. */
+  readonly when: (request: ModelRequest) => boolean
+  /** The assistant's answer. */
+  readonly reply: (request: ModelRequest) => string
+  /** The key the turn waits on, or `undefined` to answer at once. */
+  readonly hold?: ((request: ModelRequest) => string | undefined) | undefined
+}
+
+/**
+ * A script that answers with the first turn whose `when` holds.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const fromTurns = (turns: ReadonlyArray<Turn>): Script => (request) => {
+  const turn = turns.find((candidate) => candidate.when(request))
+  return turn === undefined ? undefined : { name: turn.name, text: turn.reply(request), hold: turn.hold?.(request) }
+}
+
+/**
+ * One message of a request as plain text: its role and every text it carries.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface TranscriptMessage {
+  readonly role: "system" | "user" | "assistant" | "tool"
+  readonly content: string
+}
+
+/**
+ * A request as the plain messages a Chat Completions client sent: one system
+ * message per system part, then each message's text, tool-call arguments and
+ * tool results joined.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const transcript = (request: ModelRequest): ReadonlyArray<TranscriptMessage> => [
+  ...request.system.map((part) => ({ role: "system" as const, content: part.text })),
+  ...request.messages.map((message) => ({
+    role: message.role,
+    content: message.content.map((part) =>
+      part.type === "tool-call"
+        ? part.arguments
+        : part.type === "tool-result"
+        ? part.content
+        : part.type === "text"
+        ? part.text
+        : ""
+    ).join("")
+  }))
+]
+
+/**
+ * What a scripted model is built from.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  readonly script: Script
+  /**
+   * Answers what the script does not. Without one, an unscripted request dies
+   * with `UnscriptedModelError`, which `ModelServer` answers `501`.
+   */
+  readonly fallback?: Model.Model | undefined
+  /** Holds a reply that names a key. A reply with a hold and no gate answers at once. */
+  readonly gate?: TurnGate.TurnGate | undefined
+  /** Records each turn when it is dispatched, before any hold. */
+  readonly log?: TurnLog.TurnLog | undefined
+  /**
+   * The usage each scripted answer reports, so a metering proxy in front of
+   * the server settles the call. 100 input and 100 output tokens by default.
+   */
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number } | undefined
+}
+
+// Typed as the events it streams: unannotated, TypeScript 7 gives `make`'s
+// generator a union of this literal-typed Stream and the fallback's, which
+// Stream.unwrap rejects (TS2379).
+const answer = (text: string, usage: NonNullable<Options["usage"]>): Stream.Stream<ModelEvent> =>
+  Stream.fromIterable([
+    { type: "text-start" as const, id: "scripted" },
+    { type: "text-delta" as const, id: "scripted", text },
+    { type: "text-end" as const, id: "scripted" },
+    { type: "settle" as const, stopReason: "stop" as const },
+    // After the settle, as OpenAI sends it: the choice-less usage chunk.
+    {
+      type: "usage" as const,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.inputTokens + usage.outputTokens
+    }
+  ])
+
+const unscripted = (request: ModelRequest) =>
+  Stream.die(
+    new UnscriptedModelError({
+      modelId: request.modelId,
+      messageCount: request.messages.length,
+      toolNames: request.tools.map((tool) => tool.name)
+    })
+  )
+
+/**
+ * Builds a model that answers from `options.script` and sends the rest to
+ * `options.fallback`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options): Model.Model => {
+  const usage = options.usage ?? { inputTokens: 100, outputTokens: 100 }
+  return Model.make({
+    ...(options.fallback?.providerName === undefined ? {} : { providerName: options.fallback.providerName }),
+    stream: (request) =>
+      Stream.unwrap(effect {
+        const reply = try Effect.try({
+          try: () => options.script(request),
+          // A script that throws refused the request: the client reads a 400 naming why.
+          catch: (error) =>
+            new ModelError({
+              code: "invalid_request",
+              message: `The script refused the request: ${error instanceof Error ? error.message : String(error)}`,
+              httpStatus: 400
+            })
+        })
+        if (options.log !== undefined) {
+          try options.log.chat(request, reply?.name ?? "unscripted", {
+            ...reply?.detail,
+            ...(reply?.hold === undefined ? {} : { hold: reply.hold })
+          })
+        }
+        if (reply === undefined) return options.fallback?.stream(request) ?? unscripted(request)
+        if (reply.hold !== undefined && options.gate !== undefined) try options.gate.hold(reply.hold)
+        return answer(reply.text, usage)
+      })
+  })
+}

@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as Host from "../../coding/host.ts"
-import { Landing } from "../../coding/landing.ts"
+import { Landing } from "../../coding/landing.vibe"
 import { makeHostJudge } from "./scripted-judge.ts"
 import { systemFlows } from "./system-flows.ts"
 

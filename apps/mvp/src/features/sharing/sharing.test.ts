@@ -6,7 +6,7 @@
 import { Effect, Layer, Logger, type ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { asPerson, failingWorker, member, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"

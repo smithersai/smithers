@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import * as ScoreStore from "../src/ScoreStore.ts"
-import * as SqlScoreStore from "../src/SqlScoreStore.ts"
+import * as ScoreStore from "../src/ScoreStore.vibe"
+import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 const injected = vi.hoisted(() => ({ affectedRows: undefined as number | undefined }))
 

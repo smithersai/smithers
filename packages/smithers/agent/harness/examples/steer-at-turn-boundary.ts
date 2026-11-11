@@ -4,7 +4,7 @@
  * followups stay for a later boundary.
  */
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 
 /** Drains a four-item queue at cutoff 10 and reports what each side holds. */
 export const steerAtTurnBoundary = (): {

@@ -40,15 +40,32 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./BunFileSystem": "./src/BunFileSystem.ts",
-    "./BunHost": "./src/BunHost.ts",
-    "./index": "./src/index.ts"
+    "./BunFileSystem": {
+      "types": "./.vibe/declarations/src/BunFileSystem.d.vibe.ts",
+      "vibelang-source": "./src/BunFileSystem.vibe",
+      "default": "./.vibelang/js/src/BunFileSystem.js"
+    },
+    "./BunHost": {
+      "types": "./src/BunHost.ts",
+      "vibelang-source": "./src/BunHost.ts",
+      "default": "./.vibelang/js/src/BunHost.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -60,7 +77,9 @@
     "dist/vendor/**",
     "docs/",
     "src/**/*.vibe",
-    "patches/electrobun@1.18.1.patch"
+    "patches/electrobun@1.18.1.patch",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -129,8 +148,8 @@
     "@types/ws": "8.18.2",
     "redis": "6.2.1",
     "undici": "8.12.4",
-    "vibelang-runtime": "0.0.12",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "@smthrs/platform-node": "1.0.0-rc.17",
@@ -162,9 +181,9 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   },
   "peerDependenciesMeta": {

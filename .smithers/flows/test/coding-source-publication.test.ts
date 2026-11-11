@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as Capability from "../../../packages/smithers/flows/capability/src/Capability.ts"
 import * as Permission from "../../../packages/smithers/flows/capability/src/Permission.ts"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import {
   NativeCoding,
   NativeCodingError,
@@ -17,9 +17,9 @@ import {
   NativeTransport,
   requestIdFor,
   type SourcePublication
-} from "../coding/native.ts"
+} from "../coding/native.vibe"
 import type { Plan } from "../coding/schema.ts"
-import { admitSource } from "../coding/source-admission.ts"
+import { admitSource } from "../coding/source-admission.vibe"
 
 const revision = {
   kind: "resolved" as const,

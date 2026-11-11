@@ -46,6 +46,7 @@ const walk = (error: unknown): IssueLeaf => {
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const schemaIssuePath = (error: unknown, fallback: string): string => walk(error).segments.join(".") || fallback
 
@@ -57,6 +58,7 @@ export const schemaIssuePath = (error: unknown, fallback: string): string => wal
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const schemaIssueMessage = (error: unknown): string | undefined => {
   const leaf = walk(error).leaf as { readonly annotations?: { readonly message?: unknown } } | null | undefined

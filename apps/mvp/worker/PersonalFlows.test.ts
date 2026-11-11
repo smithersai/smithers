@@ -10,7 +10,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { MAX_SOURCE_BYTES } from "../src/features/flows-ui/contract.ts"
 import type { DraftWrite } from "../src/features/flows-ui/schema.ts"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "./Actor.vibe"
 import * as PersonalFlows from "./PersonalFlows.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
 

@@ -1,13 +1,13 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import * as Scores from "../src/migrations/0001_scores.ts"
-import { migration as scores } from "../src/migrations/0001_scores.ts"
-import * as ScoreJobs from "../src/migrations/0002_score_jobs.ts"
-import { migration as jobs } from "../src/migrations/0002_score_jobs.ts"
-import * as ScoreFailureCodes from "../src/migrations/0003_score_failure_codes.ts"
-import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.ts"
-import * as RequireFailureCodes from "../src/migrations/0004_require_failure_codes.ts"
-import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.ts"
+import * as Scores from "../src/migrations/0001_scores.vibe"
+import { migration as scores } from "../src/migrations/0001_scores.vibe"
+import * as ScoreJobs from "../src/migrations/0002_score_jobs.vibe"
+import { migration as jobs } from "../src/migrations/0002_score_jobs.vibe"
+import * as ScoreFailureCodes from "../src/migrations/0003_score_failure_codes.vibe"
+import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.vibe"
+import * as RequireFailureCodes from "../src/migrations/0004_require_failure_codes.vibe"
+import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.vibe"
 
 // `scripts/build.mjs` converts every module to CommonJS with esbuild under
 // `"type": "module"`, and esbuild then reads a default import of a sibling as

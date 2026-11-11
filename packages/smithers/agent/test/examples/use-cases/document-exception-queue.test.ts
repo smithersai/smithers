@@ -15,8 +15,8 @@ import {
   DocumentExceptionQueue,
   layer,
   reviewTask
-} from "../../../examples/use-cases/document-exception-queue.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+} from "../../../examples/use-cases/document-exception-queue.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "document-exception-queue-"))
 

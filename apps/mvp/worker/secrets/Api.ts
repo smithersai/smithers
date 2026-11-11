@@ -14,13 +14,13 @@ import {
   SECRETS_TABLE,
   writeExecutionId,
 } from "../../src/features/secrets/contract.ts"
-import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import { type Actor, canAsk, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as Flows from "#vibelang/emitted/worker/Flows"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { SecretKeys } from "./Keys.ts"
-import * as SecretFlows from "./SecretFlows.ts"
+import * as SecretFlows from "#vibelang/emitted/worker/secrets/SecretFlows"
 
 // The secrets routes (decision 0005 §4, docs/features/secrets.md#routes). Values are write-only: no route answers one.
 //

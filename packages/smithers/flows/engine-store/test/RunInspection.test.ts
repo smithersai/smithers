@@ -24,7 +24,7 @@ import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
-import * as RunInspection from "../src/RunInspection.ts"
+import * as RunInspection from "../src/RunInspection.vibe"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import { withCrypto } from "./Sha256.ts"
 

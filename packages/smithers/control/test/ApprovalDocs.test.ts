@@ -8,7 +8,7 @@ describe("approval documentation", () => {
     [
       "runtime adapter",
       () =>
-        read("src/ControlRuntime.ts").split("Execution-engine operations required")[1]!.split(
+        read("src/ControlRuntime.vibe").split("Execution-engine operations required")[1]!.split(
           "export interface Service"
         )[0]!
     ],

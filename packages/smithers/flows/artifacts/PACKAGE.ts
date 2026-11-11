@@ -5,9 +5,11 @@ import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
+  entry: Input.file("src/index.vibe"),
   cwd: "packages/smithers/flows/artifacts"
 })
 
@@ -40,9 +42,9 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/FileSystemArtifactStore.ts",
-        "src/RemoteArtifacts.ts",
+        "src/RemoteArtifacts.vibe",
         "src/CombinedArtifacts.ts",
-        "src/measureBytes.ts"
+        "src/measureBytes.vibe"
       ]
     },
     {
@@ -56,10 +58,10 @@ const securityReview = Smithers.SecurityReview({
         "findMissing or remove accepting a digest list without validating each entry."
       ],
       paths: [
-        "src/validateDigest.ts",
+        "src/validateDigest.vibe",
         "src/FileSystemArtifactStore.ts",
         "src/ArtifactSweep.ts",
-        "src/RemoteArtifacts.ts",
+        "src/RemoteArtifacts.vibe",
         "src/internal/ArtifactLocks.ts"
       ]
     },
@@ -76,7 +78,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FileSystemArtifactStore.ts",
         "src/ArtifactSweep.ts",
-        "src/internal/ArtifactPath.ts",
+        "src/internal/ArtifactPath.vibe",
         "src/internal/ArtifactLocks.ts"
       ]
     },
@@ -90,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "sweepOrphanedTemps removing an entry younger than staleScratchMs or whose mtime is unknown.",
         "remove deleting without the ifUnmodifiedSinceMs fence or without ArtifactBackupLease.unlessActive under required coordination."
       ],
-      paths: ["src/ArtifactSweep.ts", "src/FileSystemArtifactStore.ts", "src/ArtifactBackupLease.ts"]
+      paths: ["src/ArtifactSweep.ts", "src/FileSystemArtifactStore.ts", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "lease-ownership",
@@ -102,7 +104,7 @@ const securityReview = Smithers.SecurityReview({
         "reclaim renaming a lock without winning the wx claim file and re-reading the same stale generation.",
         "A lock or claim path derived from unsanitized owner text."
       ],
-      paths: ["src/FileLease.ts", "src/internal/ArtifactLocks.ts", "src/ArtifactBackupLease.ts"]
+      paths: ["src/FileLease.ts", "src/internal/ArtifactLocks.ts", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "remote-endpoint-credentials",
@@ -116,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A header value with CR or LF accepted at construction.",
         "A request sent through the ambient HttpClient without refusing 3xx, so a cache redirect to another origin or to http: replays the configured credential headers there."
       ],
-      paths: ["src/RemoteArtifacts.ts", "src/CombinedArtifacts.ts"]
+      paths: ["src/RemoteArtifacts.vibe", "src/CombinedArtifacts.ts"]
     },
     {
       id: "remote-response-bounds",
@@ -129,7 +131,7 @@ const securityReview = Smithers.SecurityReview({
         "findMissing returning a digest that was not in the requested batch.",
         "A 308 Range answer that can move the chunked upload offset backwards or loop forever."
       ],
-      paths: ["src/RemoteArtifacts.ts"]
+      paths: ["src/RemoteArtifacts.vibe"]
     },
     {
       id: "docs-credential-hygiene",

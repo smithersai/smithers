@@ -3,7 +3,7 @@
  *
  * A plan records each check's execution identity on the lane that planned it,
  * and `coding/verify` compares it with the identity on whichever lane runs the
- * check (.smithers/flows/coding/catalog.ts). Lanes never share a root, so the identity
+ * check (.smithers/flows/coding/catalog.vibe). Lanes never share a root, so the identity
  * must follow content and the layout within the root, and nothing else.
  *
  * Replay a counterexample with FC_SEED=<seed>; widen with FC_NUM_RUNS.

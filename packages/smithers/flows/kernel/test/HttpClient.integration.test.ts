@@ -10,7 +10,7 @@ import { Buffer } from "node:buffer"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import * as GrantStore from "../src/GrantStore.ts"
 import * as HttpClient from "../src/HttpClient.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 interface RunningServer {
   readonly host: string

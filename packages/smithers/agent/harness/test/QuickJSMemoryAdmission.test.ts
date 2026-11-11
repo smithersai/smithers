@@ -4,8 +4,8 @@ import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as QuickJSVariant from "../src/QuickJSVariant.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as QuickJSVariant from "../src/QuickJSVariant.vibe"
+import * as Sandbox from "../src/Sandbox.vibe"
 
 const succeeds: Sandbox.Handler = () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
 

@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Grep from "../src/Grep.ts"
-import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Grep from "../src/Grep.vibe"
+import * as NativeSearch from "../src/NativeSearch.vibe"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as Search from "../src/Search.vibe"
 
 describe("optional search symbol source read", () => {
   it.each(["portable", "native"] as const)(

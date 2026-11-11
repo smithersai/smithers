@@ -7,7 +7,7 @@ import * as Model from "@smthrs/model/Model"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Result, Schema, Scope, Stream } from "effect"
 import { expect, it } from "vitest"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as Safety from "./Safety.ts"
 
 const flow = Flow.make("agent/test/cell-call-admission", {

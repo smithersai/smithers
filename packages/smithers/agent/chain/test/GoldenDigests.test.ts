@@ -1,10 +1,10 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AuthorDeclaration from "../src/AuthorDeclaration.ts"
-import * as Catalog from "../src/Catalog.ts"
-import * as Event from "../src/Event.ts"
-import * as Script from "../src/Script.ts"
-import * as SubChains from "../src/SubChains.ts"
+import * as Catalog from "../src/Catalog.vibe"
+import * as Event from "../src/Event.vibe"
+import * as Script from "../src/Script.vibe"
+import * as SubChains from "../src/SubChains.vibe"
 
 // READ BEFORE CHANGING A VALUE HERE.
 //

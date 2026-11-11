@@ -8,9 +8,9 @@
  */
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as AnthropicMessages from "../src/AnthropicMessages.ts"
-import { isContextOverflow, isQuotaExhausted, isTerminalRefusal, ModelError } from "../src/ModelError.ts"
-import * as OpenAIResponses from "../src/OpenAIResponses.ts"
+import * as AnthropicMessages from "../src/AnthropicMessages.vibe"
+import { isContextOverflow, isQuotaExhausted, isTerminalRefusal, ModelError } from "../src/ModelError.vibe"
+import * as OpenAIResponses from "../src/OpenAIResponses.vibe"
 
 describe("isContextOverflow", () => {
   it("recognizes the overflow vocabulary the shipping providers actually use", () => {

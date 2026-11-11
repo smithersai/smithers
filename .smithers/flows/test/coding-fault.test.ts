@@ -4,16 +4,16 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { StackRefused } from "../coding/outside-stack.ts"
+import { StackRefused } from "../coding/outside-stack.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { DocsImportError } from "../memory/deps.ts"
+import { DocsImportError } from "../memory/deps.vibe"
 
 const flows = fileURLToPath(new URL("..", import.meta.url))
 const sources = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? ["node_modules", "test"].includes(entry.name) ? [] : sources(join(directory, entry.name))
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")
+      : /\.(?:ts|vibe)$/.test(entry.name) && !/\.(?:test|d)\.(?:ts|vibe)$/.test(entry.name)
       ? [join(directory, entry.name)]
       : []
   )

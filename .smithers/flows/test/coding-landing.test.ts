@@ -4,8 +4,8 @@ import { TestClock } from "effect/testing"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"
-import type { AppendObservation, AppendPreparation, QueuedAppend } from "../coding/landing-schema.ts"
-import { make, type Options } from "../coding/landing.ts"
+import type { AppendObservation, AppendPreparation, QueuedAppend } from "../coding/landing-schema.vibe"
+import { make, type Options } from "../coding/landing.vibe"
 
 const options: Options = {
   apiBaseUrl: "https://api.example.test/api",

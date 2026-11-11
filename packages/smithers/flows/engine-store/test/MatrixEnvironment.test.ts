@@ -1,5 +1,6 @@
 /** The canonical matrix keeps its existing inputs and declares an optional real PostgreSQL connection. */
 import { spawnSync } from "node:child_process"
+import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
@@ -43,7 +44,13 @@ console.log("matrix environment qualified")
 `
 
 const check = (url?: string, name = "SMITHERS_TEST_PG_URL") =>
-  spawnSync(process.execPath, ["--input-type=module", "--import=vibelang/register", "-e", probe], {
+  spawnSync(process.execPath, [
+    "--import",
+    createRequire(import.meta.url).resolve("vibelang/register"),
+    "--input-type=module",
+    "-e",
+    probe
+  ], {
     cwd: root,
     encoding: "utf8",
     timeout: 20_000,

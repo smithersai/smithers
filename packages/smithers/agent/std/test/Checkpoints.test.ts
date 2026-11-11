@@ -12,10 +12,10 @@ import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import * as Checkpoints from "../src/Checkpoints.ts"
-import * as Container from "../src/Container.ts"
-import { GitWorktree } from "../src/internal/GitWorktree.ts"
-import * as Relocate from "../src/Relocate.ts"
+import * as Checkpoints from "../src/Checkpoints.vibe"
+import * as Container from "../src/Container.vibe"
+import { GitWorktree } from "../src/internal/GitWorktree.vibe"
+import * as Relocate from "../src/Relocate.vibe"
 
 interface Response {
   readonly stdout?: string

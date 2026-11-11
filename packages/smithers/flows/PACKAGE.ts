@@ -15,7 +15,7 @@ const cwd = "packages/smithers/flows"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd,
-  testSources: Smithers.glob("{test,examples}/**/*.ts"),
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
   // The example projects examples 16 and 24 discover flows in read their
   // markdown descriptors off disk at run time.
   testData: ["examples/**/*.mdx"]
@@ -90,7 +90,7 @@ const securityReview = Smithers.SecurityReview({
         "examples/19-cancel-and-child-cleanup.ts",
         "examples/37-host-containment.ts",
         "examples/37-host-containment-host.ts",
-        "examples/40-sandbox-placement.ts",
+        "examples/40-sandbox-placement.vibe",
         "examples/41-sandboxed-flow.ts",
         "examples/sandboxed-child.ts"
       ]
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "decodeURIComponent or JSON.parse on request input with no try/catch in a request or line handler.",
         "A PUT /ac/{key} accepted without a body size limit."
       ],
-      paths: ["examples/35-remote-cache.ts", "examples/10-telemetry-export.ts"]
+      paths: ["examples/35-remote-cache.vibe", "examples/35-remote-cache.platform.ts", "examples/10-telemetry-export.vibe"]
     },
     {
       id: "example-agent-prompt-payload",
@@ -116,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
         "A scripted model that splices prompt text into plan code without JSON.stringify.",
         "Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider."
       ],
-      paths: ["examples/33-delegation-trellis.ts"]
+      paths: ["examples/33-delegation-trellis.vibe"]
     },
     {
       id: "runtime-guarded-layering",
@@ -127,7 +127,7 @@ const securityReview = Smithers.SecurityReview({
         "privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.",
         "Caller-supplied options read after validate returns, so a caller can change them after construction."
       ],
-      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.ts"]
+      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.vibe"]
     },
     {
       id: "docs-copyable-snippets",

@@ -31,6 +31,8 @@ import { RemoteWrite } from "./fixtures/RemoteCeilingFlow.ts"
 import { remoteTestDatabases } from "./fixtures/RemoteTestDatabase.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/remote-ceiling-engine.ts", import.meta.url))
+// The serving engine's imports reach `.vibe` modules, which the child Node loads through VibeLang.
+const loader = ["--import", import.meta.resolve("vibelang/register")]
 const repositoryRoot = fileURLToPath(new URL("../../../../../", import.meta.url))
 const childEnv = {
   PATH: process.env.PATH,

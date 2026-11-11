@@ -1,4 +1,3 @@
-import vibelang from "vibelang-unplugin/esbuild"
 /**
  * `EdgeCache.layer` inside a Worker in local workerd, over the real `caches`
  * global: what one request stores, a later request reads, byte for byte;
@@ -10,6 +9,7 @@ import vibelang from "vibelang-unplugin/esbuild"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const entry = fileURLToPath(new URL("./workerd/cache-worker.ts", import.meta.url))
@@ -18,7 +18,7 @@ let worker: Miniflare
 
 beforeAll(async () => {
   const bundled = await build({
-    plugins: [vibelang()],
+    plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
     entryPoints: [entry],
     bundle: true,
     write: false,

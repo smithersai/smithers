@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Binding from "../agent/scorers/src/Binding.ts"
 import * as Scorer from "../agent/scorers/src/Scorer.ts"
 
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import { createEvalCli } from "../src/evaluation/EvalCli.ts"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 
@@ -177,10 +177,10 @@ describe("evaluation CLI", () => {
     // The old recommender suite was retired with packages/backend in 82b5490d.
     const root = await fixture()
     const shipped = [
-      ["agent/agent", "../agent/regression/agent.eval.ts"],
+      ["agent/agent", "../agent/regression/agent.eval.vibe"],
       [
         "review-seeded-bugs/review-seeded-bugs",
-        "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts"
+        "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.vibe"
       ]
     ] as const
     for (const [name, source] of shipped) {

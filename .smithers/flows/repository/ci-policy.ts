@@ -2,10 +2,10 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Option, Schema } from "effect"
 import { SetupCheckSchema, SetupDraftSchema, storedSetupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { backendLanding } from "../coding/landing.ts"
+import { backendLanding } from "../coding/landing.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { RepositoryRemote } from "./remote.ts"
-import { Check, Job } from "./schema.ts"
+import { RepositoryRemote } from "./remote.vibe"
+import { Check, Job } from "./schema.vibe"
 
 const Positive = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }))
 const Hash = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))
@@ -208,14 +208,16 @@ export const requiredContextFor = (ref: Pick<CiPolicyRef, "registrationId" | "re
     decode(Hash, ref.digest).slice(0, 12)
   }`
 /** Research-only issue work, the CI candidate itself, trials and replayed
- * evaluations keep their own checks and never inherit the active policy. */
-export const inheritsCiPolicy = (
+ * evaluations keep their own checks and never inherit the active policy.
+ * @throws {never} */
+export function inheritsCiPolicy(
   input: { readonly job: typeof Job.Type; readonly event: { readonly trial?: boolean } },
   steps: ReadonlyArray<{ readonly id: string }>,
   evaluation: boolean
-): boolean =>
-  input.job !== "ci" && !evaluation && input.event.trial !== true &&
-  steps.some((step) => input.job === "review" || ["checks", "fix", "feature", "chore"].includes(step.id))
+): boolean {
+  return input.job !== "ci" && !evaluation && input.event.trial !== true &&
+    steps.some((step) => input.job === "review" || ["checks", "fix", "feature", "chore"].includes(step.id))
+}
 /** A repository without the provisioned registration read has no reviewed CI;
  * a refused or malformed read is unavailable and never absence. */
 export const captureCiPolicy = (repo: string) =>

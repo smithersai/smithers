@@ -17,16 +17,16 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
 import * as Approvals from "./approvals.ts"
-import * as Box from "./box.ts"
+import * as Box from "#vibelang/emitted/src/box"
 import * as Budget from "./budget.ts"
 import * as Cli from "./cli.ts"
 import * as Debug from "./debug.ts"
-import * as FlowControl from "./flow-control.ts"
-import * as Host from "./host.ts"
-import * as Models from "./models.ts"
+import * as FlowControl from "#vibelang/emitted/src/flow-control"
+import * as Host from "#vibelang/emitted/src/host"
+import * as Models from "#vibelang/emitted/src/models"
 import * as Print from "./print.ts"
 import * as Session from "./session.ts"
-import * as Spend from "./spend.ts"
+import * as Spend from "#vibelang/emitted/src/spend"
 
 const parsed = Cli.parse(process.argv.slice(2), process.cwd())
 if ("help" in parsed) {
@@ -124,7 +124,7 @@ try {
     import("./app.tsx"),
     import("react"),
     import("./theme.ts"),
-    import("./target-approvals.ts")
+    import("#vibelang/emitted/src/target-approvals")
   ])
   // App warms the host after first draw; discovery alone never imports a flow module.
   flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })

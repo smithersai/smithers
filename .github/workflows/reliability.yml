@@ -34,6 +34,7 @@ jobs:
           node-version: 26.4.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Measure cold, warmup and repeated warm fixtures without result-cache reuse
         env:
           SMITHERS_BENCH_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/bench
@@ -69,6 +70,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Record the deterministic soak workload
         run: |
           mkdir -p reliability-artifacts/sync
@@ -106,6 +108,7 @@ jobs:
           node-version: 26.4.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Select and record reproducible campaign
         env:
           REQUESTED_SEED: ${{ inputs.seed }}
@@ -152,6 +155,7 @@ jobs:
           node-version: 26.4.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Select and record reproducible campaign
         env:
           REQUESTED_SEED: ${{ inputs.seed }}
@@ -199,6 +203,7 @@ jobs:
           node-version: 26.4.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run sidecars
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -283,6 +288,7 @@ jobs:
           test "$(npm --version)" = '11.16.0'
         shell: "bash"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - run: pnpm run sidecars
       - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
       - name: "Install native smithers-jj-export"
         run: |

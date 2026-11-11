@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import { GitWorktree } from "../src/internal/GitWorktree.ts"
+import { GitWorktree } from "../src/internal/GitWorktree.vibe"
 
 it("commit resolution reports Git startup failure without trying another ref and succeeds after transport recovery", async () => {
   const root = mkdtempSync(join(tmpdir(), "std-git-startup-"))

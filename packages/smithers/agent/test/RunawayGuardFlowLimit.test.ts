@@ -16,8 +16,8 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Schema, Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
-import * as RunawayGuard from "../src/RunawayGuard.ts"
+import * as Budget from "../src/Budget.vibe"
+import * as RunawayGuard from "../src/RunawayGuard.vibe"
 
 const guarded = Flow.make("agent/test/guarded-step", {
   payload: {},

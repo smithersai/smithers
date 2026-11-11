@@ -4,7 +4,7 @@ import * as TestRunStore from "@smthrs/run-store/test/TestRunStore"
 import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { vi } from "vitest"
-import * as ControlAffinity from "../src/internal/ControlAffinity.ts"
+import * as ControlAffinity from "../src/internal/ControlAffinity.vibe"
 
 const claimant: Ownership.OwnerId = { hostId: "host", pid: process.pid, nonce: "observer" }
 const peer: Ownership.OwnerId = { hostId: "host", pid: process.pid + 1, nonce: "parent" }

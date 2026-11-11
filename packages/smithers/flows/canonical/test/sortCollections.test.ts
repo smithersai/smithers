@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema"
 import * as SchemaTransformation from "effect/SchemaTransformation"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
-import { Canonical, sortCollections } from "../src/index.ts"
+import { Canonical, sortCollections } from "../src/index.vibe"
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),

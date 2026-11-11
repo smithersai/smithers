@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import * as TargetApprovals from "../src/cli/TargetApprovals.ts"
+import * as TargetApprovals from "../src/cli/TargetApprovals.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const roots: Array<string> = []

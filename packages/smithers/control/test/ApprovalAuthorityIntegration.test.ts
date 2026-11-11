@@ -1,8 +1,8 @@
 import { Effect, type Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { ApprovalTarget, Principal } from "../src/ControlSchema.ts"
+import { Control } from "../src/Control.vibe"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { ApprovalTarget, Principal } from "../src/ControlSchema.vibe"
 import * as TestControl from "../src/test/TestControl.ts"
 import { durable } from "./DurableStack.ts"
 

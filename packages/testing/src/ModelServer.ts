@@ -27,8 +27,8 @@ import * as OpenAIChatCompletions from "@smthrs/model/OpenAIChatCompletions"
 import { Cause, Effect, Exit, FiberSet, Schema, type Scope, Stream } from "effect"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import type * as TurnGate from "./TurnGate.ts"
-import type * as TurnLog from "./TurnLog.ts"
+import type * as TurnGate from "./TurnGate.vibe"
+import type * as TurnLog from "./TurnLog.vibe"
 
 /**
  * The routes a model server answers.

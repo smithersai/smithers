@@ -18,7 +18,7 @@ import { type Pipeable, pipeArguments } from "effect/Pipeable"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { compactable } from "./internal/compactable.ts"
-import * as Tokens from "./Tokens.ts"
+import * as Tokens from "./Tokens.vibe"
 
 /**
  * The brand a {@link ContextWindow} carries so a structurally similar

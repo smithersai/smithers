@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it, vi } from "vitest"
-import * as RunActivity from "../src/cli/RunActivity.ts"
+import * as RunActivity from "../src/cli/RunActivity.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 import { Child, layer as fixtureLayer } from "./fixtures/run-activity-cancellation/flow.ts"
 

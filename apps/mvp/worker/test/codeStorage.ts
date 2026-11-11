@@ -4,8 +4,8 @@
 // through `fail`; the live tests (worker/RepoClone.live.test.ts) use the real ones.
 import { CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
 import { Effect, Redacted, Stream } from "effect"
-import type { Sized } from "../RepoUpstream.ts"
-import { RepoUpstream, UpstreamUnavailable } from "../RepoUpstream.ts"
+import type { Sized } from "../RepoUpstream.vibe"
+import { RepoUpstream, UpstreamUnavailable } from "../RepoUpstream.vibe"
 
 /** A repository on the scripted GitHub: its default branch, head commit and files. */
 export interface GitHubRepository {

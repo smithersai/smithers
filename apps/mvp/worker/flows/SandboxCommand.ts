@@ -3,8 +3,8 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Config, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
-import { MachineFailure, Machines } from "../branch/Machines.ts"
-import { SandboxBranch } from "../branch/Sandboxes.ts"
+import { MachineFailure, Machines } from "#vibelang/emitted/worker/branch/Machines"
+import { SandboxBranch } from "#vibelang/emitted/worker/branch/Sandboxes"
 
 // `sandbox/Command { target: { branch, ownerId }, call }` (docs/features/sandbox-tools.md#long-commands): one sandbox
 // `run` command on a branch's machine, as `@smthrs/sandbox`'s `SandboxCommand` job, the library catalog's "Run commands

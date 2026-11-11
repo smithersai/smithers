@@ -6,7 +6,7 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { buildSync } from "esbuild"
+import type { BuildOptions, Metafile } from "esbuild"
 import { spawnSync } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import {
@@ -144,6 +144,36 @@ export const bundleInputs = (directory: string): ReadonlyArray<string> => {
 }
 
 /**
+ * esbuild's asynchronous `build` with vibelang-unplugin, run to completion in a
+ * child Node process that this one waits for.
+ *
+ * The CLI reaches `.vibe` modules, this package's and other workspace
+ * packages', which only the plugin compiles, and `buildSync` takes no plugins.
+ * The callers here are synchronous, so the build runs where it can await.
+ */
+const buildWithVibeLang = (options: BuildOptions & { readonly absWorkingDir: string }): { readonly metafile: Metafile } => {
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", vibeLangBuild, JSON.stringify(options)], {
+    // The child resolves esbuild and the plugin from here, as this module does.
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024
+  })
+  if (child.status !== 0) throw new Error(`esbuild failed to bundle ${String(options.entryPoints)}:\n${child.stderr}`)
+  return { metafile: JSON.parse(child.stdout) as Metafile }
+}
+
+const vibeLangBuild = `
+import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
+const options = JSON.parse(process.argv[1])
+const result = await build({ ...options, logLevel: "error", plugins: [vibelang({ root: options.absWorkingDir })] })
+process.stdout.write(JSON.stringify(result.metafile))
+`
+
+/** The namespace esbuild reports a `.vibe` input under, ahead of its absolute path. */
+const vibeLangNamespace = /^vibelang:/
+
+/**
  * Bundles `entryPoint` into `directory` and returns the bundle's path.
  *
  * The name carries the sha256 of every file the bundle was built from: the
@@ -176,7 +206,7 @@ export const bundleOnce = (options: {
   // esbuild reports its inputs relative to this directory, so name it rather
   // than reading `process.cwd()` twice and hoping it did not move.
   const workingDirectory = process.cwd()
-  const built = buildSync({
+  const built = buildWithVibeLang({
     entryPoints: [options.entryPoint],
     absWorkingDir: workingDirectory,
     bundle: true,
@@ -191,7 +221,9 @@ export const bundleOnce = (options: {
     banner: { js: "import { createRequire as ___cr } from 'node:module'; const require = ___cr(import.meta.url);" }
   })
   const inputs = [
-    ...Object.keys(built.metafile.inputs).map((input) => resolve(workingDirectory, input)),
+    ...Object.keys(built.metafile.inputs).map((input) =>
+      resolve(workingDirectory, input.replace(vibeLangNamespace, ""))
+    ),
     ...options.keyedOn ?? []
   ]
   const bundle = join(options.directory, `bundle-${keyOf(inputs)}.mjs`)

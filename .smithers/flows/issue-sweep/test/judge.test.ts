@@ -21,7 +21,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { judging, type SelectSeams, sweepRound } from "../flow.ts"
-import { classify, fileCache, probe, type Text, type Triage, type TriageFailed } from "../triage.ts"
+import { classify, fileCache, probe, type Text, type Triage, type TriageFailed } from "../triage.vibe"
 
 interface Issue {
   readonly id: string

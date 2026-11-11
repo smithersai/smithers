@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import { namespace, run } from "./fixtures/MemoryStoreHarness.ts"
 
 describe("learning note lifecycle through the public SQL store", () => {

@@ -3,7 +3,7 @@
 import { GitHub } from "@smthrs/integrations"
 import { HttpClient, HttpServerResponse } from "effect/http"
 import { decodeSites } from "./GitHubConnection.vibe"
-import * as GitHubConfig from "./github/Config.ts"
+import * as GitHubConfig from "./github/Config.vibe"
 
 export interface Setup {
   readonly origin: string

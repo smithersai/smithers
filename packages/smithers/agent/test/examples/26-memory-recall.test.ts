@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { bank, main } from "../../examples/26-memory-recall.ts"
+import { bank, main } from "../../examples/26-memory-recall.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

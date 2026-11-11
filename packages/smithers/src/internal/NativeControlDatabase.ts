@@ -6,8 +6,8 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
-import * as CliError from "../CliError.ts"
-import * as Migrations from "./ControlDatabaseMigrations.ts"
+import * as CliError from "../CliError.vibe"
+import * as Migrations from "./ControlDatabaseMigrations.vibe"
 
 /** Uses injected filesystem and path services, and opens only the supplied SQL adapter.
  * @since 1.0.0

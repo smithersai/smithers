@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
-import { runQuickstart } from "../examples/quickstart.ts"
-import { runServeRpc } from "../examples/serveRpc.ts"
+import { runQuickstart } from "../examples/quickstart.vibe"
+import { runServeRpc } from "../examples/serveRpc.vibe"
 
 it("joins a resubmitted execution id and refuses it for a different payload", async () => {
   expect(await runQuickstart()).toEqual({

@@ -10,8 +10,8 @@ import { Action, Flow } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Failure from "../src/internal/Failure.ts"
-import { PatternError } from "../src/PatternError.ts"
+import * as Failure from "../src/internal/Failure.vibe"
+import { PatternError } from "../src/PatternError.vibe"
 
 class Throttled extends Schema.TaggedError<Throttled>()("patterns-test/Throttled", { seconds: Schema.Number }) {}
 class Refused extends Schema.TaggedError<Refused>()("patterns-test/Refused", { reason: Schema.String }) {}

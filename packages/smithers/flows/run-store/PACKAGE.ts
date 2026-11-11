@@ -12,7 +12,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   // Examples are type-checked, linted, and run by test/Examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/run-store"
 })
 
@@ -67,7 +67,7 @@ const securityReview = Smithers.SecurityReview({
         "A write whose owner values are read from the caller's object more than once instead of from the frozen snapshotOwner copy.",
         "A patch or finish path that succeeds after the run left status 'running' or its owner columns were cleared."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts"]
+      paths: ["src/RunStore.vibe", "src/AttemptStore.vibe"]
     },
     {
       id: "steal-evidence-binding",
@@ -80,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "A same-host-pid-dead verdict accepted from a claimant on another host, or cross-host-unreachable-stale from the owner's own host.",
         "A steal UPDATE that drops the heartbeat_at_ms staleness predicate or the NULL claim-column predicates."
       ],
-      paths: ["src/RunStore.ts", "src/Ownership.ts"]
+      paths: ["src/RunStore.vibe", "src/Ownership.ts"]
     },
     {
       id: "lease-clock-bounds",
@@ -91,7 +91,7 @@ const securityReview = Smithers.SecurityReview({
         "A lease operation (claim, claimAndOwn, steal, heartbeat, recoverClaim) that uses snapshotTimestamp instead of snapshotLeaseReading for nowMs.",
         "heartbeatWriteTolerance not strictly less than heartbeatStaleAfter minus skew allowance and one interval, letting a lapsed owner keep working after a steal."
       ],
-      paths: ["src/RunStore.ts", "src/Heartbeat.ts", "src/Ownership.ts"]
+      paths: ["src/RunStore.vibe", "src/Heartbeat.ts", "src/Ownership.ts"]
     },
     {
       id: "pid-probe-scope",
@@ -114,7 +114,7 @@ const securityReview = Smithers.SecurityReview({
         "A limits object built without maxBytes or maxDepth for state, checkpoint, outcome, or metadata columns.",
         "Identifiers accepted without Boundary.isDurableText (length, NUL, lone surrogate checks)."
       ],
-      paths: ["src/internal/Boundary.ts", "src/RunStore.ts", "src/AttemptStore.ts"]
+      paths: ["src/internal/Boundary.ts", "src/RunStore.vibe", "src/AttemptStore.vibe"]
     },
     {
       id: "sql-parameterization",
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.unsafe, sql.literal, or string concatenation into a query in store code or migrations.",
         "A lineage or list query without a bound on rows returned for an attacker-chosen lineage id."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/migrations/**"]
+      paths: ["src/RunStore.vibe", "src/AttemptStore.vibe", "src/migrations/**"]
     },
     {
       id: "lineage-cancel-scope",
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "lineageMembership matching rows with a NULL lineage_id other than the resolved root, or all rows when the runId does not exist.",
         "create admitting a lineageId or parentRunId whose row does not exist or whose round_ordinal collides with an existing round."
       ],
-      paths: ["src/RunStore.ts"]
+      paths: ["src/RunStore.vibe"]
     },
     {
       id: "executable-state-secrets",
@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
         "Effect.annotateCurrentSpan, log, or metric attributes that include state_json, checkpoint, outcome, or metadata values rather than ids.",
         "Error messages or RunStoreError causes that embed the rejected JSON payload text."
       ],
-      paths: ["src/RunStore.ts", "src/AttemptStore.ts", "src/RunStoreMetrics.ts", "src/internal/SpanOutcome.ts"]
+      paths: ["src/RunStore.vibe", "src/AttemptStore.vibe", "src/RunStoreMetrics.vibe", "src/internal/SpanOutcome.vibe"]
     }
   ]
 })

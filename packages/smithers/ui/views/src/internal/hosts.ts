@@ -16,6 +16,7 @@ const LOCAL_SUFFIXES = [".localhost", ".local", ".internal", ".home.arpa", ".lan
  * single-label name, or a name under a local suffix, unless `privateHosts`
  * names its host.
  *
+ * @throws {never}
  * @since 0.1.0
  * @private
  */

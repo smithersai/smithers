@@ -5,8 +5,8 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
-import { layer, ThreatIntelEnricher } from "../../../examples/use-cases/threat-intel-enricher.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
+import { layer, ThreatIntelEnricher } from "../../../examples/use-cases/threat-intel-enricher.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "threat-intel-enricher-"))
 

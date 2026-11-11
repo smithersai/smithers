@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import * as Outcome from "../src/Outcome.ts"
-import * as Script from "../src/Script.ts"
+import * as Outcome from "../src/Outcome.vibe"
+import * as Script from "../src/Script.vibe"
 
 describe("Outcome", () => {
   it("builds done", () => {

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createMemoryCli, withMemory } from "../src/operator/Memory.ts"
-import { localRoot } from "../src/operator/Store.ts"
+import { localRoot } from "../src/operator/Store.vibe"
 
 const ports = vi.hoisted(() => ({ layer: undefined as typeof MemoryStore.layer | undefined }))
 vi.mock("@smthrs/memory/MemoryStore", async (load) => {

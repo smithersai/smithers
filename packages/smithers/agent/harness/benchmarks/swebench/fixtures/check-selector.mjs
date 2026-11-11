@@ -85,10 +85,10 @@ try {
       || target === join(root, "lib/journal-rows.mjs")
       || target === join(root, "prices.ts")
       || target === rateCard
-      || (dirname(target) === harnessSource && /^[A-Za-z]+\.ts$/u.test(basename(target)))
+      || (dirname(target) === harnessSource && /^[A-Za-z]+\.(?:ts|vibe)$/u.test(basename(target)))
   }
-  assert.ok(allowed("select-candidate.mjs", "../../src/Sufficiency.ts"))
-  assert.ok(allowed("lib/journal-facts.mjs", "../../../src/NarrowedCheck.ts"))
+  assert.ok(allowed("select-candidate.mjs", "../../src/Sufficiency.vibe"))
+  assert.ok(allowed("lib/journal-facts.mjs", "../../../src/NarrowedCheck.vibe"))
   assert.ok(
     allowed("prices.ts", "../../../model/src/internal/prices.generated.ts"),
     "the generated rate card"
@@ -126,7 +126,7 @@ try {
       if (specifier.startsWith(".")) pending.push(resolve(dirname(path), specifier))
     }
   }
-  assert.ok(scanned.has(join(harnessSource, "Sufficiency.ts")), "the scan reaches the detectors")
+  assert.ok(scanned.has(join(harnessSource, "Sufficiency.vibe")), "the scan reaches the detectors")
 
   for (const name of ["select-candidate.mjs", "lib/journal-facts.mjs", "lib/journal-rows.mjs", "prices.ts"]) {
     for (const specifier of importsOf(readFileSync(join(root, name), "utf8"))) {
@@ -525,7 +525,7 @@ try {
   // against the one module that writes them.
   // -----------------------------------------------------------------------
   const session = readFileSync(resolve(root, "../../../src/AgentSession.ts"), "utf8")
-  const events = readFileSync(resolve(root, "../../src/AgentEvent.ts"), "utf8")
+  const events = readFileSync(resolve(root, "../../src/AgentEvent.vibe"), "utf8")
   // Every event the harness declares, by the tag the journal names it under.
   const declared = new Set(
     [...events.matchAll(/\)\("([a-z][a-z-]+)",\s*\{/gu)].map((match) => `control.agent.${match[1]}`)

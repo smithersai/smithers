@@ -4,8 +4,8 @@ import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ADMIT_WAIT_SECONDS, FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.ts"
 import * as Budget from "../branch/Budget.ts"
-import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "#vibelang/emitted/worker/branch/Sandboxes"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 
 // `terminal/Open { terminalId, branch }` (decision 0013 §2, docs/features/branch-workspace.md#opening-a-terminal):
 // opens a person's terminal on a branch's machine. `POST /api/terminals` admits it (sign-in, the Member role, a branch

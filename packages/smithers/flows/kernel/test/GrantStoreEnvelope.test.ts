@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import { GrantStoreError, Rule } from "@smthrs/capability/Permission"
 import { Effect, Fiber, Layer } from "effect"
-import type { GrantEvent } from "../src/GrantEvent.ts"
+import type { GrantEvent } from "../src/GrantEvent.vibe"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * Envelope grants are bulk pre-approvals bound to a plan digest, so the store

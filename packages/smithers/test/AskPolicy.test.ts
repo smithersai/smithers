@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import { askPolicy } from "../src/internal/NativeEquipment.ts"
 
 describe("the host's ask policy", () => {

@@ -692,3 +692,27 @@ Quoted `/flow` values retain spaces: `/flow echo text="hello world"`.
 A durably parked flow shows `parked`; its tab retains the question. `r` resumes
 the same run, `x` stops it, and chat stays usable. Routine tree diagnostics and
 their hashes appear only when expanded with Ctrl+O.
+
+
+## Source coverage inventory
+
+`coverage-source-manifest.json` retains every logical source identifier. A native
+`.vibe` module keeps its original `.ts` identifier, so renaming a module cannot
+remove it from coverage. The source inventory test checks the complete manifest.
+
+After native source renames, run `pnpm --filter smithers-tui run coverage:roster`.
+The updater first verifies the complete logical inventory, then rewrites
+`coverage-roster.json` with the physical TypeScript files for the existing
+TypeScript roster test. Missing, extra or duplicate logical sources refuse the
+update. Additions and deletions require an explicit manifest change; regeneration
+never prunes the manifest. Declaration companions owned by a native module are
+reported separately from its logical identifier.
+
+
+The inventory treats `<name>.platform.ts` as a runtime part of its adjacent
+`<name>.vibe` module. It keeps that real TypeScript source in the physical roster
+and reports it separately. Generated `<name>.vibe.throwing.d.ts` declarations are
+type companions, like `<name>.vibe.platform.d.ts`. Every part needs its native
+owner; a platform file that was already an original logical source retains its
+own identity. Regeneration refuses to hide a runtime platform file removed from
+the previous physical roster.

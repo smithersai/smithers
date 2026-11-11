@@ -1,10 +1,10 @@
 import { Deferred, Effect, Fiber, Result, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it } from "vitest"
-import * as Evaluator from "../src/Evaluator.ts"
-import * as EvaluatorBackup from "../src/EvaluatorBackup.ts"
-import * as Model from "../src/Model.ts"
-import { ModelError } from "../src/ModelError.ts"
+import * as Evaluator from "../src/Evaluator.vibe"
+import * as EvaluatorBackup from "../src/EvaluatorBackup.vibe"
+import * as Model from "../src/Model.vibe"
+import { ModelError } from "../src/ModelError.vibe"
 
 const request: Evaluator.Request = {
   state: {},

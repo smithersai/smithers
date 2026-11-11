@@ -4,9 +4,9 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Layer } from "effect"
 import { fileURLToPath } from "node:url"
-import * as Descriptor from "../src/Descriptor.ts"
-import * as Executable from "../src/Executable.ts"
-import * as ModuleClosure from "../src/internal/ModuleClosure.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
+import * as Executable from "../src/Executable.vibe"
+import * as ModuleClosure from "../src/internal/ModuleClosure.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

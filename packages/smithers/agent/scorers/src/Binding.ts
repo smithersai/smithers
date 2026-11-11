@@ -7,7 +7,7 @@
  */
 
 import type { Flow } from "@smthrs/core"
-import type { Sampling } from "./Sampling.ts"
+import type { Sampling } from "./Sampling.vibe"
 import type { Scorer } from "./Scorer.ts"
 
 /**
@@ -49,6 +49,7 @@ export interface Binding {
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const make = (
   options: Omit<Binding, "sampling"> & { readonly sampling?: Sampling | undefined }

@@ -271,6 +271,7 @@ export function readPrompt(ask: string): { path: string; diff: string } | null {
  *
  * @since 1.0.0
  * @category constructors
+ * @throws {never}
  */
 export function answerReview(ask: string): unknown {
   const read = readPrompt(ask);

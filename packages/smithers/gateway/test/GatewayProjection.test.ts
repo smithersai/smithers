@@ -22,8 +22,8 @@ import { ExecutionFact } from "@smthrs/journal"
 import * as Schema from "effect/Schema"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
-import * as Diagnosis from "../src/Diagnosis.ts"
-import * as GatewayProjection from "../src/GatewayProjection.ts"
+import * as Diagnosis from "../src/Diagnosis.vibe"
+import * as GatewayProjection from "../src/GatewayProjection.vibe"
 
 let sequence = 0
 

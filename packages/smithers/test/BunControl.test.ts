@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it, vi } from "vitest"
-import * as BunControl from "../src/BunControl.ts"
+import * as BunControl from "../src/BunControl.vibe"
 
 const implementation = vi.hoisted(() => ({
   loaded: vi.fn(),
@@ -48,7 +48,7 @@ it("defers Bun adapters until building either public layer and forwards each roo
 })
 
 const execute = promisify(execFile)
-const module = new URL("../src/BunControl.ts", import.meta.url).href
+const module = new URL("../src/BunControl.vibe", import.meta.url).href
 
 it("lists no flows under Bun for a root without flows/", async () => {
   const root = await mkdtemp(join(tmpdir(), "bun-control-"))

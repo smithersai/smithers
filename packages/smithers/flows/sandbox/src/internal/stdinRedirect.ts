@@ -9,7 +9,7 @@ import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
 import type { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import { finalizeWithin } from "./finalizeWithin.ts"
+import { finalizeWithin } from "./finalizeWithin.vibe"
 
 /**
  * The slice of a session the redirect needs: somewhere to put the bytes, and

@@ -1,0 +1,38 @@
+import { ShapeProxy } from "@smthrs/effect-electric"
+import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
+import { SPEND_ALERT_COLUMNS, SPEND_ALERTS_TABLE } from "../src/features/spend/contract.ts"
+import * as ShapeAccess from "./ShapeAccess.vibe"
+
+// Spend alerts in ChatApi (docs/features/spend-alerts.md): Electric's `spend_alerts` shape, which only an Admin's
+// devices sync. `ops/SpendAlert` (worker/flows/SpendAlert.ts) writes the rows; nothing else does.
+
+/** `GET /api/shapes/spend-alerts` requests, by `status` and `live`. */
+export const shapes = Metric.counter("smithers_spend_alert_shape_requests", {
+  description: "GET /api/shapes/spend-alerts requests, by status and live",
+  incremental: true,
+})
+
+/** The audience an Admin reads. */
+const ADMINS = "admin"
+
+/**
+ * Reads Electric's connection (`ShapeProxy.config`) and returns `GET /api/shapes/spend-alerts`: every alert for a
+ * person with the Admin role; signed out, or any other role, 403; sessions unreadable, 503
+ * (worker/ShapeAccess.ts). Each request is a `spend.alerts.shape` line and a count.
+ */
+export const make = effect {
+  const connection = try ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+  return ShapeProxy.make({
+    ...connection,
+    shape: Effect.as(ShapeAccess.admin, {
+      table: SPEND_ALERTS_TABLE,
+      where: "audience = $1",
+      params: {
+        "1": ADMINS,
+      },
+      columns: [...SPEND_ALERT_COLUMNS],
+    }),
+    name: "spend.alerts.shape",
+    metric: shapes,
+  })
+}

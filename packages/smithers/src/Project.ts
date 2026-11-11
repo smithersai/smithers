@@ -22,7 +22,7 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Context, Layer } from "effect"
 import { existsSync, readdirSync, statSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import * as Environment from "./Environment.ts"
 import { packageVersion } from "./Version.ts"
 

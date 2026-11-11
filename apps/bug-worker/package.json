@@ -12,7 +12,8 @@
     "destroy": "alchemy destroy --stage prod"
   },
   "dependencies": {
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@smthrs/control": "workspace:*",
@@ -21,7 +22,7 @@
     "bun-types": "^1.4.0",
     "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
     "@alchemy.run/cloudflare": "2.0.0-beta.85"
   }
 }

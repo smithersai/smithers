@@ -1,0 +1,191 @@
+
+// What the git loop counts (decision 0012 §8, docs/observability.md#github). No attribute carries a title, a body, a
+// login or a token: only operations, outcomes, kinds and codes.
+
+/** Webhook deliveries, by `event` and `outcome` (`applied`, `duplicate`, `ignored`, `refused`, `too_large`, ...). */
+export const webhooks = Metric.counter("github_webhooks", {
+  description: "GitHub webhook deliveries, by event and outcome",
+  incremental: true,
+})
+
+/** Milliseconds from a delivery's arrival to its subject's row being written. */
+export const deliveryLag = Metric.histogram("github_delivery_lag_ms", {
+  description: "Milliseconds from a webhook delivery to its subject's row",
+  boundaries: Metric.exponentialBoundaries({ start: 50, factor: 2, count: 12 }),
+})
+
+/** Write requests at the route, by `op` and `outcome` (`started`, `existing`, `reauthorized`, or the refusal's code). */
+export const writeRequests = Metric.counter("github_write_requests", {
+  description: "Git write requests at the writes route, by operation and outcome",
+  incremental: true,
+})
+
+/** Attempts whose captured authority was replaced by a fresh same-ID admission while they resolved its role. */
+export const writeAuthority = Metric.counter("github_write_authority", {
+  description: "Deferred write authority transitions, by operation and outcome", incremental: true,
+})
+
+/** Writes settled by their flow, by `op`, `outcome` (`done`, `refused`, `failed`) and `token` (`user`, `app`). */
+export const writes = Metric.counter("github_writes", {
+  description: "Git writes settled, by operation, outcome and token kind",
+  incremental: true,
+})
+
+/** Milliseconds a write took, from the route to its settling, by `op`. */
+export const writeMs = Metric.histogram("github_write_ms", {
+  description: "Milliseconds from a write's admission to its settling",
+  boundaries: Metric.exponentialBoundaries({ start: 100, factor: 2, count: 14 }),
+})
+
+/** Writes whose answer was lost, by `op`: the next attempt looked for its marker. */
+export const writeUnknown = Metric.counter("github_write_unknown", {
+  description: "Git writes whose outcome was unknown, by operation",
+  incremental: true,
+})
+
+/** Webhook subjects re-read, by `outcome` (`applied`, `tombstoned`, `not_installed`, `unavailable`). */
+export const applies = Metric.counter("github_applies", {
+  description: "Subjects github/Apply re-read, by outcome",
+  incremental: true,
+})
+
+/** Rows a reconcile changed that a webhook should have delivered, by `kind` (`issue`, `comment`). */
+export const reconcileChanged = Metric.counter("github_reconcile_changed", {
+  description: "Rows a reconcile changed after the first sync, by kind",
+  incremental: true,
+})
+
+/** Reconcile walks, by `outcome` (`complete`, `partial`, `not_installed`, `refused`, `superseded`). */
+export const reconciles = Metric.counter("github_reconciles", {
+  description: "Reconcile walks, by outcome",
+  incremental: true,
+})
+
+/** Seconds since a repository's sync last finished, at each read of its issues. */
+export const syncAge = Metric.gauge("github_sync_age_seconds", {
+  description: "Seconds since the repository's issues last synced",
+})
+
+/**
+ * Tokens asked for, by `kind` and `outcome`: a step's (`user`, `app`; worker/github/Tokens.ts), and the deployment's
+ * read token (`read`, outcome `minted` or `anonymous`; worker/github/ReadToken.ts).
+ */
+export const tokenMints = Metric.counter("github_token_mints", {
+  description: "GitHub tokens asked for, by kind and outcome",
+  incremental: true,
+})
+
+/** Shape requests to the git tables, by `table`, then `status` and `live` (`@smthrs/effect-electric` adds those). */
+export const shapes = Metric.counter("github_shape_requests", {
+  description: "Electric shape requests for the git tables, by table, status and live",
+  incremental: true,
+})
+
+/** Triage runs, by `outcome` (`skipped`, `abstained`, `dropped`, `labeled`, `commented`, `comment_failed`, `unavailable`). */
+export const triageRuns = Metric.counter("triage_runs", {
+  description: "Triage runs, by outcome",
+  incremental: true,
+})
+
+/** Triage decisions, by `decision` (`accept`, `reject`, `abstain`) and `via` (`flow`, `person`). */
+export const triageDecisions = Metric.counter("triage_decisions", {
+  description: "Triage decisions, by decision and who decided",
+  incremental: true,
+})
+
+/** Flow decisions that wrote nothing, by `reason` (`pinned`, `relabeled`, `edited`, `paused`, ...). */
+export const triageDropped = Metric.counter("triage_dropped", {
+  description: "Triage decisions dropped before writing, by reason",
+  incremental: true,
+})
+
+/** A person's overrides, by the state `from` and the decision `to`: overriding the flow is the flow's error rate. */
+export const triageOverrides = Metric.counter("triage_overrides", {
+  description: "A person's triage overrides, by the state before and the decision",
+  incremental: true,
+})
+
+/** Model tokens the triage flow spent. */
+export const triageTokens = Metric.counter("triage_tokens", {
+  description: "Model tokens triage decisions spent",
+  incremental: true,
+})
+
+/** Reconcile starts a stale read of the issues awaited, by `outcome`: `started`, `timed_out` or `not_started`. */
+export const reconcileStarts = Metric.counter("github_reconcile_starts", {
+  description: "github/Reconcile starts a stale issues read awaited, by outcome",
+  incremental: true,
+})
+
+/**
+ * Reconcile admissions that began: one per issues read, counted at the admission's first instruction, before it asks
+ * whether the issues are stale. A read without one is an admission that never ran.
+ */
+export const reconcileAdmissions = Metric.counter("github_reconcile_admissions", {
+  description: "Reconcile admissions an issues read ran, counted as each begins",
+  incremental: true,
+})
+
+/** Live anonymous visibility checks, by a bounded outcome. */
+export const visibilityReads = Metric.counter("github_visibility_reads", {
+  description: "Current anonymous repository visibility checks, by outcome",
+  incremental: true,
+})
+
+/** Projection failures after a confirmed successful GitHub write, by operation. */
+export const projectionFailures = Metric.counter("github_projection_failures", {
+  description: "Projection failures after a confirmed GitHub write, by operation",
+  incremental: true,
+})
+
+/** `GET /api/repos/<owner>/<name>/issues` requests, by `outcome`: `listed`, `invalid`, `refused`, `not_found`, `unavailable`. */
+export const issueLists = Metric.counter("github_issue_lists", {
+  description: "GET /api/repos/<owner>/<name>/issues requests, by outcome",
+  incremental: true,
+})
+
+/** `POST .../issues/<number>/links` requests, by `outcome` and who posted (`by`: `person`, `runner` or `none`). */
+export const workLinkPosts = Metric.counter("smithers_work_link_posts", {
+  description: "POST /api/repos/<owner>/<name>/issues/<number>/links requests, by outcome and poster",
+  incremental: true,
+})
+
+/**
+ * First-paint requests (`GET /api/repos/<owner>/<name>/first-paint`), by `form` (`issue`, `list`, `invalid`) and
+ * `outcome`: `painted`, `missing` (no such issue), `refused_<status>` (the access rule's status), `deadline`
+ * or `error` (Postgres, or anything else). Every outcome but `painted` answered an empty `204`.
+ */
+export const firstPaints = Metric.counter("github_first_paints", {
+  description: "First-paint requests, by form and outcome",
+  incremental: true,
+})
+
+/** Relation walks, by `outcome`. */
+export const relationWalks = Metric.counter("github_relation_walks", {
+  description: "Walks of a repository's issues for their parents, by outcome",
+  incremental: true,
+})
+
+/** Issues whose `parent_issue_url` this app couldn't read: skipped, never guessed at. */
+export const relationsUnreadable = Metric.counter("github_relations_unreadable", {
+  description: "Issues whose parent URL names no issue this app can read",
+  incremental: true,
+})
+
+/** Tree scope reads, by `outcome`. */
+export const treeScopes = Metric.counter("github_tree_scopes", {
+  description: "Reads of a tree's scope, by outcome",
+  incremental: true,
+})
+
+/** Candidate repository reads for scopes and edges, by `outcome` (`read`, `unavailable`). */
+export const treeCandidateReads = Metric.counter("github_tree_candidate_reads", {
+  description: "Reads of a tree's candidate repositories, by outcome",
+  incremental: true,
+})
+
+/** Parent membership checks, by `outcome` (`verified`, `missing`, `failed`). */
+export const relationParentChecks = Metric.counter("github_relation_parent_checks", {
+  description: "Parent membership checks, by outcome",
+  incremental: true,
+})

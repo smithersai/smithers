@@ -12,10 +12,10 @@ import { afterAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
 import { checkoutArgv } from "../branch/Checkout.ts"
 import { noCommands } from "../test/commands.ts"
-import { Machines } from "../branch/Machines.ts"
-import { CheckoutFailed } from "../branch/Sandboxes.ts"
+import { Machines } from "../branch/Machines.vibe"
+import { CheckoutFailed } from "../branch/Sandboxes.vibe"
 import { runFlow } from "../test/flowHost.ts"
-import * as CiJobMachine from "./CiJobMachine.ts"
+import * as CiJobMachine from "./CiJobMachine.vibe"
 
 const image = sandboxImage
 /**

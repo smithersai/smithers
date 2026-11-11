@@ -4,10 +4,10 @@ import { Deferred, Effect, Fiber, FileSystem, Layer, Option, Path, Result } from
 import { PlatformError } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import { createHash } from "node:crypto"
-import * as Batch from "../src/FileSystem.ts"
+import * as Batch from "../src/FileSystem.vibe"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as BatchContract from "../src/test/FileSystemBatchContract.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as BatchContract from "../src/test/FileSystemBatchContract.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const info = { type: "Directory", dev: 7n, ino: Option.some(9n) } as FileSystem.File.Info
 

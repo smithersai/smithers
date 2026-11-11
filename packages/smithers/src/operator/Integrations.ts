@@ -11,9 +11,9 @@ import { Cli, z } from "incur"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import { withCredentials } from "./Credentials.ts"
-import { localFields, type LocalOptions, localRoot } from "./Store.ts"
+import { localFields, type LocalOptions, localRoot } from "./Store.vibe"
 
 /** An integration request this command refuses; the operator fixes the configuration or the host setup. */
 const refused = (fault: CliError.Fault, message: string): CliError.Refused =>

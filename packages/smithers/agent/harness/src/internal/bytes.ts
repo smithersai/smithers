@@ -18,6 +18,7 @@ import { utf8Length } from "../QuickJSLifecycle.ts"
  * @category conversions
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const size = utf8Length
 

@@ -80,7 +80,7 @@ The terminal's sockets reach the same `fetch`, so the object attaches one only w
 
 ## Keys
 
-SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 random bytes as hexadecimal) and binds to ChatApi. The sealing key and the placeholder key are SHA-256 derivations of it with labels of their own. Without SECRETS_KEY, or with one under 32 characters (logged as `secrets.off`), every secrets route answers `off` and the egress answers 503 `off`. Replacing it makes every stored value unreadable: Admins set them again.
+SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.vibe`, 32 random bytes as hexadecimal) and binds to ChatApi. The sealing key and the placeholder key are SHA-256 derivations of it with labels of their own. Without SECRETS_KEY, or with one under 32 characters (logged as `secrets.off`), every secrets route answers `off` and the egress answers 503 `off`. Replacing it makes every stored value unreadable: Admins set them again.
 
 ## Postgres
 

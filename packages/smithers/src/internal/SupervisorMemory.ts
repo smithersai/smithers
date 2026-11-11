@@ -27,7 +27,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Environment from "../Environment.ts"
 
 /**

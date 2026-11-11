@@ -5,7 +5,7 @@
  * transport yet, so the package planner refuses every one before this gate.
  */
 import { describe, expect, it } from "vitest"
-import * as Outward from "../src/Outward.ts"
+import * as Outward from "../src/Outward.vibe"
 import { HttpSecret, Secret } from "../src/Secret.ts"
 
 const npmToken = HttpSecret(Secret("NPM_TOKEN"), ["https://registry.npmjs.org"])

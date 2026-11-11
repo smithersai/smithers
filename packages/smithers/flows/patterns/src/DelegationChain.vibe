@@ -1,0 +1,804 @@
+/**
+ * The fixed delegation chain: refine, plan, derisk, execute, review, settle.
+ *
+ * Nothing here is new machinery. The chain is assembled from the patterns that
+ * already exist: {@link ReviewLoop} runs the derisk rounds, {@link Trellis}
+ * admits and executes the derisked plan, and {@link Escalation} walks the tier
+ * ladder weakest first. A tier retries through the `RetryPolicy` its own
+ * actions declare, so the engine spends those attempts durably and the chain
+ * escalates only once a tier has failed or its output was rejected. This
+ * module owns the order those parts run in and the bounds they run under.
+ *
+ * {@link make} declares what {@link run} executes: every tier call it declares
+ * carries the same `Work` a tier is run with, every leaf review carries the
+ * tier that produced the output, and settle carries the keys `run` settles
+ * with. The one payload that still differs is inside the derisk loop, which
+ * `ReviewLoop` owns: it reviews with `{ output }` carrying the produced plan
+ * and revises with `{ output, review, round }`, while `run` names the goal and
+ * the round in both.
+ *
+ * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
+ *
+ * @since 0.1.0
+ */
+
+import * as Flow from "@smthrs/flow/Flow"
+import * as Node from "@smthrs/plan/Node"
+import type * as Planned from "@smthrs/plan/Planned"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import * as Escalation from "./Escalation.vibe"
+import * as Compose from "./internal/Compose.vibe"
+import * as FailureSchema from "./internal/Failure.vibe"
+import type { Member } from "./internal/Member.ts"
+import { call as callMember } from "./internal/Member.ts"
+import { PatternError } from "./PatternError.vibe"
+import * as ReviewLoop from "./ReviewLoop.vibe"
+import * as Trellis from "./Trellis.vibe"
+
+/**
+ * Stable delegation-chain failure codes.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const DelegationErrorCode = Schema.Literals([
+  "invalid_bounds",
+  "missing_tier",
+  "derisk_failed",
+  "leaf_failed"
+])
+
+/**
+ * Stable delegation-chain failure code.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type DelegationErrorCode = typeof DelegationErrorCode.Type
+
+/**
+ * A refused chain declaration or a leaf no tier could settle.
+ *
+ * `path` names the plan path the failure belongs to, or `root` for a failure
+ * of the chain itself. `cause` carries the reported error or per-tier
+ * outcomes. It never carries the input that produced them.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class DelegationError extends Schema.TaggedError<DelegationError>()("flows/patterns/DelegationError", {
+  code: DelegationErrorCode,
+  path: Schema.String,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Unknown)
+}) {}
+
+/**
+ * The run budget threaded into every leaf call. A host that implements a
+ * budget capability enforces it; the chain only carries it.
+ *
+ * A USD ceiling is not carried here: it is enforced where every model call is
+ * made, by `@smthrs/agent`'s `Budget.make({ usd })`, which a chain's leaves
+ * spend through like any other call.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Budget {
+  readonly maxMinutes?: number | undefined
+}
+
+/**
+ * The bounds every chain declares: the tier ladder, the depth of the plan, and
+ * the derisk rounds.
+ *
+ * The chain declares no attempt budget of its own. A tier's retries are the
+ * `RetryPolicy` its actions declare, which the engine spends with durable
+ * attempt state.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Bounds {
+  readonly tierOrder: ReadonlyArray<string>
+  /**
+   * The plan envelope and the number of declared leaf slots. A plan may hold at
+   * most `maxDepth` leaves, nest `maxDepth` levels, and put `maxDepth` members
+   * in one container.
+   */
+  readonly maxDepth: number
+  readonly maxDeriskRounds: number
+}
+
+/**
+ * Configuration for {@link make}.
+ *
+ * `execute` supplies one flow per tier named in `tierOrder`, weakest first.
+ * `review` is asked twice over: once about each escalation rung, and once
+ * about the assembled leaf outputs.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface MakeOptions<R = never> extends Bounds {
+  readonly name?: string | undefined
+  readonly description?: string | undefined
+  readonly refine: Member<R>
+  readonly plan: Member<R>
+  readonly derisk: Member<R>
+  readonly execute: Readonly<Record<string, Member<R>>>
+  readonly review: Member<R>
+  readonly settle: Member<R>
+  readonly budget?: Budget | undefined
+}
+
+/**
+ * One delegated unit of work handed to a tier.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Work {
+  readonly leaf: Trellis.Leaf
+  readonly tier: string
+  readonly goal: unknown
+  readonly budget?: Budget | undefined
+}
+
+/**
+ * What the review is asked about: one escalation rung, or the whole chain.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type ReviewRequest =
+  | {
+    readonly stage: "leaf"
+    readonly leaf: Trellis.Leaf
+    readonly tier: string
+    readonly output: unknown
+  }
+  | {
+    readonly stage: "chain"
+    readonly goal: unknown
+    readonly plan: Trellis.Plan
+    readonly leaves: ReadonlyArray<unknown>
+  }
+
+/**
+ * What the derisk review is asked about on each round.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface DeriskRequest {
+  readonly goal: unknown
+  readonly plan: unknown
+  readonly round: number
+}
+
+/**
+ * What the planner is asked for on each derisk round.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface PlanRequest {
+  readonly goal: unknown
+  readonly round: number
+  readonly previous?: unknown
+  readonly derisk?: unknown
+}
+
+/**
+ * What `settle` receives once every leaf has produced an output.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Settlement {
+  readonly prompt: string
+  readonly goal: unknown
+  readonly plan: Trellis.Plan
+  readonly leaves: ReadonlyArray<unknown>
+  readonly review: unknown
+  readonly deriskExhausted: boolean
+}
+
+/**
+ * Operational callbacks for {@link run}.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface RuntimeOptions<Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6> extends Bounds {
+  readonly refine: (input: { readonly prompt: string }) => unknown!E1!R1
+  readonly plan: (request: PlanRequest) => unknown!E2!R2
+  readonly derisk: (request: DeriskRequest) => unknown!E3!R3
+  readonly execute: Readonly<Record<string, (work: Work) => unknown!E4!R4>>
+  readonly review: (request: ReviewRequest) => unknown!E5!R5
+  readonly settle: (settlement: Settlement) => Settled!E6!R6
+  readonly budget?: Budget | undefined
+  readonly concurrency?: number | undefined
+}
+
+const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
+
+// The bounds and the budget as own fields: the declared ladders and the
+// running chain read them again long after the call, and a caller's edit in
+// between must not reach them.
+const copiedBounds = (bounds: Bounds): Bounds => ({
+  tierOrder: [...bounds.tierOrder],
+  maxDepth: bounds.maxDepth,
+  maxDeriskRounds: bounds.maxDeriskRounds
+})
+
+const copiedBudget = (budget: Budget | undefined): Budget | undefined =>
+  budget === undefined ? undefined : { ...budget }
+
+const refuse = (code: DelegationErrorCode, message: string): DelegationError =>
+  new DelegationError({ code, path: "root", message })
+
+const isPatternError = (error: unknown): error is PatternError => error instanceof PatternError
+
+const checkBounds = (
+  bounds: Bounds & { readonly concurrency?: number | undefined },
+  tiers: ReadonlyArray<string>
+): DelegationError | undefined => {
+  if (!positive(bounds.maxDepth) || !positive(bounds.maxDeriskRounds)) {
+    return refuse("invalid_bounds", "maxDepth and maxDeriskRounds must be positive safe integers")
+  }
+  if (bounds.concurrency !== undefined && !positive(bounds.concurrency)) {
+    return refuse(
+      "invalid_bounds",
+      `Delegation concurrency must be a positive safe integer, received ${bounds.concurrency}`
+    )
+  }
+  if (bounds.tierOrder.length === 0) {
+    return refuse("invalid_bounds", "tierOrder must name at least one tier, weakest first")
+  }
+  const missing = bounds.tierOrder.filter((tier) => !tiers.includes(tier))
+  if (missing.length > 0) {
+    return refuse("missing_tier", `execute has no flow for tier ${missing.join(", ")}`)
+  }
+  return undefined
+}
+
+/**
+ * Reads the acceptance vocabulary both house patterns use: `true`,
+ * `"approved"`, `{ approved: true }`, or `{ accepted: true }`.
+ *
+ * @category predicates
+ * @since 0.1.0
+ */
+export const accepted = Compose.accepted
+
+/**
+ * The most flow calls a declared chain makes across its two rounds, counting
+ * only the calls the chain itself contributes.
+ *
+ * Four calls are fixed: refine, the derisk loop, the chain review, and settle.
+ * The derisk loop adds two calls per round minus the revision the last round
+ * never makes, and each of the at most `maxDepth` leaves a plan may name adds
+ * one execute plus one review call per tier it climbs. A supplied flow whose
+ * own body calls other flows adds those on top, and the engine's retries of a
+ * tier's actions are attempts of the same calls, not more of them.
+ *
+ * @category introspection
+ * @since 0.1.0
+ */
+export const bound = (options: Bounds): number =>
+  4 + 2 * options.maxDeriskRounds + options.maxDepth * 2 * options.tierOrder.length
+
+/**
+ * The state the execution round of a declared chain is handed: the refined
+ * goal and what the derisk loop settled with.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ExecutionState = Schema.Struct({
+  goal: Schema.Unknown,
+  derisked: Schema.Unknown
+})
+
+/**
+ * What a declared chain is called with. A caller passes `input` alone; the
+ * chain hands itself `execution` when it opens its execution round.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Payload = Schema.Struct({
+  input: Schema.Unknown,
+  execution: Schema.optionalKey(ExecutionState)
+})
+
+/**
+ * What a declared chain fails with: a {@link DelegationError} or a
+ * `TrellisError`, each encoded through its own schema, or the error of a stage
+ * it called.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Failure = Schema.Union([DelegationError, Trellis.TrellisError, Schema.Unknown])
+
+/**
+ * The declared form of a delegation chain.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type DelegationChainFlow<R = never> = Flow.Flow<
+  string,
+  typeof Payload,
+  typeof Schema.Unknown,
+  typeof Failure,
+  R
+>
+
+/** What a declared rung decides when its tier failed or was rejected. */
+const Escalate = { _tag: "flows/patterns/DelegationChain/Escalate" } as const
+
+const escalates = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && Object.hasOwn(value, "_tag") &&
+  (value as { readonly _tag?: unknown })._tag === Escalate._tag
+
+/** A failure as plain data: what a plan may hold while its graph is built. */
+interface Failed {
+  readonly kind: "delegation" | "trellis"
+  readonly code: string
+  readonly path: string
+  readonly message: string
+  readonly cause?: unknown
+}
+
+const mint = (failed: Failed): DelegationError | Trellis.TrellisError => {
+  if (failed.kind === "delegation") {
+    return new DelegationError({ code: failed.code as DelegationErrorCode, path: failed.path, message: failed.message })
+  }
+  return new Trellis.TrellisError({
+    code: failed.code as Trellis.TrellisErrorCode,
+    path: failed.path,
+    message: failed.message,
+    cause: failed.cause
+  })
+}
+
+/**
+ * Fails with a chain or plan error. A plan holds only data while its graph is
+ * built, and an error is a class instance, so the failure travels as data and
+ * is minted when the node runs.
+ */
+const fail = <R>(failed: Failed): Node.Node<unknown, unknown, R> =>
+  Node.bindPlanned(
+    Node.map(Node.succeed(failed), Node.capture({ failed: failed.code, path: failed.path }, mint)),
+    Node.capture({ failed: failed.code, path: failed.path }, (error: Planned.Planned<unknown>) => Node.fail(error))
+  )
+
+/**
+ * One rung of a declared ladder: the tier call, then the review of what that
+ * tier produced, then the next rung.
+ *
+ * A tier whose call fails escalates the same way a tier whose output the review
+ * rejects does, after the engine has spent the `RetryPolicy` of the tier's
+ * actions. The verdict is a `Node.branch`, so the plan carries both arms
+ * before anything runs and the decision is taken at run time. A ladder no
+ * tier settles fails `leaf_failed` at the leaf's plan path. {@link run} spends
+ * the same rule.
+ */
+const rung = <R>(
+  options: MakeOptions<R>,
+  leaf: Trellis.Leaf,
+  goal: unknown,
+  index: number
+): Node.Node<unknown, unknown, R> => {
+  const tier = options.tierOrder[index]
+  if (tier === undefined) {
+    return fail({
+      kind: "delegation",
+      code: "leaf_failed",
+      path: leaf.path,
+      message: `No tier settled the leaf at ${leaf.path}`
+    })
+  }
+  const work = {
+    leaf,
+    tier,
+    goal,
+    ...(options.budget === undefined ? {} : { budget: options.budget })
+  }
+  const marks = { path: leaf.path, tier }
+  // A success is wrapped as `{ ok }`, so no output a tier produces can pass
+  // for the escalation marker.
+  const attempt = Node.catch(
+    Node.map(callMember(options.execute[tier] as Member<R>, work), Node.capture(marks, (ok: unknown) => ({ ok }))),
+    { onFailure: Node.capture(marks, (): Node.Node<unknown, unknown, R> => Node.succeed(Escalate)) }
+  )
+  // One verdict per rung: escalate, or keep the output. The next rung is
+  // declared once, under that verdict, so a ladder's graph grows linearly
+  // with its tiers.
+  const verdict = Node.branch(attempt, {
+    if: Node.capture(marks, escalates),
+    then: () => Node.succeed(Escalate),
+    else: (wrapped: Planned.Planned<unknown>) => {
+      const output = (wrapped as Planned.Planned<{ readonly ok: unknown }>).ok
+      return Node.map(
+        Node.all({
+          output: Node.succeed(output),
+          decision: callMember(options.review, { stage: "leaf", leaf, tier, output })
+        }),
+        Node.capture(
+          marks,
+          ({ decision, output }: { readonly output: unknown; readonly decision: unknown }) =>
+            accepted(decision) ? { kept: output } : Escalate
+        )
+      )
+    }
+  })
+  return Node.branch(verdict, {
+    if: Node.capture(marks, escalates),
+    then: () => rung(options, leaf, goal, index + 1),
+    else: (kept: Planned.Planned<unknown>) =>
+      Node.map(Node.succeed(kept), Node.capture(marks, (value: unknown) => (value as { readonly kept: unknown }).kept))
+  })
+}
+
+/** Whether a value is the tagged outcome `ReviewLoop` settles with. */
+const outcome = (value: unknown): value is { readonly _tag: string; readonly output: unknown } =>
+  typeof value === "object" && value !== null && Object.hasOwn(value, "output") &&
+  ["Approved", "Exhausted", "Stalled"].includes((value as { readonly _tag?: unknown })._tag as string)
+
+type Leaves<R> = Node.Node<ReadonlyArray<unknown>, unknown, R>
+
+/**
+ * Lowers a validated plan into the ladders its leaves climb, answering every
+ * leaf output in plan order: a sequence runs its members in order, and a
+ * parallel group joins them.
+ */
+const lower = <R>(options: MakeOptions<R>, goal: unknown, plan: Trellis.Plan, path: string): Leaves<R> => {
+  if ("agent" in plan) {
+    const leaf: Trellis.Leaf = plan.agent.seat === undefined
+      ? { goal: plan.agent.goal, path }
+      : { goal: plan.agent.goal, seat: plan.agent.seat, path }
+    return Node.map(rung(options, leaf, goal, 0), Node.capture({ path }, (output: unknown) => [output]))
+  }
+  if ("parallel" in plan) {
+    const members: Record<string, Leaves<R>> = {}
+    plan.parallel.forEach((member, index) => {
+      members[`member-${index}`] = lower(options, goal, member, `${path}.parallel[${index}]`)
+    })
+    const keys = Object.keys(members)
+    return Node.map(
+      Node.all(members),
+      Node.capture(
+        { path, keys },
+        (results: Readonly<Record<string, ReadonlyArray<unknown>>>) => keys.flatMap((key) => results[key]!)
+      )
+    )
+  }
+  let chained: Leaves<R> = Node.succeed([])
+  plan.sequence.forEach((member, index) => {
+    const current = lower(options, goal, member, `${path}.sequence[${index}]`)
+    chained = Node.bindPlanned(
+      chained,
+      Node.capture({ path, index }, (previous: Planned.Planned<ReadonlyArray<unknown>>) =>
+        // The reference carries the earlier outputs; `andThen` gates every call
+        // in the next member on the earlier ones, parallel children included.
+        Node.andThen(
+          Node.succeed(previous),
+          Node.map(
+            Node.all({ previous: Node.succeed(previous), current }),
+            Node.capture({ path, index }, (
+              joined: { readonly previous: ReadonlyArray<unknown>; readonly current: ReadonlyArray<unknown> }
+            ) => [...joined.previous, ...joined.current])
+          )
+        ))
+    )
+  })
+  return chained
+}
+
+/**
+ * Declares a chain that runs the plan its derisk loop settles on, in two
+ * durable rounds.
+ *
+ * The first round refines the caller's input into a goal and runs the derisk
+ * loop (a `ReviewLoop` unrolled to `maxDeriskRounds`), then hands the goal and
+ * the loop's outcome to the execution round with the `To` outcome
+ * `@smthrs/flow` defines. The execution round reads the derisked plan as
+ * data: it validates it against the envelope `{ fuel, depth, fanout }`, all
+ * `maxDepth`, and declares one tier ladder for each leaf the plan names, with
+ * the leaf's real goal and path. A plan outside the envelope fails with the
+ * `Trellis` refusal and no leaf runs. The chain review then sees every leaf
+ * output in plan order, and settle receives the keys {@link run} settles with,
+ * `deriskExhausted` included.
+ *
+ * A crash resumes at the round boundary. Very large derisk-round bounds build a
+ * large first-round graph.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = <R = never>(caller: MakeOptions<R>): DelegationChainFlow<R> => {
+  // The body runs when each round is planned, later than this call, and the
+  // ladders it declares read the options again then, so every stage below
+  // reads this snapshot and never the caller's options.
+  const options: MakeOptions<R> = {
+    ...copiedBounds(caller),
+    refine: caller.refine,
+    plan: caller.plan,
+    derisk: caller.derisk,
+    execute: { ...caller.execute },
+    review: caller.review,
+    settle: caller.settle,
+    budget: copiedBudget(caller.budget)
+  }
+  const refusal = checkBounds(options, Object.keys(options.execute))
+  if (refusal !== undefined) $raise(refusal)
+  const derisk = ReviewLoop.make<R>({
+    produce: options.plan,
+    review: options.derisk,
+    revise: options.plan,
+    maxRounds: options.maxDeriskRounds
+  })
+  const envelope: Trellis.Envelope = { fuel: options.maxDepth, depth: options.maxDepth, fanout: options.maxDepth }
+  const captured = {
+    tierOrder: [...options.tierOrder],
+    maxDepth: options.maxDepth,
+    maxDeriskRounds: options.maxDeriskRounds,
+    budget: options.budget ?? null
+  }
+  const { name, description } = Compose.label("delegationChain", {
+    tierOrder: captured.tierOrder,
+    maxDepth: captured.maxDepth
+  }, caller)
+  const execution = (input: unknown, state: typeof ExecutionState.Type): Node.Node<unknown, unknown, R> => {
+    const goal = state.goal
+    // The state is payload a caller could hand in directly, so the derisk
+    // outcome is checked before anything reads it.
+    if (!outcome(state.derisked)) {
+      return fail({
+        kind: "delegation",
+        code: "derisk_failed",
+        path: "root",
+        message: "The execution round's derisk outcome is not a ReviewLoop outcome"
+      })
+    }
+    const derisked = state.derisked
+    const authored = derisked.output
+    const refusals = Trellis.validate(authored, envelope)
+    const refused = refusals[0]
+    if (refused !== undefined) {
+      const data = (error: Trellis.TrellisError) => ({ code: error.code, path: error.path, message: error.message })
+      return fail({
+        kind: "trellis",
+        ...data(refused),
+        cause: { rounds: [], remaining: envelope.fuel, refusals: refusals.map(data) }
+      })
+    }
+    const plan = authored as Trellis.Plan
+    return Node.bindPlanned(
+      lower(options, goal, plan, "root"),
+      Node.capture(captured, (leaves: Planned.Planned<ReadonlyArray<unknown>>) =>
+        Node.bindPlanned(
+          callMember(options.review, { stage: "chain", goal, plan, leaves }),
+          Node.capture(captured, (review: Planned.Planned<unknown>) =>
+            callMember(options.settle, {
+              prompt: input,
+              goal,
+              plan,
+              leaves,
+              review,
+              deriskExhausted: derisked._tag === "Exhausted"
+            }))
+        ))
+    )
+  }
+  const body = (payload: typeof Payload.Type): Node.Node<unknown, unknown, R> =>
+    payload.execution !== undefined
+      ? execution(payload.input, payload.execution)
+      : Node.bindPlanned(
+        callMember(options.refine, { prompt: payload.input }),
+        Node.capture(captured, (goal: Planned.Planned<unknown>) =>
+          Node.bindPlanned(
+            // The derisk loop states its own seed as one `input` field, so the
+            // planner it wraps is still handed `{ goal, round }` unchanged.
+            callMember(derisk, { input: { goal, round: 1 } }),
+            Node.capture(
+              captured,
+              (derisked: Planned.Planned<unknown>) => self.to({ input: payload.input, execution: { goal, derisked } })
+            )
+          ))
+      )
+  // The body names the flow it is the body of, which is how the first round
+  // opens the execution round. It is read when a round is planned, long after
+  // `Flow.make` has returned, so the binding is initialized by then.
+  const self: DelegationChainFlow<R> = Flow.make(name, {
+    ...(description === undefined ? {} : { description }),
+    payload: Payload,
+    success: Schema.Unknown,
+    // The engine encodes a typed failure through this schema: the chain's own
+    // errors through theirs, and whatever a stage it called failed with.
+    error: FailureSchema.schemaFor(
+      [DelegationError, Trellis.TrellisError],
+      [options.refine, options.plan, options.derisk, ...Object.values(options.execute), options.review, options.settle]
+    ) as typeof Failure,
+    maxRounds: 2,
+    body: Node.capture(captured, body)
+  })
+  return self
+}
+
+type Attempt =
+  | {
+    readonly tier: string
+    readonly failed: true
+    readonly error: unknown
+  }
+  | {
+    readonly tier: string
+    readonly failed: false
+    readonly output: unknown
+    readonly rejected: boolean
+  }
+
+const attemptCause = (attempts: ReadonlyArray<Attempt>): ReadonlyArray<Readonly<Record<string, unknown>>> =>
+  attempts.map((attempt) =>
+    attempt.failed
+      ? { tier: attempt.tier, error: attempt.error }
+      : { tier: attempt.tier, rejected: attempt.rejected }
+  )
+
+/**
+ * Runs the chain: refine the prompt into a goal, plan and derisk it, execute
+ * every leaf through the tier ladder, review the assembled outputs, settle.
+ *
+ * The derisk loop stops at the first approved round. Each leaf climbs the tier
+ * ladder weakest first, calling each tier once: a tier that fails, or whose
+ * result the review rejects, admits the next one. Retrying a tier is the job
+ * of its own effect here and of its actions' `RetryPolicy` in a declared
+ * chain, never of the chain. Only a reached rung contributes its
+ * `result.output`; an exhausted ladder fails `leaf_failed` naming the leaf's
+ * plan path, and no later stage runs.
+ *
+ * `maxDepth` is the whole plan envelope: the derisked plan may hold at most
+ * `maxDepth` leaves, nest `maxDepth` levels, and put `maxDepth` members in one
+ * container. A wider plan is refused with the `Trellis` code that names the
+ * bound it broke.
+ *
+ * @category combinators
+ * @since 0.1.0
+ */
+export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
+  prompt: string,
+  caller: RuntimeOptions<Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>
+): Settled!(E1 | E2 | E3 | E5 | E6 | DelegationError | Trellis.TrellisError)!(R1 | R2 | R3 | R4 | R5 | R6) => {
+  // Snapshots taken at the call: the effect may run later, and a caller's
+  // edit to the option object in between must not reach it.
+  const options: typeof caller = {
+    ...copiedBounds(caller),
+    refine: caller.refine,
+    plan: caller.plan,
+    derisk: caller.derisk,
+    execute: { ...caller.execute },
+    review: caller.review,
+    settle: caller.settle,
+    budget: copiedBudget(caller.budget),
+    concurrency: caller.concurrency
+  }
+  return effect {
+    const refusal = checkBounds(options, Object.keys(options.execute))
+    if (refusal !== undefined) throw refusal
+    const envelope: Trellis.Envelope = {
+      fuel: options.maxDepth,
+      depth: options.maxDepth,
+      fanout: options.maxDepth
+    }
+    const goal = try options.refine({ prompt })
+    const derisked = try (ReviewLoop.run(goal, {
+      maxRounds: options.maxDeriskRounds,
+      produce: () => options.plan({ goal, round: 1 }),
+      review: (plan, round) => options.derisk({ goal, plan, round }),
+      revise: ({ output, review, round }) => options.plan({ goal, round: round + 1, previous: output, derisk: review })
+    })
+      |> Effect.catchIf(
+        %,
+        isPatternError,
+        (error) => Effect.fail(refuse("derisk_failed", error.message))
+      ))
+    const exhausted = derisked._tag === "Exhausted"
+    const authored = derisked.output
+    const refusals = try Effect.sync(() => Trellis.validate(authored, envelope))
+    if (refusals.length > 0) {
+      const refusal = refusals[0] as Trellis.TrellisError
+      throw new Trellis.TrellisError({
+        code: refusal.code,
+        path: refusal.path,
+        message: refusal.message,
+        cause: { rounds: [], remaining: envelope.fuel, refusals }
+      })
+    }
+    const plan = authored as Trellis.Plan
+    const outputs = new Map<string, unknown>()
+    try Trellis.execute(plan, {
+      concurrency: options.concurrency ?? options.maxDepth,
+      leaf: (leaf) => {
+        const attempts: Array<Attempt> = []
+        return Escalation.run<Trellis.Leaf, Attempt, E5, R4 | R5, never, never>(leaf, {
+          rungs: options.tierOrder.map((tier) => (work: Trellis.Leaf) =>
+            Effect.matchEffect(
+              (options.execute[tier] as (work: Work) => unknown!E4!R4)({
+                leaf: work,
+                tier,
+                goal,
+                ...(options.budget === undefined ? {} : { budget: options.budget })
+              }),
+              {
+                onFailure: (error) => Effect.succeed<Attempt>({ tier, failed: true, error }),
+                onSuccess: (output) =>
+                  Effect.map(
+                    options.review({ stage: "leaf", leaf, tier, output }),
+                    (decision): Attempt => ({ tier, failed: false, output, rejected: !accepted(decision) })
+                  )
+              }
+            )
+            |> Effect.tap(%, effect (attempt) => attempts.push(attempt))
+          ),
+          accept: (attempt) => Effect.succeed(!attempt.failed && !attempt.rejected)
+        })
+          |> Effect.flatMap(%, (reached) =>
+            reached.exhausted
+              ? Effect.fail(
+                new DelegationError({
+                  code: "leaf_failed",
+                  path: leaf.path,
+                  message: `No tier settled the leaf at ${leaf.path}`,
+                  cause: attemptCause(attempts)
+                })
+              )
+              : Effect.succeed(reached.result))
+          // The preceding acceptance predicate admits exactly the successful,
+          // non-rejected member of `Attempt`. Escalation's generic predicate
+          // cannot carry that refinement into its result type, so retain the
+          // proven branch here instead of pretending a failed attempt can pass.
+          |> Effect.tap(
+            %,
+            effect (attempt) => outputs.set(leaf.path, (attempt as Extract<Attempt, { readonly failed: false }>).output)
+          )
+          |> Effect.catchTag(
+            %,
+            "flows/patterns/PatternError",
+            (error) =>
+              Effect.fail(
+                new DelegationError({
+                  code: "leaf_failed",
+                  path: leaf.path,
+                  message: `No tier settled the leaf at ${leaf.path}`,
+                  cause: error
+                })
+              )
+          )
+      }
+    })
+    const leaves = (try Effect.sync(() => Trellis.leaves(plan))).map((
+      leaf
+    ) => outputs.get(leaf.path))
+    const review = try options.review({ stage: "chain", goal, plan, leaves })
+    return try options.settle({
+      prompt,
+      goal,
+      plan,
+      leaves,
+      review,
+      deriskExhausted: exhausted
+    })
+  }
+}
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

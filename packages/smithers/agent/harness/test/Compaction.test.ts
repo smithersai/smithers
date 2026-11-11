@@ -2,7 +2,7 @@ import { ModelRequest } from "@smthrs/model"
 import { Effect } from "effect"
 import * as Result from "effect/Result"
 import { describe, expect, expectTypeOf, it } from "vitest"
-import * as Compaction from "../src/Compaction.ts"
+import * as Compaction from "../src/Compaction.vibe"
 import { ContextWindow, prefixDigest } from "../src/ContextWindow.ts"
 
 const message = (text: string) => ModelRequest.Message.assistant(text, { stopReason: "stop" })

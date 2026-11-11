@@ -19,25 +19,25 @@
  * @category messaging
  * @since 0.1.0
  */
-export * as Bridge from "./Bridge.ts"
+export * as Bridge from "./Bridge.vibe"
 
 /**
  * @category homes
  * @since 0.1.0
  */
-export * as Docs from "./Docs.ts"
+export * as Docs from "./Docs.vibe"
 
 /**
  * @category homes
  * @since 0.1.0
  */
-export * as Home from "./Home.ts"
+export * as Home from "./Home.vibe"
 
 /**
  * @category messaging
  * @since 0.1.0
  */
-export * as Interactions from "./Interactions.ts"
+export * as Interactions from "./Interactions.vibe"
 
 /**
  * @category rendering
@@ -49,7 +49,7 @@ export * as Presentation from "./Presentation.ts"
  * @category rendering
  * @since 0.1.0
  */
-export * as PresentationRealm from "./PresentationRealm.ts"
+export * as PresentationRealm from "./PresentationRealm.vibe"
 
 /**
  * @category checking
@@ -61,10 +61,10 @@ export * as ViewCode from "./ViewCode.ts"
  * @category framing
  * @since 0.1.0
  */
-export * as ViewCsp from "./ViewCsp.ts"
+export * as ViewCsp from "./ViewCsp.vibe"
 
 /**
  * @category framing
  * @since 0.1.0
  */
-export * as WebPage from "./WebPage.ts"
+export * as WebPage from "./WebPage.vibe"

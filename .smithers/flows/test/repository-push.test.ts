@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { normalEvents } from "../repository/activation.ts"
+import { normalEvents } from "../repository/activation.vibe"
 import { sourceEvent } from "../repository/events.ts"
-import { selectedSteps } from "../repository/execution.ts"
-import type { Event } from "../repository/schema.ts"
+import { selectedSteps } from "../repository/execution.vibe"
+import type { Event } from "../repository/schema.vibe"
 
 const push: typeof Event.Type = {
   source: "github",

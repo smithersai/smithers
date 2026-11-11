@@ -14,7 +14,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 /**
@@ -57,7 +57,7 @@ const securityReview = Smithers.SecurityReview({
         "A `kid` lookup that falls back to the active key when the named kid is unknown.",
         "`importHmacKey` or `layerConfig` accepting a short or low-entropy secret with no minimum byte length."
       ],
-      paths: ["src/internal/ShareSigner.ts", "src/BranchShare.ts", "src/WorkspaceShare.ts"]
+      paths: ["src/internal/ShareSigner.ts", "src/BranchShare.ts", "src/WorkspaceShare.vibe"]
     },
     {
       id: "check-order-and-expiry",
@@ -80,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "A decode failure that returns a distinct message usable as a parsing oracle, or echoes the credential in `cause`.",
         "Any transport-reachable use of `SyncPrincipal.layerWorkspace` or a default principal other than anonymous."
       ],
-      paths: ["src/SyncAuth.ts", "src/SyncPrincipal.ts", "src/SyncRpcs.ts"]
+      paths: ["src/SyncAuth.vibe", "src/SyncPrincipal.ts", "src/SyncRpcs.ts"]
     },
     {
       id: "run-read-authz",
@@ -158,7 +158,7 @@ const securityReview = Smithers.SecurityReview({
         "A `makeNoop` authority whose `verify` succeeds, or a `SyncServer.layerNoop` that returns journal data.",
         "The published `./test/TestSync` export `layerTrustAllAsOwner` (trusts every connection as owner) reachable from a non-test composition."
       ],
-      paths: ["src/test/**", "src/WorkspaceShare.ts", "src/BranchShare.ts", "src/SyncServer.ts", "src/SyncAuth.ts"]
+      paths: ["src/test/**", "src/WorkspaceShare.vibe", "src/BranchShare.ts", "src/SyncServer.ts", "src/SyncAuth.vibe"]
     },
     {
       id: "error-leakage",
@@ -173,7 +173,7 @@ const securityReview = Smithers.SecurityReview({
         "src/SyncError.ts",
         "src/internal/CauseText.ts",
         "src/SyncClient.ts",
-        "src/WorkspaceShare.ts",
+        "src/WorkspaceShare.vibe",
         "src/BranchShare.ts"
       ]
     }

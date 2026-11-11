@@ -28,7 +28,7 @@ import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"
 import * as Input from "./Input.ts"
 import { Finding, LlmLint, Reproduction, type ReviewBudget } from "./LlmLint.ts"
-import type { Engine } from "./ModelEngine.ts"
+import type { Engine } from "./ModelEngine.vibe"
 import * as Target from "./Target.ts"
 
 /**

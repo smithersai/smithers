@@ -15,7 +15,7 @@ suite grades our own loop, so none of the twelve has an equivalent to move.
 From the repository root:
 
 ```bash
-bun packages/smithers/agent/regression/run.ts
+bun packages/smithers/agent/regression/run.vibe
 ```
 
 Bun, not node: see [Updating the baseline](#updating-the-baseline). The suite
@@ -110,9 +110,9 @@ loop that suspended quietly cannot pass by ending some other way.
 
 | File            | What it is                                                                                                           |
 | --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `subject.ts`    | The composition under evaluation: the scripted provider, the seat seam, the host, and the two ways to run the agent. |
-| `agent.eval.ts`      | The seventeen scenarios, their declared expectations, the two scorers, and the case executor.                            |
-| `run.ts`        | The entry point: runs the suite, compares it to the baseline, applies the gate, sets the exit code.                  |
+| `subject.vibe`  | The composition under evaluation: the scripted provider, the seat seam, the host, and the two ways to run the agent. |
+| `agent.eval.vibe`      | The seventeen scenarios, their declared expectations, the two scorers, and the case executor.                            |
+| `run.vibe`        | The entry point: runs the suite, compares it to the baseline, applies the gate, sets the exit code.                  |
 | `baseline.json` | The committed baseline, in `@smthrs/evals` `Baseline` v1 form. Thirty-four records: seventeen cases times two scorers.          |
 | `tsconfig.json` | Typechecks the suite: `npx tsc -p packages/smithers/agent/regression`. Nothing else references it.                                          |
 
@@ -123,7 +123,7 @@ pretty-printed copy only produces a diff the next `--update` reverses.
 ## Updating the baseline
 
 ```bash
-bun packages/smithers/agent/regression/run.ts --update
+bun packages/smithers/agent/regression/run.vibe --update
 ```
 
 Do this only when a score moved for a reason you can name in the commit message.
@@ -143,13 +143,13 @@ red run:
 
 ## Adding a case
 
-1. Add a scenario to the `scenarios` table in `agent.eval.ts` with its `summary`, its
+1. Add a scenario to the `scenarios` table in `agent.eval.vibe` with its `summary`, its
    `run`, and the `expected` observation written out in full. `cases` is derived
    from that table, so there is nothing else to keep in sync.
 2. Prefer a scenario whose answer encodes the behaviour, not just its cost. A
    case that only counts model calls passes for the wrong reason as soon as an
    unrelated retry changes the count.
-3. Run `bun packages/smithers/agent/regression/run.ts --update`, read the recorded scores, and commit
+3. Run `bun packages/smithers/agent/regression/run.vibe --update`, read the recorded scores, and commit
    the baseline with the case.
 
 ## Limits
@@ -194,12 +194,12 @@ segment of letters, digits, `.`, `_` and `-`.
 
 | File | What it is |
 | --- | --- |
-| `character/world.ts` | The simulated workplace: `world.yaml`, `wiki/`, `repo/`, and the tools a role may call (chat, handoffs, requests, calendar, email, wiki, issues, web, and the work tools: `repo_read`, `repo_search`, `run_tests`, `ops_run`, `pr_open`, `issue_create`, `issue_comment`, `issue_update`), each recording its calls. |
+| `character/world.vibe` | The simulated workplace: `world.yaml`, `wiki/`, `repo/`, and the tools a role may call (chat, handoffs, requests, calendar, email, wiki, issues, web, and the work tools: `repo_read`, `repo_search`, `run_tests`, `ops_run`, `pr_open`, `issue_create`, `issue_comment`, `issue_update`), each recording its calls. |
 | `character/profile.ts` | Composes a profile (the role's `.smithers/flows/<role>/flow.mdx`: `model`, `effort`, and `metadata` `name` and comma-separated `skills`; the body is the charter) into its system segments: the host's turn contract, shared instructions, charter, skills, with byte caps. |
 | `character/event.ts` | Renders the event that starts a turn: time, where it arrived, the conversation so far, the new message. |
 | `character/subject.ts` | Runs one turn through `Agent` on a live subscription seat or a replay seat. |
 | `character/score.ts` | Deterministic checks (`@smthrs/scorers` `Checks`): jargon, forbidden phrases and truncation on every human-read message (replies, DMs, digest items, posts, requests to Will, handoff briefs, questions, notes, wiki pages, issue comments, new issues, pull requests); openers, bare paths and unlinked references on what Will reads directly; leakage on what other people read; expected calls; booking rules. |
-| `character/rubric.ts` | The seven-criterion, role-neutral rubric judge (`@smthrs/scorers` `Rubric`) on a subscription seat; it reads every human-read message in full and takes the role's ideal from the case's `focus` note. `judgeKey` records what a verdict depended on. |
+| `character/rubric.vibe` | The seven-criterion, role-neutral rubric judge (`@smthrs/scorers` `Rubric`) on a subscription seat; it reads every human-read message in full and takes the role's ideal from the case's `focus` note. `judgeKey` records what a verdict depended on. |
 | `character/suite.ts` | Loads `suite.yaml` (its `profile` names the role's `flow.mdx`; `org` holds `Skills/` and the shared instructions) and `cases/*.yaml`. |
 | `character/run.ts` | Runs cases through `@smthrs/evals` (`Suite`, `Runner`, `Trials`), prints pass@1, pass@k and pass^k, and writes results and a regression log for live runs. |
 | `character/example/` | A three-case suite in a tiny invented company: the offline gate and a template. |

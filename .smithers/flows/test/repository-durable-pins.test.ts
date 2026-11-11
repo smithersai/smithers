@@ -6,9 +6,9 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import { NativeCoding, type NativeRevision } from "../coding/native.ts"
-import { captureRepository } from "../repository/inspection.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import { NativeCoding, type NativeRevision } from "../coding/native.vibe"
+import { captureRepository } from "../repository/inspection.vibe"
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const gate = {

@@ -117,8 +117,7 @@ export type Name = keyof Manifest extends never ? string : Extract<keyof Manifes
  * @category models
  * @since 0.1.0
  */
-export type Input<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { input: infer I } ? I : unknown
+export type Input<N extends Name> = N extends keyof Manifest ? Manifest[N] extends { input: infer I } ? I : unknown
   : unknown
 
 /**
@@ -127,8 +126,7 @@ export type Input<N extends Name> = N extends keyof Manifest
  * @category models
  * @since 0.1.0
  */
-export type Output<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { output: infer O } ? O : unknown
+export type Output<N extends Name> = N extends keyof Manifest ? Manifest[N] extends { output: infer O } ? O : unknown
   : unknown
 
 const invalidRoute = (path: string, description = "Route metadata violates the command contract"): FsError =>
@@ -284,8 +282,8 @@ const copyRoute = effect (input: Route): Route!FsError => {
     maxLength: maximumSegmentLength
   }), "$")
   if (
-    !segments.ok || segments.value.length === 0 ||
-    segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))
+    !segments.ok || segments.value.length === 0
+    || segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))
   ) {
     throw invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`)
   }
@@ -394,9 +392,9 @@ export effect function load(input: Route): Loaded!FsError {
     }
   }
   if (
-    typeof module.default !== "object" || module.default === null ||
-    !("input" in module.default) || !Schema.isSchema(module.default.input) ||
-    !("output" in module.default) || !Schema.isSchema(module.default.output)
+    typeof module.default !== "object" || module.default === null
+    || !("input" in module.default) || !Schema.isSchema(module.default.input)
+    || !("output" in module.default) || !Schema.isSchema(module.default.output)
   ) throw exportMissing()
   return module.default as Loaded
 }

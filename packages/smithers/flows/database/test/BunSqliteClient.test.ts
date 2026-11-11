@@ -80,7 +80,7 @@ vi.mock("bun:sqlite", async () => {
 })
 
 import type { SqliteClientConfig } from "@effect/sql-sqlite-bun/SqliteClient"
-import * as BunSqliteClient from "../src/internal/BunSqliteClient.ts"
+import * as BunSqliteClient from "../src/internal/BunSqliteClient.vibe"
 
 const withClient = <A, E>(
   config: SqliteClientConfig,

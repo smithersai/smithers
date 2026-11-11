@@ -2,15 +2,15 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Clock, Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
-import { type Actor, canAsk } from "./Actor.ts"
+import { type Actor, canAsk } from "#vibelang/emitted/worker/Actor"
 import { branchAccess, BranchRoles, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { scopeAccess } from "./branch/Texts.ts"
-import * as GitHubConfig from "./github/Config.ts"
+import * as GitHubConfig from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as SessionStore from "./SessionStore.ts"
 import { type Admission, type Checked, configuredRoleFreshMs, LEASE_MS, roleFresh } from "./SocketAccess.ts"
-import { mayRead } from "./stack/Access.ts"
+import { mayRead } from "#vibelang/emitted/worker/stack/Access"
 
 // The rules a socket host renews a lease by (worker/SocketAccess.ts): the same ones its route admitted it with.
 // `checker` builds them inside a Durable Object, over the Hyperdrive config ChatApi binds and the deployment's own

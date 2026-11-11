@@ -14,73 +14,73 @@
  * @category actions
  * @since 1.0.0
  */
-export * as Actions from "./github/Actions.ts"
+export * as Actions from "./github/Actions.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as AppAuth from "./github/AppAuth.ts"
+export * as AppAuth from "./github/AppAuth.vibe"
 
 /**
  * @category getters
  * @since 1.0.0
  */
-export * as Collaborators from "./github/Collaborators.ts"
+export * as Collaborators from "./github/Collaborators.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Commits from "./github/Commits.ts"
+export * as Commits from "./github/Commits.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Config from "./github/Config.ts"
+export * as Config from "./github/Config.vibe"
 
 /**
  * @category getters
  * @since 1.0.0
  */
-export * as Contents from "./github/Contents.ts"
+export * as Contents from "./github/Contents.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as GitHubClient from "./github/GitHubClient.ts"
+export * as GitHubClient from "./github/GitHubClient.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Issues from "./github/Issues.ts"
+export * as Issues from "./github/Issues.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Once from "./github/Once.ts"
+export * as Once from "./github/Once.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as Payload from "./github/Payload.ts"
+export * as Payload from "./github/Payload.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as Proxy from "./github/Proxy.ts"
+export * as Proxy from "./github/Proxy.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Pulls from "./github/Pulls.ts"
+export * as Pulls from "./github/Pulls.vibe"
 
 /**
  * @category services
@@ -92,25 +92,25 @@ export * as RateLimit from "./github/RateLimit.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Refs from "./github/Refs.ts"
+export * as Refs from "./github/Refs.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Repository from "./github/Repository.ts"
+export * as Repository from "./github/Repository.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Statuses from "./github/Statuses.ts"
+export * as Statuses from "./github/Statuses.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Sync from "./github/Sync.ts"
+export * as Sync from "./github/Sync.vibe"
 
 /** GitHub user sign-in, PKCE, refresh and revocation. @since 1.0.0 @category services */
 export * as Auth from "./github/Auth.vibe"

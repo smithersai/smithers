@@ -1,10 +1,10 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { SequentialHook } from "../src/Hooks.ts"
-import type { FlowsPlugin } from "../src/index.ts"
-import * as Kernel from "../src/Kernel.ts"
-import * as Plugins from "../src/Plugins.ts"
-import * as Resolve from "../src/Resolve.ts"
+import type { SequentialHook } from "../src/Hooks.vibe"
+import type { FlowsPlugin } from "../src/index.vibe"
+import * as Kernel from "../src/Kernel.vibe"
+import * as Plugins from "../src/Plugins.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 const invalidResults = [
   { name: "forgot-return", handler: () => undefined, type: "undefined" },

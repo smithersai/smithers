@@ -1,6 +1,6 @@
 import { Effect, Metric, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { instrument, operations } from "../src/internal/Instrument.ts"
+import { instrument, operations } from "../src/internal/Instrument.vibe"
 
 describe("memory service instrumentation", () => {
   it("preserves adapter metadata and forwards every operation argument exactly once", async () => {

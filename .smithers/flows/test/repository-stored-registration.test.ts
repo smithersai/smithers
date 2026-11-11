@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { JobInput, SetupInput } from "../repository/schema.ts"
+import { JobInput, SetupInput } from "../repository/schema.vibe"
 
 /*
  * R96 B1: taking the trial's own test request out of the candidate moves the

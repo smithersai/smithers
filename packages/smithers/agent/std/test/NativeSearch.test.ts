@@ -8,8 +8,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as NativeSearch from "../src/NativeSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as NativeSearch from "../src/NativeSearch.vibe"
+import * as Search from "../src/Search.vibe"
 
 describe.skipIf(process.platform === "win32")("NativeSearch environment", () => {
   for (const declared of [false, true]) {

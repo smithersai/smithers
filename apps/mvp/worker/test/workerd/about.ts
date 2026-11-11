@@ -5,7 +5,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { ConfigProvider, Effect, Option } from "effect"
 import { FetchHttpClient, HttpEffect, type HttpClient, type HttpServerRequest, type HttpServerResponse } from "effect/http"
-import * as Actor from "../../Actor.ts"
+import * as Actor from "../../Actor.vibe"
 import * as RepoApi from "../../RepoApi.ts"
 
 interface Env {

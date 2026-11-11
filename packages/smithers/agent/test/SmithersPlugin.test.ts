@@ -11,7 +11,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Result, type Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as CellPlugin from "../src/CellPlugin.ts"
+import * as CellPlugin from "../src/CellPlugin.vibe"
 import * as SmithersPlugin from "../src/SmithersPlugin.ts"
 
 const callOf = (descriptor: FlowBinding.Binding["descriptor"], input: Schema.Json): Cell.Call =>

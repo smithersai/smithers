@@ -89,7 +89,7 @@ describe("the CLI documentation contracts", () => {
     // `bin.ts` only picks an entry; the reporter, the exit status and the
     // `--help`/`--version` scan live in the two modules it loads.
     const stale = /`bin\.ts` (?:prints|hands|reads|answers)|through `bin\.ts`|rather than in `bin\.ts`/
-    const files = ["CliError.ts", "Unsupported.ts", "Command.ts", "Providers.ts", "internal/Failure.ts"]
+    const files = ["CliError.vibe", "Unsupported.ts", "Command.ts", "Providers.ts", "internal/Failure.ts"]
       .filter((file) => stale.test(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8")))
     const tests = readFileSync(new URL("./Unsupported.test.ts", import.meta.url), "utf8")
     expect(files).toEqual([])
@@ -135,10 +135,11 @@ const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.
   sideEffects: ReadonlyArray<string>
 }
 
-/** Export-map subpaths with a literal target, minus the leading `./`. */
+/** Source-module subpaths, including native source conditions, minus `./`. */
 const subpaths = Object.entries(manifest.exports)
   .filter(([key, target]) =>
-    !key.includes("*") && typeof target === "string" && key !== "." && key !== "./package.json"
+    !key.includes("*") && (typeof target === "string" || target?.["vibelang-source"] !== undefined)
+    && key !== "." && key !== "./package.json"
   )
   .map(([key]) => key.slice(2))
 
@@ -176,14 +177,18 @@ describe("the export map", () => {
   })
 
   it("declares every module that runs the CLI at import as a side effect", () => {
+    const source = (key: string) => {
+      const target = manifest.exports[`./${key}`]!
+      return typeof target === "string" ? target : target["vibelang-source"]!
+    }
     // A bundler that honours `sideEffects` prunes an import whose bindings are
     // unused. `bin.ts` loads `cli/LegacyBin.ts` for its `NodeRuntime.runMain`
     // alone, so both must be listed as source and as each compiled output.
     const entries = subpaths.filter((key) =>
-      /^NodeRuntime\.runMain\(/m.test(readFileSync(new URL(`../src/${key}.ts`, import.meta.url), "utf8"))
+      /^NodeRuntime\.runMain\(/m.test(readFileSync(new URL(`../${source(key)}`, import.meta.url), "utf8"))
     )
     const missing = entries.flatMap((key) =>
-      [`./src/${key}.ts`, `./dist/esm/${key}.js`, `./dist/cjs/${key}.js`].filter((path) =>
+      [source(key), `./dist/esm/${key}.js`, `./dist/cjs/${key}.js`].filter((path) =>
         !manifest.sideEffects.includes(path)
       )
     )

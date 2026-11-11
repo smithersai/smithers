@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { BenchmarkSheriff, layer } from "../../../examples/use-cases/benchmark-sheriff.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { BenchmarkSheriff, layer } from "../../../examples/use-cases/benchmark-sheriff.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "benchmark-sheriff-"))
 

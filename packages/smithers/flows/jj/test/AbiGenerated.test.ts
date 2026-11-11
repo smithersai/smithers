@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
-import * as WasiPreview1 from "../src/browser/WasiPreview1.ts"
+import * as WasiPreview1 from "../src/browser/WasiPreview1.vibe"
 import { rootedSyncFs } from "./RootedSyncFs.ts"
 
 interface Abi {

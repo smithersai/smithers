@@ -17,7 +17,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   // Examples are linted and type-checked with the sources and run by the suite.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/integrations"
 })
 
@@ -71,9 +71,9 @@ const securityReview = Smithers.SecurityReview({
         "An idempotency or dedupe key built from attacker-chosen fields alone, so a replay with a new key is processed twice."
       ],
       paths: [
-        "src/core/Signature.ts",
-        "src/core/Channel.ts",
-        "src/github/Payload.ts"
+        "src/core/Signature.vibe",
+        "src/core/Channel.vibe",
+        "src/github/Payload.vibe"
       ]
     },
     {
@@ -87,10 +87,10 @@ const securityReview = Smithers.SecurityReview({
         "An IntegrationError summary, details map, or cause built from a response body or URL without passing through redact or RedactedError."
       ],
       paths: [
-        "src/github/GitHubClient.ts",
+        "src/github/GitHubClient.vibe",
         "src/core/Redact.ts",
         "src/core/RedactedError.ts",
-        "src/core/AccessToken.ts"
+        "src/core/AccessToken.vibe"
       ]
     },
     {
@@ -103,8 +103,8 @@ const securityReview = Smithers.SecurityReview({
         "A query value or GraphQL variable concatenated into a query string instead of passed as a variable."
       ],
       paths: [
-        "src/github/Repository.ts",
-        "src/github/Actions.ts",
+        "src/github/Repository.vibe",
+        "src/github/Actions.vibe",
         "src/core/IssueSync.ts"
       ]
     },
@@ -120,9 +120,9 @@ const securityReview = Smithers.SecurityReview({
         "A connection-scoped layer that falls back to ambientEnvironment() tokens when the connection's credential fails to resolve."
       ],
       paths: [
-        "src/core/Connection.ts",
+        "src/core/Connection.vibe",
         "src/Environment.ts",
-        "src/*/Config.ts"
+        "src/*/Config.{ts,vibe}"
       ]
     },
     {
@@ -136,7 +136,7 @@ const securityReview = Smithers.SecurityReview({
         "A token endpoint request that follows redirects, or accepts a non-https tokenUrl for a non-loopback host.",
         "A token response body echoed into an error without stripping access_token, refresh_token, or client_secret."
       ],
-      paths: ["src/core/Pkce.ts", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.ts", "src/core/AccessToken.ts"]
+      paths: ["src/core/Pkce.vibe", "src/core/AuthorizationUrl.ts", "src/core/OAuthToken.vibe", "src/core/AccessToken.vibe"]
     },
     {
       id: "source-store-grants",
@@ -150,10 +150,10 @@ const securityReview = Smithers.SecurityReview({
         "SQL built with sql.literal or string concatenation from a query, kind, or id instead of a bound parameter."
       ],
       paths: [
-        "src/core/SourceStore.ts",
-        "src/core/SourceRecord.ts",
-        "src/core/CursorStore.ts",
-        "src/core/Sync.ts"
+        "src/core/SourceStore.vibe",
+        "src/core/SourceRecord.vibe",
+        "src/core/CursorStore.vibe",
+        "src/core/Sync.vibe"
       ]
     }
   ]
@@ -164,7 +164,7 @@ const importRules = ImportRules({
   rules: [
     {
       kind: "forbidCalls",
-      files: ["src/core/Source.ts"],
+      files: ["src/core/Source.vibe"],
       callees: ["Effect.repeat", "Effect.retry", "Effect.sleep", "Schedule.spaced", "setTimeout", "setInterval"],
       because: "DUR-2: polling steps and waits belong to the durable flow engine."
     },

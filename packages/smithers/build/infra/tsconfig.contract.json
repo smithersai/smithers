@@ -1,6 +1,9 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
     "types": [
       "node",
       "vitest/globals"
@@ -12,6 +15,7 @@
     ]
   },
   "include": [
-    "worker/test/cli-contract.test.ts"
+    "worker/test/cli-contract.test.ts",
+    "worker/test/cli-contract.test.vibe"
   ]
 }

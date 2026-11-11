@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import * as Host from "../src/host.ts"
+import * as Host from "../src/host.vibe"
 
 const events = ["end", "data", "error", "close", "keypress"] as const
 const listeners = () => events.map((event) => process.stdin.rawListeners(event))

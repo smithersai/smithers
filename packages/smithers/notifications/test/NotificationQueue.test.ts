@@ -2,8 +2,8 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
-import * as NotificationQueue from "../src/NotificationQueue.ts"
+import type { Notification } from "../src/Notification.vibe"
+import * as NotificationQueue from "../src/NotificationQueue.vibe"
 
 const item = (
   id: string,

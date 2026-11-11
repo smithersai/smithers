@@ -1,10 +1,10 @@
 import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as AnthropicMessages from "../src/AnthropicMessages.ts"
-import { GenerationParams, ModelRequest } from "../src/ModelRequest.ts"
-import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.ts"
-import * as OpenAIResponses from "../src/OpenAIResponses.ts"
+import * as AnthropicMessages from "../src/AnthropicMessages.vibe"
+import { GenerationParams, ModelRequest } from "../src/ModelRequest.vibe"
+import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.vibe"
+import * as OpenAIResponses from "../src/OpenAIResponses.vibe"
 
 const source = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8")
 
@@ -65,7 +65,7 @@ describe("generation parameter contract", () => {
     ],
     [
       "the GenerationParams JSDoc",
-      "../src/ModelRequest.ts",
+      "../src/ModelRequest.vibe",
       (text: string) => text.split("export class GenerationParams")[0]?.split("/**").at(-1)
     ]
   ])("qualifies the omitted-field rule where %s states it", (_label, path, extract) => {

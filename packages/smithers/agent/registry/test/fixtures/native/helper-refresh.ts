@@ -13,8 +13,8 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as Descriptor from "../../../src/Descriptor.ts"
-import * as Executable from "../../../src/Executable.ts"
+import * as Descriptor from "../../../src/Descriptor.vibe"
+import * as Executable from "../../../src/Executable.vibe"
 import * as Registry from "../../../src/Registry.ts"
 
 const [root, helper] = process.argv.slice(2) as [string, string]

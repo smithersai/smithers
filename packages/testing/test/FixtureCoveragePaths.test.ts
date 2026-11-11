@@ -6,9 +6,9 @@
  * encoding error as an object cycle.
  */
 import { describe, expect, it } from "vitest"
-import { canonicalRequestDigest, index, type RecordedCall, recordedRequest } from "../src/Fixture.ts"
-import type { ModelRequestLike } from "../src/ModelLike.ts"
-import { FixtureEncodingError } from "../src/TestingError.ts"
+import { canonicalRequestDigest, index, type RecordedCall, recordedRequest } from "../src/Fixture.vibe"
+import type { ModelRequestLike } from "../src/ModelLike.vibe"
+import { FixtureEncodingError } from "../src/TestingError.vibe"
 
 const request = (messages: ModelRequestLike["messages"]): ModelRequestLike => ({
   modelId: "openai:gpt-5-mini",

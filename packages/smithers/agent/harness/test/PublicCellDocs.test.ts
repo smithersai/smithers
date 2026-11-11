@@ -1,5 +1,5 @@
 import { Effect, Result } from "effect"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 
-const source = (name: string) => readFileSync(new URL(`../src/${name}.ts`, import.meta.url), "utf8")
+const source = (name: string) =>
+  readFileSync(
+    new URL(`../src/${name}.${existsSync(new URL(`../src/${name}.vibe`, import.meta.url)) ? "vibe" : "ts"}`, import.meta.url),
+    "utf8"
+  )
 const comments = (name: string) => source(name).match(/\/\*\*[\s\S]*?\*\//g) ?? []
 
 describe("public cell documentation", () => {

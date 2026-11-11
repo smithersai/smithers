@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Config, ConfigProvider, Effect, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { SyncError } from "../src/SyncError.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 import { died, refusalOf } from "./refusal.ts"
 
 const key = (kid: string, secret: string): WorkspaceShare.Key => ({ kid, secret: Redacted.make(secret) })

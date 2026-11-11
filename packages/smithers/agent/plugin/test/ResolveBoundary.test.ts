@@ -2,11 +2,11 @@ import { Action } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
 import { expectTypeOf } from "vitest"
 import { describe, expect, it, vi } from "vitest"
-import * as Hooks from "../src/Hooks.ts"
-import type { FlowsPlugin, PluginInput } from "../src/index.ts"
-import { PluginError } from "../src/PluginError.ts"
-import * as Plugins from "../src/Plugins.ts"
-import * as Resolve from "../src/Resolve.ts"
+import * as Hooks from "../src/Hooks.vibe"
+import type { FlowsPlugin, PluginInput } from "../src/index.vibe"
+import { PluginError } from "../src/PluginError.vibe"
+import * as Plugins from "../src/Plugins.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 

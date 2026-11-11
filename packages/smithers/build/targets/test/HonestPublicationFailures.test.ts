@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, it } from "vitest"
 import { writeGeneratedFile } from "../src/GeneratedFile.ts"
-import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.ts"
+import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.vibe"
 
 let root: string
 beforeEach(async () => {

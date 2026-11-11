@@ -4,7 +4,7 @@ import { Placeholder } from "@smthrs/secrets"
 import { Config, Context, Effect, Layer, Option, Redacted } from "effect"
 
 // The keys repository secrets live under (decision 0005 §4, docs/features/secrets.md#keys), both from one Worker
-// secret, SECRETS_KEY, which only ChatApi holds (infra/Secrets.ts):
+// secret, SECRETS_KEY, which only ChatApi holds (infra/Secrets.vibe):
 //
 // - values are sealed with AES-256-GCM (`@smthrs/control`'s `WebCryptoCipher`) under a key derived from it, with the
 //   repository, the name and the key's version as the authenticated context;

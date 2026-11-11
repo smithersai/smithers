@@ -2,10 +2,10 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Capability from "@smthrs/capability/Capability"
 import { fromPlatformError, permissionDenied } from "@smthrs/capability/Permission"
 import { Effect, FileSystem as EffectFileSystem, Option, Path as EffectPath, PlatformError, Sink, Stream } from "effect"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * The permission decorator has to classify every filesystem operation, not

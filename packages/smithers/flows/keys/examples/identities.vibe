@@ -1,0 +1,45 @@
+import { DerivedKey, deriveKey, digest, StoredKey } from "@smthrs/keys"
+import * as Schema from "effect/Schema"
+
+/**
+ * Derives a compile identity with an explicit protocol and material version.
+ *
+ * @param target - Build target whose identity is required.
+ * @param flags - Ordered compiler flags; changing their order changes the key.
+ * @returns A derivation effect requiring the host Crypto service.
+ * @since 1.0.0
+ */
+export const compileKey = (target: string, flags: ReadonlyArray<string>) =>
+  deriveKey({ domain: "example/compile", version: 1, target, flags })
+
+/**
+ * Derives an identity as part of decoding structured input.
+ *
+ * @param input - Canonicalizable material; include a domain and version.
+ * @returns A Crypto-dependent decoding effect; invalid material fails decoding.
+ * @since 1.0.0
+ */
+export const decodeIdentity = (input: unknown) => Schema.decodeUnknownEffect(DerivedKey)(input, { reportInput: false })
+
+/**
+ * Validates received key text without hashing it or requiring Crypto. Throws a
+ * schema error if the input is not a supported stored key.
+ *
+ * @param input - Untrusted stored key text.
+ * @returns The validated key and its hexadecimal digest.
+ * @since 1.0.0
+ */
+export const readIdentity = (input: unknown): infer _ => {
+  const key = Schema.decodeUnknownSync(StoredKey)(input)
+  return { key, digest: digest(key) }
+}
+
+/**
+ * A host-independent program; provide a Crypto layer before running it.
+ *
+ * @since 1.0.0
+ */
+export const example = effect {
+  const key = try compileKey("web", ["--minify"])
+  return readIdentity(key)
+}

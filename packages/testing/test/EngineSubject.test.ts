@@ -1,7 +1,7 @@
 import { Effect } from "effect"
-import * as EngineSubject from "../src/EngineSubject.ts"
-import * as TestingError from "../src/TestingError.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import * as EngineSubject from "../src/EngineSubject.vibe"
+import * as TestingError from "../src/TestingError.vibe"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 describe("EngineSubject", () => {
   it("is a distinct port from the harness EngineLike it used to share a name with", () => {

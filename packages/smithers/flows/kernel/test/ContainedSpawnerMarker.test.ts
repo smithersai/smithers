@@ -6,9 +6,9 @@ import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as ProcessLedger from "../src/ProcessLedger.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as ProcessLedger from "../src/ProcessLedger.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const lifecycle: ContainedSpawner.Lifecycle = (command, spawn) =>
   Effect.map(spawn(command), (handle) => ({ handle, activate: Effect.void, settled: Effect.succeed(true) }))

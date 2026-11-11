@@ -1,7 +1,9 @@
 {
   "$schema": "https://dprint.dev/schemas/v0.json",
   "incremental": false,
-  "includes": ["**/*.{ts,tsx,js,jsx,json,md}"],
+  "includes": [
+    "**/*.{ts,tsx,js,jsx,json,md}"
+  ],
   "indentWidth": 2,
   "lineWidth": 120,
   "newLineKind": "lf",
@@ -18,7 +20,12 @@
     "**/coverage",
     ".smithers",
     "test/fixtures/force-spec",
-    "test/fixtures/viem-node-spec"
+    "test/fixtures/viem-node-spec",
+    "**/*.d.vibe.ts",
+    "**/*.d.vibex.ts",
+    "**/*.vibe.*.d.ts",
+    "**/*.vibex.*.d.ts",
+    "**/.vibelang/js/**"
   ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.93.4.wasm@cdbf74066391bdb11ddaef9ea95299636a97d637f5a9bf7f121d584875647c7a",

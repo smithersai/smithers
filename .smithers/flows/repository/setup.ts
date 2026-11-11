@@ -7,9 +7,9 @@ import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Option, Path, Schema } from "effect"
 import { setupConfiguration, SetupOperationResponseSchema } from "../../../packages/rpc/src/RepositorySetup.ts"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { NativeCoding } from "../coding/native.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
 import {
   activeRegistration,
@@ -19,13 +19,13 @@ import {
   restartedRegistration,
   WaitManual,
   WaitTrial
-} from "./activation.ts"
-import { CheckResult } from "./checks.ts"
-import { CaseInput, Evaluate, repinnedEvent } from "./evaluation.ts"
-import { CaptureRepository, type InspectionOptions, StartBudget } from "./inspection.ts"
-import { Observation, RepositoryJob } from "./jobs.ts"
-import { priorSetupReceipt } from "./receipts.ts"
-import { RepositoryRemote } from "./remote.ts"
+} from "./activation.vibe"
+import { CheckResult } from "./checks.vibe"
+import { CaseInput, Evaluate, repinnedEvent } from "./evaluation.vibe"
+import { CaptureRepository, type InspectionOptions, StartBudget } from "./inspection.vibe"
+import { Observation, RepositoryJob } from "./jobs.vibe"
+import { priorSetupReceipt } from "./receipts.vibe"
+import { RepositoryRemote } from "./remote.vibe"
 import {
   Draft,
   EvalCase,
@@ -37,8 +37,8 @@ import {
   RepositoryEvidence,
   SetupInput,
   Step
-} from "./schema.ts"
-import { admitSourcePath } from "./source.ts"
+} from "./schema.vibe"
+import { admitSourcePath } from "./source.vibe"
 
 const Error = Schema.Union([CodingError, AgentAction.AgentFailure])
 // Models author typed cases. The editable file stores JSON text only after

@@ -14,12 +14,12 @@ import { test } from "node:test"
 import { CapabilityPattern } from "../../../packages/smithers/flows/capability/src/Capability.ts"
 import { Rule } from "../../../packages/smithers/flows/capability/src/Permission.ts"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { catalogLayers } from "../coding/catalog.ts"
-import { checkDelegate, checkLayers } from "../coding/checks.ts"
-import { commandReceipts } from "../coding/command-receipts.ts"
+import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.vibe"
+import { catalogLayers } from "../coding/catalog.vibe"
+import { checkDelegate, checkLayers } from "../coding/checks.vibe"
+import { commandReceipts } from "../coding/command-receipts.vibe"
 import { type Check, type Implementation, Receipt, receiptMatches, type Revision } from "../coding/schema.ts"
-import { RunCheck } from "../coding/workflow.ts"
+import { RunCheck } from "../coding/workflow.vibe"
 
 const CheckRun = Flow.make("acceptance/RegisteredCheck", {
   payload: RunCheck.payloadSchema,

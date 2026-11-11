@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "smithers",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@babel/core": "7.29.7",
         "@babel/plugin-transform-logical-assignment-operators": "^7.29.7",
@@ -45,8 +48,8 @@
         "tinyglobby": "0.2.17",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
         "vite": "^8.2.2",
         "ws": "8.22.0",
         "yaml": "2.9.0",
@@ -80,6 +83,7 @@
         "@smthrs/plan": "workspace:*",
         "@smthrs/platform-bun": "workspace:*",
         "@smthrs/platform-node": "workspace:*",
+        "@smthrs/plugin": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/run-store": "workspace:*",
         "@smthrs/sandbox": "workspace:*",
@@ -90,7 +94,7 @@
         "mermaid": "^11.17.2",
         "microsandbox": "0.6.16",
         "playwright": "1.62.1",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@eslint/js": "9.39.5",
@@ -105,7 +109,7 @@
         "happy-dom": "20.13.2",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     ".smithers/flows/coding": {
@@ -127,19 +131,21 @@
         "@smthrs/registry": "workspace:*",
         "@smthrs/scorers": "workspace:*",
         "effect": "4.1.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@smthrs/targets": "workspace:*",
         "@types/node": "26.4.1",
         "bun-types": "^1.4.0",
         "typescript": "5.9.3",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     "apps/bug-worker": {
       "name": "@smthrs/bug-worker",
       "version": "0.0.1",
       "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "zod": "4.6.7",
       },
       "devDependencies": {
@@ -150,7 +156,7 @@
         "bun-types": "^1.4.0",
         "effect": "4.1.1",
         "typescript": "~5.9.3",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     "apps/maintainer-site": {
@@ -214,7 +220,7 @@
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "sucrase": "3.35.1",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -239,9 +245,9 @@
         "miniflare": "5.20261019.0-beta",
         "minimatch": "10.2.6",
         "typescript": "^5.9.3",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vite": "8.3.4",
         "vite-plugin-pwa": "2.0.0",
         "vitest": "5.0.0",
@@ -259,6 +265,7 @@
         "astro": "^7.3.1",
         "react": "19.2.8",
         "react-dom": "19.2.8",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -296,8 +303,8 @@
         "@types/react": "^19.2.18",
         "effect": "4.1.1",
         "typescript": "~5.9.3",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "wrangler": "4.151.2",
       },
     },
@@ -315,6 +322,7 @@
         "@smthrs/capability": "workspace:*",
         "@smthrs/cli": "workspace:*",
         "@smthrs/control": "workspace:*",
+        "@smthrs/crypto": "workspace:*",
         "@smthrs/engine": "workspace:*",
         "@smthrs/flow": "workspace:*",
         "@smthrs/gateway": "workspace:*",
@@ -323,6 +331,7 @@
         "@smthrs/kernel": "workspace:*",
         "@smthrs/model": "workspace:*",
         "@smthrs/plan": "workspace:*",
+        "@smthrs/plugin": "workspace:*",
         "@smthrs/registry": "workspace:*",
         "@smthrs/rpc": "workspace:*",
         "@smthrs/sandbox": "workspace:*",
@@ -332,6 +341,7 @@
         "effect": "4.1.1",
         "react": "19.2.8",
         "string-width": "7.2.0",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@eslint/js": "9.39.5",
@@ -347,7 +357,7 @@
         "eslint-plugin-unicorn": "65.0.0",
         "typescript": "~5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     "apps/vibelang": {
@@ -374,7 +384,7 @@
         "@smthrs/ui-styleguide": "workspace:*",
         "effect": "4.1.1",
         "foldkit": "0.170.0",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -401,9 +411,9 @@
         "istanbul-lib-source-maps": "^5.0.6",
         "istanbul-reports": "^3.2.0",
         "miniflare": "5.20261019.0-beta",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vite": "8.3.4",
         "vitest": "5.0.0",
       },
@@ -428,7 +438,7 @@
         "effect": "4.1.1",
         "electrobun": "1.18.1",
         "foldkit": "0.170.0",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/vitest": "4.1.1",
@@ -436,9 +446,9 @@
         "@types/node": "26.4.1",
         "esbuild": "0.28.2",
         "happy-dom": "20.13.2",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vite": "8.3.4",
         "vitest": "5.0.0",
       },
@@ -450,12 +460,15 @@
         "@smthrs/targets": "workspace:*",
         "@types/node": "26.4.1",
         "typescript": "5.9.3",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     "packages/effect-code-storage": {
       "name": "@smthrs/effect-code-storage",
       "version": "0.1.0",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
@@ -473,8 +486,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -486,6 +499,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@smthrs/effect-tanstack-db": "workspace:*",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -511,8 +525,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -526,6 +540,9 @@
     "packages/effect-tanstack-db": {
       "name": "@smthrs/effect-tanstack-db",
       "version": "0.1.0",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
@@ -547,8 +564,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -565,7 +582,7 @@
       "name": "@smthrs/errors",
       "version": "1.0.0-rc.17",
       "dependencies": {
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -584,8 +601,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -613,8 +630,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -640,7 +657,8 @@
         "@effect/sql-pg": "4.1.1",
         "@smthrs/targets": "workspace:*",
         "effect": "4.1.1",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -648,9 +666,9 @@
         "@vitest/coverage-v8": "5.0.0",
         "fast-check": "4.9.0",
         "typescript": "5.9.3",
-        "vibelang-runtime": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -669,8 +687,8 @@
         "eslint": "9.39.1",
         "typescript": "^5.9.3",
         "typescript-eslint": "8.65.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -733,6 +751,7 @@
         "tar": "7.5.22",
         "typescript": "5.9.3",
         "undici": "8.12.4",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "ws": "8.22.0",
         "yaml": "2.9.0",
       },
@@ -760,9 +779,9 @@
         "fast-check": "4.9.0",
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -798,6 +817,7 @@
         "@smthrs/registry": "1.0.0-rc.17",
         "@smthrs/run-store": "1.0.0-rc.17",
         "@smthrs/std": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -824,8 +844,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -844,6 +864,7 @@
         "@smthrs/registry": "workspace:*",
         "effect": "4.1.1",
         "quickjs-emscripten-core": "0.32.0",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -861,8 +882,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -873,6 +894,7 @@
         "@smthrs/core": "1.0.0-rc.17",
         "@smthrs/scorers": "1.0.0-rc.17",
         "devalue": "5.9.2",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -890,8 +912,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -909,7 +931,7 @@
         "@smthrs/registry": "workspace:*",
         "effect": "4.1.1",
         "incur": "0.5.1",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -928,8 +950,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -954,6 +976,7 @@
         "@smthrs/registry": "1.0.0-rc.17",
         "quickjs-emscripten-core": "0.32.0",
         "sucrase": "3.35.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -974,8 +997,9 @@
         "miniflare": "5.20261019.0-beta",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1002,8 +1026,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -1034,12 +1058,13 @@
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/control": "1.0.0-rc.17",
+        "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/database": "1.0.0-rc.17",
         "@smthrs/errors": "1.0.0-rc.17",
         "@smthrs/flow": "1.0.0-rc.17",
         "@smthrs/notifications": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1063,9 +1088,9 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1080,6 +1105,7 @@
         "@smthrs/database": "1.0.0-rc.17",
         "@smthrs/flow": "1.0.0-rc.17",
         "@smthrs/patterns": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1099,8 +1125,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1117,6 +1143,7 @@
         "@smthrs/flow": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/kernel": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1136,8 +1163,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1157,6 +1184,7 @@
         "@smthrs/model": "workspace:*",
         "@smthrs/rpc": "workspace:*",
         "effect": "4.1.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "zod": "4.6.7",
       },
       "devDependencies": {
@@ -1177,8 +1205,8 @@
         "eslint-plugin-unicorn": "65.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -1207,8 +1235,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1222,9 +1250,10 @@
         "@mdx-js/mdx": "3.1.1",
         "@smthrs/artifacts": "1.0.0-rc.17",
         "@smthrs/core": "1.0.0-rc.17",
+        "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/flow": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1251,8 +1280,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1275,6 +1304,7 @@
         "@smthrs/registry": "workspace:*",
         "@smthrs/scorers": "workspace:*",
         "effect": "4.1.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1282,6 +1312,7 @@
         "@types/node": "26.4.1",
         "bun-types": "^1.4.0",
         "typescript": "5.9.3",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
     },
     "packages/smithers/agent/scorers": {
@@ -1292,6 +1323,7 @@
         "@smthrs/database": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/sandbox": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1315,8 +1347,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1332,6 +1364,7 @@
         "@smthrs/core": "1.0.0-rc.17",
         "@smthrs/kernel": "1.0.0-rc.17",
         "@smthrs/model": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1354,8 +1387,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1368,6 +1401,7 @@
       "dependencies": {
         "@smthrs/control": "1.0.0-rc.17",
         "@smthrs/database": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1386,8 +1420,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1401,6 +1435,7 @@
         "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/flow": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1419,8 +1454,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1456,6 +1491,7 @@
         "tsx": "4.23.13",
         "typescript": "7.0.2",
         "undici": "8.12.4",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "ws": "8.22.0",
       },
       "devDependencies": {
@@ -1476,14 +1512,14 @@
         "eslint-plugin-unicorn": "65.0.0",
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-runtime": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
         "effect": "4.1.1",
-        "vibelang": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
       "optionalPeers": [
         "vibelang",
@@ -1495,6 +1531,7 @@
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/targets": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@alchemy.run/cloudflare": "2.0.0-beta.85",
@@ -1509,8 +1546,8 @@
         "eslint": "9.39.1",
         "typescript": "5.9.3",
         "typescript-eslint": "8.65.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -1526,6 +1563,7 @@
         "@smthrs/views": "1.0.0-rc.17",
         "ignore": "7.0.8",
         "minimatch": "10.2.6",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "yaml": "2.9.0",
       },
       "devDependencies": {
@@ -1544,8 +1582,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1566,6 +1604,7 @@
         "@smthrs/plan": "1.0.0-rc.17",
         "@smthrs/registry": "1.0.0-rc.17",
         "@smthrs/run-store": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1590,8 +1629,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1622,6 +1661,7 @@
         "@smthrs/step-cache": "1.0.0-rc.17",
         "@smthrs/sync": "1.0.0-rc.17",
         "@smthrs/time-travel": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1651,8 +1691,8 @@
         "microsandbox": "0.6.16",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1664,6 +1704,7 @@
       "version": "1.0.0-rc.17",
       "dependencies": {
         "@smthrs/crypto": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1683,8 +1724,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1694,6 +1735,9 @@
     "packages/smithers/flows/canonical": {
       "name": "@smthrs/canonical",
       "version": "1.0.0-rc.17",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.1.1",
@@ -1711,8 +1755,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1724,6 +1768,7 @@
       "version": "1.0.0-rc.17",
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1743,8 +1788,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1780,8 +1825,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1791,6 +1836,9 @@
     "packages/smithers/flows/crypto": {
       "name": "@smthrs/crypto",
       "version": "1.0.0-rc.17",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/platform-node": "4.1.1",
@@ -1810,8 +1858,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1821,6 +1869,9 @@
     "packages/smithers/flows/database": {
       "name": "@smthrs/database",
       "version": "1.0.0-rc.17",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/sql-pg": "4.1.1",
@@ -1842,9 +1893,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-runtime": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1870,7 +1920,7 @@
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/keys": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1892,9 +1942,9 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1919,6 +1969,7 @@
         "@smthrs/plan-store": "1.0.0-rc.17",
         "@smthrs/run-store": "1.0.0-rc.17",
         "@smthrs/step-cache": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1942,8 +1993,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1959,6 +2010,7 @@
         "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/keys": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1980,8 +2032,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -1994,6 +2046,7 @@
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/capability": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2012,8 +2065,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2025,6 +2078,7 @@
       "version": "1.0.0-rc.17",
       "dependencies": {
         "@smthrs/database": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2046,8 +2100,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2062,6 +2116,7 @@
         "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/jj": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2083,8 +2138,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2103,6 +2158,7 @@
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/crypto": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2123,8 +2179,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2139,6 +2195,7 @@
         "@opentelemetry/sdk-logs": "0.222.0",
         "@opentelemetry/sdk-metrics": "2.11.0",
         "@smthrs/journal": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2165,8 +2222,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2213,8 +2270,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2228,6 +2285,7 @@
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/keys": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2248,8 +2306,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2263,6 +2321,7 @@
         "@smthrs/database": "1.0.0-rc.17",
         "@smthrs/keys": "1.0.0-rc.17",
         "@smthrs/plan": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2282,8 +2341,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2309,6 +2368,7 @@
         "@smthrs/sandbox": "1.0.0-rc.17",
         "@smthrs/std": "1.0.0-rc.17",
         "typescript": "5.9.3",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2335,8 +2395,8 @@
         "madge": "8.0.0",
         "playwright": "1.62.1",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
         "ws": "8.22.0",
       },
@@ -2355,7 +2415,7 @@
         "@types/ws": "8.18.2",
         "redis": "6.2.1",
         "undici": "8.12.4",
-        "vibelang-runtime": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "ws": "8.22.0",
       },
       "devDependencies": {
@@ -2383,9 +2443,9 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2413,6 +2473,7 @@
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/run-store": "1.0.0-rc.17",
         "@smthrs/sandbox": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "5.20261019.1",
@@ -2436,9 +2497,9 @@
         "miniflare": "5.20261019.0-beta",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2468,7 +2529,8 @@
         "esbuild": "0.28.2",
         "redis": "6.2.1",
         "undici": "8.12.4",
-        "vibelang-unplugin": "0.0.12",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
         "ws": "8.22.0",
       },
       "devDependencies": {
@@ -2491,9 +2553,8 @@
         "microsandbox": "0.6.16",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-runtime": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2508,6 +2569,7 @@
         "@smthrs/database": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/observability": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2526,8 +2588,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2542,6 +2604,7 @@
         "@smthrs/jj": "1.0.0-rc.17",
         "@smthrs/kernel": "1.0.0-rc.17",
         "@smthrs/plan": "workspace:*",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2566,8 +2629,8 @@
         "microsandbox": "0.6.16",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2577,6 +2640,9 @@
     "packages/smithers/flows/secrets": {
       "name": "@smthrs/secrets",
       "version": "0.1.0",
+      "dependencies": {
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
+      },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
@@ -2593,8 +2659,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2607,6 +2673,7 @@
       "dependencies": {
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/database": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2625,8 +2692,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2638,6 +2705,7 @@
       "version": "1.0.0-rc.17",
       "dependencies": {
         "@smthrs/journal": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "yjs": "13.6.32",
       },
       "devDependencies": {
@@ -2662,8 +2730,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2680,6 +2748,7 @@
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/run-store": "1.0.0-rc.17",
         "@smthrs/step-cache": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2705,8 +2774,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2755,8 +2824,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2773,6 +2842,7 @@
         "@smthrs/harness": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
         "@smthrs/kernel": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2798,8 +2868,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2817,6 +2887,7 @@
         "redis": "6.2.1",
         "typescript": "7.0.2",
         "undici": "8.12.4",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "ws": "8.22.0",
       },
       "devDependencies": {
@@ -2838,8 +2909,8 @@
         "eslint-plugin-unicorn": "65.0.0",
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "optionalDependencies": {
@@ -2867,6 +2938,7 @@
         "@smthrs/canonical": "1.0.0-rc.17",
         "@smthrs/crypto": "1.0.0-rc.17",
         "@smthrs/journal": "1.0.0-rc.17",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -2887,8 +2959,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -2920,6 +2992,7 @@
         "effect": "4.1.1",
         "radix-ui": "^1.6.7",
         "recharts": "^3.10.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
         "y-codemirror.next": "0.3.6",
         "y-protocols": "1.0.6",
         "yjs": "13.6.32",
@@ -2940,8 +3013,8 @@
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "typescript": "~5.9.3",
-        "vibelang": "0.0.12",
-        "vibelang-unplugin": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc",
       },
       "peerDependencies": {
         "react": "^19.2.8",
@@ -2970,7 +3043,8 @@
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "typescript": "~5.9.3",
-        "vibelang-runtime": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "peerDependencies": {
         "react": "^19.2.8",
@@ -2998,6 +3072,7 @@
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "typescript": "~5.9.3",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
       },
       "peerDependencies": {
         "react": "^19.2.8",
@@ -3028,6 +3103,7 @@
         "@smthrs/harness": "1.0.0-rc.17",
         "quickjs-emscripten-core": "0.32.0",
         "sucrase": "3.35.1",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -3053,8 +3129,8 @@
         "react-dom": "19.2.8",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -3085,8 +3161,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
     },
@@ -3111,6 +3187,7 @@
         "@smthrs/platform-node": "workspace:*",
         "@smthrs/scorers": "1.0.0-rc.17",
         "string-width": "7.2.0",
+        "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -3129,8 +3206,8 @@
         "madge": "8.0.0",
         "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
-        "vibelang": "0.0.12",
-        "vibelang-vite": "0.0.12",
+        "vibelang": "0.0.14-pre.6279f9f9fbfc",
+        "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
         "vitest": "5.0.0",
       },
       "peerDependencies": {
@@ -3154,7 +3231,6 @@
     "electrobun@1.18.1": "patches/electrobun@1.18.1.patch",
     "@effect/platform-node-shared@4.1.1": "patches/@effect__platform-node-shared@4.1.1.patch",
     "@tanstack/browser-db-sqlite-persistence@0.2.36": "patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch",
-    "vibelang-runtime@0.0.12": "patches/vibelang-runtime@0.0.12.patch",
     "@tanstack/offline-transactions@1.1.3": "patches/@tanstack__offline-transactions@1.1.3.patch",
     "@opentelemetry/otlp-transformer@0.222.0": "patches/@opentelemetry__otlp-transformer@0.222.0.patch",
   },
@@ -3174,10 +3250,10 @@
     "@types/bun": "1.4.4",
     "alchemy": "2.0.0-beta.85",
     "effect": "4.1.1",
-    "vibelang": "0.0.12",
-    "vibelang-runtime": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-runtime": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-runtime-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-unplugin": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-unplugin-0.0.14-pre.6279f9f9fbfc.tgz",
+    "vibelang-vite": "file:./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-vite-0.0.14-pre.6279f9f9fbfc.tgz",
     "vitest@5.0.0": {
       "happy-dom": "20.13.2",
     },
@@ -4459,10 +4535,6 @@
 
     "@smthrs/cli": ["@smthrs/cli@workspace:packages/smithers"],
 
-    "@smthrs/cli-win32-arm64": ["@smthrs/cli-win32-arm64@0.0.12", "", { "os": "win32", "cpu": "arm64" }, "sha512-nduzfplnjL0MaJ/oiEOisqwqDMAvQ4TrD4F5FOJtgcFIQCY8cPw6AOkMmXjG+e5fiyHlHx9rNvQWDxOlViYS9w=="],
-
-    "@smthrs/cli-win32-x64": ["@smthrs/cli-win32-x64@0.0.12", "", { "os": "win32", "cpu": "x64" }, "sha512-YkGpl0u9WdL0MRzLhhu7OZCyzrg6fVyTEeF+r+ySuCOOouIHP4X5wJ5ssQT1F0w/WgWyMFEHmLdfrSF1k3P/5w=="],
-
     "@smthrs/coding": ["@smthrs/coding@workspace:.smithers/flows/coding"],
 
     "@smthrs/control": ["@smthrs/control@workspace:packages/smithers/control"],
@@ -5075,7 +5147,7 @@
 
     "bun-ffi-structs": ["bun-ffi-structs@0.3.1", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-3gM7PpVWLyrwxWjcilSiGuhWanhZivvo6l0u573NziPH6f/gwk6McbaYgn7oJWov6pKGRTDbrg94W5DcJsKTtQ=="],
 
-    "bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.3.0" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.9.0" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "bytes": ["bytes@3.1.2", "", {}, "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg=="],
 
@@ -5911,7 +5983,7 @@
 
     "madge": ["madge@8.0.0", "", { "dependencies": { "chalk": "4.1.2", "commander": "7.2.0", "commondir": "1.0.1", "debug": "4.4.3", "dependency-tree": "11.5.0", "ora": "5.4.1", "pluralize": "8.0.0", "pretty-ms": "7.0.1", "rc": "1.2.8", "stream-to-array": "2.3.0", "ts-graphviz": "2.1.6", "typescript": "5.9.3", "walkdir": "0.4.1" }, "bin": { "madge": "bin/cli.js" } }, "sha512-9sSsi3TBPhmkTCIpVQF0SPiChj1L7Rq9kU2KDG1o6v2XH9cCw086MopjVCD+vuoL5v8S77DTbVopTO8OUiQpIw=="],
 
-    "magic-string": ["magic-string@1.2.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "1.6.0" } }, "sha512-Bpb0W2TbLKOZ7vJnOUnVRGq3WL2p+ISV29M6hYPL1AFCpyKZpdr5ytiXoTSSxRVhg8YW7f65+6gbG8WG6PCa/g=="],
+    "magic-string": ["magic-string@1.4.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.6.0" } }, "sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ=="],
 
     "magicast": ["magicast@0.5.4", "", { "dependencies": { "@babel/parser": "7.29.8", "@babel/types": "7.29.8", "source-map-js": "1.2.2" } }, "sha512-llBEhWm1SacoRwgHUoQJYtwp4PBLF4faQi5TCpIGyGs9n4y5+juI0tDgyKIfpqxckRHaHzouUEph3THklWh03w=="],
 
@@ -6759,21 +6831,13 @@
 
     "vfile-message": ["vfile-message@4.0.3", "", { "dependencies": { "@types/unist": "3.0.3", "unist-util-stringify-position": "4.0.0" } }, "sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw=="],
 
-    "vibelang": ["vibelang@0.0.12", "", { "dependencies": { "dprint": "0.64.3" }, "optionalDependencies": { "@smthrs/cli-win32-arm64": "0.0.12", "@smthrs/cli-win32-x64": "0.0.12", "vibelang-darwin-arm64": "0.0.12", "vibelang-darwin-x64": "0.0.12", "vibelang-linux-arm64": "0.0.12", "vibelang-linux-x64": "0.0.12" }, "peerDependencies": { "@babel/core": "^7.29.0", "effect": "4.1.1", "metro": ">=0.87.0" }, "optionalPeers": ["@babel/core", "metro"], "bin": { "vibelang": "bin/vibelang", "vibelang-format": "bin/vibelang-format", "vibelang-ast-grep": "bin/vibelang-ast-grep" } }, "sha512-UkL8gtcqgSV0sq0fNmEGIHvZMHIwD35eC3ajO+7Ukh2N2CZkHE+9i0uYXOJNZoDEYxKzVyOtCBP1wrhhULbcXw=="],
+    "vibelang": ["vibelang@./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-0.0.14-pre.6279f9f9fbfc.tgz", { "dependencies": { "dprint": "0.64.3" }, "optionalDependencies": { "@smthrs/cli-win32-arm64": "0.0.14-pre.6279f9f9fbfc", "@smthrs/cli-win32-x64": "0.0.14-pre.6279f9f9fbfc", "vibelang-darwin-arm64": "0.0.14-pre.6279f9f9fbfc", "vibelang-darwin-x64": "0.0.14-pre.6279f9f9fbfc", "vibelang-linux-arm64": "0.0.14-pre.6279f9f9fbfc", "vibelang-linux-x64": "0.0.14-pre.6279f9f9fbfc" }, "peerDependencies": { "@babel/core": "^7.29.0", "effect": "4.1.1", "metro": ">=0.87.0" }, "optionalPeers": ["@babel/core", "metro"], "bin": { "vibelang": "bin/vibelang", "vibelang-format": "bin/vibelang-format", "vibelang-ast-grep": "bin/vibelang-ast-grep" } }, "sha512-C/IP9lf6kw5AJSYNt74TpiMSWA645qGZ/AvN5ZhnAtbJT+BDoYKOFPKBXR0No/ytf91lpYsCrPvyYiaeuuFFjQ=="],
 
-    "vibelang-darwin-arm64": ["vibelang-darwin-arm64@0.0.12", "", { "os": "darwin", "cpu": "arm64" }, "sha512-R9fFeGGLO2gdbdo4TrNHIqWOiY/gTh6aF6Mibk//ucZRqxPTqqeyk1djgTgBDjUdaBR6qr9VGE5ikMqpLjrrQg=="],
+    "vibelang-runtime": ["vibelang-runtime@./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-runtime-0.0.14-pre.6279f9f9fbfc.tgz", { "peerDependencies": { "@effect/platform-browser": "4.1.1", "@effect/platform-bun": "4.1.1", "@effect/platform-node": "4.1.1", "effect": "4.1.1" }, "optionalPeers": ["@effect/platform-browser", "@effect/platform-bun", "@effect/platform-node"] }, "sha512-im4Yp4jW10Zma9oGozcMk+VGZPA9fgquB6rHIC6IPKeoxtJ6I48ba8WWJGqcnZHa99PGUBOvGa1kTPmQwAeD6g=="],
 
-    "vibelang-darwin-x64": ["vibelang-darwin-x64@0.0.12", "", { "os": "darwin", "cpu": "x64" }, "sha512-dHuNshrdWsrEjh3Kv+Vu+337tqD1ygJhsLVPQ/Z+uIxc5iJiprrB0IjQ1egfXCRT16CXCOoQl8jJCpm6zUeN7A=="],
+    "vibelang-unplugin": ["vibelang-unplugin@./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-unplugin-0.0.14-pre.6279f9f9fbfc.tgz", { "dependencies": { "@jridgewell/remapping": "2.3.5", "magic-string": "1.4.3", "unplugin": "3.4.0" }, "peerDependencies": { "vibelang": "0.0.14-pre.6279f9f9fbfc" } }, "sha512-bWqFBTzHZqeMsFAALbfjFzh21QLaWkEX+0u6en0v6S+DFwTeJKCl1WKX4VytmMPPonmDau7bCsoSwELwdqRk6Q=="],
 
-    "vibelang-linux-arm64": ["vibelang-linux-arm64@0.0.12", "", { "os": "linux", "cpu": "arm64" }, "sha512-gAGgyego0HEJj7UqAZlvWUipXFJ3cWZXL3a2uN7lIG8TQxhZMapoqetJbmWBBy4p/Luj4KpoAeShs79GPLPVAg=="],
-
-    "vibelang-linux-x64": ["vibelang-linux-x64@0.0.12", "", { "os": "linux", "cpu": "x64" }, "sha512-3II9b/8gY2iwGQyC6ElGuOIfhMFTr8zBemstv+ymSbJa6Mzx4KVGzN8ZlqaF8x5ezxIQiEZGB2OBQbJs/Y2eMQ=="],
-
-    "vibelang-runtime": ["vibelang-runtime@0.0.12", "", { "peerDependencies": { "@effect/platform-browser": "4.1.1", "@effect/platform-bun": "4.1.1", "@effect/platform-node": "4.1.1", "effect": "4.1.1" }, "optionalPeers": ["@effect/platform-browser", "@effect/platform-bun", "@effect/platform-node"] }, "sha512-q23TUXhyZqPdw1WvnES6h//Vqk81KhiYXJR/8xbldhTrD95HcfN6/z3GtVe9xizUaFmoFytsKJSdxxlzV8C1dA=="],
-
-    "vibelang-unplugin": ["vibelang-unplugin@0.0.12", "", { "dependencies": { "unplugin": "3.4.0" }, "peerDependencies": { "vibelang": "0.0.12" } }, "sha512-6hJtCuaay2Pd4hWaoEoQSB98Y4QqfFQ9bQ0rBOsigsax/gMY8s8qEY0uGBN8+R/2f7B/qHlRDNXK+uT1fMAhsw=="],
-
-    "vibelang-vite": ["vibelang-vite@0.0.12", "", { "peerDependencies": { "vibelang": "0.0.12", "vite": ">=7 <9" } }, "sha512-7LFc/D3rzuDWA3PmG06pyMssxRV6CaAwf8bzyLRuAZGO1Cs2Wy1gwPxgEDVx33Db67JI45LJfHz/pIHmYcoRYA=="],
+    "vibelang-vite": ["vibelang-vite@./.vibelang-toolchain/0.0.14-pre.6279f9f9fbfc/tarballs/vibelang-vite-0.0.14-pre.6279f9f9fbfc.tgz", { "dependencies": { "@jridgewell/remapping": "2.3.5", "magic-string": "1.4.3" }, "peerDependencies": { "vibelang": "0.0.14-pre.6279f9f9fbfc", "vite": ">=7 <9" } }, "sha512-JZNdPFU/40ho3eY/4j8zjWmrB4ICw0taCmvJQhUBSOFk65gAQg4I3eSO46XzdPUDi3AeQU1uG9MzebuXLXI6Sg=="],
 
     "victory-vendor": ["victory-vendor@37.3.6", "", { "dependencies": { "@types/d3-array": "3.2.2", "@types/d3-ease": "3.0.2", "@types/d3-interpolate": "3.0.4", "@types/d3-scale": "4.0.9", "@types/d3-shape": "3.2.0", "@types/d3-time": "3.0.4", "@types/d3-timer": "3.0.2", "d3-array": "3.2.4", "d3-ease": "3.0.1", "d3-interpolate": "3.0.1", "d3-scale": "4.0.2", "d3-shape": "3.2.0", "d3-time": "3.1.0", "d3-timer": "3.0.1" } }, "sha512-SbPDPdDBYp+5MJHhBCAyI7wKM3d5ivekigc2Dk2s7pgbZ9wIgIBYGVw4zGHBml/qTFbexrofXW6Gu4noGxrOwQ=="],
 
@@ -6945,6 +7009,8 @@
 
     "@astrojs/react/@vitejs/plugin-react": ["@vitejs/plugin-react@5.2.0", "", { "dependencies": { "@babel/core": "7.29.7", "@babel/plugin-transform-react-jsx-self": "7.29.7", "@babel/plugin-transform-react-jsx-source": "7.29.7", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "7.20.5", "react-refresh": "0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw=="],
 
+    "@astrojs/starlight/magic-string": ["magic-string@1.2.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "1.6.0" } }, "sha512-Bpb0W2TbLKOZ7vJnOUnVRGq3WL2p+ISV29M6hYPL1AFCpyKZpdr5ytiXoTSSxRVhg8YW7f65+6gbG8WG6PCa/g=="],
+
     "@babel/code-frame/js-tokens": ["js-tokens@4.0.0", "", {}, "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ=="],
 
     "@babel/core/@babel/parser": ["@babel/parser@7.29.8", "", { "dependencies": { "@babel/types": "7.29.8" }, "bin": "./bin/babel-parser.js" }, "sha512-E8lTAYNB1KW+FH+VGJuZM1ioAx2E6oVlvQFRrf5P8ZZmsiJXYAD9vTFV7yyEURNzgh1dFqMZuO6tUwcARbqFCA=="],
@@ -7081,8 +7147,6 @@
 
     "@types/babel__traverse/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "7.29.7", "@babel/helper-validator-identifier": "7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
-    "@types/bun/bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "26.4.1", "undici-types": "8.9.0" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
-
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
 
     "@vitest/mocker/magic-string": ["magic-string@1.4.5", "", { "dependencies": { "@jridgewell/sourcemap-codec": "1.6.0" } }, "sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w=="],
@@ -7115,11 +7179,15 @@
 
     "astro/html-escaper": ["html-escaper@3.0.3", "", {}, "sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ=="],
 
+    "astro/magic-string": ["magic-string@1.2.3", "", { "dependencies": { "@jridgewell/sourcemap-codec": "1.6.0" } }, "sha512-Bpb0W2TbLKOZ7vJnOUnVRGq3WL2p+ISV29M6hYPL1AFCpyKZpdr5ytiXoTSSxRVhg8YW7f65+6gbG8WG6PCa/g=="],
+
     "babel-plugin-polyfill-corejs2/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "body-parser/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 
     "body-parser/iconv-lite": ["iconv-lite@0.7.3", "", { "dependencies": { "safer-buffer": "2.1.2" } }, "sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ=="],
+
+    "bun-types/undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "cliui/strip-ansi": ["strip-ansi@7.2.0", "", { "dependencies": { "ansi-regex": "6.3.0" } }, "sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w=="],
 
@@ -7610,8 +7678,6 @@
     "@types/babel__template/@babel/types/@babel/helper-string-parser": ["@babel/helper-string-parser@7.29.7", "", {}, "sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw=="],
 
     "@types/babel__traverse/@babel/types/@babel/helper-string-parser": ["@babel/helper-string-parser@7.29.7", "", {}, "sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw=="],
-
-    "@types/bun/bun-types/undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
     "@vue/compiler-core/@babel/parser/@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "7.29.7", "@babel/helper-validator-identifier": "7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 

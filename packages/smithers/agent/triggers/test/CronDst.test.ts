@@ -34,11 +34,11 @@ import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Cron from "../src/Cron.ts"
-import * as Scheduler from "../src/Scheduler.ts"
-import * as SqlTriggerStore from "../src/SqlTriggerStore.ts"
-import * as Trigger from "../src/Trigger.ts"
+import * as Scheduler from "../src/Scheduler.vibe"
+import * as SqlTriggerStore from "../src/SqlTriggerStore.vibe"
+import * as Trigger from "../src/Trigger.vibe"
 import { TriggerError } from "../src/TriggerError.ts"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 
 const minute = 60 * 1_000
 const hour = 60 * minute

@@ -18,7 +18,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, onTestFinished, vi } from "vitest"
-import * as NativeExecutionRead from "../src/internal/NativeExecutionRead.ts"
+import * as NativeExecutionRead from "../src/internal/NativeExecutionRead.vibe"
 
 const source = "a".repeat(32)
 const tokenDigest = Sha256.digestSync("wait-token")

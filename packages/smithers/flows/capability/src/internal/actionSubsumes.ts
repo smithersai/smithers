@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { PatternAction } from "../PatternAction.ts"
+import type { PatternAction } from "../PatternAction.vibe"
 
 /**
  * @since 0.1.0

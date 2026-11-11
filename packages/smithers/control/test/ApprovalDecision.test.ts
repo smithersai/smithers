@@ -8,15 +8,15 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
+import { Control } from "../src/Control.vibe"
 import {
   ApprovalDecision,
   ApprovalDenied,
   ApprovalPending,
   ControlRuntime,
   requireApproved
-} from "../src/ControlRuntime.ts"
-import { initial } from "../src/migrations/0001_control_tables.ts"
+} from "../src/ControlRuntime.vibe"
+import { initial } from "../src/migrations/0001_control_tables.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { durable as baseDurable, fileBundle } from "./DurableStack.ts"

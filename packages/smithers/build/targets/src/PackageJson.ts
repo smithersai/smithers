@@ -48,7 +48,7 @@ import {
 import * as Input from "./Input.ts"
 import { promptEngine } from "./LlmLint.ts"
 import * as ManifestJson from "./ManifestJson.ts"
-import { Engine } from "./ModelEngine.ts"
+import { Engine } from "./ModelEngine.vibe"
 import { assertNotManagerOwned, isTemplate, managerOwnedFields, type Template } from "./PackageJsonTemplate.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"

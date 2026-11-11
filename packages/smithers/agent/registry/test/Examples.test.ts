@@ -1,6 +1,6 @@
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { quickstart } from "../examples/quickstart.ts"
+import { quickstart } from "../examples/quickstart.vibe"
 
 describe("examples", () => {
   it("quickstart lists the described flow, reports the refused one, and renders its prompt", async () => {

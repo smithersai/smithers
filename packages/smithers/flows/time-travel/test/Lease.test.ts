@@ -6,8 +6,8 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import { TestClock } from "effect/testing"
-import * as Lease from "../src/internal/Lease.ts"
-import { error } from "../src/TimeTravelError.ts"
+import * as Lease from "../src/internal/Lease.vibe"
+import { error } from "../src/TimeTravelError.vibe"
 
 /**
  * Rewind and recovery both hold a run's lease while they act on it, and both

@@ -17,7 +17,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as JournalMigrations from "@smthrs/journal/Migrations"
 import { Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const url = process.env.SMITHERS_TEST_PG_URL
 // These cases need the deferred triggers, whether or not the release's set has 1006 yet.

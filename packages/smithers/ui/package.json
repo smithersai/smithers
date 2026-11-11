@@ -11,35 +11,79 @@
   "exports": {
     "./markdown": {
       "types": "./src/primitives/markdown.tsx",
-      "default": "./src/primitives/markdown.tsx"
+      "default": {
+        "types": "./src/primitives/markdown.tsx",
+        "vibelang-source": "./src/primitives/markdown.tsx",
+        "default": "./.vibelang/js/src/primitives/markdown.js"
+      }
     },
     "./button": {
       "types": "./src/button.tsx",
-      "default": "./src/button.tsx"
+      "default": {
+        "types": "./src/button.tsx",
+        "vibelang-source": "./src/button.tsx",
+        "default": "./.vibelang/js/src/button.js"
+      }
     },
     "./marker": {
       "types": "./src/chat/Marker.tsx",
-      "default": "./src/chat/Marker.tsx"
+      "default": {
+        "types": "./src/chat/Marker.tsx",
+        "vibelang-source": "./src/chat/Marker.tsx",
+        "default": "./.vibelang/js/src/chat/Marker.js"
+      }
     },
     ".": {
       "types": "./src/index.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": {
+        "types": "./src/index.ts",
+        "vibelang-source": "./src/index.ts",
+        "default": "./.vibelang/js/src/index.js"
+      },
+      "default": {
+        "types": "./src/index.ts",
+        "vibelang-source": "./src/index.ts",
+        "default": "./.vibelang/js/src/index.js"
+      }
     },
     "./adapters/knowledge-graph": {
       "types": "./src/adapters/knowledge-graph.ts",
-      "import": "./src/adapters/knowledge-graph.ts",
-      "default": "./src/adapters/knowledge-graph.ts"
+      "import": {
+        "types": "./src/adapters/knowledge-graph.ts",
+        "vibelang-source": "./src/adapters/knowledge-graph.ts",
+        "default": "./.vibelang/js/src/adapters/knowledge-graph.js"
+      },
+      "default": {
+        "types": "./src/adapters/knowledge-graph.ts",
+        "vibelang-source": "./src/adapters/knowledge-graph.ts",
+        "default": "./.vibelang/js/src/adapters/knowledge-graph.js"
+      }
     },
     "./adapters/chart": {
       "types": "./src/adapters/chart.tsx",
-      "import": "./src/adapters/chart.tsx",
-      "default": "./src/adapters/chart.tsx"
+      "import": {
+        "types": "./src/adapters/chart.tsx",
+        "vibelang-source": "./src/adapters/chart.tsx",
+        "default": "./.vibelang/js/src/adapters/chart.js"
+      },
+      "default": {
+        "types": "./src/adapters/chart.tsx",
+        "vibelang-source": "./src/adapters/chart.tsx",
+        "default": "./.vibelang/js/src/adapters/chart.js"
+      }
     },
     "./adapters/terminal": {
       "types": "./src/adapters/terminal.tsx",
-      "import": "./src/adapters/terminal.tsx",
-      "default": "./src/adapters/terminal.tsx"
+      "import": {
+        "types": "./src/adapters/terminal.tsx",
+        "vibelang-source": "./src/adapters/terminal.tsx",
+        "default": "./.vibelang/js/src/adapters/terminal.js"
+      },
+      "default": {
+        "types": "./src/adapters/terminal.tsx",
+        "vibelang-source": "./src/adapters/terminal.tsx",
+        "default": "./.vibelang/js/src/adapters/terminal.js"
+      }
     },
     "./status": {
       "types": "./src/status.ts",
@@ -48,28 +92,68 @@
     },
     "./time": {
       "types": "./src/time/index.ts",
-      "import": "./src/time/index.ts",
-      "default": "./src/time/index.ts"
+      "import": {
+        "types": "./src/time/index.ts",
+        "vibelang-source": "./src/time/index.ts",
+        "default": "./.vibelang/js/src/time/index.js"
+      },
+      "default": {
+        "types": "./src/time/index.ts",
+        "vibelang-source": "./src/time/index.ts",
+        "default": "./.vibelang/js/src/time/index.js"
+      }
     },
     "./calendar": {
       "types": "./src/calendar/index.ts",
-      "import": "./src/calendar/index.ts",
-      "default": "./src/calendar/index.ts"
+      "import": {
+        "types": "./src/calendar/index.ts",
+        "vibelang-source": "./src/calendar/index.ts",
+        "default": "./.vibelang/js/src/calendar/index.js"
+      },
+      "default": {
+        "types": "./src/calendar/index.ts",
+        "vibelang-source": "./src/calendar/index.ts",
+        "default": "./.vibelang/js/src/calendar/index.js"
+      }
     },
     "./vault": {
       "types": "./src/vault/index.ts",
-      "import": "./src/vault/index.ts",
-      "default": "./src/vault/index.ts"
+      "import": {
+        "types": "./src/vault/index.ts",
+        "vibelang-source": "./src/vault/index.ts",
+        "default": "./.vibelang/js/src/vault/index.js"
+      },
+      "default": {
+        "types": "./src/vault/index.ts",
+        "vibelang-source": "./src/vault/index.ts",
+        "default": "./.vibelang/js/src/vault/index.js"
+      }
     },
     "./flow-form": {
-      "types": "./src/flow-form.ts",
-      "import": "./src/flow-form.ts",
-      "default": "./src/flow-form.ts"
+      "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+      "import": {
+        "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+        "vibelang-source": "./src/flow-form.vibe",
+        "default": "./.vibelang/js/src/flow-form.js"
+      },
+      "default": {
+        "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+        "vibelang-source": "./src/flow-form.vibe",
+        "default": "./.vibelang/js/src/flow-form.js"
+      }
     },
     "./diff-paginate": {
       "types": "./src/diff-paginate.ts",
-      "import": "./src/diff-paginate.ts",
-      "default": "./src/diff-paginate.ts"
+      "import": {
+        "types": "./src/diff-paginate.ts",
+        "vibelang-source": "./src/diff-paginate.ts",
+        "default": "./.vibelang/js/src/diff-paginate.js"
+      },
+      "default": {
+        "types": "./src/diff-paginate.ts",
+        "vibelang-source": "./src/diff-paginate.ts",
+        "default": "./.vibelang/js/src/diff-paginate.js"
+      }
     },
     "./flow-arguments": {
       "types": "./src/flow-arguments.ts",
@@ -77,34 +161,82 @@
       "default": "./src/flow-arguments.ts"
     },
     "./app-operations": {
-      "types": "./src/app-operations/index.ts",
-      "import": "./src/app-operations/index.ts",
-      "default": "./src/app-operations/index.ts"
+      "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+      "import": {
+        "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/index.vibe",
+        "default": "./.vibelang/js/src/app-operations/index.js"
+      },
+      "default": {
+        "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/index.vibe",
+        "default": "./.vibelang/js/src/app-operations/index.js"
+      }
     },
     "./app-operations/wiki": {
-      "types": "./src/app-operations/wiki.ts",
-      "import": "./src/app-operations/wiki.ts",
-      "default": "./src/app-operations/wiki.ts"
+      "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
+      "import": {
+        "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/wiki.vibe",
+        "default": "./.vibelang/js/src/app-operations/wiki.js"
+      },
+      "default": {
+        "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/wiki.vibe",
+        "default": "./.vibelang/js/src/app-operations/wiki.js"
+      }
     },
     "./app-operations/http": {
-      "types": "./src/app-operations/http.ts",
-      "import": "./src/app-operations/http.ts",
-      "default": "./src/app-operations/http.ts"
+      "types": "./.vibe/declarations/src/app-operations/http.d.vibe.ts",
+      "import": {
+        "types": "./.vibe/declarations/src/app-operations/http.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/http.vibe",
+        "default": "./.vibelang/js/src/app-operations/http.js"
+      },
+      "default": {
+        "types": "./.vibe/declarations/src/app-operations/http.d.vibe.ts",
+        "vibelang-source": "./src/app-operations/http.vibe",
+        "default": "./.vibelang/js/src/app-operations/http.js"
+      }
     },
     "./command-line": {
       "types": "./src/command-line.ts",
-      "import": "./src/command-line.ts",
-      "default": "./src/command-line.ts"
+      "import": {
+        "types": "./src/command-line.ts",
+        "vibelang-source": "./src/command-line.ts",
+        "default": "./.vibelang/js/src/command-line.js"
+      },
+      "default": {
+        "types": "./src/command-line.ts",
+        "vibelang-source": "./src/command-line.ts",
+        "default": "./.vibelang/js/src/command-line.js"
+      }
     },
     "./run-command": {
       "types": "./src/run-command.ts",
-      "import": "./src/run-command.ts",
-      "default": "./src/run-command.ts"
+      "import": {
+        "types": "./src/run-command.ts",
+        "vibelang-source": "./src/run-command.ts",
+        "default": "./.vibelang/js/src/run-command.js"
+      },
+      "default": {
+        "types": "./src/run-command.ts",
+        "vibelang-source": "./src/run-command.ts",
+        "default": "./.vibelang/js/src/run-command.js"
+      }
     },
     "./clock": {
       "types": "./src/clock.ts",
-      "import": "./src/clock.ts",
-      "default": "./src/clock.ts"
+      "import": {
+        "types": "./src/clock.ts",
+        "vibelang-source": "./src/clock.ts",
+        "default": "./.vibelang/js/src/clock.js"
+      },
+      "default": {
+        "types": "./src/clock.ts",
+        "vibelang-source": "./src/clock.ts",
+        "default": "./.vibelang/js/src/clock.js"
+      }
     },
     "./notification-policy": {
       "types": "./src/notification-policy.ts",
@@ -113,20 +245,31 @@
     },
     "./copy": {
       "types": "./src/copy.ts",
-      "import": "./src/copy.ts",
-      "default": "./src/copy.ts"
+      "import": {
+        "types": "./src/copy.ts",
+        "vibelang-source": "./src/copy.ts",
+        "default": "./.vibelang/js/src/copy.js"
+      },
+      "default": {
+        "types": "./src/copy.ts",
+        "vibelang-source": "./src/copy.ts",
+        "default": "./.vibelang/js/src/copy.js"
+      }
     },
     "./adapters/code-editor": {
       "types": "./src/adapters/code-editor/index.tsx",
       "default": "./src/adapters/code-editor/index.tsx"
     },
     "./app-operations/controls": {
-      "types": "./src/app-operations/controls.ts",
-      "default": "./src/app-operations/controls.ts"
+      "types": "./.vibe/declarations/src/app-operations/controls.d.vibe.ts",
+      "vibelang-source": "./src/app-operations/controls.vibe",
+      "default": "./.vibelang/js/src/app-operations/controls.js"
     }
   },
   "files": [
-    "src/"
+    "src/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
@@ -156,7 +299,8 @@
     "yjs": "13.6.32",
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
-    "@smthrs/views": "workspace:*"
+    "@smthrs/views": "workspace:*",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -178,7 +322,19 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12"
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-unplugin": "0.0.14-pre.6279f9f9fbfc"
+  },
+  "imports": {
+    "#vibelang/emitted/src/app-operations/index": {
+      "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+      "vibelang-source": "./src/app-operations/index.vibe",
+      "default": "./.vibelang/js/src/app-operations/index.js"
+    },
+    "#vibelang/emitted/src/flow-form": {
+      "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+      "vibelang-source": "./src/flow-form.vibe",
+      "default": "./.vibelang/js/src/flow-form.js"
+    }
   }
 }

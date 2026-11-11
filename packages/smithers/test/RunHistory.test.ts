@@ -3,7 +3,7 @@ import * as TestControl from "@smthrs/control/test/TestControl"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as RunHistory from "../src/cli/RunHistory.ts"
+import * as RunHistory from "../src/cli/RunHistory.vibe"
 import { terminalSafeJson } from "../src/internal/Failure.ts"
 
 const event = (

@@ -102,9 +102,12 @@ export const live = GitHubConnection.make(effect {
 /** The delegation route. No person's object is addressed, so none is created, until a configured site's signature admits the call. */
 export function route(objects: Effect.Success<typeof GitHubConnection>, setup: Setup | undefined) {
   if (setup === undefined) return succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS }))
-  return Delegation.route({ origin: setup.origin, sites: setup.sites }, (person, request) => objects.getByName(nameOf(person)).fetch(request).pipe(
-    Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe(unavailable, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))),
-  ))
+  return Delegation.route({ origin: setup.origin, sites: setup.sites }, (person, request) => effect {
+    const object = try Effect.orDie(Effect.try(() => objects.getByName(nameOf(person))))
+    return try object.fetch(request).pipe(
+      Effect.catchCause(() => succeed(HttpServerResponse.jsonUnsafe(unavailable, { status: 503, headers: GitHub.Auth.Broker.HEADERS }))),
+    )
+  })
 }
 
 /** The broker's custodian: the token crosses to the person's object once and answers a handle. */

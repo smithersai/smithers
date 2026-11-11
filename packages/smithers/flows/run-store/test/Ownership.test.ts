@@ -19,7 +19,7 @@ import { TestClock } from "effect/testing"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
 import { vi } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import {
   heartbeatInterval,
   heartbeatLoop,
@@ -32,8 +32,8 @@ import {
   sameHostPidProbe,
   singleIncarnationLiveness
 } from "../src/Ownership.ts"
-import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type RunRow, type RunSnapshot, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const migrated = <A, E>(effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | RunStore>) =>
   effect.pipe(

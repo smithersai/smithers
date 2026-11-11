@@ -1,8 +1,8 @@
 // Fork support for a person's review change, over the shared GitHub Effect client.
-import { GitHubClient } from "./GitHubClient.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
 import { IntegrationError } from "../core/IntegrationError.ts"
-import { getPull } from "./Pulls.ts"
-import { requireRepositoryPath } from "./Repository.ts"
+import { getPull } from "./Pulls.vibe"
+import { requireRepositoryPath } from "./Repository.vibe"
 export const Fork = Schema.Struct({ name: Schema.String, owner: Schema.Struct({ login: Schema.String }), default_branch: Schema.String })
 /** Use the owner's repository or this person's actual fork. Base proposals on the upstream default branch. */
 export effect function ensureFork(owner: string, repo: string, login: string) {

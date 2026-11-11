@@ -11,8 +11,8 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { Journal } from "../src/Journal.ts"
-import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = "process-death" as RunId

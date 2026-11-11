@@ -9,7 +9,7 @@ planning reads the published pages as context when they are fresh
 vibed state or delivery receipt.
 
 ```ts
-import { RefreshWiki, planningWikiLayers } from "./planning-wiki.ts"
+import { RefreshWiki, planningWikiLayers } from "./planning-wiki.vibe"
 
 const wiki = planningWikiLayers({
   repositoryPath,

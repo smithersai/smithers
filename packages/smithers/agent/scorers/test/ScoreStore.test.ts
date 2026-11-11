@@ -9,13 +9,13 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
-import { migration as initialScores } from "../src/migrations/0001_scores.ts"
-import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.ts"
-import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.ts"
-import { ScorerError, ScorerErrorCode } from "../src/ScorerError.ts"
-import * as ScoreStore from "../src/ScoreStore.ts"
-import * as SqlScoreStore from "../src/SqlScoreStore.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import { migration as initialScores } from "../src/migrations/0001_scores.vibe"
+import { migration as failureCodes } from "../src/migrations/0003_score_failure_codes.vibe"
+import { migration as requiredFailureCodes } from "../src/migrations/0004_require_failure_codes.vibe"
+import { ScorerError, ScorerErrorCode } from "../src/ScorerError.vibe"
+import * as ScoreStore from "../src/ScoreStore.vibe"
+import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 const scratch = mkdtempSync(join(tmpdir(), "flows-scorers-"))
 afterAll(() => {
@@ -469,6 +469,22 @@ describe("ScoreStore", () => {
       }))
       expect(failure).toBeInstanceOf(ScorerError)
       expect(failure.code).toBe("invalid_observation")
+    })
+
+    it("turns metadata whose array length throws into a failed effect", async () => {
+      const hostile = new Proxy([], {
+        get: (target, key, receiver) => {
+          if (key === "length") throw new TypeError("no")
+          return Reflect.get(target, key, receiver)
+        }
+      })
+      const failure = await failed(Effect.gen(function*() {
+        const store = yield* ScoreStore.ScoreStore
+        return yield* store.record(score({ meta: hostile }))
+      }))
+      expect(failure).toBeInstanceOf(ScorerError)
+      expect(failure.code).toBe("invalid_observation")
+      expect(failure.message).toBe("An observation could not be snapshotted")
     })
   })
 

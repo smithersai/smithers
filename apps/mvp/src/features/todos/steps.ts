@@ -35,7 +35,7 @@ import {
   TodoInspect,
   TodoStepRefused,
 } from "./flows"
-import { drafts, queued, statusReads } from "./metrics"
+import { drafts, queued, statusReads } from "#vibelang/emitted/src/features/todos/metrics"
 import { Kept, type QueuedOp, type TodosCall } from "./schema"
 
 // The TODO flows' steps (docs/features/todos.md#flows). A step runs in the leader tab's engine worker, which has no

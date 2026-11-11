@@ -10,8 +10,8 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import * as ControlRuntime from "../src/ControlRuntime.ts"
+import { Control } from "../src/Control.vibe"
+import * as ControlRuntime from "../src/ControlRuntime.vibe"
 import { controlPlane } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "smithers-approval-gate-"))

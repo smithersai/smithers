@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Jj } from "../src/Jj.ts"
+import { Jj } from "../src/Jj.vibe"
 import * as NodeJj from "../src/node/NodeJj.ts"
 
 const jjInstalled = (() => {

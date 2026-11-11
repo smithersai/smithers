@@ -6,7 +6,7 @@ import { Context } from "effect"
 import { once } from "node:events"
 import { type Readable, Transform, type Writable } from "node:stream"
 import { finished } from "node:stream/promises"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 
 /** Host-owned MCP streams, independent of command arguments.
  * @category services

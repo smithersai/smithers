@@ -58,7 +58,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("//apps/mvp/infra/sandbox/Dockerfile"),
     Smithers.file("//apps/mvp/infra/sandbox/tmux.conf"),
     Smithers.file("//apps/mvp/infra/sandbox/.dockerignore"),
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts")
@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "CloudflareRuntime.layer's canExecute admitting a run other than its own executionId, or a sweep other than { host: executionId }.",
         "An OwnerIdentity that can mint one incarnation number for two runtimes, such as one read from process.pid."
       ],
-      paths: ["src/CloudflareHost.ts", "src/CloudflareRuntime.ts"]
+      paths: ["src/CloudflareHost.vibe", "src/CloudflareRuntime.vibe"]
     },
     {
       id: "alarm-never-drops-an-execution",
@@ -127,7 +127,7 @@ const securityReview = Smithers.SecurityReview({
         "Routing taken from the drive's report instead of read from the store, so an alarm that dies between its drive and its routing never starts a child or wakes a parent.",
         "A parked execution's alarm deleted or armed later without reading EngineStore.nextWake again afterwards, which loses a wake another object delivered while the alarm ran."
       ],
-      paths: ["src/ExecutionObject.ts", "src/internal/Routing.ts"]
+      paths: ["src/ExecutionObject.ts", "src/internal/Routing.vibe"]
     },
     {
       id: "no-content-in-telemetry",
@@ -141,7 +141,7 @@ const securityReview = Smithers.SecurityReview({
         "The start span ending with the caller's exit, whose failure becomes an exported exception.",
         "failureType reading anything but an error's tag."
       ],
-      paths: ["src/ExecutionObject.ts", "src/internal/FailureDetail.ts"]
+      paths: ["src/ExecutionObject.ts", "src/internal/FailureDetail.vibe"]
     },
     {
       id: "fail-closed-refusals",
@@ -153,7 +153,7 @@ const securityReview = Smithers.SecurityReview({
         "A ChildProcessSpawner or Jj operation that succeeds.",
         "The FetchHttpClient RequestInit set to anything other than redirect: \"manual\"."
       ],
-      paths: ["src/CloudflareHost.ts", "src/internal/Refusals.ts"]
+      paths: ["src/CloudflareHost.vibe", "src/internal/Refusals.vibe"]
     }
   ]
 })

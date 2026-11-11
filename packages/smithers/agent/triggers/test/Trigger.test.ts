@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Schedule from "../src/Schedule.ts"
-import * as Trigger from "../src/Trigger.ts"
+import * as Trigger from "../src/Trigger.vibe"
 
 describe("Trigger", () => {
   const declaration = (input: unknown) => ({

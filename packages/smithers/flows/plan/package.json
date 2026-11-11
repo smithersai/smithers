@@ -34,29 +34,97 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./GraphBuildError": "./src/GraphBuildError.ts",
-    "./Node": "./src/Node.ts",
-    "./Planned": "./src/Planned.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./GraphBuildError": {
+      "types": "./.vibe/declarations/src/GraphBuildError.d.vibe.ts",
+      "vibelang-source": "./src/GraphBuildError.vibe",
+      "default": "./.vibelang/js/src/GraphBuildError.js"
+    },
+    "./Node": {
+      "types": "./src/Node.ts",
+      "vibelang-source": "./src/Node.ts",
+      "default": "./.vibelang/js/src/Node.js"
+    },
+    "./Planned": {
+      "types": "./.vibe/declarations/src/Planned.d.vibe.ts",
+      "vibelang-source": "./src/Planned.vibe",
+      "default": "./.vibelang/js/src/Planned.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Effects": "./src/Effects.ts",
-    "./CachePolicy": "./src/CachePolicy.ts",
-    "./Repetition": "./src/Repetition.ts",
-    "./FileSet": "./src/FileSet.ts",
-    "./KeyMaterial": "./src/KeyMaterial.ts",
+    "./Effects": {
+      "types": "./.vibe/declarations/src/Effects.d.vibe.ts",
+      "default": {
+        "types": "./.vibe/declarations/src/Effects.d.vibe.ts",
+        "vibelang-source": "./src/Effects.vibe",
+        "default": "./.vibelang/js/src/Effects.js"
+      }
+    },
+    "./CachePolicy": {
+      "types": "./.vibe/declarations/src/CachePolicy.d.vibe.ts",
+      "vibelang-source": "./src/CachePolicy.vibe",
+      "default": "./.vibelang/js/src/CachePolicy.js"
+    },
+    "./Repetition": {
+      "types": "./.vibe/declarations/src/Repetition.d.vibe.ts",
+      "vibelang-source": "./src/Repetition.vibe",
+      "default": "./.vibelang/js/src/Repetition.js"
+    },
+    "./FileSet": {
+      "types": "./.vibe/declarations/src/FileSet.d.vibe.ts",
+      "vibelang-source": "./src/FileSet.vibe",
+      "default": "./.vibelang/js/src/FileSet.js"
+    },
+    "./KeyMaterial": {
+      "types": "./.vibe/declarations/src/KeyMaterial.d.vibe.ts",
+      "vibelang-source": "./src/KeyMaterial.vibe",
+      "default": "./.vibelang/js/src/KeyMaterial.js"
+    },
     "./Migrations": null,
-    "./Plan": "./src/Plan.ts",
-    "./Placement": "./src/Placement.ts",
-    "./PlanDiff": "./src/PlanDiff.ts",
+    "./Plan": {
+      "types": "./src/Plan.ts",
+      "vibelang-source": "./src/Plan.ts",
+      "default": "./.vibelang/js/src/Plan.js"
+    },
+    "./Placement": {
+      "types": "./.vibe/declarations/src/Placement.d.vibe.ts",
+      "vibelang-source": "./src/Placement.vibe",
+      "default": "./.vibelang/js/src/Placement.js"
+    },
+    "./PlanDiff": {
+      "types": "./src/PlanDiff.ts",
+      "vibelang-source": "./src/PlanDiff.ts",
+      "default": "./.vibelang/js/src/PlanDiff.js"
+    },
     "./PlanStore": null,
-    "./StepKey": "./src/StepKey.ts",
-    "./Scheduling": "./src/Scheduling.ts",
-    "./index": "./src/index.ts",
-    "./test/PlanFixtures": "./src/test/PlanFixtures.ts"
+    "./StepKey": {
+      "types": "./.vibe/declarations/src/StepKey.d.vibe.ts",
+      "vibelang-source": "./src/StepKey.vibe",
+      "default": "./.vibelang/js/src/StepKey.js"
+    },
+    "./Scheduling": {
+      "types": "./src/Scheduling.ts",
+      "vibelang-source": "./src/Scheduling.ts",
+      "default": "./.vibelang/js/src/Scheduling.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/PlanFixtures": {
+      "types": "./src/test/PlanFixtures.ts",
+      "vibelang-source": "./src/test/PlanFixtures.ts",
+      "default": "./.vibelang/js/src/test/PlanFixtures.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -66,7 +134,9 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -252,7 +322,8 @@
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.17",
     "@smthrs/keys": "1.0.0-rc.17",
-    "@smthrs/canonical": "1.0.0-rc.17"
+    "@smthrs/canonical": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -272,8 +343,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },

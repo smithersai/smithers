@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Host from "../src/Host.ts"
+import * as Host from "../src/Host.vibe"
 
 describe("PluginRefused", () => {
   it("is a tagged error a host fails with and a caller can match", async () => {

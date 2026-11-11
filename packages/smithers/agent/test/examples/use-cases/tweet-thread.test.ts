@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { onTestFailed, vi } from "vitest"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 import {
   delayMillis,
   layer,

@@ -1,9 +1,9 @@
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Option, Path, PlatformError, Result } from "effect"
-import * as Guarded from "../src/FileSystem.ts"
+import * as Guarded from "../src/FileSystem.vibe"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const info = { type: "Directory", dev: 7n, ino: Option.some(9n) } as FileSystem.File.Info
 

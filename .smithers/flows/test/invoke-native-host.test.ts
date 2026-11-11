@@ -17,7 +17,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import * as Serve from "../../../packages/smithers/src/Serve.ts"
+import * as Serve from "../../../packages/smithers/src/Serve.vibe"
 import { layer, sourceDigest } from "../invoke/host.ts"
 import { registerPinnedLibraries } from "../invoke/serve.ts"
 
@@ -173,6 +173,9 @@ const phase = async (root: string, stateRoot: string, restart: boolean, source =
   console.log(JSON.stringify({ runId, restart, completed: true }))
 }
 
+// The fixture child is this file run again: its imports reach `.vibe` modules, which load through VibeLang.
+const fixtureHost = ["--import", import.meta.resolve("vibelang/register"), fileURLToPath(import.meta.url)]
+
 if (process.argv[2] === "--fixture") {
   await phase(
     process.argv[3]!,
@@ -200,7 +203,7 @@ if (process.argv[2] === "--fixture") {
       const execute = promisify(execFile), results = []
       for (const mode of ["first", "restart"]) {
         const result = await execute(process.execPath, [
-          fileURLToPath(import.meta.url),
+          ...fixtureHost,
           "--fixture",
           root,
           stateRoot,
@@ -231,7 +234,7 @@ if (process.argv[2] === "--fixture") {
     const run = () =>
       promisify(execFile)(
         process.execPath,
-        [fileURLToPath(import.meta.url), "--fixture", root, stateRoot, "closure", pin],
+        [...fixtureHost, "--fixture", root, stateRoot, "closure", pin],
         { timeout: 55_000, maxBuffer: 1024 * 1024 }
       )
     const approved = await run()
@@ -275,7 +278,7 @@ if (process.argv[2] === "--fixture") {
         await rm(join(stateRoot, "fixture-receipt.json"), { force: true })
         await assert.rejects(
           promisify(execFile)(process.execPath, [
-            fileURLToPath(import.meta.url),
+            ...fixtureHost,
             "--fixture",
             root,
             stateRoot,
@@ -306,7 +309,7 @@ if (process.argv[2] === "--fixture") {
     const digest = (bytes: string) => createHash("sha256").update(bytes).digest("hex")
     const run = (pin = digest(declaration)) =>
       promisify(execFile)(process.execPath, [
-        fileURLToPath(import.meta.url),
+        ...fixtureHost,
         "--fixture",
         root,
         stateRoot,
@@ -402,7 +405,7 @@ if (process.argv[2] === "--fixture") {
     const digest = (bytes: string) => createHash("sha256").update(bytes).digest("hex")
     const run = (pin: string) =>
       promisify(execFile)(process.execPath, [
-        fileURLToPath(import.meta.url),
+        ...fixtureHost,
         "--fixture",
         root,
         stateRoot,
@@ -438,7 +441,7 @@ if (process.argv[2] === "--fixture") {
       promisify(execFile)(
         process.execPath,
         [
-          fileURLToPath(import.meta.url),
+          ...fixtureHost,
           "--fixture",
           root,
           stateRoot,
@@ -466,7 +469,7 @@ if (process.argv[2] === "--fixture") {
     await assert.rejects(
       promisify(execFile)(
         process.execPath,
-        [fileURLToPath(import.meta.url), "--fixture", root, stateRoot, "mismatch"],
+        [...fixtureHost, "--fixture", root, stateRoot, "mismatch"],
         { timeout: 25_000, maxBuffer: 1024 * 1024 }
       ),
       /Flow\.make tag must match its \.smithers\/flows\/<name>\/flow\.ts path/

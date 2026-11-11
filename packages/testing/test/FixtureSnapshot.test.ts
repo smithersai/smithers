@@ -13,11 +13,11 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Effect, Option, Ref, Stream } from "effect"
-import { canonicalRequestDigest, index, type RecordedCall, recordedRequest } from "../src/Fixture.ts"
+import { canonicalRequestDigest, index, type RecordedCall, recordedRequest } from "../src/Fixture.vibe"
 import * as FixtureStore from "../src/FixtureStore.ts"
-import type { ModelRequestLike } from "../src/ModelLike.ts"
-import * as RecordingModel from "../src/RecordingModel.ts"
-import { FixtureEncodingError } from "../src/TestingError.ts"
+import type { ModelRequestLike } from "../src/ModelLike.vibe"
+import * as RecordingModel from "../src/RecordingModel.vibe"
+import { FixtureEncodingError } from "../src/TestingError.vibe"
 
 /** A mutable request in the structural shape the recorder projects. */
 const mutableRequest = () => ({

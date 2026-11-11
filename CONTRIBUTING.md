@@ -25,6 +25,13 @@ later); that floor is what consumers may run, not what this workspace develops
 on. Install the pinned package manager (`pnpm@11.25.0`), then
 dependencies with `pnpm install`.
 
+VibeLang declaration sidecars are generated before the root `check`, `lint` and
+`test` scripts and before CI source gates. After installing dependencies, run
+`pnpm run sidecars` before invoking package scripts or TypeScript-only tools.
+Generation checks native sources and their imports, preserves ambient declarations,
+and leaves the ordinary full project and test checks unchanged. Sidecars are not
+committed. Run each package's normal build before packing it.
+
 Before landing on `main`, run every gate:
 
 ```sh
@@ -42,6 +49,8 @@ pnpm docs:check
 failing package — so a green partial run proves less than it looks like it
 does. `pnpm --recursive --if-present --no-bail run test` reports every
 package instead of the first casualty.
+
+Recursive package scripts use `ignoreWorkspaceCycles: true` because package test dependencies form cycles. Each selected package still runs once; source import cycles are checked by the `circular` targets.
 
 ## Updating documentation
 
@@ -124,7 +133,10 @@ derives checkout, installation, tool setup, and every
 in the package that owns it before CI can invoke it, matching Bazel's rule that
 a BUILD file has no free-form command surface.
 
-The generated `tsconfig.json` is the root TypeScript project. The lockfile and
+The generated `tsconfig.json` is the root TypeScript project. It selects the `PACKAGE.ts` graph declarations;
+package projects own their VibeLang source configuration. The declaration in the
+root `PACKAGE.ts` is the source of truth, and the generated-root regression
+checks the rendered configuration. The root target verifies the checked-in file. The lockfile and
 install are separate targets because a target cannot be keyed on a file it
 also produces: `Lockfile` writes `pnpm-lock.yaml`, while `Install` consumes the
 lockfile target. The hand-written `pnpm-workspace.yaml` is a planner input. Its

@@ -8,7 +8,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { bindRepositoryRegistry, provisionBuiltins, runningRepositoryPolicy } from "../repository/registry.ts"
+import { bindRepositoryRegistry, provisionBuiltins, runningRepositoryPolicy } from "../repository/registry.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
@@ -21,7 +21,7 @@ const measuredPolicy = (changedFile?: string) =>
       readFileString: ((path: string, ...options: ReadonlyArray<unknown>) =>
         fs.readFileString(path, ...options as []).pipe(Effect.map((text) =>
           changedFile !== undefined && path.endsWith(`/repository/${changedFile}`) ?
-            changedFile === "jev-checks.ts"
+            changedFile === "jev-checks.vibe"
               ? text.replace("FLAG_PROBABILITY = 0.8", "FLAG_PROBABILITY = 0.7")
               : `${text}\n// Changed classifier policy.\n`
             : text
@@ -50,7 +50,7 @@ test("source repository policy fences an approved job after semantic judge code 
   assert.ok(approved)
   assert.equal((await Effect.runPromise(oldHost.loadBody("repository/setup", approved)))._tag, "Module")
 
-  for (const file of ["jev-checks.ts", "jev-duplicates.ts", "jev-reproduction.ts", "jev-score.ts"]) {
+  for (const file of ["jev-checks.vibe", "jev-duplicates.vibe", "jev-reproduction.vibe", "jev-score.vibe"]) {
     const changed = await run(measuredPolicy(file))
     assert.notEqual(changed, original, `${file} must change the measured host policy`)
     const changedHost = bindRepositoryRegistry(base, builtins.registry, changed, systemFlows)

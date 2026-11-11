@@ -1,8 +1,8 @@
 import { Cause, Clock, Effect, type Layer, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as SessionStore from "../SessionStore.ts"
 
 // The runner audit (decision 0148, docs/features/agent-runners.md#audit): `GET /api/runners/audit`, for an Admin of

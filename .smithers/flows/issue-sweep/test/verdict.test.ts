@@ -10,7 +10,7 @@ import {
   type TimelineEntry,
   verdictBody,
   verdictWrite
-} from "../verdict.ts"
+} from "../verdict.vibe"
 
 // infraCaused ---------------------------------------------------------------
 

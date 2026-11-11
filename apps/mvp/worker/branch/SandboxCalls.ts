@@ -8,11 +8,11 @@ import {
   MAX_CALL_BODY_BYTES,
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
-import type { Actor } from "../Actor.ts"
-import { boundTo, canAsk, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import type { Actor } from "#vibelang/source/worker/Actor"
+import { boundTo, canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as Flows from "#vibelang/emitted/worker/Flows"
 import { SandboxCall } from "../flows/SandboxCall.ts"
 import { ToolCall } from "../flows/SandboxCommand.ts"
 import { branchAccess, canEdit } from "./Access.ts"

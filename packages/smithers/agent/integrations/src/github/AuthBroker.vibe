@@ -3,8 +3,8 @@ import * as Policy from "./AuthBrokerPolicy.vibe"
 import * as GitHubPage from "./AuthConsent.vibe"
 import type * as Auth from "./Auth.vibe"
 import * as CookieKeys from "../core/CookieKeys.vibe"
-import * as Pkce from "../core/Pkce.ts"
-import { forCredentials } from "../core/CredentialHttp.ts"
+import * as Pkce from "../core/Pkce.vibe"
+import { forCredentials } from "../core/CredentialHttp.vibe"
 import { WebCryptoCipher } from "@smthrs/control"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse, UrlParams } from "effect/http"
 
@@ -84,7 +84,7 @@ const decodeConsent = Schema.decodeUnknownEffect(Schema.fromJsonString(Consent))
 const decodePersonHistory = Schema.decodeUnknownEffect(Schema.fromJsonString(PersonHistory))
 const random = /^[A-Za-z0-9_-]{43}$/
 // Digests arbitrary strings through the existing HMAC primitive, with a fixed public domain separator.
-import * as Signature from "../core/Signature.ts"
+import * as Signature from "../core/Signature.vibe"
 const hash = (value: string) => Signature.computeHmacSha256Hex(value, "smithers-auth-broker-digest-v1")
 const binding = (origin: string, nonce: string, challenge: string) => hash(JSON.stringify([origin, nonce, challenge]))
 const refused = () => new BrokerRefused()

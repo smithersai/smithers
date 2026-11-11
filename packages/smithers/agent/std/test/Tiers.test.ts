@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Bash from "../src/Bash.ts"
-import * as Lsp from "../src/Lsp.ts"
+import * as Bash from "../src/Bash.vibe"
+import * as Lsp from "../src/Lsp.vibe"
 import * as Manifest from "../src/Manifest.ts"
 
 const expectedTiers = {

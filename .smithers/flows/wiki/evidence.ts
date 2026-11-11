@@ -1,5 +1,5 @@
 /** Review a curated view; retain and hash the complete source in the artifact. */
-import { type Evidence, WikiError } from "./schema.ts"
+import { type Evidence, WikiError } from "./schema.vibe"
 
 export const visibleLine = (evidence: Evidence, path: string, line: number) => {
   const ranges = evidence.spec.excerpts?.[path]

@@ -8,7 +8,7 @@ import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 import { executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

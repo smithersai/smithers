@@ -19,7 +19,9 @@ interface Held<A> {
  * @since 1.0.0
  */
 export interface FoldCache<A> {
+  /** @throws {never} */
   readonly get: (key: string) => A | undefined
+  /** @throws {never} */
   readonly put: (key: string, value: A) => void
 }
 
@@ -37,6 +39,7 @@ export interface FoldCache<A> {
  * to evicting the oldest, and it then clears the reuse marks so a fold cannot
  * hold a slot on one ancient read forever.
  *
+ * @throws {never}
  * @private
  * @since 1.0.0
  */

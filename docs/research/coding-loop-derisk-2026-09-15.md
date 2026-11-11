@@ -83,7 +83,7 @@ linking the helper statically.
 
 ### plue — the landing API `coding/vibe` needs does not exist
 
-`.smithers/flows/coding/landing.ts` calls four endpoints. Three are absent from prod and
+`.smithers/flows/coding/landing.vibe` calls four endpoints. Three are absent from prod and
 from plue `main` (`81c3ee30`):
 
 - `POST /api/repos/{o}/{r}/landings/append/prepare` — missing
@@ -96,7 +96,7 @@ three plus migration `db/migrations/20260910044000_landing_create_identity.sql`.
 
 Separately, `internal/services/repo_gateway_workspace.go:222` builds the
 workspace gateway service environment without `SMITHERS_JJHUB_TOKEN` or
-`SMITHERS_JJHUB_API_URL`, so `.smithers/flows/coding/landing-config.ts` returns
+`SMITHERS_JJHUB_API_URL`, so `.smithers/flows/coding/landing-config.vibe` returns
 `undefined` and `coding/vibe` is never registered. A live workspace advertises
 only `checks/fast`, `checks/slow`, `checks/wiki`, `coding`,
 `coding/implementation`, `coding/request`. Landing from a workspace is

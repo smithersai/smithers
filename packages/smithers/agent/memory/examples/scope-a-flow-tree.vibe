@@ -1,0 +1,46 @@
+/**
+ * Attach a memory policy to the `remember` and `recall` flows and call them
+ * through the policy-enforcing handlers: empty banks resolve to the policy
+ * namespace, and a foreign bank is refused before the store runs.
+ */
+import * as Flows from "../src/Flows.vibe"
+import * as MemoryStore from "../src/MemoryStore.vibe"
+import * as RecallKeyword from "../src/RecallKeyword.vibe"
+import * as TestMemory from "../src/test/TestMemory.ts"
+import * as WithMemory from "../src/WithMemory.vibe"
+
+const policy: WithMemory.Policy = { banks: ["flow-release-notes"], maxTokens: 2048 }
+
+const memory = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
+
+/** Writes and recalls inside the policy, then tries a bank outside it. */
+export const scopeAFlowTree = (): Promise<{
+  readonly recalledKeys: ReadonlyArray<string>
+  readonly provenance: unknown
+  readonly foreignBank: string
+}> =>
+  (effect {
+    const remember = Flows.handlersFor(WithMemory.withMemory(Flows.remember, policy), {
+      runId: "run-1",
+      nodeId: "node-7",
+      iteration: 0
+    }).remember
+    const recall = Flows.handlersFor(WithMemory.withMemory(Flows.recall, policy)).recall
+
+    // An empty bank resolves to the policy's first bank.
+    try remember({ bank: "", key: "release", text: "cut 0.1.0 with the changelog" })
+    // Empty banks recall from every policy bank.
+    const rows = try recall({ banks: [], query: "changelog" })
+
+    const store = try MemoryStore.MemoryStore
+    const fact = try store.getFact({ namespace: "flow-release-notes", key: "release" })
+
+    // A bank the policy does not list fails with invalid_namespace.
+    const refused = try (remember({ bank: "global-secrets", key: "k", text: "x" }) |> Effect.flip(%))
+
+    return {
+      recalledKeys: rows.map((row) => row.key),
+      provenance: fact?.provenance,
+      foreignBank: refused.code
+    }
+  }) |> Effect.provide(%, memory) |> Effect.runPromise(%)

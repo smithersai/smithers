@@ -34,16 +34,37 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./Install": "./src/Install.ts",
-    "./PackageManager": "./src/PackageManager.ts",
-    "./Runtime": "./src/Runtime.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Install": {
+      "types": "./.vibe/declarations/src/Install.d.vibe.ts",
+      "vibelang-source": "./src/Install.vibe",
+      "default": "./.vibelang/js/src/Install.js"
+    },
+    "./PackageManager": {
+      "types": "./src/PackageManager.ts",
+      "vibelang-source": "./src/PackageManager.ts",
+      "default": "./.vibelang/js/src/PackageManager.js"
+    },
+    "./Runtime": {
+      "types": "./src/Runtime.ts",
+      "vibelang-source": "./src/Runtime.ts",
+      "default": "./.vibelang/js/src/Runtime.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -54,7 +75,9 @@
     "WIRING.md",
     "LICENSE",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -128,7 +151,8 @@
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.17",
     "@smthrs/flow": "1.0.0-rc.17",
-    "@smthrs/plan": "1.0.0-rc.17"
+    "@smthrs/plan": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -150,8 +174,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0"
   }
 }

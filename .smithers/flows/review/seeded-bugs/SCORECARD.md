@@ -4,8 +4,8 @@ Two numbers live here, and they measure different things.
 
 ## The gate: the offline pipeline score
 
-`baseline.json` records this run per fixture, and `node
-.smithers/flows/review/seeded-bugs/run.ts` fails when a fixture disagrees with it. The
+`baseline.json` records this run per fixture, and `bun
+.smithers/flows/review/seeded-bugs/run.vibe` fails when a fixture disagrees with it. The
 reviewing seat is `deterministicReviewer.ts`, so the score is reproducible and
 free, and what it grades is the pipeline: diff ingestion, per-file fan-out,
 scoping, anchoring, de-duplication, and the scorer's matching.
@@ -57,7 +57,7 @@ change moves.
 
 ## The reference: a live model's score
 
-`node .smithers/flows/review/seeded-bugs/run.ts --live` runs the same suite against real
+`bun .smithers/flows/review/seeded-bugs/run.vibe --live` runs the same suite against real
 seats and writes a timestamped report under `.report/`. It spends real inference
 budget and is not a gate, because a model's score is not reproducible.
 

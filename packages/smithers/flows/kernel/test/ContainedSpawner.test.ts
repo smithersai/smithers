@@ -1,5 +1,5 @@
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
 /**
  * The containment decorator, exercised over a scripted host spawner.
  *
@@ -28,8 +28,8 @@ import {
 import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as ProcessLedger from "../src/ProcessLedger.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessLedger from "../src/ProcessLedger.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * A host spawner that records what it was handed and reports consecutive pids.

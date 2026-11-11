@@ -23,7 +23,7 @@ import { Node } from "@smthrs/plan"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Context, Effect, Layer, Schedule, Schema, Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Projection from "../src/internal/EngineJournalProjection.ts"
+import * as Projection from "../src/internal/EngineJournalProjection.vibe"
 import * as Supervisor from "../src/internal/EngineJournalSupervisor.ts"
 
 const Read = Action.make("supervised/read", { payload: { path: Schema.String }, success: Schema.Number })

@@ -12,7 +12,7 @@ const standard = BuildAndCheckTypeScriptPackage({
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
@@ -21,7 +21,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 // the bin imports the package's TypeScript sources through its exports.
 const modelServer = Smithers.Filegroup({
   cwd,
-  srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.ts")]
+  srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.{ts,vibe}")]
 })
 
 // The unmodified Effect contribution tests use the fork's indexed-access setting.
@@ -43,7 +43,7 @@ const securityReview = Smithers.SecurityReview({
       title: "The host adapters example spawns a fixed command, never one built from input",
       threat: "A copied example spawns a shell string built from payload or argv values on the host.",
       lookFor: ["A child spawned with a shell string built from payload or argv values."],
-      paths: ["examples/08-host-adapters.ts"]
+      paths: ["examples/08-host-adapters.vibe"]
     },
     {
       id: "fixture-secret-capture",
@@ -52,11 +52,11 @@ const securityReview = Smithers.SecurityReview({
         "Anyone who can read a committed fixture reads API keys, tokens, or private user text that a recording run captured from the live model exchange.",
       lookFor: [
         "recordedRequest in src/Fixture.ts copying system, message, tool-result, or tool-call argument text verbatim with no redaction hook or secret scan.",
-        "recordedFailure in src/RecordingModel.ts storing a provider ModelError message, path, or requestId that can echo a key or auth header.",
+        "recordedFailure in src/RecordingModel.vibe storing a provider ModelError message, path, or requestId that can echo a key or auth header.",
         "FixtureStore.makeFile writing the fixture or its .journal with default permissions instead of owner-only mode.",
         "CachedModel or RecordingModel recording a call whose request carries headers, credentials, or provider options beyond the projected ModelRequest fields."
       ],
-      paths: ["src/Fixture.ts", "src/RecordingModel.ts", "src/CachedModel.ts", "src/FixtureStore.ts"]
+      paths: ["src/Fixture.vibe", "src/RecordingModel.vibe", "src/CachedModel.vibe", "src/FixtureStore.ts"]
     },
     {
       id: "fixture-store-path-safety",
@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "A journal index check that accepts a negative, non-integer, gapped, or out-of-range index.",
         "Schema.Json or Schema.Record fields that accept unbounded nesting or size without the 128-level canonicalize cap."
       ],
-      paths: ["src/Fixture.ts", "src/FixtureStore.ts", "src/internal/Structural.ts"]
+      paths: ["src/Fixture.vibe", "src/FixtureStore.ts", "src/internal/Structural.ts"]
     },
     {
       id: "replay-live-fallthrough",
@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "canonicalRequestDigest omitting a request field such as tools, params, toolChoice, or serverTools, so two different requests share a recording.",
         "A replayed recorded failure that is not stamped with modelErrorTag and therefore bypasses the caller's quota or refusal handling."
       ],
-      paths: ["src/RecordedModel.ts", "src/CachedModel.ts", "src/Fixture.ts", "src/ModelLike.ts"]
+      paths: ["src/RecordedModel.vibe", "src/CachedModel.vibe", "src/Fixture.vibe", "src/ModelLike.vibe"]
     },
     {
       id: "test-host-isolation",
@@ -108,7 +108,7 @@ const securityReview = Smithers.SecurityReview({
         "makeStubBash matching a command by prefix or pattern, or through a prototype key, instead of Object.hasOwn exact lookup.",
         "HostSuite capability cases that pass when the host silently performs the real side effect."
       ],
-      paths: ["src/TestHost.ts", "src/HostSuite.ts"]
+      paths: ["src/TestHost.vibe", "src/HostSuite.vibe"]
     },
     {
       id: "process-probe-exec",
@@ -134,12 +134,12 @@ const securityReview = Smithers.SecurityReview({
         "Divergence or ScoreSuite reports embedding raw model output or fixture contents in text printed on failure."
       ],
       paths: [
-        "src/TestingError.ts",
-        "src/RecordedModel.ts",
-        "src/PlanAssertions.ts",
-        "src/JournalAssertions.ts",
-        "src/Divergence.ts",
-        "src/internal/ScoreSuite.ts"
+        "src/TestingError.vibe",
+        "src/RecordedModel.vibe",
+        "src/PlanAssertions.vibe",
+        "src/JournalAssertions.vibe",
+        "src/Divergence.vibe",
+        "src/internal/ScoreSuite.vibe"
       ]
     }
   ]

@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Bind from "../src/Bind.ts"
+import * as Bind from "../src/Bind.vibe"
 
 const references = (args: Record<string, any>, at?: string) => Result.getOrThrow(Bind.references(args, at))
 const refused = (args: Record<string, any>, at?: string) =>

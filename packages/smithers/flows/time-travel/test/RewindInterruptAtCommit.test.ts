@@ -14,12 +14,12 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { error } from "../src/TimeTravelError.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { error } from "../src/TimeTravelError.vibe"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const owner = { hostId: "test-host", pid: 20, nonce: "commit-owner" }
 const frame = { lineageId: "run/root", seq: 0 }

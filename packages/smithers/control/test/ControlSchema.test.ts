@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ControlSchema from "../src/ControlSchema.ts"
+import * as ControlSchema from "../src/ControlSchema.vibe"
 
 const roundTrip = <A>(schema: Schema.Codec<A, unknown, never, never>, value: A): void => {
   expect(Schema.decodeUnknownSync(schema)(Schema.encodeSync(schema)(value))).toEqual(value)

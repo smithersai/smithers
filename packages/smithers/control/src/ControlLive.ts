@@ -23,7 +23,7 @@ import {
   type SignalInput,
   type SteerInput,
   type WatchInput
-} from "./Control.ts"
+} from "./Control.vibe"
 import {
   ClaimLost,
   type CodeDrift,
@@ -39,11 +39,11 @@ import {
   RunNotFound,
   Unauthorized,
   Unavailable
-} from "./ControlError.ts"
-import type { CancelRecord, Launch } from "./ControlExecutor.ts"
-import { ControlExecutor } from "./ControlExecutor.ts"
+} from "./ControlError.vibe"
+import type { CancelRecord, Launch } from "./ControlExecutor.vibe"
+import { ControlExecutor } from "./ControlExecutor.vibe"
 import * as ControlFacts from "./ControlFacts.ts"
-import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.ts"
+import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.vibe"
 import type {
   ControlEvent,
   FireSummary,
@@ -55,7 +55,7 @@ import type {
   RunSummary,
   TriggerSummary,
   WatchFilter
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 import {
   ApprovalInputSchema,
   defaultPageSize,
@@ -69,12 +69,12 @@ import {
   SteerInputSchema,
   steerItem,
   WatchCursor
-} from "./ControlSchema.ts"
-import * as DispatchReader from "./DispatchReader.ts"
+} from "./ControlSchema.vibe"
+import * as DispatchReader from "./DispatchReader.vibe"
 import { schemaIssuePath } from "./internal/issues.ts"
 import * as MutationBoundary from "./internal/MutationBoundary.ts"
-import { alreadyApplied, canonical, mutationKey } from "./internal/planning.ts"
-import * as Lineage from "./Lineage.ts"
+import { alreadyApplied, canonical, mutationKey } from "./internal/planning.vibe"
+import * as Lineage from "./Lineage.vibe"
 import * as Steering from "./Steering.ts"
 
 const sourceId = JournalEvent.SourceId.make("/control")

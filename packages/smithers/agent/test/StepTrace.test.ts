@@ -10,6 +10,7 @@ import { TestClock } from "effect/testing"
 import { execFile, spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -181,6 +182,8 @@ describe("agent checkpoint process recovery", () => {
     const filename = join(directory, "engine.sqlite")
     const runId = "killed-trace"
     const child = spawn(process.execPath, [
+      "--import",
+      createRequire(import.meta.url).resolve("vibelang/register"),
       fileURLToPath(new URL("./fixtures/step-trace-child.ts", import.meta.url)),
       filename,
       runId
@@ -248,6 +251,8 @@ describe("agent checkpoint process recovery", () => {
           // there too: Vitest rewrites callback source, which is plan identity.
           const recovered = yield* Effect.promise(() =>
             promisify(execFile)(process.execPath, [
+              "--import",
+              createRequire(import.meta.url).resolve("vibelang/register"),
               fileURLToPath(new URL("./fixtures/step-trace-child.ts", import.meta.url)),
               filename,
               runId,

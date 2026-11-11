@@ -39,7 +39,7 @@ import {
   ProcessId
 } from "effect/process/ChildProcessSpawner"
 import { expect } from "vitest"
-import { makeMemoryFs } from "../../src/TestHost.ts"
+import { makeMemoryFs } from "../../src/TestHost.vibe"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()

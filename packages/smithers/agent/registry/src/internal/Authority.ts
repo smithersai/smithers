@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 
-import type { EffectDeclaration, EffectTier } from "../Descriptor.ts"
+import type { EffectDeclaration, EffectTier } from "../Descriptor.vibe"
 
 const tierRank: Record<EffectTier, number> = {
   sealed: 0,

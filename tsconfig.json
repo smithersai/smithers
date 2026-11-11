@@ -2,6 +2,9 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    "customConditions": [
+      "vibelang-source"
+    ],
     "lib": [
       "ES2024"
     ],

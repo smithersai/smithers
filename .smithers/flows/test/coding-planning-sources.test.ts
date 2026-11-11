@@ -11,11 +11,11 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import * as TestMemory from "../../../packages/smithers/agent/memory/src/test/TestMemory.ts"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import { namespace as learningNamespace } from "../coding/learnings.ts"
-import { NativeCoding } from "../coding/native.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import { namespace as learningNamespace } from "../coding/learnings.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { gather } from "../coding/planning-memory.ts"
 import {
   collectSources,
@@ -26,11 +26,11 @@ import {
   reader as sourceReader,
   readmePaths,
   staleSources
-} from "../coding/planning-sources.ts"
-import { PlanningContext, planningMemory, planningPrompt, ReviewRequest } from "../coding/planning.ts"
+} from "../coding/planning-sources.vibe"
+import { PlanningContext, planningMemory, planningPrompt, ReviewRequest } from "../coding/planning.vibe"
 import { CodingError } from "../coding/schema.ts"
 import { operations as wikiOperations } from "../wiki/operations.ts"
-import type { PageSpec } from "../wiki/schema.ts"
+import type { PageSpec } from "../wiki/schema.vibe"
 
 const run = <A>(effect: Effect.Effect<A, never, import("effect/FileSystem").FileSystem | import("effect/Path").Path>) =>
   Effect.runPromise(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))

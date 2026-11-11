@@ -3,7 +3,8 @@ import { MockAgent } from "@effect/platform-node/Undici"
 import { Effect } from "effect"
 import { writeFileSync } from "node:fs"
 import "./scripted-native-host.ts"
-import { layerRebuildableRequestExecutor, platform } from "../../src/internal/NodeControlHost.ts"
+
+const { layerRebuildableRequestExecutor, platform } = await import("../../src/internal/NodeControlHost.ts")
 
 Object.assign(platform, {
   requestExecutor: layerRebuildableRequestExecutor(Effect.acquireRelease(

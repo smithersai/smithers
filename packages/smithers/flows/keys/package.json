@@ -34,11 +34,23 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Key": "./src/Key.ts",
-    "./index": "./src/index.ts"
+    "./Key": {
+      "types": "./src/Key.ts",
+      "vibelang-source": "./src/Key.ts",
+      "default": "./.vibelang/js/src/Key.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -51,7 +63,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",
@@ -94,8 +108,8 @@
     }
   },
   "scripts": {
-    "lint": "eslint src examples --max-warnings=0 && dprint check",
-    "format": "dprint fmt",
+    "lint": "(eslint src examples --max-warnings=0 && dprint check) && vibelang-format --check",
+    "format": "(dprint fmt) && vibelang-format --write",
     "build": "node scripts/build.mjs",
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node ../../../repo-targets/scripts/circular.mjs",
@@ -104,7 +118,8 @@
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.17",
-    "@smthrs/crypto": "1.0.0-rc.17"
+    "@smthrs/crypto": "1.0.0-rc.17",
+    "vibelang-runtime": "0.0.14-pre.6279f9f9fbfc"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -124,8 +139,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.14-pre.6279f9f9fbfc",
+    "vibelang-vite": "0.0.14-pre.6279f9f9fbfc",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },

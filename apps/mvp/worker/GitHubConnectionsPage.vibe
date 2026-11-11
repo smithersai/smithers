@@ -1,6 +1,6 @@
 // A person's sites connected to GitHub through smithers.sh (decision 0165): the Disconnect that doesn't depend on the site.
 import { nameOf, type GitHubConnection } from "./GitHubConnection.vibe"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { GitHub } from "@smthrs/integrations"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SessionStore from "./SessionStore.ts"

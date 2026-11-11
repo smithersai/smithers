@@ -37,7 +37,7 @@ import { readFile, readlink, symlink, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, vi } from "vitest"
-import * as Executable from "../src/Executable.ts"
+import * as Executable from "../src/Executable.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))

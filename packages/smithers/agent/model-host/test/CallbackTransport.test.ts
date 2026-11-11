@@ -5,7 +5,7 @@ import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransport, CallbackTransportObserver } from "../src/CallbackTransport.ts"
-import type { HostDiagnosticFields } from "../src/HostDiagnostics.ts"
+import type { HostDiagnosticFields } from "../src/HostDiagnostics.vibe"
 import { createHostDiagnostics } from "./diagnostics.ts"
 import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
 

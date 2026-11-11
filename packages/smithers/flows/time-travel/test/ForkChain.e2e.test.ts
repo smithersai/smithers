@@ -7,7 +7,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { workspaceNameFor } from "../src/internal/Fork.ts"
+import { workspaceNameFor } from "../src/internal/Fork.vibe"
 import { TimeTravel } from "../src/TimeTravel.ts"
 import { jjInstalled, runReal, runState, withRealFixture } from "./RealTimeTravelHarness.ts"
 

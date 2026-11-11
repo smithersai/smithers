@@ -14,7 +14,7 @@ import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
 import * as RunProgress from "../src/cli/RunProgress.ts"
 import * as CommandStatus from "../src/internal/CommandStatus.ts"
-import * as Serve from "../src/Serve.ts"
+import * as Serve from "../src/Serve.vibe"
 import * as Ui from "../src/Ui.ts"
 
 const ports = vi.hoisted(() => ({
@@ -60,8 +60,8 @@ vi.mock("../src/operator/Triggers.ts", async (load) => ({
   ...await load<typeof import("../src/operator/Triggers.ts")>(),
   layerTriggerScheduler: ports.scheduler
 }))
-vi.mock("../src/Serve.ts", async (load) => ({
-  ...await load<typeof import("../src/Serve.ts")>(),
+vi.mock("../src/Serve.vibe", async (load) => ({
+  ...await load<typeof import("../src/Serve.vibe")>(),
   host: ports.serve
 }))
 

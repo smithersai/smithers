@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import * as Redaction from "../src/Redaction.ts"
+import * as Redaction from "../src/Redaction.vibe"
 
 // Invented wire forms from ops/machine-token/issue.ts and control/src/ScopedToken.ts.
 // Both use 32 bytes (43 base64url characters); scoped tokens sign encoded JSON claims.

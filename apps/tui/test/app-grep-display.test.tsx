@@ -11,7 +11,7 @@ import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
 import * as Files from "../src/files.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 // Actual App, native frames, persisted harness events and real commands. The

@@ -14,8 +14,8 @@ import * as Effect from "effect/Effect"
 import type { PlatformError } from "effect/PlatformError"
 import * as fs from "node:fs"
 import { runInNewContext } from "node:vm"
-import * as BrowserJj from "../src/browser/BrowserJj.ts"
-import { isJjError, Jj, type JjError, type JjFailure } from "../src/Jj.ts"
+import * as BrowserJj from "../src/browser/BrowserJj.vibe"
+import { isJjError, Jj, type JjError, type JjFailure } from "../src/Jj.vibe"
 import { emptyWasmModule, fakeFlowsJjWasm } from "./FakeFlowsJjWasm.ts"
 
 /** The fake module sees an empty workspace and existing repository metadata. */

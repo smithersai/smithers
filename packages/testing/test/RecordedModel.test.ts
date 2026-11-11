@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ProductionModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, type Exit, Fiber, Option, Result, Stream } from "effect"
-import { decode, type Fixture } from "../src/Fixture.ts"
-import { modelErrorTag, ModelLike, type ModelRequestLike } from "../src/ModelLike.ts"
-import { layer, make, RecordedModel, scripted } from "../src/RecordedModel.ts"
-import { ReplayHarnessMismatchError, UnscriptedModelError } from "../src/TestingError.ts"
+import { decode, type Fixture } from "../src/Fixture.vibe"
+import { modelErrorTag, ModelLike, type ModelRequestLike } from "../src/ModelLike.vibe"
+import { layer, make, RecordedModel, scripted } from "../src/RecordedModel.vibe"
+import { ReplayHarnessMismatchError, UnscriptedModelError } from "../src/TestingError.vibe"
 import journal from "./fixtures/small-run/journal.json" with { type: "json" }
 
 const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown =>

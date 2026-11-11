@@ -21,7 +21,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
 const bunTest = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("scripts/run-bun-tests.mjs")),
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts"), Smithers.file("vitest.config.ts")],
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts"), Smithers.file("vitest.config.ts")],
   deps: [],
   cwd: "packages/smithers/flows/platform-bun"
 })
@@ -65,7 +65,7 @@ const securityReview = Smithers.SecurityReview({
         "The spawner's platform layer resolving files through a non-atomic FileSystem.",
         "BunFileSystem.layer or BunFileSystem.layerWith aliasing anything other than AtomicFileSystem.layer or AtomicFileSystem.layerWith, which own the absolute-helper-path and no-PATH checks."
       ],
-      paths: ["src/BunHost.ts", "src/BunFileSystem.ts"]
+      paths: ["src/BunHost.ts", "src/BunFileSystem.vibe"]
     },
     {
       id: "repository-root-refusal",

@@ -1,24 +1,24 @@
 import * as Effect from "effect/Effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Sampling from "../src/Sampling.ts"
+import * as Sampling from "../src/Sampling.vibe"
 import * as Scorer from "../src/Scorer.ts"
 
 const read = (path: string): string => readFileSync(new URL(path, import.meta.url), "utf8")
 
 // The JSDoc scanner must not run past the end of a comment block, so the body
 // pattern excludes a closing delimiter rather than matching lazily.
-const documented = /\/\*\*((?:[^*]|\*(?!\/))*)\*\/\s*export\s+(const|function|class|interface|type)\s+([A-Za-z0-9_$]+)/g
+const documented = /\/\*\*((?:[^*]|\*(?!\/))*)\*\/\s*export\s+(?:effect\s+)?(const|function|class|interface|type)\s+([A-Za-z0-9_$]+)/g
 
 // `index.ts` is a barrel, so every namespace names a sibling module.
 const namespaces = (): ReadonlyArray<readonly [string, string]> =>
-  [...read("../src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.ts"/g)]
-    .map(([, namespace, file]) => [namespace!, file!] as const)
+  [...read("../src/index.ts").matchAll(/export \* as (\w+) from "\.\/(\w+)\.(ts|vibe)"/g)]
+    .map(([, namespace, file, extension]) => [namespace!, `${file}.${extension}`] as const)
 
 const exported = (): ReadonlyArray<string> => {
   const names = new Set<string>()
   for (const [namespace, file] of namespaces()) {
-    for (const [, block, , name] of read(`../src/${file}.ts`).matchAll(documented)) {
+    for (const [, block, , name] of read(`../src/${file}`).matchAll(documented)) {
       if (block!.includes("@category")) names.add(`${namespace}.${name!}`)
     }
   }
@@ -34,7 +34,7 @@ const exported = (): ReadonlyArray<string> => {
 const members = (): ReadonlyArray<string> => {
   const rows: Array<string> = []
   for (const [namespace, file] of namespaces()) {
-    for (const [, block, kind, name] of read(`../src/${file}.ts`).matchAll(documented)) {
+    for (const [, block, kind, name] of read(`../src/${file}`).matchAll(documented)) {
       if (block!.includes("@category")) rows.push(`${namespace}.${name!} ${kind!}`)
     }
   }
@@ -133,7 +133,7 @@ describe("documentation", () => {
 
   it("keeps every `@since` tag on the package's own version", () => {
     for (const [, file] of namespaces()) {
-      expect(read(`../src/${file}.ts`)).not.toContain("@since 1.0.0")
+      expect(read(`../src/${file}`)).not.toContain("@since 1.0.0")
     }
   })
 })

@@ -14,11 +14,11 @@ import type { Service as ControlService } from "@smthrs/control/Control"
 import { PersistenceError, Unavailable } from "@smthrs/control/ControlError"
 import type { ControlEvent, ListResponse, RunSummary } from "@smthrs/control/ControlSchema"
 import { Deferred, Effect, Fiber, Logger, Schema, Stream } from "effect"
-import { GatewayError } from "../src/GatewayError.ts"
-import * as GatewayProjection from "../src/GatewayProjection.ts"
-import * as GatewaySchema from "../src/GatewaySchema.ts"
+import { GatewayError } from "../src/GatewayError.vibe"
+import * as GatewayProjection from "../src/GatewayProjection.vibe"
+import * as GatewaySchema from "../src/GatewaySchema.vibe"
 import * as Projections from "../src/Projections.ts"
-import * as RunTrace from "../src/RunTrace.ts"
+import * as RunTrace from "../src/RunTrace.vibe"
 
 const die = () => Effect.die("the suite does not use this operation")
 

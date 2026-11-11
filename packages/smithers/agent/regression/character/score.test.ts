@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import * as Score from "./score.ts"
-import type * as Subject from "./subject.ts"
+import type * as Subject from "./subject.vibe"
 import * as Suite from "./suite.ts"
 import * as World from "./world.ts"
 

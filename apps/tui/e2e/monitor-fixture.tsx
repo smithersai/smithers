@@ -7,7 +7,7 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { appendFileSync } from "node:fs"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 const notable = process.env.MONITOR_NOTABLE === "1"
 const host: Host.Host = {

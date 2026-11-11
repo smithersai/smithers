@@ -16,7 +16,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Layer, Stream } from "effect"
-import * as Author from "./Author.ts"
+import * as Author from "./Author.vibe"
 import { failureCode } from "./internal/failureCode.ts"
 
 /**

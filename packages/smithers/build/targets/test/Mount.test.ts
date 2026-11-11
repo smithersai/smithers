@@ -4,7 +4,7 @@
  * directory laid over the checkout. Construction validates and performs no I/O.
  */
 import { describe, expect, it } from "vitest"
-import * as Mount from "../src/Mount.ts"
+import * as Mount from "../src/Mount.vibe"
 import * as S from "../src/Smithers.ts"
 
 const pin = "b04191b2941534754282c51ef2df2f965ac43a5c"

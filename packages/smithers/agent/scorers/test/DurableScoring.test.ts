@@ -8,9 +8,9 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as ScoreStore from "../src/ScoreStore.ts"
-import * as Scoring from "../src/Scoring.ts"
-import * as SqlScoreStore from "../src/SqlScoreStore.ts"
+import * as ScoreStore from "../src/ScoreStore.vibe"
+import * as Scoring from "../src/Scoring.vibe"
+import * as SqlScoreStore from "../src/SqlScoreStore.vibe"
 
 const Grade = Action.make("scorers-test/Grade", {
   payload: {},

@@ -26,18 +26,18 @@ export * as McpClient from "./McpClient.ts"
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as Diagnostics from "./Diagnostics.ts"
+export * as Diagnostics from "./Diagnostics.vibe"
 
 /**
  * @category errors
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as McpError from "./McpError.ts"
+export * as McpError from "./McpError.vibe"
 
 /**
  * @category services
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as McpFlows from "./McpFlows.ts"
+export * as McpFlows from "./McpFlows.vibe"

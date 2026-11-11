@@ -22,7 +22,7 @@ import * as fsModule from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as TestHost from "../../src/TestHost.ts"
+import * as TestHost from "../../src/TestHost.vibe"
 
 type BashResult = Awaited<ReturnType<BrowserChildProcessSpawner.JustBashLike["exec"]>>
 

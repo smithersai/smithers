@@ -4,9 +4,9 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { findPlanningWikiReview } from "../coding/planning-wiki.ts"
-import { finalize, PlanningContext } from "../coding/planning.ts"
-import { Receipt, WikiError } from "../wiki/schema.ts"
+import { findPlanningWikiReview } from "../coding/planning-wiki.vibe"
+import { finalize, PlanningContext } from "../coding/planning.vibe"
+import { Receipt, WikiError } from "../wiki/schema.vibe"
 
 const config = {
   mode: "verified" as const,

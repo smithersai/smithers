@@ -9,22 +9,24 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { promisify } from "node:util"
 import ReleaseContent from "../release-content/flow.ts"
-import * as Content from "../release-content/workflow.ts"
+import * as Content from "../release-content/workflow.vibe"
 import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
 import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
-import { type Candidate, ReleaseError } from "../release-support/schema.ts"
+import { type Candidate, ReleaseError } from "../release-support/schema.vibe"
 import ReleaseFlow from "../release/flow.ts"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
-import * as Release from "../release/workflow.ts"
+import * as Release from "../release/workflow.vibe"
 import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
   const worker = join(import.meta.dirname, "resume-worker.ts")
-  const start = await promisify(execFile)(process.execPath, [worker, fixture.root, "start"])
-  const resume = await promisify(execFile)(process.execPath, [worker, fixture.root, "resume"])
+  // The worker's imports reach `.vibe` modules, which load through VibeLang.
+  const loader = ["--import", import.meta.resolve("vibelang/register")]
+  const start = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "start"])
+  const resume = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "resume"])
   const first = JSON.parse(start.stdout.trim().split("\n").at(-1)!)
   const last = JSON.parse(resume.stdout.trim().split("\n").at(-1)!)
   assert.equal(first.result.status, "waiting")

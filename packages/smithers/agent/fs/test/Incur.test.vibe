@@ -227,7 +227,9 @@ describe("Incur projection", () => {
     // The abort runs when the build calls `load`, before its program runs.
     const load = vi.spyOn(Route, "load").mockImplementationOnce((): typeof visible!! => {
       controller.abort(reason)
-      return effect { return visible }
+      return effect {
+        return visible
+      }
     })
     const { cli } = try makeCli()
     try ensuring(effect {

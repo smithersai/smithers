@@ -2,7 +2,7 @@ import { Budget } from "@smthrs/agent"
 import { HarnessError, Sandbox } from "@smthrs/harness"
 import { Evaluator, ModelError } from "@smthrs/model"
 import { expect, test } from "vitest"
-import { agentFailureCodes } from "./TodoDiagnostic.ts"
+import { agentFailureCodes } from "./TodoDiagnostic.vibe"
 
 test("TODO failure diagnostics keep typed agent and model codes without messages", () => {
   const privateText = "private repository content and provider message"

@@ -30,10 +30,10 @@ import {
   PlanDigestMismatch,
   PlanNotFound,
   RunNotFound
-} from "../src/ControlError.ts"
-import { ControlRuntime, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
-import type { Envelope, Principal } from "../src/ControlSchema.ts"
-import { canonical } from "../src/internal/planning.ts"
+} from "../src/ControlError.vibe"
+import { ControlRuntime, type Service as ControlRuntimeService } from "../src/ControlRuntime.vibe"
+import type { Envelope, Principal } from "../src/ControlSchema.vibe"
+import { canonical } from "../src/internal/planning.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 

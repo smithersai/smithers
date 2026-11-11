@@ -4,7 +4,7 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 const inRun = <A, E, R>(id: string, effect: Effect.Effect<A, E, R>) =>
   Effect.provideService(effect, FlowRuntime.FlowInstance, { executionId: id } as FlowRuntime.FlowInstance["Service"])

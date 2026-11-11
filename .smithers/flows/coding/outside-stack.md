@@ -1,6 +1,6 @@
 # Admitting outside stacks
 
-`coding/AppendOutsideStack` (`outside-stack.ts`) appends jj stacks that other
+`coding/AppendOutsideStack` (`outside-stack.vibe`) appends jj stacks that other
 authors built to the mythical history as Changes. It is the operation a merge
 queue needs when many independent agents each produce their own jj stack and
 enqueue it: apply each stack to the tip, run its fast checks, and move the tip

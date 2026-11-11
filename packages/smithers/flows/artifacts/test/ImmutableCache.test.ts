@@ -18,7 +18,7 @@ import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as References from "effect/References"
 import * as Tracer from "effect/Tracer"
-import { ImmutableCache } from "../src/index.ts"
+import { ImmutableCache } from "../src/index.vibe"
 
 const encoder = new TextEncoder()
 const utf8 = (text: string) => encoder.encode(text)
@@ -206,7 +206,7 @@ describe("the memory cache", () => {
   })
 
   it("dies on a namespace that is not a short label, so no path reaches telemetry", async () => {
-    for (const namespace of ["", "Repo", "src/index.ts", "repo blob", "repo..blob", "repo.", "a".repeat(65)]) {
+    for (const namespace of ["", "Repo", "src/index.vibe", "repo blob", "repo..blob", "repo.", "a".repeat(65)]) {
       const exit = await exitOf(get(ImmutableCache.key(namespace, "x")), ImmutableCache.layerMemory())
       expect(Exit.hasDies(exit)).toBe(true)
     }

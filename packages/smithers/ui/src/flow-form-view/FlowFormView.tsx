@@ -18,7 +18,7 @@ import {
   missingLabels,
   publicFormPayload,
   submissionPayload,
-} from "../flow-form";
+} from "#vibelang/emitted/src/flow-form";
 import { Input } from "../input";
 import { Field, Label } from "../label";
 

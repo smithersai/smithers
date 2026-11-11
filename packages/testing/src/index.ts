@@ -12,58 +12,58 @@
  */
 
 /** @since 0.0.0 @category errors */
-export * as TestingError from "./TestingError.ts"
+export * as TestingError from "./TestingError.vibe"
 
 /** @since 0.0.0 @category models */
 export * as PlanLike from "./PlanLike.ts"
 
 /** @since 0.0.0 @category services */
-export * as EngineSubject from "./EngineSubject.ts"
+export * as EngineSubject from "./EngineSubject.vibe"
 
 /** @since 0.0.0 @category services */
-export * as ModelLike from "./ModelLike.ts"
+export * as ModelLike from "./ModelLike.vibe"
 
 /** @since 0.0.0 @category layers */
-export * as TestLayers from "./TestLayers.ts"
+export * as TestLayers from "./TestLayers.vibe"
 
 /** @since 0.0.0 @category assertions */
-export * as Plan from "./Plan.ts"
+export * as Plan from "./Plan.vibe"
 
 /** @since 0.0.0 @category assertions */
-export * as PlanAssertions from "./PlanAssertions.ts"
+export * as PlanAssertions from "./PlanAssertions.vibe"
 
 /** @since 0.0.0 @category assertions */
-export * as JournalAssertions from "./JournalAssertions.ts"
+export * as JournalAssertions from "./JournalAssertions.vibe"
 
 /** @since 0.0.0 @category assertions */
-export * as Divergence from "./Divergence.ts"
+export * as Divergence from "./Divergence.vibe"
 
 /** @since 0.0.0 @category conformance */
-export * as Conformance from "./Conformance.ts"
+export * as Conformance from "./Conformance.vibe"
 
 /** @since 0.0.0 @category models */
-export * as RecordedModel from "./RecordedModel.ts"
+export * as RecordedModel from "./RecordedModel.vibe"
 
 /** @since 0.0.0 @category models */
-export * as RecordingModel from "./RecordingModel.ts"
+export * as RecordingModel from "./RecordingModel.vibe"
 
 /** @since 0.0.0 @category models */
-export * as CachedModel from "./CachedModel.ts"
+export * as CachedModel from "./CachedModel.vibe"
 
 /** @since 1.0.0 @category models */
-export * as CachedEvaluator from "./CachedEvaluator.ts"
+export * as CachedEvaluator from "./CachedEvaluator.vibe"
 
 /** @since 1.0.0 @category models */
-export * as TurnGate from "./TurnGate.ts"
+export * as TurnGate from "./TurnGate.vibe"
 
 /** @since 1.0.0 @category models */
-export * as ScriptedModel from "./ScriptedModel.ts"
+export * as ScriptedModel from "./ScriptedModel.vibe"
 
 /** @since 1.0.0 @category models */
 export * as BuiltinScript from "./BuiltinScript.ts"
 
 /** @since 0.0.0 @category fixtures */
-export * as Fixture from "./Fixture.ts"
+export * as Fixture from "./Fixture.vibe"
 
 /** @since 0.0.0 @category services */
 export * as FixtureStore from "./FixtureStore.ts"
@@ -76,25 +76,25 @@ export * as FixtureStore from "./FixtureStore.ts"
 export * as HttpRecording from "./HttpRecording.ts"
 
 /** @since 0.0.0 @category layers */
-export * as MemoryEngine from "./MemoryEngine.ts"
+export * as MemoryEngine from "./MemoryEngine.vibe"
 
 /** @since 0.0.0 @category layers */
-export * as FlowEngineLike from "./FlowEngineLike.ts"
+export * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /** @since 0.0.0 @category testing */
-export * as RestartableEngine from "./RestartableEngine.ts"
+export * as RestartableEngine from "./RestartableEngine.vibe"
 
 /** @since 0.0.0 @category conformance */
-export * as HostSuite from "./HostSuite.ts"
+export * as HostSuite from "./HostSuite.vibe"
 
 /** @since 0.0.0 @category assertions */
 export * as ScoreGate from "./ScoreGate.ts"
 
 /** @since 1.0.0 @category testing */
-export * as RealCliDriver from "./RealCliDriver.ts"
+export * as RealCliDriver from "./RealCliDriver.vibe"
 
 /** @since 1.0.0 @category testing */
-export * as TerminalRecording from "./TerminalRecording.ts"
+export * as TerminalRecording from "./TerminalRecording.vibe"
 
 /** Filesystem corpus tooling for feedback-guided fuzz suites. */
 export * as FuzzCorpus from "./internal/fuzz.ts"

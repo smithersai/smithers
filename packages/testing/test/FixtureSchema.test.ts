@@ -8,8 +8,8 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, type Schema } from "effect"
-import { decode, Fixture, type RecordedCall } from "../src/Fixture.ts"
-import type { ModelEventLike, ModelRequestLike, RecordedRequestLike } from "../src/ModelLike.ts"
+import { decode, Fixture, type RecordedCall } from "../src/Fixture.vibe"
+import type { ModelEventLike, ModelRequestLike, RecordedRequestLike } from "../src/ModelLike.vibe"
 
 type Decoded = Schema.Schema.Type<typeof Fixture>
 type DecodedCall = Decoded["calls"][number]

@@ -8,10 +8,10 @@ import { Control, type Service as ControlService } from "@smthrs/control/Control
 import { layerNoopAuth } from "@smthrs/control/ControlRpcs"
 import { Effect, Layer, Schema, type Scope } from "effect"
 import { RpcTest } from "effect/rpc"
-import { GatewayRpcs } from "../src/GatewayRpcs.ts"
-import * as GatewayServer from "../src/GatewayServer.ts"
+import { GatewayRpcs } from "../src/GatewayRpcs.vibe"
+import * as GatewayServer from "../src/GatewayServer.vibe"
 import { Projections, type Service as ProjectionsService } from "../src/Projections.ts"
-import * as RunHistory from "../src/RunHistory.ts"
+import * as RunHistory from "../src/RunHistory.vibe"
 
 const principal = { id: "gateway-test", kind: "test", stampedAt: 1 }
 

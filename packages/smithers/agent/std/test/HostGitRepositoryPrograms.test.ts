@@ -22,7 +22,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as Checkpoints from "../src/Checkpoints.ts"
+import * as Checkpoints from "../src/Checkpoints.vibe"
 
 const git = (root: string, args: ReadonlyArray<string>): string =>
   execFileSync("git", ["-C", root, ...args], { encoding: "utf8" })

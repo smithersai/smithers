@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { freemem, loadavg, tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { make } from "../vm.ts"
+import { make } from "../vm.vibe"
 import { adoptWork } from "../work/flow.ts"
 import { fixRemotely } from "./remote-capture.ts"
 

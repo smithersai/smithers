@@ -23,6 +23,7 @@
  *
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const isControlCodePoint = (code: number): boolean =>
   code < 0x20 ||
@@ -39,6 +40,7 @@ export const isControlCodePoint = (code: number): boolean =>
  *
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const controlCharacter = (value: string): string | undefined => {
   for (const character of value) {
@@ -55,6 +57,7 @@ export const controlCharacter = (value: string): string | undefined => {
  *
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const flattenControlCharacters = (value: string): string => {
   if (controlCharacter(value) === undefined) return value

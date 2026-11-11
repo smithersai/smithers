@@ -1,0 +1,46 @@
+/**
+ * Cooperative cancellation: a caller requests it, the owner's guarded
+ * checkpoint refuses to run past the request, and the owner acknowledges it
+ * and settles the run as `cancelled`.
+ *
+ * @since 1.0.0
+ */
+import { RunStore } from "@smthrs/run-store"
+import type { OwnerId } from "@smthrs/run-store/Ownership"
+import * as TestRunStore from "@smthrs/run-store/test/TestRunStore"
+import * as Effect from "effect/Effect"
+
+const owner: OwnerId = { hostId: "worker-a", pid: 311, nonce: "cancel-demo" }
+const runId = "cancel-demo-1"
+
+/**
+ * Runs the cancellation handshake and returns each outcome along the way plus
+ * the settled row.
+ *
+ * @since 1.0.0
+ */
+export const main = (effect {
+  const runs = try RunStore.RunStore
+
+  try runs.create(runId, JSON.stringify({ cursor: 0 }))
+  const pending = try runs.get(runId)
+  const owned = try runs.claimAndOwn(runId, pending, owner, try Clock.currentTimeMillis)
+  if (owned._tag !== "Activated") return try Effect.die(`claimAndOwn lost: ${owned._tag}`)
+
+  // Any process may ask; the request is a timestamp on the row, not a kill.
+  const requested = try runs.requestCancel(runId, try Clock.currentTimeMillis)
+  const repeated = try runs.requestCancel(runId, try Clock.currentTimeMillis)
+
+  // The owner's next progress write is guarded on "no request yet", so it
+  // cannot persist state past the request.
+  const progress = try runs.transitionOwned(runId, owner, "running", JSON.stringify({ cursor: 1 }), {
+    cancelRequested: "absent"
+  })
+
+  // The owner records that it saw the request, then settles the run.
+  const acknowledged = try runs.acknowledgeCancel(runId, owner, try Clock.currentTimeMillis)
+  const settled = try runs.transitionOwned(runId, owner, "cancelled", undefined, { cancelRequested: "present" })
+  const afterSettle = try runs.requestCancel(runId, try Clock.currentTimeMillis)
+
+  return { requested, repeated, progress, acknowledged, settled, afterSettle, row: try runs.get(runId) }
+}) |> Effect.provide(%, TestRunStore.layer) |> Effect.scoped(%)

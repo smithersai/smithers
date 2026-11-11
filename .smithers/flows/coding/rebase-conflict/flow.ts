@@ -5,7 +5,7 @@ import { Schema } from "effect"
 // literal `export default Flow.make(` without importing the file, so the flow
 // cannot also be a named const; an unresolved repair runs again as a child of
 // the value this self-import reads back after the module evaluates.
-import { Done, Repair, RepairError, RepairPayload, Resolved } from "../todo-conflict-schema.ts"
+import { Done, Repair, RepairError, RepairPayload, Resolved } from "../todo-conflict-schema.vibe"
 import TodoConflict from "./flow.ts"
 
 type Repairs = Node.Node<

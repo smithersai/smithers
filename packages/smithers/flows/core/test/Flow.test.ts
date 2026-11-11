@@ -3,9 +3,9 @@ import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Annotations from "../src/Annotations.ts"
+import * as Annotations from "../src/Annotations.vibe"
 import * as Flow from "../src/Flow.ts"
-import * as Markdown from "../src/Markdown.ts"
+import * as Markdown from "../src/Markdown.vibe"
 import * as Placement from "../src/Placement.ts"
 describe("Flow combinators", () => {
   const original = Markdown.lowerMarkdown({
@@ -79,7 +79,7 @@ describe("Flow combinators", () => {
 })
 
 it("retains frozen signature payload adaptation and annotation overrides", async () => {
-  const { build } = await import("../src/internal/Signature.ts")
+  const { build } = await import("../src/internal/Signature.vibe")
   const { Graph } = await import("@smthrs/flow")
   const { Node } = await import("@smthrs/plan")
   const base = Markdown.lowerMarkdown({ name: "frozen" }, "Prompt")

@@ -12,9 +12,9 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
-import * as NotificationEvent from "../src/NotificationEvent.ts"
-import * as NotificationQueue from "../src/NotificationQueue.ts"
+import type { Notification } from "../src/Notification.vibe"
+import * as NotificationEvent from "../src/NotificationEvent.vibe"
+import * as NotificationQueue from "../src/NotificationQueue.vibe"
 
 const provenance = {
   sourceRunId: "operator",

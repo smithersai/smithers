@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as ts from "typescript"
+import { compileProjectSync, formatDiagnostic } from "vibelang/project"
 import { describe, expect, it } from "vitest"
 
 const readDoc = (path: string): string => readFileSync(new URL(`../docs/${path}`, import.meta.url), "utf8")
@@ -79,36 +80,46 @@ describe("documentation contracts", () => {
   it("assembled quickstart typechecks against public Jj", () => {
     const blocks = [...readDoc("quickstart.md").matchAll(/^```ts\n([\s\S]*?)^```/gm)]
     expect(blocks.length).toBeGreaterThan(1)
-    const filename = fileURLToPath(new URL("../docs/quickstart.mts", import.meta.url))
     const source = blocks.map((block) => block[1]).join("\n")
-    const options: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2024,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      skipLibCheck: true,
-      allowImportingTsExtensions: true,
-      noEmit: true,
-      types: ["node"]
-    }
-    const host = ts.createCompilerHost(options)
-    const readFile = host.readFile.bind(host)
-    const fileExists = host.fileExists.bind(host)
-    host.readFile = (path) => path === filename ? source : readFile(path)
-    host.fileExists = (path) => path === filename || fileExists(path)
-    const program = ts.createProgram([filename], options, host)
-    // The quickstart's own diagnostics: checking every dependency's source as well
-    // repeats their typecheck targets and took over a minute on a CI runner.
-    const diagnostics = ts.getPreEmitDiagnostics(program, program.getSourceFile(filename))
-    expect(
-      diagnostics.map((diagnostic) =>
-        ts.formatDiagnosticsWithColorAndContext([diagnostic], {
-          getCanonicalFileName: (path) => path,
-          getCurrentDirectory: () => host.getCurrentDirectory(),
-          getNewLine: () => "\n"
+    // The VibeLang checker, since the packages the quickstart imports are .vibe
+    // sources that a stock TypeScript program cannot read.
+    const directory = mkdtempSync(join(fileURLToPath(packageRoot), "test", ".docs-quickstart-"))
+    try {
+      const filename = join(directory, "quickstart.mts")
+      writeFileSync(filename, source)
+      writeFileSync(
+        join(directory, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            target: "es2024",
+            module: "nodenext",
+            moduleResolution: "nodenext",
+            strict: true,
+            skipLibCheck: true,
+            allowImportingTsExtensions: true,
+            noEmit: true,
+            types: ["node"]
+          },
+          files: ["quickstart.mts"]
         })
       )
-    ).toEqual([])
+      const { errors } = compileProjectSync({
+        project: join(directory, "tsconfig.json"),
+        root: fileURLToPath(repoRoot),
+        cache: false
+      })
+      // The quickstart's own diagnostics: checking every dependency's source as well
+      // repeats their typecheck targets and took over a minute on a CI runner.
+      expect(
+        errors
+          .filter((diagnostic) =>
+            diagnostic.file === undefined || resolve(fileURLToPath(repoRoot), diagnostic.file) === filename
+          )
+          .map(formatDiagnostic)
+      ).toEqual([])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })
 

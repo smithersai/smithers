@@ -4,8 +4,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { collectSources, extractPaths } from "../coding/planning-sources.ts"
-import { repositorySourceReader } from "../repository/inspection.ts"
+import { collectSources, extractPaths } from "../coding/planning-sources.vibe"
+import { repositorySourceReader } from "../repository/inspection.vibe"
 
 test("repository evidence excludes retained evals and their symlink aliases while retaining source and authored flows", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "repository-sources-"))

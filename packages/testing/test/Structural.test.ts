@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { canonical, compare, same, snapshot } from "../src/internal/Structural.ts"
-import * as ModelLike from "../src/ModelLike.ts"
+import * as ModelLike from "../src/ModelLike.vibe"
 
 const deeplyNested = (depth: number): Record<string, unknown> => {
   let value: Record<string, unknown> = { leaf: 1 }

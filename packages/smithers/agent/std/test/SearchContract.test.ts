@@ -4,8 +4,8 @@ import { Effect } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import { describe, expect, it } from "vitest"
 import * as Std from "../src/index.ts"
-import * as Internal from "../src/internal/SearchContract.ts"
-import * as SearchContract from "../src/SearchContract.ts"
+import * as Internal from "../src/internal/SearchContract.vibe"
+import * as SearchContract from "../src/SearchContract.vibe"
 import { fileInfo } from "./TestLayers.ts"
 
 describe("SearchContract", () => {

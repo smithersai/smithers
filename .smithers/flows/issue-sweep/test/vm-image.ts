@@ -5,7 +5,7 @@
  */
 import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
-import { buildImage } from "../vm.ts"
+import { buildImage } from "../vm.vibe"
 
 const revision = process.argv[2] ??
   execFileSync("gh", ["api", "repos/smithersai/smithers/commits/main", "--jq", ".sha"], { encoding: "utf8" }).trim()

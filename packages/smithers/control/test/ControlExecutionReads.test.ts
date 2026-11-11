@@ -2,11 +2,11 @@
 import { ExecutionFact } from "@smthrs/journal"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
-import { Control } from "../src/Control.ts"
-import { InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
-import type { ExecutionBatch, Principal } from "../src/ControlSchema.ts"
+import * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
+import { Control } from "../src/Control.vibe"
+import { InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
+import type { ExecutionBatch, Principal } from "../src/ControlSchema.vibe"
 import { live, memoryRuntime } from "./TestStack.ts"
 
 const alice: Principal = { id: "alice", kind: "test", stampedAt: 1 }

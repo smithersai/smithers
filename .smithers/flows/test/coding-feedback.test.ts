@@ -8,11 +8,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { correctionLayers, CorrectPlan } from "../coding/correction.ts"
-import { EarlyFeedback, feedbackLayers, ObservePlan } from "../coding/feedback.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { correctionLayers, CorrectPlan } from "../coding/correction.vibe"
+import { EarlyFeedback, feedbackLayers, ObservePlan } from "../coding/feedback.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import {
   checkInputDigest,
   CodingError,
@@ -21,7 +21,7 @@ import {
   type Receipt,
   type Revision
 } from "../coding/schema.ts"
-import { Implement, policyLayers, RunCheck } from "../coding/workflow.ts"
+import { Implement, policyLayers, RunCheck } from "../coding/workflow.vibe"
 
 const revision = (name: string, parent?: string): Revision => ({
   changeId: `jj-${name}`,

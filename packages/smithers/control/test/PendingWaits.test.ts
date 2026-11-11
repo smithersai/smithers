@@ -25,10 +25,10 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+import { Control } from "../src/Control.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 
 /** A durable deferred token: base64 of `[flowName, executionId, deferredName]`. */

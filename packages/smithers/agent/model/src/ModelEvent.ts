@@ -9,7 +9,7 @@
  */
 
 import { Effect, Schema } from "effect"
-import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.ts"
+import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.vibe"
 
 /**
  * `Object.assign` for a schema's statics, defining each one instead of assigning

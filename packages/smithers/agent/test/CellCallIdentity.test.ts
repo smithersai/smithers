@@ -8,9 +8,9 @@ import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { createHash } from "node:crypto"
 import { expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import * as Budget from "../src/Budget.vibe"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }

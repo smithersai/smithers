@@ -5,11 +5,11 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
-import { CursorStore, layerMemory } from "../src/core/CursorStore.ts"
-import type { ExternalEvent } from "../src/core/ExternalEvent.ts"
+import { Failure, fromIntegrationError } from "../src/core/ActionFailure.vibe"
+import { CursorStore, layerMemory } from "../src/core/CursorStore.vibe"
+import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.ts"
+import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.vibe"
 
 const event = (id: number): ExternalEvent => ({
   source: "example",

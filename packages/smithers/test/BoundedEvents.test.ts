@@ -1,7 +1,7 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as CliError from "../src/CliError.ts"
-import * as BoundedEvents from "../src/internal/BoundedEvents.ts"
+import * as CliError from "../src/CliError.vibe"
+import * as BoundedEvents from "../src/internal/BoundedEvents.vibe"
 
 const context = { operation: "test history", subject: "run test" }
 

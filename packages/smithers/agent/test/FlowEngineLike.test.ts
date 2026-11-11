@@ -51,12 +51,12 @@ import * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
-import * as Budget from "../src/Budget.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as Budget from "../src/Budget.vibe"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
-import * as InternalModelStep from "../src/internal/ModelStep.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
+import * as InternalModelStep from "../src/internal/ModelStep.vibe"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
+import * as WorkspaceObservation from "../src/WorkspaceObservation.vibe"
 
 /**
  * Everything `FlowEngineLike.make` reads, the two safety policies included.

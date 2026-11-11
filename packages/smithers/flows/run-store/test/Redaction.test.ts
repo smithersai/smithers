@@ -10,9 +10,9 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as AttemptStore from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
-import * as RunStore from "../src/RunStore.ts"
+import * as AttemptStore from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import * as RunStore from "../src/RunStore.vibe"
 
 describe("durable run state redaction", () => {
   // Executable state must round-trip verbatim: a field whose name merely ends

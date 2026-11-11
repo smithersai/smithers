@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Option, Ref } from "effect"
-import * as CachedEvaluator from "../src/CachedEvaluator.ts"
-import type * as CachedModel from "../src/CachedModel.ts"
+import * as CachedEvaluator from "../src/CachedEvaluator.vibe"
+import type * as CachedModel from "../src/CachedModel.vibe"
 import * as FixtureStore from "../src/FixtureStore.ts"
 
 const questions = {

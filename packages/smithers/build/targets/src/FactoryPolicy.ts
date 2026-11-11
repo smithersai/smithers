@@ -7,7 +7,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import * as Home from "./Home.ts"
+import * as Home from "./Home.vibe"
 
 // Validate the input before Struct can discard excess keys. The check travels
 // with the schema, including when it is nested in a decoded factory projection.

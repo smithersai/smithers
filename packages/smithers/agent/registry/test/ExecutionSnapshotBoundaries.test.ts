@@ -10,11 +10,11 @@ import { Deferred, Effect, Fiber, FileSystem, Layer, Logger, Path, PlatformError
 import * as EffectDigest from "effect/crypto/Digest"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
-import * as Snapshot from "../src/ExecutionSnapshot.ts"
-import * as Prompt from "../src/Prompt.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
+import * as Snapshot from "../src/ExecutionSnapshot.vibe"
+import * as Prompt from "../src/Prompt.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)

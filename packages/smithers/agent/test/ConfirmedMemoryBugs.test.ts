@@ -7,11 +7,11 @@ import { Registry, RegistryError } from "@smthrs/registry"
 import { Context, Deferred, Effect, FileSystem, Option, Path, Result, Schema, Scope, Tracer } from "effect"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as FlowStore from "../src/FlowStore.ts"
+import * as FlowStore from "../src/FlowStore.vibe"
 import * as Memory from "../src/Memory.ts"
-import * as MemoryCalibration from "../src/MemoryCalibration.ts"
+import * as MemoryCalibration from "../src/MemoryCalibration.vibe"
 import * as MemoryMine from "../src/MemoryMine.ts"
-import * as PromoteFlows from "../src/PromoteFlows.ts"
+import * as PromoteFlows from "../src/PromoteFlows.vibe"
 
 const directory = fileURLToPath(new URL(".", import.meta.url))
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | Scope.Scope>) =>

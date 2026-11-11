@@ -1,0 +1,7 @@
+// What sharing counts in the browser (docs/observability.md#browser). No attribute carries an id or a login.
+
+/** `branch/share` requests, by `change` (`person`, `access`, `remove`, `link`) and `outcome`. */
+export const shares = Metric.counter("smithers_web_branch_shares", {
+  description: "Branch share changes from this browser, by change and outcome",
+  incremental: true,
+})

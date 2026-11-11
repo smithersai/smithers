@@ -8,8 +8,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
-import * as Discovery from "../src/Discovery.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
+import * as Discovery from "../src/Discovery.vibe"
 
 // The package owns its own prose. Nothing generates these files, so this is
 // the gate that keeps the scan's cost model honest: discovery reads and

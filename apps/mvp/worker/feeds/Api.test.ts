@@ -16,7 +16,7 @@ import {
   MAX_FEED_REQUEST_BYTES,
 } from "../../src/features/feeds/contract.ts"
 import { FeedAnswers, Ingested } from "../../src/features/feeds/schema.ts"
-import * as Actor from "../Actor.ts"
+import * as Actor from "../Actor.vibe"
 import { recorded, testFile } from "../test/harness.ts"
 import * as FeedsApi from "./Api.ts"
 import { DEV_FEED_KEY } from "./dev.ts"

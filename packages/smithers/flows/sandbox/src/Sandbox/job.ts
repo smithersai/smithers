@@ -13,8 +13,8 @@ import { encodeBase64 } from "../internal/base64.ts"
 import { pidDirectory } from "../internal/pidDirectory.ts"
 import { sessionSlug } from "../internal/sessionSlug.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Provider } from "./Provider.ts"
-import type { Session } from "./Session.ts"
+import type { Provider } from "./Provider.vibe"
+import type { Session } from "./Session.vibe"
 import { capture, type CheckoutOptions, Work } from "./Work.ts"
 
 /**

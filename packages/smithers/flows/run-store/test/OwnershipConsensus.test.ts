@@ -26,10 +26,10 @@ import { Clock, Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { heartbeatStaleAfter } from "../src/Heartbeat.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import { heartbeatInterval, heartbeatLoop, type LivenessEvidence, type OwnerId } from "../src/Ownership.ts"
-import { type RunSnapshot, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type RunSnapshot, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const ownerA: OwnerId = { hostId: "host-a", pid: 101, nonce: "owner-a" }
 const ownerB: OwnerId = { hostId: "host-b", pid: 202, nonce: "owner-b" }

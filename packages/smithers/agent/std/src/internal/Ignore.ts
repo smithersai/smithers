@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { escapeRegex } from "./SearchContract.ts"
+import { escapeRegex } from "./SearchContract.vibe"
 
 interface Rule {
   readonly expression: RegExp

@@ -7,9 +7,9 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as MemoryMine from "../src/MemoryMine.ts"
-import * as ScriptedJudge from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatRouter from "../src/SeatRouter.ts"
+import * as ScriptedJudge from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatRouter from "../src/SeatRouter.vibe"
 
 describe("the explicit offline completion judge", () => {
   const codingChecks: CompletionClaim.Evidence["checksRun"] = [{

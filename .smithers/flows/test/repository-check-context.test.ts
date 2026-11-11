@@ -7,9 +7,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
-import { captureCheckContext, contextFailure, rulePaths, sourceImports } from "../repository/check-context.ts"
-import { assessSemantic, captureChecks, type Comparison, selectedComparison } from "../repository/checks.ts"
-import type { Work } from "../repository/jobs.ts"
+import { captureCheckContext, contextFailure, rulePaths, sourceImports } from "../repository/check-context.vibe"
+import { assessSemantic, captureChecks, type Comparison, selectedComparison } from "../repository/checks.vibe"
+import type { Work } from "../repository/jobs.vibe"
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const check = {

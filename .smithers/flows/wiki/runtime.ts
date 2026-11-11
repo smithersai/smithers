@@ -13,12 +13,12 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer } from "effect"
 import type * as HttpClient from "effect/http/HttpClient"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
 import Wiki from "./flow.ts"
-import { checkCitations, unsupportedCitations } from "./jev-citations.ts"
+import { checkCitations, unsupportedCitations } from "./jev-citations.vibe"
 import { operations } from "./operations.ts"
-import { WikiError } from "./schema.ts"
-import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Write } from "./workflow.ts"
+import { WikiError } from "./schema.vibe"
+import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Write } from "./workflow.vibe"
 
 /** The same subscription judge and proxy-aware transport as the native host. */
 export const hostEvaluator = (

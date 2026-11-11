@@ -7,7 +7,7 @@ import { createHash, randomBytes } from "node:crypto"
 import { constants as fsConstants, existsSync } from "node:fs"
 import { type FileHandle, mkdir, open, rename, unlink } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import type { NativeOptions } from "./native.ts"
+import type { NativeOptions } from "./native.vibe"
 
 /** Installed authority only. The provider must authenticate the registered run,
  * confine paths and compare every base before settling the complete batch.

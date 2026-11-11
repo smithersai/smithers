@@ -11,6 +11,7 @@ import { wellFormed } from "./Digest.ts"
  *
  * @category queries
  * @since 1.0.0
+ * @throws {never}
  */
 export const ftsTerms = (query: string): ReadonlyArray<string> => {
   const trimmed = wellFormed(query).replaceAll("\0", " ").trim()
@@ -22,6 +23,7 @@ export const ftsTerms = (query: string): ReadonlyArray<string> => {
  *
  * @category queries
  * @since 0.1.0
+ * @throws {never}
  */
 export const literalFtsQuery = (query: string): string =>
   ftsTerms(query).map((term) => `"${term.replaceAll("\"", "\"\"")}"`).join(" ")

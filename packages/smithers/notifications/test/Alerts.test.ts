@@ -18,7 +18,7 @@ import { TestClock } from "effect/testing"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Alerts from "../src/Alerts.ts"
-import * as NotificationQueue from "../src/NotificationQueue.ts"
+import * as NotificationQueue from "../src/NotificationQueue.vibe"
 
 const runId = "run-1"
 

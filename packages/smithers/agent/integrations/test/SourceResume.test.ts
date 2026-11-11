@@ -7,9 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
-import { CursorStore, makeMemory } from "../src/core/CursorStore.ts"
-import { runWithCursor } from "../src/core/Source.ts"
+import { Failure, fromIntegrationError } from "../src/core/ActionFailure.vibe"
+import { CursorStore, makeMemory } from "../src/core/CursorStore.vibe"
+import { runWithCursor } from "../src/core/Source.vibe"
 
 it("reopens SQLite after handling and replays the batch and handler before committing the cursor", async () => {
   const root = mkdtempSync(join(tmpdir(), "integration-source-resume-"))

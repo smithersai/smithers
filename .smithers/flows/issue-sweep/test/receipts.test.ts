@@ -5,8 +5,8 @@ import { promises as fs } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { makeReservations } from "../accounts.ts"
-import { make, restoreAssignments, values } from "../work/receipts.ts"
+import { makeReservations } from "../accounts.vibe"
+import { make, restoreAssignments, values } from "../work/receipts.vibe"
 
 test("long durable identities persist in bounded filenames and reconstruct without collisions or traversal", async (t) => {
   const root = await fs.mkdtemp(join(tmpdir(), "issue-sweep-receipts-"))

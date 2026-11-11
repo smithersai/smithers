@@ -11,7 +11,7 @@ const cwd = "packages/smithers/agent/harness"
 
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["docs/api.md"]
 })
 
@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A cell-controlled value (flow name, input, at, print parts, intent payload) passed to host eval, dynamic import, Function or a property lookup on a host object without JSON decoding.",
         "The ctx and console globals becoming writable or configurable, so a cell can replace ctx.call for later cells."
       ],
-      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/CellValidation.ts"]
+      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.vibe", "src/CellValidation.ts"]
     },
     {
       id: "realm-resource-limits",
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "A flow result materialized into the realm without the payloadBytes estimate, or a deep JSON payload whose handle building can overflow the host stack uncaught.",
         "Proxy or another getter-driven intrinsic available to cells that makes the variables-panel memory probe under-report held bytes."
       ],
-      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/VariablesPanel.ts"]
+      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.vibe", "src/VariablesPanel.vibe"]
     },
     {
       id: "flow-call-authorization",
@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "A declaration digest mismatch between the catalog the model saw and the registry entry that runs, or a binding dispatched when its digest differs from the registry descriptor.",
         "A catalog refresh (openFrame nextCatalog) or discovered flow list that adds entries without the modelInvocable filter."
       ],
-      paths: ["src/CellTurn.ts", "src/CellCalls.ts", "src/FlowBinding.ts"]
+      paths: ["src/CellTurn.ts", "src/CellCalls.vibe", "src/FlowBinding.ts"]
     },
     {
       id: "write-guards",
@@ -123,7 +123,7 @@ const securityReview = Smithers.SecurityReview({
         "TruncatedOutput.reuse matching that a trivial re-encoding of the fragment (whitespace, JSON escaping) evades.",
         "An at option accepted by Cell.checkpointOf that does not name a checkpoint this run minted."
       ],
-      paths: ["src/CellTurn.ts", "src/TruncatedOutput.ts", "src/Cell.ts"]
+      paths: ["src/CellTurn.ts", "src/TruncatedOutput.vibe", "src/Cell.ts"]
     },
     {
       id: "prompt-injection-boundary",
@@ -138,16 +138,16 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/untrustedData.ts",
-        "src/internal/cellPrompt.ts",
+        "src/internal/cellPrompt.vibe",
         "src/internal/printsObservation.ts",
-        "src/CallLedger.ts",
-        "src/NarrowedCheck.ts",
-        "src/Compaction.ts",
-        "src/Relevance.ts",
-        "src/Supervisor.ts",
-        "src/Steering.ts",
-        "src/Monitor.ts",
-        "src/Notifications.ts",
+        "src/CallLedger.vibe",
+        "src/NarrowedCheck.vibe",
+        "src/Compaction.vibe",
+        "src/Relevance.vibe",
+        "src/Supervisor.vibe",
+        "src/Steering.vibe",
+        "src/Monitor.vibe",
+        "src/Notifications.vibe",
         "src/CellTurn.ts"
       ]
     },
@@ -160,7 +160,7 @@ const securityReview = Smithers.SecurityReview({
         "A boundary or step key that omits the invocation input, the declaration digest, the frame ordinal or the live-tree digest.",
         "A replayed outcome returned without re-checking the capability envelope or withheld-flow state that applied when it was recorded."
       ],
-      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.ts", "src/EngineLike.ts"]
+      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.vibe", "src/EngineLike.vibe"]
     },
     {
       id: "completion-gate-bypass",
@@ -173,12 +173,12 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/CompletionClaim.ts",
-        "src/Judgement.ts",
-        "src/UnresolvedFailure.ts",
+        "src/Judgement.vibe",
+        "src/UnresolvedFailure.vibe",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
-        "src/VacuousVerification.ts",
-        "src/Sufficiency.ts",
+        "src/VacuousVerification.vibe",
+        "src/Sufficiency.vibe",
         "src/CellTurn.ts"
       ]
     },
@@ -192,11 +192,11 @@ const securityReview = Smithers.SecurityReview({
         "A flow handler cause or print buffer persisted verbatim without the redaction FlowBinding documents."
       ],
       paths: [
-        "src/AgentEvent.ts",
-        "src/Transcript.ts",
-        "src/EngineLike.ts",
+        "src/AgentEvent.vibe",
+        "src/Transcript.vibe",
+        "src/EngineLike.vibe",
         "src/FlowBinding.ts",
-        "src/HarnessError.ts"
+        "src/HarnessError.vibe"
       ]
     }
   ]

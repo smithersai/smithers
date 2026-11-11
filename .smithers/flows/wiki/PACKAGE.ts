@@ -7,18 +7,18 @@ const data = [
   ...new Set([
     ...sourceFiles,
     ".smithers/coding-project.json",
-    ".smithers/flows/wiki/schema.ts",
+    ".smithers/flows/wiki/schema.vibe",
     ".smithers/flows/wiki/evidence.ts",
     ".smithers/flows/wiki/flow.ts",
-    ".smithers/flows/wiki/workflow.ts",
+    ".smithers/flows/wiki/workflow.vibe",
     ".smithers/flows/wiki/operations.ts",
     ".smithers/flows/wiki/main.ts",
     ".smithers/flows/wiki/runtime.ts",
     ".smithers/flows/wiki/reuse.ts",
-    ".smithers/flows/wiki/jev-citations.ts",
-    ".smithers/flows/repository/jev-checks.ts",
+    ".smithers/flows/wiki/jev-citations.vibe",
+    ".smithers/flows/repository/jev-checks.vibe",
     ".smithers/flows/coding/schema.ts",
-    ".smithers/flows/coding/wiki-output.ts",
+    ".smithers/flows/coding/wiki-output.vibe",
     ".smithers/flows/release-support/runtime.ts"
   ])
 ].map((file) => S.file(`//${file}`))
@@ -44,7 +44,7 @@ const freshness = S.Shell.Test({
 })
 const securityReview = S.SecurityReview({
   cwd: ".smithers/flows/wiki",
-  include: ["*.ts"],
+  include: ["*.{ts,vibe}"],
   checks: [
     {
       id: "wiki-source-confinement",
@@ -82,7 +82,7 @@ const securityReview = S.SecurityReview({
         "The Jev citation classifier state carrying excerpt lines that the page excerpts hid, or a low-confidence answer counted as supported.",
         "agentLayers in runtime.ts giving the reviewer a nonempty capabilityEnvelope or registry tools, so injected page text can act instead of only answer."
       ],
-      paths: ["workflow.ts", "evidence.ts", "jev-citations.ts", "operations.ts", "runtime.ts"]
+      paths: ["workflow.vibe", "evidence.ts", "jev-citations.vibe", "operations.ts", "runtime.ts"]
     },
     {
       id: "reused-review-trust",

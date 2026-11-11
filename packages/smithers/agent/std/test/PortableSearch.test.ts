@@ -8,14 +8,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { afterAll, describe, expect, it, vi } from "vitest"
-import * as Grep from "../src/Grep.ts"
+import * as Grep from "../src/Grep.vibe"
 import * as Grouping from "../src/internal/Grouping.ts"
 import * as LinearRegex from "../src/internal/LinearRegex.ts"
-import * as NativeSearch from "../src/NativeSearch.ts"
-import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
-import * as SearchConformance from "../src/SearchConformance.ts"
-import * as SearchContract from "../src/SearchContract.ts"
+import * as NativeSearch from "../src/NativeSearch.vibe"
+import * as PortableSearch from "../src/PortableSearch.vibe"
+import * as Search from "../src/Search.vibe"
+import * as SearchConformance from "../src/SearchConformance.vibe"
+import * as SearchContract from "../src/SearchContract.vibe"
 
 const root = mkdtempSync(join(tmpdir(), "portable-search-bounds-"))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -66,8 +66,8 @@ describe("portable search bounds", () => {
     const script = `
       import { Effect, Layer } from "effect"
       import { NodeServices } from "@effect/platform-node"
-      import * as PortableSearch from ${JSON.stringify(new URL("../src/PortableSearch.ts", import.meta.url).href)}
-      import * as Grep from ${JSON.stringify(new URL("../src/Grep.ts", import.meta.url).href)}
+      import * as PortableSearch from ${JSON.stringify(new URL("../src/PortableSearch.vibe", import.meta.url).href)}
+      import * as Grep from ${JSON.stringify(new URL("../src/Grep.vibe", import.meta.url).href)}
       let ticks = 0
       const timer = setInterval(() => { ticks++ }, 1)
       try {

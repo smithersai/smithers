@@ -224,6 +224,7 @@ export const canonical = (value: unknown): string => render(value, new Set<objec
  *
  * @since 0.0.0
  * @category encoding
+ * @throws {never}
  */
 export const same = (left: unknown, right: unknown): boolean =>
   Object.is(left, right) || canonical(left) === canonical(right)

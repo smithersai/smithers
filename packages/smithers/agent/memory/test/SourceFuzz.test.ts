@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Recall from "../src/Recall.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
+import * as Recall from "../src/Recall.vibe"
 import * as Source from "../src/Source.ts"
 
 const byteLength = (text: string): number => new TextEncoder().encode(text).byteLength

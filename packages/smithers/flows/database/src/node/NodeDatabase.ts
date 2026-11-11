@@ -7,12 +7,12 @@ import { type Duration, Effect, Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
-import * as PostgresSelection from "../internal/PostgresSelection.ts"
+import * as PostgresSelection from "../internal/PostgresSelection.vibe"
 import * as ReleasePolicy from "../internal/ReleasePolicy.ts"
 import * as SqliteOpen from "../internal/SqliteOpen.ts"
-import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
+import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.vibe"
 
-export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.vibe"
 
 /**
  * Where the store at `filename` lives on PostgreSQL, as this module would open

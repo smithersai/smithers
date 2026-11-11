@@ -1,13 +1,13 @@
 import { Effect, Layer, type Scope } from "effect"
-import type * as Author from "../src/Author.ts"
-import type * as Authorize from "../src/Authorize.ts"
-import * as Catalog from "../src/Catalog.ts"
-import * as Chain from "../src/Chain.ts"
-import type * as Event from "../src/Event.ts"
-import * as Journal from "../src/Journal.ts"
-import type * as Outcome from "../src/Outcome.ts"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
-import type * as Steering from "../src/Steering.ts"
+import type * as Author from "../src/Author.vibe"
+import type * as Authorize from "../src/Authorize.vibe"
+import * as Catalog from "../src/Catalog.vibe"
+import * as Chain from "../src/Chain.vibe"
+import type * as Event from "../src/Event.vibe"
+import * as Journal from "../src/Journal.vibe"
+import type * as Outcome from "../src/Outcome.vibe"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
+import type * as Steering from "../src/Steering.vibe"
 
 /** Wraps script lines in the one fenced flow block the shape gate expects. */
 export const flow = (...lines: ReadonlyArray<string>): string => ["```flow", ...lines, "```"].join("\n")

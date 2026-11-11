@@ -1,0 +1,22 @@
+import { type Effect } from "effect"
+
+// The prompt a shared branch's people type together (docs/features/coedit.md#the-prompt). When the app provides it and
+// the conversation shown is a branch its owner shared (`Place.shared`), the composer's draft is the branch's prompt:
+// every change the person makes to the draft goes to it, and everyone else's changes come back into the draft
+// (`mirrorDraft`). Anywhere else, or without it, the draft is the person's own, kept on this device (`chat-drafts`).
+
+/** Where in the draft the person's selection is: where it started and where the caret is. */
+export interface DraftSelection {
+  readonly anchor: number
+  readonly head: number
+}
+
+export service SharedPrompt: {
+    /** The person made the draft `draft`, from `base`, the draft the composer showed, with `selection` after. */
+    readonly set: (
+      draft: string,
+      edit: { readonly base: string; readonly selection?: DraftSelection | undefined },
+    ) => void!!
+  } {
+  static readonly key = "@smthrs/mvp/chat/SharedPrompt"
+}

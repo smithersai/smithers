@@ -4,9 +4,9 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as CacheStoreLive from "../src/CacheStore.ts"
-import { CacheStore } from "../src/CacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as CacheStoreLive from "../src/CacheStore.vibe"
+import { CacheStore } from "../src/CacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const migrated = <A, E>(
   effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | CacheStore>

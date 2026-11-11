@@ -20,7 +20,7 @@ import {
   maxPageBytes,
   publishedPages,
   TooLarge
-} from "../memory/deps.ts"
+} from "../memory/deps.vibe"
 
 type Platform = FileSystem.FileSystem | Path.Path
 const run = <A, E>(effect: Effect.Effect<A, E, Platform>) =>

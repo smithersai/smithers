@@ -6,6 +6,7 @@ import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from 
 import { jsdocConvention } from "../../../../eslint.jsdoc.js"
 
 export default tseslint.config(
+  { ignores: ["**/*.d.vibe.ts"] },
   {
     // VibeLang writes these declarations beside each .vibe source; they are generated and untracked.
     ignores: [

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { share } from "../../coding/host-modules.ts"
 import { systemFlowsFromEnv } from "../../coding/host.ts"
-import { bindRepositoryRegistry, repositoryCatalog } from "../../repository/registry.ts"
+import { bindRepositoryRegistry, repositoryCatalog } from "../../repository/registry.vibe"
 
 assert.ok(process.getuid && process.getuid() > 0, "repository canary requires an unprivileged guest")
 assert.equal(process.getgid?.(), 1000, "canary requires the unprivileged image group")

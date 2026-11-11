@@ -2,7 +2,7 @@ import { Effect, Layer, Schema } from "effect"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { test } from "node:test"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import {
   capture,
   finish,
@@ -12,7 +12,7 @@ import {
   reviewCheckDelegate,
   ReviewLens,
   reviewRole
-} from "../coding/review-check.ts"
+} from "../coding/review-check.vibe"
 import {
   type Check,
   checkInputDigest,

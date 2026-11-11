@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Baseline, baselineFrom, drift } from "./baseline.ts";
-import { BUG_CLASSES, loadCorpus, type PlantedBugLabel, type SeededBugLabel } from "./labels.ts";
+import { BUG_CLASSES, loadCorpus, type PlantedBugLabel, type SeededBugLabel } from "./labels.vibe";
 import { scoreCorpus, type ReviewFinding } from "./score.ts";
 
 const corpusDir = join(import.meta.dirname, "corpus");

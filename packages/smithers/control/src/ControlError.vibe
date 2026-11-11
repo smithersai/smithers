@@ -1,0 +1,378 @@
+/**
+ * Stable, schema-backed control-plane failures.
+ *
+ * @since 0.1.0
+ */
+
+import * as Fault from "@smthrs/flow/Fault"
+import { NotificationError } from "@smthrs/notifications/NotificationQueue"
+import { Schema } from "effect"
+import { FlowId, RunHost, RunId } from "./ControlSchema.vibe"
+
+const constantCode = <const Code extends string>(code: Code) =>
+  Schema.Literal(code).pipe(Schema.withConstructorDefault(Effect.succeed(code)))
+
+/**
+ * No run with this id exists.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class RunNotFound extends Schema.TaggedError<RunNotFound>()("/control/RunNotFound", {
+  code: constantCode("run_not_found"),
+  runId: RunId
+}) {
+  /**
+   * The sentence an operator reads. Without one the CLI printed the bare
+   * fields, `run_not_found runId=nope`, which names no next action.
+   */
+  override get message(): string {
+    return `Run ${this.runId} was not found. Run \`smthrs runs list\` to see the runs you can read.`
+  }
+}
+
+/**
+ * No plan with this id exists.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class PlanNotFound extends Schema.TaggedError<PlanNotFound>()("/control/PlanNotFound", {
+  code: constantCode("plan_not_found"),
+  planId: Schema.String
+}) {
+  /**
+   * The sentence an operator reads. Every renderer in the tree prints
+   * `message`, so a refusal without one does not explain the next action.
+   */
+  override get message(): string {
+    return `Plan ${this.planId} was not found. Create the plan again before approving or launching it.`
+  }
+}
+
+/**
+ * The plan was denied and cannot be launched.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class PlanDenied extends Schema.TaggedError<PlanDenied>()("/control/PlanDenied", {
+  code: constantCode("plan_denied"),
+  planId: Schema.String
+}) {
+  /**
+   * The sentence an operator reads. Every renderer in the tree prints
+   * `message`, so a denial must state how to make a later launch possible.
+   */
+  override get message(): string {
+    return `Plan ${this.planId} was denied and cannot be launched. Create and approve a new plan before running it.`
+  }
+}
+
+/**
+ * No flow with this id is registered.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class FlowNotFound extends Schema.TaggedError<FlowNotFound>()("/control/FlowNotFound", {
+  code: constantCode("flow_not_found"),
+  flowId: FlowId
+}) {
+  /**
+   * The sentence an operator reads, which names the command that lists the
+   * flows a caller can start.
+   */
+  override get message(): string {
+    return `Flow ${this.flowId} is not registered. Run \`smthrs flow list\` to see the flows you can start.`
+  }
+}
+
+/**
+ * The submitted plan does not hash to the digest the caller declared, so
+ * the control plane refuses to store it.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class PlanDigestMismatch extends Schema.TaggedError<PlanDigestMismatch>()("/control/PlanDigestMismatch", {
+  code: constantCode("plan_digest_mismatch"),
+  planId: Schema.String,
+  expected: Schema.String,
+  actual: Schema.String
+}) {}
+
+/**
+ * The plan's effect envelope differs from the one the caller declared.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class EnvelopeMismatch extends Schema.TaggedError<EnvelopeMismatch>()("/control/EnvelopeMismatch", {
+  code: constantCode("envelope_mismatch"),
+  planId: Schema.String,
+  expected: Schema.String,
+  actual: Schema.String
+}) {}
+
+/**
+ * The caller's claim on this run lapsed or was fenced by a newer owner.
+ *
+ * `parkedBy` names the live process that parked the run: it, not the caller,
+ * drives the run, so `Control.resume` hands the resume to it.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class ClaimLost extends Schema.TaggedError<ClaimLost>()("/control/ClaimLost", {
+  code: constantCode("claim_lost"),
+  runId: RunId,
+  reason: Schema.optional(Schema.String),
+  parkedBy: Schema.optional(RunHost)
+}) {}
+
+/**
+ * The run's flow or engine changed since the run started, so resuming it would
+ * run code the run did not start with. Pass `allowCodeDrift` to resume it
+ * anyway; the run then records the code it resumed on.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class CodeDrift extends Schema.TaggedError<CodeDrift>()("/control/CodeDrift", {
+  code: constantCode("code_drift"),
+  runId: RunId,
+  flowId: FlowId,
+  /** The execution digest the run started with; absent when only the engine changed. */
+  recorded: Schema.optional(Schema.String),
+  /** The flow's execution digest now; absent when the flow is gone or declares none. */
+  current: Schema.optional(Schema.String),
+  /** The engine version the run started on, when the engine changed. */
+  recordedEngine: Schema.optional(Schema.String),
+  /** The engine version resuming it, when the engine changed. */
+  currentEngine: Schema.optional(Schema.String)
+}) {
+  override get message(): string {
+    const changes = [
+      ...(this.recorded === undefined
+        ? []
+        : [`${this.flowId} ${this.recorded}, which is now ${this.current ?? "gone"}`]),
+      ...(this.recordedEngine === undefined
+        ? []
+        : [`engine ${this.recordedEngine}, which is now ${this.currentEngine ?? "unknown"}`])
+    ]
+    // A flow that is gone has no code to adopt, so the flag would not help.
+    const next = this.recorded !== undefined && this.current === undefined
+      ? "Restore the flow to resume it."
+      : "Resume with --allow-code-drift to run the changed code."
+    return `Run ${this.runId} started on ${changes.join(" and ")}. ${next}`
+  }
+}
+
+/**
+ * This request was already answered; a second answer is refused rather
+ * than overwriting the first.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class AlreadyResolved extends Schema.TaggedError<AlreadyResolved>()("/control/AlreadyResolved", {
+  code: constantCode("already_resolved"),
+  requestId: Schema.String
+}) {}
+
+/**
+ * The request did not satisfy its schema or a stated precondition.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class InvalidInput extends Schema.TaggedError<InvalidInput>()("/control/InvalidInput", {
+  code: constantCode("invalid_input"),
+  issue: Schema.String
+}) {}
+
+/**
+ * The caller lacks a usable credential or authority for this operation.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()("/control/Unauthorized", {
+  code: constantCode("unauthorized"),
+  message: Schema.String
+}) {}
+
+/**
+ * The operation is not implemented in this deployment. `ticket` names the
+ * issue that tracks it, per `Concepts/Tickets Not Exceptions.md`.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class Unavailable extends Schema.TaggedError<Unavailable>()("/control/Unavailable", {
+  code: constantCode("unavailable"),
+  feature: Schema.String,
+  ticket: Schema.String
+}) {}
+
+/**
+ * The request failed before a declared control response reached the caller.
+ *
+ * `retryable` classifies only the transport phase. Connection failures and
+ * HTTP 5xx responses are retryable; local encode failures, response decode
+ * failures, and HTTP 4xx responses are not. A caller may resend a retryable
+ * mutation only when its idempotency key makes replay safe. A keyless request
+ * can have reached the server even when its response was lost.
+ *
+ * `message` is a fixed operator-facing sentence. `cause` retains the original
+ * client failure for diagnostics without copying its raw text into output.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class TransportError extends Schema.TaggedError<TransportError>()("/control/TransportError", {
+  code: constantCode("transport_error"),
+  message: Schema.String,
+  retryable: Schema.Boolean,
+  cause: Schema.optional(Schema.Defect())
+}) {}
+
+/**
+ * A control-plane store operation failed.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class PersistenceError extends Schema.TaggedError<PersistenceError>()("/control/PersistenceError", {
+  code: constantCode("persistence_failed"),
+  operation: Schema.String,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect())
+}) {}
+
+/**
+ * The executor refused or could not start the run.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class LaunchFailed extends Schema.TaggedError<LaunchFailed>()("/control/LaunchFailed", {
+  code: constantCode("launch_failed"),
+  runId: RunId,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect())
+}) {}
+
+/**
+ * A signal named a wait point the run does not have open.
+ *
+ * `Control.signal` completes the `WaitFor` deferred a run is parked on. A
+ * signal whose name matches no open wait point completes nothing, and recording
+ * it anyway would leave an operator watching a delivery that never lands, so it
+ * is refused where it arrives.
+ *
+ * The signal's name is `waitName`, not `name`. A field spelled `name` on an
+ * `Error` subclass shadows `Error.prototype.name`, which every renderer in the
+ * tree reads: `smithers signal run-3 '{"name":"go"}'` against a timer-parked
+ * run printed `go: ` to stderr and exited 1, because `bin.ts` reports
+ * `${error.name}: ${error.message}` and this class had overwritten one and
+ * defined neither (release validation, defect D3).
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class NoMatchingWait extends Schema.TaggedError<NoMatchingWait>()("/control/NoMatchingWait", {
+  code: constantCode("no_matching_wait"),
+  runId: RunId,
+  waitName: Schema.String
+}) {
+  /**
+   * The sentence an operator reads. Every other renderer in the tree prints
+   * `message`, so a refusal with none is a refusal with no reason.
+   */
+  override get message(): string {
+    return `no wait point named "${this.waitName}" is open on run ${this.runId}. ` +
+      `Read \`smthrs runs show ${this.runId}\` to see what that run is waiting for.`
+  }
+}
+
+/**
+ * A credential write lost a race: the record moved on before this writer
+ * committed, so the update is refused rather than silently overwriting the
+ * winner.
+ *
+ * @since 0.1.0
+ * @category errors
+ */
+export class CredentialConflict extends Schema.TaggedError<CredentialConflict>()("/control/CredentialConflict", {
+  code: constantCode("credential_conflict"),
+  id: Schema.String,
+  expectedVersion: Schema.Number,
+  actualVersion: Schema.Number
+}) {}
+
+/**
+ * Every stable failure emitted by the control plane, as one schema.
+ *
+ * This is the single membership list. The exported union type is derived from
+ * it and `ControlClient.isControlError` is `Schema.is` of it, so an error class
+ * added here reaches both. Two hand-maintained lists drifted: `ControlError`
+ * omitted `CredentialConflict` while the README documented it as a member, and
+ * `isControlError` repeated the same thirteen names a second time.
+ *
+ * @since 0.1.0
+ * @category errors
+ */
+export const ControlErrorSchema = Schema.Union([
+  RunNotFound,
+  PlanNotFound,
+  PlanDenied,
+  FlowNotFound,
+  PlanDigestMismatch,
+  EnvelopeMismatch,
+  ClaimLost,
+  CodeDrift,
+  AlreadyResolved,
+  InvalidInput,
+  Unauthorized,
+  Unavailable,
+  TransportError,
+  PersistenceError,
+  LaunchFailed,
+  NoMatchingWait,
+  CredentialConflict,
+  NotificationError
+])
+
+/**
+ * Every stable failure emitted by the control plane.
+ *
+ * @since 0.1.0
+ * @category errors
+ */
+export type ControlError = typeof ControlErrorSchema.Type
+
+// Whose problem each control refusal is when it ends a run.
+for (
+  const [tag, kind] of [
+    ["RunNotFound", "user"],
+    ["PlanNotFound", "user"],
+    ["PlanDenied", "user"],
+    ["FlowNotFound", "user"],
+    ["PlanDigestMismatch", "user"],
+    ["EnvelopeMismatch", "user"],
+    ["AlreadyResolved", "user"],
+    ["InvalidInput", "user"],
+    ["Unauthorized", "user"],
+    ["NoMatchingWait", "user"],
+    ["CredentialConflict", "user"],
+    // A flow without a model or an approved executable identity: the person's to fix.
+    ["LaunchFailed", "user"],
+    ["ClaimLost", "infra"],
+    ["CodeDrift", "infra"],
+    ["Unavailable", "infra"],
+    ["TransportError", "infra"],
+    ["PersistenceError", "infra"]
+  ] as const
+) Fault.register(`/control/${tag}`, kind)

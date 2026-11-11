@@ -39,8 +39,8 @@ import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
 import * as Flow from "./Flow/index.ts"
-import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
-import * as Sleep from "./Sleep.ts"
+import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.vibe"
+import * as Sleep from "./Sleep.vibe"
 
 /**
  * How the wait between attempts grows.

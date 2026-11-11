@@ -178,16 +178,16 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import type * as AgentEvent from "./AgentEvent.ts"
-import { HarnessError } from "./HarnessError.ts"
+import type * as AgentEvent from "./AgentEvent.vibe"
+import { HarnessError } from "./HarnessError.vibe"
 import * as bytes from "./internal/bytes.ts"
 import { answeredBy } from "./internal/decidedBy.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
 import { failedReading, paidTogether } from "./internal/paidUsage.ts"
-import * as Judgement from "./Judgement.ts"
-import * as NarrowedCheck from "./NarrowedCheck.ts"
-import * as UnresolvedFailure from "./UnresolvedFailure.ts"
+import * as Judgement from "./Judgement.vibe"
+import * as NarrowedCheck from "./NarrowedCheck.vibe"
+import * as UnresolvedFailure from "./UnresolvedFailure.vibe"
 
 /**
  * The most of one check's result the brake sends, in UTF-8 bytes.
@@ -785,6 +785,7 @@ export interface Reading extends Probabilities {
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const find = (reading: Probabilities): Probabilities | undefined =>
   reading.complete <= disprovenAt || reading.overclaims >= overclaimedAt || reading.invented >= unsupportedAt
@@ -802,6 +803,7 @@ export const find = (reading: Probabilities): Probabilities | undefined =>
  *
  * @category predicates
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const unrecorded = (reading: Probabilities): boolean => reading.invented >= inventedAt
 
@@ -890,6 +892,7 @@ export const refusedBytes = 2048
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const refused = (claim: string): string =>
   elide.head(claim.trim(), refusedBytes, "the run record has the whole completion")
@@ -1029,6 +1032,7 @@ export const read = (
  *
  * @category constructors
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const demand = (): string => DemandText.claim()
 
@@ -1046,5 +1050,6 @@ export const quote = (value: Schema.Json): string => CanonicalJson.stringify(val
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const prose = (text: string): string => elide.head(text.trim(), proseBytes, "the run record has the whole text")

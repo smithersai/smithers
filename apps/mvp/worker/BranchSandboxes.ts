@@ -8,10 +8,10 @@ import { FetchHttpClient, HttpBody, HttpServerRequest, HttpServerResponse } from
 import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { BranchSandbox } from "../infra/BranchSandbox.ts"
-import { CiArtifacts, GateMachine } from "../infra/GateMachine.ts"
+import { CiArtifacts, GateMachine } from "#vibelang/emitted/infra/GateMachine"
 import { ROLES } from "../src/features/auth/contract.ts"
 import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/contract.ts"
-import type { Role } from "./Actor.ts"
+import type { Role } from "#vibelang/source/worker/Actor"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import * as Artifacts from "./branch/Artifacts.ts"
 import * as Budget from "./branch/Budget.ts"
@@ -27,8 +27,8 @@ import {
   routed,
   type SleepOutcome,
   type ToolOutcome
-} from "./branch/Machines.ts"
-import * as RegistryEgress from "./branch/RegistryEgress.ts"
+} from "#vibelang/emitted/worker/branch/Machines"
+import * as RegistryEgress from "#vibelang/emitted/worker/branch/RegistryEgress"
 import {
   type Attachment,
   checkoutDetails,
@@ -39,7 +39,7 @@ import {
   Sandboxes,
   SandboxUnavailable,
   TerminalSockets
-} from "./branch/Sandboxes.ts"
+} from "#vibelang/emitted/worker/branch/Sandboxes"
 import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type UserOptions } from "./branch/Session.ts"
 import { userOf } from "./branch/Users.ts"
 import * as Agents from "./personal/Agents.ts"
@@ -64,7 +64,7 @@ import * as SocketChecks from "./SocketChecks.ts"
 //
 // A job machine the deployment declares (worker/branch/JobMachines.ts, docs/features/ci.md#machines) is the same object
 // over its own container class and instance type, in its own namespace: `GateObject`, over the gate image
-// (infra/GateMachine.ts). A branch names it in `SandboxBranch.machine`; its tools, its keep and its box's requests reach
+// (infra/GateMachine.vibe). A branch names it in `SandboxBranch.machine`; its tools, its keep and its box's requests reach
 // that namespace. A gate box also reaches its run's artifacts at `http://artifacts.smithers.internal`
 // (worker/branch/Artifacts.ts), which its object answers from the `CiArtifacts` bucket.
 

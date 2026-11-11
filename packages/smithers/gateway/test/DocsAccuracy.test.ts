@@ -103,10 +103,10 @@ describe("the package docs", () => {
   })
 })
 
-/** Every TypeScript file under src/, relative to the package. */
+/** Every TypeScript or VibeLang file under src/, relative to the package. */
 const srcSources = (): ReadonlyArray<string> =>
   (Fs.readdirSync(Path.join(packageRoot, "src"), { recursive: true }) as Array<string>)
-    .filter((file) => file.endsWith(".ts"))
+    .filter((file) => file.endsWith(".ts") || file.endsWith(".vibe"))
     .map((file) => Path.join("src", file))
 
 describe("the package manifest and source references", () => {

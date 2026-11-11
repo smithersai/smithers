@@ -23,9 +23,9 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as FileSystemBatchContract from "./FileSystemBatchContract.ts"
+import * as FileSystemBatchContract from "./FileSystemBatchContract.vibe"
 
-export { check as checkFileSystemBatch } from "./FileSystemBatchContract.ts"
+export { check as checkFileSystemBatch } from "./FileSystemBatchContract.vibe"
 
 /**
  * A capability that must fail with a stable typed code.

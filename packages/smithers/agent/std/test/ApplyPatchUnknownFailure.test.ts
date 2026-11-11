@@ -8,7 +8,7 @@
  */
 import { Cause, Effect, Exit, Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import { layer } from "./TestLayers.ts"
 
 const hooks = vi.hoisted(() => ({
@@ -16,8 +16,8 @@ const hooks = vi.hoisted(() => ({
   derive: undefined as undefined | (() => never)
 }))
 
-vi.mock("../src/internal/ApplyPatch.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/internal/ApplyPatch.ts")>()
+vi.mock("../src/internal/ApplyPatch.vibe", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/internal/ApplyPatch.vibe")>()
   return {
     ...original,
     parsePatch: (patch: string) => hooks.parse === undefined ? original.parsePatch(patch) : hooks.parse(),

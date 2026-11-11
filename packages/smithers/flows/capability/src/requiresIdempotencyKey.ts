@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { EffectTier } from "./EffectTier.ts"
+import type { EffectTier } from "./EffectTier.vibe"
 
 /**
  * Determines whether retrying an effect requires an idempotency key.

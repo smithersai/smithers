@@ -4,8 +4,8 @@ import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-tr
 import { Effect, Logger, Metric } from "effect"
 import { createServer, type Server } from "node:http"
 import { describe, expect, it, vi } from "vitest"
-import * as BrowserOtel from "../src/BrowserOtel.ts"
-import * as NodeOtel from "../src/NodeOtel.ts"
+import * as BrowserOtel from "../src/BrowserOtel.vibe"
+import * as NodeOtel from "../src/NodeOtel.vibe"
 
 /**
  * The host-specific SDK wiring, exercised through the one thing it promises:

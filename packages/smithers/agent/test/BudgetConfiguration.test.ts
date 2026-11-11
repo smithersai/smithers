@@ -1,6 +1,6 @@
 import { Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 describe("budget configuration", () => {
   const invalid = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1]

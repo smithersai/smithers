@@ -4,7 +4,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import {
   heartbeatInterval,
   heartbeatLoop,
@@ -14,8 +14,8 @@ import {
   type LivenessEvidence,
   type OwnerId
 } from "../src/Ownership.ts"
-import { type HeartbeatOutcome, type RunRow, type RunSnapshot, type RunStatus, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type HeartbeatOutcome, type RunRow, type RunSnapshot, type RunStatus, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => effect
 

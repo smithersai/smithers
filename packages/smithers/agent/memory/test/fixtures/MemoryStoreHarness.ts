@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as MemoryStore from "../../src/MemoryStore.ts"
+import * as MemoryStore from "../../src/MemoryStore.vibe"
 import * as TestMemory from "../../src/test/TestMemory.ts"
 
 export const namespace = { kind: "flow", id: "project-1" } as const

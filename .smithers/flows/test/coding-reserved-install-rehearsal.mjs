@@ -5,9 +5,9 @@ import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Layer, ManagedRuntime, Redacted, Schema } from "effect"
-import { NativeCodingError, nativeLayer, NativeTransport, StackCandidate, StackProposal } from "../coding/native.ts"
+import { NativeCodingError, nativeLayer, NativeTransport, StackCandidate, StackProposal } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { Candidate, Propose, stackBaseLayer } from "../coding/stack.ts"
+import { Candidate, Propose, stackBaseLayer } from "../coding/stack.vibe"
 
 const token = process.env.SMITHERS_NATIVE_REPOSITORY_TOKEN
 if (!token) throw new Error("Missing rehearsal credential")

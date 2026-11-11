@@ -8,7 +8,7 @@ const sources = (dir: string, prefix = ""): ReadonlyArray<readonly [string, stri
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? sources(join(dir, entry.name), `${prefix}${entry.name}/`)
-      : entry.name.endsWith(".ts")
+      : /\.(?:ts|vibe)$/.test(entry.name)
       ? [[`${prefix}${entry.name}`, readFileSync(join(dir, entry.name), "utf8")] as const]
       : []
   )
@@ -26,14 +26,14 @@ describe("package conventions", () => {
         /Schema\.Int\.check\(\s*\n?\s*Schema\.isGreaterThanOrEqualTo\(0\),\s*\n?\s*Schema\.isLessThanOrEqualTo\(Number\.MAX_SAFE_INTEGER\)/
       )
     ).toEqual([
-      "internal/nonNegativeSafeInt.ts"
+      "internal/nonNegativeSafeInt.vibe"
     ])
   })
 
   // Two private `refused` helpers plus ten inline copies of one literal shape.
   it("constructs a refusal call result in one place", () => {
     expect(owning(/(?:Cell\.)?CallResult\.new\(\{\s*\n?\s*outcome: "failure"/)).toEqual([
-      "internal/refusal.ts"
+      "internal/refusal.vibe"
     ])
   })
 
@@ -46,7 +46,7 @@ describe("package conventions", () => {
 
   // Compaction verified the declared digest twice, with the noun as the only difference.
   it("verifies a declared compaction prefix in one place", () => {
-    const compaction = src.find(([name]) => name === "Compaction.ts")?.[1] ?? ""
+    const compaction = src.find(([name]) => name === "Compaction.vibe")?.[1] ?? ""
     expect(compaction.match(/step\.replacedPrefixDigest/g)?.length).toBe(1)
   })
 

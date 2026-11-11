@@ -12,7 +12,7 @@ import {
   readCiPolicy,
   requiredContextFor
 } from "../repository/ci-policy.ts"
-import { RepositoryRemote } from "../repository/remote.ts"
+import { RepositoryRemote } from "../repository/remote.vibe"
 
 const repo = "example/repo", workspace = "22222222-2222-4222-8222-222222222222"
 const registrationId = "33333333-3333-4333-8333-333333333333"

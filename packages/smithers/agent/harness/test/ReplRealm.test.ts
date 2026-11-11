@@ -15,10 +15,10 @@ import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as CellValidation from "../src/CellValidation.ts"
 import * as bytes from "../src/internal/bytes.ts"
-import * as CellPrompt from "../src/internal/cellPrompt.ts"
+import * as CellPrompt from "../src/internal/cellPrompt.vibe"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Sandbox from "../src/Sandbox.ts"
-import type * as VariablesPanel from "../src/VariablesPanel.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
+import type * as VariablesPanel from "../src/VariablesPanel.vibe"
 
 const projection = (name: string): Cell.FlowProjection =>
   new Cell.FlowProjection({

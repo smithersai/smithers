@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { Panel } from "../src/panels.ts"
+import type { Panel } from "../src/panels.vibe"
 import * as Summary from "../src/summary.ts"
 import * as Transcript from "../src/transcript.ts"
 

@@ -743,7 +743,7 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 
 /** Import alias, pipe form, shadowing and literal allowlist regressions for the guard. */
 const workerIoLintTests = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("eslint.worker-inflight.test.mjs")]),
+  runner: Smithers.testRunner([Smithers.file("eslint.worker-inflight.test.mjs"), Smithers.file("eslint.worker-prelude.test.mjs")]),
   srcs: [Smithers.file("eslint.worker-inflight.js"), Smithers.file("eslint.config.js")],
   deps: [],
   cwd
