@@ -126,6 +126,12 @@ const accountPoolOf = (environment: Readonly<Record<string, string | undefined>>
  * A Claude Code seat keeps its sessions open between turns. `retain` receives
  * each such seat's `close`, so the host can end the sessions when it shuts down.
  *
+ * A flow may declare a role seat (`coding/review`) instead of a model.
+ * `SMITHERS_SEATS`, a JSON object from role id to seat alias or
+ * `provider:model`, pins each role before alias expansion; the journaled seat
+ * keeps the role id. An unpinned role seat refuses, naming the variable, and a
+ * malformed value refuses every seat.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -136,76 +142,139 @@ export const seatResolver = (
 ): SeatResolver.Service => {
   const ambient = withAliases(providerSeats(environment, executor, retain), hostOf(environment))
   const accounts = new Map<string, SeatResolver.Service>()
+  const roles = rolePins(environment)
+  const resolveModel = (declared: string): Effect.Effect<Seat.Seat, Seat.SeatUnresolved> =>
+    Effect.gen(function*() {
+      const separator = declared.indexOf("@")
+      if (separator < 0) return yield* ambient.resolve(declared)
+      const seat = declared.slice(0, separator)
+      const account = declared.slice(separator + 1)
+      const refuse = (message: string) =>
+        new Seat.SeatUnresolved({
+          seat: declared,
+          message: `Account ${account || "(empty)"}: ${message}`
+        })
+      if (seat === "" || !/^(claude|codex)-[A-Za-z0-9][A-Za-z0-9_-]*$/.test(account)) {
+        return yield* refuse("Invalid account-pinned seat; use <seat>@<claude-account|codex-account>.")
+      }
+      const claude = account.startsWith("claude-")
+      const expanded = Providers.expandSeat(seat)
+      if (
+        claude ?
+          !(expanded !== seat && expanded.startsWith("anthropic:")) && !seat.startsWith("claude-code:")
+          : !expanded.startsWith("openai:") && !expanded.startsWith("codex:")
+      ) {
+        return yield* refuse("This login cannot serve the declared seat.")
+      }
+      const directory = account === "codex-default"
+        ? join(homedir(), ".codex")
+        : join(
+          Environment_.read(environment, "SMITHERS_ACCOUNTS_DIR") ?? join(homedir(), ".smithers", "accounts"),
+          account
+        )
+      let exists = false
+      try {
+        exists = statSync(directory).isDirectory()
+      } catch { /* Unknown accounts refuse before consulting any ambient login. */ }
+      if (!exists) return yield* refuse(`Unknown account at ${directory}.`)
+      let resolver = accounts.get(directory)
+      if (resolver === undefined) {
+        const selected: Record<string, string | undefined> = { ...environment }
+        // A pin names a local login, so neither an ambient credential nor a
+        // remote pool/proxy may choose a different account for this seat.
+        delete selected[accountPoolVariable]
+        delete selected[Endpoint.modelProxyVariable]
+        if (claude) {
+          selected.CLAUDE_CONFIG_DIR = directory
+          delete selected.ANTHROPIC_API_KEY
+          delete selected.ANTHROPIC_API_KEY_FILE
+          delete selected.ANTHROPIC_AUTH_TOKEN
+          delete selected.CLAUDE_CODE_OAUTH_TOKEN
+          delete selected.ANTHROPIC_BASE_URL
+          delete selected.CLAUDE_CODE_USE_BEDROCK
+          delete selected.CLAUDE_CODE_USE_VERTEX
+          delete selected.CLAUDE_CODE_USE_FOUNDRY
+          delete selected.ANTHROPIC_FOUNDRY_BASE_URL
+        } else {
+          delete selected.OPENAI_API_KEY
+          delete selected.OPENAI_API_KEY_FILE
+          delete selected.CODEX_API_KEY
+          delete selected.OPENAI_BASE_URL
+          selected.CODEX_HOME = directory
+          selected[openaiAuthVariable] = "chatgpt"
+        }
+        resolver = withAliases(providerSeats(selected, executor, retain), hostOf(selected))
+        accounts.set(directory, resolver)
+      }
+      return yield* resolver.resolve(seat).pipe(
+        Effect.map((resolved) => Seat.make({ ...resolved, id: declared })),
+        Effect.mapError((error) => refuse(error.message))
+      )
+    }).pipe(Effect.tap(() => Telemetry.startUp.mark("seat")))
   return SeatResolver.make({
     resolve: (declared) =>
-      Effect.gen(function*() {
-        const separator = declared.indexOf("@")
-        if (separator < 0) return yield* ambient.resolve(declared)
-        const seat = declared.slice(0, separator)
-        const account = declared.slice(separator + 1)
-        const refuse = (message: string) =>
+      typeof roles === "string"
+        ? Effect.fail(new Seat.SeatUnresolved({ seat: declared, message: roles }))
+        : Object.hasOwn(roles, declared)
+        ? resolveModel(roles[declared]!).pipe(
+          Effect.map((resolved) => Seat.make({ ...resolved, id: declared })),
+          Effect.mapError((error) =>
+            new Seat.SeatUnresolved({
+              seat: declared,
+              message: `${rolePinsVariable} pins ${declared} to ${roles[declared]}: ${error.message}`
+            })
+          )
+        )
+        : roleSeatPattern.test(declared) && !Providers.isDecisionSeat(declared)
+        ? Effect.fail(
           new Seat.SeatUnresolved({
             seat: declared,
-            message: `Account ${account || "(empty)"}: ${message}`
+            message: `${declared} is a role seat. Pin it to a seat alias or provider:model in ${rolePinsVariable}, ` +
+              `for example ${rolePinsVariable}='${JSON.stringify({ [declared]: "sol" })}'`
           })
-        if (seat === "" || !/^(claude|codex)-[A-Za-z0-9][A-Za-z0-9_-]*$/.test(account)) {
-          return yield* refuse("Invalid account-pinned seat; use <seat>@<claude-account|codex-account>.")
-        }
-        const claude = account.startsWith("claude-")
-        const expanded = Providers.expandSeat(seat)
-        if (
-          claude ?
-            !(expanded !== seat && expanded.startsWith("anthropic:")) && !seat.startsWith("claude-code:")
-            : !expanded.startsWith("openai:") && !expanded.startsWith("codex:")
-        ) {
-          return yield* refuse("This login cannot serve the declared seat.")
-        }
-        const directory = account === "codex-default"
-          ? join(homedir(), ".codex")
-          : join(
-            Environment_.read(environment, "SMITHERS_ACCOUNTS_DIR") ?? join(homedir(), ".smithers", "accounts"),
-            account
-          )
-        let exists = false
-        try {
-          exists = statSync(directory).isDirectory()
-        } catch { /* Unknown accounts refuse before consulting any ambient login. */ }
-        if (!exists) return yield* refuse(`Unknown account at ${directory}.`)
-        let resolver = accounts.get(directory)
-        if (resolver === undefined) {
-          const selected: Record<string, string | undefined> = { ...environment }
-          // A pin names a local login, so neither an ambient credential nor a
-          // remote pool/proxy may choose a different account for this seat.
-          delete selected[accountPoolVariable]
-          delete selected[Endpoint.modelProxyVariable]
-          if (claude) {
-            selected.CLAUDE_CONFIG_DIR = directory
-            delete selected.ANTHROPIC_API_KEY
-            delete selected.ANTHROPIC_API_KEY_FILE
-            delete selected.ANTHROPIC_AUTH_TOKEN
-            delete selected.CLAUDE_CODE_OAUTH_TOKEN
-            delete selected.ANTHROPIC_BASE_URL
-            delete selected.CLAUDE_CODE_USE_BEDROCK
-            delete selected.CLAUDE_CODE_USE_VERTEX
-            delete selected.CLAUDE_CODE_USE_FOUNDRY
-            delete selected.ANTHROPIC_FOUNDRY_BASE_URL
-          } else {
-            delete selected.OPENAI_API_KEY
-            delete selected.OPENAI_API_KEY_FILE
-            delete selected.CODEX_API_KEY
-            delete selected.OPENAI_BASE_URL
-            selected.CODEX_HOME = directory
-            selected[openaiAuthVariable] = "chatgpt"
-          }
-          resolver = withAliases(providerSeats(selected, executor, retain), hostOf(selected))
-          accounts.set(directory, resolver)
-        }
-        return yield* resolver.resolve(seat).pipe(
-          Effect.map((resolved) => Seat.make({ ...resolved, id: declared })),
-          Effect.mapError((error) => refuse(error.message))
         )
-      }).pipe(Effect.tap(() => Telemetry.startUp.mark("seat")))
+        : resolveModel(declared)
   })
+}
+
+const rolePinsVariable = "SMITHERS_SEATS"
+
+/** A role id, as `SMITHERS_CODING_SEATS` and a project's `seats` spell one. */
+const roleIdPattern = /^[a-z0-9][a-z0-9/_-]{0,63}$/
+
+/**
+ * A role seat: a namespaced role id such as `coding/review`. A seat with no
+ * `provider:` is otherwise an Anthropic model id, and those never hold a `/`;
+ * the one other such seat, Jev's bare `typesafe-ai/jev`, keeps its own refusal.
+ */
+const roleSeatPattern = /^[a-z0-9][a-z0-9_-]*\/[a-z0-9/_-]+$/
+
+/**
+ * The operator's role pins from `SMITHERS_SEATS`, or why they are refused.
+ * Unset or blank pins nothing. Each pin must name a seat alias or an explicit
+ * `provider:model`: the plain host has no routing graph to send `auto` to.
+ */
+const rolePins = (
+  environment: Readonly<Record<string, string | undefined>>
+): Readonly<Record<string, string>> | string => {
+  const raw = Environment_.read(environment, rolePinsVariable)
+  if (raw === undefined) return {}
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    value = undefined
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return `${rolePinsVariable} must be a JSON object of role to seat`
+  }
+  for (const [role, seat] of Object.entries(value)) {
+    if (!roleIdPattern.test(role)) return `${rolePinsVariable} ${role}: invalid role id`
+    if (typeof seat !== "string") return `${rolePinsVariable} ${role}: the seat must be a string`
+    const refusal = Providers.seatRefusal(seat)
+    if (refusal !== undefined) return `${rolePinsVariable} ${role}: ${refusal}`
+  }
+  return value as Readonly<Record<string, string>>
 }
 
 /**

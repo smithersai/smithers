@@ -26,6 +26,7 @@ describe("the environment contract", () => {
       "SMITHERS_CACHE_NAMESPACE",
       "SMITHERS_MCP_CONFIG",
       "SMITHERS_OPENAI_AUTH",
+      "SMITHERS_SEATS",
       "SMITHERS_TEST_COMMAND",
       "SMITHERS_TEST_CONTAINER",
       "SMITHERS_TEST_CWD",

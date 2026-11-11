@@ -192,6 +192,88 @@ describe("NodeControl.seatResolver credentials", () => {
   })
 })
 
+describe("NodeControl.seatResolver role pins", () => {
+  const pinned = (pins: unknown, environment: Readonly<Record<string, string>> = keyed) => ({
+    ...environment,
+    SMITHERS_SEATS: typeof pins === "string" ? pins : JSON.stringify(pins)
+  })
+
+  it("resolves a role pinned to provider:model on that provider's route, keeping the role id", async () => {
+    const resolved = await Effect.runPromise(
+      resolve(pinned({ "coding/review": "openai:gpt-6.1-sol" }), "coding/review")
+    )
+
+    expect(resolved.id).toBe("coding/review")
+    expect(resolved.modelId).toBe("gpt-6.1-sol")
+    expect((await prepared(resolved, resolved.modelId)).url).toBe("https://api.openai.com/v1/responses")
+  })
+
+  it("expands a role pinned to an alias", async () => {
+    const resolved = await Effect.runPromise(resolve(pinned({ "coding/implement": "kimi" }), "coding/implement"))
+
+    expect(resolved.id).toBe("coding/implement")
+    expect(resolved.modelId).toBe(Seat.modelIdOf(Providers.expandSeat("kimi")))
+  })
+
+  it("refuses a pinned role whose seat has no credential, naming the pin and the variable", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(resolve(pinned({ "coding/review": "openai:gpt-6.1-sol" }, {}), "coding/review"))
+    )
+
+    expect(error.seat).toBe("coding/review")
+    expect(error.message).toBe(
+      "SMITHERS_SEATS pins coding/review to openai:gpt-6.1-sol: Set OPENAI_API_KEY to run the openai:gpt-6.1-sol seat"
+    )
+  })
+
+  it.each([
+    ["unset", keyed],
+    ["blank", { ...keyed, SMITHERS_SEATS: "" }],
+    ["set without the role", pinned({ "coding/implement": "sol" })]
+  ])("refuses an unpinned role seat with SMITHERS_SEATS %s, naming the variable", async (_case, environment) => {
+    const error = await Effect.runPromise(Effect.flip(resolve(environment, "coding/review")))
+
+    expect(error).toBeInstanceOf(Seat.SeatUnresolved)
+    expect(error.seat).toBe("coding/review")
+    expect(error.message).toBe(
+      "coding/review is a role seat. Pin it to a seat alias or provider:model in SMITHERS_SEATS, " +
+        "for example SMITHERS_SEATS='{\"coding/review\":\"sol\"}'"
+    )
+  })
+
+  it("leaves model seats, aliases and bare model ids alone when roles are pinned", async () => {
+    const environment = pinned({ "coding/review": "sol" })
+
+    expect((await Effect.runPromise(resolve(environment, "anthropic:claude-3"))).id).toBe("anthropic:claude-3")
+    expect((await Effect.runPromise(resolve(environment, "openrouter:openai/gpt-5.6-sol"))).id).toBe(
+      "openrouter:openai/gpt-5.6-sol"
+    )
+    expect((await Effect.runPromise(resolve(environment, "claude-sonnet-4-5"))).id).toBe("claude-sonnet-4-5")
+  })
+
+  it.each([
+    ["not JSON", "{", "SMITHERS_SEATS must be a JSON object of role to seat"],
+    ["an array", ["sol"], "SMITHERS_SEATS must be a JSON object of role to seat"],
+    ["null", "null", "SMITHERS_SEATS must be a JSON object of role to seat"],
+    ["a non-string seat", { "coding/review": 1 }, "SMITHERS_SEATS coding/review: the seat must be a string"],
+    ["an invalid role id", { "Coding Review": "sol" }, "SMITHERS_SEATS Coding Review: invalid role id"],
+    [
+      "an unknown seat",
+      { "coding/review": "mystery" },
+      `SMITHERS_SEATS coding/review: ${Providers.seatRefusal("mystery")}`
+    ],
+    ["auto", { "coding/review": "auto" }, `SMITHERS_SEATS coding/review: ${Providers.seatRefusal("auto")}`],
+    ["jev", { "coding/review": "jev" }, `SMITHERS_SEATS coding/review: ${Providers.seatRefusal("jev")}`]
+  ])("refuses every seat while SMITHERS_SEATS is %s", async (_case, pins, message) => {
+    for (const seat of ["coding/review", "anthropic:claude-3"]) {
+      const error = await Effect.runPromise(Effect.flip(resolve(pinned(pins), seat)))
+
+      expect(error.seat).toBe(seat)
+      expect(error.message).toBe(message)
+    }
+  })
+})
+
 describe("NodeControl.seatResolver ChatGPT mode", () => {
   const directories: Array<string> = []
 

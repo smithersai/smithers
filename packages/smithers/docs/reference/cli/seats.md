@@ -22,3 +22,19 @@ own login when Smithers asks. An API-key login cannot serve a seat.
 Claude login status is cached for 30 seconds. After signing in or out of
 Claude Code, retry seat resolution once that cache expires. Execution still
 reports authentication failures from the selected account.
+
+## Role seats
+
+A flow may declare a role seat, such as `coding/review`, instead of a model.
+Pin each role the flow declares in `SMITHERS_SEATS`, a JSON object from role
+id to a seat alias or an explicit `provider:model`:
+
+```bash
+SMITHERS_SEATS='{"coding/review":"sol","coding/implement":"opus"}' \
+  smthrs flow start review --data '{"repo":".","commit":"@-"}'
+```
+
+The pin resolves like any declared seat, so an alias still runs on Claude Code
+when no Anthropic key is set. The journaled seat keeps the role id. A role
+seat with no pin fails with `SeatUnresolved` naming `SMITHERS_SEATS`; a value
+that is not a JSON object of valid role ids and seats refuses every seat.

@@ -45,6 +45,7 @@ export const names: ReadonlyArray<Name> = [
   entry("CACHE_NAMESPACE", "Target-cache trust domain for result publication"),
   entry("MCP_CONFIG", "Path to the --mcp-config server array"),
   entry("OPENAI_AUTH", "`api-key` or `chatgpt`, selecting how openai seats authenticate"),
+  entry("SEATS", "JSON object pinning role seats such as `coding/review` to a seat alias or provider:model"),
   entry("TEST_COMMAND", "The command the `test` flow runs"),
   entry("TEST_CONTAINER", "The container the `test` flow runs in"),
   entry(
