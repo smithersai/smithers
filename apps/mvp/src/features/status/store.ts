@@ -8,10 +8,11 @@ import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
 import { ConversationOwners } from "../conversations/owners"
 import { RUNS_SHAPE_ROUTE } from "./contract"
-import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitsQuery } from "./queries"
+import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitRunsQuery, waitsQuery } from "./queries"
 import { Local, Run } from "./schema"
 import type { Message } from "../chat/schema"
 import type { Source } from "../repo/gate"
+import { RepoStore } from "../repo/store"
 
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
 // Electric and kept on the device; this tab's own rows about each question; the live queries the views read, each
@@ -64,8 +65,9 @@ export class StatusStore extends Context.Service<
     /** The home conversation's latest answer. */
     readonly latest: Success<typeof latestQuery>
     /**
-     * `core/waits`: the open waits addressed to the person, oldest first (decision 0017), of the home conversation and of
-     * each conversation whose repository may show (the data gate, `shownRunsQuery`); the title counts these.
+     * `core/waits`: the open waits addressed to the person, oldest first (decision 0017), of the home conversation, of
+     * each conversation whose repository may show (the data gate), and of each agent's question to them (`queue/ask`;
+     * `waitRunsQuery`); the title counts these.
      */
     readonly waits: Success<typeof waitsQuery>
     /** The person's runs whose conversation may show (`shownRunsQuery`): what a page lists of them, never `runs`. */
@@ -93,8 +95,9 @@ export class StatusStore extends Context.Service<
           schema: Run,
           getKey: (row) => row.id,
           syncMode: "eager",
-          // Version 3: a run names its conversation (`conversationId`), what its wait shows through.
-          persist: { schemaVersion: 3 },
+          // Version 3: a run names its conversation (`conversationId`), what its wait shows through. Version 4: its
+          // repository (`repoId`), what an agent's question to the person names.
+          persist: { schemaVersion: 4 },
           shape: {
             url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -103,9 +106,13 @@ export class StatusStore extends Context.Service<
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
         const statuses = yield* statusesQuery(chat.shownMessages as unknown as Source<Message>, runs, local)
         // A wait shows only through its run's conversation (decision 0110, the data gate): the home conversation's, or one
-        // whose repository may show now. A run of a conversation this device has no row of shows no wait.
-        const shownRuns = yield* shownRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, (yield* ConversationOwners).shown as unknown as Source<{ readonly conversationId: string }>)
-        const waits = yield* waitsQuery(messages, shownRuns as unknown as Source<Run>)
+        // whose repository may show now. A run of a conversation this device has no row of shows no wait. An agent's
+        // question has no conversation: its own repository must pass the data gate.
+        const owners = (yield* ConversationOwners).shown as unknown as Source<{ readonly conversationId: string }>
+        const shownRuns = yield* shownRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners)
+        const visibleRuns = yield* (yield* RepoStore).gate(runs)
+        const waitRuns = yield* waitRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, owners, visibleRuns as unknown as Source<Run>)
+        const waits = yield* waitsQuery(messages, waitRuns as unknown as Source<Run>)
         const latest = yield* latestQuery(statuses)
         const deliveries = yield* deliveriesQuery(runs)
 

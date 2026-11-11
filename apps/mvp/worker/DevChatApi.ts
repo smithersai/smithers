@@ -2,6 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 import { GitHub } from "@smthrs/integrations"
 import type * as Actor from "./Actor.ts"
 import { program, props } from "./ChatApi.ts"
+import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "./github/Config.ts"
 import type * as RepoRoles from "./github/RepoRoles.ts"
@@ -16,7 +17,8 @@ import type { Signed } from "./SignIn.ts"
 // `ALERT_TELEGRAM_API_URL`) send without its key (docs/features/spend-alerts.md#channels). The deployment's own model
 // answers here unless `HOSTED_MODEL_ENABLED=false` (decision 0099), so a laptop and the scripted end-to-end tests
 // answer without a key of their own. While `FEED_KEYS` is unset it accepts the development feed key for every
-// repository (worker/feeds/dev.ts), so a local collector and the end-to-end tests push feeds. Production bundles
+// repository (worker/feeds/dev.ts), so a local collector and the end-to-end tests push feeds, and its development ask
+// token as an agent's machine token on every repository (worker/AsksDev.ts), so they ask a person. Production bundles
 // worker/ChatApi.ts, which never imports this file.
 
 /** The local developer: a person with the Admin role. */
@@ -135,6 +137,7 @@ export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
     // One person here is every parallel spec and a laptop's whole day; a deploy's people keep the 200 a day.
     summaryDailyCap: 100_000,
     feedKey: DEV_FEED_KEY,
+    askToken: DEV_ASK_TOKEN,
     localSynced: { repository: repositoryOf(STRANGERS_REPOSITORY), issue: LOCAL_ISSUE }
   })
 ) {}

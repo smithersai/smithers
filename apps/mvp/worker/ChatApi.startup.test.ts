@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { bundle, type Output } from "./test/startup/bundle.ts"
 
@@ -52,7 +53,14 @@ describe("ChatApi's startup", () => {
     // The bundle is the real one: it holds the feeds' routes, just not the key.
     expect(text).toContain("FEED_KEYS")
     expect(text).not.toContain(DEV_FEED_KEY)
-    expect(output.some((file) => Object.keys(file.modules ?? {}).some((module) => /worker\/(DevChatApi|feeds\/dev)\.ts$/.test(module))))
+    expect(output.some((file) => Object.keys(file.modules ?? {}).some((module) => /worker\/(DevChatApi|feeds\/dev|AsksDev)\.ts$/.test(module))))
       .toBe(false)
+  })
+
+  test("never holds alchemy dev's development ask token: a deploy takes issued machine tokens alone (docs/features/agent-status.md#development)", () => {
+    const text = output.map((file) => file.type === "chunk" ? file.code! : String(file.source ?? "")).join("\n")
+    // The bundle is the real one: it holds the asks' routes, just not the token.
+    expect(text).toContain("queue.ask.request")
+    expect(text).not.toContain(DEV_ASK_TOKEN)
   })
 })

@@ -3,7 +3,7 @@ import { Node } from "@smthrs/plan"
 import { Cause, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
-import { MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "../../src/features/status/contract.ts"
+import { MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH, QUEUE_ASK_FLOW } from "../../src/features/status/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { rowIdOf } from "../RepoRuns.ts"
 
@@ -19,8 +19,8 @@ import { rowIdOf } from "../RepoRuns.ts"
 // `POST /api/runs/<id>/answer` (worker/Runs.ts). Both steps are sealed: their payloads hold the question and the answer,
 // which the engine keeps for the run alone. Its records carry the execution id and outcomes, never the words.
 
-/** The flow's name: a `runs` row's `flow`. */
-export const ASK_FLOW = "queue/ask"
+/** The flow's name: a `runs` row's `flow`, which a device's queue reads too (src/features/status/queries.ts). */
+export const ASK_FLOW = QUEUE_ASK_FLOW
 
 /** The human task a `queue/ask` run parks on. */
 export const ASK_TASK = "queue-ask"

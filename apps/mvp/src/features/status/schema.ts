@@ -94,6 +94,11 @@ export const Run = Schema.Struct({
    * data gate). A row synced before the shape carried it has none.
    */
   conversationId: Schema.optional(Schema.NullOr(Schema.String)),
+  /**
+   * The repository the run works in, or, for an agent's question to the person (`queue/ask`, which has no
+   * conversation), the one it asks about: `github/<owner>/<name>`.
+   */
+  repoId: Schema.optional(Schema.NullOr(Schema.String)),
 })
 export type Run = typeof Run.Type
 

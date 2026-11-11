@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest"
 import { Unsent } from "../features/chat/schema"
 import { listed } from "../features/runs/contract"
 import { RepositoryV3 } from "./repo-history"
-import { RunV1, RunV2 } from "./runs-history"
+import { RunV1, RunV2, RunV3 } from "./runs-history"
 import { FileTabRowV1, UnsentV1 } from "./history"
 import { ChatUnsentStore, deviceRegistry, IssueRequestedStore } from "./registry"
 
@@ -48,6 +48,10 @@ describe("the device's stores", () => {
 
   test("preserves the deployed runs v2 schema", () => {
     expect(Migrations.fingerprint(RunV2)).toBe(read()!.stores["runs"]!.versions["2"])
+  })
+
+  test("preserves the deployed runs v3 schema", () => {
+    expect(Migrations.fingerprint(RunV3)).toBe(read()!.stores["runs"]!.versions["3"])
   })
 
   test("match the lock: no persisted schema changed without a new version, and none disappeared", () => {

@@ -424,6 +424,14 @@ const needs = {
       "ALERT_TELEGRAM_API_URL at the stand-in, set E2E_FLEET_TELEGRAM_URL to the same URL (the spec serves it) and " +
       "E2E_FLEET_TELEGRAM_CHAT to the chat an Admin saved; a deployment's real Telegram can't be read back",
   },
+  askToken: {
+    met: (run) => run.target === "local" || (
+      set(run, "E2E_MACHINE_TOKEN_FILE") && existsSync(run.env.E2E_MACHINE_TOKEN_FILE!) &&
+      /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(run.env.E2E_ASK_REPOSITORY ?? "")
+    ),
+    reason: "an agent asks through a real machine token: locally alchemy dev's development token; on a deployment, " +
+      "E2E_MACHINE_TOKEN_FILE names a private token file with ask/create on E2E_ASK_REPOSITORY, where the signed-in test account must be a Maintainer or Admin",
+  },
   feedKey: {
     // Locally, `alchemy dev` accepts its development feed key (worker/feeds/dev.ts) unless FEED_KEYS is set.
     met: (run) =>

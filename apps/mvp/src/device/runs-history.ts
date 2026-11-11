@@ -2,7 +2,14 @@ import { Schema } from "effect"
 import { MAX_ANSWER_LENGTH } from "../features/status/contract"
 import { Run } from "../features/status/schema"
 
-const { conversationId: _conversationId, ...v2Fields } = Run.fields
+const { repoId: _repoId, ...v3Fields } = Run.fields
+const { conversationId: _conversationId, ...v2Fields } = v3Fields
+
+/**
+ * Deployed runs v3, before a run's row named its repository (an agent's question to the person, `queue/ask`, names
+ * one). A v4 device syncs its runs again from the start.
+ */
+export const RunV3 = Schema.Struct(v3Fields)
 
 /**
  * Deployed runs v2, before a run's row named its conversation (decision 0110, the data gate): its waits couldn't be

@@ -210,8 +210,9 @@ const synced = [
   MessagesStore,
   Migrations.synced({ id: "message-pins", version: 1, schema: Pin }),
   ViewsStore,
-  // Version 2: an approval's answer may carry a note (`Decision`).
-  Migrations.synced({ id: "runs", version: 3, schema: Run }),
+  // Version 2: an approval's answer may carry a note (`Decision`). Version 3: a run names its conversation. Version 4:
+  // its repository, which an agent's question to the person (`queue/ask`) names.
+  Migrations.synced({ id: "runs", version: 4, schema: Run }),
   Migrations.synced({ id: "repo-repositories", version: 4, schema: Repository }),
   Migrations.synced({ id: "issue-summaries", version: 2, schema: ItemSummary, family: true }),
   Migrations.synced({ id: "issue-items", version: 3, schema: Item, family: true }),

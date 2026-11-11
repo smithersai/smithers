@@ -8,6 +8,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { mirrorDraft } from "../chat/actions"
 import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
+import { QUEUE_ASK_FLOW } from "../status/contract"
 import { StatusStore } from "../status/store"
 import { CONVERSATION_NAMESPACE } from "../branch/contract"
 import type { TextOf } from "./contract"
@@ -322,8 +323,11 @@ export const followAnswers = Effect.gen(function* () {
   yield* status.runs.changes({ initial: true }).pipe(
     Stream.runForEach(() =>
       Effect.gen(function* () {
+        // An agent's question to the person (`queue/ask`) has no answer box: the queue's strip answers it, and its room
+        // is its launcher's alone (worker/branch/Texts.ts), never the person's.
         const open = (yield* status.runs.toArray).filter((run) =>
-          run.status === "needs_you" && run.answeredAt === null && run.wait?.kind === "question"
+          run.status === "needs_you" && run.answeredAt === null && run.wait?.kind === "question" &&
+          run.flow !== QUEUE_ASK_FLOW
         )
         const shown = new Set<string>()
         for (const run of open) {

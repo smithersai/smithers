@@ -2,7 +2,7 @@
 // tab itself runs over real waits in src/plugins/plugins.test.ts; one conversation holds one open wait at a time, so
 // several waiting at once (one per branch conversation) are proved here, on the cursor's own rules.
 import { describe, expect, test } from "vitest"
-import { clamp, follow } from "./tab"
+import { clamp, follow, repositoryOf } from "./tab"
 
 const rows = (...ids: Array<string>) => ids.map((runId) => ({ runId }))
 
@@ -25,5 +25,10 @@ describe("the queue's cursor", () => {
     expect(follow(rows("a", "c"), "b", 1)).toBe(1)
     expect(clamp(follow(rows("a"), "b", 1), 1)).toBe(0)
     expect(follow(rows(), undefined, 0)).toBe(0)
+  })
+
+  test("the item's repository reads as owner and name; a wait that names none has none", () => {
+    expect(repositoryOf("github/acme/widgets")).toBe("acme/widgets")
+    expect(repositoryOf("")).toBeUndefined()
   })
 })

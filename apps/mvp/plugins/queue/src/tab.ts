@@ -18,14 +18,22 @@ export interface Wait {
   readonly question: boolean
   readonly approval: boolean
   readonly createdAt: string
+  /** The repository the wait is about, `github/<owner>/<name>`; empty when it names none. */
+  readonly repoId: string
 }
 
-/** Where the queue stands: the item shown, its place (0 first) and how many wait. */
+/** Where the queue stands: the item shown, its place (0 first), how many wait, and the item's repository. */
 export interface Current {
   readonly item: Wait | undefined
   readonly index: number
   readonly total: number
+  /** `<owner>/<name>` of the item's repository, when it names one: who asks may be any repository's agent. */
+  readonly repository?: string
 }
+
+/** A repository's id as a person reads it: `github/acme/widgets` as `acme/widgets`; nothing for none. */
+export const repositoryOf = (repoId: string): string | undefined =>
+  repoId.startsWith("github/") ? repoId.slice("github/".length) : undefined
 
 /** The queue's view. */
 export const VIEW = "queue/queue"
@@ -70,7 +78,8 @@ export const tab = Effect.gen(function* () {
     const item = rows[at]
     const moved = item?.runId !== runId
     runId = item?.runId
-    current = { item, index: at, total: rows.length }
+    const repository = item === undefined ? undefined : repositoryOf(item.repoId)
+    current = { item, index: at, total: rows.length, ...(repository === undefined ? {} : { repository }) }
     if (moved && item !== undefined) run(host.select({ query: "core/waits", key: item.runId }).pipe(Effect.ignore))
     for (const listener of listeners) listener()
   }

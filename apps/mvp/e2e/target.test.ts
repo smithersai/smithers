@@ -876,3 +876,20 @@ describe("retained production prerequisites", () => {
     } finally { rmSync(directory, { recursive: true, force: true }) }
   })
 })
+
+describe("addressed-ask prerequisites", () => {
+  it("allows development or an explicit repository and existing token file", () => {
+    expect(NEEDS.askToken.met(local)).toBe(true)
+    const directory = mkdtempSync(join(tmpdir(), "ask-token-need-"))
+    const file = join(directory, "token")
+    try {
+      const env = { E2E_MACHINE_TOKEN_FILE: file, E2E_ASK_REPOSITORY: "acme/widgets" }
+      expect(NEEDS.askToken.met(deployedAs("maintainer", env))).toBe(false)
+      writeFileSync(file, "", { mode: 0o600 })
+      expect(NEEDS.askToken.met(deployedAs("maintainer", env))).toBe(true)
+      for (const repository of [undefined, "", "acme/widgets/extra"]) {
+        expect(NEEDS.askToken.met(deployedAs("maintainer", { ...env, E2E_ASK_REPOSITORY: repository }))).toBe(false)
+      }
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  })
+})

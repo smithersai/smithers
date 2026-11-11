@@ -84,3 +84,7 @@ Cold-start storage must not serialize draft saves behind schema autocommits. The
 ### Plugin snapshot identity (2026-11-04)
 
 The public live-query adapter compares the current gated rows synchronously and retains the previous array only while row identities and order match. A hidden repository returns one shared frozen empty array. The rows stream still only notifies listeners: it never supplies an authorization snapshot. This preserves same-stack revocation while satisfying React's `useSyncExternalStore` snapshot identity contract. Revision `771ed98aed9f` introduced fresh arrays on each read when replacing the unsafe asynchronous snapshot; the behavioral regression covers both requirements together.
+
+### Addressed questions
+
+A `queue/ask` run has no conversation. Its `repo_id` reaches the device as `repoId` (`runs` v4), and `StatusStore` joins it through `RepoStore.gate(runs)` before `core/waits` can expose it. Recipient-only sync and answer authorization do not replace this display gate. A refused repository or unverified session hides its prompt, options, queue entry and title count together; personal home waits keep their existing ownership rule.

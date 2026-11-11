@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import type { Actor } from "./Actor.ts"
 import * as Asks from "./Asks.ts"
+import { DEV_ASK_TOKEN } from "./AsksDev.ts"
 import { BranchRoles } from "./branch/Access.ts"
 import { Directory } from "./branch/People.ts"
 import * as Flows from "./Flows.ts"
@@ -57,13 +58,17 @@ const token = async (scope: ReadonlyArray<string> = ["ask/create"], lane = "lane
 }
 
 /** The asks routes over this file's schema, starting runs through `starter`, recording every line and count. */
-const asksRoutes = async (starter: Flows.FlowStarter["Service"], database?: Layer.Layer<SqlClient.SqlClient, unknown>) => {
+const asksRoutes = async (
+  starter: Flows.FlowStarter["Service"],
+  database?: Layer.Layer<SqlClient.SqlClient, unknown>,
+  options?: Asks.Options,
+) => {
   const { database: own } = await scratch()
   const lines: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
   const registry: Metric.MetricRegistry = new Map()
   const logger = Logger.make((options) => void lines.push(StructuredLogger.formatStructured.log(options)))
   const handler = HttpEffect.toWebHandler(
-    Asks.make(database ?? own).fetch.pipe(
+    Asks.make(database ?? own, options).fetch.pipe(
       Effect.provideService(Flows.FlowStarter, starter),
       Effect.provide(Directory.layer(own)),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
@@ -253,6 +258,30 @@ describe("an agent asks a person, and the person's answer resumes its run", () =
       expect(routes.count({ op: "create", outcome: "unknown_person" })).toBe(1)
       expect(routes.count({ op: "create", outcome: "conflict" })).toBe(2)
       expect(JSON.stringify(routes.lines)).not.toContain("sentinel")
+    }))
+
+  test("alchemy dev's development token asks on any repository as its own agent and lane; a deploy refuses it", () =>
+    withRemote(async (remote) => {
+      const maya = await person()
+      const dev = await asksRoutes(remote.starter, undefined, { developmentToken: DEV_ASK_TOKEN })
+      const sent = body(maya.login)
+      expect((await dev.ask(DEV_ASK_TOKEN, sent, "Elsewhere/Tools")).status).toBe(202)
+      const executionId = Ask.askExecutionId("elsewhere/tools", sent.id)
+      expect((await Effect.runPromise(remote.alarm(executionId)))._tag).toBe("Parked")
+      expect(await json(await dev.read(DEV_ASK_TOKEN, sent.id, "elsewhere/tools"))).toEqual([200, { status: "open" }])
+      const runId = await Effect.runPromise(rowIdOf(executionId))
+      expect(await sql((sql) => sql`SELECT launched_by AS "launchedBy" FROM runs WHERE id = ${runId}::uuid`))
+        .toEqual([{ launchedBy: "machine:development/local" }])
+      // Beside it, an issued token still asks as its own lane; any other bearer is no one.
+      expect((await dev.ask(await token(), body(maya.login))).status).toBe(202)
+      expect(await json(await dev.ask("smm_unknown", body(maya.login)))).toEqual([401, { code: "authentication" }])
+      expect(dev.lines.find((line) => line.message === "queue.ask.request")).toMatchObject({
+        annotations: { agent: "development", lane: "local", outcome: "started" },
+      })
+      // A deploy passes no development token: the same bearer is no one there.
+      const deploy = await asksRoutes(remote.starter)
+      expect(await json(await deploy.ask(DEV_ASK_TOKEN, body(maya.login)))).toEqual([401, { code: "authentication" }])
+      expect(JSON.stringify([dev.lines, deploy.lines])).not.toContain(DEV_ASK_TOKEN)
     }))
 
   test("an ask whose question ended without an answer reads closed", () =>

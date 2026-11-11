@@ -1,3 +1,4 @@
+import { digestSync } from "@smthrs/crypto"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -10,6 +11,7 @@ import { Ask, ASK_FLOW, askExecutionId, AskId } from "./flows/Ask.ts"
 import { repositoryOf } from "./github/Config.ts"
 import { type Machine, machineOf, type MachineScope } from "./github/MachineWrite.ts"
 import { rowIdOf } from "./RepoRuns.ts"
+import { bearerOf } from "./RunCredentials.ts"
 
 // An agent asks a person (decision 0031, docs/features/agent-status.md#addressed-waits). With a machine token holding
 // `ask/create` on the repository, and no person behind it:
@@ -82,11 +84,32 @@ const askOf = (rowId: string, asker: string) =>
         : { status: "closed" as const })
   })
 
+/** How the asks routes are built beyond their database. */
+export interface Options {
+  /**
+   * A bearer taken as a machine token holding `ask/create` on every repository, as agent `development`, lane `local`:
+   * only `alchemy dev` passes one (worker/AsksDev.ts). A deploy takes issued machine tokens alone.
+   */
+  readonly developmentToken?: string
+}
+
 /**
  * The asks routes over `database`. Starting a run needs `FlowStarter`; finding the person a login names, `Directory`:
  * the people who have signed in to this deployment.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options = {}) => {
+  const development = options.developmentToken === undefined ? undefined : digestSync(options.developmentToken)
+  /** The development token's machine, when `request` carries it. */
+  const developmentOf = (request: HttpServerRequest.HttpServerRequest) =>
+    Option.filter(
+      Option.map(bearerOf(request), (token): Machine => ({
+        agent: "development",
+        lane: "local",
+        scope: [ASK_SCOPE],
+        tokenSha256: digestSync(token),
+      })),
+      (machine) => machine.tokenSha256 === development,
+    )
   const route = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
@@ -106,7 +129,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => 
         fields.outcome = "method"
         return HttpServerResponse.empty({ status: 405, headers: { allow: method, ...noStore } })
       }
-      const machine = yield* machineOf(request, repo.id).pipe(Effect.provide(database))
+      const machine = Option.orElse(yield* machineOf(request, repo.id).pipe(Effect.provide(database)), () => developmentOf(request))
       if (Option.isNone(machine)) return refuse(401, "authentication")
       fields.agent = machine.value.agent
       fields.lane = machine.value.lane

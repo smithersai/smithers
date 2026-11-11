@@ -2,6 +2,7 @@ import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
 import type { Message } from "../chat/schema"
 import type { Source } from "../repo/gate"
+import { QUEUE_ASK_FLOW } from "./contract"
 import type { Local, Run } from "./schema"
 
 // What frontends read about the agent's status (decision 0015), each a live query over this device's collections:
@@ -54,8 +55,8 @@ export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
 
 /**
  * `core/waits` (decision 0017): the open waits addressed to the viewer, in every conversation, oldest first, then by run
- * id. A run's row is synced only to the person who launched it, the one `run/answer` lets answer it, so every open row
- * here is theirs, a question on a branch this tab never opened included. An answer in the home conversation that already
+ * id. A run's row is synced only to the person who launched it, or the one an agent's `queue/ask` asks, the one
+ * `run/answer` lets answer it, so every open row here is theirs, a question on a branch this tab never opened included. An answer in the home conversation that already
  * settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a run's row when it settles its answer
  * itself (worker/flows/Expire.ts, worker/Answers.ts). Each row is `WAITS_ROW` (./contract.ts).
  */
@@ -89,14 +90,13 @@ export const waitsQuery = (home: Collection.Collection<Message>, runs: Source<Ru
         question: Query.caseWhen(Query.eq(run.wait!.kind, "question"), true, false),
         approval: Query.caseWhen(Query.eq(run.wait!.kind, "approval"), true, false),
         createdAt: run.createdAt,
+        repoId: Query.coalesce(run.repoId, ""),
       })),
   )
 
 /**
- * The person's runs whose wait may show (decision 0110, the data gate): a run of the home conversation, which is theirs
- * (its answer is one of `home`), or of a conversation whose repository may show now (`conversations`,
- * ConversationOwners' `shown`). A run neither proves, such as one of a refused repository's conversation, or of a
- * conversation this device has no row of, is hidden.
+ * The person's runs whose conversation may show (decision 0110): personal home runs, or a conversation whose
+ * repository is visible. Addressed questions have no conversation and are not listed on run pages.
  */
 export const shownRunsQuery = (
   home: Source<Message>,
@@ -113,7 +113,39 @@ export const shownRunsQuery = (
           Query.or(Query.not(Query.isUndefined(message?.id)), Query.not(Query.isUndefined(owner?.conversationId)))
         )
         .select(({ run }) => run),
-    // Each row keeps its run's id as its key, as the runs collection does.
+    { getKey: (run) => run.id },
+  )
+
+/**
+ * Runs whose waits may show: conversation runs, plus addressed questions from repositories that may show now.
+ * `visibleRuns` is `RepoStore.gate(runs)`: revocation, an unverified session, and pending refusal restoration hide
+ * addressed prompts and options in the same change as other repository content (decisions 0031 and 0110).
+ */
+export const waitRunsQuery = (
+  home: Source<Message>,
+  runs: Source<Run>,
+  conversations: Source<{ readonly conversationId: string }>,
+  visibleRuns: Source<Run>,
+) =>
+  LiveQuery.make(
+    (q) =>
+      q
+        .from({ run: runs.tanstack })
+        .leftJoin({ message: home.tanstack }, ({ run, message }) => Query.eq(run.id, message.id))
+        .leftJoin({ owner: conversations.tanstack }, ({ run, owner }) => Query.eq(run.conversationId, owner.conversationId))
+        .leftJoin({ visible: visibleRuns.tanstack }, ({ run, visible }) => Query.eq(run.id, visible.id))
+        .where(({ run, message, owner, visible }) =>
+          Query.or(
+            Query.not(Query.isUndefined(message?.id)),
+            Query.not(Query.isUndefined(owner?.conversationId)),
+            Query.and(
+              Query.eq(run.flow, QUEUE_ASK_FLOW),
+              Query.isNull(run.conversationId),
+              Query.not(Query.isUndefined(visible?.id)),
+            ),
+          )
+        )
+        .select(({ run }) => run),
     { getKey: (run) => run.id },
   )
 

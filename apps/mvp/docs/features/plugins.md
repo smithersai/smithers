@@ -117,7 +117,7 @@ A view with `scope: "repository"` belongs to one repository's page (decision 012
 
 ## The queue
 
-The first plugin (`plugins/queue/`): everything that waits on you, one item at a time, oldest first, full screen, by keyboard. `g q` or `/queue` opens it; `j` and `k` move; the strip answers: `1`–`9` picks an option, `a` approves and `r` asks for changes (each with the note), `⌘↵` sends the note as a reply. Its only wiring is its manifest and `PluginHost`; it never dispatches `run/answer` itself.
+The first plugin (`plugins/queue/`): everything that waits on you, one item at a time, oldest first, full screen, by keyboard: the agent's questions in your conversations, and what an agent with no person behind it asks you ([addressed waits](agent-status.md#addressed-waits)). Each item shows its place and its repository. `g q` or `/queue` opens it; `j` and `k` move; the strip answers: `1`–`9` picks an option, `a` approves and `r` asks for changes (each with the note), `⌘↵` sends the note as a reply. Its only wiring is its manifest and `PluginHost`; it never dispatches `run/answer` itself.
 
 ## Bug reports
 
@@ -148,6 +148,6 @@ repository (`src/features/fleet/store.ts`). It dispatches nothing: a run links t
 - `src/plugins/*.test.ts`: the app's manifests load with no refusal; the trust boundaries above against the real registry; `PluginHost` scoping and its refusals; the strip and the keymap over a real device (`src/test/chatApi.ts`).
 - `plugins/queue/src/tab.test.ts`: the queue over real waits, answered through the strip, on a real device.
 - `src/plugins/factory.test.ts`: the factory's For you over a collector's decisions, answered through the strip by button and key, on a real device; each answer reaches the collector once.
-- `e2e/queue.spec.ts`: the agent asks three times; `g q`; `2`, `j`, a note and `a`, `1`; every asking run goes on. With a GIF.
+- `e2e/queue.spec.ts`: the agent asks three times; `g q`; `2`, `j`, a note and `a`, `1`; every asking run goes on. An agent asks the Maintainer twice; `1` and a note with `⌘↵` answer; the agent reads both answers. With GIFs.
 
 Full-size plugin headers show the host connection pill, including Offline, queued writes and Retry, so cached queue contents remain qualified.

@@ -64,8 +64,9 @@ agent ─ Bearer smm_… (ask/create) ─ POST /api/repos/<o>/<n>/asks { id, to,
     queue/ask/open   ─ runs row: needs_you, addressed_to the person, launched_by machine:<agent>/<lane>
     HumanTask (ask)  ─ parks; no deadline
     queue/ask/settle ─ done with the answer; failed when the task failed
-the person's devices ◀─ /api/shapes/runs (addressed_to = them)
-the person ─ POST /api/runs/<runId>/answer ─▶ the run's object takes the answer ─▶ the row records it ─▶ the run resumes
+the person's devices ◀─ /api/shapes/runs (addressed_to = them) ─▶ core/waits ─▶ the queue, the nav count, the title
+the person ─ the queue's strip: run/answer ─ POST /api/runs/<runId>/answer ─▶ the run's object takes the answer
+                                                                          ─▶ the row records it ─▶ the run resumes
 agent ─ GET /api/repos/<o>/<n>/asks/<id> ─▶ { status: open | answered | closed, answer?, answeredAt? }
 ```
 
@@ -73,10 +74,23 @@ agent ─ GET /api/repos/<o>/<n>/asks/<id> ─▶ { status: open | answered | cl
 - **Delivery first.** The answer route gives the answer to the parked run (`TaskAnswers`, [remote-flows.md](remote-flows.md#answers)), then records it on the row. The run's settle step writes the answer too, so an answer the row missed still lands. The same answer again is taken; another is `409 not_open`.
 - **No conversation.** The row has no `conversation_id` and no `execution`, so it is never a repository's run and never folds into the feed.
 - **One attempt.** The route sends only words, which an `ask` task always takes, so the task never refuses an answer.
+- **On the person's devices.** The row is in `core/waits` (`waitRunsQuery`, `src/features/status/queries.ts`), so the queue shows it with its repository, and the nav count and the title count it. It has no conversation, so it joins its repository directly through `RepoStore.gate(runs)` (decision 0110). A refusal, a role that grants no access, an unverified session, or pending restoration of stored refusals hides its prompt, options and repository; a network failure alone keeps verified cached content visible. The server syncs it to its person alone and accepts an answer only while they are a Maintainer or Admin of its repository. A conversation's run still shows only through its conversation. The queue's keys answer it: `1`–`9` picks an option, `⌘↵` sends the note. `run/answer` records the answer, and its delivery finds no run on the device (`not_here`), as `run/deliver` does: the press ends done. It is no run a page lists (`shownRunsQuery`), and it opens no shared answer box.
+
+The browser regression in `e2e/queue.spec.ts` checks two devices, reload, offline viewing and keyboard answers. Against a deployment, set `E2E_ASK_REPOSITORY` and `E2E_MACHINE_TOKEN_FILE` to a private token file holding `ask/create` there; the signed-in test account must be a Maintainer or Admin. It selects and answers only its own generated questions.
+
+### Development
+
+`alchemy dev` takes `smm_smithers-development-ask-token` (`worker/AsksDev.ts`) as a machine token holding `ask/create` on every repository, agent `development`, lane `local`, so a local agent and `e2e/queue.spec.ts` ask a person without issuing a token. A deploy never holds it (`worker/ChatApi.startup.test.ts`).
+
+```
+$ curl -k -X POST -H 'Authorization: Bearer smm_smithers-development-ask-token' \
+    -d '{"id":"try-1","to":"local-maintainer","prompt":"Ship it?","options":["yes","no"]}' \
+    https://localhost:1443/api/repos/smithersai/smithers/asks
+```
 
 ## core/waits
 
-`waitsQuery(home, runs)` (`src/features/status/queries.ts`, decision 0017): the open waits addressed to the person, from the synced `runs`, in every conversation. A row is open while `needs_you`, unanswered and holding a `wait`, unless its answer in the home conversation already settled. Today a wait is addressed to the run's launcher, the only person its row syncs to and the only one `run/answer` lets answer. `StatusStore.waits` is the live query; the plugin host reads its `rows`, and the tab's title counts it.
+`waitsQuery(home, runs)` (`src/features/status/queries.ts`, decision 0017): the open waits addressed to the person, from the synced `runs`, in every conversation, and each agent's question to them ([addressed waits](#addressed-waits)). A row is open while `needs_you`, unanswered and holding a `wait`, unless its answer in the home conversation already settled. A wait is addressed to the run's launcher, or for `queue/ask` to the person its row names: the only person its row syncs to and the only one `run/answer` lets answer. `StatusStore.waits` is the live query; the plugin host reads its `rows`, and the tab's title counts it.
 
 | Field | |
 |---|---|
@@ -84,6 +98,7 @@ agent ─ GET /api/repos/<o>/<n>/asks/<id> ─▶ { status: open | answered | cl
 | `kind`, `question`, `approval` | `question` or `approval`, and a flag for each, for a keybinding's `when` |
 | `prompt`, `options` | the question; `options` is empty for an approval |
 | `createdAt` | when the run started: the oldest wait comes first |
+| `repoId` | the repository the run works in or asks about, `github/<owner>/<name>`; empty when its row names none. The queue shows it as `<owner>/<name>` |
 
 `WAITS_ROW` (`src/features/status/contract.ts`) is the row as JSON Schema; the plugin loader checks a manifest's `$item.<field>` against it. Result rows also carry TanStack DB's virtual `$` fields. Because it reads `runs`, a wait shows for any run that asks, not only a chat answer; a branch run whose settled report never landed still shows until it does.
 
@@ -123,10 +138,10 @@ agent ─ GET /api/repos/<o>/<n>/asks/<id> ─▶ { status: open | answered | cl
 
 | Piece | What it is |
 |---|---|
-| `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 2 }`; version 2 holds an approval's note) |
+| `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 4 }`; version 2 holds an approval's note, 3 the run's conversation, 4 its repository) |
 | `status-local` | this tab's rows about each run's latest question: `draft`, `sending`, `focus`; a row for an older `version` counts as none |
 | `statuses`, `latest` | each conversation's answers and latest state: its messages joined to `runs` and `status-local`, read through `Status.queries.of(conversationId)` |
-| `waits` | `core/waits`: every open wait in the person's runs, oldest first, then by run id, including branches this tab has never opened; a settled home answer still wins ([below](#corewaits)) |
+| `waits` | `core/waits`: every open wait in the person's runs, oldest first, then by run id, including branches this tab has never opened and agents' questions to the person; a settled home answer still wins ([below](#corewaits)) |
 | `answer(id, value)`, `setDraft`, `focus` | the card's Answer (or the notifications panel's), its field, a toast's Answer |
 | followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`, counting `waits`), and `agent.status.shown` per wait |
 
@@ -175,7 +190,8 @@ committed records; the crashed incarnation cannot flush pending records into it.
 | Test | Proves |
 |---|---|
 | `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval, with and without a note; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |
-| `src/features/status/queries.test.ts` | `core/waits` over a local `runs` collection: the order, every filter, rows following changes, each row exactly `WAITS_ROW` |
+| `src/features/status/queries.test.ts` | `core/waits` over a local `runs` collection: the order, every filter, rows following changes, each row exactly `WAITS_ROW`; the data gate, an agent's question to the person in `core/waits` and out of `shownRunsQuery`, a run of a hidden conversation still hidden |
+| `src/features/status/asks.test.ts` | On the person's Node device, an agent's ask through the real asks route: in `core/waits` with its repository, the title and the queue; the strip's option answers it with the press done; `run/deliver` finds nothing; the run settles; the agent reads `answered`; the queue empties |
 | `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `waits` and the title on both, this tab's draft and focus, an answer from the other device delivered through sync, an approval with a note, waiting behind a question, a failure |
 | `src/features/status/faults.test.ts` | Injected `RunsClient` faults: a question reported again, a delivery before the question parks, an approval refused, an answer sent again, refusals final |
 | `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
@@ -183,6 +199,7 @@ committed records; the crashed incarnation cannot flush pending records into it.
 | `worker/Asks.test.ts` | With a real machine token, the real runs routes and `queue/ask` on the object's handlers: the person answers and the same run resumes and settles, the asker reads `answered`; the row syncs to its person only; the asks routes' refusals, idempotency and lanes; someone else, a non-maintainer, an agent acting for the person, a stale version, a second answer, an unreadable role, a run not parked yet and an unreachable object |
 | `worker/flows/Ask.test.ts` | `queue/ask` parks with its row, takes an answer before or after its object's handlers are replaced, settles `done` or `failed`, writes its row once, and takes nothing for another task, a run not parked on a person, or an answer past the task's bounds |
 | `packages/smithers/ui/tests/agent-status.test.tsx` | The pill, the card, the toasts and the title |
+| `e2e/queue.spec.ts` | In a real browser: an agent asks local development's Maintainer twice with the development ask token; the queue shows each with its repository; `1` and a note with `⌘↵` answer them; the agent reads both answers; the queue empties |
 | `e2e/status.spec.ts` | In real browsers: the scripted agent asks; the card, the top bar's bell, toast and title show it on two devices; the second device answers from the toast; the first device's run goes on; and a real-model run on two devices, locally or on the deployment's own branch: card, toast, bell and title on both, Hide on B clears both toasts while entries stay listed, and answering teal on B resumes A's run |
 
 A failed header pill links to the failed answer's run, with the accessible name “Answer failed — view run”.

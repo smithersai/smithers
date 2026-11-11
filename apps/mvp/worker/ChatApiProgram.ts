@@ -127,7 +127,9 @@ const pools = { request: ChatDatabase, engine: EngineDatabase } as const
  * own models unless its environment or an Admin turns the deployment's model on (decision 0099). `localRoles`, which only
  * `alchemy dev` sets, are its people's roles on other repositories while the App isn't configured
  * (`RepoRoles.LocalRoles`). `feedKey`, which only `alchemy dev` sets, is a feed key accepted for every repository while
- * `FEED_KEYS` is unset (worker/feeds/dev.ts, docs/features/feeds.md#development).
+ * `FEED_KEYS` is unset (worker/feeds/dev.ts, docs/features/feeds.md#development). `askToken`, which only `alchemy dev`
+ * sets, is a machine token that may ask a person on every repository (worker/AsksDev.ts,
+ * docs/features/agent-status.md#development).
  */
 export interface ProgramOptions {
   readonly fallback?: SignIn.Signed
@@ -141,6 +143,7 @@ export interface ProgramOptions {
   /** `Chat.make`'s: the summaries' daily cap when `TIMELINE_SUMMARY_DAILY_CAP` is unset. Only `alchemy dev` sets it. */
   readonly summaryDailyCap?: number
   readonly feedKey?: string
+  readonly askToken?: string
   /**
    * Local development's synced repository and its one open issue (`GitHubApi.Options.localSynced`). Only `alchemy dev`
    * sets it, and it counts only in local development: a signed-in `fallback` and no GitHub App.
@@ -443,7 +446,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     /** Where a person's answer reaches a remote run parked on it (worker/Flows.ts `TaskAnswers`): its own object. */
     const taskAnswerer = Executions.answerer(executions)
     // An agent's questions to people (worker/Asks.ts), started on `FlowExecution` as `queue/ask`.
-    const asks = Asks.make(database)
+    const asks = Asks.make(database, options.askToken === undefined ? {} : { developmentToken: options.askToken })
     // A confirmed feed barrier's pass starts with the next request, whatever else runs
     // (docs/features/notifications.md#rows-written-before): at most one indexed read a minute per isolate.
     const launchFeedRedaction = yield* RedactFeed.launcher

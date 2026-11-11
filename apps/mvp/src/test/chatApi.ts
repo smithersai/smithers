@@ -54,6 +54,9 @@ import { Rooms } from "../../worker/branch/Rooms.ts"
 import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
 import * as Chat from "../../worker/Chat.ts"
 import * as Flows from "../../worker/Flows.ts"
+import * as Asks from "../../worker/Asks.ts"
+import * as ExecutionHost from "../../worker/ExecutionHost.ts"
+import { executions } from "../../worker/test/executions.ts"
 import * as TodoSession from "../../worker/flows/TodoSession.ts"
 import * as Pause from "../../worker/flows/Pause.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
@@ -381,6 +384,12 @@ export class TestChatApi extends Context.Service<
     /** Bug reports' routes (worker/bugs/Api.ts): every `ops/BugReport` they started, recorded and never run. */
     readonly bugs: { readonly starts: ReadonlyArray<Started> }
     /**
+     * An agent's questions to people (worker/Asks.ts, docs/features/agent-status.md#addressed-waits), as ChatApi routes
+     * them: `queue/ask` on each execution's Durable Object handlers (worker/test/executions.ts), and the answer route
+     * reaching them (`TaskAnswers`). Nothing runs an object's alarm by itself here: `alarm` runs it, as Cloudflare would.
+     */
+    readonly asks: { readonly alarm: (executionId: string) => Effect.Effect<{ readonly _tag: string }> }
+    /**
      * The git loop (worker/github/Api.ts) for `TEST_REPOSITORY`, with a GitHub App configured: every remote flow its
      * routes started (`starts`), and its Postgres, where a test writes what a remote flow would (`run`).
      */
@@ -619,6 +628,12 @@ export class TestChatApi extends Context.Service<
           Effect.provideService(FetchHttpClient.Fetch, branchForge.fetch),
           Effect.provideService(ConfigProvider.ConfigProvider, config),
         )
+        // An agent's questions to people (worker/Asks.ts): `queue/ask` on each execution's object, its engine on a schema
+        // of its own, made on first use and dropped with the device stores.
+        const asksSchema = TestSchemas.schemaName("flows")
+        stores.push(asksSchema)
+        const asksRemote = executions(ExecutionHost.database(server, asksSchema), database)
+        const asks = Asks.make(database)
         const sockets = terminalSockets()
         const branchRooms = rooms()
         const directory = Directory.layer(
@@ -850,6 +865,9 @@ export class TestChatApi extends Context.Service<
                 : options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
             )
           }
+          if (Asks.handles(path)) {
+            return asks.fetch.pipe(Effect.provideService(Flows.FlowStarter, asksRemote.starter), Effect.provide(directory))
+          }
           if (FeedsApi.handles(path)) return feeds.fetch
           if (FleetApi.handles(path)) return fleet.fetch
           if (DomainsApi.handles(path)) {
@@ -883,6 +901,8 @@ export class TestChatApi extends Context.Service<
             ? Effect.provideContext(repos.fetch, repoCache)
             : chat.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, expiries),
+              // An answer to a question an agent asked the person reaches its run's object (worker/Runs.ts).
+              Effect.provideService(Flows.TaskAnswers, asksRemote.answers),
               Effect.provide(personalModels),
               Effect.provide(docsSource),
               Effect.provideService(ImmutableCache.ImmutableCache, webCache),
@@ -1084,6 +1104,7 @@ export class TestChatApi extends Context.Service<
             return { filename, id, keep: (leader) => void leaders.push(leader) }
           },
           bugs: { starts: bugStarts },
+          asks: { alarm: (executionId) => Effect.orDie(asksRemote.alarm(executionId)) },
           github: {
             starts,
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),

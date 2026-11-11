@@ -33,8 +33,15 @@ export const ASK_WITHIN_MS = 10 * 60 * 1000
 export const ASK_TASK = "agent-ask"
 
 /**
+ * The flow of an agent's question to one person (worker/flows/Ask.ts, docs/features/agent-status.md#addressed-waits):
+ * its `runs` row has no conversation and syncs only to the person it asks.
+ */
+export const QUEUE_ASK_FLOW = "queue/ask"
+
+/**
  * One row of `core/waits` (`waitsQuery`, decision 0017), as JSON Schema: what the plugin loader checks a manifest's
  * `$item.<field>` references against. `options` is empty for an approval; `question` and `approval` say which it is.
+ * `repoId` is the repository the run works in or asks about (`github/<owner>/<name>`), empty when its row names none.
  */
 export const WAITS_ROW = {
   type: "object",
@@ -48,8 +55,9 @@ export const WAITS_ROW = {
     question: { type: "boolean" },
     approval: { type: "boolean" },
     createdAt: { type: "string" },
+    repoId: { type: "string" },
   },
-  required: ["runId", "version", "execution", "kind", "prompt", "options", "question", "approval", "createdAt"],
+  required: ["runId", "version", "execution", "kind", "prompt", "options", "question", "approval", "createdAt", "repoId"],
   additionalProperties: false,
 } as const
 

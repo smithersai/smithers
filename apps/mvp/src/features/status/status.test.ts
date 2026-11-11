@@ -108,6 +108,8 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
         question: true,
         approval: false,
         createdAt: expect.any(String),
+        // The run works in the home conversation's repository.
+        repoId: "github/octo/hello",
       }])
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
