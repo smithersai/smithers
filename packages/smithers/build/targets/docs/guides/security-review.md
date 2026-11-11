@@ -39,6 +39,13 @@ Run a full audit of a package and every nested package with:
 smithers-build review '//packages/uploads/...:securityAudit' --policy-revision <sha>
 ```
 
+Set `engine` and `model` for the primary security reviewer. The second pass
+and candidate verification use the other engine family; `alternateModel`
+selects its model, defaulting to `claude-opus-5-5` for Claude or `gpt-6-sol`
+for Codex. Each model call makes one attempt; the host's durable flow owns retries.
+Include globs support minimatch extglobs such as `src/+(a|b)/*.ts` in both
+changed and full reviews.
+
 ## Checks
 
 Each check has a kebab-case `id`, a one-line `title`, a `threat` naming who
@@ -124,22 +131,23 @@ must not produce weaponized exploits or instructions to attack live systems.
 
 ## Options
 
-| Option           | Default           | Meaning                                                       |
-| ---------------- | ----------------- | ------------------------------------------------------------- |
-| `cwd`            | required          | Workspace-relative package directory.                         |
-| `checks`         | required          | The package's checks; `[]` leaves only `general`.             |
-| `include`        | `["src/**"]`      | Reviewed files; strings or `S.glob`, `//` for workspace root. |
-| `context`        | `[]`              | Files read into every batch whether or not they changed.      |
-| `engine`         | `"claude"`        | `claude` or `codex`.                                          |
-| `model`          | `claude-opus-5-5` | `gpt-6-sol` when `engine` is `codex`.                         |
-| `base`           | `"origin/main"`   | The diff review's base revision.                              |
-| `batchSize`      | `4`               | Changed files per model call in `security`.                   |
-| `auditBatchSize` | `8`               | Changed files per model call in `securityAudit`.              |
-| `contextTokens`  | `200000`          | The model's context window every call fits.                   |
-| `required`       | `false`           | Empty selections and missing engines fail instead of passing. |
-| `budget`         | none              | `modelCalls`, `promptTokens` and `wallMs` for the review.     |
-| `deps`           | `[]`              | Targets that must run first.                                  |
-| `summary`        | generated         | One-line summary of `security`.                               |
+| Option           | Default                | Meaning                                                       |
+| ---------------- | ---------------------- | ------------------------------------------------------------- |
+| `cwd`            | required               | Workspace-relative package directory.                         |
+| `checks`         | required               | The package's checks; `[]` leaves only `general`.             |
+| `include`        | `["src/**"]`           | Reviewed files; strings or `S.glob`, `//` for workspace root. |
+| `context`        | `[]`                   | Files read into every batch whether or not they changed.      |
+| `engine`         | `"claude"`             | `claude` or `codex`.                                          |
+| `model`          | `claude-opus-5-5`      | `gpt-6-sol` when `engine` is `codex`.                         |
+| `alternateModel` | other family's default | Model for the second pass and candidate verification.         |
+| `base`           | `"origin/main"`        | The diff review's base revision.                              |
+| `batchSize`      | `4`                    | Changed files per model call in `security`.                   |
+| `auditBatchSize` | `8`                    | Changed files per model call in `securityAudit`.              |
+| `contextTokens`  | `200000`               | The model's context window every call fits.                   |
+| `required`       | `false`                | Empty selections and missing engines fail instead of passing. |
+| `budget`         | none                   | `modelCalls`, `promptTokens` and `wallMs` for the review.     |
+| `deps`           | `[]`                   | Targets that must run first.                                  |
+| `summary`        | generated              | One-line summary of `security`.                               |
 
 ## Batching
 

@@ -69,6 +69,11 @@ path for a child running under a target's own `cwd`. A rule that renders a
 declared path into argv uses the second one; stripping the `//` alone resolves
 the path against the wrong directory whenever `cwd` is not the workspace root.
 
+`Input.staticPrefix(pattern, keepLiteralFile?)` returns the literal directory
+prefix before the first glob segment, including extglob syntax. Set
+`keepLiteralFile` to `true` for repository pathspecs so an exact-file include
+stays narrowed to that file; the default returns its parent directory.
+
 `EsLint`, `BiomeCheck`, and `Dprint` render configuration paths this way. For
 example, `//eslint.config.js` becomes `../../eslint.config.js` under
 `cwd: "packages/foo"`. ESLint also renders source files and glob patterns.

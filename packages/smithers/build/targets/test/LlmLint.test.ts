@@ -623,6 +623,13 @@ describe("LlmLint.review all scope", () => {
       LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload({ scope: "all" }))
     )
     expect(all.files).toEqual(["src/a.ts", "src/b.ts"])
+    const exact = await Effect.runPromise(
+      LlmLint.review(
+        { workspaceRoot: root, executable: cli.executable },
+        payload({ scope: "all", include: [Input.glob("README.md")] })
+      )
+    )
+    expect(exact.files).toEqual(["README.md"])
   })
 
   it("defaults the declared scope to changed and carries all to the action", () => {

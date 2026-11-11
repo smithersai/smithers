@@ -13,11 +13,13 @@ can pass. A bare `[]`, prose refusal, truncated output, or provider failure
 cannot become a clean review. Generic model lint still uses a findings array.
 
 Every security review uses three independent passes: the selected engine/model,
-the other engine family (`claude-opus-5-5` or `gpt-6-sol`), then the selected
-engine/model again. Each pass starts without previous findings. Configure credentials for both model families on the review host. Tool-free
-provider requests use `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`. Each invocation gets at most two attempts; a review has at most
-256 attempts, including verification, and 8 MiB of attempt receipts. Exhausting
-a bound fails the review. Missing executables fail immediately without retry.
+the other engine family, then the selected engine/model again. Set
+`alternateModel` in `SecurityReview`, `LlmLint` attrs, or the review payload
+to select the other family's model for the second pass and candidate verification.
+It defaults to `claude-opus-5-5` for Claude and `gpt-6-sol` for Codex. Each pass starts without previous findings. Configure credentials for both model families on the review host. Tool-free
+provider requests use `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`. Each invocation makes one attempt; failures return to the host's durable flow,
+which owns retry policy. A review has at most 256 attempts, including verification,
+and 8 MiB of attempt receipts. Exhausting a bound fails the review.
 
 The union retains every candidate, including one reported by only one pass.
 Each candidate receives a separate source verification by the alternate engine.
@@ -27,7 +29,7 @@ the same location and check; unrelated verifier findings fail that attempt. Veri
 controlled execution receipt can confirm a finding.
 
 Successful reports and review errors retain attempt receipts with the engine,
-model, pass, purpose, result, completion envelope, and retry failure. Findings
+model, pass, purpose, result, completion envelope, and failure. Findings
 that block release carry those receipts too. Coverage is a model assertion,
 not proof that the code is safe.
 

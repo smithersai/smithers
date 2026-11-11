@@ -576,13 +576,23 @@ const validatedScanLimits = (value: Partial<ScanLimits> | undefined): ScanLimits
 
 const globMagic = /[*?[\]{}!()|@+]/
 
-const staticPrefix = (pattern: string): string => {
+/**
+ * The literal directory prefix before a glob's first dynamic segment.
+ *
+ * A pattern without glob syntax returns its parent directory unless
+ * `keepLiteralFile` is true, which preserves exact-file repository pathspecs.
+ * The prefix narrows scans without dropping matches, including minimatch extglobs.
+ *
+ * @category discovery
+ * @since 0.1.0
+ */
+export const staticPrefix = (pattern: string, keepLiteralFile = false): string => {
   const segments: Array<string> = []
   for (const segment of pattern.split("/")) {
     if (globMagic.test(segment)) break
     segments.push(segment)
   }
-  if (segments.length === pattern.split("/").length) segments.pop()
+  if (!keepLiteralFile && segments.length === pattern.split("/").length) segments.pop()
   return segments.join("/")
 }
 

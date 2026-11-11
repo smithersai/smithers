@@ -67,6 +67,27 @@ describe("Input nested ignore precedence", () => {
   )
 })
 
+describe("Input.staticPrefix", () => {
+  it.each([
+    ["src/+(a|b)/x.ts", "src"],
+    ["src/@(a|b).ts", "src"],
+    ["+(src)/a.ts", ""],
+    ["src/?(a|b).ts", "src"],
+    ["src/*(a|b).ts", "src"],
+    ["src/!(c).ts", "src"],
+    ["src/{a,b}.ts", "src"],
+    ["src/[ab].ts", "src"],
+    ["src/a.ts", "src"],
+    ["README.md", ""]
+  ])("keeps the literal directory prefix of %s", (pattern, prefix) => {
+    expect(Input.staticPrefix(pattern)).toBe(prefix)
+  })
+
+  it.each(["README.md", "src/a.ts"])("preserves an exact-file pathspec for %s", (pattern) => {
+    expect(Input.staticPrefix(pattern, true)).toBe(pattern)
+  })
+})
+
 describe("Input.resolvePath", () => {
   it.each(["/src/**", "/"])("refuses the single-slash absolute path %j and names //", (value) => {
     expect(() => Input.resolvePath("pkg", value)).toThrow(/single "\/".*"\/\/"/)

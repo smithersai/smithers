@@ -207,7 +207,9 @@ export const renderRubric = (checks: ReadonlyArray<Check>): string =>
  * `src/**`; patterns are package-relative unless they start with `//`.
  * `context` files are read into every batch whether or not they changed.
  * `engine` defaults to `claude` on {@link defaultClaudeModel}; `codex`
- * defaults to {@link defaultCodexModel}. `base` is the diff review's base,
+ * defaults to {@link defaultCodexModel}. `alternateModel` selects the other
+ * family's model for the second pass and candidate verification; it defaults
+ * to that family's default model. `base` is the diff review's base,
  * `origin/main` by default. `batchSize` (default 4) caps changed files per
  * model call in the diff review and `auditBatchSize` (default 8) in the full
  * audit. Related files share a call and carry their unchanged callers and
@@ -235,6 +237,7 @@ export interface Options {
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly engine?: Engine | undefined
   readonly model?: string | undefined
+  readonly alternateModel?: string | undefined
   readonly base?: string | undefined
   readonly batchSize?: number | undefined
   readonly auditBatchSize?: number | undefined
@@ -519,6 +522,7 @@ export const SecurityReview = (options: Options): SecurityTargets => {
     rubric,
     engine,
     model,
+    ...(options.alternateModel === undefined ? {} : { alternateModel: options.alternateModel }),
     failOn: "error" as const,
     securityChecks: checks.map((check) => check.id),
     ...(options.contextTokens === undefined ? {} : { contextTokens: options.contextTokens }),

@@ -7,6 +7,7 @@ import * as Input from "../src/Input.ts"
 import type * as LlmLint from "../src/LlmLint.ts"
 import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
+import { plannedCalls } from "./plan.ts"
 
 const check: SecurityReview.Check = {
   id: "upload-path-traversal",
@@ -94,6 +95,27 @@ describe("SecurityReview declaration", () => {
     const { paths: _paths, ...unfocused } = check
     const rubric = attrsOf(SecurityReview.SecurityReview({ cwd: "p", checks: [unfocused] }).security).rubric
     expect(rubric.split("\n").filter((line) => line === "Focus: every reviewed file")).toHaveLength(2)
+  })
+
+  it.each(["claude", "codex"] as const)("carries the alternate model into both %s security actions", (engine) => {
+    const targets = SecurityReview.SecurityReview({
+      cwd: "p",
+      checks: [],
+      engine,
+      alternateModel: "host-security-model"
+    })
+    for (const target of [targets.security, targets.securityAudit]) {
+      expect(attrsOf(target).alternateModel).toBe("host-security-model")
+      expect(plannedCalls(target)[0]!.payload).toMatchObject({
+        engine,
+        alternateModel: "host-security-model",
+        securityChecks: ["general"]
+      })
+    }
+  })
+
+  it.each(["", "x".repeat(1025)])("refuses an invalid alternate model", (alternateModel) => {
+    expect(() => SecurityReview.SecurityReview({ cwd: "p", checks: [], alternateModel })).toThrow()
   })
 
   it("defaults a codex review to gpt-6-sol and keeps an explicit model", () => {

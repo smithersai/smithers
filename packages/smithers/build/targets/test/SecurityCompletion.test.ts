@@ -164,7 +164,7 @@ describe("LlmLint.review security completion", () => {
         Effect.exit(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
       )
       expect(exit._tag).toBe("Failure")
-      expect(await cli.calls()).toHaveLength(2)
+      expect(await cli.calls()).toHaveLength(1)
       await Fs.rm(NodePath.join(root, "model-calls.jsonl"), { force: true })
     }
   })
@@ -186,18 +186,17 @@ describe("LlmLint.review security completion", () => {
     ])
   })
 
-  it("retries a failed pass once and records the failed attempt", async () => {
+  it("fails after the first failed pass and retains its receipt without an internal retry", async () => {
     const cli = await scriptedCli([claude("[]"), claude(completion()), codex(completion()), claude(completion())])
-    const report = await Effect.runPromise(
-      LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())
+    const failure = await Effect.runPromise(
+      Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
-    expect(await cli.calls()).toHaveLength(4)
-    expect(report.attempts?.map(({ pass, attempt, status }) => [pass, attempt, status])).toEqual([
-      [1, 1, "failed"],
-      [1, 2, "completed"],
-      [2, 1, "completed"],
-      [3, 1, "completed"]
-    ])
+    expect(await cli.calls()).toHaveLength(1)
+    expect(failure).toMatchObject({
+      _tag: "smithers-build/LlmReviewError",
+      phase: "parse",
+      attempts: [{ pass: 1, attempt: 1, status: "failed" }]
+    })
   })
 
   it("rejects an explicit Claude refusal despite a valid completion body", async () => {
@@ -206,7 +205,7 @@ describe("LlmLint.review security completion", () => {
       Effect.exit(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(exit._tag).toBe("Failure")
-    expect(await cli.calls()).toHaveLength(2)
+    expect(await cli.calls()).toHaveLength(1)
   })
 
   it("retains refusal text in the final failure", async () => {
@@ -216,7 +215,7 @@ describe("LlmLint.review security completion", () => {
     )
     expect(failure._tag).toBe("smithers-build/LlmReviewError")
     expect((failure as LlmLint.LlmReviewError).message).toContain("refused")
-    expect((failure as LlmLint.LlmReviewError).attempts).toHaveLength(2)
+    expect((failure as LlmLint.LlmReviewError).attempts).toHaveLength(1)
   })
 
   it("rejects a Claude api_error stop reason even with a success subtype", async () => {
@@ -225,7 +224,7 @@ describe("LlmLint.review security completion", () => {
       Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(failure._tag).toBe("smithers-build/LlmReviewError")
-    expect(await cli.calls()).toHaveLength(2)
+    expect(await cli.calls()).toHaveLength(1)
   })
 
   it("rejects a Codex failed turn despite a valid completion body", async () => {
@@ -237,7 +236,7 @@ describe("LlmLint.review security completion", () => {
       Effect.exit(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(exit._tag).toBe("Failure")
-    expect(await cli.calls()).toHaveLength(3)
+    expect(await cli.calls()).toHaveLength(2)
   })
 
   it.each([
@@ -270,7 +269,7 @@ describe("LlmLint.review security completion", () => {
       Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(failure._tag).toBe("smithers-build/LlmReviewError")
-    expect(await cli.calls()).toHaveLength(3)
+    expect(await cli.calls()).toHaveLength(2)
   })
 
   it("accepts a completed Codex turn with an ordinary failed command item", async () => {
@@ -293,7 +292,7 @@ describe("LlmLint.review security completion", () => {
       Effect.flip(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
     )
     expect(failure).toMatchObject({ _tag: "smithers-build/LlmReviewError", phase: "parse" })
-    expect(await cli.calls()).toHaveLength(2)
+    expect(await cli.calls()).toHaveLength(1)
   })
 
   it("requires coverage of every declared check, including general", async () => {
@@ -303,7 +302,7 @@ describe("LlmLint.review security completion", () => {
       payload({ securityChecks: ["authorization", "general"] })
     )))
     expect(failure).toMatchObject({ _tag: "smithers-build/LlmReviewError", phase: "parse" })
-    expect(await onlyGeneral.calls()).toHaveLength(2)
+    expect(await onlyGeneral.calls()).toHaveLength(1)
   })
 
   it("accepts one completed evidence entry for each declared check", async () => {
@@ -496,7 +495,7 @@ describe("LlmLint.review security completion", () => {
         Effect.exit(LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload()))
       )
       expect(exit._tag).toBe("Failure")
-      expect(await cli.calls()).toHaveLength(2)
+      expect(await cli.calls()).toHaveLength(1)
     })
 
     it("reviews a deleted file beside an edited one in its own batch", async () => {

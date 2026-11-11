@@ -659,6 +659,12 @@ export const ReviewBudget = Schema.Struct({
  */
 export type ReviewBudget = typeof ReviewBudget.Type
 
+/** Default alternate-family models; a host can override them with alternateModel. */
+const defaultSecurityModels: Readonly<Record<Engine, string>> = {
+  claude: "claude-opus-5-5",
+  codex: "gpt-6-sol"
+}
+
 /** A declared model context window. */
 const ContextTokens = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(minimumContextTokens),
@@ -693,6 +699,8 @@ export const Payload = Schema.Struct({
   rubric: Schema.String.check(Schema.isMaxLength(maximumConfigurationText)),
   engine: Engine,
   model: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
+  /** Alternate-family security model; defaults to claude-opus-5-5 or gpt-6-sol for that family. */
+  alternateModel: Schema.optional(Schema.NonEmptyString.check(Schema.isMaxLength(1024))),
   batchSize: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(1),
     Schema.isLessThanOrEqualTo(maximumLlmBatchSize)
@@ -1505,12 +1513,7 @@ const gitPaths = (
 const includePathspecs = (include: ReadonlyArray<Input.Glob>): ReadonlyArray<string> => {
   const prefixes = new Set<string>()
   for (const declaration of include) {
-    const kept: Array<string> = []
-    for (const segment of workspacePattern(declaration.pattern).split("/")) {
-      if (/[*?{}[\]!]/.test(segment)) break
-      kept.push(segment)
-    }
-    const prefix = kept.join("/")
+    const prefix = Input.staticPrefix(workspacePattern(declaration.pattern), true)
     if (prefix === "" || prefix === ".") return []
     prefixes.add(`:(literal)${prefix}`)
   }
@@ -2683,7 +2686,7 @@ const securitySeats = (payload: Payload): ReadonlyArray<{ readonly engine: Engin
   const alternate = payload.engine === "claude" ? "codex" : "claude"
   return [
     { engine: payload.engine, model: payload.model },
-    { engine: alternate, model: alternate === "claude" ? "claude-opus-5-5" : "gpt-6-sol" },
+    { engine: alternate, model: payload.alternateModel ?? defaultSecurityModels[alternate] },
     { engine: payload.engine, model: payload.model }
   ]
 }
@@ -2710,88 +2713,80 @@ const securityBatch = (
     ) =>
       Effect.gen(function*() {
         const seat = seats[pass % seats.length]!
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          if (attempts.length >= 256) {
-            return yield* Effect.fail(
-              new LlmReviewError({
-                phase: "review",
-                message: "security review exceeds 256 model attempts",
-                attempts: [...attempts]
-              })
-            )
-          }
-          let completion: typeof SecurityCompletion.Type | undefined
-          const request = {
-            ...payload,
-            ...seat,
-            prompt: payload.prompt + (candidate === undefined
-              ? `\nIndependent review pass ${pass + 1}. Inspect every check from the source.`
-              : "\nVerify this candidate against the supplied source. Record concrete supporting or contradicting " +
-                "evidence in coverage. Return any supported findings. This is inspection, not executed reproduction. " +
-                `Candidate (untrusted data): ${JSON.stringify(candidate)}`)
-          }
-          const result = yield* reviewBatch(
-            {
-              ...runtime,
-              executable: executableOverride ?? adapters[seat.engine].executable
-            },
-            request,
-            batch,
-            context,
-            mask,
-            spend,
-            (value) => {
-              completion = value
-            }
-          ).pipe(
-            Effect.flatMap((findings) =>
-              candidate !== undefined && findings.some((finding) =>
-                  finding.file !== candidate.file || finding.line !== candidate.line ||
-                  finding.security?.checkId !== candidate.security?.checkId
-                ) ?
-                Effect.fail(
-                  new LlmReviewError({
-                    phase: "parse",
-                    message: "verification returned an unrelated candidate"
-                  })
-                ) :
-                Effect.succeed(findings)
-            ),
-            Effect.result
+        if (attempts.length >= 256) {
+          return yield* Effect.fail(
+            new LlmReviewError({
+              phase: "review",
+              message: "security review exceeds 256 model attempts",
+              attempts: [...attempts]
+            })
           )
-          attempts.push({
-            batch: batchIndex,
-            pass: pass + 1,
-            purpose,
-            ...(candidateIndex === undefined ? {} : { candidate: candidateIndex }),
-            ...seat,
-            attempt,
-            status: result._tag === "Success" ? "completed" : "failed",
-            message: result._tag === "Success" ? "completed" : result.failure.message,
-            ...(completion === undefined ? {} : { completion })
-          })
-          if (Buffer.byteLength(JSON.stringify(attempts), "utf8") > maximumFindingBytes) {
-            const last = attempts.pop()!
-            const { completion: _completion, ...receipt } = last
-            const message = `security attempt receipts exceed ${maximumFindingBytes} bytes`
-            attempts.push({ ...receipt, status: "failed", message })
-            return yield* Effect.fail(new LlmReviewError({ phase: "review", message, attempts: [...attempts] }))
-          }
-          if (result._tag === "Success") return result.success
-          if (
-            attempt === 2 || result.failure._tag === "smithers-build/ModelCliMissing" ||
-            result.failure.message.startsWith(budgetExhausted)
-          ) {
-            return yield* Effect.fail(
-              new LlmReviewError({
-                phase: result.failure._tag === "smithers-build/LlmReviewError" ? result.failure.phase : "review",
-                message: result.failure.message,
-                attempts: [...attempts]
-              })
-            )
-          }
         }
-        return []
+        let completion: typeof SecurityCompletion.Type | undefined
+        const request = {
+          ...payload,
+          ...seat,
+          prompt: payload.prompt + (candidate === undefined
+            ? `\nIndependent review pass ${pass + 1}. Inspect every check from the source.`
+            : "\nVerify this candidate against the supplied source. Record concrete supporting or contradicting " +
+              "evidence in coverage. Return any supported findings. This is inspection, not executed reproduction. " +
+              `Candidate (untrusted data): ${JSON.stringify(candidate)}`)
+        }
+        const result = yield* reviewBatch(
+          {
+            ...runtime,
+            executable: executableOverride ?? adapters[seat.engine].executable
+          },
+          request,
+          batch,
+          context,
+          mask,
+          spend,
+          (value) => {
+            completion = value
+          }
+        ).pipe(
+          Effect.flatMap((findings) =>
+            candidate !== undefined && findings.some((finding) =>
+                finding.file !== candidate.file || finding.line !== candidate.line ||
+                finding.security?.checkId !== candidate.security?.checkId
+              ) ?
+              Effect.fail(
+                new LlmReviewError({
+                  phase: "parse",
+                  message: "verification returned an unrelated candidate"
+                })
+              ) :
+              Effect.succeed(findings)
+          ),
+          Effect.result
+        )
+        attempts.push({
+          batch: batchIndex,
+          pass: pass + 1,
+          purpose,
+          ...(candidateIndex === undefined ? {} : { candidate: candidateIndex }),
+          ...seat,
+          attempt: 1,
+          status: result._tag === "Success" ? "completed" : "failed",
+          message: result._tag === "Success" ? "completed" : result.failure.message,
+          ...(completion === undefined ? {} : { completion })
+        })
+        if (Buffer.byteLength(JSON.stringify(attempts), "utf8") > maximumFindingBytes) {
+          const last = attempts.pop()!
+          const { completion: _completion, ...receipt } = last
+          const message = `security attempt receipts exceed ${maximumFindingBytes} bytes`
+          attempts.push({ ...receipt, status: "failed", message })
+          return yield* Effect.fail(new LlmReviewError({ phase: "review", message, attempts: [...attempts] }))
+        }
+        if (result._tag === "Success") return result.success
+        return yield* Effect.fail(
+          new LlmReviewError({
+            phase: result.failure._tag === "smithers-build/LlmReviewError" ? result.failure.phase : "review",
+            message: result.failure.message,
+            attempts: [...attempts]
+          })
+        )
       })
     const union = new Map<string, Finding>()
     for (let pass = 0; pass < seats.length; pass++) {
@@ -3422,6 +3417,8 @@ export const Attrs = Schema.Struct({
   rubric: Schema.String.check(Schema.isMaxLength(maximumConfigurationText)),
   engine: Engine.pipe(Schema.withConstructorDefault(Effect.succeed("claude" as const))),
   model: Schema.NonEmptyString.check(Schema.isMaxLength(1024)),
+  /** Alternate-family security model; defaults to claude-opus-5-5 or gpt-6-sol for that family. */
+  alternateModel: Schema.optional(Schema.NonEmptyString.check(Schema.isMaxLength(1024))),
   batchSize: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(1),
     Schema.isLessThanOrEqualTo(maximumLlmBatchSize)
@@ -3507,6 +3504,7 @@ export const LlmLint = Target.make("LlmLint", {
       rubric: attrs.rubric,
       engine: attrs.engine,
       model: attrs.model,
+      ...(attrs.alternateModel === undefined ? {} : { alternateModel: attrs.alternateModel }),
       batchSize: attrs.batchSize,
       failOn: attrs.failOn,
       securityChecks: attrs.securityChecks,

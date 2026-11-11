@@ -115,6 +115,100 @@ describe("LlmLint.review seat transport", () => {
     expect(report.manifest?.engine.executable).toBeUndefined()
   })
 
+  it.each(["changed", "all"] as const)("reviews extglob includes in %s scope", async (scope) => {
+    await write("src/b.ts", "export const b = 1\n")
+    await write("src/a/x.ts", "export const x = 1\n")
+    await write("src/b/x.ts", "export const x = 2\n")
+    for (
+      const [pattern, files] of [
+        ["src/+(a|b).ts", ["src/a.ts", "src/b.ts"]],
+        ["src/@(a|b).ts", ["src/a.ts", "src/b.ts"]],
+        ["+(src)/@(a|b).ts", ["src/a.ts", "src/b.ts"]],
+        ["src/+(a|b)/x.ts", ["src/a/x.ts", "src/b/x.ts"]]
+      ] as const
+    ) {
+      const seen: Array<Seen> = []
+      const report = await Effect.runPromise(LlmLint.review(
+        { workspaceRoot: root, transport: seats("[]", seen) },
+        payload({ include: [Input.glob(pattern)], scope })
+      ))
+      expect(report.files, pattern).toEqual(files)
+      expect(seen.length, pattern).toBeGreaterThan(0)
+    }
+  })
+
+  it.each(["claude", "codex"] as const)("uses a configured alternate model with primary %s", async (engine) => {
+    const seen: Array<Seen> = []
+    const report = await Effect.runPromise(LlmLint.review(
+      { workspaceRoot: root, transport: seats(completion(), seen), store: { directory: store, owner: "//:security" } },
+      payload({ engine, model: "primary-model", alternateModel: "host-alternate-model", securityChecks: ["general"] })
+    ))
+    const expected = [
+      { engine, model: "primary-model" },
+      { engine: engine === "claude" ? "codex" : "claude", model: "host-alternate-model" },
+      { engine, model: "primary-model" }
+    ]
+    expect(seen.map(({ seat }) => seat)).toEqual(expected)
+    expect(report.manifest?.engine.seats).toEqual(expected)
+    expect(report.attempts?.map(({ engine, model }) => ({ engine, model }))).toEqual(expected)
+  })
+
+  it("uses the configured alternate model for candidate verification", async () => {
+    const seen: Array<Seen> = []
+    const candidate = {
+      file: "src/a.ts",
+      line: 1,
+      severity: "info",
+      message: "The caller may supply unchecked input.",
+      security: {
+        checkId: "general",
+        impact: "low",
+        verification: "suspected",
+        releaseRecommendation: "allow",
+        attackerPreconditions: "A caller supplies input.",
+        evidence: "The operation uses that input.",
+        nextConfirmationStep: "Inspect validation at the caller."
+      }
+    }
+    const report = await Effect.runPromise(LlmLint.review(
+      { workspaceRoot: root, transport: seats(completion([candidate]), seen) },
+      payload({ alternateModel: "verification-model", securityChecks: ["general"] })
+    ))
+    expect(seen.map(({ seat }) => seat.model)).toEqual([
+      "claude-opus-5-5",
+      "verification-model",
+      "claude-opus-5-5",
+      "verification-model"
+    ])
+    expect(report.attempts?.at(-1)).toMatchObject({
+      purpose: "verify",
+      engine: "codex",
+      model: "verification-model",
+      attempt: 1
+    })
+  })
+
+  it("leaves a failed model call to the durable engine without retrying inside the action", async () => {
+    let calls = 0
+    const failure = await Effect.runPromise(Effect.flip(LlmLint.review(
+      {
+        workspaceRoot: root,
+        transport: () => {
+          calls++
+          return Effect.fail(new Error("seat temporarily unavailable"))
+        }
+      },
+      payload({ securityChecks: ["general"] })
+    )))
+    expect(calls).toBe(1)
+    expect(failure).toMatchObject({
+      _tag: "smithers-build/LlmReviewError",
+      phase: "review",
+      message: "Review seat unavailable: seat temporarily unavailable",
+      attempts: [{ pass: 1, attempt: 1, status: "failed" }]
+    })
+  })
+
   it("fails a required review when a seat is unavailable instead of skipping it", async () => {
     const failure = await Effect.runPromise(Effect.flip(LlmLint.review(
       { workspaceRoot: root, transport: () => Effect.fail(new Error("Claude Code is signed out")) },
