@@ -459,6 +459,23 @@ describe("default atomic helper resolution", () => {
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
   })
 
+  it("refuses to stage again a workspace-local helper rewritten before its staged copy was pruned", async () => {
+    const { packageRoot, root } = await fixture()
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, helperName)
+    await helper(binary)
+    stagePackaged(packageRoot)
+    const workspace = root
+    const selected = resolveDefaultExecutable(packageRoot, workspace, join(root, "absent"))
+    await writeFile(binary, "#!/bin/sh\necho planted\n")
+    await rm(dirname(selected), { recursive: true, force: true })
+    expectHelperError(
+      () => resolveDefaultExecutable(packageRoot, workspace, join(root, "absent")),
+      "helper_inside_workspace",
+      /changed after the host staged it/
+    )
+    await expect(access(selected)).rejects.toThrow()
+  })
+
   it("stages nothing and throws nothing when no helper is packaged", async () => {
     const { packageRoot } = await fixture()
     expect(() => stagePackaged(packageRoot)).not.toThrow()

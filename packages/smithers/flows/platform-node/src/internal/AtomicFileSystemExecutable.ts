@@ -70,6 +70,12 @@ export const packageRoot = installedPackageRoot(
 /** Each source's staged copy, and when this process last marked its directory in use. */
 const staged = new Map<string, { readonly path: string; touchedAt: number }>()
 /**
+ * The digest each source held when this process first staged it. It outlives a
+ * pruned copy: re-staging bytes that differ would execute whatever a flow wrote
+ * to a workspace-local source after the host was built.
+ */
+const stagedDigests = new Map<string, string>()
+/**
  * Package roots already staged, and the sources that staging copied. Staging
  * happens once per root per process: a later layer build runs after flows may
  * have planted a helper, so only what existed at the FIRST build is trusted.
@@ -215,6 +221,13 @@ export const outsideWorkspace = (
   // delegates to the OS, which cannot open its virtual /$bunfs path.
   const bytes = readFileSync(source)
   const digest = sha256(bytes)
+  const first = stagedDigests.get(source)
+  if (first !== undefined && first !== digest) {
+    throw new AtomicHelperError({
+      code: "helper_inside_workspace",
+      message: `atomic helper changed after the host staged it, so a flow may have rewritten it: ${source}`
+    })
+  }
   for (const [index, base] of bases.entries()) {
     const directory = join(base, `.smthrs-atomic-helper-${digest}`)
     const destination = join(directory, helperName)
@@ -237,6 +250,7 @@ export const outsideWorkspace = (
       const executable = usableExecutable(destination, boundaryRoot)
       prune(base, `.smthrs-atomic-helper-${digest}`)
       staged.set(source, { path: executable, touchedAt: now.getTime() })
+      stagedDigests.set(source, digest)
       return executable
     } catch (cause) {
       if (temporary !== undefined) rmSync(temporary, { force: true })

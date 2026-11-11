@@ -67,8 +67,11 @@ The packaged helper and the source-checkout builds (steps 3 and 4) are copied
 to a private `0700` directory when the first layer in the process is built,
 before any flow runs. Later layer builds copy nothing, because a flow of an
 earlier run may already have written those paths. Requests execute that copy,
-so a flow that rewrites one of those files later changes nothing that runs. A
-default helper not present at that first build is refused with
+so a flow that rewrites one of those files later changes nothing that runs. If
+that copy disappears while the host runs, removed by a temporary-file cleaner or
+by another process after a week unused, the adapter copies the file again only
+when its bytes still match the first copy; changed bytes are refused with
+`PermissionDenied`. A default helper not present at that first build is refused with
 `PermissionDenied` when its path, or the file the path links to, lies inside the
 confined workspace: its bytes, or the choice of binary, could only have come
 from a flow.
