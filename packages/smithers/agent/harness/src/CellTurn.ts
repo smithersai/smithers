@@ -548,7 +548,11 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withConstructorDefault(Effect.succeed(0)),
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
-  /** Bounded identity of the failure being retried. */
+  /**
+   * Bounded identity of the failure being retried: its text and a digest of
+   * the calls that produced it, so different calls with the same result do not
+   * count as one failure repeated.
+   */
   failureKey: Schema.String.pipe(
     Schema.withConstructorDefault(Effect.succeed("")),
     Schema.withDecodingDefaultKey(Effect.succeed(""))
@@ -4004,7 +4008,14 @@ const frame = (
       : failed
       ? ran.calls.map((call) => `${call.flow}: ${call.summary}`).join("; ")
       : ""
-    const failureKey = failure.slice(0, 1_000)
+    // The key names the calls as well as what they printed: five searches for
+    // five names that each match nothing print the same text, and each one is a
+    // new question, not a retry. Only the same calls failing the same way repeat.
+    const failureKey = failure === ""
+      ? ""
+      : `${failure.slice(0, 1_000)} (calls ${
+        Digest.digest(CanonicalJson.stringify(ran.calls.map((call) => call.subject)))
+      })`
     const failureFrames = failureKey === "" ? 0 : failureKey === state.failureKey ? state.failureFrames + 1 : 1
     const facts: Frame.StateChanges = ran.restored.size === 0 ? accounting.facts : {
       ...accounting.facts,

@@ -668,6 +668,25 @@ console.log(kept)`
     expect(String(failure)).toContain("Runaway guard")
   })
 
+  it("does not count different calls that fail with the same result as one repeated failure", async () => {
+    // A `grep` that matches nothing exits 1 with empty output, so five
+    // searches for five different names all return the same text. Each frame
+    // asked a new question; only the same call failing the same way is a loop.
+    const noMatch = { _tag: "Success" as const, value: { exitCode: 1, stdout: "", stderr: "" } }
+    const { events, failure, model } = await run({
+      script: [
+        ...Array.from({ length: 5 }, (_, index) => emits(`await ctx.call("fs/list", { path: "dir-${index}" })`)),
+        emits(`ctx.done("searched five places")`)
+      ],
+      calls: Array.from({ length: 5 }, () => noMatch),
+      state: state({ maxFrames: 30 })
+    })
+
+    expect(failure).toBeUndefined()
+    expect(model.recorder.requests).toHaveLength(6)
+    expect(of(events, "resolved")).toHaveLength(1)
+  })
+
   it("resets the failure streak after a successful frame", async () => {
     const script = Array.from(
       { length: 12 },
