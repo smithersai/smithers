@@ -190,7 +190,9 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
 
 - A usage limit (`rate_limited: The usage limit has been reached`,
   `quota_exceeded`, the Codex CLI's "You've hit your usage limit") takes the
-  account out of rotation with the reset time the message names, and the
+  account out of rotation with the reset time the message names (a date, a
+  time of day such as "Try again at 9:27 AM.", or "in 3 hours"), or for five
+  hours when it names none the pool can read, and the
   trial is re-run whole on the next healthy account. Every re-run is in the
   trial's `agent/requeue.log` and in `requeues` of `smithers-run.json` /
   `codex-account.json`; the earlier attempt's log and workspace are kept as

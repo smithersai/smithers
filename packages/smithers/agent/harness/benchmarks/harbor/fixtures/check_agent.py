@@ -40,6 +40,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -813,6 +814,23 @@ def check_accounts() -> None:
         pool.disable("codex-2", "limit", reset_at=None)
         pool.enable("codex-2")
         assert "codex-2" not in pool.disabled()
+        # A limit with no readable reset time is a cool-off, never a removal
+        # for good (the Codex CLI's "Try again at 9:27 AM." once read as none).
+        later = [now[0]]
+        solo = accounts.Pool(found[1:2], home / "solo.json", wait_sec=0, clock=lambda: later[0])
+        solo.disable("codex-2", "You've hit your usage limit.", reset_at=None)
+        later[0] += accounts.NO_RESET_COOLOFF_SEC - 1
+        try:
+            solo.lease("t-cool")
+        except accounts.NoSeatLeft:
+            pass
+        else:
+            raise AssertionError("the cool-off holds until it ends")
+        later[0] += 1
+        assert solo.lease("t-back").label == "codex-2", "the cool-off ends and the account is back"
+        solo.disable("codex-2", "limit", reset_at="not a time")
+        later[0] += accounts.NO_RESET_COOLOFF_SEC
+        assert solo.lease("t-bad").label == "codex-2", "an unreadable reset time is a cool-off too"
 
         # A new login appearing during the pause is picked up.
         pool.disable("codex-2", "x")
@@ -835,6 +853,18 @@ def check_accounts() -> None:
     assert reset is not None and reset.startswith("2026-09-27T"), reset
     assert accounts.reset_time_of('{"resets_at":"2026-09-27T16:27:00Z"}') == "2026-09-27T16:27+00:00"
     assert accounts.reset_time_of("The usage limit has been reached") is None
+    # The CLI's same-day form names a local time with no date: the next 9:27 AM
+    # on this host's clock, tomorrow once today's has passed.
+    for at in (datetime(2026, 9, 27, 8, 0).timestamp(), datetime(2026, 9, 27, 10, 0).timestamp()):
+        same_day = accounts.reset_time_of("You've hit your usage limit. Try again at 9:27 AM.", now=at)
+        assert same_day is not None, "the same-day form names a reset"
+        moment = datetime.fromisoformat(same_day).timestamp()
+        assert at < moment <= at + 86400 and datetime.fromtimestamp(moment).strftime("%H:%M") == "09:27", same_day
+    assert accounts.reset_time_of("try again at 9:27pm", now=datetime(2026, 9, 27, 8, 0).timestamp()) is not None
+    assert accounts.reset_time_of("try again at 13:27 PM", now=0) is None
+    assert accounts.reset_time_of("Usage limit hit. Try again in 3 hours 12 minutes.", now=1_000_020) == \
+        datetime.fromtimestamp(1_000_020 + 3 * 3600 + 12 * 60, timezone.utc).isoformat(timespec="minutes")
+    assert accounts.reset_time_of("usage limit, resets in 2d 30m", now=0) == "1970-01-03T00:30+00:00"
 
     assert accounts.classify_cause("rate_limited: The usage limit has been reached\n/harness/HarnessError: x") == "seat"
     assert accounts.classify_cause("quota_exceeded: insufficient_quota") == "seat"
