@@ -19,6 +19,7 @@ import { PreviewOutput } from "./previewOutputSchema.ts"
 import { ReviewInput } from "./reviewInputSchema.ts"
 import { ReviewRunOutput } from "./reviewRunOutputSchema.ts"
 import { ReviewTarget } from "./reviewTargetSchema.ts"
+import { ReviewVerdict } from "./reviewVerdictSchema.ts"
 
 /**
  * Everything the local git work produces in one durable step.
@@ -158,7 +159,9 @@ export const WalkthroughOutput = Schema.Struct({
 export type WalkthroughOutput = typeof WalkthroughOutput.Type
 
 /**
- * What a whole review run answers with.
+ * What a whole review run answers with. `verdict` is read from the
+ * post-verification review (`reviewVerdict`); a result stored before it
+ * existed decodes as `incomplete`, never as a pass.
  *
  * @since 1.0.0
  * @category schemas
@@ -166,6 +169,7 @@ export type WalkthroughOutput = typeof WalkthroughOutput.Type
 export const ReviewResult = Schema.Struct({
   target: ReviewTarget,
   review: ReviewRunOutput,
+  verdict: withDefault(ReviewVerdict, "incomplete"),
   walkthrough: WalkthroughOutput,
   story: Story,
   ui: Schema.Struct({ kind: Schema.Literal("html"), title: Schema.String, html: Schema.String })

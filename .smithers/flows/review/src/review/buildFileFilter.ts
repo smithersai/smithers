@@ -1,7 +1,5 @@
 import { join, resolve } from "node:path"
-import { mergeBase } from "../git/mergeBase.ts"
-import { runCommand } from "../git/runCommand.ts"
-import { runGit } from "../git/runGit.ts"
+import { type Revisions, revisionsFor } from "../git/revisions.ts"
 import { io, runIo } from "../io.ts"
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
 import type { ReviewWarning } from "../workflow/reviewWarningSchema.ts"
@@ -21,29 +19,21 @@ async function readDiskRule(label: string, path: string): Promise<RuleFile | nul
 
 // The revision whose rule governs a review. Range and commit mode review a
 // change its author controls, so the change's own rule file never applies.
-async function ruleRevision(repoDir: string, input: OpenCodeReviewInput) {
+// A root commit has no parent, so there is no rule it did not write.
+async function ruleRevision(revisions: Revisions, input: OpenCodeReviewInput) {
   const mode = reviewMode(input)
-  if (mode === "range") return mergeBase(repoDir, input.from, input.to)
-  if (mode === "commit") {
-    const parent = await runCommand(
-      "git",
-      ["rev-parse", "--verify", "--quiet", `${input.commit.trim()}^1^{commit}`],
-      repoDir
-    )
-    // A root commit has no parent, so there is no rule it did not write.
-    return parent.exitCode === 0 ? parent.stdout.trim() : null
-  }
+  if (mode === "range") return revisions.forkPoint(input.from.trim(), input.to.trim())
+  if (mode === "commit") return revisions.parent(input.commit.trim())
   return "worktree"
 }
 
 async function readRepoRule(repoDir: string, input: OpenCodeReviewInput): Promise<RuleFile | null> {
-  const rev = await ruleRevision(repoDir, input)
+  const revisions = await revisionsFor(repoDir)
+  const rev = await ruleRevision(revisions, input)
   if (rev === null) return null
   if (rev === "worktree") return readDiskRule(REPO_RULE, join(repoDir, REPO_RULE))
-  const entry = (await runGit(repoDir, ["ls-tree", "--end-of-options", rev, "--", REPO_RULE])).trim()
-  const [, type, sha] = entry.split(/\s+/)
-  if (type !== "blob" || !sha) return null
-  return { label: REPO_RULE, text: await runGit(repoDir, ["cat-file", "blob", sha]) }
+  const text = await revisions.fileAt(rev, REPO_RULE)
+  return text === null ? null : { label: REPO_RULE, text }
 }
 
 function parseRule(file: RuleFile, warnings: Array<ReviewWarning>): FileFilter | null {

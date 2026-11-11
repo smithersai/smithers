@@ -20,6 +20,7 @@ import { ReviewFailure } from "./reviewFailureSchema.ts"
 import { type Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
+import { reviewVerdict } from "../review/reviewVerdict.ts"
 import { NativeReviewAgentOutput } from "./nativeReviewAgentOutputSchema.ts"
 import {
   ApplyVerdicts,
@@ -43,7 +44,8 @@ type FileReviewRequirement =
  * The narrating round: story and the rendered walkthrough.
  *
  * Every model step here is caught, because a review whose narrator timed out is
- * still a review. `normalizeStory` falls back to the deterministic story which is exactly what a caught failure hands the renderer.
+ * still a review. The verdict is read from the post-verification review this
+ * round receives, so narration never changes it. `normalizeStory` falls back to the deterministic story which is exactly what a caught failure hands the renderer.
  *
  * @since 1.0.0
  * @category flows
@@ -86,6 +88,7 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
       Node.map((rendered) => ({
         target,
         review: rendered.review,
+        verdict: reviewVerdict(review),
         walkthrough: rendered.walkthrough,
         story: rendered.story,
         ui: rendered.ui

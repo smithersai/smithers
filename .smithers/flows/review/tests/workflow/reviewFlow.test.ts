@@ -117,6 +117,7 @@ describe("the review flow", () => {
     )
 
     expect(result.review.status).toBe("success")
+    expect(result.verdict).toBe("fail")
     expect(result.review.comments).toHaveLength(3)
     expect(result.review.comments.map((comment) => comment.path).sort()).toEqual([
       "src/file0.ts",
@@ -299,6 +300,7 @@ describe("the review flow", () => {
     )
 
     expect(result.review.status).toBe("failed")
+    expect(result.verdict).toBe("incomplete")
     expect(result.review.warnings.some((warning) => warning.type === "subtask_error")).toBe(true)
     expect(result.walkthrough.path).toBe(join(repo, "w.html"))
   }, 120_000)
@@ -341,6 +343,7 @@ describe("the review flow", () => {
     )
 
     expect(result.review.comments).toHaveLength(0)
+    expect(result.verdict).toBe("pass")
     expect(result.review.warnings.some((warning) => warning.type === "verifier_dropped")).toBe(true)
     expect(result.review.message).toContain("Verification dropped 1 finding")
   }, 120_000)
@@ -356,6 +359,7 @@ describe("the review flow", () => {
     expect(result.review.comments).toHaveLength(1)
     expect(result.review.warnings.some((warning) => warning.type === "verifier_error")).toBe(true)
     expect(result.review.status).toBe("completed_with_warnings")
+    expect(result.verdict).toBe("incomplete")
     expect(readFileSync(result.walkthrough.path, "utf8")).toContain("unverified")
   }, 120_000)
 
@@ -381,6 +385,8 @@ describe("the review flow", () => {
     expect(result.story.chapters.length).toBeGreaterThan(0)
     expect(result.story.headline).not.toBe("Two bindings")
     expect(result.review.status).toBe("completed_with_warnings")
+    // The narrator writes the story, not the findings: its failure leaves the verdict alone.
+    expect(result.verdict).toBe("fail")
     expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "narrator_error" }))
     expect(readFileSync(result.walkthrough.path, "utf8")).toContain("narrator_error")
   }, 120_000)
@@ -396,8 +402,43 @@ describe("the review flow", () => {
     )
 
     expect(result.review.status).toBe("skipped")
+    expect(result.verdict).toBe("incomplete")
     expect(result.review.comments).toHaveLength(0)
     expect(result.walkthrough.files).toBe(2)
+  }, 120_000)
+
+  test("a jj commit's verified major finding fails it, and the same finding demoted to minor passes", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "review-flow-jj-"))
+    tempDirs.push(repo)
+    const jj = (args: string[]) => execFileSync("jj", args, { cwd: repo, stdio: "pipe", encoding: "utf8" })
+    jj(["git", "init", "--no-colocate", "."])
+    jj(["config", "set", "--repo", "user.name", "Test User"])
+    jj(["config", "set", "--repo", "user.email", "test@example.com"])
+    mkdirSync(join(repo, "src"))
+    writeFileSync(join(repo, "src/file0.ts"), "export const value0 = 0;\n")
+    jj(["commit", "-m", "base"])
+    writeFileSync(join(repo, "src/file0.ts"), "export const value0 = 0;\nexport const next0 = 1;\n")
+    jj(["commit", "-m", "change"])
+    const commit = jj(["log", "--no-graph", "-r", "@-", "-T", "commit_id"])
+    const verified = (verdict: unknown) => (ask: string) =>
+      ask.includes("adjudicate code-review findings") ? { verdicts: [verdict] } : answerFor()(ask)
+
+    const kept = await runReview(
+      repo,
+      { commit, narrate: false, verify: true, out: join(repo, "w.html") },
+      verified({ index: 0, verdict: "keep", reason: "the diff shows it" })
+    )
+    expect(kept.target).toMatchObject({ mode: "commit", ref: commit })
+    expect(kept.review.comments.map((comment) => [comment.path, comment.severity])).toEqual([["src/file0.ts", "major"]])
+    expect(kept.verdict).toBe("fail")
+
+    const demoted = await runReview(
+      repo,
+      { commit, narrate: false, verify: true, out: join(repo, "w.html") },
+      verified({ index: 0, verdict: "demote", severity: "minor", reason: "an edge case, not a bug" })
+    )
+    expect(demoted.review.comments.map((comment) => comment.severity)).toEqual(["minor"])
+    expect(demoted.verdict).toBe("pass")
   }, 120_000)
 })
 
