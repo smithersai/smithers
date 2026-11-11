@@ -2,8 +2,9 @@
  * Targets for the review seeded-bug suite.
  *
  * Two test targets, because the suite has two halves that fail for different
- * reasons. `test` is the corpus-integrity and scoring-math suite: pure, fast,
- * and independent of the review app. `suite` runs the real review flow over all
+ * reasons. `test` is the corpus-integrity and scoring-math suite, pure and
+ * fast, plus the fixed-suite adapter's test, which reviews one clean control
+ * twice. `suite` runs the real review flow over all
  * sixteen fixtures and gates the result on `baseline.json`; it is offline
  * because its reviewing seat is `deterministicReviewer.ts` rather than a model,
  * so it spends nothing and answers the same way twice. Both run from this
@@ -48,14 +49,21 @@ const suite = Smithers.NodeTest({
 })
 
 /**
- * The corpus-integrity and scoring-math suite.
+ * The corpus-integrity and scoring-math suite, and the fixed-suite adapter's
+ * test: one clean control reviewed by a refusing seat, which must fail the
+ * case rather than score it, and by the deterministic reviewer.
  *
  * @since 1.0.0
  * @category test
  */
 const test = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["score.test.ts", "deterministicReviewer.test.ts", "fixtureRepo.test.ts"]),
+  runner: Smithers.testSuite([
+    "score.test.ts",
+    "deterministicReviewer.test.ts",
+    "fixtureRepo.test.ts",
+    "review-seeded-bugs.eval.test.ts"
+  ]),
   srcs: sources,
   deps: [],
   cwd

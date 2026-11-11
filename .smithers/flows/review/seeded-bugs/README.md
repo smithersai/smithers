@@ -75,4 +75,8 @@ bun test .smithers/flows/review/seeded-bugs
 `score.test.ts` validates corpus integrity and the scoring math.
 `deterministicReviewer.test.ts` pins the offline reviewer's diff parsing, its
 signals, and the structural guarantee that it reads nothing but its prompt.
-Both are free and touch no network.
+`review-seeded-bugs.eval.test.ts` drives the fixed-suite adapter
+(`review-seeded-bugs.eval.ts`) through the evals runner over one clean
+control: a review that ended `failed` or `skipped` fails its case with an
+`executor` error instead of scoring its missing findings as a perfect clean
+review. All three are free and touch no network.
