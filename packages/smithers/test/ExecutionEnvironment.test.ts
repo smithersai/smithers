@@ -87,36 +87,41 @@ describe("persistent execution environments", () => {
     await expect(readFile(marker)).rejects.toThrow()
   })
 
-  it("stops a resistant descendant after its parent exits on cancellation", async () => {
-    const { root, source } = await fixture()
-    const marker = join(root, "child.pid")
-    const controller = new AbortController()
-    const running = Environments.run(
-      { name: "dev", transport: "local", directory: root },
-      ["/bin/sh", "-c", `sh -c 'trap "" TERM; echo $$ > "$1"; exec sleep 60' child "$1" & wait`, "parent", marker],
-      source,
-      { signal: controller.signal }
-    )
-    try {
-      const pid = await waitForPid(marker)
-      controller.abort()
-      expect(await running).toBe(130)
-      // The descendant may briefly remain while its signal is delivered/reaped.
-      let alive = true
-      for (let i = 0; i < 100 && alive; i++) {
-        try {
-          process.kill(pid, 0)
-          await new Promise((resolve) => setTimeout(resolve, 10))
-        } catch {
-          alive = false
+  // A terminal child shares this process's group, so its descendants are
+  // stopped by pid rather than by a process-group signal.
+  it.each([false, true])(
+    "stops a resistant descendant after its parent exits on cancellation (terminal: %s)",
+    async (terminal) => {
+      const { root, source } = await fixture()
+      const marker = join(root, "child.pid")
+      const controller = new AbortController()
+      const running = Environments.run(
+        { name: "dev", transport: "local", directory: root },
+        ["/bin/sh", "-c", `sh -c 'trap "" TERM; echo $$ > "$1"; exec sleep 60' child "$1" & wait`, "parent", marker],
+        source,
+        { terminal, signal: controller.signal }
+      )
+      try {
+        const pid = await waitForPid(marker)
+        controller.abort()
+        expect(await running).toBe(130)
+        // The descendant may briefly remain while its signal is delivered/reaped.
+        let alive = true
+        for (let i = 0; i < 100 && alive; i++) {
+          try {
+            process.kill(pid, 0)
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          } catch {
+            alive = false
+          }
         }
+        expect(alive).toBe(false)
+      } finally {
+        controller.abort()
+        await running.catch(() => {})
       }
-      expect(alive).toBe(false)
-    } finally {
-      controller.abort()
-      await running.catch(() => {})
     }
-  })
+  )
 
   it("runs a real local executable with exact arguments, selected cwd and home, and its exit code", async () => {
     const { root, source } = await fixture()

@@ -5,6 +5,7 @@
  * @since 1.0.0
  */
 
+import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
@@ -14,6 +15,7 @@ import * as CliError from "./CliError.ts"
 import { Client } from "./internal/backend/Client.ts"
 import { quote, sshArgs } from "./internal/backend/SSH.ts"
 import { workspaceSSH } from "./internal/backend/Workspaces.ts"
+import * as Tree from "./runner/Tree.ts"
 
 /**
  * The caller's process configuration.
@@ -335,7 +337,8 @@ const launchFailure = async (
 
 /**
  * Execute with inherited terminal I/O. Cancellation stops the local process
- * group; a remote command has SSH's connection lifecycle, not a durable receipt.
+ * group, or in terminal mode every descendant it saw, before returning 130; a
+ * remote command has SSH's connection lifecycle, not a durable receipt.
  * @category constructors
  * @since 1.0.0
  */
@@ -354,22 +357,40 @@ export const run = async (
       stdio: "inherit",
       detached: grouped
     })
-    let interrupted = false, timer: ReturnType<typeof setTimeout> | undefined
+    let interrupted = false, deadline = 0, timer: ReturnType<typeof setTimeout> | undefined
+    // A terminal child stays in this process's group so it keeps the
+    // foreground terminal; its descendants are then signalled by pid.
+    let tree: Tree.Tree | undefined
     const kill = (signal: NodeJS.Signals) => {
+      // Read the tree before signalling: a child that exits first leaves its
+      // descendants orphaned, out of reach of a walk from its pid.
+      if (tree !== undefined) Effect.runSync(tree.observe)
       try {
         if (grouped && child.pid !== undefined) process.kill(-child.pid, signal)
         else child.kill(signal)
       } catch { /* Already exited. */ }
+      if (tree !== undefined) Effect.runSync(tree.signal(signal))
     }
     const interrupt = () => {
       interrupted = true
+      if (!grouped && child.pid !== undefined) tree = Tree.watch(child.pid)
       kill("SIGTERM")
+      deadline = Date.now() + 500
       timer = setTimeout(() => kill("SIGKILL"), 500)
       timer.unref()
     }
     const cleanup = () => {
       options.signal?.removeEventListener("abort", interrupt)
       if (timer !== undefined) clearTimeout(timer)
+    }
+    const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+      cleanup()
+      if (!interrupted && profile.transport === "ssh" && code === 255) {
+        // OpenSSH reserves 255 for transport failures; a remote command may
+        // also return it. Never reflect provider diagnostics or credentials.
+        process.stderr.write("SSH session failed (exit 255). Check connectivity, known_hosts and SSH access.\n")
+      }
+      resolve(interrupted ? 130 : code ?? (128 + constants.signals[signal!]))
     }
     child.once("error", (error) => {
       cleanup()
@@ -379,13 +400,19 @@ export const run = async (
       // A resistant descendant can outlive its parent. Kill the group before
       // dropping the timer, even when the parent has already exited.
       if (interrupted && grouped) kill("SIGKILL")
-      cleanup()
-      if (!interrupted && profile.transport === "ssh" && code === 255) {
-        // OpenSSH reserves 255 for transport failures; a remote command may
-        // also return it. Never reflect provider diagnostics or credentials.
-        process.stderr.write("SSH session failed (exit 255). Check connectivity, known_hosts and SSH access.\n")
+      if (tree === undefined) return settle(code, signal)
+      // Ungrouped descendants get the rest of their grace period, then SIGKILL.
+      clearTimeout(timer)
+      const seen = tree
+      const wait = () => {
+        if (Effect.runSync(seen.gone)) return settle(code, signal)
+        if (Date.now() >= deadline) {
+          kill("SIGKILL")
+          return settle(code, signal)
+        }
+        timer = setTimeout(wait, 20)
       }
-      resolve(interrupted ? 130 : code ?? (128 + constants.signals[signal!]))
+      wait()
     })
     options.signal?.addEventListener("abort", interrupt, { once: true })
     if (options.signal?.aborted) interrupt()
