@@ -117,8 +117,7 @@ export const removedVerbs: ReadonlyArray<RemovedVerb> = [
     "claude-shell",
     "hermes",
     "listeners",
-    "observability",
-    "alerts"
+    "observability"
   ]),
   removedGroup("Accounts and providers", plugins, "herdr", ["status", "attach", "open", "clean"]),
   removedGroup("Accounts and providers", plugins, "openapi", ["list", "generate"]),

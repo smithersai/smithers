@@ -38,7 +38,6 @@
     "hermes": "no replacement ships in rc.0.",
     "listeners": "no replacement ships in rc.0.",
     "observability": "the kernel's telemetry and the OTLP layer; see [Observability](/docs/guides/observability/).",
-    "alerts": "no replacement ships in rc.0.",
     "herdr": "no replacement ships in rc.0.",
     "openapi": "no replacement ships in rc.0.",
     "token": "no replacement ships in rc.0.",

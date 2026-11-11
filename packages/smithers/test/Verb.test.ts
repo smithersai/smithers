@@ -199,7 +199,6 @@ describe("the removed surface", () => {
       "hermes",
       "listeners",
       "observability",
-      "alerts",
       "herdr",
       "openapi",
       "cron",

@@ -5,11 +5,13 @@
  */
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
+import { spawn } from "node:child_process"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 
@@ -382,4 +384,43 @@ describe("smthrs alerts", () => {
       .toContain("Recorded site-freshness ok on probe-owner.")
     expect((await human(["alerts", "list"])).stdout).toBe("alerts list\nNo open alerts on probe-owner.\n")
   })
+
+  it("reaches the command through the executable, not the 0.x removed-verb refusal", async () => {
+    const root = await telegramProject()
+    // spawn, not spawnSync: the loopback provider answers on this event loop.
+    const child = spawn(process.execPath, [
+      "--no-warnings",
+      fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
+      "alerts",
+      "report",
+      "--root",
+      root,
+      "--run",
+      run,
+      "--probe",
+      "site-freshness",
+      "--state",
+      "failing",
+      "--json"
+    ], {
+      cwd: root,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        HOME: root,
+        XDG_CONFIG_HOME: root,
+        XDG_DATA_HOME: root,
+        SMITHERS_REMOTE: "",
+        SMITHERS_ALERT_TELEGRAM_TOKEN: BOT_TOKEN
+      }
+    })
+    let stdout = ""
+    let stderr = ""
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk))
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk))
+    const status = await new Promise<number | null>((resolve) => child.on("close", resolve))
+    expect(status, stderr + stdout).toBe(0)
+    expect(JSON.parse(stdout)).toMatchObject({ destination: "telegram", delivered: [{ condition: "site-freshness" }] })
+    expect(received.map((request) => request.path)).toEqual([`/bot${BOT_TOKEN}/sendMessage`])
+  }, 90_000)
 })

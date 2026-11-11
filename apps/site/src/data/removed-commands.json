@@ -378,17 +378,6 @@
     },
     {
       "kind": "verb",
-      "anchor": "alerts",
-      "name": "alerts",
-      "group": "Accounts and providers",
-      "reason": "moved to the plugins repository or deferred",
-      "subcommands": [],
-      "spellings": [
-        "smthrs alerts"
-      ]
-    },
-    {
-      "kind": "verb",
       "anchor": "herdr",
       "name": "herdr",
       "group": "Accounts and providers",
@@ -882,7 +871,6 @@
   "anchors": [
     "add",
     "agents",
-    "alerts",
     "ask",
     "ask-human",
     "chat",
@@ -978,7 +966,6 @@
     "hermes",
     "listeners",
     "observability",
-    "alerts",
     "herdr",
     "openapi",
     "cron",
