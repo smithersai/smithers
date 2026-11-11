@@ -8,6 +8,7 @@ import * as Effect_1 from "effect/Effect";
 import { FlowEngine } from "@smthrs/engine";
 import * as JournalEvent from "@smthrs/journal/JournalEvent";
 import * as Effect from "effect/Effect";
+import { identity } from "effect/Function";
 import * as SqlClient from "effect/sql/SqlClient";
 import { EventTypes } from "../EventTypes.js";
 const optionalTime = (value) => value === null ? null : Number(value);
@@ -41,7 +42,7 @@ export const deferredClockFacts = Effect_1.gen(function* deferredClockFacts() {
     for (const event of events) {
         const payload = yield* Effect.orDie(Effect.try({
             try: () => JSON.parse(event.payload_json),
-            catch: (error) => error
+            catch: identity
         }));
         const name = event.event_type === EventTypes.clockScheduled || event.event_type === EventTypes.clockCompleted
             ? payload.clockName

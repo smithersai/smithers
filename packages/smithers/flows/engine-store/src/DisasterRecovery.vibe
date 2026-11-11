@@ -45,6 +45,7 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import { identity } from "effect/Function"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -379,7 +380,7 @@ const checkFileSize = (
 ): void!DisasterRecoveryError =>
   effect {
     const info = try fs.stat(path).pipe(Effect.mapError(ioFailure(method, `stating ${path}`)))
-    if (info.size <= try Effect.orDie(Effect.try({ try: () => BigInt(limit), catch: (error) => error }))) return
+    if (info.size <= try Effect.orDie(Effect.try({ try: () => BigInt(limit), catch: identity }))) return
     const message = `${path} is ${info.size} bytes, which exceeds the ${limit}-byte file limit`
     throw error(method, "io", message, new RangeError(message))
   }

@@ -35,6 +35,7 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Journal, JournalEvent, Projection } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
+import { identity } from "effect/Function"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -398,7 +399,7 @@ const foldRun = (runId: string, upTo?: number | undefined) =>
     const floor = try floorOf(sql, runId)
     if (floor === undefined) return try foldEntries(journal, runId, initial, undefined, upTo)
     const kept = fromCheckpoint(
-      try Effect.orDie(Effect.try({ try: () => JSON.parse(floor.state_json) as unknown, catch: (error) => error }))
+      try Effect.orDie(Effect.try({ try: () => JSON.parse(floor.state_json) as unknown, catch: identity }))
     )
     if (Option.isNone(kept)) {
       throw new FoldIncomplete({

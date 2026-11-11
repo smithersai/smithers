@@ -11,6 +11,7 @@ import { OwnerId } from "@smthrs/journal/OwnerId";
 import { revisionTriggers } from "@smthrs/run-store/Migrations";
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore";
 import { Cause, Effect, Option, Schema } from "effect";
+import { identity } from "effect/Function";
 /**
  * Non-negative safe integer for timestamps and revisions.
  *
@@ -166,7 +167,7 @@ export const selectColumns = (sql, hasWaitingRequest = true) => {
     (SELECT seq FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_seq`;
 };
 // A token the digest refuses is a defect, as the digest's throw inside the read always was.
-const tokenDigest = (token) => Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: (error) => error }));
+const tokenDigest = (token) => Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: identity }));
 /**
  * Decodes a run row and validates observation invariants.
  *

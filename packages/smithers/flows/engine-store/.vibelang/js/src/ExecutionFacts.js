@@ -8,6 +8,7 @@ import { FlowEngine } from "@smthrs/engine";
 import { DurableDeferred } from "@smthrs/flow";
 import { ExecutionFact, Redaction } from "@smthrs/journal";
 import { Effect, Option, Schema } from "effect";
+import { identity } from "effect/Function";
 import * as JournalRecords from "./internal/JournalRecords.js";
 import * as StateTransaction from "./internal/StateTransaction.js";
 // The wait point a `WaitFor/` deferred token names, or null for any other token.
@@ -22,7 +23,7 @@ const waitPoint = (token) => {
     return null;
 };
 // A token the digest refuses is a defect, as the digest's throw inside the observation always was.
-const tokenDigest = (token) => Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: (error) => error }));
+const tokenDigest = (token) => Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: identity }));
 /** Read the semantic subset shared with ExecutionSnapshot inside its caller's transaction.
  * @category queries
  * @since 1.0.0

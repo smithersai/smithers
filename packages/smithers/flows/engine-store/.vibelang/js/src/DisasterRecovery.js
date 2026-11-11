@@ -45,6 +45,7 @@ import { DurableWriter } from "@smthrs/database/DurableWriter";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import { identity } from "effect/Function";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ArtifactRoots from "./internal/ArtifactRoots.js";
@@ -193,7 +194,7 @@ const fileSizeLimit = (method, options) => {
  */
 const checkFileSize = (fs, method, path, limit) => Effect_1.gen(function* () {
     const info = yield* fs.stat(path).pipe(Effect.mapError(ioFailure(method, `stating ${path}`)));
-    if (info.size <= (yield* Effect.orDie(Effect.try({ try: () => BigInt(limit), catch: (error) => error }))))
+    if (info.size <= (yield* Effect.orDie(Effect.try({ try: () => BigInt(limit), catch: identity }))))
         return;
     const message = `${path} is ${info.size} bytes, which exceeds the ${limit}-byte file limit`;
     return yield* Effect_1.fail(error(method, "io", message, new RangeError(message)));

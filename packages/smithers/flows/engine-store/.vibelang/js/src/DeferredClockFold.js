@@ -36,6 +36,7 @@ import * as Effect_1 from "effect/Effect";
 import { DurableWriter } from "@smthrs/database/DurableWriter";
 import { Journal, JournalEvent, Projection } from "@smthrs/journal";
 import * as Effect from "effect/Effect";
+import { identity } from "effect/Function";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -327,7 +328,7 @@ const foldRun = (runId, upTo) => Effect_1.gen(function* () {
     const floor = yield* floorOf(sql, runId);
     if (floor === undefined)
         return yield* foldEntries(journal, runId, initial, undefined, upTo);
-    const kept = fromCheckpoint(yield* Effect.orDie(Effect.try({ try: () => JSON.parse(floor.state_json), catch: (error) => error })));
+    const kept = fromCheckpoint(yield* Effect.orDie(Effect.try({ try: () => JSON.parse(floor.state_json), catch: identity })));
     if (Option.isNone(kept)) {
         return yield* Effect_1.fail(new FoldIncomplete({
             code: "fold_incomplete",

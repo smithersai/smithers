@@ -10,6 +10,7 @@ import { OwnerId } from "@smthrs/journal/OwnerId"
 import { revisionTriggers } from "@smthrs/run-store/Migrations"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
 import { Cause, Effect, Option, Schema } from "effect"
+import { identity } from "effect/Function"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.vibe"
 
@@ -218,7 +219,7 @@ export const selectColumns = (sql: SqlClient.SqlClient, hasWaitingRequest = true
 
 // A token the digest refuses is a defect, as the digest's throw inside the read always was.
 const tokenDigest = (token: string): Sha256.Digest!! =>
-  Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: (error) => error }))
+  Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: identity }))
 
 /**
  * Decodes a run row and validates observation invariants.

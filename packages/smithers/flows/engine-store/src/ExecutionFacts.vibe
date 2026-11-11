@@ -8,6 +8,7 @@ import { DurableDeferred } from "@smthrs/flow"
 import { ExecutionFact, type Journal, Redaction } from "@smthrs/journal"
 import type { RunStore } from "@smthrs/run-store"
 import { Effect, Option, Schema } from "effect"
+import { identity } from "effect/Function"
 import type * as DurableEngineState from "./DurableEngineState.vibe"
 import * as JournalRecords from "./internal/JournalRecords.vibe"
 import * as StateTransaction from "./internal/StateTransaction.vibe"
@@ -36,7 +37,7 @@ const waitPoint = (token: string): string | null => {
 
 // A token the digest refuses is a defect, as the digest's throw inside the observation always was.
 const tokenDigest = (token: string): Sha256.Digest!! =>
-  Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: (error) => error }))
+  Effect.orDie(Effect.try({ try: () => Sha256.digestSync(token), catch: identity }))
 
 /** Read the semantic subset shared with ExecutionSnapshot inside its caller's transaction.
  * @category queries
