@@ -83,8 +83,8 @@ structure Change where
   id : ChangeId
   /-- Higher lands first. -/
   priority : Nat
-  /-- Arrival order; breaks priority ties. A fix keeps it, so a change that
-  needed a fix does not lose its place. -/
+  /-- Arrival order; breaks priority ties. A fix takes a new one, so a fixed
+  change queues behind the runs already in flight. -/
   seq : Nat
   /-- Bumped by every fix. -/
   rev : Nat

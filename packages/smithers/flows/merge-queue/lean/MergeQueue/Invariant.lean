@@ -105,14 +105,14 @@ theorem Inv.empty (cfg : Config) : Inv cfg State.empty := by
 /-- Rewriting changes by a function that keeps identity, leaves merged changes
 alone and merges nothing keeps the invariant. `withdraw`, `fixed`, `gaveUp`
 and `blame` are all of this shape. -/
-theorem Inv.mapChanges {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change → Change)
-    (hid : ∀ c, (g c).id = c.id) (hseq : ∀ c, (g c).seq = c.seq)
+theorem Inv.mapChanges' {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change → Change) (next : Nat)
+    (hid : ∀ c, (g c).id = c.id) (hseq : ∀ c ∈ s.changes, (g c).seq < next)
     (keep : ∀ c, c.status = .merged → g c = c)
     (fresh : ∀ c, (g c).status = .merged → c.status = .merged)
     (att : ∀ c ∈ s.changes, (g c).attempts ≤ cfg.maxAttempts)
     (rsn : ∀ c ∈ s.changes, ∀ r, (g c).status = .unmergeable r → r.detail ≠ "")
     (hrev : ∀ c, c.rev ≤ (g c).rev) :
-    Inv cfg { s with changes := s.changes.map g } := by
+    Inv cfg { s with changes := s.changes.map g, nextSeq := next } := by
   have ids : (s.changes.map g).map (·.id) = s.changes.map (·.id) := by
     simp [List.map_map, Function.comp_def, hid]
   constructor
@@ -120,7 +120,7 @@ theorem Inv.mapChanges {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change 
     rw [ids]; exact inv.changeIds
   · intro c hc
     obtain ⟨old, member, rfl⟩ := List.mem_map.mp hc
-    rw [hseq]; exact inv.seqs old member
+    exact hseq old member
   · exact inv.runIds
   · exact inv.runFresh
   · exact inv.runTrees
@@ -147,6 +147,17 @@ theorem Inv.mapChanges {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change 
   · intro r hr p hp
     obtain ⟨c, member, same, rev⟩ := inv.runRevs r hr p hp
     exact ⟨g c, List.mem_map_of_mem member, by rw [hid]; exact same, Nat.le_trans rev (hrev c)⟩
+
+/-- Rewriting changes by a function that also keeps arrival numbers. -/
+theorem Inv.mapChanges {cfg : Config} {s : State} (inv : Inv cfg s) (g : Change → Change)
+    (hid : ∀ c, (g c).id = c.id) (hseq : ∀ c, (g c).seq = c.seq)
+    (keep : ∀ c, c.status = .merged → g c = c)
+    (fresh : ∀ c, (g c).status = .merged → c.status = .merged)
+    (att : ∀ c ∈ s.changes, (g c).attempts ≤ cfg.maxAttempts)
+    (rsn : ∀ c ∈ s.changes, ∀ r, (g c).status = .unmergeable r → r.detail ≠ "")
+    (hrev : ∀ c, c.rev ≤ (g c).rev) :
+    Inv cfg { s with changes := s.changes.map g } :=
+  inv.mapChanges' g s.nextSeq hid (fun c member => by rw [hseq]; exact inv.seqs c member) keep fresh att rsn hrev
 
 theorem Inv.withdrawNow {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) : Inv cfg (s.withdrawNow id) := by
   unfold State.withdrawNow
@@ -177,12 +188,15 @@ theorem Inv.withdraw {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId
   · exact inv
   · exact inv.withdrawNow id
 
-theorem Inv.fixed {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (attempt : Nat) :
-    Inv cfg (s.fixed id attempt) := by
-  unfold State.fixed
-  apply inv.mapChanges
+theorem Inv.fixedNow {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (attempt : Nat) :
+    Inv cfg (s.fixedNow id attempt) := by
+  unfold State.fixedNow
+  apply inv.mapChanges'
   · intro c; split <;> rfl
-  · intro c; split <;> rfl
+  · intro c member
+    split
+    · exact Nat.lt_succ_self _
+    · exact Nat.lt_succ_of_lt (inv.seqs c member)
   · intro c merged
     split
     · rename_i h; simp [merged, Status.isFixing] at h
@@ -200,6 +214,13 @@ theorem Inv.fixed {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (
     · cases unmergeable
     · exact inv.reasons c member r unmergeable
   · intro c; split <;> simp
+
+theorem Inv.fixed {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (attempt : Nat) :
+    Inv cfg (s.fixed id attempt) := by
+  unfold State.fixed
+  split
+  · exact inv.fixedNow id attempt
+  · exact inv
 
 theorem Inv.gaveUp {cfg : Config} {s : State} (inv : Inv cfg s) (id : ChangeId) (attempt : Nat) (detail : String) :
     Inv cfg (s.gaveUp id attempt detail) := by

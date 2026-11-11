@@ -118,7 +118,9 @@ theorem predictions_never_decide (cfg : Config) (s : State) (history : List (Che
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> rfl
-  | fixed id attempt => rfl
+  | fixed id attempt =>
+    simp only [step, State.fixed, State.fixedNow]
+    split <;> rfl
   | gaveUp id attempt detail =>
     simp only [step, State.gaveUp, failuresOf]
     rfl
@@ -236,7 +238,9 @@ theorem history_bounded {cfg : Config} {s : State} (reachable : Reachable cfg s)
       · simp only [step, refused]; exact ih
       · simp only [step, took]
         exact record_bounded _ _ _ _ _ ih
-    | fixed id attempt => exact ih
+    | fixed id attempt =>
+      simp only [step, State.fixed, State.fixedNow]
+      split <;> exact ih
     | gaveUp id attempt detail => exact ih
     | foreign id =>
       simp only [step, State.foreign]

@@ -394,9 +394,11 @@ describe("blame", () => {
 describe("fixed", () => {
   const blamed = [standard, "enqueue 1 4", "start 1", "result 0 2 fail 5", "blame 0"]
 
-  it("queues the new revision in the change's old place", () => {
-    const { state } = play(...blamed, "fixed 1 1")
-    expect(state.changes[0]).toEqual({ id: 1, priority: 4, seq: 0, rev: 1, attempts: 1, status: { _tag: "queued" } })
+  it("queues the new revision at the back, behind changes that arrived while it was being fixed", () => {
+    const { state } = play(...blamed, "enqueue 2 4", "fixed 1 1")
+    expect(state.changes[0]).toEqual({ id: 1, priority: 4, seq: 2, rev: 1, attempts: 1, status: { _tag: "queued" } })
+    expect(state.nextSeq).toBe(3)
+    expect(ready(state).map((change) => change.id)).toEqual([2, 1])
   })
 
   it("refuses an answer for another attempt and for a change that is not being fixed", () => {

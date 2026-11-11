@@ -75,9 +75,9 @@ theorem budget_withdrawNow (cfg : Config) (s : State) (id : ChangeId) :
 
 /-- **A fix answer strictly lowers the budget** when it takes effect, and never
 raises it. -/
-theorem budget_fixed (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) :
-    (s.fixed id attempt).budget cfg ≤ s.budget cfg := by
-  unfold State.fixed State.budget
+theorem budget_fixedNow (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) :
+    (s.fixedNow id attempt).budget cfg ≤ s.budget cfg := by
+  unfold State.fixedNow State.budget
   apply sum_map_le
   intro c _
   split
@@ -86,10 +86,10 @@ theorem budget_fixed (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) 
     simp [Change.budget, fixing, Status.isTerminal, Status.isFixing]
   · exact Nat.le_refl _
 
-theorem budget_fixed_lt (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat)
+theorem budget_fixedNow_lt (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat)
     (took : ∃ c ∈ s.changes, c.id = id ∧ c.status.isFixing = true ∧ c.attempts = attempt) :
-    (s.fixed id attempt).budget cfg < s.budget cfg := by
-  unfold State.fixed State.budget
+    (s.fixedNow id attempt).budget cfg < s.budget cfg := by
+  unfold State.fixedNow State.budget
   apply sum_map_lt
   · intro c _
     split
@@ -101,6 +101,20 @@ theorem budget_fixed_lt (cfg : Config) (s : State) (id : ChangeId) (attempt : Na
     refine ⟨c, member, ?_⟩
     obtain ⟨run, fixing⟩ := Status.isFixing_iff.mp h.2.1
     simp [h, Change.budget, fixing, Status.isTerminal, Status.isFixing]
+
+/-- A fix answer never raises the budget. -/
+theorem budget_fixed (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) :
+    (s.fixed id attempt).budget cfg ≤ s.budget cfg := by
+  rcases s.fixed_cases id attempt with refused | ⟨_, took⟩
+  · rw [refused]; exact Nat.le_refl _
+  · rw [took]; exact budget_fixedNow cfg s id attempt
+
+/-- **A fix answer that takes effect strictly lowers the budget.** -/
+theorem budget_fixed_lt (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) (took : s.fixed id attempt ≠ s) :
+    (s.fixed id attempt).budget cfg < s.budget cfg := by
+  rcases s.fixed_cases id attempt with refused | ⟨found, eq⟩
+  · exact absurd refused took
+  · rw [eq]; exact budget_fixedNow_lt cfg s id attempt found
 
 /-- **A verdict never raises the budget.** -/
 theorem budget_gaveUp (cfg : Config) (s : State) (id : ChangeId) (attempt : Nat) (detail : String) :

@@ -65,7 +65,8 @@ theorem main_moves_only_by_land {cfg : Config} {s : State} {e : Event} (moved : 
   | withdraw id => exact absurd (by simp only [step, State.withdraw]; split <;> rfl) moved
   | result run check verdict duration =>
     exact absurd (by simp only [step, State.result]; split <;> rfl) moved
-  | fixed id attempt => exact absurd rfl moved
+  | fixed id attempt =>
+    exact absurd (by simp only [step, State.fixed, State.fixedNow]; split <;> rfl) moved
   | gaveUp id attempt detail => exact absurd rfl moved
   | push run => exact absurd (by simp only [step, State.push]; (repeat' split) <;> rfl) moved
   | start count => exact absurd (by simp only [step, State.start]; split <;> rfl) moved
@@ -232,7 +233,11 @@ theorem ended_is_final (cfg : Config) {s : State} {c : Change} (member : c ∈ s
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> exact member
-  | fixed id attempt => exact mem_map_of_fixed member (by simp [notFixing])
+  | fixed id attempt =>
+    simp only [step, State.fixed, State.fixedNow]
+    split
+    · exact mem_map_of_fixed member (by simp [notFixing])
+    · exact member
   | gaveUp id attempt detail => exact mem_map_of_fixed member (by simp [notFixing])
   | foreign id =>
     simp only [step, State.foreign]
@@ -254,34 +259,38 @@ theorem ended_is_final (cfg : Config) {s : State} {c : Change} (member : c ∈ s
   | cancel run => exact member
 
 /-- **No change is ever lost.** Whatever happens, a change the queue has seen
-is still in the queue's record, under the same id, arrival number and priority. -/
+is still in the queue's record, under the same id and priority. -/
 theorem never_lost (cfg : Config) {s : State} {c : Change} (member : c ∈ s.changes) (e : Event) :
-    ∃ d ∈ (step cfg s e).changes, d.id = c.id ∧ d.seq = c.seq ∧ d.priority = c.priority := by
-  have mapped : ∀ g : Change → Change, (∀ x, (g x).id = x.id ∧ (g x).seq = x.seq ∧ (g x).priority = x.priority) →
-      ∃ d ∈ s.changes.map g, d.id = c.id ∧ d.seq = c.seq ∧ d.priority = c.priority :=
+    ∃ d ∈ (step cfg s e).changes, d.id = c.id ∧ d.priority = c.priority := by
+  have mapped : ∀ g : Change → Change, (∀ x, (g x).id = x.id ∧ (g x).priority = x.priority) →
+      ∃ d ∈ s.changes.map g, d.id = c.id ∧ d.priority = c.priority :=
     fun g keeps => ⟨g c, List.mem_map_of_mem member, keeps c⟩
-  have same : ∃ d ∈ s.changes, d.id = c.id ∧ d.seq = c.seq ∧ d.priority = c.priority := ⟨c, member, rfl, rfl, rfl⟩
+  have same : ∃ d ∈ s.changes, d.id = c.id ∧ d.priority = c.priority := ⟨c, member, rfl, rfl⟩
   cases e with
   | enqueue id priority =>
     simp only [step, State.enqueue]
     split
     · exact same
-    · exact ⟨c, List.mem_append_left _ member, rfl, rfl, rfl⟩
+    · exact ⟨c, List.mem_append_left _ member, rfl, rfl⟩
   | withdraw id =>
     simp only [step, State.withdraw]
     split
     · exact same
-    · exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
+    · exact mapped _ fun x => by split <;> exact ⟨rfl, rfl⟩
   | result run check verdict duration =>
     simp only [step, State.result]
     split <;> exact same
-  | fixed id attempt => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
-  | gaveUp id attempt detail => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
+  | fixed id attempt =>
+    simp only [step, State.fixed, State.fixedNow]
+    split
+    · exact mapped _ fun x => by split <;> exact ⟨rfl, rfl⟩
+    · exact same
+  | gaveUp id attempt detail => exact mapped _ fun x => by split <;> exact ⟨rfl, rfl⟩
   | foreign id =>
     simp only [step, State.foreign]
     split
     · exact same
-    · exact ⟨c, List.mem_append_left _ member, rfl, rfl, rfl⟩
+    · exact ⟨c, List.mem_append_left _ member, rfl, rfl⟩
   | push run =>
     simp only [step, State.push]
     (repeat' split) <;> exact same
@@ -290,13 +299,13 @@ theorem never_lost (cfg : Config) {s : State} {c : Change} (member : c ∈ s.cha
     split <;> exact same
   | land run =>
     simp only [step, State.land, State.landNow]
-    (repeat' split) <;> first | exact same | exact mapped _ fun x => by split <;> exact ⟨rfl, rfl, rfl⟩
+    (repeat' split) <;> first | exact same | exact mapped _ fun x => by split <;> exact ⟨rfl, rfl⟩
   | blame run =>
     simp only [step, State.blame]
     (repeat' split) <;>
       first
       | exact same
-      | exact mapped _ fun x => by (repeat' split) <;> exact ⟨rfl, rfl, rfl⟩
+      | exact mapped _ fun x => by (repeat' split) <;> exact ⟨rfl, rfl⟩
   | cancel run => exact same
 
 /-! ## Fixing is bounded; unmergeable has a reason -/
@@ -358,19 +367,9 @@ theorem crash_keeps_main_and_changes (s : State) (lost : List RunId) :
 earlier attempt cannot move a change that has since been blamed again. -/
 theorem stale_fix_refused (s : State) (id : ChangeId) (attempt : Nat)
     (stale : ∀ c ∈ s.changes, c.id = id → c.attempts ≠ attempt) : s.fixed id attempt = s := by
-  unfold State.fixed
-  have same : (s.changes.map fun c =>
-      if c.id = id ∧ c.status.isFixing = true ∧ c.attempts = attempt then
-        { c with rev := c.rev + 1, status := Status.queued }
-      else c) = s.changes := by
-    conv => rhs; rw [← List.map_id s.changes]
-    apply List.map_congr_left
-    intro c member
-    split
-    · rename_i h
-      exact absurd h.2.2 (stale c member h.1)
-    · rfl
-  rw [same]
+  rcases s.fixed_cases id attempt with refused | ⟨⟨c, member, same, _, current⟩, _⟩
+  · exact refused
+  · exact absurd current (stale c member same)
 
 /-- A verdict for another attempt is refused. -/
 theorem stale_verdict_refused (s : State) (id : ChangeId) (attempt : Nat) (detail : String)
@@ -423,9 +422,10 @@ theorem fix_is_tested_afresh {cfg : Config} {s : State} (inv : Inv cfg s) {c : C
     (fixing : c.status.isFixing = true) (r : Run) (held : r ∈ s.runs) (batch : List Part)
     (live : (s.fixed c.id c.attempts).live r = some batch) : ∀ p ∈ batch, p.id ≠ c.id := by
   intro p inBatch same
+  rw [State.fixed_of_fixing s member fixing] at live
   obtain ⟨tree, _, allReady⟩ := State.live_some live
   obtain ⟨c', member', part, queued⟩ := State.partReady_iff.mp (allReady p inBatch)
-  simp only [State.fixed] at member'
+  simp only [State.fixedNow] at member'
   obtain ⟨d, dMember, rfl⟩ := List.mem_map.mp member'
   have dIs : d = c := by
     apply eq_of_nodup_map inv.changeIds dMember member

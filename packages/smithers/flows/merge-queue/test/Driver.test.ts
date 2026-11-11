@@ -466,7 +466,7 @@ describe("crash and restart", () => {
   it("a crash at every single service call of the whole run ends with the same result", async () => {
     const calm = scenario()
     const expected = await drain(calm)
-    expect(calm.calls()).toBeGreaterThan(40)
+    expect(calm.calls()).toBeGreaterThan(30)
     for (let crashAt = 0; crashAt < calm.calls(); crashAt++) {
       const world = scenario()
       world.failCall(crashAt)

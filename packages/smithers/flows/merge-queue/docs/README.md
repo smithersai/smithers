@@ -38,7 +38,8 @@ names it.
 - **Unmergeable always has a reason.** A fix agent's verdict stands only with
   written words for the author.
 - **Order is kept.** A run always tests the first ready changes by priority,
-  then arrival. A fixed change keeps its place.
+  then arrival. A fixed change re-queues at the back of its priority, so it
+  never jumps ahead of runs already in flight.
 - **A crash loses nothing.** Losing any runs at any moment keeps every
   invariant, delivering any event twice is the same as delivering it once, and
   the next decision is a function of the durable state alone.

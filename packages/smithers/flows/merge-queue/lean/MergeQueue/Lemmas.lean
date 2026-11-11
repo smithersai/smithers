@@ -244,4 +244,25 @@ theorem State.land_cases (cfg : Config) (s : State) (run : RunId) :
   · rename_i pushed; exact Or.inr ⟨pushed, rfl⟩
   · exact Or.inl rfl
 
+/-- A fix answer is refused, or it is the re-queue of the change. -/
+theorem State.fixed_cases (s : State) (id : ChangeId) (attempt : Nat) :
+    s.fixed id attempt = s
+      ∨ ((∃ c ∈ s.changes, c.id = id ∧ c.status.isFixing = true ∧ c.attempts = attempt)
+          ∧ s.fixed id attempt = s.fixedNow id attempt) := by
+  unfold State.fixed
+  split
+  · rename_i found
+    obtain ⟨c, member, h⟩ := List.any_eq_true.mp found
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    exact Or.inr ⟨⟨c, member, h.1.1, h.1.2, h.2⟩, rfl⟩
+  · exact Or.inl rfl
+
+/-- A fix answer for a change that is being fixed on that attempt takes effect. -/
+theorem State.fixed_of_fixing (s : State) {c : Change} (member : c ∈ s.changes) (fixing : c.status.isFixing = true) :
+    s.fixed c.id c.attempts = s.fixedNow c.id c.attempts := by
+  unfold State.fixed
+  have found : s.changes.any (fun d => d.id == c.id && d.status.isFixing && d.attempts == c.attempts) = true :=
+    List.any_eq_true.mpr ⟨c, member, by simp [fixing]⟩
+  simp [found]
+
 end MergeQueue

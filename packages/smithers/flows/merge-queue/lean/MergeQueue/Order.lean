@@ -67,16 +67,21 @@ theorem higher_priority_first {a b : Change} (higher : b.priority < a.priority) 
       beq_eq_false_iff_ne, ne_eq]
     omega
 
-/-- A fix keeps a change's place in the queue: its priority and arrival number
-do not change. -/
-theorem fix_keeps_place (s : State) (id : ChangeId) (attempt : Nat) :
-    (s.fixed id attempt).changes.map (fun c => (c.id, c.priority, c.seq))
-      = s.changes.map (fun c => (c.id, c.priority, c.seq)) := by
-  unfold State.fixed
-  simp only [List.map_map]
-  apply List.map_congr_left
-  intro c _
-  simp only [Function.comp_def]
-  split <;> rfl
+/-- **A fix re-queues at the back.** The fixed change comes back at its next
+revision with an arrival number above every arrival so far, and every other
+change is left exactly as it was. So a fix never jumps ahead of the runs
+already in flight. -/
+theorem fix_requeues_at_the_back {cfg : Config} {s : State} (inv : Inv cfg s) {c : Change} (member : c ∈ s.changes)
+    (fixing : c.status.isFixing = true) :
+    { c with rev := c.rev + 1, seq := s.nextSeq, status := Status.queued } ∈ (s.fixed c.id c.attempts).changes
+      ∧ (∀ d ∈ s.changes, d.seq < s.nextSeq)
+      ∧ ∀ d ∈ s.changes, d.id ≠ c.id → d ∈ (s.fixed c.id c.attempts).changes := by
+  rw [State.fixed_of_fixing s member fixing]
+  refine ⟨?_, inv.seqs, ?_⟩
+  · simp only [State.fixedNow, List.mem_map]
+    exact ⟨c, member, by simp [fixing]⟩
+  · intro d dMember other
+    simp only [State.fixedNow, List.mem_map]
+    exact ⟨d, dMember, by simp [other]⟩
 
 end MergeQueue

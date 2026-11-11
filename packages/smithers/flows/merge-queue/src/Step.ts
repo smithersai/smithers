@@ -336,18 +336,35 @@ export const result = (
     }
     : state
 
+const fixingOn = (change: Change, id: number, attempt: number): boolean =>
+  change.id === id && change.status._tag === "fixing" && change.attempts === attempt
+
 /**
- * A fix agent delivers a new revision. `attempt` names the fix attempt the
- * agent was started for, so an answer from an earlier attempt is refused.
+ * The new revision of a change being fixed, queued again with a new arrival
+ * number.
+ *
+ * @category events
+ * @since 0.1.0
+ */
+export const fixedNow = (state: State, id: number, attempt: number): State => ({
+  ...rewrite(state, (change) =>
+    fixingOn(change, id, attempt)
+      ? { ...change, rev: change.rev + 1, seq: state.nextSeq, status: { _tag: "queued" } }
+      : change),
+  nextSeq: state.nextSeq + 1
+})
+
+/**
+ * A fix agent delivers a new revision, for the fix attempt it was started
+ * for; an answer from an earlier attempt is refused. The change is queued
+ * again at the back of its priority: it takes a new arrival number, so it
+ * does not jump ahead of the runs already in flight.
  *
  * @category events
  * @since 0.1.0
  */
 export const fixed = (state: State, id: number, attempt: number): State =>
-  rewrite(state, (change) =>
-    change.id === id && change.status._tag === "fixing" && change.attempts === attempt
-      ? { ...change, rev: change.rev + 1, status: { _tag: "queued" } }
-      : change)
+  state.changes.some((change) => fixingOn(change, id, attempt)) ? fixedNow(state, id, attempt) : state
 
 /**
  * A fix agent judges the change unmergeable. The verdict stands only with

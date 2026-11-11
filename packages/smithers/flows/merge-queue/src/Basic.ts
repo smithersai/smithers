@@ -103,7 +103,7 @@ export interface Change {
   readonly id: number
   /** Higher lands first. */
   readonly priority: number
-  /** Arrival order; breaks priority ties. A fix keeps it. */
+  /** Arrival order; breaks priority ties. A fix takes a new one. */
   readonly seq: number
   /** Bumped by every fix. */
   readonly rev: number

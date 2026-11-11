@@ -2,7 +2,7 @@
 
 Written by `node scripts/mutants.ts --write`. Do not edit: run it again.
 
-51 planted bugs; 51 caught on both sides.
+53 planted bugs; 53 caught on both sides.
 
 Each bug is planted in the Lean reference and in the TypeScript kernel. In Lean it must break a proof, or, when
 every proof still holds (the bug changes the policy, not a guarantee), make the differential fuzz differ. In
@@ -29,9 +29,9 @@ TypeScript the recorded reference digests or the theorem checks must notice.
 | `blame-ignores-attempt-limit` | Allow one fix attempt more than the limit. | proof: `State.blame_cases` | reference digest (seed 12); Inv.step (seed 12) |
 | `blame-keeps-exhausted-queued` | Leave a change queued when it fails with no attempt left. | proof: `State.blame_cases` | no TypeScript mutant: the types refuse it |
 | `blame-does-not-count` | Start a fix without counting the attempt. | proof: `State.blame_cases` | reference digest (seed 1) |
-| `fixed-any-attempt` | Accept a fix answer from an earlier attempt. | proof: `stale_fix_refused`, `fix_is_tested_afresh` | reference digest (seed 1) |
-| `fixed-keeps-revision` | Requeue a fixed change at its old revision, so its old failed run still counts. | proof: `stale_fix_refused`, `fix_is_tested_afresh` | reference digest (seed 2) |
-| `fixed-stays-fixing` | Take a fix answer without requeueing the change. | proof: `State.fixed_twice`, `Inv.fixed` | reference digest (seed 2); step_idempotent (seed 2) |
+| `fixed-any-attempt` | Accept a fix answer from an earlier attempt. | proof: `State.fixed_twice`, `fix_is_tested_afresh` | reference digest (seed 1) |
+| `fixed-keeps-revision` | Requeue a fixed change at its old revision, so its old failed run still counts. | proof: `fix_requeues_at_the_back`, `fix_is_tested_afresh` | reference digest (seed 2) |
+| `fixed-stays-fixing` | Take a fix answer without requeueing the change. | proof: `State.fixed_twice`, `Inv.fixedNow` | reference digest (seed 2); step_idempotent (seed 2) |
 | `verdict-without-words` | Put a change out as unmergeable with no words for its author. | proof: `Inv.gaveUp` | reference digest (seed 270) |
 | `verdict-any-attempt` | Accept a verdict from an earlier attempt. | proof: `stale_verdict_refused` | reference digest (seed 353) |
 | `withdraw-a-merged-change` | Withdraw a change that already merged. | proof: `State.withdrawNow_twice`, `Inv.withdrawNow` | reference digest (seed 2); Inv.step (seed 2); ended_is_final, never_lost (seed 2) |
@@ -46,7 +46,7 @@ TypeScript the recorded reference digests or the theorem checks must notice.
 | `order-lowest-priority-first` | Put lower priority first. | proof: `higher_priority_first` | reference digest (seed 1) |
 | `cancel-forgets-every-run` | Cancelling one run forgets every other run instead. | proof: `Inv.cancel` | reference digest (seed 1); plan_takes_effect (seed 1); the policy settles (seed 1) |
 | `history-keeps-one-too-many` | Remember one duration more than the window. | proof: `record_bounded` | reference digest (seed 1); Inv.step (seed 1) |
-| `bisect-does-not-narrow` | Retest the whole failing prefix instead of a shorter one. | proof: `State.nextStart_some`, `bisection_narrows` | reference digest (seed 3); plan_takes_effect (seed 3); the policy settles (seed 3) |
+| `bisect-does-not-narrow` | Retest the whole failing prefix instead of a shorter one. | proof: `bisectStep_bounds` | reference digest (seed 3); plan_takes_effect (seed 3); the policy settles (seed 3) |
 | `speculate-past-the-queue` | Start a run on more changes than are ready. | proof: `State.nextStart_some` | reference digest (seed 2); plan_takes_effect (seed 2); the policy settles (seed 2) |
 | `never-cancel` | Never cancel a run the queue no longer needs. | differential: every proof still holds; the kernel and the mutated reference differ | reference digest (seed 1) |
 | `ignore-the-run-limit-in-policy` | Plan a start when no run slot is free. | proof: `State.nextStart_some`, `no_deadlock`, `bisection_narrows` | reference digest (seed 1); plan_takes_effect (seed 1); the policy settles (seed 1) |
@@ -61,3 +61,5 @@ TypeScript the recorded reference digests or the theorem checks must notice.
 | `withdraw-a-pushing-change` | Withdraw a change that is on its way onto the target. | proof: `withdraw_takes_effect`, `pushing_change_is_not_withdrawn` | reference digest (seed 1) |
 | `cancel-the-pushing-run` | Let the policy forget the run it is pushing. | differential: every proof still holds; the kernel and the mutated reference differ | reference digest (seed 248) |
 | `land-keeps-pushing` | Record a landing without ending the push. | proof: `State.landNow_cases` | reference digest (seed 1) |
+| `bisect-one-at-a-time` | Bisect with one run at a time although more run slots are free. | proof: `bisectStep_bounds` | reference digest (seed 22) |
+| `fixed-keeps-its-place` | Re-queue a fixed change in its old place, ahead of the runs in flight. | proof: `Inv.fixedNow` | reference digest (seed 2) |

@@ -99,7 +99,8 @@ export const theorems: ReadonlyArray<Theorem> = [
     holds: (kernel, entry) =>
       entry.before.changes.every((change, index) => {
         const later = entry.after.changes[index]
-        return later !== undefined && later.id === change.id && later.seq === change.seq
+        return later !== undefined && later.id === change.id
+          && (later.seq === change.seq || entry.event._tag === "fixed")
           && later.priority === change.priority
           && (!kernel.isTerminal(change.status) || JSON.stringify(later) === JSON.stringify(change))
       })

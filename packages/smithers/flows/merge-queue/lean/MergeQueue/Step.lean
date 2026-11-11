@@ -161,13 +161,22 @@ def State.result (cfg : Config) (s : State) (run : RunId) (check : CheckId) (ver
       history := record cfg.window s.history check duration }
   else s
 
-/-- A fix agent delivers a new revision. `attempt` names the fix attempt the
-agent was started for, so an answer from an earlier attempt is refused. -/
-def State.fixed (s : State) (id : ChangeId) (attempt : Nat) : State :=
+/-- The new revision of a change being fixed, queued again with a new arrival
+number. -/
+def State.fixedNow (s : State) (id : ChangeId) (attempt : Nat) : State :=
   { s with
     changes := s.changes.map fun c =>
-      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then { c with rev := c.rev + 1, status := .queued }
-      else c }
+      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then
+        { c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }
+      else c
+    nextSeq := s.nextSeq + 1 }
+
+/-- A fix agent delivers a new revision, for the fix attempt it was started
+for. The change is queued again at the back of its priority: it takes a new
+arrival number, so it does not jump ahead of the runs already in flight. -/
+def State.fixed (s : State) (id : ChangeId) (attempt : Nat) : State :=
+  if s.changes.any (fun c => c.id == id && c.status.isFixing && c.attempts == attempt) then s.fixedNow id attempt
+  else s
 
 /-- A fix agent judges the change unmergeable. The verdict stands only with
 written words for the author. -/

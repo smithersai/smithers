@@ -28,12 +28,16 @@ theorem State.withdrawNow_twice (s : State) (id : ChangeId) : (s.withdrawNow id)
 
 theorem State.fixed_twice (s : State) (id : ChangeId) (attempt : Nat) :
     (s.fixed id attempt).fixed id attempt = s.fixed id attempt := by
-  unfold State.fixed
-  simp only [List.map_map, State.mk.injEq, and_true, true_and]
-  apply List.map_congr_left
-  intro c _
-  simp only [Function.comp_def]
-  split <;> simp_all [Status.isFixing]
+  rcases s.fixed_cases id attempt with refused | ⟨_, took⟩
+  · rw [refused, refused]
+  · rw [took]
+    unfold State.fixed
+    have gone : (s.fixedNow id attempt).changes.any
+        (fun c => c.id == id && c.status.isFixing && c.attempts == attempt) = false := by
+      simp only [State.fixedNow, List.any_map, List.any_eq_false, Function.comp_def]
+      intro c _
+      split <;> simp_all [Status.isFixing]
+    simp [gone]
 
 theorem State.gaveUp_twice (s : State) (id : ChangeId) (attempt : Nat) (detail : String) :
     (s.gaveUp id attempt detail).gaveUp id attempt detail = s.gaveUp id attempt detail := by

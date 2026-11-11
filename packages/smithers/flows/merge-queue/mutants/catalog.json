@@ -262,13 +262,13 @@
     "what": "Accept a fix answer from an earlier attempt.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then { c with rev := c.rev + 1, status := .queued }",
-      "mutated": "      if c.id = id ∧ c.status.isFixing ∧ attempt ≤ c.attempts then { c with rev := c.rev + 1, status := .queued }"
+      "original": "      if c.id = id ∧ c.status.isFixing ∧ c.attempts = attempt then\n        { c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }",
+      "mutated": "      if c.id = id ∧ c.status.isFixing ∧ attempt ≤ c.attempts then\n        { c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "    change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt\n      ? { ...change, rev: change.rev + 1",
-      "mutated": "    change.id === id && change.status._tag === \"fixing\" && attempt <= change.attempts\n      ? { ...change, rev: change.rev + 1"
+      "original": "  change.id === id && change.status._tag === \"fixing\" && change.attempts === attempt\n",
+      "mutated": "  change.id === id && change.status._tag === \"fixing\" && attempt <= change.attempts\n"
     }
   },
   {
@@ -276,13 +276,13 @@
     "what": "Requeue a fixed change at its old revision, so its old failed run still counts.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "{ c with rev := c.rev + 1, status := .queued }",
-      "mutated": "{ c with status := .queued }"
+      "original": "{ c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }",
+      "mutated": "{ c with seq := s.nextSeq, status := .queued }"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }",
-      "mutated": "      ? { ...change, status: { _tag: \"queued\" } }"
+      "original": "      ? { ...change, rev: change.rev + 1, seq: state.nextSeq, status: { _tag: \"queued\" } }",
+      "mutated": "      ? { ...change, seq: state.nextSeq, status: { _tag: \"queued\" } }"
     }
   },
   {
@@ -290,13 +290,13 @@
     "what": "Take a fix answer without requeueing the change.",
     "lean": {
       "file": "lean/MergeQueue/Step.lean",
-      "original": "{ c with rev := c.rev + 1, status := .queued }",
-      "mutated": "{ c with rev := c.rev + 1 }"
+      "original": "{ c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }",
+      "mutated": "{ c with rev := c.rev + 1, seq := s.nextSeq }"
     },
     "ts": {
       "file": "src/Step.ts",
-      "original": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }",
-      "mutated": "      ? { ...change, rev: change.rev + 1 }"
+      "original": "      ? { ...change, rev: change.rev + 1, seq: state.nextSeq, status: { _tag: \"queued\" } }",
+      "mutated": "      ? { ...change, rev: change.rev + 1, seq: state.nextSeq }"
     }
   },
   {
@@ -713,6 +713,20 @@
       "file": "src/Policy.ts",
       "original": "Math.floor((gap + free) / (free + 1))",
       "mutated": "Math.floor((gap + 1 + 0 * free) / 2)"
+    }
+  },
+  {
+    "name": "fixed-keeps-its-place",
+    "what": "Re-queue a fixed change in its old place, ahead of the runs in flight.",
+    "lean": {
+      "file": "lean/MergeQueue/Step.lean",
+      "original": "{ c with rev := c.rev + 1, seq := s.nextSeq, status := .queued }",
+      "mutated": "{ c with rev := c.rev + 1, status := .queued }"
+    },
+    "ts": {
+      "file": "src/Step.ts",
+      "original": "      ? { ...change, rev: change.rev + 1, seq: state.nextSeq, status: { _tag: \"queued\" } }",
+      "mutated": "      ? { ...change, rev: change.rev + 1, status: { _tag: \"queued\" } }"
     }
   }
 ]
