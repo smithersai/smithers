@@ -100,7 +100,21 @@ const relocate = project => {
   renameSync(staging, project.sidecarDir)
 }
 
-const generatedDeclaration = file => /\.d\.vibe\.ts$|\.vibe\.[^/]+\.d\.[cm]?ts$/.test(file)
+// The compiler also writes X.d.ts beside X.vibe (or X.vibex) re-exporting it, so stock TypeScript
+// importers resolve the native module. It is output: an include glob that matches it must not make
+// it an input of the next generation, or the compiler refuses to overwrite it (TS5055).
+const reexportShim = file => {
+  const stem = /^(.*)\.d\.ts$/.exec(file)?.[1]
+  if (stem === undefined || /\.d\.vibex?$/.test(stem)) return false
+  return [".vibe", ".vibex"].some(extension => {
+    if (!existsSync(stem + extension)) return false
+    const name = "./" + basename(stem) + extension
+    return readFileSync(file, "utf8").split("\n").every(line =>
+      line === "" || line === `export * from "${name}";` || line === `export { default } from "${name}";`)
+  })
+}
+
+const generatedDeclaration = file => /\.d\.vibe\.ts$|\.vibe\.[^/]+\.d\.[cm]?ts$/.test(file) || reexportShim(file)
 
 const ambientContext = project => {
   // Preserve globals and library references introduced by any original root,

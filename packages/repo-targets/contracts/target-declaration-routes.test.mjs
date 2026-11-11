@@ -293,3 +293,23 @@ test("native source imports require the same extension opt-in as TypeScript", ()
     }
   }
 }))
+
+test("a second preparation does not read the compiler's re-export shims as inputs", () => fixture(dir => {
+  // Without a sidecarDir the compiler writes value.d.ts beside value.vibe, re-exporting it for stock
+  // TypeScript importers. A project whose include matches that directory lists the shim among its
+  // files on the next preparation; generating it again must not try to overwrite its own input.
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "shim-input-fixture", type: "module" }))
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    compilerOptions: {
+      target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+      skipLibCheck: true, noEmit: true, allowArbitraryExtensions: true, allowImportingTsExtensions: true
+    },
+    include: ["**/*"],
+    exclude: ["node_modules"]
+  }))
+  writeFileSync(join(dir, "value.vibe"), "export const value = 1\n")
+  writeFileSync(join(dir, "use.ts"), 'import { value } from "./value.vibe"\nexport const next = value + 1\n')
+  assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 1)
+  assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 1)
+}))
