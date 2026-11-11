@@ -79,3 +79,32 @@ describe("front door", () => {
     )
   })
 })
+
+describe("front door ranges and labels", () => {
+  const facts = (ownRepos: number) => ({
+    ...visitFacts,
+    signedIn: true,
+    ownRepos: { state: "known", value: ownRepos } as const
+  })
+  it("a range with only a minimum has no upper bound", () => {
+    const r = FrontDoor.parse({
+      ...placeholderRules,
+      journeys: [{ ...placeholderRules.journeys[0], when: { ownRepos: { min: 3 } } }]
+    })
+    for (const value of [2, 3, 1_000_000]) {
+      expect(chooseJourney(r, facts(value)).journey).toBe(value >= 3 ? "no-repo" : "default")
+    }
+  })
+  it("an earlier label rule shadows only a later rule whose labels it all allows", () => {
+    const journey = (id: string, when: object) => ({ ...placeholderRules.journeys[2], id, when })
+    const shadowed = (later: object) =>
+      shadowedJourneys(FrontDoor.parse({
+        ...placeholderRules,
+        journeys: [journey("earlier", { source: ["effeck", "github"] }), journey("later", later)]
+      }))
+    expect(shadowed({ source: ["github"] })).toEqual([{ journey: "later", by: "earlier" }])
+    expect(shadowed({ source: ["github", "search"] })).toEqual([])
+    expect(shadowed({})).toEqual([])
+    expect(shadowed({ medium: ["email"] })).toEqual([])
+  })
+})

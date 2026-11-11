@@ -609,7 +609,7 @@ export const criticalPath = (
       } else {
         frames.pop()
         visiting.delete(frame.label)
-        best.set(frame.label, { total: frame.longest + (duration.get(frame.label) ?? 0), via: frame.via })
+        best.set(frame.label, { total: frame.longest + duration.get(frame.label)!, via: frame.via })
       }
     }
   }
@@ -620,7 +620,7 @@ export const criticalPath = (
    * which is where a Bazel-style critical path ends.
    */
   const dependedOn = new Set<string>()
-  for (const [from, list] of deps) if (duration.has(from)) { for (const to of list) dependedOn.add(to) }
+  for (const list of deps.values()) for (const to of list) dependedOn.add(to)
   let root: string | undefined
   let rootTotal = -1
   for (const node of nodes) {

@@ -3473,3 +3473,25 @@ describe("local gateway card identity", () => {
     }
   )
 })
+
+describe("live Secrets models", () => {
+  const row = { id: "secrets", kind: "secrets", title: "Secrets", status: "active", createdAt: 0, ordinal: 0 }
+
+  test("a live model keeps its repository", () => {
+    const card = CardSchema.parse({
+      ...row,
+      payload: { repo: "owner/repo", secrets: [{ name: "DEPLOY", scope: "all_branches", actions: [] }] }
+    })
+    if (card.kind !== "secrets") throw new Error("wrong kind")
+    expect(card.payload).toEqual({
+      repo: "owner/repo",
+      scope: "repository",
+      secrets: [{ name: "DEPLOY", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null }]
+    })
+  })
+
+  test("a live-shaped model with an unknown scope is refused, not reinterpreted", () => {
+    const payload = { repo: "owner/repo", secrets: [{ name: "DEPLOY", scope: "everywhere", actions: [] }] }
+    expect(CardSchema.safeParse({ ...row, payload }).success).toBe(false)
+  })
+})

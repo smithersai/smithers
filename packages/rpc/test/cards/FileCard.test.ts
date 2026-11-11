@@ -172,3 +172,8 @@ test("refuses malformed file rows and deltas with stable tagged codes", () => {
   )
   expect(projectBranchFiles(undefined, { path: "new.ts" })).toEqual({ rows: [{ path: "new.ts" }] })
 })
+
+test("a delta that already carries changed rows replaces the projection as given", () => {
+  const delta = { changed: [{ path: "a.ts" }], hint: "rebased" }
+  expect(projectBranchFiles({ rows: [{ path: "old.ts" }] }, delta)).toBe(delta)
+})

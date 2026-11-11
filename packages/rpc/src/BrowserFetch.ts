@@ -185,8 +185,7 @@ const mappedIpv4 = (rest: string): string | undefined => {
   if (parseIpv4(rest) !== undefined) return rest
   const groups = rest.split(":")
   if (groups.length !== 2) return undefined
-  const high = groups[0] ?? ""
-  const low = groups[1] ?? ""
+  const [high, low] = groups as [string, string]
   if (!/^[0-9a-f]{1,4}$/.test(high) || !/^[0-9a-f]{1,4}$/.test(low)) return undefined
   const a = Number.parseInt(high, 16)
   const b = Number.parseInt(low, 16)
@@ -262,8 +261,9 @@ const ipv6Groups = (ip: string): ReadonlyArray<number> | undefined => {
     }
     return out
   }
-  const head = parse(halves[0] ?? "")
-  const tail = halves.length === 2 ? parse(halves[1] ?? "") : []
+  const [left, right] = halves as [string, string | undefined]
+  const head = parse(left)
+  const tail = right === undefined ? [] : parse(right)
   if (head === undefined || tail === undefined) return undefined
   if (halves.length === 1) return head.length === 8 ? head : undefined
   const gap = 8 - head.length - tail.length
@@ -390,7 +390,7 @@ export const extractReadableText = (html: string): string => {
   // One pass, so `&amp;lt;` decodes to the literal text `&lt;`, never to `<`.
   const decoded = withoutTags.replace(
     /&(nbsp|amp|lt|gt|quot|#39|apos);/gi,
-    (_entity, name: string) => ENTITIES[name.toLowerCase()] ?? ""
+    (_entity, name: string) => ENTITIES[name.toLowerCase()]!
   )
   return decoded.replace(/\s+/g, " ").trim().slice(0, BROWSER_FETCH_MAX_TEXT)
 }
@@ -451,10 +451,8 @@ const abortable = <T>(pending: Promise<T>, signal: AbortSignal): Promise<T> =>
   new Promise((resolve, reject) => {
     const abort = (): void => reject(signal.reason)
     pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
-    if (signal.aborted) {
-      reject(signal.reason)
-      return
-    }
+    // Throwing in the executor rejects with the reason a deadline that already fired carries.
+    signal.throwIfAborted()
     signal.addEventListener("abort", abort, { once: true })
   })
 

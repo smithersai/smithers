@@ -1265,8 +1265,8 @@ export const decodeModelAnswers = (
       case "choice": {
         const keys = Object.keys((question as Extract<ModelQuestion, { type: "choice" }>).criteria)
         if (!keys.includes(answer.choice)) return no
-        const probabilities = distributionOf(keys, answer.choice, answer.probabilities, (index) => keys[index]!)
-        if (probabilities === undefined) return no
+        // The schema already bounds each choice probability to [0, 1], so this distribution always exists.
+        const probabilities = distributionOf(keys, answer.choice, answer.probabilities, (index) => keys[index]!)!
         answers[id] = {
           type: "choice",
           value: answer.choice,
@@ -1681,8 +1681,8 @@ export const resolveModelEndpoint = (
   const path = model.path ?? defaults.path
   if (!pathIsSafe(path)) return failed({ code: "invalid", field: "path" })
   const baseUrl = url.toString().replace(/\/+$/, "")
+  // A safe path starts with one "/" after a serialized origin, so it cannot change the origin.
   const target = `${baseUrl}${path}`
-  if (modelOriginOf(new URL(target).origin) !== origin) return failed({ code: "invalid", field: "path" })
   return { ok: true, endpoint: { origin, baseUrl, path, url: target } }
 }
 

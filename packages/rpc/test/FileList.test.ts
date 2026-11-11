@@ -114,3 +114,29 @@ describe("the files flow every host binds", () => {
     expect(value).toBe("src in acme/app:\na.ts\n(The directory has more entries than one listing shows.)")
   })
 })
+
+describe("a listing at a named revision", () => {
+  test("the revision is part of the card's identity, title and payload", () => {
+    const { card, value } = fileListCard(
+      { repo: "acme/app", path: "", entries: [{ name: "a.ts", kind: "file" }], ref: "release/1.2" },
+      0,
+      1
+    )
+    expect(card.id).toBe("files-acme/app-/@release/1.2")
+    expect(card.title).toBe("Files · acme/app · / · release/1.2")
+    expect(card.payload).toEqual({
+      repo: "acme/app",
+      path: "",
+      entries: [{ name: "a.ts", kind: "file" }],
+      address: "/acme/app/",
+      ref: "release/1.2"
+    })
+    expect(CardSchema.safeParse(card).success).toBe(true)
+    expect(value).toBe("/ in acme/app:\na.ts")
+  })
+
+  test("an empty repository root is named as the root", () => {
+    expect(listingValue("acme/app", "", [])).toBe("/ in acme/app is empty.")
+    expect(fileListCard({ repo: "acme/app", path: "", entries: [] }, 0, 1).value).toBe("/ in acme/app is empty.")
+  })
+})

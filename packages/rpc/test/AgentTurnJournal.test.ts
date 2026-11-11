@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest"
-import { AgentTurnBatchRejected, agentTurnJournalDigestInput, projectAgentTurnBatch } from "../src/AgentTurnJournal.ts"
+import {
+  AgentConversationBatchSchema,
+  AgentTurnBatchRejected,
+  agentTurnJournalDigestInput,
+  projectAgentTurnBatch
+} from "../src/AgentTurnJournal.ts"
 import type { AgentTurnBatch, AgentTurnJournalHead } from "../src/AgentTurnJournal.ts"
 
 /*
@@ -110,5 +115,18 @@ describe("agentTurnJournalDigestInput", () => {
       "smithers-agent-turn/batch/v1:{\"a\":\"x\",\"b\":1}"
     )
     expect(agentTurnJournalDigestInput("access", "token")).toBe("smithers-agent-turn/access/v1:\"token\"")
+  })
+})
+
+describe("AgentConversationBatchSchema", () => {
+  test("an archived batch keeps each frame's original bytes, including fields the live frame drops", () => {
+    const archived = { ...batch, frames: [{ ...delta("a"), signature: "sig-a" }] }
+    expect(AgentConversationBatchSchema.parse(archived).frames).toEqual([{ ...delta("a"), signature: "sig-a" }])
+  })
+
+  test("a frame the live schema refuses is refused with the live schema's issues", () => {
+    const parsed = AgentConversationBatchSchema.safeParse({ ...batch, frames: [{ runId: "run-1", type: "teleport" }] })
+    expect(parsed.success).toBe(false)
+    expect(parsed.error?.issues.every((issue) => issue.path[0] === "frames" && issue.path[1] === 0)).toBe(true)
   })
 })

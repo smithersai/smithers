@@ -288,3 +288,23 @@ describe("issue groups", () => {
     expect(ids(groups, "done")).toEqual(["edge", "unstamped"])
   })
 })
+
+describe("ties and singular counts", () => {
+  test("Needs you items waiting since the same moment keep snapshot order", () => {
+    const groups = issueGroups(stack([
+      item("b", "blocked", { updatedAt: "2026-09-29T08:00:00Z" }),
+      item("a", "proposed", { updatedAt: "2026-09-29T08:00:00Z" }),
+      item("c", "blocked", { updatedAt: "2026-09-29T07:00:00Z" })
+    ]))
+    expect(groups.find((group) => group.id === "needs-you")?.items.map((one) => one.id)).toEqual(["c", "b", "a"])
+  })
+
+  test("one misroute and one replan read in the singular, two in the plural", () => {
+    const base = stackMetrics(stack([]))
+    const text = (misroutes: number, replans: number) =>
+      stackMetricLabels({ ...base, misroutes, replans }).filter(({ id }) => id === "misroutes" || id === "replans")
+        .map((label) => label.text)
+    expect(text(1, 1)).toEqual(["1 misroute", "1 replan"])
+    expect(text(2, 2)).toEqual(["2 misroutes", "2 replans"])
+  })
+})

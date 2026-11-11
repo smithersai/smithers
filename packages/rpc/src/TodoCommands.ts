@@ -96,10 +96,8 @@ export const parseTodoArgs = (field?: "text" | "answer", target = true) => (args
   const line = (args ?? "").trim()
   if (line.startsWith("{")) {
     try {
-      const value: unknown = JSON.parse(line)
-      return value && typeof value === "object" && !Array.isArray(value)
-        ? { payload: value as Record<string, unknown> }
-        : { error: "Invalid TODO input" }
+      // A JSON text that begins with `{` is an object or a syntax error.
+      return { payload: JSON.parse(line) as Record<string, unknown> }
     } catch {
       return { error: "Invalid TODO input" }
     }

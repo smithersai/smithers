@@ -162,4 +162,9 @@ describe("upstream refusal boundary", () => {
     expect(upstreamRefusalMessage("Cloud", 503, JSON.stringify({ message: "  Maintenance in progress. " })))
       .toBe("Cloud is having trouble right now (HTTP 503).")
   })
+
+  test.each([403, 500])("says the pinned scope sentence instead of the HTTP %s fallback", (status) => {
+    const body = JSON.stringify({ error: { message: " insufficient token scope " } })
+    expect(upstreamRefusalMessage("Cloud", status, body)).toBe("insufficient token scope")
+  })
 })
