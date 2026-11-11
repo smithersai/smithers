@@ -36,7 +36,7 @@ absolute path, and `--root` are passed through.
 
 ## How the launch knows the run is real
 
-The child re-executes the CLI as `smthrs run <payload>` with a nonce in
+The child re-executes the CLI as `smthrs flow execute <payload>` with a nonce in
 `SMITHERS_INTERNAL_DETACHED_ADMISSION`. As soon as the control plane accepts
 the launch and the run row is durable, the child writes one admission line
 naming that nonce and the run id to its own log. The parent reads that line and
@@ -117,10 +117,12 @@ always-run cleanup step.
 
 ## A run nothing drives
 
-A module flow launched this way settles at `accepted` with
-`waitingReason: "executor"` and stays there, because the CLI's agent host
-drives prompt flows and a flow whose body is a module (`flow.ts` or `flow.vibe`) is driven by
-the host program that registers its delegates. That is a real wait for a real
+A run that no executor claims within five seconds of its admission stays
+`accepted`, listed with `waitingReason: "executor"`. A module whose `flow.ts`
+or `flow.vibe` default-exports `Flow.make(...)` is its own work, and the
+detached child runs it. A module that only declares the flows it delegates to
+runs where a host program registers them ([native module hosts](./native-module-host.md)),
+such as `smthrs runner serve` for its `lane` module. That is a real wait for a real
 external executor, so the run is not a bug and does not time out.
 
 `smthrs runs list` labels it, `smthrs runs show` diagnoses it as `pending`,

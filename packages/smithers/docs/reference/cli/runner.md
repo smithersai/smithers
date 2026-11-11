@@ -1,6 +1,6 @@
 ---
 title: "Runner commands"
-description: "Run a host's external agent jobs on your own machine: the runner token, runner.json, and how a job runs, stops and resumes."
+description: "Run a host's external agent jobs on your own machine, or coding-agent lanes with the runner as its own host: the runner token, runner.json, and how a job runs, stops and resumes."
 ---
 
 A runner is a machine you attach to a Smithers host so a named external agent
@@ -8,12 +8,14 @@ can do a step's work there. The runner pulls: it claims jobs over HTTPS, so it
 needs no inbound address. Each job runs the agent your `runner.json` maps the
 job's profile to, speaking the [Agent Client Protocol](https://agentclientprotocol.com)
 (ACP) on its stdio, in a jj checkout of the job's repository at the job's base
-commit. The runner settles the files the agent changed.
+commit. The runner settles the files the agent changed. A `runner.json` with
+no `origin` makes the runner its own host, for [local lanes](#local-lanes).
 
 | Command | Purpose |
 | --- | --- |
 | `smthrs runner token [--state <dir>] [--rotate]` | Make the runner's token and print its SHA-256 |
-| `smthrs runner serve --config <runner.json>` | Claim and run jobs until stopped |
+| `smthrs runner serve --config <runner.json>` | Claim and run jobs until stopped; with no `origin`, also host the lanes |
+| `smthrs runner start <brief> --config <runner.json> --profile <p> --repository <id> [--base <rev>] [--standing] [--max-hours <n>] [--restarts <n>]` | Queue a lane for a runner that is its own host, and print the request's id |
 
 ## Register a runner
 
@@ -69,7 +71,8 @@ job's deadline.
 
 | Field | Meaning |
 | --- | --- |
-| `origin` | The host. `https`, or `http` on `localhost` only. |
+| `origin` | The host. `https`, or `http` on `localhost` only. Absent: the runner is its own host, and needs no token ([local lanes](#local-lanes)). |
+| `lanes` | With no `origin`: `root`, the project whose control store holds the lanes' runs; the state directory unless set. |
 | `name` | The name the admin registered. |
 | `capacity` | Jobs run at once; 4 unless set, 64 at most. |
 | `stateDir` | Token, journal (`engine.db`), checkouts (`work/`) and transcript spools (`spool/`); `~/.smithers/runner` unless set. |
@@ -254,10 +257,66 @@ time, so a quiet build isn't mistaken for a stuck agent.
 - **Deadline.** At the job's deadline the runner stops the agent and fails
   `timeout`.
 
+## Local lanes
+
+A `runner.json` with no `origin` makes the runner its own host. `serve` then
+runs one process holding three things: a job store of its own under the state
+directory, the claim loop above, which claims from that store, and a control
+host for the lanes root (`lanes.root`, the state directory unless set). A lane
+is a control run of the `lane` module; each of its rounds is one external
+agent step whose job the runner itself claims and works.
+
+```
+smthrs runner start brief.md --config runner.json --profile p --repository r
+  └─ <state>/lanes/<id>.json ─────────────── waits there while serve is down
+smthrs runner serve --config runner.json
+  ├─ admits it: plan, approve, run (key runner-lane:<id>) ── a run in `runs list`
+  │    runner/Lane round ── runner/Lane/Session step ── <state>/jobs/<job>.json
+  └─ claim loop: claims the job, runner/Job does it in a checkout, settles it
+       one-shot: the run completes with the step's result
+       standing: the next round starts, same brief, same run
+```
+
+- **Start.** `runner start` checks the profile, the repository and the brief
+  file, resolves `--base` with jj in the repository's mirror (its `main`
+  unless set) to a commit, and writes the request whole under
+  `<state>/lanes/`. It prints the request's id; once `serve` admits it, the
+  run's id is in `<state>/lanes/admitted/<id>.json`. Each round's agent has
+  `--max-hours` (4 unless set) and `--restarts` (1 unless set), and its change
+  may hold at most 1,000 files and 16 MiB.
+- **Admission.** `serve` admits each request every `pollSeconds`, after a
+  restart too, and deletes it. A daemon stopped at any step admits it again
+  from where it was, as the same run. A request that doesn't decode, or that
+  control refuses, is renamed `<id>.json.rejected`.
+- **Watch.** `smthrs runs list|show|logs --root <lanes root>` reads a lane's
+  run. While its agent works the run reads `parked` between its step's probes,
+  or `running`. The agent's transcript is appended to
+  `<state>/transcripts/<job>.jsonl`, one event per line, once each.
+- **Steer.** `smthrs runs steer <run> --message <text> --root <lanes root>`
+  reaches the agent at the runner's next heartbeat, as [Steering](#steering)
+  says, and the run then has no steer pending.
+- **Stop.** `smthrs runs cancel <run> --root <lanes root>` cancels the run
+  (its receipt exits 130). Once the run reads `cancelled`, after its step's
+  next probe, its open job is cancelled: the runner stops the agent's whole
+  process tree at its next heartbeat and removes the checkout. A standing
+  lane ends only this way, or when a round fails.
+- **Restart.** A daemon killed or stopped mid-job resumes the lane with no
+  `runs resume`: the control host takes the run back, the store hands the
+  claim back `reclaimed`, and the session resumes from its checkpoint. The
+  job is done once.
+
+The job store keeps each job as one JSON file under `<state>/jobs/`, written
+to a temporary file and renamed, so a kill leaves the last whole write. It
+has the hosted store's rules: a cancel before a job starts wins, a job past
+its agent's hours ends `timeout`, and a retryable end past its restarts ends
+`exhausted`. A file that doesn't decode is logged and left; nothing claims
+its job. One `serve` owns a state directory.
+
 ## Records
 
 Logs carry job keys, generations, outcome codes, account labels and durations:
 `runner.serve`, `runner.claim`, `runner.heartbeat`, `runner.session`, `runner.steer`, `runner.quiet`, `runner.tree`,
-`runner.settle`, `runner.events`, `runner.transcript` and `runner.job`. They
+`runner.settle`, `runner.events`, `runner.transcript`, `runner.job`, and, for
+local lanes, `runner.lane` and `runner.jobs`. They
 never carry a prompt, the agent's text,
 a command line, an environment or a path.
