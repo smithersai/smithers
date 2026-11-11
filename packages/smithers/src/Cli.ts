@@ -100,6 +100,9 @@ export const makeCli = (
       mcp: false,
       options: options.extend({
         agent: z.string().optional(),
+        memoryDb: z.string().min(1).optional().describe(
+          "SQLite file the registered agents share as their memory store (defaults to SMITHERS_MEMORY_DB)"
+        ),
         verbose: z.boolean().default(false).describe("Show redacted diagnostic details")
       }),
       run: (c) =>
@@ -113,10 +116,14 @@ export const makeCli = (
               message: `Unknown agent ${requested}. Known agents: ${Agents.agents.map((agent) => agent.id).join(", ")}`
             })
           }
-          const wired = targets.map((agent) => Agents.addMcp(agent, environment["HOME"], environment))
+          // The store the entry records travels with the environment the agent's profile is read from.
+          const registering = c.options.memoryDb === undefined
+            ? environment
+            : { ...environment, SMITHERS_MEMORY_DB: c.options.memoryDb }
+          const wired = targets.map((agent) => Agents.addMcp(agent, environment["HOME"], registering))
           if (wired.every((entry) => entry.status === "failed")) {
             const stderr = config.stderr ?? process.stderr
-            stderr.write(`${Agents.manualInstructions(targets.map((agent) => agent.id))}\n`)
+            stderr.write(`${Agents.manualInstructions(targets.map((agent) => agent.id), registering)}\n`)
             throw new CliError.UnsupportedError({ message: "Could not register the MCP server" })
           }
           return wired

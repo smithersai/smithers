@@ -343,8 +343,8 @@ integer TTL in milliseconds. `compact` requires `--summary` and an exclusive
 count (`--keep`); `--dry-run` previews it.
 
 `memory list`, `memory get`, `memory set`, and `memory recall` are also MCP
-tools of `smthrs --mcp`, so agent CLIs registered with `smthrs mcp add` share
-facts; see [shared agent memory](../../guides/wire-the-mcp-server.md#shared-agent-memory).
+tools of `smthrs --mcp`, so agent CLIs registered with
+`smthrs mcp add --memory-db <file>` share facts; see [shared agent memory](../../guides/wire-the-mcp-server.md#shared-agent-memory).
 Over MCP, `--root` is refused.
 
 `memory messages add --message-id <id>` is idempotent for the same thread,

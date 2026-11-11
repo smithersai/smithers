@@ -12805,12 +12805,13 @@ The agent configurations `smthrs mcp add` writes into.
 | -------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `serverName`         | `"smithers"`                               | The registered server name.                                                                                                                                                                            |
 | `codexConfigString`  | `(text: string) => string`                 | A TOML basic string for Codex overrides; refuses malformed Unicode.                                                                                                                                    |
-| `Agent`, `agents`    | `{ id, mcpConfig }`                        | `claude` at `~/.claude.json`, `codex` at `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`).                                                                                                   |
+| `Agent`, `agents` | `{ id, mcpConfig }` | `claude` at `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`), `codex` at `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). |
 | `find`               | `(id) => Agent \| undefined`               | One agent by id.                                                                                                                                                                                       |
 | `launchCommand`      | `(execPath?, entry?) => { command, args }` | The current executable and entry, verbatim, so a local development install registers itself rather than a package runner.                                                                              |
+| `serverEnvironment` | `(environment) => { SMITHERS_MEMORY_DB } \| undefined` | The environment a registered server starts with: the absolute path of the memory store `SMITHERS_MEMORY_DB` names, or undefined without one. |
 | `Wired`              | `{ agent, path, status, reason? }`         | What one wiring attempt did.                                                                                                                                                                           |
-| `addMcp`             | `(agent, home?, environment?) => Wired`    | Registers through the Codex CLI and verifies discovery, or writes Claude JSON under a lock with atomic replacement. An explicit home isolates Codex unless the supplied environment sets `CODEX_HOME`. |
-| `manualInstructions` | `(targets?) => string`                     | What to do by hand when every write failed.                                                                                                                                                            |
+| `addMcp` | `(agent, home?, environment?) => Wired` | Registers through the Codex CLI and verifies discovery, or writes Claude JSON under a lock with atomic replacement. The entry carries `serverEnvironment(environment)`. An explicit home isolates the write unless the supplied environment sets `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. |
+| `manualInstructions` | `(targets?, environment?) => string` | What to do by hand when every write failed, with the memory store the environment names. |
 
 ## Serve
 
@@ -49376,6 +49377,7 @@ Options:
   --mcp-config <string>  Path to the configured MCP servers
   --quiet                Suppress progress messages
   --agent <string>
+  --memory-db <string>   SQLite file the registered agents share as their memory store (defaults to SMITHERS_MEMORY_DB)
   --verbose              Show redacted diagnostic details
 
 Custom Global Options:

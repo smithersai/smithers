@@ -110,6 +110,35 @@ describe("Codex MCP registration", () => {
     expect(readFileSync(first.path)).toEqual(original)
   })
 
+  it.skipIf(!installedCodex)("records the shared memory store where the installed Codex client reads it", () => {
+    const home = temporaryHome()
+    const store = join(home, "shared", "memory.db")
+    const environment = { ...isolatedEnvironment(home), SMITHERS_MEMORY_DB: store }
+    const listedStore = (): unknown => {
+      const listed = spawnSync("codex", ["mcp", "list", "--json"], {
+        cwd: home,
+        env: isolatedEnvironment(home),
+        encoding: "utf8",
+        timeout: 30_000
+      })
+      expect(listed.status, listed.stderr).toBe(0)
+      const servers = JSON.parse(listed.stdout) as Array<{ name: string; transport: { env: unknown } }>
+      return servers.find((server) => server.name === "smithers")?.transport.env
+    }
+
+    const first = Agents.addMcp(codex, undefined, environment)
+    expect(first.status, first.reason).toBe("written")
+    expect(listedStore()).toEqual({ SMITHERS_MEMORY_DB: store })
+    expect(Agents.addMcp(codex, undefined, environment).status).toBe("unchanged")
+
+    const moved = join(home, "moved.db")
+    expect(Agents.addMcp(codex, undefined, { ...environment, SMITHERS_MEMORY_DB: moved }).status).toBe("written")
+    expect(listedStore()).toEqual({ SMITHERS_MEMORY_DB: moved })
+
+    expect(Agents.addMcp(codex, undefined, isolatedEnvironment(home)).status).toBe("written")
+    expect(listedStore() ?? {}).toEqual({})
+  }, 120_000)
+
   it.skipIf(!installedCodex)("refuses malformed Codex TOML without changing its bytes", () => {
     const home = temporaryHome()
     const codexHome = join(home, ".codex")

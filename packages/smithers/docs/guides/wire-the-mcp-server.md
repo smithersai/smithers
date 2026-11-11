@@ -20,8 +20,11 @@ server named `smithers` into the agent's own configuration:
 
 | Agent | File |
 | --- | --- |
-| `claude` | `~/.claude.json` |
+| `claude` | `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`) |
 | `codex` | `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) |
+
+Each agent profile has its own file, so run `mcp add` once per profile with
+that profile's `CLAUDE_CONFIG_DIR` or `CODEX_HOME` set.
 
 `smthrs mcp add` with no `--agent` wires every agent it knows. An unknown agent
 name is a usage error that lists the known ids. `smthrs mcp` on its own prints
@@ -104,6 +107,20 @@ agent CLI, or another profile of the same CLI.
 The store is the SQLite file `SMITHERS_MEMORY_DB` names in the server's
 environment. Without it, the store is the `.flows/control.db` of the project
 the server started in, so only agents started in that project share it.
+
+Register every agent and profile with one store:
+
+```bash
+smthrs mcp add --memory-db ~/.smithers/memory.db
+CLAUDE_CONFIG_DIR=~/profiles/second smthrs mcp add --agent claude --memory-db ~/.smithers/memory.db
+CODEX_HOME=~/profiles/codex-two smthrs mcp add --agent codex --memory-db ~/.smithers/memory.db
+```
+
+`--memory-db` defaults to the `SMITHERS_MEMORY_DB` of the shell that runs
+`mcp add`. The entry records the store's absolute path as the server's
+`SMITHERS_MEMORY_DB`, because Codex starts an MCP server without the
+environment Codex itself runs in. An entry that names another store, or none,
+is rewritten; registering without a store removes it from the entry.
 Facts default to the `user:cli` namespace; pass `namespace` to use another.
 
 Deleting facts, notes, threads, messages, and compaction are not MCP tools;
