@@ -281,9 +281,43 @@ describe("a storage that fails", () => {
   test("a write deleted while the outbox upgrades is skipped", async () => {
     const storage = memoryStorage()
     await oldBuild(storage, [note("a", 1)])
-    storage.entries.set("parked:gone", JSON.stringify({ reason: "mutation", name: "save", write: "{}" }))
+    const before = [...storage.entries]
     const vanishing = { ...storage, get: () => Promise.resolve(null) }
+    const seen = await nextBuild(vanishing, ({ sent }) =>
+      Effect.gen(function*() {
+        return {
+          sent,
+          upgraded: (yield* Metric.value(
+            Metric.withAttributes(Outbox.carried, { name: "save", outcome: "upgraded", reason: "none" })
+          )).count,
+          parked: (yield* Metric.value(
+            Metric.withAttributes(Outbox.carried, { name: "unknown", outcome: "parked", reason: "unreadable" })
+          )).count
+        }
+      }))
+    expect([...storage.entries]).toEqual(before)
+    expect([...storage.entries.keys()].filter((key) => key.startsWith("parked:"))).toEqual([])
+    expect(seen).toEqual({ sent: [], upgraded: 0, parked: 0 })
+  })
+
+  test("a parked write deleted while being read is skipped and later parked writes are still listed", async () => {
+    const storage = memoryStorage()
+    storage.entries.set("parked:gone", JSON.stringify({ reason: "mutation", name: "save", write: "{}" }))
+    storage.entries.set(
+      "parked:kept",
+      JSON.stringify({
+        reason: "mutation",
+        name: "save",
+        write: JSON.stringify({ mutationFnName: "save", mutations: [{ modified: note("kept", 1) }] })
+      })
+    )
+    const before = [...storage.entries]
+    const vanishing = {
+      ...storage,
+      get: (key: string) => key === "parked:gone" ? Promise.resolve(null) : storage.get(key)
+    }
     const parked = await nextBuild(vanishing, ({ outbox }) => outbox.parked)
-    expect(parked).toEqual([])
+    expect(parked).toEqual([{ id: "kept", name: "save", reason: "mutation", rows: [note("kept", 1)] }])
+    expect([...storage.entries]).toEqual(before)
   })
 })
