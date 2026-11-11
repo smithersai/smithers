@@ -12,7 +12,7 @@
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Duration from "effect/Duration"
 import * as Schema from "effect/Schema"
-import { arrayOf } from "../schema/withDefault.ts"
+import { arrayOf, withDefault } from "../schema/withDefault.ts"
 import { buildNarratePrompt } from "../walkthrough/buildNarratePrompt.ts"
 import { ChangedFile } from "../walkthrough/changedFileSchema.ts"
 import { Story } from "../walkthrough/storySchema.ts"
@@ -36,9 +36,14 @@ import { VerifyVerdicts } from "./verifyVerdictsSchema.ts"
  * @category actions
  */
 export const ReviewFile = AgentAction.make("smithers-review/ReviewFile", {
-  payload: { path: Schema.String, prompt: Schema.String, timeout: OpenCodeReviewInput.fields.timeout },
+  payload: {
+    path: Schema.String,
+    prompt: Schema.String,
+    timeout: OpenCodeReviewInput.fields.timeout,
+    seat: withDefault(Schema.String, SEAT.review)
+  },
   output: NativeReviewAgentOutput,
-  seat: SEAT.review,
+  seat: ({ seat }) => seat,
   timeout: ({ timeout }) => Duration.minutes(timeout),
   system: [
     "You are a precise code reviewer. Report only defects you can point at in the diff you were given.",
@@ -56,11 +61,12 @@ export const ReviewFile = AgentAction.make("smithers-review/ReviewFile", {
 export const VerifyFindings = AgentAction.make("smithers-review/VerifyFindings", {
   payload: {
     timeout: OpenCodeReviewInput.fields.timeout,
+    seat: withDefault(Schema.String, SEAT.verify),
     findings: arrayOf(ReviewComment),
     files: arrayOf(ChangedFile)
   },
   output: VerifyVerdicts,
-  seat: SEAT.verify,
+  seat: ({ seat }) => seat,
   timeout: ({ timeout }) => Duration.minutes(timeout),
   system: [
     "You adjudicate code-review findings against the diff they were made on.",
@@ -91,6 +97,7 @@ export const VerifyFindings = AgentAction.make("smithers-review/VerifyFindings",
 export const NarrateChanges = AgentAction.make("smithers-review/NarrateChanges", {
   payload: {
     timeout: OpenCodeReviewInput.fields.timeout,
+    seat: withDefault(Schema.String, SEAT.narrate),
     files: arrayOf(ChangedFile),
     comments: arrayOf(ReviewComment),
     background: Schema.String,
@@ -98,7 +105,7 @@ export const NarrateChanges = AgentAction.make("smithers-review/NarrateChanges",
     ref: Schema.String
   },
   output: Story,
-  seat: SEAT.narrate,
+  seat: ({ seat }) => seat,
   timeout: ({ timeout }) => Duration.minutes(timeout),
   system: [
     "You explain a change set to a reader who has not seen it, in chapters, in the order that makes it easiest to follow."

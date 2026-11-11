@@ -21,6 +21,7 @@ import * as Schema from "effect/Schema"
 import { finalizeNativeReview } from "../review/finalizeNativeReview.ts"
 import { pluralize } from "../text/pluralize.ts"
 import { Changes } from "../walkthrough/changesSchema.ts"
+import { normalizeStory } from "../walkthrough/normalizeStory.ts"
 import { Story } from "../walkthrough/storySchema.ts"
 import { applyFindingVerdicts } from "./applyFindingVerdicts.ts"
 import { ReviewInput } from "./reviewInputSchema.ts"
@@ -212,3 +213,50 @@ export const RenderWalkthrough = Action.make("smithers-review/RenderWalkthrough"
     ui: Schema.Struct({ kind: Schema.Literal("html"), title: Schema.String, html: Schema.String })
   })
 })
+
+/**
+ * `review` with the narrator's failure, when there was one, as a `narrator_error` warning: a review whose narrator
+ * failed completes with warnings.
+ *
+ * @since 1.0.0
+ * @category combinators
+ */
+export const withNarratorWarning = (
+  review: typeof ReviewRunOutput.Type,
+  narrateFailure: string
+): typeof ReviewRunOutput.Type =>
+  narrateFailure === "" ? review : {
+    ...review,
+    status: review.status === "success" ? "completed_with_warnings" as const : review.status,
+    warnings: [...review.warnings, { file: "", type: "narrator_error", message: narrateFailure }]
+  }
+
+/**
+ * The implementation layer for {@link RenderWalkthrough} on a host that keeps no files, such as a Worker: the result
+ * carries the review and the normalized story, and no walkthrough is rendered or written.
+ *
+ * @since 1.0.0
+ * @category layers
+ */
+export const findingsOnlyWalkthroughLayer = RenderWalkthrough.toLayer((
+  { changes, input, narrateFailure, review: originalReview, story: rawStory }
+) =>
+  Effect.sync(() => {
+    const story = normalizeStory(rawStory, changes.files)
+    const review = withNarratorWarning(originalReview, narrateFailure)
+    return {
+      review,
+      walkthrough: {
+        path: "",
+        artifactPath: "",
+        bytes: 0,
+        chapters: story.chapters.length,
+        files: changes.files.length,
+        findings: review.comments.length,
+        message: "No walkthrough was rendered."
+      },
+      story,
+      ui: { kind: "html" as const, title: input.title || story.headline, html: "" }
+    }
+  })
+)

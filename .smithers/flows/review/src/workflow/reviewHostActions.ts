@@ -20,7 +20,7 @@ import { normalizeStory } from "../walkthrough/normalizeStory.ts"
 import { renderWalkthroughHtml } from "../walkthrough/renderWalkthroughHtml.ts"
 import { walkthroughPath } from "../walkthrough/walkthroughPath.ts"
 import { writeWalkthroughArtifact } from "../walkthrough/writeWalkthroughArtifact.ts"
-import { PrepareReview, RenderWalkthrough } from "./reviewActions.ts"
+import { PrepareReview, RenderWalkthrough, withNarratorWarning } from "./reviewActions.ts"
 import { ChangeSetUnreadable, reasonOf, WalkthroughUnwritable } from "./reviewFailureSchema.ts"
 
 /**
@@ -57,14 +57,7 @@ export const renderWalkthroughLayer = Layer.unwrap(Effect.gen(function*() {
   return RenderWalkthrough.toLayer(
     ({ changes, input, review: originalReview, story: rawStory, target, narrateFailure }) =>
       Effect.gen(function*() {
-        const warnings = [
-          ...(narrateFailure ? [{ file: "", type: "narrator_error", message: narrateFailure }] : [])
-        ]
-        const review = warnings.length === 0 ? originalReview : {
-          ...originalReview,
-          status: originalReview.status === "success" ? "completed_with_warnings" as const : originalReview.status,
-          warnings: [...originalReview.warnings, ...warnings]
-        }
+        const review = withNarratorWarning(originalReview, narrateFailure)
         const story = normalizeStory(rawStory, changes.files)
         const html = yield* Effect.promise(() =>
           renderWalkthroughHtml({

@@ -12,21 +12,20 @@
  * contracted `@smthrs/agent` root.
  */
 import { describe, expect, test } from "bun:test"
+import { Effect, Layer, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { isBuiltin } from "node:module"
 import { dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
+import { comparisonSnapshot, layer, preparedReviewOf, ReviewFiles, ReviewInput } from "../../rounds.ts"
+import { host } from "../host.ts"
+import { scriptedSeats } from "./scriptedSeats.ts"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 
 /** What a host without a checkout imports to run the rounds. */
-const ENTRIES = [
-  "src/workflow/reviewFlow.ts",
-  "src/workflow/reviewActions.ts",
-  "src/review/preparedReviewOf.ts",
-  "src/github/comparisonSnapshot.ts"
-]
+const ENTRIES = ["rounds.ts"]
 
 const PACKAGES = new Set(["effect", "@smthrs/flow", "@smthrs/plan", "@smthrs/agent/AgentAction"])
 
@@ -77,4 +76,49 @@ describe("the rounds a host without a checkout registers", () => {
     expect(found).toContain("node:async_hooks <- src/workflow/reviewHostActions.ts -> src/io.ts")
     expect(found.some((line) => line.startsWith("node:path <- "))).toBe(true)
   })
+})
+
+describe("the package root's rounds", () => {
+  test("review a GitHub comparison and render no walkthrough", async () => {
+    const finding = {
+      path: "src/a.ts",
+      content: "The second binding repeats the first.",
+      severity: "major",
+      category: "correctness",
+      confidence: "confirmed",
+      startLine: 2,
+      endLine: 2,
+      existingCode: "",
+      suggestionCode: "",
+      thinking: ""
+    }
+    const answer = (ask: string) =>
+      ask.includes("adjudicate code-review findings")
+        ? { verdicts: [{ index: 0, verdict: "keep", reason: "the diff shows it" }] }
+        : { status: "success", message: "", summary: null, comments: [finding], warnings: [] }
+    const input = Schema.decodeUnknownSync(ReviewInput)({ narrate: false })
+    const snapshot = comparisonSnapshot({
+      input,
+      repository: "acme/widgets",
+      base: "a".repeat(40),
+      head: "b".repeat(40),
+      files: [{
+        filename: "src/a.ts",
+        status: "added",
+        additions: 2,
+        deletions: 0,
+        patch: "@@ -0,0 +1,2 @@\n+export const a = 1\n+export const a2 = a"
+      }],
+      truncated: false
+    })
+    const result = await Effect.runPromise(
+      ReviewFiles.execute({ input, prepared: preparedReviewOf(snapshot), offset: 0, outcomes: [] }, {
+        executionId: `rounds-${Math.random()}`
+      }).pipe(Effect.provide(layer.pipe(Layer.provideMerge(host(scriptedSeats(answer))))), Effect.orDie)
+    )
+    expect(result.verdict).toBe("fail")
+    expect(result.review.comments.map((comment) => [comment.path, comment.startLine])).toEqual([["src/a.ts", 2]])
+    expect(result.walkthrough).toMatchObject({ path: "", bytes: 0, findings: 1 })
+    expect(result.ui.html).toBe("")
+  }, 120_000)
 })

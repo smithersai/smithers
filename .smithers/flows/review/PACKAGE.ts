@@ -3,6 +3,8 @@ import { Smithers } from "@smthrs/targets"
 const cwd = ".smithers/flows/review"
 const sources = [
   Smithers.file("//.smithers/flows/review/flow.ts"),
+  Smithers.file("//.smithers/flows/review/rounds.ts"),
+  Smithers.file("//.smithers/flows/review/package.json"),
   Smithers.glob("//.smithers/flows/review/src/**/*.ts")
 ]
 const tests = Smithers.glob("//.smithers/flows/review/tests/**/*.ts")

@@ -1,3 +1,4 @@
+import { SeatResolver } from "@smthrs/agent"
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Fiber, Layer } from "effect"
 import { TestClock } from "effect/testing"
@@ -107,6 +108,36 @@ const runReview = (
   )
 
 describe("the review flow", () => {
+  test("asks the seats its input names", async () => {
+    const repo = tempRepo(2)
+    const asked: Array<string> = []
+    const scripted = scriptedSeats(answerFor())
+    // The scripted resolver, recording each seat id the rounds ask it for.
+    const recording = Layer.effect(
+      SeatResolver.SeatResolver,
+      Effect.map(
+        SeatResolver.SeatResolver,
+        (seats) => SeatResolver.make({ resolve: (id) => (asked.push(id), seats.resolve(id)) })
+      )
+    ).pipe(Layer.provide(scripted))
+    const result = await Effect.runPromise(
+      Review.execute(
+        {
+          repo,
+          out: join(repo, "w.html"),
+          reviewSeat: "acme/reviewer",
+          narrateSeat: "acme/narrator"
+        } as Parameters<typeof Review.execute>[0],
+        { executionId: `review-seats-${Math.random()}` }
+      ).pipe(
+        Effect.provide(layerMemory(recording)),
+        Effect.orDie
+      )
+    )
+    expect(result.review.comments).toHaveLength(2)
+    expect([...new Set(asked)].sort()).toEqual(["acme/narrator", "acme/reviewer"])
+  }, 120_000)
+
   test("fans out over every changed file and reports one finding per file", async () => {
     const repo = tempRepo(3)
     const out = join(repo, "walkthrough.html")

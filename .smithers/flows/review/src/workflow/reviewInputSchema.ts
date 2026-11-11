@@ -7,6 +7,7 @@
 import * as Schema from "effect/Schema"
 import { withDefault } from "../schema/withDefault.ts"
 import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts"
+import { SEAT } from "./reviewSeats.ts"
 
 /**
  * The full review request.
@@ -20,7 +21,11 @@ export const ReviewInput = Schema.Struct({
   narrate: withDefault(Schema.Boolean, true),
   title: withDefault(Schema.String, ""),
   split: withDefault(Schema.Boolean, false),
-  verify: withDefault(Schema.Boolean, true)
+  verify: withDefault(Schema.Boolean, true),
+  /** The seat that reviews each file and verifies the findings, as the host resolves seat ids. */
+  reviewSeat: withDefault(Schema.String, SEAT.review),
+  /** The seat that narrates the walkthrough. */
+  narrateSeat: withDefault(Schema.String, SEAT.narrate)
 })
 
 /**
