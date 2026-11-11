@@ -324,7 +324,7 @@ declared request's kind, options, and schema to shape the answer.
 | --- | --- |
 | `memory` | `list/get/set/rm`, `recall`, `notes list/get/add/status/supersede`, `threads list/create/show/rm`, `messages list/add`, and `compact`. |
 | `credentials` | `list/add/rotate/revoke`; encrypted secrets are supplied through `--secret-env` or `--secret-file`, and output contains references only. |
-| `triggers` | `list/show/register/sync/enable/disable/fire/serve`; registration accepts flags or `--file`, `sync` registers the workspace's `S.Cron` targets, and `fire` queues an occurrence for the scheduler. |
+| `triggers` | `list/show/history/register/sync/enable/disable/fire/serve`; registration accepts flags or `--file`, `sync` registers the workspace's `S.Cron` targets, `fire` queues an occurrence for the scheduler, and `history` lists past occurrences with their outcome. |
 | `integrations` | `list` and `doctor [--offline]`. |
 | `eval` | `list/run/baseline/compare`; discover `evals/**/*.eval.ts` modules exporting `suite` and `executor`, and compare saved results with committed baselines. `run` also records score observations in the project's `.flows/engine.db` when it exists. |
 | `alerts` | `report/list/ack`; record a probe result in a run, page a person once on Telegram or by email, list the run's open alerts, and acknowledge one. See [probe alerts](#probe-alerts). |
@@ -404,7 +404,9 @@ the same on demand. Such a trigger has the reserved flow `system/target-run`
 and the labels to run as its input. The build executes it as
 `smthrs target <labels>`, so it has no plan and needs no approval;
 `triggers show <label>` reports the run under `activeTargetRun`, and the
-command's output is kept under `.flows/logs/`. See
+command's output is kept under `.flows/logs/`. `triggers history [<label>]`
+lists past occurrences newest first with their outcome, run ID and that log;
+`--outcome` filters and `--limit` (default 20) caps the page. See
 [Schedule a build target](../../guides/schedule-a-target.md).
 A launch attempt persists `launching` before calling Control. Cancellation
 before the run ID is recorded remains `cancelling` while the scheduler

@@ -122,6 +122,54 @@ export const Package = S.Package({ targets: { broken, after, nightly: S.Cron({ s
     await expect(readFile(join(root, "after.log"), "utf8")).rejects.toMatchObject({ code: "ENOENT" })
   }, 120_000)
 
+  it("history lists past occurrences newest first with outcome, run and log", async () => {
+    const root = await workspace(
+      `${census}
+const broken = S.Shell.Run({ shell: "echo probe-unreadable; exit 3", sandbox: "none" })
+export const Package = S.Package({ targets: { census, broken, nightly: S.Cron({ schedule: "0 3 * * *", run: [census] }), probe: S.Cron({ schedule: "0 4 * * *", run: [broken] }) } })`
+    )
+    await serve(root, ["sync"])
+    expect((await serve(root, ["history"])).data).toEqual({ items: [], more: false })
+    await serve(root, ["fire", "//:nightly", "--occurrence", "1000"])
+    await serve(root, ["fire", "//:probe", "--occurrence", "2000"])
+    await serving(root, () =>
+      until(
+        () => history(root),
+        (items) => items.filter((item) => item.outcome === "completed" || item.outcome === "failed").length === 2
+      ))
+
+    const all = await serve(root, ["history"])
+    expect(all.code, all.output).toBe(0)
+    expect(all.data).toMatchObject({
+      items: [
+        { triggerId: "//:probe", firedAt: "1970-01-01T00:00:02.000Z", outcome: "failed" },
+        {
+          triggerId: "//:nightly",
+          occurrence: 1000,
+          firedAt: "1970-01-01T00:00:01.000Z",
+          outcome: "completed",
+          runId: "target-run://:nightly:1970-01-01T00:00:01.000Z",
+          log: ".flows/logs/target-run_nightly_1970-01-01T00_00_01.000Z.log"
+        }
+      ],
+      more: false
+    })
+    expect(all.data.items[0].error).toContain("failed")
+    expect(await readFile(join(root, all.data.items[0].log), "utf8")).toContain("probe-unreadable")
+
+    expect((await serve(root, ["history", "//:nightly"])).data.items).toMatchObject([{ triggerId: "//:nightly" }])
+    expect((await serve(root, ["history", "--outcome", "failed"])).data.items).toMatchObject([{
+      triggerId: "//:probe"
+    }])
+    expect((await serve(root, ["history", "--limit", "1"])).data).toMatchObject({
+      items: [{ triggerId: "//:probe" }],
+      more: true
+    })
+    const unknown = await serve(root, ["history", "//:nope"])
+    expect(unknown.code).toBe(1)
+    expect(unknown.data.message).toBe("Unknown trigger //:nope")
+  }, 120_000)
+
   it("keeps the store in step with the declarations", async () => {
     const root = await workspace(nightly("*/10 * * * *"))
     await serve(root, ["register", "daily", "--flow", "check", "--cron", "0 9 * * *"])

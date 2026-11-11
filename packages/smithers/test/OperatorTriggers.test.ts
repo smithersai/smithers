@@ -125,6 +125,16 @@ describe("trigger CLI", () => {
       })).pipe(Effect.provide([runner, layer]))
     )
     expect(launches).toEqual(["daily:1970-01-01T00:00:01.000Z"])
+    // A flow run has no build-target log.
+    expect((await serve(directory, ["history", "daily"])).data.items).toEqual([
+      {
+        triggerId: "daily",
+        occurrence: 1000,
+        firedAt: "1970-01-01T00:00:01.000Z",
+        outcome: "completed",
+        runId: "run-1"
+      }
+    ])
   })
 
   it("refuses an unknown trigger and queues a manual occurrence at the current time by default", async () => {

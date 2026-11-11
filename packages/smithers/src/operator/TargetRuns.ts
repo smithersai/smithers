@@ -110,8 +110,14 @@ const failure = (message: string, cause?: unknown) => new TriggerError({ code: "
 const translated = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.mapError((cause) => cause instanceof TriggerError ? cause : failure(operation, cause)))
 
-/** The project-relative log of one run; the handle's punctuation is not a file name. */
-const logOf = (handle: string): string => join(".flows", "logs", `${handle.replaceAll(/[^A-Za-z0-9._-]+/g, "_")}.log`)
+/**
+ * The project-relative file holding one run's output; the handle's
+ * punctuation is not a file name.
+ * @category getters
+ * @since 1.0.0
+ */
+export const logOf = (handle: string): string =>
+  join(".flows", "logs", `${handle.replaceAll(/[^A-Za-z0-9._-]+/g, "_")}.log`)
 
 /**
  * One `smthrs target` invocation.

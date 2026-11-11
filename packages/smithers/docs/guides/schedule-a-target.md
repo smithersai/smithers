@@ -66,7 +66,7 @@ approve. Each occurrence is one row in the project's control database:
 | --- | --- |
 | The active run and its state | `smthrs triggers show <label>`, under `activeTargetRun` |
 | The command's output | `.flows/logs/target-run_<label>_<occurrence>.log` |
-| Past occurrences and their outcome | the trigger's fire history |
+| Past occurrences and their outcome | `smthrs triggers history <label>` |
 
 An occurrence that arrives while the previous one is still running is skipped
 (`overlap: "skip"`). A run whose host dies is taken over by the next scheduler
@@ -74,6 +74,20 @@ that finds its lease expired, about 30 seconds later, and its command starts
 again. A scheduled target therefore runs at least once per occurrence: write it
 so that a repeat is safe. Cached targets such as tests are served from the
 build cache when their inputs did not change; a `Shell.Run` target always runs.
+
+## See past occurrences
+
+```bash
+smthrs triggers history //:coverageCensus --json
+```
+
+```text
+{"items":[{"triggerId":"//:coverageCensus","occurrence":1794377400000,"outcome":"failed","runId":"target-run://:coverageCensus:2026-11-11T06:10:00.000Z","error":"smthrs target exited 1; output is in .flows/logs/target-run_coverageCensus_2026-11-11T06_10_00.000Z.log","firedAt":"2026-11-11T06:10:00.000Z","log":".flows/logs/target-run_coverageCensus_2026-11-11T06_10_00.000Z.log"}],"more":false}
+```
+
+Occurrences are listed newest first. Leave out the label to list every
+trigger's, narrow with `--outcome failed`, and raise `--limit` (default 20)
+when `more` is `true`.
 
 ## Fire it now
 

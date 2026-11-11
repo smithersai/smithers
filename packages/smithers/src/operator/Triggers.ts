@@ -169,6 +169,40 @@ export const createTriggersCli = (
           }
         })
     })
+    .command("history", {
+      description:
+        "List past occurrences newest first: when each fired, its outcome, its run and a build-target run's log",
+      mcp: { annotations: { readOnlyHint: true } },
+      args: z.object({ id: z.string().min(1).optional() }),
+      options: options.extend({
+        outcome: z.enum(["launched", "completed", "skipped", "buffered", "superseded", "failed"]).optional(),
+        limit: z.number().int().positive().default(20)
+      }),
+      run: (context) =>
+        execute(context, () =>
+          withTriggers(
+            context.options,
+            Effect.gen(function*() {
+              const store = yield* TriggerStore.TriggerStore
+              if (context.args.id !== undefined) yield* required(store, context.args.id)
+              const page = yield* store.history({
+                triggerId: context.args.id,
+                outcome: context.options.outcome,
+                limit: context.options.limit
+              })
+              return {
+                items: page.items.map((fire) => ({
+                  ...fire,
+                  firedAt: new Date(fire.occurrence).toISOString(),
+                  ...(fire.runId !== undefined && TargetRuns.isHandle(fire.runId) ?
+                    { log: TargetRuns.logOf(fire.runId) } :
+                    {})
+                })),
+                more: page.nextCursor !== undefined
+              }
+            })
+          ))
+    })
     .command("register", {
       description: "Register or update a validated cron trigger from flags or a JSON file",
       mcp: { annotations: { readOnlyHint: false } },
