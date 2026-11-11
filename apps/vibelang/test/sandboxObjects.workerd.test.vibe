@@ -19,19 +19,19 @@ describe("sandbox objects refuse a faulty Container in workerd", () => {
     return (try response.json) as unknown
   }
 
-  it.live("refuses invalid and stale machine generations and failed starts, while a stopped lease stays stopped", () => effect {
+  it.live("names why it refuses invalid and stale machine generations and failed starts, while a stopped lease stays stopped", () => effect {
     provide FetchHttpClient.layer {
       const call = (kind: string, generation: number, command = "") => post("/machine/faults", [kind, generation, "op", command])
       const answers = [try call("start", -1), try call("start", 0), try call("command", 1), try call("lease", 0), try call("stop", 0), try call("start", 1), try call("command", 1), try call("start", 2), try call("stop", 1), try call("start", 2)]
-      const refused = { ok: false, output: "" }
+      const refused = (reason: string) => ({ ok: false, output: "", reason })
       try Effect.try(() => expect(answers).toEqual([
-        refused, refused, refused, { ok: true, output: "stopped" }, { ok: true, output: "" },
-        refused, refused, refused, refused, refused,
+        refused("generation"), refused("phase"), refused("generation"), { ok: true, output: "stopped" }, { ok: true, output: "" },
+        refused("ContainerUnavailable"), refused("not-current"), refused("phase"), refused("ContainerUnavailable"), refused("phase"),
       ]))
     }
   })
 
-  it.live("refuses a box that never runs, fails its setup or survives destroy, and reports the lost checkpoint once stopped", () => effect {
+  it.live("names why it refuses a box that never runs, fails its setup or survives destroy, reports the lost checkpoint once stopped, and keeps an image whose command exits running", () => effect {
     provide FetchHttpClient.layer {
       const call = (machine: string, fault: string, kind: string) => post(`/machine/${machine}/${fault}`, [kind, 1, "op", ""])
       const answers = [
@@ -40,10 +40,14 @@ describe("sandbox objects refuse a faulty Container in workerd", () => {
         try call("broken", "stuck", "stop"),
         try call("broken", "broken", "stop"),
         try call("broken", "broken", "lease"),
+        try call("exits", "exits", "start"),
       ]
-      const refused = { ok: false, output: "" }
+      const refused = (reason: string) => ({ ok: false, output: "", reason })
       try Effect.try(() => expect(answers).toEqual([
-        refused, refused, refused, { ok: true, output: "checkpoint-failed" }, { ok: true, output: "stopped" },
+        refused("not-running-after-wake"), refused("setup-exit-1"), refused("running-after-destroy"),
+        { ok: true, output: "checkpoint-failed" }, { ok: true, output: "stopped" },
+        // An image whose own command exits at once still runs: the machine gives it a long-running entrypoint.
+        { ok: true, output: "" },
       ]))
     }
   })
@@ -61,8 +65,9 @@ describe("sandbox objects refuse a faulty Container in workerd", () => {
       const alarm = try post("/account/owner/alarm", [])
       try Effect.try(() => {
         expect(read).toMatchObject({ ok: true, snapshot: { status: "stopped", generation: 0 } })
-        expect(failed).toMatchObject({ ok: false })
-        expect(after).toEqual({ ok: false, refusal: "unavailable" })
+        // The refusal names the machine operation that failed and the Container's own error tag, no more.
+        expect(failed).toEqual({ ok: false, refusal: "unavailable", reason: "container-stop:ContainerUnavailable" })
+        expect(after).toEqual({ ok: false, refusal: "unavailable", reason: "container-stop:ContainerUnavailable" })
         expect(persisted).toEqual({ pending: "cancel-start", running: false })
         for (const refusal of [other, signedOut, viewer]) expect(refusal).toEqual({ ok: false, refusal: "forbidden" })
         expect(alarm).toMatchObject({ alarm: expect.any(Number) })

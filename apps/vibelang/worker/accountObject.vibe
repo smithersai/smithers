@@ -6,7 +6,7 @@ import { HttpServerRequest } from "effect/http"
 import { Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
 import { SandboxPolicy, type SandboxPrincipal, mayStart } from "../src/core/sandboxPolicy.vibe"
 import type { Role } from "../src/core/sandboxDecision.vibe"
-import type { Machines } from "../src/core/sandboxHost.vibe"
+import { failureReason, type Machines } from "../src/core/sandboxHost.vibe"
 import type { MachineShape, ObjectState } from "./machineObject.vibe"
 import * as Sandboxes from "./Sandboxes.vibe"
 import { signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
@@ -18,8 +18,8 @@ export service SandboxIdentity {
 }
 export const noIdentity = Layer.succeed(SandboxIdentity, { request: () => succeed({ owner: "", role: "viewer" as const }), role: () => succeed("viewer" as const) })
 export service SandboxGateway { readonly gateway: Gateway<RuntimeContext> }
-/** A refused run carries only its reason: the gateway turns it into `Refused` and reads nothing else. */
-type Answer = { readonly ok: true; readonly snapshot: SandboxSnapshot; readonly output: string } | { readonly ok: false; readonly refusal: string }
+/** A refused run carries only its refusal and content-free cause: the gateway turns it into `Refused` and reads nothing else. */
+type Answer = { readonly ok: true; readonly snapshot: SandboxSnapshot; readonly output: string } | { readonly ok: false; readonly refusal: string; readonly reason?: string }
 export interface AccountShape {
   run(owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string): Answer!!RuntimeContext
   alarm(): void!!RuntimeContext
@@ -33,7 +33,7 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
       const answer = try Effect.mapError(Effect.try(() => namespace.getByName(id)), () => new Unavailable({ reason: "container-binding" })).pipe(
         Effect.flatMap((stub) => Effect.provideService(stub.apply(kind, generation, operationId, command), RuntimeContext, runtime)),
       )
-      if (!answer.ok) throw new Unavailable({ reason: "container-operation" })
+      if (!answer.ok) throw new Unavailable({ reason: `container-${kind}:${answer.reason ?? "unknown"}` })
       return answer.output
     }
     const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), (status) => status === "running"), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }
@@ -55,7 +55,7 @@ export function accountObject(state: ObjectState, namespace: Named<MachineShape>
           return { ok: true as const, snapshot: try host.snapshot(conversation), output: typeof answer === "string" ? answer : "" }
         }
         // A failed stop is still running in the persisted ledger; no success receipt is returned.
-        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => ({ ok: false as const, refusal: error._tag === "Refused" ? error.refusal : "unavailable" })
+        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch (error) => error._tag === "Refused" ? { ok: false as const, refusal: error.refusal } : { ok: false as const, refusal: "unavailable", reason: failureReason(error) }
       },
       alarm: effect () => {
         // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
@@ -77,7 +77,7 @@ export function gatewayOf(namespace: Named<AccountShape>, identity: SandboxIdent
     }
     const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
     const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
-    if (!answer.ok) throw new Refused({ refusal: answer.refusal })
+    if (!answer.ok) throw new Refused({ refusal: answer.refusal, ...(answer.reason === undefined ? {} : { reason: answer.reason }) })
     return answer
   }
   // Resolve the current principal for every HTTP operation, before any journal replay can return a result.

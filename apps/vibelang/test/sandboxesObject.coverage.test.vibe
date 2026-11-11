@@ -101,8 +101,9 @@ describe("the sandbox object", () => {
     const replayed = try failed(Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, ""))
     const snapshot = try host.snapshot("c-1")
     try Effect.try(() => {
-      expect(failedStart).toBe("Unavailable:start-failed")
-      expect(replayed).toBe("Unavailable:start-failed")
+      // The machine's own reason survives the cancel and the replay, so a live failure names its cause.
+      expect(failedStart).toBe("Unavailable:start-failed:no image")
+      expect(replayed).toBe("Unavailable:start-failed:no image")
       expect(snapshot.status).toBe("stopped")
       expect(calls).toEqual(["start:mock-person/c-1:1", "stop:mock-person/c-1:1"])
     })

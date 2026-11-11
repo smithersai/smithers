@@ -128,7 +128,7 @@ describe("sandbox writer boundaries", () => {
       const refused = try Effect.result(host.start("away", "start-away"))
       const away = try host.snapshot("away")
       try Effect.try(() => {
-        expect(failureOf(refused)).toMatchObject({ reason: "start-failed" })
+        expect(failureOf(refused)).toMatchObject({ reason: "start-failed:out-of-minutes" })
         expect(away.status).toBe("stopped")
         expect(stopped).toEqual(["mock-person/away"])
         expect(w.receipts.get("start-away")?.request.kind).toBe("start")

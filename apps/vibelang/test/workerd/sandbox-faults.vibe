@@ -16,18 +16,20 @@ const unavailable = () => Effect.fail(new ContainerUnavailable())
 /**
  * How the Container fails, chosen per request by the path after the machine's name. `""`: every operation fails.
  * `"inert"`: a start returns but the box never runs. `"broken"`: the box runs, every command in it exits 1 and every
- * checkpoint fails. `"stuck"`: broken, and destroy leaves it running.
+ * checkpoint fails. `"stuck"`: broken, and destroy leaves it running. `"exits"`: the image's own command exits at once,
+ * as `debian:bookworm-slim`'s `bash` does with nothing attached, so the box runs only when started with an entrypoint;
+ * then every command in it exits 0.
  */
-type Fault = "" | "inert" | "broken" | "stuck"
+type Fault = "" | "inert" | "broken" | "stuck" | "exits"
 function faultyContainer(fault: () => Fault) {
   let up = false
   const when = <A>(work: () => A) => fault() === "" ? unavailable() : sync(work)
   return {
     running: sync(() => up),
-    start: () => when(() => { up = fault() !== "inert" }),
+    start: (options?: { readonly entrypoint?: ReadonlyArray<string> }) => when(() => { up = fault() === "exits" ? options?.entrypoint !== undefined : fault() !== "inert" }),
     destroy: () => when(() => { if (fault() !== "stuck") up = false }),
     setInactivityTimeout: () => when(() => undefined),
-    exec: () => when(() => ({ stdin: undefined, stdout: Stream.empty, stderr: Stream.empty, exitCode: succeed(1) })),
+    exec: () => when(() => ({ stdin: undefined, stdout: Stream.empty, stderr: Stream.empty, exitCode: succeed(fault() === "exits" ? 0 : 1) })),
     snapshotContainer: unavailable,
     interceptOutboundHttp: unavailable, interceptAllOutboundHttp: unavailable, interceptOutboundHttps: unavailable,
   }

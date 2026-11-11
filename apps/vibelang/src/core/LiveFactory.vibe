@@ -146,7 +146,7 @@ export function LiveFactory(origin: string) {
 effect function sandboxRefusal(response: HttpClientResponse.HttpClientResponse) {
   if (response.status !== 403 && response.status !== 409) return
   const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
-  const schema = Schema.Struct({ refusal: Schema.String })
+  const schema = Schema.Struct({ refusal: Schema.String, reason: Schema.optional(Schema.String) })
   const refusal = try Effect.mapError(Schema.decodeUnknownEffect(schema)(body), unavailable("refusal is not the protocol"))
-  throw new Refused({ refusal: refusal.refusal })
+  throw new Refused({ refusal: refusal.refusal, ...(refusal.reason === undefined ? {} : { reason: refusal.reason }) })
 }
