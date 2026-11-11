@@ -2517,7 +2517,9 @@ describe("CellTurn narrowed verification", () => {
         `await ctx.call("edit", { path: "a.py", text: "fix" })
          console.log("edited")`,
         running("check suite"),
-        finishing("check suite -k one", "narrowed")
+        finishing("check suite -k one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
       ],
       [ok("a.py=fixed"), ok(), ok()]
     )
@@ -2585,7 +2587,12 @@ describe("CellTurn narrowed verification", () => {
 
   it("leaves a run whose narrowing demand is disarmed alone", async () => {
     const { events } = await verifying(
-      [running("check suite"), fixing("check suite -k one", "narrowed")],
+      [
+        running("check suite"),
+        fixing("check suite -k one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
       [ok(), ok("a.py=fixed"), ok()],
       { narrowingCap: 0 }
     )
@@ -2845,7 +2852,9 @@ describe("CellTurn narrow-only verification", () => {
       [
         running("look at tests/a.py"),
         running("look at src/b.py"),
-        fixing("check src/b.py tests/a.py -k one", "unbounced")
+        fixing("check src/b.py tests/a.py -k one", "unbounced"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
       ],
       [ok(), ok(), ok("a.py=fixed")],
       { narrowingCap: 0 }
@@ -5048,6 +5057,8 @@ describe("CellTurn unmoved workspace", () => {
       readonly unmovedCap?: number
       readonly readOnlyCap?: number
       readonly evaluator?: Layer.Layer<Evaluator.Evaluator>
+      /** The host measures no tree, so the run has no digest to compare. */
+      readonly unmeasured?: boolean
     } = {}
   ) =>
     run({
@@ -5070,7 +5081,7 @@ describe("CellTurn unmoved workspace", () => {
       flows: [shell, editor],
       script: cells.map(emits),
       calls,
-      tree: "a.py=base",
+      ...(overrides.unmeasured === true ? {} : { tree: "a.py=base" }),
       evaluator: overrides.evaluator ?? describing
     })
 
@@ -5314,7 +5325,9 @@ describe("CellTurn unmoved workspace", () => {
         `await ctx.call("edit", { path: "a.py", text: "fix" })
          console.log("edited")`,
         reading,
-        done("fixed it")
+        done("changed a.py"),
+        // A frame left to answer a demand in, so only the rule decides.
+        done("answered the demand")
       ],
       [{ _tag: "Success", value: null, tree: "a.py=fixed" }, { _tag: "Success", value: null }]
     )
@@ -5324,20 +5337,23 @@ describe("CellTurn unmoved workspace", () => {
     // that changed something.
     expect(of(events, "unmoved-demanded")).toEqual([])
     expect(of(events, "resolved")[0]?.message.content).toEqual([
-      expect.objectContaining({ text: "fixed it" })
+      expect.objectContaining({ text: "changed a.py" })
     ])
   })
 
   it("says nothing when the host measures nothing to compare", async () => {
-    const { events } = await run({
-      state: state({ maxFrames: 2 }),
-      script: [emits(done("done"))]
+    // The judge is armed and reads this claim as unsupported over a tree that
+    // held still, and a frame is left to answer in, so only the tree decides.
+    const { events } = await completing([done("changed a.py"), done("answered the demand")], [], {
+      unmeasured: true
     })
 
     // An unmeasured tree cannot say it held still, and a demand on that basis
     // would bounce every run on a host with no workspace at all.
     expect(of(events, "unmoved-demanded")).toEqual([])
-    expect(of(events, "resolved")).toHaveLength(1)
+    expect(of(events, "resolved")[0]?.message.content).toEqual([
+      expect.objectContaining({ text: "changed a.py" })
+    ])
   })
 
   it("takes the completion rather than the demand when no frame is left to spend", async () => {
@@ -5349,13 +5365,19 @@ describe("CellTurn unmoved workspace", () => {
     ])
   })
 
-  it("leaves a run whose unmoved demand is disarmed alone", async () => {
-    const { events } = await completing([done("described a change")], [], { unmovedCap: 0 })
+  it("hands the bounce to the claim demand when the unmoved demand is disarmed", async () => {
+    const { events } = await completing([done("described a change"), done("answered the demand")], [], {
+      unmovedCap: 0
+    })
 
+    // The judge still reads the claim as unsupported and a frame is left, so
+    // the run is bounced once; with the cap at zero the tree fact never takes
+    // that bounce, and the judge's own wording does.
     expect(of(events, "unmoved-demanded")).toEqual([])
     expect(of(events, "discipline-armed")[0]?.unmovedCap).toBe(0)
+    expect(of(events, "claim-demanded")[0]).toMatchObject({ demanded: true, nextFrame: 1 })
     expect(of(events, "resolved")[0]?.message.content).toEqual([
-      expect.objectContaining({ text: "described a change" })
+      expect.objectContaining({ text: "answered the demand" })
     ])
   })
 })
@@ -5477,7 +5499,13 @@ describe("CellTurn unanswered failure", () => {
 
   it("says nothing when the run walked away from the check that failed", async () => {
     const { events } = await checking(
-      [editing, running("check src/a.py"), finishing("check other/thing.py", "checked elsewhere")],
+      [
+        editing,
+        running("check src/a.py"),
+        finishing("check other/thing.py", "checked elsewhere"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
       [edited, red, green]
     )
 
@@ -5492,7 +5520,13 @@ describe("CellTurn unanswered failure", () => {
 
   it("says nothing when the run re-ran the check itself rather than replacing it", async () => {
     const { events } = await checking(
-      [editing, running("check src/a.py"), finishing("check src/a.py", "re-ran and it still fails")],
+      [
+        editing,
+        running("check src/a.py"),
+        finishing("check src/a.py", "re-ran and it still fails"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
       [edited, red, red]
     )
 
@@ -5506,7 +5540,13 @@ describe("CellTurn unanswered failure", () => {
 
   it("says nothing when the flow declared its own call broken", async () => {
     const { events } = await checking(
-      [editing, running("check src/a.py"), finishing("check src/a.py::one", "narrowed")],
+      [
+        editing,
+        running("check src/a.py"),
+        finishing("check src/a.py::one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
       [
         edited,
         {
@@ -5523,23 +5563,32 @@ describe("CellTurn unanswered failure", () => {
     expect(of(events, "unresolved-demanded")).toEqual([])
   })
 
-  it("says nothing when the failing check shares its frame with the edit", async () => {
+  it("says nothing when the failing check ran before an edit in its own frame", async () => {
     const { events } = await checking(
       [
-        `await ctx.call("edit", { path: "a.py", text: "fix" })
-         await ctx.call("bash", { mode: "unhermetic", command: "check src/a.py" })
-         console.log("edited and checked")`,
-        finishing("check src/a.py::one", "narrowed")
+        declaring(
+          "check src/a.py",
+          `await ctx.call("edit", { path: "a.py", text: "fix" })
+           console.log("checked and edited")`
+        ),
+        finishing("check src/a.py::one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
       ],
-      [edited, red, green]
+      [red, edited, green]
     )
 
-    // Nothing orders a frame's calls against its edits, so that frame's checks
-    // are stamped with the tree it closed on whether they ran before or after.
-    // Reading a failure off that stamp would attribute a pre-edit result to a
-    // post-edit tree — which is a reproduction run in the same frame as its own
-    // fix, still reporting the bug.
+    // A frame's checks are stamped with the tree it closed on, and a check
+    // with a write after it read a tree that is gone. Reading a failure off
+    // that stamp would attribute a pre-edit result to a post-edit tree — a
+    // reproduction run just before its own fix, still reporting the bug.
+    expect(of(events, "cell-call-started").map((event) => event.declared)).toEqual([
+      true,
+      undefined,
+      undefined
+    ])
     expect(of(events, "unresolved-demanded")).toEqual([])
+    expect(of(events, "resolved")[0]?.message.content).toEqual([expect.objectContaining({ text: "narrowed" })])
   })
 
   it("takes the completion rather than the demand when no frame is left to spend", async () => {
@@ -5557,7 +5606,13 @@ describe("CellTurn unanswered failure", () => {
 
   it("leaves a run whose unanswered-failure demand is disarmed alone", async () => {
     const { events } = await checking(
-      [editing, running("check src/a.py"), finishing("check src/a.py::one", "narrowed")],
+      [
+        editing,
+        running("check src/a.py"),
+        finishing("check src/a.py::one", "narrowed"),
+        // A frame left to answer a demand in, so only the rule decides.
+        `ctx.done("answered the demand")`
+      ],
       [edited, red, green],
       { unresolvedCap: 0 }
     )
