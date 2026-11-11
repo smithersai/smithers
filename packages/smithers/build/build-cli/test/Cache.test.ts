@@ -287,6 +287,30 @@ describe("openCache", () => {
     await cache.close()
   })
 
+  /**
+   * The regression (#5090): a result between the remote's one MiB ceiling and
+   * the local 16 MiB one is a normal build record, yet refusing to publish it
+   * disabled the remote for every later target in the process.
+   */
+  it("skips publishing a result over the remote entry limit and keeps the remote enabled", async () => {
+    const warnings: Array<string> = []
+    respond = (request, response) => {
+      response.writeHead(request.method === "PUT" ? 201 : 404).end()
+    }
+    const cache = await openCache({ workspaceRoot: root, endpoint, warn: (line) => warnings.push(line) })
+    const large = { ...result, key: "large", output: "x".repeat(remoteEntryLimit) }
+    await cache.put("large", large)
+    await cache.put("small", { ...result, key: "small" })
+    expect(await cache.get("other")).toBeNull()
+    expect(await cache.get("large")).toEqual(large)
+    expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "PUT /ac/small",
+      "GET /ac/other"
+    ])
+    expect(warnings).toEqual(["smthrs: remote cache entry exceeds limits; skipped one entry"])
+    await cache.close()
+  })
+
   it("names the network cause when a remote request fails, without the token", async () => {
     const warnings: string[] = []
     const cache = await openCache({
