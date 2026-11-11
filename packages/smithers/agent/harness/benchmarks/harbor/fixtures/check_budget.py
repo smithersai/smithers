@@ -22,6 +22,8 @@ budget fell back to a default nobody chose. What is pinned:
     silently read as `high` is refused. The stock Codex arm, checked when a
     runner is importable, passes the effort to the CLI and records both the
     effort asked for and the effort each turn of the session ran at.
+  - A usage limit ends the trial with `SeatExhausted` after one run of the
+    CLI: it is never re-run in the task container the run already changed.
   - When a runner is importable (HARBOR_PYTHON), the adapter's copy of the
     timeout rule agrees with the runner's own function over its own config
     model and path classes, so a runner upgrade that moves either is caught.
@@ -193,6 +195,64 @@ def check_budget() -> None:
             message = refused(Path(directory), **given)
         assert "budget_sec" in message, f"{name}: the refusal names the way out: {message}"
         assert "3600" not in message and "3,600" not in message, name
+
+
+class SeatRun(Driven):
+    """A run whose journal records a usage-limit retry: a seat verdict."""
+
+    async def _drive(self, workspace: Path, env: dict[str, str], budget: float) -> tuple[int, str]:
+        self.drives = getattr(self, "drives", 0) + 1
+        (self.logs_dir / "smithers-run.log").write_text("plan, approve, run\n")
+        result = await super()._drive(workspace, env, budget)
+        if self.drives > 1:  # a re-run on the next account would succeed
+            return result
+        connection = sqlite3.connect(workspace / ".flows" / "control.db")
+        connection.execute("insert into flows_journal_events values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           ("run-1", 99, "run-1-99", "fixture", 99, 1_700_000_000_099, "control.agent.model-retried",
+                            json.dumps({"code": "quota_exceeded", "attempt": 2}), "{}"))
+        connection.commit()
+        connection.close()
+        return result
+
+
+def check_seat_is_never_rerun_in_place() -> None:
+    """The regression of #4798: a usage limit used to re-run the CLI in the
+    same task container, on the leftover clock, and score only the last
+    attempt. One trial is one attempt: the account leaves rotation and
+    `SeatExhausted`, an infra exception the runner re-runs in a fresh
+    environment, ends `run()`."""
+    import outcome  # noqa: E402
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        logs = root / "jobs" / "task__abc" / "agent"
+        logs.mkdir(parents=True)
+        (logs.parent / "config.json").write_text(json.dumps(HARBOR))
+        home = root / "codex-1"
+        home.mkdir()
+        calls: list[tuple] = []
+        pool = types.SimpleNamespace(
+            disable=lambda label, reason, reset_at=None: calls.append(("disable", label, reason)),
+            lease=lambda trial="": calls.append(("lease", trial)) or agent.accounts.Account("codex-2", home))
+        seated = SeatRun(logs_dir=logs, model_name=MODEL, budget_sec=900)
+        seated._pool, seated._account = pool, agent.accounts.Account("codex-1", home)
+        context = types.SimpleNamespace()
+        try:
+            asyncio.run(seated.run("Fix the bug.", Environment(root / "environment"), context))
+        except agent.accounts.SeatExhausted as error:
+            assert error.label == "codex-1", error
+        else:
+            raise AssertionError("a seat verdict must raise SeatExhausted out of run()")
+        assert seated.drives == 1, f"the CLI ran {seated.drives} times in one task container"
+        assert calls == [("disable", "codex-1", "quota_exceeded: model-retried (attempt 2)")], calls
+        record = json.loads((logs / "smithers-run.json").read_text())
+        assert record["verdict"] == "seat" and record["account"] == "codex-1", record
+        assert "requeues" not in record and "attempt" not in record, record
+        assert context.metadata["verdict"] == "seat" and "requeues" not in context.metadata, context.metadata
+        assert (logs / "workspace").is_dir() and not list(logs.glob("*-attempt-*")), sorted(logs.iterdir())
+    assert "SeatExhausted" in outcome.INFRA_EXCEPTIONS, "the runner re-runs a dry seat by type"
+    assert outcome.classify({"finished_at": "t", "exception_info": {"exception_type": "SeatExhausted"},
+                             "verifier_result": {"rewards": {"reward": 1.0}}}) == "infra"
 
 
 def check_runner_rule() -> str:
@@ -367,6 +427,46 @@ def check_codex_effort() -> str:
         later.mkdir()
         (later / "rollout-2026-10-11T09-45-31-s2.jsonl").write_text(rollout("high", "2026-10-11T09:45"))
         assert codex_pool.session_efforts(logs / "sessions") == ["xhigh", "high"]
+
+    # #4798 for the stock arm: a usage limit ends the trial after one run of
+    # the CLI, never a second run in the container the first one changed.
+    with tempfile.TemporaryDirectory() as directory:
+        logs = Path(directory) / "agent"
+        logs.mkdir()
+        home = Path(directory) / "seat"
+        home.mkdir()
+        (home / "auth.json").write_text("{}")
+        calls: list[tuple] = []
+        pooled = codex_pool.PooledCodex(logs_dir=logs, model_name=MODEL)
+        pooled._pool = types.SimpleNamespace(
+            disable=lambda label, reason, reset_at=None: calls.append(("disable", label, reset_at)),
+            lease=lambda trial="": calls.append(("lease",)) or codex_pool.accounts.Account("codex-3", home))
+        pooled._account = codex_pool.accounts.Account("codex-2", home)
+        command = '{"type":"item.completed","item":{"type":"command_execution","exit_code":0}}\n'
+        runs: list[int] = []
+
+        async def limited(self, instruction, environment, context):
+            runs.append(1)  # a second run, on the next account, would succeed
+            (logs / "codex.txt").write_text(command + ("You've hit your usage limit. Try again at Nov 11th, 2026 5:00 AM.\n"
+                                                       if len(runs) == 1 else ""))
+
+        original = codex_pool.Codex.run
+        codex_pool.Codex.run = limited
+        try:
+            environment = types.SimpleNamespace(capabilities=types.SimpleNamespace(mounted=True))
+            asyncio.run(pooled.run("fix it", environment, codex_pool.AgentContext()))
+        except codex_pool.accounts.SeatExhausted as error:
+            assert error.label == "codex-2" and error.reset_at, error
+        else:
+            raise AssertionError("a usage limit must raise SeatExhausted out of PooledCodex.run()")
+        finally:
+            codex_pool.Codex.run = original
+        assert len(runs) == 1, f"the CLI ran {len(runs)} times in one task container"
+        assert [call[:2] for call in calls] == [("disable", "codex-2")], calls
+        record = json.loads((logs / "codex-account.json").read_text())
+        assert record["account"] == "codex-2" and record["usageLimit"].startswith("You've hit"), record
+        assert "requeues" not in record and "requeues" not in pooled._metadata, (record, pooled._metadata)
+        assert not list(logs.glob("codex-attempt-*")), sorted(logs.iterdir())
     return "checked"
 
 
@@ -376,6 +476,7 @@ if __name__ == "__main__":
         os.environ["SMITHERS_ROOT"] = empty  # no checkout: the revision and the fingerprint are simply absent
         check_budget()
         check_effort()
+        check_seat_is_never_rerun_in_place()
     rule = check_runner_rule()
     codex = check_codex_effort()
     print(f"check_budget.py: the budget follows the task's agent timeout under both runners' configs, an unknown "

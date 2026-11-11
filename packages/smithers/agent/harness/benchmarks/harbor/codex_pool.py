@@ -13,10 +13,10 @@ Harbor's `codex` agent takes one `auth.json` for the whole job
 (`CODEX_FORCE_AUTH_JSON` / `CODEX_AUTH_JSON_PATH`). This subclass leases the
 next account from `accounts.Pool` for each trial instead, records the label
 (never the email) beside the trial's logs, and applies the same policy as
-`SmithersAgent`: a usage limit takes the account out of rotation and re-runs
-the trial whole on the next healthy account (every re-run in `requeue.log`),
-and when none is left the pool pauses and then raises, so a dry seat is never
-scored. A task that names no user in an image whose `USER` is not root runs
+`SmithersAgent`: a usage limit takes the account out of rotation and raises
+`SeatExhausted`, so the runner re-runs the trial in a fresh environment on the
+next healthy account, and when none is left the pool pauses and then raises,
+so a dry seat is never scored. A task that names no user in an image whose `USER` is not root runs
 as that image's uid, so the runner chowns `auth.json` to the CLI's user
 (`image_uid`). Everything else is Harbor's Codex agent unchanged.
 
@@ -39,10 +39,8 @@ import asyncio
 import contextlib
 import json
 import shlex
-import shutil
 import sys
 from collections.abc import Iterator
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -184,7 +182,6 @@ class PooledCodex(Codex):
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
         self._pool = accounts.Pool.from_environment()
         self._account: accounts.Account | None = None
-        self._requeues: list[dict[str, Any]] = []
         self._metadata: dict[str, Any] = {}
         self._seal: dict[str, Any] = {}
 
@@ -229,7 +226,7 @@ class PooledCodex(Codex):
         proof = {"sealed": self._seal["sealed"], "seal": self._seal} if self._seal else {}
         (self.logs_dir / ACCOUNT_FILE).write_text(json.dumps(
             {"account": self._account.label if self._account else None, "reasoningEffort": self._effort,
-             "requeues": self._requeues, **proof, **extra},
+             **proof, **extra},
             indent=2))
 
     async def _prove_seal(self, environment: BaseEnvironment) -> dict[str, Any]:
@@ -254,51 +251,40 @@ class PooledCodex(Codex):
     async def _run_pooled(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         self._seal = {**await self._prove_seal(environment), "webSearches": 0}
         self._write_account()
-        attempt = 0
-        while True:
-            attempt += 1
-            failure: BaseException | None = None
-            try:
-                await super().run(instruction, environment, context)
-            except Exception as error:  # a dry seat may surface as a failed command
-                failure = error
-            output = self.logs_dir / self._OUTPUT_FILENAME
-            await self._fetch_output(environment, output)
-            try:
-                text = output.read_text(errors="replace")
-            except OSError:
-                text = ""
-            self._seal["webSearches"] += web_searches(text)
-            limit = usage_limit_in(text) or (usage_limit_in(str(failure)) if failure else None)
-            if limit is None:
-                if failure is not None:
-                    raise failure
-                break
-            assert self._account is not None
-            reset_at = accounts.reset_time_of(text)
-            previous = self._account.label
-            self._pool.disable(previous, limit, reset_at)
-            if output.is_file():
-                shutil.move(str(output), str(self.logs_dir / f"codex-attempt-{attempt}.txt"))
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
-                log.write(f"{now} attempt {attempt} on {previous} ended in a usage limit (resets {reset_at or 'unknown'}): {limit}\n")
-            self._account = await asyncio.to_thread(self._pool.lease, self.logs_dir.parent.name)
-            self._requeues.append({"attempt": attempt, "from": previous, "to": self._account.label,
-                                   "cause": limit, "resetAt": reset_at})
-            self._write_account()
-            with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
-                log.write(f"{now} requeued as attempt {attempt + 1} on {self._account.label}\n")
+        # One attempt per trial: a usage limit is never re-run in this task
+        # container, which the attempt already changed. The account leaves
+        # rotation and `SeatExhausted` (infra) makes the runner re-run the
+        # trial in a fresh environment.
+        failure: BaseException | None = None
+        try:
+            await super().run(instruction, environment, context)
+        except Exception as error:  # a dry seat may surface as a failed command
+            failure = error
+        output = self.logs_dir / self._OUTPUT_FILENAME
+        await self._fetch_output(environment, output)
+        try:
+            text = output.read_text(errors="replace")
+        except OSError:
+            text = ""
+        self._seal["webSearches"] += web_searches(text)
+        limit = usage_limit_in(text) or (usage_limit_in(str(failure)) if failure else None)
         reached = container_commands(text)
         if self._seal["webSearches"]:
             searched = f"the CLI ran {self._seal['webSearches']} web search(es) outside the task container"
             self._seal.update(sealed=False, reason="; ".join(filter(None, [self._seal.get("reason"), searched])))
-        self._write_account(attempt=attempt, containerCommands=reached)
+        reset_at = accounts.reset_time_of(text) if limit is not None else None
+        self._write_account(containerCommands=reached,
+                            **({"usageLimit": limit, "resetAt": reset_at} if limit is not None else {}))
         # Kept off the context until Harbor has filled it: Harbor reads the
         # session's token usage only into an empty context.
         self._metadata = {"account": self._account.label if self._account else None,
-                          "attempt": attempt, "requeues": self._requeues, "container_commands": reached,
-                          "sealed": self._seal["sealed"], "seal": self._seal}
+                          "container_commands": reached, "sealed": self._seal["sealed"], "seal": self._seal}
+        if limit is not None:
+            assert self._account is not None
+            self._pool.disable(self._account.label, limit, reset_at)
+            raise accounts.SeatExhausted(self._account.label, limit, reset_at)
+        if failure is not None:
+            raise failure
         if reached["succeeded"] == 0:
             raise accounts.ContainerUnreachable(
                 f"codex ran no command with exit 0 in the task container ({reached['attempted']} attempted)")

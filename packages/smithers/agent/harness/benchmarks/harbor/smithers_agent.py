@@ -871,7 +871,6 @@ class SmithersAgent(BaseAgent):
         self._plue = False
         self._pool: accounts.Pool | None = None
         self._account: accounts.Account | None = None
-        self._requeues: list[dict[str, Any]] = []
 
     @staticmethod
     def name() -> str:
@@ -954,106 +953,90 @@ class SmithersAgent(BaseAgent):
         kept = self.logs_dir / "workspace"
         if kept.exists():
             shutil.rmtree(kept)
-        trial = self.logs_dir.parent.name
+        # One attempt per trial. A seat that runs dry is not the model's
+        # failure, but the attempt already changed the task container and
+        # spent part of the runner's agent timeout, so it is never re-run
+        # here: the account leaves rotation and `SeatExhausted` (infra)
+        # makes the runner re-run the trial in a fresh environment. A route
+        # fault raises so the runner records an exception, never a reward.
+        #
+        # The CLI runs in a scratch directory outside any checkout: it
+        # walks up from its working directory for project state, and a
+        # jobs directory inside this repository would put the run under
+        # the repository's own `.smithers`. It is moved under the trial's
+        # logs when the run is over.
+        workspace = Path(tempfile.mkdtemp(prefix="smithers-bench-"))
+        flow_dir = workspace / ".smithers" / "flows" / FLOW_NAME
+        flow_dir.mkdir(parents=True)
+        (flow_dir / "flow.mdx").write_text(
+            render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit,
+                          effort=self._effort),
+            encoding="utf-8",
+        )
+        shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
+        shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
+            if shim_home else None
+        env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
+                              codex_home=self._account.home if self._account else None,
+                              container=container, cwd=cwd)
+        record: dict[str, Any] = {
+            "framework": FRAMEWORK,
+            "seat": self.seat,
+            "authMode": self.auth_mode,
+            "account": self._account.label if self._account else None,
+            "transport": "plue" if self._plue else "docker",
+            "openaiApiKeyInCliEnvironment": "OPENAI_API_KEY" in env,
+            "asks": env.get(ASKS_VARIABLE),
+            "helper": str(helper) if helper else None,
+            "container": container,
+            "cwd": cwd,
+            "commit": self._commit,
+            "effort": self._effort,
+            **budget,
+            "harnessRoot": str(self.root),
+            "harnessRevision": harness_revision(self.root),
+            "subject": subject_fingerprint(self.root),
+            "startedAt": _iso(int(time.time() * 1000)),
+        }
+        (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
 
-        # One attempt per account: a seat that runs dry is not the model's
-        # failure, so the trial is re-run whole on the next healthy account
-        # and every re-run is on the record. A route fault raises so the
-        # runner records an exception, never a reward.
-        attempt = 0
-        while True:
-            attempt += 1
-            # The CLI runs in a scratch directory outside any checkout: it
-            # walks up from its working directory for project state, and a
-            # jobs directory inside this repository would put the run under
-            # the repository's own `.smithers`. It is moved under the trial's
-            # logs when the attempt is over.
-            workspace = Path(tempfile.mkdtemp(prefix="smithers-bench-"))
-            flow_dir = workspace / ".smithers" / "flows" / FLOW_NAME
-            flow_dir.mkdir(parents=True)
-            (flow_dir / "flow.mdx").write_text(
-                render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit,
-                              effort=self._effort),
-                encoding="utf-8",
-            )
-            shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
-            shim = shim_directory(shim_home, shim_config(dict(os.environ), getattr(environment, "_plue_workdir", None))) \
-                if shim_home else None
-            env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
-                                  codex_home=self._account.home if self._account else None,
-                                  container=container, cwd=cwd)
-            record: dict[str, Any] = {
-                "framework": FRAMEWORK,
-                "seat": self.seat,
-                "authMode": self.auth_mode,
-                "account": self._account.label if self._account else None,
-                "attempt": attempt,
-                "requeues": list(self._requeues),
-                "transport": "plue" if self._plue else "docker",
-                "openaiApiKeyInCliEnvironment": "OPENAI_API_KEY" in env,
-                "asks": env.get(ASKS_VARIABLE),
-                "helper": str(helper) if helper else None,
-                "container": container,
-                "cwd": cwd,
-                "commit": self._commit,
-                "effort": self._effort,
-                **budget,
-                "harnessRoot": str(self.root),
-                "harnessRevision": harness_revision(self.root),
-                "subject": subject_fingerprint(self.root),
-                "startedAt": _iso(int(time.time() * 1000)),
-            }
-            (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
+        started = time.monotonic()
+        try:
+            exit_status, phase = await self._drive(workspace, env, budget["budgetSec"])
+        finally:
+            if shim_home is not None:
+                shutil.rmtree(shim_home, ignore_errors=True)
+        wall = time.monotonic() - started
+        shutil.move(str(workspace), str(kept))
+        workspace = kept
 
-            started = time.monotonic()
-            try:
-                exit_status, phase = await self._drive(workspace, env, budget["budgetSec"])
-            finally:
-                if shim_home is not None:
-                    shutil.rmtree(shim_home, ignore_errors=True)
-            wall = time.monotonic() - started
-            shutil.move(str(workspace), str(kept))
-            workspace = kept
+        journal = journal_path(workspace / ".flows")
+        events = read_journal(journal) if journal is not None else []
+        summary = summarize(events)
+        try:
+            log_text = (self.logs_dir / "smithers-run.log").read_text(errors="replace")
+        except OSError:
+            log_text = ""
+        kind, cause = verdict(log_text, summary, events)
+        reached = container_commands(events, container)
+        record.update({
+            "verdict": kind,
+            "cause": cause,
+            "containerCommands": reached,
+            "phase": phase,
+            "exitStatus": exit_status,
+            "wallSec": round(wall, 3),
+            "journal": str(journal) if journal is not None else None,
+            "run": summary,
+            "finishedAt": _iso(int(time.time() * 1000)),
+        })
+        (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
 
-            journal = journal_path(workspace / ".flows")
-            events = read_journal(journal) if journal is not None else []
-            summary = summarize(events)
-            try:
-                log_text = (self.logs_dir / "smithers-run.log").read_text(errors="replace")
-            except OSError:
-                log_text = ""
-            kind, cause = verdict(log_text, summary, events)
-            reached = container_commands(events, container)
-            record.update({
-                "verdict": kind,
-                "cause": cause,
-                "containerCommands": reached,
-                "phase": phase,
-                "exitStatus": exit_status,
-                "wallSec": round(wall, 3),
-                "journal": str(journal) if journal is not None else None,
-                "run": summary,
-                "finishedAt": _iso(int(time.time() * 1000)),
-            })
-            (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
-
-            if kind == "seat" and self._account is not None and self._pool is not None:
-                reset_at = accounts.reset_time_of(cause or "") or accounts.reset_time_of(log_text)
+        reset_at = None
+        if kind == "seat":
+            reset_at = accounts.reset_time_of(cause or "") or accounts.reset_time_of(log_text)
+            if self._account is not None and self._pool is not None:
                 self._pool.disable(self._account.label, cause or "usage limit", reset_at)
-                previous = self._account.label
-                shutil.move(str(kept), str(self.logs_dir / f"workspace-attempt-{attempt}"))
-                (self.logs_dir / "smithers-run.log").rename(self.logs_dir / f"smithers-run-attempt-{attempt}.log")
-                with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
-                    log.write(f"{_iso(int(time.time() * 1000))} attempt {attempt} on {previous} ended in a usage limit"
-                              f" (resets {reset_at or 'unknown'}): {cause}\n")
-                # Waits while the pool is paused; raises NoSeatLeft after the wait.
-                self._account = await asyncio.to_thread(self._pool.lease, trial)
-                self._requeues.append({"attempt": attempt, "from": previous, "to": self._account.label,
-                                       "cause": cause, "resetAt": reset_at})
-                with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
-                    log.write(f"{_iso(int(time.time() * 1000))} requeued as attempt {attempt + 1} on {self._account.label}\n")
-                continue
-            break
 
         if self._commit:
             record["commitResult"] = await self._commit_work(environment, cwd)
@@ -1067,8 +1050,7 @@ class SmithersAgent(BaseAgent):
                 instruction=instruction,
                 session_id=getattr(self, "session_id", None) or environment.session_id,
                 extra={"authMode": self.auth_mode, "bindings": summary["bindings"],
-                       "harnessRevision": record["harnessRevision"], "account": record["account"],
-                       "requeues": record["requeues"]},
+                       "harnessRevision": record["harnessRevision"], "account": record["account"]},
             )
             (self.logs_dir / "trajectory.json").write_text(json.dumps(document, indent=2))
 
@@ -1081,8 +1063,6 @@ class SmithersAgent(BaseAgent):
             "seat": self.seat,
             "auth_mode": self.auth_mode,
             "account": record["account"],
-            "attempt": attempt,
-            "requeues": record["requeues"],
             "transport": record["transport"],
             "verdict": kind,
             "cause": cause,
@@ -1110,7 +1090,7 @@ class SmithersAgent(BaseAgent):
         if kind == "infra":
             raise accounts.ModelRouteError(cause or "model route failed")
         if kind == "seat":
-            raise accounts.SeatExhausted(record["account"] or "?", cause or "usage limit")
+            raise accounts.SeatExhausted(record["account"] or "?", cause or "usage limit", reset_at)
         if reached["succeeded"] == 0:
             raise accounts.ContainerUnreachable(
                 f"no command reached {container} with exit 0 ({reached['attempted']} attempted)")

@@ -22,6 +22,9 @@ A run is publishable only when all of these hold:
 - At least `--min-tasks` tasks are paired. A task either arm could not place
   (`PlueUnplaceable`) leaves both arms and is listed.
 - Every scored trial reports input, cached and output tokens.
+- No scored trial carries `requeues` in its metadata: harness revisions
+  before #4798 re-ran a usage-limited attempt in the container the first
+  attempt had changed and reported only the last attempt's tokens.
 - Every scored trial is sealed: no mounts, no extra allowed hosts beyond the
   stock arm's model route (`seal.ALLOWED_HOSTS`), at least one command
   exited 0 in the task container, and for the Smithers arm the host-call
@@ -243,6 +246,7 @@ def read_trials(job: Path, smithers: bool) -> list[dict]:
             "startedAt": result.get("started_at"),
             "finishedAt": result.get("finished_at"),
             "harnessRevision": (agent_result.get("metadata") or {}).get("harness_revision"),
+            "requeues": (agent_result.get("metadata") or {}).get("requeues"),
             "trajectory": f"{trial.name}/agent/trajectory.json" if (trial / "agent" / "trajectory.json").is_file() else None,
         })
     return rows
@@ -382,6 +386,9 @@ def build(smithers_job: Path, baseline_job: Path, min_tasks: int = MIN_TASKS) ->
                 refusals.append(f"{arm}: {row['trial']} reports no {', '.join(missing)}")
             for reason in row["seal"]:
                 refusals.append(f"{arm}: {row['trial']} is not sealed: {reason}")
+            if row["requeues"]:
+                refusals.append(f"{arm}: {row['trial']} was re-run in place after a usage limit; "
+                                "re-run it in a fresh environment before publishing")
 
     results = {}
     for arm in ("smithers", "baseline"):

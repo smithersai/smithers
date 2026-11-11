@@ -192,11 +192,14 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
   `quota_exceeded`, the Codex CLI's "You've hit your usage limit") takes the
   account out of rotation with the reset time the message names (a date, a
   time of day such as "Try again at 9:27 AM.", or "in 3 hours"), or for five
-  hours when it names none the pool can read, and the
-  trial is re-run whole on the next healthy account. Every re-run is in the
-  trial's `agent/requeue.log` and in `requeues` of `smithers-run.json` /
-  `codex-account.json`; the earlier attempt's log and workspace are kept as
-  `*-attempt-N`.
+  hours when it names none the pool can read, and raises `SeatExhausted`, an
+  infra exception. The attempt already changed the task container and spent
+  part of the agent timeout, so it is never re-run in place: the runner
+  re-runs the trial in a fresh environment on the next healthy account
+  (`--retry-include SeatExhausted`, or `requeue.py`). The stock arm records
+  the limit as `usageLimit` and `resetAt` in `codex-account.json`.
+  `report.py` refuses a scored trial whose metadata carries `requeues`: older
+  harness revisions re-ran it in place.
 - A route fault (`authentication`, `no_route`, `provider_internal`,
   `transport`, `completion_unjudged`, a `rate_limited` the
   harness gave up on) raises `ModelRouteError`, so Harbor records an

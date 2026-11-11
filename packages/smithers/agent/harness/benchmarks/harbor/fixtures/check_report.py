@@ -265,6 +265,29 @@ class ReportCLI(unittest.TestCase):
         self.assertTrue(any(r.endswith("reports no n_cache_tokens") and r.startswith("smithers: ") for r in report["refusals"]),
                         report["refusals"])
 
+    def test_a_trial_re_run_in_place_after_a_usage_limit_is_refused(self) -> None:
+        """#4798: harness revisions before the fix re-ran a usage-limited
+        attempt in the container it had changed and kept only the last
+        attempt's tokens, recording the re-runs as `requeues`."""
+        self.paired(50)
+        requeued = {}
+        for arm in ("smithers", "baseline"):
+            trial = next(self.jobs[arm].glob("task-007__*"))
+            result = json.loads((trial / "result.json").read_text())
+            result["agent_result"]["metadata"]["requeues"] = [{"attempt": 1, "from": "codex-1", "to": "codex-2"}]
+            (trial / "result.json").write_text(json.dumps(result))
+            requeued[arm] = trial.name
+        self.assert_refused(*(f"{arm}: {name} was re-run in place after a usage limit; "
+                              "re-run it in a fresh environment before publishing" for arm, name in requeued.items()))
+
+    def test_an_empty_requeue_record_still_publishes(self) -> None:
+        self.paired(50)
+        trial = next(self.jobs["smithers"].glob("task-007__*"))
+        result = json.loads((trial / "result.json").read_text())
+        result["agent_result"]["metadata"]["requeues"] = []
+        (trial / "result.json").write_text(json.dumps(result))
+        self.assertTrue(self.run_report(0)[1]["publishable"])
+
     def test_a_smithers_host_call_unseals_the_trial(self) -> None:
         self.paired(1)
         trial = self.trial("smithers", "task-001", host_command="cat ../tests/test_outputs.py")
