@@ -796,7 +796,10 @@ const layerNoop: Layer.Layer<Scheduler>
 ```
 
 `make` builds the service in the current scope and forks nothing; the caller
-decides when a tick happens. `layer` additionally forks a supervisor fiber that
+decides when a tick happens. The service keeps each trigger's watermark and
+its launch fibers in memory, so build it once and keep its scope open across
+ticks. A host that keeps no process between ticks calls
+[`Scheduler.tick`](#schedulertick) instead. `layer` additionally forks a supervisor fiber that
 ticks and sleeps forever. The supervisor sleeps only through the Effect Clock,
 so scope closure interrupts it, and it recovers from the whole cause of a failed
 tick rather than the typed error alone.
@@ -818,6 +821,61 @@ not persisted) re-arms the occurrence as pending, and a buffered occurrence is
 re-armed. Every failure other than interruption is logged with the trigger id.
 Interrupting the fiber detaches it; the reservation lease re-arms the
 occurrence.
+
+### Scheduler.tick
+
+```ts
+interface TickOptions extends Omit<Options, "pollInterval" | "runPollInterval"> {
+  readonly since?: number | undefined
+}
+
+interface Ticked {
+  readonly at: number
+  readonly watermark: number
+}
+
+const tick: (
+  options?: TickOptions
+) => Effect.Effect<Ticked, TriggerError, Runner | TriggerStore.TriggerStore>
+```
+
+`tick` is one whole tick for a host that keeps no process between ticks: a
+durable flow step, a queue consumer, a scheduled function. It needs no scope.
+
+A scheduler from `make` keeps two things in memory that such a host loses. The
+first is the watermark each trigger was dispatched through: a scheduler built
+for every tick sees every trigger for the first time, and first sight owes a
+trigger that never fired nothing, so it never fires. The second is the fiber
+launching each run: closing the scope interrupts it, and the occurrence waits
+for the five-minute reservation lease.
+
+`tick` takes the watermark as `since` and answers the next one:
+
+- `since` is the `watermark` the previous tick answered, in epoch
+  milliseconds. Each trigger starts from `since`, or from the last fire the
+  store recorded when that is later, and the catch-up policy decides what the
+  interval owes, exactly as it does for a stalled poll. Absent, the tick is a
+  first tick. A `since` that is not a safe integer is refused with
+  `invalid_options` at `since`.
+- `at` is when the tick read the clock.
+- `watermark` is what the next tick passes as `since`. It is `at` when every
+  trigger finished dispatching. When one did not (a claim failed, a row would
+  not decode, a declaration changed mid-tick), it is this tick's own `since`,
+  so the next tick asks the policy about the same interval again; the claim
+  protocol refuses the occurrences that already fired.
+
+Keep the watermark wherever the host keeps durable state. A durable flow keeps
+it in the payload of its next round.
+
+`tick` returns once every launch it started is recorded as `launched`,
+compensated, or failed, so it waits at most `startTimeout` for one launch. It
+does not watch the runs it launched: the next tick asks `Runner.inspect` about
+the run each trigger holds and records how it stopped, which is also how the
+overlap policy sees a run across ticks. The fire ledger is pruned on a first
+tick and on a tick that crosses an hour boundary since the last one.
+
+`tick` fails with what `runOnce` fails with, such as a store that cannot list
+its triggers. Retry it with the same `since`.
 
 ## DispatchReader
 

@@ -11,6 +11,7 @@ import type { PlanCard, Receipt, RunStatus } from "@smthrs/control/ControlSchema
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -467,15 +468,25 @@ const isolate = (
   effect: Effect.Effect<void, TriggerError>
 ): Effect.Effect<void, TriggerError> => Effect.asVoid(attempted(annotations, work, effect))
 
-/**
- * Constructs a scheduler service in the current Scope.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (
-  options: Options = {}
-): Effect.Effect<Service, TriggerError, Runner | Scope.Scope | TriggerStore> =>
+/** What a one-shot {@link tick} knows in place of an earlier tick's memory. */
+interface Seed {
+  readonly since: number | undefined
+  readonly at: number
+}
+
+/** A scheduler, and what only {@link tick} reads from it. */
+interface Built {
+  readonly service: Service
+  /** Completes once every launch in flight is recorded, compensated, or failed. */
+  readonly launched: Effect.Effect<void>
+  /** Whether the last tick finished every trigger's dispatch. */
+  readonly clean: Effect.Effect<boolean>
+}
+
+const build = (
+  options: Options,
+  seed: Seed | undefined
+): Effect.Effect<Built, TriggerError, Runner | Scope.Scope | TriggerStore> =>
   Effect.gen(function*() {
     const parentScope = yield* Effect.scope
     const providedStore = yield* TriggerStore
@@ -500,7 +511,19 @@ export const make = (
     const inspectTimeout = yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout")
     const cancelTimeout = yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout")
     const fireRetention = yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
-    const lastPrunedAt = yield* Ref.make<number | undefined>(undefined)
+    // A one-shot tick remembers no earlier prune. Its `since` stands in: the
+    // ledger is pruned on a first tick and when an hour boundary passed since.
+    const lastPrunedAt = yield* Ref.make<number | undefined>(
+      seed?.since !== undefined && Math.floor(seed.at / pruneEvery) === Math.floor(seed.since / pruneEvery)
+        ? seed.at
+        : undefined
+    )
+    // The watermark a trigger starts from when this process has not seen it:
+    // the caller's, or the last fire the store recorded when that is later.
+    const seeded = (trigger: Registered): number | undefined =>
+      seed?.since === undefined ? undefined : Math.max(seed.since, trigger.lastFiredAt ?? seed.since)
+    const launching = new Set<Deferred.Deferred<void>>()
+    let clean = true
     // Every runner call carries a deadline. A runtime that never answers used
     // to hold the launch, and the tick waiting on it, for the life of the
     // scope with nothing written down.
@@ -679,6 +702,8 @@ export const make = (
         // The occurrence takes the entry under its reservation before the
         // runner hears of it, so every write below is fenced on this launch.
         yield* active.take(trigger.id, { occurrence, runId: reservation })
+        const recorded = yield* Deferred.make<void>()
+        launching.add(recorded)
         let runId: string | undefined
         let launchRecorded = false
         let completed = false
@@ -705,6 +730,7 @@ export const make = (
             reservationId: reservation
           })
           launchRecorded = true
+          yield* Deferred.succeed(recorded, undefined)
           let state: RunState
           while (true) {
             const inspected = yield* inspectRun(trigger.id, runId)
@@ -784,11 +810,15 @@ export const make = (
           // any other scope closure must leave it alone: the next incarnation
           // re-attaches through `resolveActive`. Cancellation is a deliberate
           // act and belongs to `cancelActive` alone.
-          Effect.ensuring(Effect.suspend(() =>
-            launchRecorded && !completed
-              ? active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
-              : active.remove(trigger.id, occurrence)
-          ))
+          Effect.ensuring(Effect.suspend(() => {
+            launching.delete(recorded)
+            return Effect.andThen(
+              Deferred.succeed(recorded, undefined),
+              launchRecorded && !completed
+                ? active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber: undefined }))
+                : active.remove(trigger.id, occurrence)
+            )
+          }))
         )
         // The tick does not wait for the launch. The claim already fenced
         // the occurrence under its reservation, and every failure below is
@@ -1008,7 +1038,7 @@ export const make = (
         // occurrence (including a plan waiting for a human decision).
         if (!trigger.enabled) return
         if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger, held)
-        const observed = (yield* Ref.get(observedAt)).get(trigger.id)
+        const observed = (yield* Ref.get(observedAt)).get(trigger.id) ?? seeded(trigger)
         const due = yield* DueOccurrences.compute(trigger, now, observed)
         let dispatched: number | undefined
         let interrupted = false
@@ -1029,9 +1059,13 @@ export const make = (
           )
           if (stale) break
           if (settledHere && !interrupted) dispatched = occurrence
-          if (!settledHere) interrupted = true
+          if (!settledHere) {
+            interrupted = true
+            clean = false
+          }
         }
         if (stale) {
+          clean = false
           // The occurrences were computed from a declaration the store has
           // since replaced, so the schedule decision is what went stale: a
           // trigger edited to fire at noon owes nothing for the hourly
@@ -1062,6 +1096,7 @@ export const make = (
         yield* isolate({ host }, "heartbeat", store.heartbeat(host))
         // Nothing else deletes from the fire ledger, so without this it keeps
         // one row per occurrence forever and every fires listing reads it all.
+        clean = true
         const now = yield* Clock.currentTimeMillis
         const last = yield* Ref.get(lastPrunedAt)
         if (last === undefined || now - last >= pruneEvery) {
@@ -1084,20 +1119,106 @@ export const make = (
         yield* Effect.forEach(
           listing,
           (row) =>
-            isolate(
+            attempted(
               { triggerId: row.triggerId },
               "tick",
               Result.isFailure(row.trigger)
                 ? Effect.fail(row.trigger.failure)
                 : processTrigger(row.trigger.success, row)
-            ),
+            ).pipe(Effect.map((finished) => {
+              if (!finished) clean = false
+            })),
           { concurrency, discard: true }
         )
       }).pipe((tick) => timed(tickDuration, tick), Effect.withSpan("Scheduler.runOnce", { attributes: { host } }))
     )
 
-    return Scheduler.of({ runOnce })
+    return {
+      service: Scheduler.of({ runOnce }),
+      launched: Effect.suspend(() =>
+        Effect.forEach([...launching], (recorded) => Deferred.await(recorded), { discard: true })
+      ),
+      clean: Effect.sync(() => clean)
+    }
   })
+
+/**
+ * Constructs a scheduler service in the current Scope.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const make = (
+  options: Options = {}
+): Effect.Effect<Service, TriggerError, Runner | Scope.Scope | TriggerStore> =>
+  Effect.map(build(options, undefined), (built) => built.service)
+
+/**
+ * Options of one {@link tick}: the scheduler's, without the two poll
+ * intervals a tick never sleeps through, and the watermark the previous tick
+ * answered.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export interface TickOptions extends Omit<Options, "pollInterval" | "runPollInterval"> {
+  /**
+   * The `watermark` the previous tick answered, in epoch milliseconds: this
+   * tick owes every trigger the boundaries after it. Absent on a first tick,
+   * which owes a trigger that never fired nothing, as a starting process does.
+   */
+  readonly since?: number | undefined
+}
+
+/**
+ * What one {@link tick} did.
+ *
+ * @category models
+ * @since 1.0.0-rc.18
+ */
+export interface Ticked {
+  /** When the tick read the clock, in epoch milliseconds. */
+  readonly at: number
+  /**
+   * What the next tick passes as `since`: `at` when every trigger finished
+   * dispatching, and this tick's own `since` when one did not, so the next
+   * tick asks the catch-up policy about the same interval again.
+   */
+  readonly watermark: number
+}
+
+/**
+ * One whole tick for a host that keeps no process between ticks: a durable
+ * flow step, a queue consumer, a scheduled function.
+ *
+ * {@link make} keeps two things in memory that such a host loses: the
+ * watermark each trigger was dispatched through, and the fibers launching its
+ * runs. A scheduler built for every tick therefore never fires a trigger that
+ * has not fired before, and closing its scope cuts a launch off until the
+ * reservation lease expires. `tick` takes the watermark as `since`, answers
+ * the next one, and returns only once every launch it started is recorded,
+ * compensated, or failed. It waits at most `startTimeout` for one launch.
+ *
+ * It does not watch the runs it launched. The next tick asks the runner about
+ * the run each trigger holds and records how it stopped.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.18
+ */
+export const tick = (
+  options: TickOptions = {}
+): Effect.Effect<Ticked, TriggerError, Runner | TriggerStore> =>
+  Effect.scoped(Effect.gen(function*() {
+    const since = options.since
+    if (since !== undefined && !Number.isSafeInteger(since)) {
+      return yield* Effect.fail(invalidOption("since", "a safe integer of epoch milliseconds"))
+    }
+    const at = yield* Clock.currentTimeMillis
+    const built = yield* build(options, { since, at })
+    yield* built.service.runOnce
+    yield* built.launched
+    return { at, watermark: since === undefined || (yield* built.clean) ? at : since }
+  }))
 
 /**
  * Constructs a scheduler that performs no work.

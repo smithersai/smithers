@@ -116,8 +116,9 @@ missing store; it never answers an empty page it cannot stand behind.
 ## Tick without a supervisor
 
 `Scheduler.make` returns the same service without forking anything, so the
-caller decides when a tick happens. Use it in tests, in a one-shot process, or
-under a scheduler you already own:
+caller decides when a tick happens. Use it in tests or under a loop you already
+own, and keep its scope open across ticks: the service holds each trigger's
+watermark and its launch fibers in memory.
 
 ```ts
 import * as Scheduler from "@smthrs/triggers/Scheduler"
@@ -131,6 +132,29 @@ const oneTick = Effect.scoped(Effect.gen(function*() {
 
 `runOnce` holds a semaphore permit, so two concurrent calls on one scheduler
 serialize rather than interleave.
+
+## Tick from a host with no process
+
+A durable flow step, a queue consumer and a scheduled function keep nothing in
+memory between ticks. A scheduler built for each tick would see every trigger
+for the first time, which owes a trigger that never fired nothing, and closing
+its scope would cut its launches off. `Scheduler.tick` is one whole tick for
+such a host. It takes the watermark the previous tick answered and returns
+only once its launches are recorded:
+
+```ts
+import * as Scheduler from "@smthrs/triggers/Scheduler"
+import * as Effect from "effect/Effect"
+
+/** One round of a durable loop: tick, then keep `watermark` for the next round. */
+export const round = (since: number | undefined) =>
+  Effect.map(Scheduler.tick({ since, host: "edge" }), (ticked) => ticked.watermark)
+```
+
+Store the watermark durably, for example in the payload of the flow's next
+round, and pass it back as `since`. A first tick passes none. The next tick
+settles the runs this one launched, so run a tick at least as often as the
+tightest schedule, and keep `startTimeout` below the time one step may take.
 
 `Scheduler.makeNoop` and `Scheduler.layerNoop` provide an inert scheduler
 without allocating a supervisor fiber, for a composition that needs the service
