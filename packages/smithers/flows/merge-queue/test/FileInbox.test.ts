@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as PlatformError from "effect/PlatformError"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -100,14 +101,29 @@ describe("the inbox as a file", () => {
     expect(woke).toBe(true)
   })
 
-  it("wait keeps polling while the file cannot be read", async () => {
-    const exit = await Effect.runPromiseExit(
+  it("wait keeps polling while the file cannot be read, and returns once it can be", async () => {
+    // A file system whose first two reads fail and which then works: nothing here depends on how long a read takes.
+    const path = fresh()
+    writeFileSync(path, JSON.stringify({ _tag: "close" }) + "\n")
+    let reads = 0
+    const recovering = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (real) => ({
+        ...real,
+        readFileString: (file: string, encoding?: string) =>
+          reads++ < 2
+            ? Effect.fail(
+              PlatformError.systemError({ _tag: "Unknown", module: "FileSystem", method: "readFileString" })
+            )
+            : real.readFileString(file, encoding)
+      }))
+    ).pipe(Layer.provide(NodeFileSystem.layer))
+    await Effect.runPromise(
       Effect.flatMap(Inbox, (inbox) => inbox.wait(0)).pipe(
-        Effect.timeout("40 millis"),
-        Effect.provide(Layer.provideMerge(FileInbox.layer({ path: directory, poll: "5 millis" }), NodeFileSystem.layer))
+        Effect.provide(Layer.provideMerge(FileInbox.layer({ path, poll: "5 millis" }), recovering))
       )
     )
-    expect(Exit.isFailure(exit) && String(exit.cause)).toContain("Timeout")
+    expect(reads).toBeGreaterThan(2)
   })
 
   it("reports the file system failing as the inbox being unavailable", async () => {

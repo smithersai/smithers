@@ -110,7 +110,8 @@ const job = (run: number, parts: Tree, checks: ReadonlyArray<number> = [1, 2]): 
   eta: 0
 })
 
-describe.skipIf(!jjInstalled)("CI as commands on candidate commits", () => {
+// Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
+describe.skipIf(!jjInstalled)("CI as commands on candidate commits", { timeout: 120_000 }, () => {
   it("a check passes when its command exits 0 and fails otherwise, for the candidate commit", async () => {
     const world = await setup()
     await world.register(1, 0, world.change({ "one.txt": "one\n" }))

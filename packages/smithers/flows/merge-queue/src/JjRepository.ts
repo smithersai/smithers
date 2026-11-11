@@ -101,6 +101,8 @@ export const Ledger = Schema.Struct({
   pinned: Schema.Array(Pinned),
   /** The candidate commit built for each tree. A tree's prefixes have entries of their own. */
   candidates: Schema.Array(Schema.Struct({ tree: Schema.String, commit: Schema.String })),
+  /** Trees whose last change could not be applied on the changes before it. */
+  refused: Schema.Array(Schema.String),
   /** Commits of a stack below its last one. On the bookmark they belong to the part that follows them. */
   interior: Schema.Array(Schema.String),
   /** The id the next foreign commit gets. */
@@ -214,7 +216,15 @@ export const make = (
       const genesis = yield* tipCommit
       if (genesis === undefined) return yield* unavailable(`no bookmark ${options.bookmark}`)
       // Written at once: the queue's tree is what follows this commit, for good.
-      const created = { genesis, sources: [], pinned: [], candidates: [], interior: [], foreign: firstForeign }
+      const created = {
+        genesis,
+        sources: [],
+        pinned: [],
+        candidates: [],
+        refused: [],
+        interior: [],
+        foreign: firstForeign
+      }
       yield* fs.writeFileString(options.ledger, JSON.stringify(created) + "\n")
       return created
     }).pipe(
@@ -303,22 +313,25 @@ export const make = (
         return { commit, interior: below }
       })
 
-    const build = (tree: Tree) =>
+    /**
+     * One step towards the candidate for a tree: the answer when the ledger
+     * already has it, or else one more change applied, with `more` to come.
+     *
+     * There is one commit per prefix of the tree, shared by every candidate
+     * that starts with that prefix. So two runs that test the same parts in
+     * the same order test the same commit, and a longer candidate descends
+     * from a shorter one: landing the shorter never strands the longer. A
+     * prefix whose last change could not be applied is remembered too, so the
+     * other runs that contain it are answered at once.
+     */
+    const extend = (parts: ReadonlyArray<typeof Pinned.Type>, batch: Tree, tree: Tree) =>
       Effect.gen(function*() {
-        const { ledger, parts } = yield* read
-        const batch = strip(parts, tree)
-        if (batch === undefined) return { _tag: "stale" } as const
-        // One commit per prefix of the tree, shared by every candidate that
-        // starts with that prefix. So two runs that test the same parts in the
-        // same order test the same commit, and a longer candidate descends
-        // from a shorter one: landing the shorter never strands the longer.
-        const candidates = [...ledger.candidates]
-        const pinned = [...ledger.pinned]
-        const interior = [...ledger.interior]
+        const ledger = yield* load
         let onto = parts.at(-1)?.commit ?? ledger.genesis
         for (const [index, part] of batch.entries()) {
           const prefix = key(tree.slice(0, parts.length + index + 1))
-          const made = candidates.find((entry) => entry.tree === prefix)
+          if (ledger.refused.includes(prefix)) return { _tag: "conflict", part } as const
+          const made = ledger.candidates.find((entry) => entry.tree === prefix)
           if (made !== undefined) {
             onto = made.commit
             continue
@@ -327,15 +340,17 @@ export const make = (
           if (source === undefined) return yield* unavailable(`no commit registered for ${part.id}.${part.rev}`)
           const applied = yield* apply(source.commit, onto)
           if (applied === undefined) {
-            yield* save({ ...ledger, candidates, pinned, interior })
+            yield* save({ ...ledger, refused: [...ledger.refused, prefix] })
             return { _tag: "conflict", part } as const
           }
-          interior.push(...applied.interior)
-          onto = applied.commit
-          candidates.push({ tree: prefix, commit: onto })
-          pinned.push({ ...part, commit: onto })
+          yield* save({
+            ...ledger,
+            candidates: [...ledger.candidates, { tree: prefix, commit: applied.commit }],
+            pinned: [...ledger.pinned, { ...part, commit: applied.commit }],
+            interior: [...ledger.interior, ...applied.interior]
+          })
+          return { _tag: "more" } as const
         }
-        if (candidates.length !== ledger.candidates.length) yield* save({ ...ledger, candidates, pinned, interior })
         return { _tag: "built", commit: onto } as const
       })
 
@@ -345,6 +360,21 @@ export const make = (
     const one = <A>(effect: Effect.Effect<A, Unavailable>): Effect.Effect<A, Unavailable> =>
       Semaphore.withPermit(lock, effect)
 
+    // The lock is taken for one change at a time, so a short candidate is not
+    // kept waiting behind a long one that shares its first changes. The tip is
+    // read once: a candidate built while the bookmark moves is merely stale,
+    // and a stale commit cannot land, since the bookmark only moves forwards.
+    const build = (tree: Tree): Effect.Effect<Candidate, Unavailable> =>
+      Effect.flatMap(one(read), ({ parts }) => {
+        const batch = strip(parts, tree)
+        if (batch === undefined) return Effect.succeed({ _tag: "stale" } as const)
+        const next: Effect.Effect<Candidate, Unavailable> = Effect.flatMap(
+          one(extend(parts, batch, tree)),
+          (step) => step._tag === "more" ? next : Effect.succeed(step)
+        )
+        return next
+      })
+
     return {
       register: (part, commit) =>
         one(Effect.flatMap(load, (ledger) =>
@@ -353,10 +383,10 @@ export const make = (
             sources: [...ledger.sources.filter((entry) => !samePart(entry, part)), { ...part, commit }]
           }))),
       tip: one(tip),
-      candidate: (tree) => one(build(tree)),
+      candidate: build,
       advance: (from, to) =>
-        one(Effect.gen(function*() {
-          const current = yield* tip
+        Effect.gen(function*() {
+          const current = yield* one(tip)
           if (!sameTree(current, from)) {
             return
           }
@@ -364,8 +394,10 @@ export const make = (
           if (built._tag !== "built") {
             return yield* unavailable(`no candidate to land for ${key(to)}`)
           }
-          yield* jj(["bookmark", "set", options.bookmark, "-r", built.commit])
-        }))
+          // jj moves a bookmark only forwards, and the candidate descends from
+          // the tip it was built on: if the bookmark moved meanwhile, this fails.
+          yield* one(jj(["bookmark", "set", options.bookmark, "-r", built.commit]))
+        })
     }
   })
 

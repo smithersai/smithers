@@ -9,7 +9,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawnerModule from "effect/process/ChildProcessSpawner"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
@@ -83,7 +83,8 @@ const repository = () => {
 
 const tree = (...parts: ReadonlyArray<readonly [number, number]>): Tree => parts.map(([id, rev]) => ({ id, rev }))
 
-describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
+// Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
+describe.skipIf(!jjInstalled)("the target as a jj bookmark", { timeout: 120_000 }, () => {
   it("starts with an empty tree: the queue's tree is what follows the bookmark it found", async () => {
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
@@ -217,7 +218,8 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
     const repo = repository()
     const jjArgs = "jj --ignore-working-copy --config user.name=queue --config user.email=queue@example.com"
     // Adds a "regenerated" commit on a clean change, and refuses a conflicted one.
-    const script = `[ "$3" = false ] || exit 1; ${jjArgs} new --no-edit "$1" -m regenerated >/dev/null 2>&1; `
+    const script =
+      `echo "$3" >> finish-calls.txt; [ "$3" = false ] || exit 1; ${jjArgs} new --no-edit "$1" -m regenerated >/dev/null 2>&1; `
       + `${jjArgs} log --no-graph -r 'heads('"$1"'::) & description(substring:"regenerated")' -T commit_id`
     const finish = (head: string, onto: string, conflicted: boolean) => ({
       command: "sh",
@@ -230,6 +232,11 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
     await run(queue.register({ id: 2, rev: 0 }, repo.change("same.txt", "yours\n")))
     await run(queue.register({ id: 3, rev: 0 }, repo.change("three.txt", "three\n")))
     expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    // The refusal is remembered: the other runs that contain the change are answered without replaying it.
+    expect(await run(queue.candidate(tree([1, 0], [2, 0])))).toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    expect(await run(queue.candidate(tree([1, 0], [2, 0], [3, 0]))))
+      .toEqual({ _tag: "conflict", part: { id: 2, rev: 0 } })
+    expect(readFileSync(join(repo.path, "finish-calls.txt"), "utf8").trim().split("\n")).toEqual(["false", "true"])
     await run(queue.advance([], tree([1, 0], [3, 0])))
     expect(repo.jj("log", "--no-graph", "-r", `${base}..main`, "-T", "description").trim().split("\n"))
       .toEqual(["regenerated", "change three.txt", "regenerated", "change same.txt"])
@@ -341,13 +348,30 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
       }).pipe(Effect.provide(mute)) as Effect.Effect<string>
     )
     expect(unreadable).toContain("printed no new commit")
-    const stuck = await runExit(
-      Effect.flatMap(Target, (target) => target.wait([])).pipe(
-        Effect.timeout("600 millis"),
-        Effect.provide(JjRepository.target(none, "5 millis"))
-      )
+    // The wait goes on while the tip cannot be read, and ends once it can be and differs. The host fails its first
+    // two spawns and then works, so nothing here depends on how long anything takes.
+    let spawns = 0
+    const recovering = Layer.provideMerge(
+      Layer.effect(
+        ChildProcessSpawner,
+        Effect.map(ChildProcessSpawner, (real) =>
+          ChildProcessSpawnerModule.make((command) =>
+            spawns++ < 2
+              ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }))
+              : real.spawn(command)
+          ))
+      ),
+      host
     )
-    expect(Exit.isFailure(stuck)).toBe(true)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const flaky = yield* JjRepository.make({ ...repo.options, ledger: join(root, "recovering.json") })
+        yield* Effect.flatMap(Target, (target) => target.wait(tree([1, 0]))).pipe(
+          Effect.provide(JjRepository.target(flaky, "5 millis"))
+        )
+      }).pipe(Effect.provide(recovering)) as Effect.Effect<void>
+    )
+    expect(spawns).toBeGreaterThan(2)
     const notRepository = await run(JjRepository.make({ ...repo.options, path: root, ledger: join(root, "m.json") }))
     expect(await detail(notRepository.tip)).toContain("exited")
   })
@@ -355,7 +379,9 @@ describe.skipIf(!jjInstalled)("the target as a jj bookmark", () => {
   it("the Target service waits until the bookmark moves", async () => {
     const repo = repository()
     const queue = await run(JjRepository.make(repo.options))
-    const layer = JjRepository.target(queue, "5 millis")
+    // Polled at a pace near real use: a jj process every 5 ms beside the test's own jj commands starved them on a
+    // loaded host.
+    const layer = JjRepository.target(queue, "200 millis")
     let woke = false
     const waiting = run(Effect.flatMap(Target, (target) => target.wait([])).pipe(Effect.provide(layer))).then(
       () => (woke = true)

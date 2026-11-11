@@ -97,7 +97,8 @@ const brief = (id: number, failures: ReadonlyArray<number> = [1]): FixBrief => (
 
 const answerWith = (json: string): string => `printf '%s' '${json}' > "$2"`
 
-describe.skipIf(!jjInstalled)("fix agents as commands", () => {
+// Real jj and real processes: a budget for a loaded host, still finite so a hang fails.
+describe.skipIf(!jjInstalled)("fix agents as commands", { timeout: 120_000 }, () => {
   it("a fixed answer registers the new revision's commit before the queue hears of it", async () => {
     const world = await setup("cat \"$1.commit\" > \"$2\"")
     await world.base.runPromise(world.repository.register({ id: 1, rev: 0 }, world.change({ "one.txt": "broken\n" })))
