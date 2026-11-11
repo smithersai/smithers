@@ -50,6 +50,63 @@ describe("the projection", () => {
     expect(nodes[0]!.settledSequence).toBeGreaterThan(nodes[1]!.settledSequence!)
   })
 
+  it("joins equal and idless call IDs only within their own step scope", () => {
+    // Two concurrent steps of a module run each make call `same`, then an
+    // idless `write`. Settling the right step first must not hand its result
+    // to the left step's node, nor the left step's to the right's.
+    const stepFact = (scope: string, kind: string, payload: unknown) => {
+      const step = {
+        stepId: scope.repeat(64),
+        executionId: "execution-1",
+        action: "agent",
+        attempt: 1,
+        ask: 0,
+        retry: 1,
+        scope
+      }
+      return event("control.engine.event", {
+        version: 1,
+        executionId: step.executionId,
+        generation: 0,
+        sequence,
+        emittedAtMs: sequence,
+        sourceId: `step-fact-v1:${step.stepId}:${step.attempt}:${step.ask}:${step.retry}`,
+        sourceSequence: sequence,
+        eventType: "flows.harness.step-fact.v1",
+        payload: {
+          version: 1,
+          step,
+          generation: 0,
+          frame: 0,
+          ordinal: 0,
+          cell: "",
+          at: sequence,
+          eventType: kind,
+          sourceSequence: sequence,
+          payload
+        }
+      })
+    }
+    const start = "control.agent.cell-call-started"
+    const settle = "control.agent.cell-call-settled"
+    const nodes = NodeOutput.project([
+      stepFact("a", start, { callId: "same", flowName: "write" }),
+      stepFact("b", start, { callId: "same", flowName: "write" }),
+      stepFact("a", start, { flowName: "write" }),
+      stepFact("b", start, { flowName: "write" }),
+      stepFact("b", settle, { callId: "same", flowName: "write", value: "b" }),
+      stepFact("a", settle, { callId: "same", flowName: "write", value: "a" }),
+      stepFact("b", settle, { flowName: "write", value: "idless b" }),
+      stepFact("a", settle, { flowName: "write", value: "idless a" })
+    ])
+    expect(nodes.map((node) => [node.nodeId, node.value])).toEqual([
+      ["write#1", "a"],
+      ["write#2", "b"],
+      ["write#3", "idless a"],
+      ["write#4", "idless b"]
+    ])
+  })
+
   it("allows upgraded legacy settlements without letting unknown IDs steal identified starts", () => {
     const nodes = NodeOutput.project([
       event("control.agent.cell-call-started", { callId: "current", flowName: "read" }),

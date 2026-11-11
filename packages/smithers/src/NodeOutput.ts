@@ -73,6 +73,13 @@ export interface Node {
   readonly settledSequence?: number | undefined
 }
 
+interface OpenCall {
+  readonly node: Node
+  readonly flowName: string
+  readonly callId?: string | undefined
+  readonly scope?: string | undefined
+}
+
 /**
  * Projects a run's events into its node outputs, in the order they started.
  *
@@ -85,7 +92,10 @@ export interface Node {
  */
 export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): ReadonlyArray<Node> => {
   const ordinals = new Map<string, number>()
-  const open: Array<Node> = []
+  // A step scope is part of a call's identity: two concurrent steps may each
+  // make call `same`, or an idless call of one flow. It stays off the public
+  // `Node` because the node id already names the call.
+  const open: Array<OpenCall> = []
   const nodes: Array<Node> = []
   let finalOutput: string | undefined
   let finalAt: number | undefined
@@ -106,7 +116,7 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
         startedAt: event.occurredAt,
         startedSequence: event.sequence
       }
-      open.push(node)
+      open.push({ node, flowName, callId: node.callId, scope: callScope(event) })
       nodes.push(node)
       continue
     }
@@ -115,12 +125,12 @@ export const project = (events: ReadonlyArray<ControlSchema.ControlEvent>): Read
       // Dispatch identity survives concurrent same-name calls. Legacy
       // fallback may claim only an unidentified start, including old runs
       // that resume with a newly identified settlement after an upgrade.
-      const index = openCallIndex(open, asString(payload["callId"]), flowName)
+      const index = openCallIndex(open, asString(payload["callId"]), flowName, callScope(event))
       if (index < 0) continue
-      const [node] = open.splice(index, 1)
-      const position = nodes.indexOf(node!)
+      const { node } = open.splice(index, 1)[0]!
+      const position = nodes.indexOf(node)
       nodes[position] = {
-        ...node!,
+        ...node,
         outcome: asString(payload["outcome"]) === "failure" ? "failure" : "success",
         value: payload["value"],
         message: asString(payload["message"]),
