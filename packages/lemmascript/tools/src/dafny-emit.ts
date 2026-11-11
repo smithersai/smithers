@@ -807,7 +807,8 @@ function emitExpr(e: Expr): string {
 // quantifier or a lambda) is now preceded by a call to its lemma, with the same arguments and preconditions: the
 // caller reasons from the contract, as it does for a method (`tests/contract-callers.test.ts`, fixture
 // `contract-callers.ts`).
-let _ensuresLemmas = new Set<string>();
+// Each def with a companion lemma: its parameters and preconditions, which guard the lemma's calls in a companion lemma.
+let _ensuresLemmas = new Map<string, { params: string[]; requires: Expr[] }>();
 // The def whose function body is being emitted: its own lemma names the function, so calling it there is a cycle.
 let _bodyOf: string | null = null;
 const SHORT_CIRCUIT = new Set(["&&", "||", "∧", "∨", "==>", "→"]);
@@ -834,9 +835,30 @@ function contractCalls(e: Expr, out: Array<Expr & { kind: "app" }> = []): Array<
   return out;
 }
 
-/** The lemma calls that give `e`'s contract calls their contracts, one per line at `pad`. */
-function contractLemmaCalls(e: Expr, pad: string): string[] {
-  return contractCalls(e).map(c => `${pad}${escapeGeneratedName(`${c.fn}${ENSURES_LEMMA_SUFFIX}`)}(${c.args.map(emitExpr).join(", ")});`);
+/** The callee's preconditions at a call: each parameter replaced by its argument, all at once. */
+function callPreconditions(c: Expr & { kind: "app" }): Expr[] {
+  const callee = _ensuresLemmas.get(c.fn);
+  if (callee === undefined || callee.params.length !== c.args.length) return [];
+  const holder = (i: number): string => `\u0000arg${i}`;
+  return callee.requires.map(r => {
+    let x = callee.params.reduce((acc, p, i) => replaceVar(acc, p, { kind: "var", name: holder(i) }), r);
+    c.args.forEach((a, i) => { x = replaceVar(x, holder(i), a); });
+    return x;
+  });
+}
+
+/**
+ * The lemma calls that give `e`'s contract calls their contracts, one per line at `pad`. In a companion lemma
+ * (`guarded`) each call is a hint under its callee's preconditions: a failed call precondition would let Dafny assume
+ * that call's ensures and prove the lemma for a body outside its domain (`tests/contract-callers.test.ts`). The
+ * function's own body still checks those preconditions.
+ */
+function contractLemmaCalls(e: Expr, pad: string, guarded = false): string[] {
+  return contractCalls(e).map(c => {
+    const call = `${escapeGeneratedName(`${c.fn}${ENSURES_LEMMA_SUFFIX}`)}(${c.args.map(emitExpr).join(", ")});`;
+    const pre = guarded ? callPreconditions(c) : [];
+    return pre.length === 0 ? `${pad}${call}` : `${pad}if (${pre.map(emitExpr).join(" && ")}) { ${call} }`;
+  });
 }
 
 /**
@@ -848,7 +870,7 @@ function contractLemmaBody(e: Expr, indent: number, seen: ReadonlySet<string> = 
   const pad = "  ".repeat(indent);
   const known = new Set(seen);
   // Each lemma call once on a path: a substituted value repeats its calls in the conditions and branches after it.
-  const fresh = (x: Expr) => contractLemmaCalls(x, pad).filter(line => {
+  const fresh = (x: Expr) => contractLemmaCalls(x, pad, true).filter(line => {
     if (known.has(line.trim())) return false;
     known.add(line.trim());
     return true;
@@ -2161,9 +2183,9 @@ export function emitDafnyFile(file: Module, tsFileName?: string, options: LscOpt
   _neededPreambles.clear();
   _havocedTypeNames.clear();
   collectHavocedTypeNames(file.decls, _havocedTypeNames);
-  _ensuresLemmas = new Set(file.decls.flatMap(d => d.kind === "namespace" ? d.decls : [d])
+  _ensuresLemmas = new Map(file.decls.flatMap(d => d.kind === "namespace" ? d.decls : [d])
     .filter((d): d is Decl & { kind: "def" } => d.kind === "def" && d.ensures.length > 0 && !(d.opaque === true && d.decreases === null))
-    .map(d => d.name));
+    .map(d => [d.name, { params: d.params.map(p => p.name), requires: d.requires }]));
 
   // Track successfully emitted pure defs — method wrappers are only
   // skipped when the corresponding pure def was actually emitted.

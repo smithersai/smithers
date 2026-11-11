@@ -49,7 +49,7 @@ test("a recursive function's body does not call its own lemma; the lemma calls i
 test("a companion lemma substitutes a let's value instead of declaring a local", () => {
   const output = emit(fixture);
   const lemma = output.slice(output.indexOf("lemma lastNonzero_ensures"), output.indexOf("method trailingZeros"));
-  assert.match(lemma, /\{\n\s*zerosStart_ensures\(xs, \|xs\|\);\n\}/);
+  assert.match(lemma, /\{\n\s*if \(\(0 <= \|xs\|\) && \(\|xs\| <= \|xs\|\)\) \{ zerosStart_ensures\(xs, \|xs\|\); \}\n\}/);
   assert.doesNotMatch(lemma, /var /);
 });
 
@@ -87,9 +87,9 @@ export function conjunction(n: number): boolean { return n > 0 && positive(n) > 
 export function disjunction(n: number): boolean { return n <= 0 || positive(n) > 0 }
 `);
   const and = output.slice(output.indexOf("lemma conjunction_ensures"), output.indexOf("function disjunction"));
-  assert.match(and, /if \(n > 0\) \{\s*positive_ensures\(n\);\s*\}/);
+  assert.match(and, /if \(n > 0\) \{\s*if \(\(0 < n\)\) \{ positive_ensures\(n\); \}\s*\}/);
   const or = output.slice(output.indexOf("lemma disjunction_ensures"));
-  assert.match(or, /if !\(\(n <= 0\)\) \{\s*positive_ensures\(n\);\s*\}/);
+  assert.match(or, /if !\(\(n <= 0\)\) \{\s*if \(\(0 < n\)\) \{ positive_ensures\(n\); \}\s*\}/);
 });
 
 test("guarded calls keep the empty and nonempty runtime cases", () => {
@@ -167,4 +167,22 @@ export function signedFirst(flag: boolean): number { return flag ? signed(-1) : 
     assert.equal(stmt.kind, "return");
     if (stmt.kind === "return") assert.equal(stmt.value.ty.kind, "int", name);
   }
+});
+
+test("a companion lemma calls a lemma only where its callee's preconditions hold", () => {
+  // A failed call precondition lets Dafny assume that call's ensures, which proved the lemma's own postcondition for a
+  // body that steps outside its domain (mutant issue-ancestor-predecessor, 0018 third-lane batch 31). Guarded, the
+  // call adds no failure site and the postcondition carries the proof, as before the lemma had a body.
+  const output = emit(`
+//@ verify
+//@ requires 0 <= steps && steps <= limit
+//@ ensures \\result <= steps
+//@ decreases steps
+export function down(steps: number, limit: number): number {
+  return steps === 0 ? 0 : down(steps - 1, limit)
+}
+`);
+  const lemma = output.slice(output.indexOf("lemma down_ensures"));
+  assert.match(lemma, /if \(\(0 <= \(steps - 1\)\) && \(\(steps - 1\) <= limit\)\) \{ down_ensures\(\(steps - 1\), limit\); \}/);
+  assert.doesNotMatch(lemma, /^\s*down_ensures/m);
 });
