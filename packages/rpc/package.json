@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@types/node": "26.4.1",
-    "dprint": "0.55.2",
+    "dprint": "0.57.1",
     "eslint": "9.39.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "8.65.0",
