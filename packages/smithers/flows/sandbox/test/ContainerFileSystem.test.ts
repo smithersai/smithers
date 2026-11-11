@@ -78,14 +78,18 @@ describe("container native filesystem", () => {
         expect((yield* Effect.flip(fixture("", code).fs.stat!("/file"))).reason._tag).toBe(reason)
       })
   )
-  it.effect("reports a refusal the guest words as Permission denied as PermissionDenied", () =>
+  it.effect("reports a refusal the guest words as Permission denied or Operation not permitted as PermissionDenied", () =>
     Effect.gen(function*() {
       const denied = "chmod: /file: Permission denied"
       expect((yield* Effect.flip(fixture("", 1, false, denied).fs.chmod!("/file", 0o640))).reason._tag)
         .toBe("PermissionDenied")
-      // EPERM is not EACCES: the platform implementations leave it Unknown too.
+      // EPERM, as Node's filesystem maps it too, so `Preserve` falls back for
+      // a file whose owner an unprivileged guest cannot assign.
       const owner = "chown: /file: Operation not permitted"
-      expect((yield* Effect.flip(fixture("", 1, false, owner).fs.chown!("/file", 0, 0))).reason._tag).toBe("Unknown")
+      expect((yield* Effect.flip(fixture("", 1, false, owner).fs.chown!("/file", 0, 0))).reason._tag)
+        .toBe("PermissionDenied")
+      const other = "chown: /file: invalid group"
+      expect((yield* Effect.flip(fixture("", 1, false, other).fs.chown!("/file", 0, 0))).reason._tag).toBe("Unknown")
     }))
   it.effect("does not turn a disconnected container into an absent file", () =>
     Effect.gen(function*() {

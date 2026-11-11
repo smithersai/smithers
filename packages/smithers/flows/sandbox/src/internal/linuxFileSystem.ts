@@ -50,7 +50,7 @@ export const linuxFileSystem = (
       const text = yield* run(
         "stat",
         path,
-        `if [ ! -e ${quoted} ] && [ ! -L ${quoted} ] && [ -x "$(dirname -- ${quoted})" ]; then exit 9; fi; stat -L -c '%f %s %u %g %d %i %h %Y' -- ${quoted}`
+        `p=$(dirname -- ${quoted}; printf x); if [ ! -e ${quoted} ] && [ ! -L ${quoted} ] && [ -x "\${p%?x}" ]; then exit 9; fi; stat -L -c '%f %s %u %g %d %i %h %Y' -- ${quoted}`
       )
       const fields = text.trim().split(/\s+/)
       const mode = Number.parseInt(fields[0]!, 16)
@@ -102,8 +102,8 @@ export const linuxFileSystem = (
     // chmod starts from the guest umask, as open(O_CREAT, mode) would. The
     // payload is never streamed to an existing entry, even if a rival wins.
     const script = `set -e
-parent=$(dirname -- ${quoted})
-tmp=$(mktemp -d "$parent/.smithers-write.XXXXXXXX")
+parent=$(dirname -- ${quoted}; printf x)
+tmp=$(mktemp -d "\${parent%?x}/.smithers-write.XXXXXXXX")
 trap 'rm -rf -- "$tmp"' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT

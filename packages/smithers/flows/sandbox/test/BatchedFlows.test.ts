@@ -16,12 +16,14 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { ApplyPatch, Edit, Ls, Read, Write } from "@smthrs/std"
-import { Context, Effect, FileSystem, Path, Stream } from "effect"
+import { Context, Effect, Fiber, FileSystem, Path, Stream } from "effect"
 import * as Base64 from "effect/encoding/Base64"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
 import {
   chmodSync,
+  chownSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -60,9 +62,14 @@ interface Counted<A> {
 /**
  * A transport that runs each request here, in its `cwd`, and records the
  * script; `before` runs ahead of the call with that index, as an outside
- * writer racing the flow would.
+ * writer racing the flow would. `env` is set for the guest's script, as a
+ * guest whose `PATH` holds other utilities would have it.
  */
-const counting = (scripts: Array<string>, before?: Record<number, () => void>): ContainerSandbox.Transport => ({
+const counting = (
+  scripts: Array<string>,
+  before?: Record<number, () => void>,
+  env: ReadonlyArray<string> = []
+): ContainerSandbox.Transport => ({
   exec: (request) =>
     Effect.sync(() => {
       before?.[scripts.length]?.()
@@ -74,6 +81,7 @@ const counting = (scripts: Array<string>, before?: Record<number, () => void>): 
           "cd \"$1\" || exit 125; shift; exec \"$@\"",
           "sh",
           request.cwd ?? root,
+          ...env.length === 0 ? [] : ["env", ...env],
           request.file,
           ...request.args
         ]
@@ -81,11 +89,16 @@ const counting = (scripts: Array<string>, before?: Record<number, () => void>): 
     })
 })
 
-/** Runs `flow` with the std services of a real session rooted at `workdir`. */
+/**
+ * Runs `flow` with the std services of a real session rooted at `workdir`.
+ * `ordinary` hands the flow a copy of the filesystem, which carries no
+ * batched calls, so it takes the ordinary path over the same guest.
+ */
 const real = <A, E>(
   workdir: string,
   flow: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path>,
-  before?: Record<number, () => void>
+  before?: Record<number, () => void>,
+  options: { readonly env?: ReadonlyArray<string>; readonly ordinary?: boolean } = {}
 ) =>
   Effect.gen(function*() {
     const scripts: Array<string> = []
@@ -94,12 +107,61 @@ const real = <A, E>(
       container: "task",
       workdir,
       spawner,
-      transport: counting(scripts, before)
+      transport: counting(scripts, before, options.env)
     })
-    const host = yield* Sandbox.hostContext(session)
-    const result = yield* Effect.result(Effect.provide(flow, Context.pick(FileSystem.FileSystem, Path.Path)(host)))
+    const host = Context.pick(FileSystem.FileSystem, Path.Path)(yield* Sandbox.hostContext(session))
+    const services = options.ordinary === true
+      ? Context.add(host, FileSystem.FileSystem, { ...Context.get(host, FileSystem.FileSystem) })
+      : host
+    const result = yield* Effect.result(Effect.provide(flow, services))
     return { result, scripts } satisfies Counted<unknown>
   }).pipe(Effect.scoped, Effect.provide(rawPlatform))
+
+/**
+ * A directory of utilities that shadow the guest's own: `head` waits for
+ * `gate` to exist, after touching `started`, so a commit stops part way
+ * while it holds its locks; `chown` refuses as an unprivileged user's does,
+ * with `words` as its message.
+ */
+const shims = (name: string, words = "Operation not permitted") => {
+  const directory = join(root, `${name}-bin`)
+  const gate = join(directory, "gate")
+  const started = join(directory, "started")
+  mkdirSync(directory)
+  const head = spawnSync("sh", ["-c", "command -v head"], { encoding: "utf8" }).stdout.trim()
+  writeFileSync(
+    join(directory, "head"),
+    `#!/bin/sh\n: > '${started}'\nwhile [ ! -e '${gate}' ]; do sleep 0.02; done\nexec '${head}' "$@"\n`
+  )
+  writeFileSync(
+    join(directory, "chown"),
+    `#!/bin/sh\nprintf 'chown: changing ownership of %s: ${words}\\n' "$3" >&2\nexit 1\n`
+  )
+  chmodSync(join(directory, "head"), 0o755)
+  chmodSync(join(directory, "chown"), 0o755)
+  return { env: [`PATH=${directory}:${process.env["PATH"]}`], gate, started }
+}
+
+/** Waits, in real time, until `ready` holds. */
+const until = (ready: () => boolean) =>
+  Effect.promise(async () => {
+    for (let tries = 0; !ready(); tries++) {
+      if (tries === 500) throw new Error("timed out waiting for the guest")
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+  })
+
+/** The `.smithers-` entries left in `directory`. */
+const leftovers = (directory: string) => readdirSync(directory).filter((name) => name.startsWith(".smithers-"))
+
+/** A group this process may give a file that its new files do not get, if there is one. */
+const foreignGroup = (() => {
+  if (process.getuid?.() === 0) return 4242
+  const primary = process.getgid?.()
+  return spawnSync("id", ["-G"], { encoding: "utf8" }).stdout.trim().split(/\s+/).map(Number).find((gid) =>
+    gid !== primary
+  )
+})()
 
 /** A fresh guest tree under `name`. */
 const tree = (name: string): string => {
@@ -190,6 +252,34 @@ describe.skipIf(!linuxUserland)("the std file flows on a real Linux userland", (
       // A moved file keeps its source's mode.
       expect(statSync(join(workdir, "lib", "moved.py")).mode & 0o7777).toBe(0o600)
       expect(readdirSync(join(workdir, "src")).sort()).toEqual(["a.py", "run.sh"])
+    }))
+
+  it.effect("commits every file of a patch on a guest whose head reads past the bytes it keeps", () =>
+    Effect.gen(function*() {
+      const workdir = tree("greedy-head")
+      // BusyBox's `head -c` buffers its input: what it read and did not keep is gone for the next reader.
+      const directory = join(root, "greedy-head-bin")
+      mkdirSync(directory)
+      const head = spawnSync("sh", ["-c", "command -v head"], { encoding: "utf8" }).stdout.trim()
+      writeFileSync(join(directory, "head"), `#!/bin/sh\ncat | '${head}' "$@"\n`)
+      chmodSync(join(directory, "head"), 0o755)
+      const env = [`PATH=${directory}:${process.env["PATH"]}`]
+      const patched = yield* real(workdir, ApplyPatch.run({ input: patch }), undefined, { env })
+      expect(patched.result).toMatchObject({
+        _tag: "Success",
+        success: { added: ["lib/deep/added.py"], modified: ["src/a.py", "lib/moved.py"], deleted: ["src/gone.py"] }
+      })
+      expect(readFileSync(join(workdir, "lib", "deep", "added.py"), "utf8")).toBe("added = \"ü\"\n")
+      expect(readFileSync(join(workdir, "src", "a.py"), "utf8")).toBe("alpha = 1\nbeta = 3\n")
+      expect(readFileSync(join(workdir, "lib", "moved.py"), "utf8")).toBe("moved\n")
+      // The spooled input is removed with the staged files.
+      for (const folder of ["src", "lib", join("lib", "deep")]) {
+        expect(readdirSync(join(workdir, folder)).filter((name) => name.startsWith(".smithers-"))).toEqual([])
+      }
+      // One write still reads standard input directly, and survives the same guest.
+      const written = yield* real(workdir, Write.run({ path: "src/one.txt", content: "seul\n" }), undefined, { env })
+      expect(written.result).toMatchObject({ _tag: "Success", success: { created: true } })
+      expect(readFileSync(join(workdir, "src", "one.txt"), "utf8")).toBe("seul\n")
     }))
 
   it.effect("ls is one round trip and follows links to directories", () =>
@@ -296,6 +386,179 @@ describe.skipIf(!linuxUserland)("the std file flows on a real Linux userland", (
       expect(readFileSync(join(workdir, "bin", "blob"))).toEqual(Buffer.from(bytes))
       expect(outcome.scripts.every((script) => script.length < 8192)).toBe(true)
     }))
+
+  it.live("lands exactly one of two concurrent edits and refuses the other as stale", () =>
+    Effect.gen(function*() {
+      for (let round = 0; round < 12; round++) {
+        const workdir = tree(`race-two-${round}`)
+        const target = join(workdir, "src", "a.py")
+        const outcomes = yield* Effect.all(
+          ["left", "right"].map((side) =>
+            Effect.map(
+              real(workdir, Edit.run({ path: "src/a.py", oldString: "beta = 2", newString: `beta = "${side}"` })),
+              ({ result }) => ({ side, result })
+            )
+          ),
+          { concurrency: "unbounded" }
+        )
+        const won = outcomes.filter(({ result }) => result._tag === "Success")
+        const lost = outcomes.filter(({ result }) => result._tag === "Failure")
+        expect(won).toHaveLength(1)
+        expect(lost[0]!.result).toMatchObject({ _tag: "Failure", failure: { code: "no_match", path: "src/a.py" } })
+        expect(readFileSync(target, "utf8")).toBe(`alpha = 1\nbeta = "${won[0]!.side}"\n`)
+        expect(leftovers(join(workdir, "src"))).toEqual([])
+      }
+    }))
+
+  it.live("holds the ordinary path's lock while it commits, so either path refuses the other", () =>
+    Effect.gen(function*() {
+      const workdir = tree("lock")
+      const target = join(workdir, "src", "a.py")
+      const { env, gate, started } = shims("lock")
+      // The batched edit stops while staging, holding the file's lock.
+      const holder = yield* Effect.forkChild(
+        real(workdir, Edit.run({ path: "src/a.py", oldString: "beta = 2", newString: "beta = 3" }), undefined, { env })
+      )
+      yield* until(() => existsSync(started))
+      const [lock] = leftovers(join(workdir, "src")).filter((name) => name.endsWith(".lock"))
+      expect(lock).toBeDefined()
+      const edit = Edit.run({ path: "src/a.py", oldString: "alpha", newString: "omega" })
+      for (const ordinary of [true, false]) {
+        const refused = yield* real(workdir, edit, undefined, { ordinary })
+        expect(refused.result).toMatchObject({
+          _tag: "Failure",
+          failure: { code: "no_match", path: "src/a.py", message: expect.stringContaining(`${lock} is held`) }
+        })
+      }
+      writeFileSync(gate, "")
+      expect((yield* Fiber.join(holder)).result._tag).toBe("Success")
+      expect(readFileSync(target, "utf8")).toBe("alpha = 1\nbeta = 3\n")
+      expect(leftovers(join(workdir, "src"))).toEqual([])
+      // A lock left by a stopped writer is never stolen: the edit refuses
+      // until someone removes it, then lands.
+      mkdirSync(join(workdir, "src", lock!))
+      const stale = yield* real(workdir, edit)
+      expect(stale.result).toMatchObject({ _tag: "Failure", failure: { code: "no_match" } })
+      expect(existsSync(join(workdir, "src", lock!))).toBe(true)
+      rmSync(join(workdir, "src", lock!), { recursive: true })
+      expect((yield* real(workdir, edit)).result._tag).toBe("Success")
+      expect(readFileSync(target, "utf8")).toBe("omega = 1\nbeta = 3\n")
+    }))
+
+  it.live("releases its locks and temporary files when the commit is killed part way", () =>
+    Effect.gen(function*() {
+      const workdir = tree("killed")
+      const { env, gate, started } = shims("killed")
+      const holder = yield* Effect.forkChild(
+        real(workdir, Edit.run({ path: "src/a.py", oldString: "beta = 2", newString: "beta = 3" }), undefined, { env })
+      )
+      yield* until(() => existsSync(started))
+      expect(leftovers(join(workdir, "src")).some((name) => name.endsWith(".lock"))).toBe(true)
+      yield* Fiber.interrupt(holder)
+      yield* until(() => leftovers(join(workdir, "src")).length === 0)
+      expect(readFileSync(join(workdir, "src", "a.py"), "utf8")).toBe("alpha = 1\nbeta = 2\n")
+      // Lets a `head` the kill did not reach finish.
+      writeFileSync(gate, "")
+    }))
+
+  it.effect("keeps every byte of a path that ends in a newline", () =>
+    Effect.gen(function*() {
+      const workdir = tree("newline")
+      writeFileSync(join(workdir, "src", "a"), "plain\n")
+      writeFileSync(join(workdir, "src", "a\n"), "newline\n")
+      mkdirSync(join(workdir, "src", "d"))
+      const edit = yield* real(workdir, Edit.run({ path: "src/a\n", oldString: "newline", newString: "edited" }))
+      expect(edit.result._tag).toBe("Success")
+      expect(readFileSync(join(workdir, "src", "a\n"), "utf8")).toBe("edited\n")
+      expect(readFileSync(join(workdir, "src", "a"), "utf8")).toBe("plain\n")
+      const made = yield* real(workdir, Write.run({ path: "src/d\n/new.txt", content: "made\n" }))
+      expect(made.result._tag).toBe("Success")
+      expect(readFileSync(join(workdir, "src", "d\n", "new.txt"), "utf8")).toBe("made\n")
+      expect(readdirSync(join(workdir, "src", "d"))).toEqual([])
+      const taken = yield* Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        const session = ContainerSandbox.existing({ container: "task", workdir, spawner, transport: counting([]) })
+        return yield* linuxFileSystem(session, "container")[Batched].snapshot(["src/a\n", "src/e\n/f/g.txt"])
+      }).pipe(Effect.provide(rawPlatform))
+      expect(taken.map(({ canonical }) => canonical)).toEqual([
+        join(workdir, "src", "a\n"),
+        join(workdir, "src", "e\n", "f", "g.txt")
+      ])
+      // The ordinary probes look at the parent the path names, not its newline-less twin.
+      writeFileSync(join(workdir, "src", "f"), "a file\n")
+      const probed = yield* real(
+        workdir,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          return {
+            exists: yield* fs.exists("src/f\n/x"),
+            made: yield* Effect.flip(fs.makeDirectory("src/d\n/x/y"))
+          }
+        })
+      )
+      expect(probed.result).toMatchObject({
+        _tag: "Success",
+        success: { exists: false, made: { reason: { _tag: "NotFound" } } }
+      })
+    }))
+
+  it.effect.skipIf(foreignGroup === undefined)(
+    "rewrites in place a file whose owner it cannot assign, as Preserve does",
+    () =>
+      Effect.gen(function*() {
+        const workdir = tree("owner")
+        const target = join(workdir, "src", "run.sh")
+        chownSync(target, statSync(target).uid, foreignGroup!)
+        chownSync(join(workdir, "src", "move.py"), statSync(target).uid, foreignGroup!)
+        const before = statSync(target)
+        const { env, gate } = shims("owner")
+        writeFileSync(gate, "")
+        const edit = yield* real(workdir, Edit.run({ path: "src/run.sh", oldString: "one", newString: "two" }), {}, {
+          env
+        })
+        expect(edit.result._tag).toBe("Success")
+        const after = statSync(target)
+        expect(readFileSync(target, "utf8")).toBe("echo two\n")
+        // The same inode, so the same owner and mode.
+        expect([after.ino, after.gid, after.mode]).toEqual([before.ino, foreignGroup, before.mode])
+        // A moved file whose owner cannot be given keeps its own, and takes the mode.
+        const moved = yield* real(
+          workdir,
+          ApplyPatch.run({
+            input:
+              "*** Begin Patch\n*** Update File: src/move.py\n*** Move to: lib/moved.py\n@@\n-moving\n+moved\n*** End Patch"
+          }),
+          {},
+          { env }
+        )
+        expect(moved.result._tag).toBe("Success")
+        const landed = statSync(join(workdir, "lib", "moved.py"))
+        expect([landed.mode & 0o7777, landed.gid === foreignGroup]).toEqual([0o600, false])
+        expect(leftovers(join(workdir, "src"))).toEqual([])
+        // The ordinary path over the same guest falls back the same way.
+        const ordinary = yield* real(
+          workdir,
+          Edit.run({ path: "src/run.sh", oldString: "two", newString: "two!" }),
+          {},
+          { env, ordinary: true }
+        )
+        expect(ordinary.result._tag).toBe("Success")
+        expect([statSync(target).ino, statSync(target).gid]).toEqual([before.ino, foreignGroup])
+        // Any other ownership failure still stops the write.
+        const broken = shims("owner-broken", "invalid group")
+        writeFileSync(broken.gate, "")
+        const refused = yield* real(
+          workdir,
+          Edit.run({ path: "src/run.sh", oldString: "two!", newString: "six" }),
+          {},
+          {
+            env: broken.env
+          }
+        )
+        expect(refused.result._tag).toBe("Failure")
+        expect(readFileSync(target, "utf8")).toBe("echo two!\n")
+      })
+  )
 })
 
 describe.skipIf(linuxUserland)("the std file flows on a real Linux userland", () => {

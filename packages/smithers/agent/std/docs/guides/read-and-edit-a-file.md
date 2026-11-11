@@ -198,15 +198,25 @@ then make one or two:
 its changes from those bytes and submits them in one `commit` with the
 versions. The provider compares every version with the file as it is now and
 refuses the whole batch if any differs: the handler fails with `no_match`,
-names the file, and nothing is written. It then stages each write in a
-temporary file beside its destination, creating missing parents and copying the
-mode and owner of the file it replaces (a moved file takes its source's), and
-renames each one into place. Failures while staging write nothing. A failure
-while renaming or removing leaves the earlier changes in place, and
-`apply_patch` lists them, as it does on an ordinary host.
+names the file, and nothing is written. It then creates missing parents and
+takes, inside the guest, the same `.smithers-*.lock` directory the ordinary
+path takes for each file, so batched and ordinary handlers exclude each other.
+A held lock refuses the batch with the ordinary path's `no_match` refusal,
+which names the lock; a stale lock is never reclaimed. It stages each write in
+a temporary file beside its destination, copying the mode and owner of the file
+it replaces (a moved file takes its source's), compares every version again
+under the locks, and renames each write into place. A file whose owner the
+guest's user cannot assign, such as a group-writable file root owns, is
+rewritten in place instead, keeping its inode, owner, and mode; a moved file
+whose source owner it cannot assign keeps its own owner and takes the source's
+mode. Failures while staging write nothing. A failure while renaming or
+removing leaves the earlier changes in place, and `apply_patch` lists them, as
+it does on an ordinary host. The commit releases its locks however it ends,
+except when the guest kills it with `SIGKILL`; that lock stays until someone
+removes it, as an ordinary writer's does.
 
-Batched hosts take no lock, so two handlers racing on one file both read it and
-the second commit is refused. A versioned host's provider always takes
+Of two handlers racing on one file, both read it, exactly one commit lands, and
+the other is refused with `no_match`. A versioned host's provider always takes
 precedence over batched calls. The provider attaches the calls
 non-enumerably, so a wrapper that copies the filesystem to guard its
 operations does not inherit calls that would bypass the guards.

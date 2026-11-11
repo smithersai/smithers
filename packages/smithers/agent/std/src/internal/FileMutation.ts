@@ -116,8 +116,9 @@ export const Batched = Symbol.for("@smthrs/std/file-batch")
 export interface Snapshot {
   /**
    * The path with every symbolic link resolved, as `realPath` answers; for
-   * an absent path, its parent's resolution joined with its name; absent
-   * when the parent is absent too.
+   * an absent path, its nearest existing ancestor's resolution joined with
+   * the rest of the path, which is where creating its parents puts it;
+   * absent when no ancestor resolves.
    */
   readonly canonical: string | undefined
   /** Opaque. Equal versions mean an unchanged entry; `commit` compares them. */
@@ -142,12 +143,19 @@ export interface Snapshot {
  */
 export interface BatchedChange extends Change {
   readonly version: string
+  /**
+   * The cooperative lock directory the ordinary path takes for this change's
+   * canonical path. The commit holds it from before its final comparison
+   * until the batch ends, so the two paths exclude each other.
+   */
+  readonly lock?: string | undefined
 }
 
 /**
  * How far a batched commit got. `stopped` names the change that ended it:
- * `changed` means the entry no longer matched its snapshot, and then nothing
- * was applied. A failure while staging also applies nothing; a failure while
+ * `changed` means the entry no longer matched its snapshot, and `locked` that
+ * another writer held the change's lock; either way nothing was applied. A
+ * failure while staging also applies nothing; a failure while
  * renaming or removing leaves the `applied` changes before it in place.
  *
  * @category models
@@ -157,7 +165,7 @@ export interface Committed {
   readonly applied: number
   readonly stopped?: {
     readonly index: number
-    readonly reason: "changed" | PlatformError.PlatformError
+    readonly reason: "changed" | "locked" | PlatformError.PlatformError
   } | undefined
 }
 
@@ -167,10 +175,15 @@ export interface Committed {
  * `snapshot` answers one {@link Snapshot} per path, in order, reading the
  * paths in `read`. `commit` first compares every change's version with what
  * is there now and refuses the batch, changing nothing, if any differs. It
- * then stages each write in a temporary file beside its destination,
- * creating missing parents and giving it the mode and owner of the file it
- * replaces (or of `metadataFrom`), and finally renames each write over its
- * destination and removes each removal, in order. `list` names a directory's
+ * then creates missing parents, takes every change's `lock` with an
+ * exclusive `mkdir` (refusing the batch if one is held, and never stealing
+ * a stale one), stages each write in a temporary file beside its destination,
+ * giving it the mode and owner of the file it replaces (or of `metadataFrom`),
+ * compares every version again, and finally renames each write over its
+ * destination and removes each removal, in order, releasing its locks
+ * however it ends. A replaced file whose owner the guest cannot assign is
+ * rewritten in place, and a new file whose `metadataFrom` owner it cannot
+ * assign keeps its own owner and takes only the mode, as `Preserve` does. `list` names a directory's
  * entries and whether each, following links, is a directory; it fails with
  * `BadResource` for a path that is not a directory.
  *
@@ -315,10 +328,21 @@ const lockHash = (value: string): string => {
 
 const parent = (path: string) => path.slice(0, path.lastIndexOf(path.startsWith("/") ? "/" : "\\") + 1)
 
+/** The cooperative lock directory for `destination`, a resolved path. */
+const lockOf = (destination: string): string => `${parent(destination)}.smithers-${lockHash(destination)}.lock`
+
+const held = (path: string, lock: string): StdError.StdError =>
+  new StdError.StdError({
+    code: "no_match",
+    message:
+      `Concurrent mutation of ${path}: lock ${lock} is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`,
+    path
+  })
+
 /**
  * Versioned hosts capture bases under a local semaphore until scope exit.
- * Batched hosts take one snapshot of every path, and their commit compares
- * it again, so they hold no lock. Ordinary hosts hold all named files using
+ * Batched hosts take one snapshot of every path; their commit takes the same
+ * locks inside the guest and compares the snapshot again under them. Ordinary hosts hold all named files using
  * exclusive mkdir, so independently composed hosts and processes agree.
  * A hash collision only refuses an unrelated edit; it cannot lose exclusion.
  * `batch` says how a batched host's snapshot is taken; without it every path
@@ -359,17 +383,30 @@ export const acquire = (
         Effect.mapError(batch?.failure ?? FsFailure.reading(named[0]!, `File not found: ${named[0]}`))
       )
       const seen = new Map(named.map((path, index) => [path, snapshots[index]!]))
+      const lockFor = (path: string) => {
+        const canonical = seen.get(path)!.canonical
+        return canonical === undefined ? undefined : lockOf(canonical)
+      }
       return {
         // A flow reads only the paths it named in `batch.read`.
         read: (path, failure) => Effect.mapError(Effect.fromResult(seen.get(path)!.content!), failure),
         commit: (changes, _ordinary, failure) =>
           changes.length === 0 ? Effect.void : Effect.flatMap(
-            files.commit(changes.map((change) => ({ ...change, version: seen.get(change.path)!.version }))),
+            files.commit(
+              changes.map((change) => ({
+                ...change,
+                version: seen.get(change.path)!.version,
+                lock: lockFor(change.path)
+              }))
+            ),
             ({ applied, stopped }) => {
               if (stopped === undefined) return Effect.void
+              const path = changes[stopped.index]!.path
               return Effect.fail(
                 stopped.reason === "changed"
-                  ? concurrent(changes[stopped.index]!.path)
+                  ? concurrent(path)
+                  : stopped.reason === "locked"
+                  ? held(path, lockFor(path)!)
                   : failure(stopped.reason, stopped.index, applied)
               )
             }
@@ -389,20 +426,19 @@ export const acquire = (
         ),
         Effect.mapError(FsFailure.reading(path, `File not found: ${path}`))
       )
-      const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`
-      locks.set(lock, path)
+      locks.set(lockOf(destination), path)
     }
     for (const [lock, path] of [...locks].sort(([left], [right]) => left.localeCompare(right))) {
       yield* Effect.acquireRelease(
         fileSystem.makeDirectory(lock, { mode: 0o700 }).pipe(
           Effect.mapError(FsFailure.denied(path, (error) =>
-            new StdError.StdError({
-              code: error.reason._tag === "AlreadyExists" ? "no_match" : "command_failed",
-              message: error.reason._tag === "AlreadyExists"
-                ? `Concurrent mutation of ${path}: lock ${lock} is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`
-                : `Could not lock ${path} for mutation`,
-              path
-            })))
+            error.reason._tag === "AlreadyExists"
+              ? held(path, lock)
+              : new StdError.StdError({
+                code: "command_failed",
+                message: `Could not lock ${path} for mutation`,
+                path
+              })))
         ),
         () => fileSystem.remove(lock, { recursive: true }).pipe(Effect.orDie)
       )

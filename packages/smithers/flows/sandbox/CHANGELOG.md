@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A batched commit of several files lands every file on a BusyBox guest
+  (Alpine). The commit read each file's bytes from standard input with one
+  `head -c` after another, and BusyBox's `head` reads past the bytes it
+  keeps, so the second write found no input and the whole `apply_patch`
+  failed with "Failed to write file". A commit of more than one write now
+  spools standard input to a file once and cuts each write from it; a single
+  write still reads standard input directly.
+
+- A Linux session's batched commit holds the ordinary path's `.smithers-*.lock` directory for every file inside the
+  guest, from before its final version check until it ends, and releases it on exit or `TERM`, `INT`, `HUP`, or
+  `PIPE`. Two concurrent edits of one file no longer both report success while the second overwrites the first: one
+  lands and the other is refused, and a held lock refuses the batch as it refuses the ordinary path.
+- A Linux session's batched snapshot, commit, and listing keep a trailing newline in a path that passes through
+  command substitution, as do `stat`, exclusive `writeFile`, `exists`, and `makeDirectory`. Writing `/work/a\n` no
+  longer overwrites `/work/a`.
+- A Linux session's batched commit no longer fails on a writable file whose owner the guest's user cannot assign: it
+  rewrites the file in place, keeping its inode, owner, and mode, and a moved file keeps its own owner and takes its
+  source's mode, as `@smthrs/std`'s ordinary path does. Other `chown` failures still stop the commit.
+- A guest refusal worded `Operation not permitted` (`EPERM`) is `PermissionDenied`, as Node's filesystem reports it,
+  so `@smthrs/std`'s ordinary path rewrites a file in place when a sandbox guest cannot assign its owner.
+- A batched snapshot of a path whose parent is absent resolves it through its nearest existing ancestor, so a commit
+  that creates the parent locks the name the ordinary path would.
+
 ### Changed
 
 - `SandboxTools.execute` answers the call's own result type, `SandboxTools.ResultOf<C>`: a `run` call's answer is a

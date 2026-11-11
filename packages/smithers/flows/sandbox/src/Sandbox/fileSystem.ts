@@ -363,7 +363,7 @@ const derive = (session: Session): FileSystem.FileSystem => {
       // directory is the `EACCES` barrier, and a searchable directory proves
       // the path genuinely absent.
       const script = `if [ -e ${target} ]; then exit 0; fi; p=${target}; ` +
-        `while [ "$p" != / ]; do p=$(dirname "$p"); if [ -e "$p" ]; then ` +
+        `while [ "$p" != / ]; do p=$(dirname -- "$p"; printf x); p=\${p%?x}; if [ -e "$p" ]; then ` +
         `if [ ! -d "$p" ]; then exit ${badResourceExit}; ` +
         `elif [ ! -x "$p" ]; then exit ${deniedExit}; else exit 1; fi; fi; done; exit 1`
       const result = yield* probe(session, "exists", path, script)
@@ -399,7 +399,7 @@ const derive = (session: Session): FileSystem.FileSystem => {
         ? `if [ -d ${target} ]; then exit 0; ` +
           `elif [ -e ${target} ]; then exit ${alreadyExistsExit}; else mkdir -p ${target}; fi`
         : `if [ -e ${target} ] || [ -h ${target} ]; then exit ${alreadyExistsExit}; ` +
-          `elif [ ! -e "$(dirname ${target})" ]; then exit ${absentExit}; else mkdir ${target}; fi`
+          `elif p=$(dirname -- ${target}; printf x) && [ ! -e "\${p%?x}" ]; then exit ${absentExit}; else mkdir ${target}; fi`
       const result = yield* probe(session, "makeDirectory", path, script)
       if (result.code === alreadyExistsExit) {
         return yield* Effect.fail(

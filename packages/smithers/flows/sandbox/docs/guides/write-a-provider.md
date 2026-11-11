@@ -169,7 +169,10 @@ make several per edit. When each call is a network round trip, also implement
 two calls each. The Linux sessions in this package implement it as three shell
 scripts; read `src/internal/linuxBatch.ts` before writing your own. The
 contract's paths are not rooted for you, so root them with the session's
-workdir.
+workdir. A commit must take each change's `lock` directory with an exclusive
+`mkdir` before its final version check, stop with `"locked"` when one exists,
+and remove the ones it created however it ends, so it and the ordinary path
+exclude each other.
 
 ## Declare capabilities when you project the session
 

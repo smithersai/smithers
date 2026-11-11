@@ -11,7 +11,7 @@
  */
 import { NodeServices } from "@effect/platform-node"
 import { Effect, FileSystem, Option, Path, PlatformError, Result } from "effect"
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -39,6 +39,8 @@ interface Options {
   readonly snapshot?: PlatformError.PlatformError
   /** Replaces one path's snapshot. */
   readonly seen?: (path: string, taken: FileMutation.Snapshot) => FileMutation.Snapshot
+  /** Refuses the commit because another writer holds the lock of the change at this index. */
+  readonly locked?: number
 }
 
 const failure = (method: string, tag: PlatformError.SystemErrorTag = "Unknown") =>
@@ -98,6 +100,9 @@ const provider = (fs: FileSystem.FileSystem, path: Path.Path, options: Options =
     commit: (changes) =>
       Effect.gen(function*() {
         calls.commit.push(changes)
+        if (options.locked !== undefined) {
+          return { applied: 0, stopped: { index: options.locked, reason: "locked" as const } }
+        }
         yield* Effect.promise(() => options.beforeCommit?.() ?? Promise.resolve())
         for (const [index, change] of changes.entries()) {
           if ((yield* version(change.path)) !== change.version) {
@@ -283,9 +288,53 @@ describe("edit on a batched host", () => {
       expect(answer(result)).toMatchObject({ replacements: 1 })
       expect(calls.snapshot).toEqual([{ paths: [target], read: [target] }])
       expect(calls.commit).toEqual([[
-        { path: target, content: new TextEncoder().encode("alpha\ngamma\n"), version: expect.any(String) }
+        {
+          path: target,
+          content: new TextEncoder().encode("alpha\ngamma\n"),
+          version: expect.any(String),
+          lock: expect.stringMatching(/\.lock$/)
+        }
       ]])
       expect(await readFile(target, "utf8")).toBe("alpha\ngamma\n")
+    })
+  })
+
+  it("hands the commit the lock the ordinary path takes, and none for a path it could not resolve", async () => {
+    await fixture(async (root) => {
+      const target = join(root, "a.txt")
+      // The ordinary path, over the real filesystem, names its lock in the file's directory.
+      const ordinary = await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          yield* FileMutation.acquire(yield* FileSystem.FileSystem, [target], yield* Path.Path)
+          return yield* Effect.promise(() => readdir(root))
+        })).pipe(Effect.provide(NodeServices.layer))
+      )
+      const lock = ordinary.filter((name) => name.endsWith(".lock"))
+      expect(lock).toHaveLength(1)
+      const { calls } = await run(Edit.run({ path: target, oldString: "beta", newString: "gamma" }))
+      expect(calls.commit[0]![0]!.lock).toBe(join(await realpath(root), lock[0]!))
+      const unresolved = await run(Edit.run({ path: target, oldString: "gamma", newString: "delta" }), {
+        seen: (_path, taken) => ({ ...taken, canonical: undefined })
+      })
+      expect(answer(unresolved.result)).toMatchObject({ replacements: 1 })
+      expect(unresolved.calls.commit[0]![0]!.lock).toBeUndefined()
+    })
+  })
+
+  it("refuses a file whose lock another writer holds, with the ordinary path's refusal", async () => {
+    await fixture(async (root) => {
+      const target = join(root, "a.txt")
+      const { calls, result } = await run(Edit.run({ path: target, oldString: "beta", newString: "gamma" }), {
+        locked: 0
+      })
+      expect(refusal(result)).toMatchObject({
+        code: "no_match",
+        path: target,
+        message: `Concurrent mutation of ${target}: lock ${
+          calls.commit[0]![0]!.lock
+        } is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`
+      })
+      expect(await readFile(target, "utf8")).toBe("alpha\nbeta\n")
     })
   })
 

@@ -53,6 +53,7 @@ export interface Change {
   readonly content: Uint8Array | null
   readonly version: string
   readonly metadataFrom?: string | undefined
+  readonly lock?: string | undefined
 }
 
 /**
@@ -65,7 +66,7 @@ export interface Committed {
   readonly applied: number
   readonly stopped?: {
     readonly index: number
-    readonly reason: "changed" | PlatformError.PlatformError
+    readonly reason: "changed" | "locked" | PlatformError.PlatformError
   } | undefined
 }
 
@@ -169,8 +170,20 @@ export const versionFunction = `v() {
 }`
 
 /**
+ * `o COMMAND...` runs COMMAND and, when it succeeds, prints `x` after its
+ * output. Command substitution strips every trailing newline, including one
+ * that ends a pathname, so a path is read as `$(o ...)` and then trimmed of
+ * exactly the utility's one newline and the `x` with `\${p%?x}`.
+ *
+ * @category scripts
+ * @since 1.0.0-rc.17
+ */
+export const outputFunction = `o() { "$@" && printf x; }`
+
+/**
  * `q PATH READ MAX` prints four NUL-terminated fields for PATH: where it
- * resolves (`e` and its real path, `p` and its parent's real path, or `n`);
+ * resolves (`e` and its real path; `p`, how many trailing components are
+ * absent, and the real path of the nearest ancestor that exists; or `n`);
  * its version; its `stat` (`S` and the raw mode and size, `N` for absent, or
  * `E` and the utility's error, decided as the `stat` override decides); and,
  * when READ is 1 and it is a regular file of at most MAX bytes (MAX -1 is no
@@ -182,13 +195,16 @@ export const versionFunction = `v() {
  * @since 1.0.0-rc.17
  */
 export const snapshotFunction = `${versionFunction}
+${outputFunction}
 q() {
-  if [ -e "$1" ]; then c=e$(readlink -f "$1")
-  elif [ -e "$(dirname -- "$1")" ]; then c=p$(readlink -f "$(dirname -- "$1")")
+  a=$(o dirname -- "$1"); a=\${a%?x}; b=$a; i=1
+  while [ ! -e "$b" ] && [ "$b" != / ] && b=$(o dirname -- "$b"); do b=\${b%?x}; i=$((i + 1)); done
+  if [ -e "$1" ] && c=$(o readlink -f "$1"); then c=e\${c%?x}
+  elif c=$(o readlink -f "$b"); then c=p$i\${c%?x}
   else c=n
   fi
   n=
-  if [ ! -e "$1" ] && [ ! -L "$1" ] && [ -x "$(dirname -- "$1")" ]; then s=N
+  if [ ! -e "$1" ] && [ ! -L "$1" ] && [ -x "$a" ]; then s=N
   elif s=$(stat -L -c '%f %s' -- "$1" 2>&1); then n=\${s#* }; s=S$s
   else s=E$s
   fi
@@ -201,44 +217,80 @@ q() {
 
 /**
  * The commit's functions. `x I PATH VERSION` stops the batch, before any
- * change, when PATH's version differs. `w I PATH SIZE FROM` stages write I:
- * it refuses a directory or a dangling link, follows an existing link to its
- * file, creates missing parents, copies SIZE bytes of standard input into a
- * fresh temporary file beside the destination, and gives it the mode and
- * owner of the file it replaces, or of FROM, or the umask's default; it
- * leaves the temporary file in `$t` and the destination in `$d`. `r I PATH`
- * refuses a removal of nothing or of a directory. `k I METHOD [TAG]` reports
- * the change that failed and exits 20; `=I` reports a changed entry. Applied
- * changes print `+`.
+ * change, when PATH's version differs. `w I PATH FROM` prepares write I: it
+ * refuses a directory or a dangling link, follows an existing link to its
+ * file, and creates missing parents; it leaves the destination in `$d` and
+ * the file whose metadata the write keeps (the destination, or FROM) in
+ * `$f`. `l I LOCK` takes the cooperative lock directory LOCK with an
+ * exclusive `mkdir`, leaving it in `$h`, and reports `#I` when another writer
+ * holds it; a stale lock is never stolen. `s I DEST META SIZE [OFFSET]`
+ * stages write I: it copies SIZE bytes of standard input into a fresh
+ * temporary file beside DEST and gives it the mode and owner of META, or the
+ * umask's default, leaving it in `$t`. Two writes never read standard input
+ * in turn, because a `head -c` may read past the bytes it keeps (BusyBox's
+ * does) and leave the next write nothing: a batch of several writes passes
+ * each its OFFSET, the first of them spools standard input to `$A`, and each
+ * is cut from that file. An owner the guest may not assign is not
+ * fatal: a replaced file is then rewritten in place (`$i` is 1) and a new
+ * one keeps its own owner, as `Preserve` does. `a I TEMP DEST INPLACE`
+ * applies a staged write. `r I PATH` refuses a removal of nothing or of a
+ * directory. `k I METHOD [TAG]` reports the change that failed and exits 20;
+ * `=I` reports a changed entry. Applied changes print `+`. `D` defers the
+ * signals that end the script and `E` restores them, exiting for one that
+ * came meanwhile, so a lock is never taken without being recorded for
+ * release.
  *
  * @category scripts
  * @since 1.0.0-rc.17
  */
 export const commitFunctions = `${versionFunction}
+${outputFunction}
 k() { printf '!%s %s %s\\n' "$1" "$2" "\${3:--}"; exit 20; }
 x() { [ "$(v "$2")" = "$3" ] || { printf '=%s\\n' "$1"; exit 20; }; }
 w() {
-  t=
   if [ -d "$2" ]; then printf '%s: is a directory\\n' "$2" >&2; k "$1" writeFile BadResource; fi
-  if [ -e "$2" ]; then d=$(readlink -f "$2") || k "$1" writeFile; f=$d
+  if [ -e "$2" ]; then d=$(o readlink -f "$2") || k "$1" writeFile; d=\${d%?x}; f=$d
   elif [ -L "$2" ]; then printf '%s: is a dangling symbolic link\\n' "$2" >&2; k "$1" writeFile
-  else d=$2; f=$4; mkdir -p -- "$(dirname -- "$2")" || k "$1" makeDirectory
+  else d=$2; f=$3; p=$(o dirname -- "$2") && mkdir -p -- "\${p%?x}" || k "$1" makeDirectory
   fi
-  t=$(mktemp "$(dirname -- "$d")/.smithers-XXXXXXXX") || k "$1" writeFile
-  head -c "$3" > "$t" && [ "$(wc -c < "$t")" -eq "$3" ] || k "$1" writeFile
-  if [ -n "$f" ] && [ -e "$f" ]; then
-    o=$(stat -L -c %u:%g -- "$f") && m=$(stat -L -c %a -- "$f") || k "$1" writeFile
-    [ "$(stat -c %u:%g -- "$t")" = "$o" ] || chown -- "$o" "$t" || k "$1" chown
+}
+l() {
+  if e=$(mkdir -m 700 -- "$2" 2>&1); then h=$2; return; fi
+  if [ -e "$2" ] || [ -L "$2" ]; then printf '#%s\\n' "$1"; exit 20; fi
+  printf '%s\\n' "$e" >&2; k "$1" lock
+}
+s() {
+  t=; i=
+  p=$(o dirname -- "$2") && t=$(mktemp "\${p%?x}/.smithers-XXXXXXXX") || k "$1" writeFile
+  if [ -z "$5" ]; then head -c "$4" > "$t"
+  else
+    [ -n "$A" ] || { A=$(mktemp "\${p%?x}/.smithers-XXXXXXXX") && cat > "$A"; } || k "$1" writeFile
+    tail -c "+$(($5 + 1))" "$A" | head -c "$4" > "$t"
+  fi && [ "$(wc -c < "$t")" -eq "$4" ] || k "$1" writeFile
+  if [ -n "$3" ] && [ -e "$3" ]; then
+    u=$(stat -L -c %u:%g -- "$3") && m=$(stat -L -c %a -- "$3") || k "$1" writeFile
+    if [ "$(stat -c %u:%g -- "$t")" != "$u" ] && ! e=$(chown -- "$u" "$t" 2>&1); then
+      case $e in
+        *'Operation not permitted'* | *'Permission denied'*) [ "$3" != "$2" ] || i=1 ;;
+        *) printf '%s\\n' "$e" >&2; k "$1" chown ;;
+      esac
+    fi
   else m=$(printf '%o' $((0666 & ~0$(umask))))
   fi
   chmod -- "$m" "$t" || k "$1" chmod
+}
+a() {
+  if [ -z "$4" ]; then mv -f -T -- "$2" "$3" || k "$1" rename
+  else cat -- "$2" > "$3" || k "$1" writeFile; rm -f -- "$2"
+  fi
 }
 r() {
   if [ ! -e "$2" ] && [ ! -L "$2" ]; then printf '%s: nothing is there\\n' "$2" >&2; k "$1" remove NotFound; fi
   if [ -d "$2" ] && [ ! -L "$2" ]; then printf '%s: is a directory\\n' "$2" >&2; k "$1" remove BadResource; fi
 }
-trap 'exit 143' TERM
-trap 'exit 130' INT`
+D() { z=; trap 'z=143' TERM; trap 'z=130' INT; trap 'z=129' HUP; trap 'z=141' PIPE; }
+E() { trap 'exit 143' TERM; trap 'exit 130' INT; trap 'exit 129' HUP; trap 'exit 141' PIPE; [ -z "$z" ] || exit "$z"; }
+E`
 
 const quote = CommandLine.quote
 
@@ -253,9 +305,10 @@ export const snapshotScript = (paths: ReadonlyArray<{ readonly path: string; rea
 
 /**
  * The commit script for already rooted changes: compare every version, check
- * every removal, stage every write, compare again, then apply each change in
- * order. A refused removal therefore creates no parent directory. Temporary
- * files left by a stop are removed on exit.
+ * every removal, prepare every write, take every lock, stage every write,
+ * compare again under the locks, then apply each change in order. A refused
+ * removal therefore creates no parent directory. Temporary files left by a
+ * stop are removed, and the locks released, on every exit but `SIGKILL`.
  *
  * @category scripts
  * @since 1.0.0-rc.17
@@ -266,25 +319,50 @@ export const commitScript = (
     readonly size: number | undefined
     readonly version: string
     readonly metadataFrom: string | undefined
+    readonly lock?: string | undefined
   }>
 ) => {
   const compare = changes.map(({ path, version }, index) => `x ${index} ${quote(path)} ${quote(version)}`)
-  const staged = changes.flatMap(({ size }, index) => size === undefined ? [] : [` "$t${index}"`]).join("")
+  const writes = changes.flatMap(({ size }, index) => size === undefined ? [] : [index])
+  // Each lock is taken once, for the first change that names it.
+  const locks = changes.flatMap(({ lock }, index) =>
+    lock === undefined || changes.findIndex((other) => other.lock === lock) !== index ? [] : [[lock, index] as const]
+  )
+  const staged = writes.map((index) => ` "$t${index}"`).join("")
+  // Where each write's bytes start in standard input, when it carries more than one.
+  const offsets = new Map<number, number>()
+  if (writes.length > 1) {
+    let offset = 0
+    for (const index of writes) {
+      offsets.set(index, offset)
+      offset += changes[index]!.size!
+    }
+  }
+  const taken = locks.map((_, held) => ` "$h${held}"`).join("")
   return [
     commitFunctions,
-    `trap 'for y in "$t"${staged}; do [ -z "$y" ] || rm -f -- "$y"; done' EXIT`,
+    `A=; trap 'for y in "$t" "$A"${staged}; do [ -z "$y" ] || rm -f -- "$y"; done; ` +
+    `for y in "$h"${taken}; do [ -z "$y" ] || rm -rf -- "$y"; done' EXIT`,
     ...compare,
     ...changes.flatMap(({ path, size }, index) => size === undefined ? [`r ${index} ${quote(path)}`] : []),
-    ...changes.flatMap(({ metadataFrom, path, size }, index) =>
-      size === undefined
-        ? []
-        : [`w ${index} ${quote(path)} ${size} ${quote(metadataFrom ?? "")}; t${index}=$t; d${index}=$d`]
+    ...writes.map((index) =>
+      `w ${index} ${quote(changes[index]!.path)} ${
+        quote(changes[index]!.metadataFrom ?? "")
+      }; d${index}=$d; f${index}=$f`
+    ),
+    ...locks.length === 0
+      ? []
+      : ["D", ...locks.map(([lock, index], held) => `l ${index} ${quote(lock)}; h${held}=$h; h=`), "E"],
+    ...writes.map((index) =>
+      `s ${index} "$d${index}" "$f${index}" ${changes[index]!.size}${
+        offsets.has(index) ? ` ${offsets.get(index)}` : ""
+      }; t${index}=$t; i${index}=$i; t=`
     ),
     ...compare,
     ...changes.map(({ path, size }, index) =>
       size === undefined
         ? `rm -- ${quote(path)} || k ${index} remove; echo +`
-        : `mv -f -T -- "$t${index}" "$d${index}" || k ${index} rename; t${index}=; echo +`
+        : `a ${index} "$t${index}" "$d${index}" "$i${index}"; t${index}=; echo +`
     )
   ].join("\n")
 }
@@ -304,12 +382,14 @@ export const listScript = (directory: string) =>
     `if [ -d "$d" ]; then find -H "$d" -mindepth 1 -maxdepth 1 -print0 || exit 1; printf '\\0'; ` +
     `find -L "$d" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null; exit 0`,
     `elif [ -e "$d" ]; then exit 11`,
-    `elif [ ! -L "$d" ] && [ -x "$(dirname -- "$d")" ]; then exit 9`,
+    `elif p=$(dirname -- "$d"; printf x) && [ ! -L "$d" ] && [ -x "\${p%?x}" ]; then exit 9`,
     `else stat -L -- "$d" >/dev/null; exit 1`,
     `fi`
   ].join("\n")
 
-const nameOf = (path: string): string => path.replace(/\/+$/, "").split("/").pop()!
+/** The resolution `base` of an ancestor of `path`, joined with the `count` components below it. */
+const under = (base: string, path: string, count: number): string =>
+  `${base === "/" ? "" : base}/${path.replace(/\/+$/, "").split("/").slice(-count).join("/")}`
 
 /**
  * `@smthrs/std`'s batched file calls over `session`, a Linux guest. Paths
@@ -333,10 +413,11 @@ export const batchedFiles = (session: Session, guest: string): BatchedFiles => {
     [resolved, version, stat, read]: ReadonlyArray<string>,
     asked: boolean
   ): Snapshot => {
+    const ancestor = /^p(\d+)(\/[\s\S]*)$/.exec(resolved!)
     const canonical = resolved!.startsWith("e") && resolved!.length > 1
       ? resolved!.slice(1)
-      : resolved!.startsWith("p") && resolved!.length > 1
-      ? `${resolved === "p/" ? "" : resolved!.slice(1)}/${nameOf(path)}`
+      : ancestor !== null
+      ? under(ancestor[2]!, path, Number(ancestor[1]))
       : undefined
     const fields = stat!.slice(1).trim().split(" ")
     const mode = Number.parseInt(fields[0]!, 16)
@@ -388,7 +469,8 @@ export const batchedFiles = (session: Session, guest: string): BatchedFiles => {
         path: resolve(change.path),
         size: change.content?.byteLength,
         version: change.version,
-        metadataFrom: change.metadataFrom === undefined ? undefined : resolve(change.metadataFrom)
+        metadataFrom: change.metadataFrom === undefined ? undefined : resolve(change.metadataFrom),
+        lock: change.lock
       }))
       const stdin = concat(changes.flatMap(({ content }) => content === null ? [] : [content]))
       return gather(session, "writeFile", rooted[0]?.path ?? session.workdir, commitScript(rooted), stdin).pipe(
@@ -397,8 +479,11 @@ export const batchedFiles = (session: Session, guest: string): BatchedFiles => {
           const applied = lines.filter((line) => line === "+").length
           if (code === 0 || applied === changes.length) return { applied: changes.length }
           const last = lines.at(-1) ?? ""
-          if (code === 20 && /^=\d+$/.test(last)) {
-            return { applied, stopped: { index: Number(last.slice(1)), reason: "changed" } }
+          if (code === 20 && /^[=#]\d+$/.test(last)) {
+            return {
+              applied,
+              stopped: { index: Number(last.slice(1)), reason: last[0] === "=" ? "changed" : "locked" }
+            }
           }
           // A stop the script did not report is the change after the last
           // one it confirmed, as when the transport dies part way.

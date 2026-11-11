@@ -87,6 +87,8 @@ describe.skipIf(!engineAvailable)("ContainerSandbox.existing against a real engi
   it("reads, edits and patches the container's files, never the host's", async () => {
     const name = names[0]!
     start(name)
+    // The mode the engine's `exec` gave the file: its umask is 022 on Docker and 000 on OrbStack.
+    const created = inside(name, "stat -c %a /work/src/text.py").trim()
     const outcome = await Effect.runPromise(
       Effect.gen(function*() {
         const services = yield* machine(name)
@@ -124,7 +126,7 @@ describe.skipIf(!engineAvailable)("ContainerSandbox.existing against a real engi
     expect(inside(name, "cat /work/src/text.py")).toBe("café = \"naïve\"\nrésumé = \"日本語 🎉🎉\"\nend = 2\n")
     expect(inside(name, "cat /work/src/new.py")).toBe("value = \"ü\"\n")
     // The edit replaced the file and kept its mode and owner.
-    expect(inside(name, "stat -c '%a %u' /work/src/mode.sh /work/src/text.py")).toBe("754 1000\n644 1000\n")
+    expect(inside(name, "stat -c '%a %u' /work/src/mode.sh /work/src/text.py")).toBe(`754 1000\n${created} 1000\n`)
     // Nothing reached this host under the container's paths.
     expect(existsSync("/work/src/new.py")).toBe(false)
   }, 120_000)

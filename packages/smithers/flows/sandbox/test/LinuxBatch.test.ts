@@ -61,16 +61,25 @@ describe("snapshot", () => {
     Effect.gen(function*() {
       const { files, sent } = guest({
         stdout: record("e/work/a.txt", "f 1 2 5 9 9 77 5", "S81a4 5", `B${Base64.encode(encoder.encode("hello"))}\n`) +
-          record("p/work", "a", "N", "-") + record("p/", "a", "N", "-") + record("n", "a", "N", "-")
+          record("p1/work", "a", "N", "-") + record("p1/", "a", "N", "-") + record("n", "a", "N", "-") +
+          record("p2/real/work", "a", "N", "-") + record("p3/", "a", "N", "-")
       })
-      const taken = yield* files.snapshot(["a.txt", "new.txt", "/top.txt", "x/y/z.txt"], {
+      const taken = yield* files.snapshot(["a.txt", "new.txt", "/top.txt", "x/y/z.txt", "d/e.txt", "/u/v/w.txt/"], {
         read: ["a.txt", "new.txt"],
         maxBytes: 64
       })
       expect(sent[0]!.script).toContain(
         "\nq /work/a.txt 1 64\nq /work/new.txt 1 64\nq /top.txt 0 64\nq /work/x/y/z.txt 0 64"
       )
-      expect(taken.map(({ canonical }) => canonical)).toEqual(["/work/a.txt", "/work/new.txt", "/top.txt", undefined])
+      // An absent parent resolves through the nearest ancestor that exists.
+      expect(taken.map(({ canonical }) => canonical)).toEqual([
+        "/work/a.txt",
+        "/work/new.txt",
+        "/top.txt",
+        undefined,
+        "/real/work/d/e.txt",
+        "/u/v/w.txt"
+      ])
       expect(taken[0]).toMatchObject({
         version: "f 1 2 5 9 9 77 5",
         info: Result.succeed({ type: "File", size: 5 }),
@@ -89,7 +98,7 @@ describe("snapshot", () => {
           record("e/work/big", "f", "S81a4 99", "-") +
           record("e/work/locked", "f", "S8180 3", "R") +
           record("e/work/bad", "f", "S81a4 3", "B*not base64*") +
-          record("p/work", "a", "Estat: cannot stat '/work/denied': Permission denied", "-") +
+          record("p1/work", "a", "Estat: cannot stat '/work/denied': Permission denied", "-") +
           record("e", "f", "S81a4", "-") +
           record("e/work/odd", "e", "S1a4 0", "-")
       })
@@ -140,38 +149,53 @@ describe("snapshot", () => {
 })
 
 describe("commit", () => {
-  const change = (path: string, content: string | null, metadataFrom?: string) => ({
+  const change = (path: string, content: string | null, metadataFrom?: string, lock?: string) => ({
     path,
     content: content === null ? null : encoder.encode(content),
     version: `v ${path}`,
-    ...metadataFrom === undefined ? {} : { metadataFrom }
+    ...metadataFrom === undefined ? {} : { metadataFrom },
+    ...lock === undefined ? {} : { lock }
   })
 
-  it.effect("compares, checks removals, stages writes, compares again, then applies in order", () =>
+  it.effect("compares, checks removals, prepares writes, locks, stages, compares again, then applies in order", () =>
     Effect.gen(function*() {
       const { files, sent } = guest({ stdout: "+\n+\n+\n" })
       const committed = yield* files.commit([
-        change("a.txt", "first"),
-        change("gone.txt", null),
-        change("new/b.txt", "second", "old.txt")
+        change("a.txt", "first", undefined, "/work/.smithers-1.lock"),
+        change("gone.txt", null, undefined, "/work/.smithers-2.lock"),
+        change("new/b.txt", "second", "old.txt"),
+        change("a.txt", null, undefined, "/work/.smithers-1.lock")
       ])
-      expect(committed).toEqual({ applied: 3 })
+      expect(committed).toEqual({ applied: 4 })
       const lines = sent[0]!.script.split("\n")
-      const body = lines.slice(lines.findIndex((line) => line.startsWith("trap 'for y")))
+      const body = lines.slice(lines.findIndex((line) => line.startsWith("A=; trap 'for y")))
       expect(body).toEqual([
-        `trap 'for y in "$t" "$t0" "$t2"; do [ -z "$y" ] || rm -f -- "$y"; done' EXIT`,
+        `A=; trap 'for y in "$t" "$A" "$t0" "$t2"; do [ -z "$y" ] || rm -f -- "$y"; done; ` +
+        `for y in "$h" "$h0" "$h1"; do [ -z "$y" ] || rm -rf -- "$y"; done' EXIT`,
         "x 0 /work/a.txt 'v a.txt'",
         "x 1 /work/gone.txt 'v gone.txt'",
         "x 2 /work/new/b.txt 'v new/b.txt'",
+        "x 3 /work/a.txt 'v a.txt'",
         "r 1 /work/gone.txt",
-        "w 0 /work/a.txt 5 ''; t0=$t; d0=$d",
-        "w 2 /work/new/b.txt 6 /work/old.txt; t2=$t; d2=$d",
+        "r 3 /work/a.txt",
+        "w 0 /work/a.txt ''; d0=$d; f0=$f",
+        "w 2 /work/new/b.txt /work/old.txt; d2=$d; f2=$f",
+        // Each lock once, deferring signals until each is recorded for release.
+        "D",
+        "l 0 /work/.smithers-1.lock; h0=$h; h=",
+        "l 1 /work/.smithers-2.lock; h1=$h; h=",
+        "E",
+        // Two writes: each names where its bytes start, and is cut from the spooled input.
+        `s 0 "$d0" "$f0" 5 0; t0=$t; i0=$i; t=`,
+        `s 2 "$d2" "$f2" 6 5; t2=$t; i2=$i; t=`,
         "x 0 /work/a.txt 'v a.txt'",
         "x 1 /work/gone.txt 'v gone.txt'",
         "x 2 /work/new/b.txt 'v new/b.txt'",
-        `mv -f -T -- "$t0" "$d0" || k 0 rename; t0=; echo +`,
+        "x 3 /work/a.txt 'v a.txt'",
+        `a 0 "$t0" "$d0" "$i0"; t0=; echo +`,
         "rm -- /work/gone.txt || k 1 remove; echo +",
-        `mv -f -T -- "$t2" "$d2" || k 2 rename; t2=; echo +`
+        `a 2 "$t2" "$d2" "$i2"; t2=; echo +`,
+        "rm -- /work/a.txt || k 3 remove; echo +"
       ])
       // The bytes travel on standard input, in staging order, and never in the script.
       expect(new TextDecoder().decode(sent[0]!.stdin)).toBe("firstsecond")
@@ -181,6 +205,11 @@ describe("commit", () => {
   it.effect.each(
     [
       [{ stdout: "=1\n", code: 20 }, { applied: 0, stopped: { index: 1, reason: "changed" } }],
+      [{ stdout: "#1\n", code: 20 }, { applied: 0, stopped: { index: 1, reason: "locked" } }],
+      [{ stdout: "!0 lock -\n", stderr: "mkdir: Permission denied\n", code: 20 }, {
+        applied: 0,
+        stopped: { index: 0, reason: { reason: { _tag: "PermissionDenied", method: "lock" } } }
+      }],
       [{ stdout: "+\n+\n", code: 143 }, { applied: 2 }],
       [{ stdout: "!0 makeDirectory -\n", stderr: "mkdir: Permission denied\n", code: 20 }, {
         applied: 0,
@@ -264,8 +293,12 @@ describe("the scripts", () => {
   it("quote every path once and carry no file content", () => {
     expect(snapshotScript([{ path: "/w/it's", read: true }], -1)).toContain(`q '/w/it'\\''s' 1 -1`)
     expect(listScript("/w/a b")).toContain(`d='/w/a b'`)
-    expect(commitScript([{ path: "/w/a b", size: 3, version: "a", metadataFrom: undefined }])).toContain(
-      `w 0 '/w/a b' 3 ''; t0=$t; d0=$d`
+    const script = commitScript([{ path: "/w/a b", size: 3, version: "a", metadataFrom: undefined, lock: "/w/l k" }])
+    expect(script).toContain(`w 0 '/w/a b' ''; d0=$d; f0=$f`)
+    expect(script).toContain(`l 0 '/w/l k'; h0=$h; h=`)
+    // A script with no locks defers no signals.
+    expect(commitScript([{ path: "/w/a", size: 1, version: "a", metadataFrom: undefined }]).split("\n")).not.toContain(
+      "D"
     )
   })
 

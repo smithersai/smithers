@@ -369,7 +369,7 @@ describe("Sandbox.fileSystem", () => {
       })
       expect(provider.state.commands[0]).toBe(
         `if [ -e /there ]; then exit 0; fi; p=/there; ` +
-          `while [ "$p" != / ]; do p=$(dirname "$p"); if [ -e "$p" ]; then ` +
+          `while [ "$p" != / ]; do p=$(dirname -- "$p"; printf x); p=\${p%?x}; if [ -e "$p" ]; then ` +
           `if [ ! -d "$p" ]; then exit 11; elif [ ! -x "$p" ]; then exit 12; else exit 1; fi; fi; done; exit 1`
       )
     }))
@@ -513,7 +513,7 @@ describe("Sandbox.fileSystem", () => {
       )
       expect(provider.state.commands.slice(0, 5)).toEqual([
         "if [ -d /deep/tree ]; then exit 0; elif [ -e /deep/tree ]; then exit 10; else mkdir -p /deep/tree; fi",
-        `if [ -e /flat ] || [ -h /flat ]; then exit 10; elif [ ! -e "$(dirname /flat)" ]; then exit 9; else mkdir /flat; fi`,
+        `if [ -e /flat ] || [ -h /flat ]; then exit 10; elif p=$(dirname -- /flat; printf x) && [ ! -e "\${p%?x}" ]; then exit 9; else mkdir /flat; fi`,
         "rm -r -f /old",
         "if [ -e /single ] || [ -h /single ]; then rm /single; else exit 9; fi",
         "if [ ! -e /from ] && [ ! -h /from ]; then exit 9; elif [ -d /to ]; then " +
@@ -614,7 +614,7 @@ describe("Sandbox.fileSystem", () => {
       expect(platformReason(outcome.garbled)).toBe("Unknown")
       expect(String(outcome.garbled)).toContain("instead of a type and a size")
       expect(provider.state.commands).toContain(
-        `if [ -e /sandbox ] || [ -h /sandbox ]; then exit 10; elif [ ! -e "$(dirname /sandbox)" ]; then exit 9; else mkdir /sandbox; fi`
+        `if [ -e /sandbox ] || [ -h /sandbox ]; then exit 10; elif p=$(dirname -- /sandbox; printf x) && [ ! -e "\${p%?x}" ]; then exit 9; else mkdir /sandbox; fi`
       )
     }))
 
