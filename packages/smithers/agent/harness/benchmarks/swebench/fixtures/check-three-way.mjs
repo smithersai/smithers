@@ -156,6 +156,42 @@ try {
   assert.deepEqual(partial.stillLost, [], "an instance this wave has not run is not lost")
   assert.match(render(partial), /not re-run/)
 
+  // Every compared column uses the same completed intersection, even when
+  // the middle wave is missing rows the last wave has already finished.
+  const middlePartial = threeWay({ baselinePath, firstPath: partialPath, secondPath })
+  assert.equal(middlePartial.comparedCount, 1, "a missing middle result is not compared")
+  assert.equal(middlePartial.scoredCount, 1)
+  assert.equal(middlePartial.pending, 4)
+  assert.deepEqual(middlePartial.recovered, [], "a missing verdict is not a loss followed by recovery")
+  for (const totals of [middlePartial.totals, middlePartial.rawTotals]) {
+    assert.deepEqual(Object.values(totals).map((one) => one.instances), [1, 1, 1])
+    assert.deepEqual(Object.values(totals).map((one) => one.usd), [1, 0.5, 0.5])
+    assert.deepEqual(Object.values(totals).map((one) => one.wallSeconds), [100, 100, 100])
+    assert.deepEqual(Object.values(totals).map((one) => one.agentSeconds), [90, 90, 90])
+    assert.deepEqual(Object.values(totals).map((one) => one.frames), [4, 4, 4])
+  }
+  const missingMiddle = middlePartial.rows.find((row) => row.id === "e__steady-5")
+  assert.equal(missingMiddle.pending, true)
+  assert.equal(missingMiddle.first, undefined)
+  assert.equal(missingMiddle.second.resolved, true)
+  assert.match(
+    render(middlePartial),
+    /\| e__steady-5 \| resolved \| — \| resolved \| \$1\.00 \| — \| \$0\.50 \| -0\.50 \| 4 → — → 4 \| 90 → — → 90 \|/
+  )
+  const noCommon = threeWay({
+    baselinePath,
+    firstPath: ledger(join(temporary, "no-common.jsonl"), [
+      ...graded("outside__population", "resolved", cost(99))
+    ]),
+    secondPath
+  })
+  assert.equal(noCommon.comparedCount, 0)
+  assert.equal(noCommon.pending, 5)
+  for (const totals of Object.values(noCommon.totals)) {
+    assert.equal(totals.instances, 0)
+    assert.equal(totals.usd, 0)
+  }
+
   // -------------------------------------------------------------------------
   // An excluded instance, in no movement row and in both denominators.
   // -------------------------------------------------------------------------

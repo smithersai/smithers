@@ -26,7 +26,8 @@
  * modules rather than re-implemented here (see `lib/journal-facts.mjs`):
  *
  * 1. **a check failed over the pre-edit tree** — some call reported a failing
- *    exit status in a frame at epoch 0, before the run had changed anything;
+ *    exit status in a non-mutating frame at epoch 0, before the run had changed
+ *    anything;
  * 2. **the tree moved after it** — some later frame's measurement says the
  *    workspace changed;
  * 3. **the same check, or a broader one, went green over the final tree** —
@@ -195,7 +196,7 @@ const proofOverFinalTree = (facts) => {
 /** The first failure this run watched before it had changed anything. */
 const preEditFailure = (facts) => {
   for (const frame of facts.frames) {
-    if (frame.epoch !== 0) break
+    if (frame.epoch !== 0 || frame.mutated) break
     for (const entry of frame.checks) {
       if (entry.check.failing && entry.check.stable) return { check: entry.check, seq: entry.seq, frame }
     }

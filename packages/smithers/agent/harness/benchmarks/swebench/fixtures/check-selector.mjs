@@ -425,6 +425,37 @@ try {
   const cost = { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 10_000 }
   const cheaper = { inputTokens: 10_000, cachedInputTokens: 0, outputTokens: 1_000 }
 
+  // A first-frame write followed by a failing check is post-edit evidence,
+  // even though the frame opened at epoch zero. A later edit and green check
+  // must not let it beat a genuine reproduction on the opening tree.
+  const reproduction = "proof__pre-edit"
+  const postEdit = twin(reproduction, 40, undefined)
+  postEdit.frames[0].calls.unshift({
+    flow: "write",
+    input: { path: "a.py", text: "first edit" },
+    ok: true,
+    mutates: true
+  })
+  postEdit.frames[0].mutated = true
+  postEdit.frames[0].digest = "cccc"
+  const genuine = twin(reproduction, 40, undefined)
+  for (const [index, journal] of [["r1", postEdit], ["r2", genuine]]) {
+    const source = join(temporary, "tie", `proof-${index}.json`)
+    writeFileSync(source, JSON.stringify({ journals: [journal] }))
+    rehydrate(source, tieJournals, index, tiePatches)
+  }
+  const reproductionRun = select(reproduction, tieJournals, tiePatches, tieOut)
+  assert.equal(reproductionRun.status, 0, reproductionRun.stderr)
+  const reproductionRationale = JSON.parse(rationaleOf(tieOut, reproduction))
+  assert.equal(reproductionRationale.selected, "r2", "only the genuine pre-edit reproduction holds all predicates")
+  const byRun = new Map(reproductionRationale.candidates.map((candidate) => [candidate.index, candidate]))
+  const heldBy = (index) => reproductionRationale.predicateOrder.map((name) => byRun.get(index).predicates[name].held)
+  assert.deepEqual(heldBy("r1"), [false, false, true, true])
+  assert.deepEqual(heldBy("r2"), [true, true, true, true])
+  assert.equal(byRun.get("r1").predicates.preEditFailure.held, false)
+  assert.equal(byRun.get("r2").predicates.preEditFailure.epoch, 0)
+  assert.equal(typeof byRun.get("r2").predicates.preEditFailure.seq, "number")
+
   // r1 changed nothing worth capturing, r2 did: a non-empty patch wins.
   writeFileSync(
     join(temporary, "tie", "r1.json"),

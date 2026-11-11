@@ -2584,8 +2584,13 @@ get back to where we were" means, and against the wave in between, which is what
 recovery gets reported as a win, or a remaining regression gets lost behind a
 large improvement.
 
-So this composes `compare-runs.mjs` twice rather than recomputing anything, and
-adds the two rows that only exist with three ledgers:
+The three columns sum `compare-runs.mjs`'s per-instance facts over one completed
+intersection: an instance is compared only once all three ledgers have finished
+it. Scored and raw totals, readiness counts and movement sets use that same
+intersection. Pending rows retain each wave's completed verdict, cost and timing
+independently, including when the middle wave has not finished.
+
+It adds the two rows that only exist with three ledgers:
 
 - **recovered** — the baseline resolved it, the middle wave did not, this one
   does. That is the surgery's own scoreboard, and it is disjoint from **gained**,

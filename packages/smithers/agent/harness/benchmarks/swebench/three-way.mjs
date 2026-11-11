@@ -13,10 +13,10 @@
  * against only one of them is how a recovery gets reported as a win, or a
  * remaining regression gets lost behind a large improvement.
  *
- * So this composes `compare-runs.mjs` twice rather than recomputing anything:
- * baseline-against-second and first-against-second, keyed by instance. Every
- * number here comes out of that module's `compare`, and the fold, the
- * every-attempt cost rule and the two labelled wall clocks are all its own.
+ * So this composes `compare-runs.mjs` twice: baseline-against-second and
+ * first-against-second, keyed by instance. Its per-instance facts retain the
+ * ledger fold, the every-attempt cost rule and the two labelled wall clocks.
+ * Every compared total uses the intersection completed by all three waves.
  * What is added is the shape — three columns instead of two — and the two
  * questions that only exist with three ledgers:
  *
@@ -48,6 +48,22 @@ import { isExcluded, renderExclusions } from "./lib/excluded.mjs"
 /** How one instance reads in a column, or an em dash where a wave has no row. */
 const cell = (facts) => (facts === undefined ? "—" : facts.resolved ? "resolved" : facts.verdict)
 
+/** Sums already-folded facts over the same completed rows for each wave. */
+const totalsOf = (rows, wave) => {
+  const totals = { instances: 0, resolved: 0, usd: 0, unknownCost: 0, frames: 0, wallSeconds: 0, agentSeconds: 0 }
+  for (const row of rows) {
+    const facts = row[wave]
+    totals.instances += 1
+    if (facts.resolved) totals.resolved += 1
+    if (facts.usd === null) totals.unknownCost += 1
+    totals.usd = totals.usd === null || facts.usd === null ? null : totals.usd + facts.usd
+    totals.frames += facts.frames
+    totals.wallSeconds += facts.wallSeconds
+    totals.agentSeconds += facts.agentSeconds
+  }
+  return totals
+}
+
 /**
  * Folds two pairwise comparisons into one row per instance.
  *
@@ -68,31 +84,32 @@ export const threeWay = ({ baselinePath, firstPath, secondPath }) => {
     baseline: row.before,
     first: middle.get(row.id),
     second: row.after,
-    pending: row.pending,
+    pending: row.pending || middle.get(row.id) === undefined,
     delta: row.delta,
     deltaFromFirst: againstFirst.instances.find((one) => one.id === row.id)?.delta
   }))
 
-  const done = rows.filter((row) => !row.pending && row.first !== undefined && !isExcluded(row.id))
+  const compared = rows.filter((row) => !row.pending)
+  const done = compared.filter((row) => !isExcluded(row.id))
   const isResolved = (facts) => facts !== undefined && facts.resolved
   return {
     baselinePath,
     firstPath,
     secondPath,
     population: againstBaseline.population,
-    comparedCount: againstBaseline.comparedCount,
-    pending: againstBaseline.pending,
-    scoredCount: againstBaseline.scoredCount,
+    comparedCount: compared.length,
+    pending: rows.length - compared.length,
+    scoredCount: done.length,
     excluded: againstBaseline.excluded,
     totals: {
-      baseline: againstBaseline.totals.scored.baseline,
-      first: againstFirst.totals.scored.baseline,
-      second: againstBaseline.totals.scored.rerun
+      baseline: totalsOf(done, "baseline"),
+      first: totalsOf(done, "first"),
+      second: totalsOf(done, "second")
     },
     rawTotals: {
-      baseline: againstBaseline.totals.compared.baseline,
-      first: againstFirst.totals.compared.baseline,
-      second: againstBaseline.totals.compared.rerun
+      baseline: totalsOf(compared, "baseline"),
+      first: totalsOf(compared, "first"),
+      second: totalsOf(compared, "second")
     },
     // The surgery's own scoreboard: what the middle wave dropped and this one
     // holds again, and what is still on the floor.
@@ -179,21 +196,17 @@ export const render = (summary, names = { baseline: "baseline", first: "first", 
   )
   lines.push("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
   for (const row of summary.rows) {
-    if (row.pending || row.first === undefined) {
-      lines.push(
-        `| ${row.id} | ${cell(row.baseline)} | ${cell(row.first)} | not re-run`
-          + ` | ${money(row.baseline.usd)} | ${row.first === undefined ? "—" : money(row.first.usd)}`
-          + ` | — | — | — | — |`
-      )
-      continue
-    }
+    const columns = [row.baseline, row.first, row.second]
+    const dollars = columns.map((facts) => facts === undefined ? "—" : money(facts.usd))
     lines.push(
       `| ${row.id}${isExcluded(row.id) ? " **excluded**" : ""}`
-        + ` | ${cell(row.baseline)} | ${cell(row.first)} | ${cell(row.second)}`
-        + ` | ${money(row.baseline.usd)} | ${money(row.first.usd)} | ${money(row.second.usd)}`
-        + ` | ${signed(row.delta.usd)}`
-        + ` | ${row.baseline.frames} → ${row.first.frames} → ${row.second.frames}`
-        + ` | ${row.baseline.agentSeconds} → ${row.first.agentSeconds} → ${row.second.agentSeconds} |`
+        + ` | ${cell(row.baseline)} | ${cell(row.first)} | ${
+          row.second === undefined ? "not re-run" : cell(row.second)
+        }`
+        + ` | ${dollars.join(" | ")}`
+        + ` | ${row.delta === undefined ? "—" : signed(row.delta.usd)}`
+        + ` | ${columns.map((facts) => facts?.frames ?? "—").join(" → ")}`
+        + ` | ${columns.map((facts) => facts?.agentSeconds ?? "—").join(" → ")} |`
     )
   }
   lines.push("")
