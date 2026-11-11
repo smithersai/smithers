@@ -172,18 +172,26 @@ async function renderInRepo(repoDir: string, out = "") {
 test.each([
   [".smithers-review", ""],
   [".smithers-review/.smithers-review-artifacts", ""],
-  ["reports", "reports/walkthrough.html"]
+  ["reports", "reports/walkthrough.html"],
+  ["..reports", "..reports/walkthrough.html"],
+  ["...reports", "...reports/walkthrough.html"],
+  ["..reports/nested", "..reports/nested/walkthrough.html"],
+  ["..reports/.smithers-review-artifacts", "..reports/walkthrough.html"],
+  ["..reports/walkthrough.html", "..reports/walkthrough.html"]
 ])("render refuses to follow a checked-out %s symlink out of the repository", async (link, out) => {
   const repo = fs.mkdtempSync(join(tmpdir(), "review-symlink-repo-"))
   const victim = fs.mkdtempSync(join(tmpdir(), "review-symlink-victim-"))
   dirs.push(repo, victim)
   fs.mkdirSync(dirname(join(repo, link)), { recursive: true })
-  fs.symlinkSync(victim, join(repo, link))
+  const victimFile = join(victim, "walkthrough.html")
+  fs.writeFileSync(victimFile, "previous complete artifact")
+  fs.symlinkSync(link.endsWith(".html") ? victimFile : victim, join(repo, link))
   await expect(renderInRepo(repo, out)).rejects.toMatchObject({
     _tag: "smithers-review/WalkthroughUnwritable",
     message: expect.stringContaining("symbolic link")
   })
-  expect(fs.readdirSync(victim, { recursive: true })).toEqual([])
+  expect(fs.readFileSync(victimFile, "utf8")).toBe("previous complete artifact")
+  expect(fs.readdirSync(victim, { recursive: true })).toEqual(["walkthrough.html"])
 })
 
 test("render still writes the default output inside a plain repository", async () => {
@@ -193,6 +201,35 @@ test("render still writes the default output inside a plain repository", async (
   expect(result.walkthrough.path).toBe(join(repo, ".smithers-review", "walkthrough.html"))
   expect(fs.existsSync(result.walkthrough.path)).toBe(true)
 })
+
+test.each(["..reports", "...reports", "..reports/nested"])(
+  "render writes and retains artifacts in a plain %s directory",
+  async (directory) => {
+    const repo = fs.mkdtempSync(join(tmpdir(), "review-plain-repo-"))
+    dirs.push(repo)
+    const result = await renderInRepo(repo, `${directory}/walkthrough.html`)
+    expect(result.walkthrough.path).toBe(join(repo, directory, "walkthrough.html"))
+    expect(fs.readFileSync(result.walkthrough.artifactPath, "utf8")).toBe(
+      fs.readFileSync(result.walkthrough.path, "utf8")
+    )
+  }
+)
+
+test.each(["../external/walkthrough.html", "absolute"])(
+  "render preserves host-authorized external output: %s",
+  async (out) => {
+    const root = fs.mkdtempSync(join(tmpdir(), "review-external-output-"))
+    dirs.push(root)
+    const repo = join(root, "repo")
+    fs.mkdirSync(repo)
+    const expected = join(root, "external", "walkthrough.html")
+    const result = await renderInRepo(repo, out === "absolute" ? expected : out)
+    expect(result.walkthrough.path).toBe(expected)
+    expect(fs.readFileSync(result.walkthrough.artifactPath, "utf8")).toBe(
+      fs.readFileSync(expected, "utf8")
+    )
+  }
+)
 
 test.each(["failed", "completed_with_errors", "completed_with_warnings"] as const)(
   "verifier failure preserves %s status",

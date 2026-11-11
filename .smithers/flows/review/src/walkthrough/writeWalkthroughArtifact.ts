@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { join, relative, resolve } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { io, runIo } from "../io.ts"
 import { walkthroughArtifactsDir } from "./walkthroughArtifactsDir.ts"
 
@@ -8,9 +8,9 @@ async function assertPlainParents(repo: string, path: string): Promise<void> {
   const fs = io().fs
   const root = resolve(repo)
   const suffix = relative(root, resolve(path))
-  if (suffix.startsWith("..")) return // Explicit external outputs are bounded by the host.
+  if (suffix === ".." || suffix.startsWith(`..${sep}`) || isAbsolute(suffix)) return // Explicit external outputs are bounded by the host.
   let current = root
-  for (const part of suffix.split("/")) {
+  for (const part of suffix.split(sep)) {
     current = join(current, part)
     let link: string | undefined
     try {
