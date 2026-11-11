@@ -12,6 +12,7 @@
  */
 
 import { z } from "zod"
+import { HttpUrlSchema } from "./WebUrl.ts"
 
 /**
  * Who posted, acted or owns something; `agentId` when the identity is a configured agent profile.
@@ -22,7 +23,7 @@ import { z } from "zod"
 export const PersonaRefSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
-  iconUrl: z.string().optional(),
+  iconUrl: HttpUrlSchema.optional(),
   agentId: z.string().optional()
 })
 /**

@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { CardCallbacks, CardProps } from "./CardAction.ts"
 import { CardErrorSchema, SyncHealthSchema } from "./CardPrimitives.ts"
 import { SetupCardSchema } from "./SetupCard.ts"
+import { HttpUrlSchema } from "./WebUrl.ts"
 
 /**
  * Settings projection fields from spec §14.3 and ui-components.md v0.4 (T-UI-02): the setup fields plus the
@@ -21,7 +22,7 @@ export const SettingsCardSchema = SetupCardSchema.extend({
     /** Origins served over plain HTTP at a non-loopback host, which the View marks "unencrypted" (spec §17.6). @since 1.0.0 */
     origins_unencrypted: z.array(z.string()).optional()
   }),
-  callback_fixes: z.array(z.object({ settings_url: z.string().url(), add_url: z.string().url() })).optional(),
+  callback_fixes: z.array(z.object({ settings_url: HttpUrlSchema, add_url: HttpUrlSchema })).optional(),
   capacity: z.number().int().nonnegative(),
   parallel: z.number().int().nonnegative().optional(),
   todo_preapprove_default: z.boolean().optional(),

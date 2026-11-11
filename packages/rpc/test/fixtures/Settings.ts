@@ -62,6 +62,17 @@ export const fixtures = {
     actions: owner,
     expect: ["smthrs login http://mac-mini.local:8080", "Machines", "TODOs per day"]
   }),
+  callback_fixes: story(
+    "GitHub callback URLs need repair",
+    {
+      ...base,
+      callback_fixes: [{
+        settings_url: "https://github.com/settings/apps/smithers",
+        add_url: "https://github.com/settings/apps/smithers?callback_url=http%3A%2F%2Flocalhost%3A4000"
+      }]
+    },
+    { actions: owner, expect: ["Repair"] }
+  ),
   squash_blocked: story(
     "Repository blocked until squash merging is on",
     { ...base, steps: setup.squash_blocked.model.steps, github: setup.squash_blocked.model.github },
