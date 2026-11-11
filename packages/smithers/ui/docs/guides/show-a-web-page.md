@@ -82,6 +82,21 @@ never flashes it, so a page that never loads still says what it is. Pass your
 own controls, such as a full-screen link, as `actions`; they render between
 the origin and that link.
 
+The Effect service `WebPageLoad` says when the frame has loaded; its default
+layer waits for the frame's `load` event. To test the preview, provide a layer
+whose `loaded` waits for your test, so the test never races the framed site:
+
+```tsx
+import { Deferred, Effect, Layer } from "effect"
+import { WebPageLoad, WebPageLoadProvider, WebPageView } from "@smthrs/ui"
+
+const released = Deferred.makeUnsafe<void>()
+const held = Layer.succeed(WebPageLoad, WebPageLoad.of({ loaded: () => Deferred.await(released) }))
+
+<WebPageLoadProvider layer={held}><WebPageView url={url} preview={preview} /></WebPageLoadProvider>
+// The preview leaves once the test runs Deferred.doneUnsafe(released, Effect.void).
+```
+
 `WebLinkCard`'s `Open in new tab` is a real anchor with `target="_blank"` and
 `rel="noopener noreferrer"`, styled as a `Button`, with a `↵` key: focused,
 Enter opens it. A person's click or key on a link opens the tab, and popup

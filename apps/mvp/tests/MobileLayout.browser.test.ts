@@ -264,6 +264,7 @@ test("tablet: the full account name remains readable", async () => {
 
 for (const width of [390, 768, 1280]) test(`${width}: pending web page stays inside its figure`, async () => {
   const page = await browser.newPage({ viewport: { width, height: 844 } })
+  page.setDefaultTimeout(5_000)
   try {
     await page.goto(`${origin}?screen=web-page`)
     const figure = page.locator(".sui-web-page-view")
@@ -275,6 +276,10 @@ for (const width of [390, 768, 1280]) test(`${width}: pending web page stays ins
     const bounds = await pending.boundingBox()
     expect(preview!.x).toBeGreaterThanOrEqual(bounds!.x)
     expect(preview!.x + preview!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width)
+    // The fixture's WebPageLoad held the cover until now, whatever the framed site did (TEST-2).
+    await page.evaluate(() => (window as unknown as { releasePageLoad: () => void }).releasePageLoad())
+    await page.locator('.sui-web-page-view[data-state="loaded"]').waitFor()
+    expect(await pending.count()).toBe(0)
   } finally {
     await page.close()
   }

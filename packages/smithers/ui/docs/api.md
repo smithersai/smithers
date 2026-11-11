@@ -1159,6 +1159,13 @@ function framedPageTarget(url: string, hostOrigin?: string): WebPageTarget | nul
 const WEB_PAGE_SANDBOX: "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
 const webPageCss: string
 
+class WebPageLoad extends Context.Service<WebPageLoad, {
+  readonly loaded: (frame: HTMLIFrameElement) => Effect.Effect<void>  // succeeds once the frame has loaded
+}> {
+  static readonly layer: Layer.Layer<WebPageLoad>  // the frame's own `load` event
+}
+function WebPageLoadProvider(props: { layer: Layer.Layer<WebPageLoad>; children?: ReactNode }): JSX.Element
+
 type WebPageViewProps = Omit<ComponentProps<"figure">, "children" | "title" | "ref" | "dangerouslySetInnerHTML"> & {
   url: string
   size?: "inline" | "full"     // default "inline"
@@ -1183,9 +1190,16 @@ type WebPageTarget = { readonly href: string; readonly origin: string; readonly 
 (`web-page-origin`), `actions` and an `Open in new tab` link
 (`web-page-open`), then the `iframe` (`web-page-frame`) with `sandbox` set to
 `WEB_PAGE_SANDBOX`, `referrerPolicy="no-referrer"`, `loading="lazy"` and no
-`allow` attribute. Until the frame's `load` event, the page's preview
-(`web-page-pending`, `aria-hidden`) covers it, fading in after 600 ms; a new
-`url` covers it again. `inline` is 28rem high; `full` fills its container.
+`allow` attribute. Until `WebPageLoad`'s `loaded` succeeds for the frame, the
+page's preview (`web-page-pending`, `aria-hidden`) covers it, fading in after
+600 ms; a new `url` covers it again. `inline` is 28rem high; `full` fills its
+container.
+
+`WebPageLoad` is the Effect service that says when a frame has loaded.
+`WebPageLoad.layer`, the default, waits for the frame's `load` event.
+`WebPageLoadProvider` gives every `WebPageView` inside it another layer, such
+as a test's whose `loaded` waits until the test releases it. The view
+interrupts `loaded` when its `url` changes or it unmounts.
 
 `WebLinkCard` renders a `Card` (`web-link-card`) with the page's preview and
 an anchor styled as a `Button` (`web-link-open`): `Open in new tab` and a

@@ -2,10 +2,11 @@
 // WebPageView under happy-dom: real createRoot + act. The preload disables
 // iframe page loading, so no frame here touches the network.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { Deferred, Effect, Layer } from "effect";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WebPageView } from "../src/web-page";
+import { WebPageLoad, WebPageLoadProvider, WebPageView } from "../src/web-page";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -130,6 +131,44 @@ describe("WebPageView", () => {
     const sheet = document.head.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)!.textContent!;
     expect(sheet).toContain("animation:sui-web-page-pending 160ms ease 600ms forwards;");
     expect(sheet).toContain(".sui-web-page-pending { --motion-hold:600ms; position:absolute; inset:0;");
+  });
+
+  test("a provided WebPageLoad decides when the cover leaves, and stops waiting for a frame that shows another page or leaves", async () => {
+    const released = Deferred.makeUnsafe<void>();
+    const waited: string[] = [];
+    const interrupted: string[] = [];
+    const held = Layer.succeed(WebPageLoad, WebPageLoad.of({
+      loaded: (frame) => {
+        const src = frame.getAttribute("src")!;
+        return Effect.sync(() => waited.push(src)).pipe(
+          Effect.andThen(src === "https://example.com/held" ? Deferred.await(released) : Effect.never),
+          Effect.onInterrupt(() => Effect.sync(() => interrupted.push(src))),
+        );
+      },
+    }));
+    await render(<WebPageLoadProvider layer={held}><WebPageView url="https://example.com/held" /></WebPageLoadProvider>);
+    const figure = $("figure")!;
+    expect(waited).toEqual(["https://example.com/held"]);
+    // The frame's own event no longer ends the cover under this layer: its service does.
+    await act(async () => {
+      $("iframe")!.dispatchEvent(new Event("load"));
+    });
+    expect(figure.dataset.state).toBe("loading");
+    expect($("[data-slot=web-page-pending]")).not.toBeNull();
+    await act(async () => {
+      Deferred.doneUnsafe(released, Effect.void);
+    });
+    expect(figure.dataset.state).toBe("loaded");
+    expect($("[data-slot=web-page-pending]")).toBeNull();
+
+    await act(async () => root!.render(<WebPageLoadProvider layer={held}><WebPageView url="https://example.org/" /></WebPageLoadProvider>));
+    expect(figure.dataset.state).toBe("loading");
+    expect(waited).toEqual(["https://example.com/held", "https://example.org/"]);
+    expect(interrupted).toEqual([]);
+    await act(async () => root!.render(<WebPageLoadProvider layer={held}><WebPageView url="https://example.net/" /></WebPageLoadProvider>));
+    expect(interrupted).toEqual(["https://example.org/"]);
+    await act(async () => root!.render(<WebPageLoadProvider layer={held}>{null}</WebPageLoadProvider>));
+    expect(interrupted).toEqual(["https://example.org/", "https://example.net/"]);
   });
 
   test("renders the normalized URL it checked, never the raw input", async () => {

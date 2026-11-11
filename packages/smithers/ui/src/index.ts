@@ -940,6 +940,8 @@ export {
   framedPageTarget,
   WEB_PAGE_SANDBOX,
   WebLinkCard,
+  WebPageLoad,
+  WebPageLoadProvider,
   WebPageView,
   webPageCss,
   webPageTarget,

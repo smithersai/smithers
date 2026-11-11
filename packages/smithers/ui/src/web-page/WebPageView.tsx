@@ -1,11 +1,13 @@
 /** @jsxImportSource react */
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { Effect, Exit, Fiber } from "effect";
+import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../button";
 import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { useInjectUiCss } from "../styles";
 import { hostOrigin } from "./hostOrigin";
 import { PagePreview, type WebPagePreview } from "./PagePreview";
+import { useWebPageLoad, WebPageLoad } from "./webPageLoad";
 import { framedPageTarget } from "./webPageUrl";
 
 /**
@@ -26,22 +28,37 @@ export type WebPageViewProps = Omit<ComponentProps<"figure">, "children" | "titl
   title?: string;
   /** Controls placed in the top bar before `Open in new tab`. */
   actions?: ReactNode;
-  /** What the page says about itself, shown over the frame until it loads. */
+  /** What the page says about itself, shown over the frame until it loads (`WebPageLoad`). */
   preview?: WebPagePreview;
 };
 
 /**
  * An outside web page in a sandboxed frame, under a bar with its origin and an
- * always-visible `Open in new tab` link. Until the frame loads, its preview
- * (icon, title, description, domain) covers it, so a page that never loads
- * still says what it is. Many sites refuse framing and the page cannot tell:
- * check before framing (`@smthrs/views`' `WebPage.check`) and show a
- * `WebLinkCard` for a page that refuses.
+ * always-visible `Open in new tab` link. Until the frame loads, as
+ * `WebPageLoad` says, its preview (icon, title, description, domain) covers
+ * it, so a page that never loads still says what it is. Many sites refuse
+ * framing and the page cannot tell: check before framing (`@smthrs/views`'
+ * `WebPage.check`) and show a `WebLinkCard` for a page that refuses.
  */
 export function WebPageView({ url, size = "inline", title, actions, preview = {}, className, ...props }: WebPageViewProps) {
   useInjectUiCss();
   const [loaded, setLoaded] = useState<string | null>(null);
+  const load = useWebPageLoad();
+  const frame = useRef<HTMLIFrameElement>(null);
   const target = framedPageTarget(url, hostOrigin());
+  const href = target?.href;
+  // Listening starts in the commit that sets the frame's `src`, so no `load` event can come first.
+  useLayoutEffect(() => {
+    const element = frame.current;
+    if (element === null || href === undefined) return;
+    const fiber = Effect.runFork(Effect.flatMap(WebPageLoad, (service) => service.loaded(element)).pipe(Effect.provide(load)));
+    fiber.addObserver((exit) => {
+      if (Exit.isSuccess(exit)) setLoaded(href);
+    });
+    return () => {
+      Effect.runFork(Fiber.interrupt(fiber));
+    };
+  }, [href, load]);
   if (target === null) {
     return <EmptyState {...props} className={className} title="Can't show this page" data-slot="web-page-view" data-refused="true" />;
   }
@@ -76,7 +93,7 @@ export function WebPageView({ url, size = "inline", title, actions, preview = {}
           sandbox={WEB_PAGE_SANDBOX}
           referrerPolicy="no-referrer"
           loading="lazy"
-          onLoad={() => setLoaded(target.href)}
+          ref={frame}
         />
         {pending ? (
           <div data-slot="web-page-pending" className="sui-web-page-pending" aria-hidden="true">
