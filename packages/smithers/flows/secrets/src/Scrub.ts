@@ -8,8 +8,9 @@
  * ({@link forms}):
  *
  * - the value itself, as UTF-8;
- * - percent-encoded, with uppercase and lowercase hexadecimal, and with `+`
- *   for a space;
+ * - percent-encoded, with uppercase and lowercase hexadecimal, with `+` for
+ *   a space, and with any byte but `%` escaped or left literal, as
+ *   `encodeURI` and path escapers leave reserved characters;
  * - inside a JSON string;
  * - inside base64 or base64url, at each of the three byte alignments, so the
  *   value is found inside a longer encoded string such as a Basic
@@ -106,7 +107,9 @@ const percentTokens = (value: string): ReadonlyArray<ReadonlyArray<Uint8Array>> 
       [...new Set([hex.charAt(1), hex.charAt(1).toUpperCase()])].map((last) => utf8(`%${first}${last}`))
     )
     if (byte === 32) escapes.push(utf8("+"))
-    if (/^[A-Za-z0-9!'()*~._-]$/.test(String.fromCharCode(byte))) escapes.push(Uint8Array.of(byte))
+    // Encoders differ in which bytes they leave literal (`encodeURI` and path escapers keep `/`, `:` and `=`), so
+    // every byte but `%` may appear as itself. `%` starts every escape, so the tokens stay prefix-free.
+    if (byte !== 0x25) escapes.push(Uint8Array.of(byte))
     return escapes
   })
 
