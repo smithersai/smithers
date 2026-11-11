@@ -433,51 +433,48 @@ export const protectedPaths: ReadonlyArray<string> = [
  *
  * The guard runs before the router and has to reach the router's verdict, or
  * an alias walks past the credential check and the body limit and is answered
- * by the mount anyway. Measured against `HttpRouter` on this tree, all of
- * `/%72pc`, `/rpc;transport-parameter`, `/rpc/`, `//rpc`, `///rpc`, `/rpc//`,
- * `/RPC`, `/./rpc`, and `/foo/../rpc` reach the `/rpc` handler, while
- * `/rpc%2f`, `/rpc%3Bp`, `/%2frpc`, and `/rpc%20` do not. This is not only
- * about crafted aliases: `@smthrs/control` `ControlClient`'s HTTP protocol
- * posts every call to `/rpc/`, so a literal comparison skipped the body limit
- * on the path the product's own client uses.
+ * by the mount anyway. So this repeats, step for step, what `HttpRouter`'s
+ * `FindMyWay` router does to `request.url` before it looks a route up:
  *
- * Each segment is therefore taken without its `;` parameter, empty segments are
- * dropped, and what is left is decoded with `decodeURI` and compared without
- * regard to case. `decodeURI` is the decoder rather than `decodeURIComponent`
- * because it leaves a reserved character encoded, which is what keeps
- * `/rpc%2f` a different path here exactly as it is to the router. An invalid
- * escape is left as written, since it names no mount either way.
+ * 1. An absolute target loses everything up to the first `/` after
+ *    `http://` or `https://`, so `http://[/rpc` and `http:///rpc` are `/rpc`.
+ * 2. The path ends at the first `;`, `?`, or `#` after its first character,
+ *    so `/rpc;/../x` and `/rpc;a/b` are `/rpc`.
+ * 3. What is left is decoded with `decodeURI`, which leaves a reserved
+ *    character encoded, so `/%72pc` is `/rpc` and `/rpc%2f` is not. An
+ *    escaped `%` stays escaped, as the router keeps it. A target the decoder
+ *    refuses is returned as written: the router finds no route for it.
+ * 4. Runs of `/` collapse, one trailing `/` goes, and the result is compared
+ *    without regard to case.
  *
- * Dot segments are resolved by `URL` before the split. The normalization errs
- * toward matching: a spelling this resolves to a mount that the router then
- * refuses is answered 401 rather than 404, which costs an unauthenticated
- * caller nothing it was entitled to.
+ * Dot segments are not resolved, because the router does not resolve them:
+ * over a socket `/foo/../rpc` is an unknown route, and resolving it here is
+ * what once let `/projections;/../x` read as `/x` while the router served
+ * `/projections`. `@smthrs/control` `ControlClient`'s HTTP protocol posts
+ * every call to `/rpc/`, which is one more reason a literal comparison was
+ * never enough.
  *
  * @param url the request target, origin-relative or absolute
  * @since 1.0.0
  * @category constructors
  */
 export const routedPath = (url: string): string => {
-  // An empty leading segment is a protocol-relative URL to `URL`, so `//rpc`
-  // would parse as the host `rpc` and lose the path entirely. Anchoring an
-  // origin-relative target on the origin keeps every segment. An absolute
-  // target that does not parse at all names no mount, so it is compared as
-  // written and reaches the router as the unknown route it is.
-  const target = url.startsWith("/") ? `http://gateway.invalid${url}` : url
-  const parsed = URL.parse(target, "http://gateway.invalid")
-  if (parsed === null) return url
-  const segments: Array<string> = []
-  for (const segment of parsed.pathname.split("/")) {
-    const parameter = segment.indexOf(";")
-    const named = parameter < 0 ? segment : segment.slice(0, parameter)
-    if (named === "") continue
-    try {
-      segments.push(decodeURI(named))
-    } catch {
-      segments.push(named)
+  let path = url.startsWith("/") ? url : url.replace(/^https?:\/\/.*?\//, "/")
+  for (let index = 1; index < path.length; index++) {
+    const code = path.charCodeAt(index)
+    if (code === 59 || code === 63 || code === 35) {
+      path = path.slice(0, index)
+      break
     }
   }
-  return `/${segments.join("/")}`.toLowerCase()
+  try {
+    path = decodeURI(path.replaceAll("%25", "%2525"))
+  } catch {
+    return url.toLowerCase()
+  }
+  path = path.replace(/\/\/+/g, "/")
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1)
+  return path.toLowerCase()
 }
 
 /**

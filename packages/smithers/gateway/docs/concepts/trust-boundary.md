@@ -175,26 +175,33 @@ The guard runs before the router, so it has to reach the router's verdict. An
 alias it did not recognize would walk past the credential check and the body
 limit and be answered by the mount anyway.
 
-Measured against the `HttpRouter` this package is built on, all of `/%72pc`,
-`/rpc;transport-parameter`, `/rpc/`, `//rpc`, `///rpc`, `/rpc//`, `/RPC`,
-`/./rpc`, and `/foo/../rpc` reach the `/rpc` handler, while `/rpc%2f`,
-`/rpc%3Bp`, `/%2frpc`, and `/rpc%20` do not.
+Measured over a socket against the `HttpRouter` this package is built on, all
+of `/%72pc`, `/rpc;transport-parameter`, `/rpc;/../x`, `/rpc;a/b`, `/rpc/`,
+`//rpc`, `///rpc`, `/rpc//`, `/RPC`, and the absolute `http://[/rpc` reach the
+`/rpc` handler, while `/rpc%2f`, `/rpc%3Bp`, `/%2frpc`, `/rpc%20`, `/./rpc`,
+and `/foo/../rpc` do not.
 
-`GatewayServer.routedPath` reproduces that. It resolves dot segments with
-`URL`, takes each segment without its `;` parameter, drops empty segments,
-decodes the rest with `decodeURI`, and compares without regard to case.
-`decodeURI` rather than `decodeURIComponent` is what leaves a reserved
-character encoded, which is what keeps `/rpc%2f` a different path here exactly
-as it is to the router. An invalid escape is left as written, because it names
-no mount either way.
+`GatewayServer.routedPath` reproduces that, step for step, from the request
+target the router reads:
+
+1. An absolute target loses everything up to the first `/` after `http://` or
+   `https://`.
+2. The path ends at the first `;`, `?`, or `#`. The router cuts there before
+   it does anything else, so `/projections;/../x` is `/projections` to both.
+3. The rest is decoded with `decodeURI`, which leaves a reserved character
+   encoded, so `/rpc%2f` stays a different path here exactly as it is to the
+   router. A target the decoder refuses names no mount.
+4. Runs of `/` collapse, a trailing `/` is dropped, and the comparison ignores
+   case.
+
+Dot segments are not resolved, because the router does not resolve them.
+Resolving them with `URL` once made `/projections;/../x` read as `/x`, which
+skipped edge authentication and the body limit while the router still served
+`/projections`.
 
 This is not only about crafted aliases. `ControlClient`'s HTTP protocol posts
 every call to `/rpc/`, so a literal comparison skipped the body limit on the
 path `@smthrs/control`'s own client uses.
-
-The normalization errs toward matching: a spelling it resolves to a mount that
-the router then refuses is answered 401 rather than 404, which costs an
-unauthenticated caller nothing it was entitled to.
 
 ## Ingress runs before the transport parses anything
 

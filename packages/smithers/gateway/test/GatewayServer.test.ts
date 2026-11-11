@@ -629,10 +629,11 @@ describe("telling a size overflow from every other body-read failure", () => {
 })
 
 describe("classifying a request target the way the router will", () => {
-  // Measured against `HttpRouter` on this tree with a single `/rpc` route:
-  // every spelling on the left of the first list answered 200 and every
-  // spelling in the second answered 404. The guard has to agree, because it
-  // decides authentication and the body limit before the router runs.
+  // Measured against `HttpRouter` on this tree with a single `/rpc` route,
+  // over a socket so no client normalized the target first: every spelling
+  // on the left of the first list answered 200 and every spelling in the
+  // second answered 404. The guard has to agree, because it decides
+  // authentication and the body limit before the router runs.
   it.each([
     ["/rpc", "/rpc"],
     ["/%72pc", "/rpc"],
@@ -645,11 +646,22 @@ describe("classifying a request target the way the router will", () => {
     ["///rpc", "/rpc"],
     ["/rpc//", "/rpc"],
     ["/RPC", "/rpc"],
-    ["/./rpc", "/rpc"],
-    ["/foo/../rpc", "/rpc"],
+    // The router cuts the path at the first `;` before anything else, so a
+    // dot segment after it never takes the mount away (#4912).
+    ["/rpc;/../x", "/rpc"],
+    ["/rpc;a/b", "/rpc"],
+    ["/projections;/../x", "/projections"],
+    ["/rpc/ws;/../../x", "/rpc/ws"],
+    ["/sync/ws;a/../../x", "/sync/ws"],
+    ["/runtime/v1/command;/../../../x", "/runtime/v1/command"],
     ["/rpc?x=1", "/rpc"],
     ["/rpc#fragment", "/rpc"],
     ["http://gateway.invalid/rpc", "/rpc"],
+    // The router drops everything up to the first `/` after the scheme,
+    // whether or not the authority parses.
+    ["http://[/projections", "/projections"],
+    ["http:///rpc", "/rpc"],
+    ["https://gateway.invalid/RPC;p", "/rpc"],
     // The client the product ships posts here, and a literal comparison
     // recognised none of it.
     ["/rpc/ws", "/rpc/ws"],
@@ -666,7 +678,11 @@ describe("classifying a request target the way the router will", () => {
     "/rpc%3Bp",
     "/%2frpc",
     "/rpc%20",
-    "/ rpc"
+    "/ rpc",
+    // The router resolves no dot segment, so these are unknown routes.
+    "/./rpc",
+    "/foo/../rpc",
+    "/rpc%25"
   ])("keeps %s off the mounts, as the router does", (target) => {
     // Both lists, because the guard reads both: `protectedPaths` decides the
     // credential check and `rpcPaths` decides the body limit, and a spelling
@@ -682,11 +698,9 @@ describe("classifying a request target the way the router will", () => {
     expect(GatewayServer.routedPath("/%ZZ")).toBe("/%zz")
   })
 
-  it("compares an unparseable absolute target as written", () => {
-    // A target that is not a URL at all names no mount. `URL.parse` answers
-    // null rather than throwing, so the guard returns the target unchanged
-    // and the router answers the unknown route.
-    expect(GatewayServer.routedPath("http://[")).toBe("http://[")
+  it("keeps an escaped percent sign escaped, as the router does", () => {
+    // The router doubles `%25` before `decodeURI`, so `/%2572pc` is not `/rpc`.
+    expect(GatewayServer.routedPath("/%2572pc")).toBe("/%2572pc")
   })
 })
 
@@ -1209,7 +1223,9 @@ describe("the assembled gateway over a real loopback bind", () => {
           "///rpc",
           "/rpc//",
           "/RPC",
-          "/rpc;p/"
+          "/rpc;p/",
+          "/rpc;/../x",
+          "/rpc;a/b"
         ]
       ) {
         const response = yield* Effect.promise(() =>
@@ -1247,7 +1263,9 @@ describe("the assembled gateway over a real loopback bind", () => {
           "///projections",
           "/projections//",
           "/PROJECTIONS",
-          "/projections;p/"
+          "/projections;p/",
+          "/projections;/../x",
+          "/projections;a/b"
         ]
       ) {
         const response = yield* Effect.promise(() =>
@@ -1260,7 +1278,17 @@ describe("the assembled gateway over a real loopback bind", () => {
         expect([target, response.status]).toEqual([target, 401])
       }
 
-      for (const target of ["/%72pc/ws", "/rpc/ws;transport-parameter", "//rpc/ws", "/rpc/ws/", "/RPC/WS"]) {
+      for (
+        const target of [
+          "/%72pc/ws",
+          "/rpc/ws;transport-parameter",
+          "//rpc/ws",
+          "/rpc/ws/",
+          "/RPC/WS",
+          "/rpc/ws;/../../x",
+          "/sync/ws;a/../../x"
+        ]
+      ) {
         const response = yield* Effect.promise(() =>
           raw(`${url}${target}`, [
             `GET ${target} HTTP/1.1`,
