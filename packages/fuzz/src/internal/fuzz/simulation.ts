@@ -37,6 +37,8 @@ export class World {
   readonly buckets: Array<[priority: number, tasks: Array<() => void>]> = []
   readonly timers: Array<Timer> = []
   readonly slices = new WeakMap<Fiber.Fiber<unknown, unknown>, number>()
+  // Every fiber that has run in the world, so the ones still alive when the root exits can be released.
+  readonly fibers = new Set<Fiber.Fiber<unknown, unknown>>()
   readonly schedule: Fuzz.ScheduleTape
   readonly quanta: ReadonlyArray<number>
   // Virtual time in integer nanoseconds, so sub-millisecond sleeps keep their precision.
@@ -58,6 +60,7 @@ export class World {
     shouldYield: (fiber) => {
       // The run loop resets the operation count at the start of every slice, so a count of one is a new slice.
       if (fiber.currentOpCount === 1) {
+        this.fibers.add(fiber)
         const word = this.schedule.next()
         const index = word === 0 ? 0 : 1 + Math.floor(word / 0x100000000 * (this.quanta.length - 1))
         this.slices.set(fiber, this.quanta[index])
@@ -120,13 +123,13 @@ export class World {
   }
 
   /**
-   * Runs queued tasks until the fiber exits, at most `slice` loop turns at a time. When no task is queued, virtual time
+   * Runs queued tasks until `done` holds, at most `slice` loop turns at a time. When no task is queued, virtual time
    * jumps to the earliest timer and wakes every timer due then, in registration order. A wake resumes its fiber
    * synchronously, so each wake counts as a step like a task: a loop of sleeps reaches the limit too. The limit is
    * checked before a task leaves the queue, so a limited world keeps every pending continuation.
    */
-  run(fiber: Fiber.Fiber<unknown, unknown>, slice: number): Outcome | "Paused" {
-    for (let turn = 0; fiber.pollUnsafe() === undefined; turn++) {
+  run(done: () => boolean, slice: number): Outcome | "Paused" {
+    for (let turn = 0; !done(); turn++) {
       if (this.steps >= this.limit) return "Limited"
       if (turn === slice) return "Paused"
       const task = this.dequeue()
@@ -148,14 +151,27 @@ export class World {
   }
 
   /**
-   * Interrupts a stuck or limited root and runs its finalizers inside the world with a fresh budget of `steps`. Returns
-   * `"Limited"` when finalizers were still running at the end of that budget, or `"Deadlock"` when the interrupted
-   * root remains suspended with no runnable work or timers.
+   * Interrupts every fiber still alive in the world, including fibers that queued work starts meanwhile, and runs
+   * their finalizers inside the world with a fresh budget of `steps`. Returns `"Completed"` when every fiber has
+   * exited and no task is queued, `"Limited"` when work was still running at the end of that budget, or
+   * `"Deadlock"` when an interrupted fiber remains suspended with no runnable work or timers.
    */
-  release(fiber: Fiber.Fiber<unknown, unknown>, steps: number): Outcome {
-    fiber.interruptUnsafe()
+  release(steps: number): Outcome {
+    const interrupted = new Set<Fiber.Fiber<unknown, unknown>>()
     this.limit = this.steps + steps
-    return this.run(fiber, Infinity) as Outcome
+    return this.run(() => {
+      // An interruption can exit the fiber at once, or start more fibers, so exits are read after every interruption.
+      for (const fiber of this.fibers) {
+        if (!interrupted.has(fiber)) {
+          interrupted.add(fiber)
+          fiber.interruptUnsafe()
+        }
+      }
+      for (const fiber of this.fibers) {
+        if (fiber.pollUnsafe() !== undefined) this.fibers.delete(fiber)
+      }
+      return this.fibers.size === 0 && this.buckets.length === 0
+    }, Infinity) as Outcome
   }
 }
 
@@ -177,33 +193,38 @@ export const execution = (options?: {
           false
         )
         const fiber = Effect.runForkWith(context)(self as Effect.Effect<Exit.Exit<unknown, unknown>>)
+        world.fibers.add(fiber)
+        const exited = () => fiber.pollUnsafe() !== undefined
         const drive = (): Effect.Effect<Outcome> =>
           Effect.suspend(() => {
-            const outcome = world.run(fiber, stepsPerSlice)
+            const outcome = world.run(exited, stepsPerSlice)
             return outcome === "Paused" ? Effect.flatMap(Effect.yieldNow, drive) : Effect.succeed(outcome)
           })
         return drive().pipe(
           // Interrupting the fuzz run releases what the evaluation holds before the interruption propagates.
-          Effect.onInterrupt(() => Effect.sync(() => world.release(fiber, maxSteps))),
+          Effect.onInterrupt(() => Effect.sync(() => world.release(maxSteps))),
           Effect.flatMap((outcome): Effect.Effect<Fuzz.ExecutionResult> => {
-            if (outcome === "Completed") {
-              return Effect.map(fiber.pollUnsafe()!, (exit): Fuzz.ExecutionResult => ({ _tag: "Completed", exit }))
-            }
-            // Release what the stuck program holds, so its finalizers run inside the world. A finalizer that is still
-            // running when the budget ends would be abandoned half done: that is a driver failure, not a finding.
-            const cleanup = world.release(fiber, maxSteps)
+            // Release what the program still holds: a stuck root, and fibers that outlive the root, such as detached
+            // forks. Their finalizers run inside the world. A finalizer that is still running when the budget ends
+            // would be abandoned half done: that is a driver failure, not a finding.
+            const cleanup = world.release(maxSteps)
             if (cleanup !== "Completed") {
               return Effect.die(
                 new Error(
-                  `the simulation interrupted a ${
-                    outcome === "Deadlock" ? "deadlocked" : "step-limited"
+                  `the simulation ${
+                    outcome === "Completed"
+                      ? "completed an"
+                      : `interrupted a ${outcome === "Deadlock" ? "deadlocked" : "step-limited"}`
                   } evaluation, but ${
                     cleanup === "Deadlock"
-                      ? "cleanup deadlocked: a finalizer or uninterruptible root remains suspended"
+                      ? "cleanup deadlocked: a finalizer or uninterruptible fiber remains suspended"
                       : `its finalizers did not finish within ${maxSteps} more steps; raise maxSteps`
                   }`
                 )
               )
+            }
+            if (outcome === "Completed") {
+              return Effect.map(fiber.pollUnsafe()!, (exit): Fuzz.ExecutionResult => ({ _tag: "Completed", exit }))
             }
             return Effect.succeed({ _tag: outcome })
           })
