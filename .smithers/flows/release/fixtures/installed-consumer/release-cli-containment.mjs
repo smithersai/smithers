@@ -78,11 +78,16 @@ const containment = async (recovery) => {
     const before = performance.now()
     const result = spawnSync(process.execPath, [executable, ...args,
       "--mcp-config", mcpConfig, "--json"], {
-      // Each combined invocation replaces two separately bounded 45 s calls.
-      // Node 24 measurement on 2026-09-14: CJS mixed startup took 48.08 s
-      // before the inherited single-call limit interrupted it. Preserve the
-      // original summed budget while exercising both transports together.
-      cwd: root, env: environment, encoding: "utf8", timeout: 90_000, maxBuffer: 1024 * 1024
+      // `up -d` waits for its detached child to admit the run, and grants a
+      // child still booting up to 4 x 30 s (Detached.defaultTimeoutMs and
+      // liveChildGraceMultiple in packages/smithers/src/Detached.ts) before it
+      // reports a failed launch itself. That window opens only once the
+      // launcher has booted, so a shorter bound here kills a launch the CLI
+      // would still accept: on nyc-01 at load 100 (2026-11-11) four of five
+      // `up busy -d` calls ran past 90 s, and two took 143 s and 145 s. 180 s
+      // covers the launcher's boot, the 120 s window and the 2 s SIGTERM and
+      // SIGKILL graces.
+      cwd: root, env: environment, encoding: "utf8", timeout: 180_000, maxBuffer: 1024 * 1024
     })
     console.log(JSON.stringify({ containmentCommand: { format, kind, recovery, args }, at: new Date().toISOString(), durationMs: performance.now() - before }))
     if (Number.isSafeInteger(result.pid)) launchedPids.add(result.pid)
