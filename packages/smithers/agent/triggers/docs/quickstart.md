@@ -10,7 +10,9 @@ store is the production SQLite one and the scheduler is the production one;
 only two things are substituted, and both are seams the package already has:
 the `Runner` records launches instead of reaching a control plane, and the
 Effect `Clock` is a test clock, so a nightly schedule crosses two boundaries in
-milliseconds instead of two days.
+milliseconds instead of two days. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same steps as Effect
+code.
 
 By the end you will have a trigger row that remembers when it last fired, and
 one launch carrying an idempotency key derived from the occurrence.
@@ -152,6 +154,83 @@ Four facts in that output are the package working.
   noticed it. It is the cursor catch-up resumes from, and it only ever moves
   forward, so an older run settling after a newer occurrence was skipped cannot
   drag it backwards and replay settled work.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the walkthrough is an
+`effect` function: `try` runs each store, clock, and scheduler call, and a
+`provide` block supplies the store, the recording runner, and the test clock.
+`main` hands the runner its own `launched` array, so each run starts with an
+empty record. The launch and the stored row are the ones above.
+
+This is `examples/vibelang/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as Scheduler from "@smthrs/triggers/Scheduler"
+import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
+import * as TriggerStore from "@smthrs/triggers/TriggerStore"
+import { TestClock } from "effect/testing"
+
+const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: ":memory:" }))
+
+/** The production store, a runner that records each launch, and a test clock. */
+export const layer = (launched: Array<Scheduler.StartInput>) =>
+  Layer.mergeAll(
+    Layer.provide(SqlTriggerStore.layer, database),
+    // The launcher seam: record the launch and answer with a run id.
+    Scheduler.layerNoopRunner({
+      start: (input) =>
+        sync(() => {
+          launched.push(input)
+          return input.idempotencyKey
+        })
+    }),
+    TestClock.layer()
+  )
+
+/** Registers a nightly trigger, then ticks across two schedule boundaries. */
+export effect function registerAndTick() {
+  const triggers = try TriggerStore.TriggerStore
+  try triggers.register({
+    id: "nightly-report",
+    flowId: "reports/nightly",
+    input: { channel: "#ops" },
+    cron: "0 3 * * *",
+    timezone: "UTC",
+    overlap: "skip",
+    catchUp: "one",
+    maxCatchUp: 1,
+    enabled: true
+  })
+
+  const scheduler = try Scheduler.make()
+
+  // First sight of this trigger: the tick records a watermark and fires nothing.
+  try TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
+  try scheduler.runOnce
+
+  // A boundary has passed since that watermark, so this tick launches it.
+  try TestClock.setTime(Date.parse("2026-03-02T03:00:00.000Z"))
+  try scheduler.runOnce
+  try yieldNow
+
+  return try triggers.get("nightly-report")
+}
+
+/** Runs the walkthrough and answers the recorded launches and the stored row. */
+export effect function main() {
+  const launched: Array<Scheduler.StartInput> = []
+  const registered = try scoped(effect {
+    provide layer(launched) {
+      return try registerAndTick()
+    }
+  })
+  return { launched, registered }
+}
+```
 
 ## Next steps
 

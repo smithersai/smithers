@@ -1,0 +1,30 @@
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/vibelang/quickstart.vibe"
+
+const occurrence = "2026-03-02T03:00:00.000Z"
+
+it.effect("launches only the second boundary, keyed by the occurrence", effect () => {
+  const { launched } = try main()
+  expect(launched).toEqual([{
+    flowId: "reports/nightly",
+    input: { channel: "#ops" },
+    idempotencyKey: `nightly-report:${occurrence}`
+  }])
+})
+
+it.effect("records the fired occurrence as the trigger's last fire", effect () => {
+  const { registered } = try main()
+  expect(Option.getOrUndefined(registered)).toEqual({
+    id: "nightly-report",
+    flowId: "reports/nightly",
+    input: { channel: "#ops" },
+    cron: "0 3 * * *",
+    timezone: "UTC",
+    overlap: "skip",
+    catchUp: "one",
+    maxCatchUp: 1,
+    enabled: true,
+    revision: 1,
+    lastFiredAt: Date.parse(occurrence)
+  })
+})

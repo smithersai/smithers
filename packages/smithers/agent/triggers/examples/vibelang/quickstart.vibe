@@ -1,0 +1,63 @@
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as Scheduler from "@smthrs/triggers/Scheduler"
+import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
+import * as TriggerStore from "@smthrs/triggers/TriggerStore"
+import { TestClock } from "effect/testing"
+
+const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: ":memory:" }))
+
+/** The production store, a runner that records each launch, and a test clock. */
+export const layer = (launched: Array<Scheduler.StartInput>) =>
+  Layer.mergeAll(
+    Layer.provide(SqlTriggerStore.layer, database),
+    // The launcher seam: record the launch and answer with a run id.
+    Scheduler.layerNoopRunner({
+      start: (input) =>
+        sync(() => {
+          launched.push(input)
+          return input.idempotencyKey
+        })
+    }),
+    TestClock.layer()
+  )
+
+/** Registers a nightly trigger, then ticks across two schedule boundaries. */
+export effect function registerAndTick() {
+  const triggers = try TriggerStore.TriggerStore
+  try triggers.register({
+    id: "nightly-report",
+    flowId: "reports/nightly",
+    input: { channel: "#ops" },
+    cron: "0 3 * * *",
+    timezone: "UTC",
+    overlap: "skip",
+    catchUp: "one",
+    maxCatchUp: 1,
+    enabled: true
+  })
+
+  const scheduler = try Scheduler.make()
+
+  // First sight of this trigger: the tick records a watermark and fires nothing.
+  try TestClock.setTime(Date.parse("2026-03-01T03:00:00.000Z"))
+  try scheduler.runOnce
+
+  // A boundary has passed since that watermark, so this tick launches it.
+  try TestClock.setTime(Date.parse("2026-03-02T03:00:00.000Z"))
+  try scheduler.runOnce
+  try yieldNow
+
+  return try triggers.get("nightly-report")
+}
+
+/** Runs the walkthrough and answers the recorded launches and the stored row. */
+export effect function main() {
+  const launched: Array<Scheduler.StartInput> = []
+  const registered = try scoped(effect {
+    provide layer(launched) {
+      return try registerAndTick()
+    }
+  })
+  return { launched, registered }
+}

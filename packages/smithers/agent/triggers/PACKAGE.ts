@@ -4,10 +4,15 @@ import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+  examples: [{
+    page: Input.file("docs/quickstart.md"),
+    example: Input.file("examples/vibelang/quickstart.vibe"),
+    test: Input.file("test/quickstart.test.vibe")
+  }],
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
-  tests: Smithers.glob("test/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  tests: Smithers.glob("test/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/triggers"
 })
 
