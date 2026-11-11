@@ -187,6 +187,7 @@ const codingPackages = [
   "packages/smithers/flows/journal",
   "packages/smithers/flows/kernel",
   "packages/smithers/flows/keys",
+  "packages/smithers/flows/merge-queue",
   "packages/smithers/flows/observability",
   "packages/smithers/flows/patterns",
   "packages/smithers/flows/plan",

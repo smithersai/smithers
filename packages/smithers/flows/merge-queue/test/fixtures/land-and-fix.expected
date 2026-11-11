@@ -1,0 +1,24 @@
+main= | changes= | runs= | next=0,0 | landed= | history= | ready= | plan=wait | ci= | fix=
+main= | changes=10:p5:s0:r0:a0:queued | runs= | next=0,1 | landed= | history= | ready=10 | plan=start 1 | ci= | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued | runs= | next=0,2 | landed= | history= | ready=10,11 | plan=start 2 | ci= | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs= | next=0,3 | landed= | history= | ready=12,10,11 | plan=start 2 | ci= | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs=0:/12.0,10.0: | next=1,3 | landed= | history= | ready=12,10,11 | plan=start 3 | ci=0@60:1+2 | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs=0:/12.0,10.0:;1:/12.0,10.0,11.0: | next=2,3 | landed= | history= | ready=12,10,11 | plan=wait | ci=0@60:1+2,1@60:1+2 | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs=0:/12.0,10.0:;1:/12.0,10.0,11.0: | next=2,3 | landed= | history= | ready=12,10,11 | plan=wait | ci=0@60:1+2,1@60:1+2 | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs=0:/12.0,10.0:1p;1:/12.0,10.0,11.0: | next=2,3 | landed= | history=1:30 | ready=12,10,11 | plan=wait | ci=0@60:2,1@60:2+1 | fix=
+main= | changes=10:p5:s0:r0:a0:queued;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:queued | runs=0:/12.0,10.0:1p,2p;1:/12.0,10.0,11.0: | next=2,3 | landed= | history=1:30,2:50 | ready=12,10,11 | plan=land 0 | ci=1@50:2+1 | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0: | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50 | ready=11 | plan=wait | ci=1@50:2+1 | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0: | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50 | ready=11 | plan=wait | ci=1@50:2+1 | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a0:queued;12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready=11 | plan=blame 1 | ci= | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:fixing(1);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci=1@50:2 | fix=11.0#1:1:
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:unmergeable(agentVerdict;1;1;needs a rewrite);12:p9:s2:r0:a0:merged | runs=1:/12.0,10.0,11.0:1f | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=cancel 1 | ci= | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:unmergeable(agentVerdict;1;1;needs a rewrite);12:p9:s2:r0:a0:merged | runs= | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci= | fix=
+main=12.0,10.0 | changes=10:p5:s0:r0:a0:merged;11:p5:s1:r0:a1:unmergeable(agentVerdict;1;1;needs a rewrite);12:p9:s2:r0:a0:merged | runs= | next=2,3 | landed=0:/12.0,10.0:1p,2p | history=1:30,2:50,1:10 | ready= | plan=wait | ci= | fix=
+error
