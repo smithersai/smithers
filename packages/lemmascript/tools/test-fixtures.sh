@@ -51,6 +51,7 @@ cp tools/fixtures/deterministic-extern-equality.ts "$fixture_dir/deterministic.t
 cp tools/fixtures/impure-extern-equality.ts "$fixture_dir/impure.ts"
 cp tools/fixtures/negated-array-ternary.ts "$fixture_dir/negated-array-ternary.ts"
 cp tools/fixtures/string-search-positions.ts "$fixture_dir/string-search-positions.ts"
+cp tools/fixtures/map-set.ts "$fixture_dir/map-set.ts"
 cp examples/safeSlice.ts "$fixture_dir/legacy-safe-slice.ts"
 cp -R tools/fixtures/utf16-project "$fixture_dir/utf16-project"
 cp tools/fixtures/optional-binder-collisions.ts "$fixture_dir/optional-binder-collisions.ts"
@@ -67,6 +68,7 @@ fi
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/deterministic.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/negated-array-ternary.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/string-search-positions.ts"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/map-set.ts"
 expect_failure \
   "Dafny equated two calls to an impure extern" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/impure.ts"

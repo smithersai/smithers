@@ -855,7 +855,9 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       let rightCtx = ctx;
       let rawRight = e.right;
       if (e.op === "&&" || e.op === "==>") {
-        rightCtx = collectAndChainNarrowings(left, ctx);
+        // A `k in m` on the left also holds on the right, so `m[k]` there is the value, not an Option: Dafny checks
+        // the right operand's well-formedness under the left one, as `if (k in m)` does.
+        rightCtx = withInAtoms(collectAndChainNarrowings(left, ctx), extractInAtoms(left));
       }
       // A contract literal compared with a typed value takes that type, so `\\result.commands == [{ type: "T" }]`
       // builds the declared datatype and not an anonymous tuple.
@@ -1078,7 +1080,9 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
       const inner: Ty = left.ty.kind === "optional" ? left.ty.inner : left.ty;
       // The default shares the result type, so coerce a string literal to a
       // string-union enum (e.g. `availableLevels[0] ?? "off"`).
-      const right = coerceToTargetTy(resolveExpr(e.right, ctx), inner, ctx.typeDecls);
+      // A record or array literal default builds the left's type, not the enclosing function's return type.
+      const literal = e.right.kind === "record" || e.right.kind === "arrayLiteral";
+      const right = coerceToTargetTy(resolveExpr(e.right, literal ? { ...ctx, returnTy: inner } : ctx), inner, ctx.typeDecls);
       // `??` is only total when its default is: with a nullable right operand
       // (rule-chain style `ruleA(e) ?? ruleB(e) ?? null`), the result stays
       // optional — otherwise the enclosing chain level loses its optionality
@@ -1356,8 +1360,24 @@ function resolveSpecs(specs: string[], ctx: Ctx): TExpr[] {
 }
 
 function splitConj(e: RawExpr): RawExpr[] {
-  if (e.kind === "binop" && e.op === "&&") return [...splitConj(e.left), ...splitConj(e.right)];
+  const leaves = conjuncts(e);
+  // A guard (`x != undefined`, `k in m`) narrows the conjuncts after it, so they stay one clause with it.
+  const guard = leaves.findIndex(isNarrowingGuard);
+  if (guard < 0 || guard === leaves.length - 1) return leaves;
+  const kept = leaves.slice(guard).reduce((left, right): RawExpr => ({ kind: "binop", op: "&&", left, right }));
+  return [...leaves.slice(0, guard), kept];
+}
+
+function conjuncts(e: RawExpr): RawExpr[] {
+  if (e.kind === "binop" && e.op === "&&") return [...conjuncts(e.left), ...conjuncts(e.right)];
   return [e];
+}
+
+function isNarrowingGuard(e: RawExpr): boolean {
+  if (e.kind !== "binop") return false;
+  if (e.op === "in") return true;
+  const undef = (x: RawExpr) => x.kind === "var" && x.name === "undefined";
+  return (e.op === "!=" || e.op === "!==") && (undef(e.left) || undef(e.right));
 }
 
 // ── Resolve statements ───────────────────────────────────────

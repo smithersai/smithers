@@ -128,7 +128,10 @@ export const BUILTINS = {
   "map.has": { ret: BOOL, pure: true, argIsKey: true },
   "map.set": { ret: self, pure: false },
   "map.delete": { ret: self, pure: false },
-  "map.keys": { ret: () => UNKNOWN, pure: true },
+  // In a contract `m.keys()` is the map's key set (Dafny `m.Keys`), so a loop can decrease `m.keys() - seen`. Code
+  // keeps it unmodeled: at run time it is an ordered iterator, not a set.
+  "map.keys": { pure: true,
+    ret: (objTy, _args, c) => objTy.kind === "map" && c.inSpec ? { kind: "set", elem: objTy.key } : UNKNOWN },
   "map.values": { ret: () => UNKNOWN, pure: true },
 
   // ── set ───────────────────────────────────────────────────

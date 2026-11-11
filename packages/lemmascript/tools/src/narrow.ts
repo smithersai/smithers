@@ -49,9 +49,22 @@ import {
 
 // ── Walkers ──────────────────────────────────────────────────
 
+/** Conjunctions another rule narrows as a whole: an implication's premise (ruleImplOptional), an `if`, `while` or
+ *  ternary condition, an expression statement (the statement rules and ruleConditionalAndOptional), and every
+ *  conjunction inside a longer chain. ruleAndOptional rewrites only the root of a chain in none of those places. */
+const narrowedElsewhere = new WeakSet<TExpr>();
+function markWhole(e: TExpr): void {
+  narrowedElsewhere.add(e);
+  if (e.kind === "binop" && e.op === "&&") { markWhole(e.left); markWhole(e.right); }
+}
+
 function walkExpr(e: TExpr, ctx: CondCtx): TExpr {
+  if (e.kind === "binop" && e.op === "==>") markWhole(e.left);
+  if (e.kind === "conditional") markWhole(e.cond);
+  if (e.kind === "binop" && e.op === "&&") { markWhole(e.left); markWhole(e.right); }
+  const premise = narrowedElsewhere.has(e);
   const r = recurseExpr(e, ctx);
-  return ruleNullish(r, ctx) ?? ruleNullishIndex(r) ?? ruleOptChainIndex(r) ?? ruleOptChain(r, ctx) ?? ruleImplOptional(r, ctx) ?? ruleImplArrayIsArray(r, ctx) ?? ruleConditionalArrayIsArray(r, ctx) ?? ruleConditionalAndArrayIsArray(r, ctx) ?? ruleConditionalAndOptional(r, ctx) ?? ruleConditionalOptionalSimple(r, ctx) ?? ruleConditionalInMap(r, ctx) ?? ruleConditionalOptionalTruthy(r, ctx) ?? r;
+  return ruleNullish(r, ctx) ?? ruleNullishIndex(r) ?? ruleOptChainIndex(r) ?? ruleOptChain(r, ctx) ?? ruleImplOptional(r, ctx) ?? (premise ? null : ruleAndOptional(r, ctx)) ?? ruleImplArrayIsArray(r, ctx) ?? ruleConditionalArrayIsArray(r, ctx) ?? ruleConditionalAndArrayIsArray(r, ctx) ?? ruleConditionalAndOptional(r, ctx) ?? ruleConditionalOptionalSimple(r, ctx) ?? ruleConditionalInMap(r, ctx) ?? ruleConditionalOptionalTruthy(r, ctx) ?? r;
 }
 
 function recurseExpr(e: TExpr, ctx: CondCtx): TExpr {
@@ -85,6 +98,8 @@ function recurseExpr(e: TExpr, ctx: CondCtx): TExpr {
 }
 
 function walkStmt(s: TStmt, ctx: CondCtx): TStmt {
+  if (s.kind === "if" || s.kind === "while") markWhole(s.cond);
+  if (s.kind === "expr") markWhole(s.expr);
   // Recurse into children first, then try rules at this node.
   const r = recurseStmt(s, ctx);
   // Optional narrowing fires before Array.isArray narrowing: in a chain like
@@ -305,6 +320,48 @@ function ruleImplOptional(e: TExpr, ctx: CondCtx): TExpr | null {
     binder: check.binder,
     someBody: walkExpr(innerBody, ctx),
     noneBody: { kind: "bool", value: true, ty: { kind: "bool" } },
+    ty: { kind: "bool" },
+  };
+}
+
+/** Whether `e` holds a match or coalescing on `scrutinee` itself. */
+function matchesOn(e: unknown, scrutinee: TExpr): boolean {
+  if (e === null || typeof e !== "object") return false;
+  const node = e as { kind?: string; scrutinee?: TExpr; left?: TExpr };
+  if (node.kind === "someMatch" && node.scrutinee && exprEqual(node.scrutinee, scrutinee)) return true;
+  if (node.kind === "nullish" && node.left && exprEqual(node.left, scrutinee)) return true;
+  return Object.entries(e).some(([key, value]) => key !== "ty" && (Array.isArray(value) ? value.some(v => matchesOn(v, scrutinee)) : matchesOn(value, scrutinee)));
+}
+
+/** Driver (expression): `path !== undefined && rest` — presence fact on the left of a boolean conjunction. The right
+ *  operand runs only when the left holds, so it reads the narrowed value.
+ *  → `someMatch path { Some(_p_val) => rest, None => false }`. Boolean only: a value-returning `a && b` is unchanged. */
+function ruleAndOptional(e: TExpr, ctx: CondCtx): TExpr | null {
+  if (e.kind !== "binop" || e.op !== "&&" || e.ty.kind !== "bool") return null;
+  let check: PresentFact;
+  let restCond: TExpr | null = null;
+  const extracted = leadingPresent(e.left);
+  if (extracted) {
+    check = extracted.check;
+    restCond = extracted.restCond;
+  } else {
+    const c = presentFact(e.left);
+    if (!c || c.negated) return null;
+    check = c;
+  }
+  const innerBody: TExpr = restCond
+    ? { kind: "binop", op: "&&", left: restCond, right: e.right, ty: { kind: "bool" } }
+    : e.right;
+  // A right side that already matches on the checked value (`x != undefined && (x ?? d) == d`, rewritten bottom-up)
+  // keeps its own match: binding `x` here would leave that match over a value that is no longer an Option.
+  if (matchesOn(innerBody, check.scrutinee)) return null;
+  check = bindPresentFact(check, ctx);
+  return {
+    kind: "someMatch",
+    scrutinee: check.scrutinee, binderTy: check.innerTy,
+    binder: check.binder,
+    someBody: walkExpr(innerBody, ctx),
+    noneBody: { kind: "bool", value: false, ty: { kind: "bool" } },
     ty: { kind: "bool" },
   };
 }

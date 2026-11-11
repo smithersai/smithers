@@ -536,6 +536,7 @@ function emitExpr(e: Expr): string {
         }
         if (e.method === "set") return `${obj}[${args[0]} := ${args[1]}]`;
         if (e.method === "has") return `(${args[0]} in ${obj})`;
+        if (e.method === "keys" && args.length === 0) return `${obj}.Keys`;
         if (e.method === "delete") {
           // Minted comprehension binder: freshen so a user variable `k` in the
           // receiver or key isn't captured (`k != k` would delete nothing).
