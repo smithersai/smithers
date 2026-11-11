@@ -2,25 +2,28 @@ import assert from "node:assert/strict"
 import { execFile, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { createWriteStream, watch } from "node:fs"
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
 import { promisify } from "node:util"
+import { fileURLToPath } from "node:url"
 import { runInNewContext } from "node:vm"
 import { campaignConfiguration, expectedDiff, runCampaign, verifyCampaign, verifyParser } from "./run-jj-abi-campaign.mjs"
 
 const configuration = { seed: 0, cases: 1, steps: 1 }
 
-// The executable derives its root from this helper. Copy both so these
-// process tests reach the isolated campaign rather than failing at import.
+// The executable derives its root from this helper. Copy both, and link the
+// repository node_modules the helper imports `yaml` and `tinyglobby` from, so
+// these process tests reach the isolated campaign rather than failing at import.
 const copyCampaign = async (root) => {
   const campaign = join(root, ".smithers/flows/bench/jj-abi-campaign")
   await mkdir(campaign, { recursive: true })
   await mkdir(join(root, "packages/repo-targets/scripts"), { recursive: true })
   await copyFile(new URL("run-jj-abi-campaign.mjs", import.meta.url), join(campaign, "run-jj-abi-campaign.mjs"))
   await copyFile(new URL("../../../../packages/repo-targets/scripts/workspace-packages.mjs", import.meta.url), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
+  await symlink(fileURLToPath(new URL("../../../../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
   return join(campaign, "run-jj-abi-campaign.mjs")
 }
 
