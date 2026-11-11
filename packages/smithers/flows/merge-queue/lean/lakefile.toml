@@ -1,0 +1,23 @@
+name = "mergeQueue"
+version = "0.1.0"
+defaultTargets = ["MergeQueue", "reference"]
+
+# The invariant matrix. Editing INVARIANTS.md rebuilds MergeQueue.Matrix, which
+# checks every row.
+[[input_file]]
+name = "invariants"
+path = "INVARIANTS.md"
+text = true
+
+# Core Lean only: no Mathlib, no Batteries. Every warning fails the build, so a
+# `sorry` cannot pass; MergeQueue/Audit.lean also checks every theorem's axioms.
+[[lean_lib]]
+name = "MergeQueue"
+needs = ["invariants"]
+leanOptions = { warningAsError = true, autoImplicit = false }
+
+# The executable reference: reads an event trace on stdin and prints the state
+# after every event. The TypeScript kernel must print the same lines.
+[[lean_exe]]
+name = "reference"
+root = "Main"
