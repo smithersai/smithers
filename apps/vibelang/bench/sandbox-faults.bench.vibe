@@ -32,8 +32,8 @@ effect function faults() {
   const saved = (try Ref.get(w.state))!
   try Effect.try(() => {
     expect([home.status, again.status, again.generation]).toEqual(["running", "running", home.generation])
-    expect(failureOf(broken)).toMatchObject({ reason: "start-failed" })
-    expect(failureOf(slow)).toMatchObject({ reason: "start-failed" })
+    expect(failureOf(broken)).toMatchObject({ reason: "start-failed:provision-failed" })
+    expect(failureOf(slow)).toMatchObject({ reason: "start-failed:out-of-minutes" })
     expect(failureOf(clock)).toMatchObject({ reason: "invalid-clock" })
     expect(stopped).toEqual(["mock-person/broken", "mock-person/slow", "mock-person/home"])
     expect(saved.ledger.sandboxes.every(box => !box.running)).toBe(true)
