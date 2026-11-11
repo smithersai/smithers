@@ -262,8 +262,11 @@ the namespace's 16 bytes and the name's UTF-8 bytes, cut to 16 bytes, with the
 version and variant bits set. The same namespace and name give the same UUID on
 every host, so a device offline and a server agree on an id with no round trip.
 It digests through the injected `Crypto` (provide `WebCrypto.layer`). A
-namespace that isn't a UUID is a defect. A name-based UUID identifies; it is
-never a secret.
+namespace that isn't a UUID or a name containing an unpaired UTF-16 surrogate
+dies with a `TypeError` before the host is called. Names are encoded without
+Unicode normalization, so UUIDs for well-formed names remain unchanged. The host
+must return a `Uint8Array` of exactly 20 SHA-1 bytes; malformed output also dies
+with a `TypeError`. A name-based UUID identifies; it is never a secret.
 
 ### Uuid.isUuid
 

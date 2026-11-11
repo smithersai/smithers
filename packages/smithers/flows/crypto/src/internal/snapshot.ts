@@ -18,8 +18,13 @@
  */
 export type SnapshotFailureCode = "invalid_input" | "invalid_text" | "text_encoding_failed"
 
-/** Whether UTF-8 can represent a JavaScript string without replacement. */
-const isWellFormed = (value: string): boolean => {
+/**
+ * Whether UTF-8 can represent a JavaScript string without replacement.
+ *
+ * @private
+ * @since 1.0.0-rc.17
+ */
+export const isWellFormed = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index)
     if (code >= 0xd800 && code <= 0xdbff) {

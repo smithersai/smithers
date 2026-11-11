@@ -12,6 +12,10 @@
 
 ### Fixed
 
+- `Uuid.v5` rejects unpaired UTF-16 surrogates instead of assigning distinct
+  malformed names the same UUID, and rejects malformed SHA-1 host digests.
+  UUIDs for well-formed names remain unchanged. ([#4487](https://github.com/smithersai/smithers/issues/4487)).
+
 - Share live function identity metadata across compatible bundles without reading entropy at module initialization. ([#1991](https://github.com/smithersai/smithers/issues/1991)).
 
 ## [1.0.0-rc.0] - 2026-08-31
