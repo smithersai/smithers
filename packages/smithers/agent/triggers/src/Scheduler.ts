@@ -629,7 +629,13 @@ const build = (
           if (!isReservation(local.runId)) {
             const state = yield* inspectStored(local.runId)
             if (state === "active") return local
-            yield* settleRecovered(trigger.id, local.occurrence, local.runId, state)
+            // A refusal means another scheduler superseded the run and
+            // settled the occurrence. This includes a run this process
+            // launched: its monitor was refused the same way and left the
+            // entry here. Failing on it would stop the trigger until restart.
+            yield* settleRecovered(trigger.id, local.occurrence, local.runId, state).pipe(
+              Effect.catchIf((error) => error.code === "stale_owner", () => Effect.void)
+            )
             yield* active.remove(trigger.id, local.occurrence)
           } else {
             // A recovered reservation has no monitor that can remove it. Ask

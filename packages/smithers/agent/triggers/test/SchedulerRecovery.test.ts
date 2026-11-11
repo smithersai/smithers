@@ -128,6 +128,60 @@ describe("Scheduler recovery", () => {
     })))
   })
 
+  // Host B superseding a run host A launched settles A's occurrence first, so
+  // the store refuses A's own settlement with `stale_owner`. A used to keep
+  // its entry and fail that trigger on every later tick until restart.
+  it("keeps firing after another scheduler supersedes a run this one monitors", async () => {
+    await inMemory(Effect.scoped(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* seedFired(store, trigger("supersede", "one"))
+      const runner = runnerFixture()
+      const hostA = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+      const hostB = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+      yield* TestClock.setTime(hour)
+      yield* hostA.runOnce
+      yield* TestClock.setTime(2 * hour)
+      yield* hostB.runOnce
+      expect(runner.cancelled).toEqual(["run-1"])
+      // A's monitor polls run-1, sees it stopped, and is refused.
+      yield* TestClock.adjust("15 seconds")
+      yield* TestClock.setTime(3 * hour)
+      yield* hostA.runOnce
+      expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([
+        `hourly:${new Date(hour).toISOString()}`,
+        `hourly:${new Date(2 * hour).toISOString()}`,
+        `hourly:${new Date(3 * hour).toISOString()}`
+      ])
+      expect(yield* store.activeRun("hourly")).toEqual(Option.some("run-3"))
+    })))
+  })
+
+  it("keeps firing after another scheduler supersedes a run this one recovered", async () => {
+    await inMemory(Effect.scoped(Effect.gen(function*() {
+      const store = yield* TriggerStore.TriggerStore
+      yield* seedFired(store, trigger("supersede", "one"))
+      const runner = runnerFixture()
+      const hostA = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+      const hostB = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+      yield* TestClock.setTime(hour)
+      yield* hostB.runOnce
+      // A adopts run-1 from the store; it has no monitor for it.
+      yield* hostA.runOnce
+      expect(runner.starts).toHaveLength(1)
+      yield* TestClock.setTime(2 * hour)
+      yield* hostB.runOnce
+      expect(runner.cancelled).toEqual(["run-1"])
+      yield* TestClock.setTime(3 * hour)
+      yield* hostA.runOnce
+      expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([
+        `hourly:${new Date(hour).toISOString()}`,
+        `hourly:${new Date(2 * hour).toISOString()}`,
+        `hourly:${new Date(3 * hour).toISOString()}`
+      ])
+      expect(yield* store.activeRun("hourly")).toEqual(Option.some("run-3"))
+    })))
+  })
+
   it.each(["committed", "reserved"])("keeps an idempotent run adopted by a newer %s attempt", async (owner) => {
     await inMemory(Effect.scoped(Effect.gen(function*() {
       const store = yield* TriggerStore.TriggerStore
