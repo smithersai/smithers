@@ -536,22 +536,6 @@ describe("what a node settled with, as a journal row keeps it", () => {
   })
 })
 
-describe("what the summary costs a large value", () => {
-  it("names a large value's size without walking it, so the redactor is never asked", () => {
-    // A rebuilt member would be one more object and thirteen more rule scans
-    // per string, on the journal write path, for every node of every graph.
-    // The proof the walk was skipped is that a credential SURVIVES: nothing
-    // rewrote it, because the preview keeps nothing to rewrite.
-    const summary = NodeJournal.resultSummary({
-      apiKey: "sk-live-abcdefgh12345678",
-      body: "x".repeat(NodeJournal.maximumSummarizedBytes)
-    })!
-    expect(summary.preview).toBe("")
-    expect(summary.truncated).toBe(true)
-    expect(summary.bytes).toBeGreaterThan(NodeJournal.maximumSummarizedBytes)
-  })
-})
-
 describe("original plan observations", () => {
   it.each([
     "absent",

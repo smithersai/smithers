@@ -95,3 +95,57 @@ export function spawn(command: string, args: ReadonlyArray<string>, options: Spa
   live.add(child)
   return child
 }
+
+/** Wait for one complete protocol line, retaining bounded diagnostics and removing every listener on settlement. */
+export const waitForLine = (
+  child: ChildProcessWithoutNullStreams,
+  matches: (line: string) => boolean,
+  options: { readonly timeoutMs: number; readonly description: string }
+): Promise<string> =>
+  new Promise((resolve, reject) => {
+    let pending = ""
+    let stdout = ""
+    let stderr = ""
+    const tail = (text: string) => text.slice(-4096)
+    const diagnostic = () => `\n${stderr}\n${stdout}`
+    const cleanup = () => {
+      clearTimeout(timer)
+      child.stdout.off("data", onData)
+      child.stderr.off("data", onStderr)
+      child.off("error", onError)
+      child.off("exit", onExit)
+    }
+    const onError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) =>
+      onError(new Error(`child exited before ${options.description} with ${code ?? signal}${diagnostic()}`))
+    const onStderr = (chunk: string) => {
+      stderr = tail(stderr + chunk)
+    }
+    const onData = (chunk: string) => {
+      stdout = tail(stdout + chunk)
+      pending += chunk
+      for (let newline = pending.indexOf("\n"); newline !== -1; newline = pending.indexOf("\n")) {
+        const line = pending.slice(0, newline)
+        pending = pending.slice(newline + 1)
+        if (matches(line)) {
+          cleanup()
+          resolve(line)
+          return
+        }
+      }
+    }
+    const timer = setTimeout(
+      () => onError(new Error(`child did not reach ${options.description}${diagnostic()}`)),
+      options.timeoutMs
+    )
+    child.stdout.setEncoding("utf8")
+    child.stderr.setEncoding("utf8")
+    child.stdout.on("data", onData)
+    child.stderr.on("data", onStderr)
+    child.once("error", onError)
+    child.once("exit", onExit)
+    if (exited(child)) onExit(child.exitCode, child.signalCode)
+  })

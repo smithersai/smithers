@@ -33,25 +33,10 @@ for (const frontier of ["intent", "completion"] as const) {
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }))
     })
-    let stdout = ""
-    let stderr = ""
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk)
-    })
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`child missed ${frontier} frontier: ${stderr}`)), 30_000)
-        const finish = (error?: Error) => {
-          clearTimeout(timer)
-          if (error) reject(error)
-          else resolve()
-        }
-        child.stdout.on("data", (chunk) => {
-          stdout += String(chunk)
-          if (stdout.includes("ready-to-kill\n")) finish()
-        })
-        child.once("error", finish)
-        child.once("exit", () => finish(new Error(`child exited early: ${stderr}`)))
+      await ChildProcesses.waitForLine(child, (line) => line === "ready-to-kill", {
+        timeoutMs: 30_000,
+        description: "durable frontier"
       })
       expect(await readFile(join(root, "shared.txt"), "utf8")).toBe(frontier === "intent" ? "initial" : "winner")
       expect(ChildProcesses.killGroup(child)).toBe(true)

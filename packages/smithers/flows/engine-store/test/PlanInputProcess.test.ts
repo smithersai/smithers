@@ -30,25 +30,10 @@ it(
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }))
     })
-    let output = ""
-    let stderr = ""
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk)
-    })
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`child did not reach its durable frontier: ${stderr}`)), 30_000)
-        const finish = (error?: Error) => {
-          clearTimeout(timer)
-          if (error) reject(error)
-          else resolve()
-        }
-        child.stdout.on("data", (chunk) => {
-          output += String(chunk)
-          if (output.includes("ready-to-kill\n")) finish()
-        })
-        child.once("error", finish)
-        child.once("exit", () => finish(new Error(`child exited before its frontier: ${stderr}`)))
+      await ChildProcesses.waitForLine(child, (line) => line === "ready-to-kill", {
+        timeoutMs: 30_000,
+        description: "durable frontier"
       })
       expect(await readFile(join(root, "config.txt"), "utf8")).toBe("initial!")
       expect(ChildProcesses.killGroup(child)).toBe(true)

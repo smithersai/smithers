@@ -284,59 +284,58 @@ describe("non-retryable verdict durability across resume", () => {
 
   it.effect("replays a persisted failed attempt row by rethrowing the persisted domain error", () =>
     Effect.gen(function*() {
-      // Unit-level pin on `ActionPersistence`: a `failed` row must rethrow
-      // the persisted cause — the `_tag` survives the JSON round trip so
-      // `RetryPolicy` non-retryable matching works on replay.
-      const makeEngine = EngineStore.make({
-        owner: { hostId: "failed-row-host" },
-        journalSource: "failed-row-test",
-        isAlive: () => Effect.succeed(false)
-      })
+      const owner = { hostId: "failed-row-host", pid: 1, nonce: "failed-row-owner" }
+      const key = "failed-row/tagged"
+      const error = { _tag: "FatalBoom", detail: "unit" } as const
       let dispatches = 0
-      const flaky = Action.make({
-        name: "NonRetryableReplay/tagged",
-        success: Schema.String,
-        error: Schema.Struct({ _tag: Schema.Literal("FatalBoom"), detail: Schema.String }),
-        tier: "sealed",
-        idempotencyKey: "tagged-v1",
-        execute: Effect.suspend(() => {
-          dispatches++
-          return Effect.fail({ _tag: "FatalBoom" as const, detail: "unit" })
-        })
-      })
-
-      const outcome = yield* provide(
-        Effect.gen(function*() {
-          // First run records the failure durably and fails the run.
-          yield* Effect.scoped(Effect.gen(function*() {
-            const engine = yield* makeEngine
-            yield* engine.register(ReplayFlow, () => flaky)
-            yield* engine.execute(ReplayFlow, {
-              executionId: "failed-row-run",
-              payload: {},
-              discard: false
-            }).pipe(Effect.exit)
-          }))
-          const attempts = yield* AttemptStore.AttemptStore
-          const row = yield* attempts.get({
-            runId: "failed-row-run",
-            stepKeyDigest: sha256(actionKey("NonRetryableReplay/tagged", "tagged-v1")),
-            attempt: 1
+      const outcome = yield* provide(Effect.gen(function*() {
+        const runs = yield* RunStore.RunStore
+        const attempts = yield* AttemptStore.AttemptStore
+        const runId = "failed-row-run"
+        yield* runs.create(runId, "{}")
+        const initial = yield* runs.get(runId)
+        const claimed = yield* runs.claimAndOwn(
+          runId,
+          {
+            status: initial.status,
+            owner: initial.owner,
+            heartbeatAtMs: initial.heartbeatAtMs
+          },
+          owner,
+          0
+        )
+        expect(claimed._tag).toBe("Activated")
+        const executor = () =>
+          ActionPersistence.make({
+            runId,
+            owner,
+            sourceId: "failed-row-test",
+            execute: () =>
+              Effect.suspend(() => {
+                dispatches++
+                return Effect.fail(error)
+              })
           })
-          return { row, dispatches }
-        })
-      )
+        const input = { action: {}, attempt: 1, key, tier: "sealed" as const }
+        const first = yield* executor()(input).pipe(Effect.exit)
+        const row = yield* attempts.get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+        // A fresh executor must read the persisted Fail, without calling its body.
+        const replay = yield* executor()(input).pipe(Effect.exit)
+        return { first, replay, row }
+      }))
 
-      expect(outcome.dispatches).toBe(1)
+      expect(dispatches).toBe(1)
       const row = Option.getOrThrow(outcome.row)
       expect(row.state).toBe("failed")
-      // The persisted cause is JSON-shaped Fail material whose `_tag`
-      // survives, which is exactly what the replay branch rehydrates.
-      const cause = row.error as {
-        readonly reasons: ReadonlyArray<{ readonly _tag: string; readonly error?: unknown }>
+      expect(row.error).toEqual({ reasons: [{ _tag: "Fail", error }] })
+      for (const exit of [outcome.first, outcome.replay]) {
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(exit.cause.reasons.map((reason) => reason._tag === "Fail" ? reason.error : reason._tag)).toEqual([
+            error
+          ])
+        }
       }
-      expect(cause.reasons[0]?._tag).toBe("Fail")
-      expect((cause.reasons[0]?.error as { readonly _tag: string })._tag).toBe("FatalBoom")
     }))
 
   it.effect("rehydrates persisted Die, Interrupt, and unrecognizable failure material", () =>

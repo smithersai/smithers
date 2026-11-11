@@ -23,39 +23,12 @@ export const launch = (filename: string, runId: string): ChildProcessWithoutNull
     env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
   })
 
-/** Keep only the last 4 KiB of child output in an error message. */
-const tail = (text: string): string => text.length > 4096 ? `...${text.slice(-4096)}` : text
-
-/** The child's first protocol line, or a failure naming what it did instead. */
+/** The child's first protocol line, ignoring admission telemetry. */
 export const firstJsonLine = (child: ChildProcessWithoutNullStreams): Promise<Record<string, unknown>> =>
-  new Promise((resolve, reject) => {
-    let stdout = ""
-    let stderr = ""
-    const timeout = setTimeout(() => {
-      reject(new Error(`child did not produce a JSON line\n${tail(stderr)}\n${tail(stdout)}`))
-    }, processBudget)
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk
-      // Admission telemetry shares stdout with this child protocol.
-      const line = stdout.split("\n").slice(0, -1).find((line) => line.startsWith("{"))
-      if (line === undefined) return
-      clearTimeout(timeout)
-      resolve(JSON.parse(line) as Record<string, unknown>)
-    })
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk
-    })
-    child.once("error", (cause) => {
-      clearTimeout(timeout)
-      reject(cause)
-    })
-    child.once("exit", (code, signal) => {
-      clearTimeout(timeout)
-      reject(new Error(`child exited before its marker with ${code ?? signal}\n${tail(stderr)}\n${tail(stdout)}`))
-    })
-  })
+  ChildProcesses.waitForLine(child, (line) => line.startsWith("{"), {
+    timeoutMs: processBudget,
+    description: "JSON line"
+  }).then((line) => JSON.parse(line) as Record<string, unknown>)
 
 /** SIGKILLs the child's process group and waits for the child to exit. */
 export const killHard = (child: ChildProcessWithoutNullStreams): Promise<void> => ChildProcesses.kill(child)

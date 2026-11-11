@@ -61,10 +61,9 @@ const fakeEngine = {} as unknown as FlowRuntime.FlowRuntime["Service"]
 const migratedDatabase = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
 
 /**
- * The real SQL stores, so `DurableEngineState.transaction` is an actual write
- * transaction rather than the in-memory twin's pass-through. The ordering this
- * file asserts is a property of transaction composition, so it has to be
- * exercised against the implementation that has transactions.
+ * The real SQL stores share one write transaction across engine state and
+ * run state. The memory twin serializes and rolls back its own maps, but
+ * does not share that transaction with the SQL run store.
  */
 const services = Layer.mergeAll(
   SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
@@ -292,10 +291,10 @@ describe("the order the cancellation transaction writes in", () => {
    * Inheritance reads the parent row only after the child row exists, so a
    * cancellation that walked the edge table BEFORE marking its own run could
    * miss an edge whose admission also missed the mark. Two serialized
-   * transactions make that redundant, but `DurableEngineState.makeMemory`'s
-   * `transaction` is a pass-through, and there the write order is the only
-   * thing closing the interleaving. Pinned here so a refactor of `interrupt`
-   * cannot reopen it silently.
+   * SQL transactions make that redundant. The memory twin serializes and
+   * rolls back its own maps, but shares no transaction with the SQL run store,
+   * so the write order still closes that interleaving. Pin it here so a
+   * refactor of `interrupt` cannot reopen it silently.
    */
   it.effect("records the run's own request before it walks the edge table", () =>
     Effect.gen(function*() {

@@ -6,11 +6,12 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Journal, type JournalEvent } from "@smthrs/journal"
-import * as Notifying from "@smthrs/journal/test/Notifying"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -20,11 +21,15 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as Inconsistency from "../src/Inconsistency.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import * as Clocks from "./Clocks.ts"
+import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const ownerA: Ownership.OwnerId = { hostId: "lifecycle-host-a", pid: 1, nonce: "lifecycle-owner-a" }
@@ -166,42 +171,73 @@ describe("lifecycle journal durability", () => {
       expect(Option.getOrThrow(result.cached).recordedEventSeq).toBe(provenanceSeq)
     }))
 
-  it.effect("a zombie owner cannot journal attempt-finished after fence loss", () =>
+  it.live("a zombie owner cannot journal attempt-finished after fence loss", () =>
     Effect.gen(function*() {
       const key = "lifecycle/fence-proof"
-      const result = yield* run(Effect.gen(function*() {
-        yield* activate("fence-proof", ownerA)
-        const attempts = yield* AttemptStore.AttemptStore
-        const runs = yield* RunStore.RunStore
-        const journal = yield* Journal.Journal
-        // Steal the run to owner B in the window between the attempt row
-        // sealing and the attempt-finished journal append.
-        const stealing = Notifying.wrap(
-          attempts,
-          (op, order, args) =>
-            op === "finish" && order === "after" &&
-              (args[0] as { readonly state: string }).state === "succeeded"
-              ? takeover(runs, "fence-proof", ownerB).pipe(Effect.orDie)
-              : Effect.void
+      const result = yield* withCrypto(
+        Effect.acquireUseRelease(
+          Effect.promise(() => mkdtemp(join(tmpdir(), "lifecycle-fence-"))),
+          (directory) =>
+            Effect.scoped(Effect.gen(function*() {
+              const filename = yield* PersistentDatabase.scoped(join(directory, "engine.sqlite"))
+              // Independently built stores have distinct connections and writers:
+              // the rival's takeover commits before the zombie starts settlement.
+              const rivalContext = yield* Layer.build(TestStores.layerAt(filename))
+              const rival = Context.get(rivalContext, RunStore.RunStore)
+              return yield* Effect.gen(function*() {
+                yield* activate("fence-proof", ownerA)
+                const attempts = yield* AttemptStore.AttemptStore
+                const runs = yield* RunStore.RunStore
+                const journal = yield* Journal.Journal
+                let dispatches = 0
+                const executor = ActionPersistence.make({
+                  runId: "fence-proof",
+                  owner: ownerA,
+                  sourceId: "lifecycle-fence-test",
+                  execute: () =>
+                    Effect.gen(function*() {
+                      dispatches++
+                      const value = "v1"
+                      // Companion ownership records resolve the journal from the caller context.
+                      // Keep the rival run store and its companion on the same connection.
+                      yield* takeover(rival, "fence-proof", ownerB).pipe(Effect.provide(rivalContext))
+                      // Reading through A proves B's claim is durable on another connection.
+                      expect((yield* runs.get("fence-proof")).owner).toEqual(ownerB)
+                      return value
+                    })
+                })
+                const exit = yield* executor({
+                  action: {},
+                  attempt: 1,
+                  key,
+                  tier: "sealed",
+                  metadata: boundary
+                }).pipe(
+                  Effect.forkChild({ startImmediately: true }),
+                  Effect.flatMap(Fiber.await)
+                )
+                yield* journal.flush
+                return {
+                  exit,
+                  dispatches,
+                  owner: (yield* runs.get("fence-proof")).owner,
+                  attempt: yield* attempts.get({ runId: "fence-proof", stepKeyDigest: sha256(key), attempt: 1 }),
+                  entries: (yield* journal.entries({ runId: "fence-proof" as never, limit: 100 })).entries
+                }
+              }).pipe(Effect.provide(Layer.mergeAll(TestStores.layerAt(filename), StepBoundary.layerTest(), jj)))
+            })),
+          (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
         )
-        const executor = makeExecutor({ runId: "fence-proof", owner: ownerA, key, result: "v1" })
-        const exit = yield* executor({
-          action: {},
-          attempt: 1,
-          key,
-          tier: "sealed",
-          metadata: boundary
-        }).pipe(
-          Effect.provideService(AttemptStore.AttemptStore, stealing),
-          Effect.forkChild({ startImmediately: true }),
-          Effect.flatMap(Fiber.await)
-        )
-        yield* journal.flush
-        const entries = yield* journal.entries({ runId: "fence-proof" as never, limit: 100 })
-        return { exit, entries: entries.entries }
-      }))
+      )
 
-      expect(Exit.isSuccess(result.exit)).toBe(false)
+      expect(result.dispatches).toBe(1)
+      expect(result.owner, Exit.isFailure(result.exit) ? Cause.pretty(result.exit.cause) : "executor succeeded")
+        .toEqual(ownerB)
+      expect(Exit.isFailure(result.exit)).toBe(true)
+      if (Exit.isFailure(result.exit)) {
+        expect(Cause.hasInterruptsOnly(result.exit.cause)).toBe(true)
+      }
+      expect(Option.getOrThrow(result.attempt).state).toBe("running")
       expect(eventTypes(result.entries)).not.toContain("flows.engine.attempt-finished")
     }))
 

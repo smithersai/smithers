@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -316,35 +317,59 @@ describe("durable engine migrations", () => {
       expect(outcomes.partial).toEqual(partialOwners.map(([label]) => [
         label,
         expect.stringMatching(
-          /CHECK constraint failed: \( status = 'running' AND owner_host_id IS NOT NULL|violates check constraint/
+          /CHECK constraint failed: \( status = 'running' AND owner_host_id IS NOT NULL|violates check constraint "flows_runs_check"/
         )
       ]))
     }))
 
   it.effect("enforces every cache row invariant at the schema boundary", () =>
     Effect.gen(function*() {
+      const rows = [
+        ["key_digest", "('', '{}', '{}', 0, 'run', 0)", "length(key_digest) > 0"],
+        ["result_json", "('bad-result', 'not-json', '{}', 0, 'run', 0)", "json_valid(result_json)"],
+        ["meta_json", "('bad-meta', '{}', 'not-json', 0, 'run', 0)", "json_valid(meta_json)"],
+        ["created_at_ms", "('negative-created', '{}', '{}', -1, 'run', 0)", "typeof(created_at_ms) = 'integer'"],
+        ["created_at_ms", "('fractional-created', '{}', '{}', 0.5, 'run', 0)", "typeof(created_at_ms) = 'integer'"],
+        [
+          "created_at_ms",
+          "('unsafe-created', '{}', '{}', 9007199254740992, 'run', 0)",
+          "typeof(created_at_ms) = 'integer'"
+        ],
+        ["recorded_run_id", "('empty-run', '{}', '{}', 0, '', 0)", "length(recorded_run_id) > 0"],
+        ["recorded_event_seq", "('negative-seq', '{}', '{}', 0, 'run', -1)", "typeof(recorded_event_seq) = 'integer'"],
+        [
+          "recorded_event_seq",
+          "('fractional-seq', '{}', '{}', 0, 'run', 0.5)",
+          "typeof(recorded_event_seq) = 'integer'"
+        ],
+        [
+          "recorded_event_seq",
+          "('unsafe-seq', '{}', '{}', 0, 'run', 9007199254740992)",
+          "typeof(recorded_event_seq) = 'integer'"
+        ]
+      ] as const
       const outcomes = yield* migrated(Effect.gen(function*() {
         const sql = yield* Effect.service(SqlClient.SqlClient)
-        const invalidRows = [
-          "('', '{}', '{}', 0, 'run', 0)",
-          "('bad-result', 'not-json', '{}', 0, 'run', 0)",
-          "('bad-meta', '{}', 'not-json', 0, 'run', 0)",
-          "('negative-created', '{}', '{}', -1, 'run', 0)",
-          "('fractional-created', '{}', '{}', 0.5, 'run', 0)",
-          "('unsafe-created', '{}', '{}', 9007199254740992, 'run', 0)",
-          "('empty-run', '{}', '{}', 0, '', 0)",
-          "('negative-seq', '{}', '{}', 0, 'run', -1)",
-          "('fractional-seq', '{}', '{}', 0, 'run', 0.5)",
-          "('unsafe-seq', '{}', '{}', 0, 'run', 9007199254740992)"
-        ] as const
-        return yield* Effect.forEach(invalidRows, (values) =>
+        const insert = (values: string) =>
           Effect.exit(sql.unsafe(
             `INSERT INTO flows_step_cache (
             key_digest, result_json, meta_json, created_at_ms, recorded_run_id, recorded_event_seq
           ) VALUES ${values}`
-          )))
+          ))
+        return {
+          postgres: Dialect.isPostgres(sql),
+          control: rejectedBy(yield* insert("('valid', '{}', '{}', 0, 'run', 0)")),
+          rejected: yield* Effect.forEach(rows, ([, values]) => Effect.map(insert(values), rejectedBy))
+        }
       }))
 
-      expect(outcomes.every(Exit.isFailure)).toBe(true)
+      expect(outcomes.control).toBe("inserted")
+      expect(outcomes.rejected).toEqual(rows.map(([column, , check]) =>
+        expect.stringContaining(
+          outcomes.postgres
+            ? `violates check constraint "flows_step_cache_${column}_check"`
+            : `CHECK constraint failed: ${check}`
+        )
+      ))
     }))
 })

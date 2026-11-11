@@ -4,7 +4,9 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as PendingRunStatements from "../src/internal/PendingRunStatements.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { assertIndexed, seedHistory } from "./PendingQueryPlan.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const views = new Map<string, DurableEngineState.MemoryRunView>([
@@ -76,16 +78,20 @@ describe("pending admission query", () => {
     withCrypto(
       Effect.gen(function*() {
         const sql = yield* SqlClient
-        const plan = yield* sql<
-          { detail: string }
-        >`EXPLAIN QUERY PLAN SELECT run_id, created_at_ms FROM flows_runs INDEXED BY flows_runs_listing_3
-      WHERE status = 'pending' AND execution_flow = 'child' AND created_at_ms < 30
-      AND (created_at_ms > 1 OR (created_at_ms = 1 AND run_id > 'a'))
-      AND (created_at_ms < 20 OR (created_at_ms = 20 AND run_id <= 'z'))
-      ORDER BY created_at_ms, run_id LIMIT 64`
-        expect(plan.map((row) => row.detail).join(" ")).toContain("SEARCH flows_runs USING INDEX flows_runs_listing_3")
-        expect(plan.some((row) => row.detail.includes("TEMP B-TREE"))).toBe(false)
-      }).pipe(Effect.provide(TestStores.layerAt(":memory:")), Effect.scoped)
+        yield* seedHistory(sql)
+        for (const descending of [false, true]) {
+          const statement = PendingRunStatements.pending(
+            sql,
+            "child",
+            64,
+            { createdAtMs: 1, runId: "a" },
+            { createdAtMs: 20, runId: "z" },
+            descending,
+            30
+          )
+          yield* assertIndexed(sql, statement, "flows_runs_listing_3")
+        }
+      }).pipe(Effect.provide(TestStores.database), Effect.scoped)
     ))
   it.effect("returns nothing without a memory enumerator", () =>
     Effect.gen(function*() {

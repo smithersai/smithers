@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
-import * as Dialect from "@smthrs/database/Dialect"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
-import * as Arr from "effect/Array"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
+import * as PendingRunStatements from "../src/internal/PendingRunStatements.ts"
 import * as TestStores from "../src/test/TestStores.ts"
+import { assertIndexed, seedHistory } from "./PendingQueryPlan.ts"
 
 const views = new Map<string, DurableEngineState.MemoryRunView>([
   ["z", { status: "pending", owner: null, createdAtMs: 1, cancelRequestedAtMs: 0 }],
@@ -101,37 +101,16 @@ describe("indexed pending cancellation discovery", () => {
   it.effect("uses a creation-order partial index rather than scanning settled history", () =>
     Effect.gen(function*() {
       const sql = yield* SqlClient
-      for (let offset = 0; offset < 5_000; offset += 500) {
-        yield* sql`INSERT INTO flows_runs ${
-          sql.insert(Arr.makeBy(500, (index) => ({
-            run_id: `history-${offset + index}`,
-            status: "cancelled",
-            created_at_ms: 0,
-            state_json: JSON.stringify({ version: 1, flowName: "history", payload: {} }),
-            cancel_requested_at_ms: 0
-          })))
-        }`
-      }
-      yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json, cancel_requested_at_ms)
-      VALUES ('requested', 'pending', 2, ${JSON.stringify({ version: 1, flowName: "absent", payload: {} })}, 0)`
-      yield* sql`ANALYZE flows_runs`
-      const select = sql`SELECT run_id, created_at_ms FROM flows_runs
-      ${Dialect.isPostgres(sql) ? sql`` : sql`INDEXED BY flows_runs_pending_cancel_idx`}
-      WHERE status = 'pending' AND cancel_requested_at_ms IS NOT NULL
-        AND (created_at_ms, run_id) > (1, 'a') AND (created_at_ms, run_id) <= (2, 'z')
-      ORDER BY created_at_ms, run_id LIMIT 64`
-      if (Dialect.isPostgres(sql)) {
-        const plan = yield* sql`EXPLAIN (FORMAT JSON) ${select}`
-        const evidence = JSON.stringify(plan)
-        expect(evidence).toContain("flows_runs_pending_cancel_idx")
-        expect(evidence).not.toContain("Seq Scan")
-        console.log("pending-cancel PostgreSQL plan", evidence)
-      } else {
-        const plan = yield* sql<{ detail: string }>`EXPLAIN QUERY PLAN ${select}`
-        const evidence = plan.map((row) => row.detail).join(" ")
-        expect(evidence).toContain("SEARCH flows_runs USING INDEX flows_runs_pending_cancel_idx")
-        expect(evidence).not.toContain("TEMP B-TREE")
-        console.log("pending-cancel SQLite plan", evidence)
+      yield* seedHistory(sql)
+      for (const descending of [false, true]) {
+        const statement = PendingRunStatements.cancellations(
+          sql,
+          64,
+          { createdAtMs: 1, runId: "a" },
+          { createdAtMs: 2, runId: "z" },
+          descending
+        )
+        yield* assertIndexed(sql, statement, "flows_runs_pending_cancel_idx")
       }
     }).pipe(Effect.provide(TestStores.database), Effect.scoped))
 })

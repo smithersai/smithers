@@ -29,6 +29,7 @@ import * as SqlError from "effect/sql/SqlError"
 import * as AttemptProbe from "./internal/AttemptProbe.ts"
 import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
+import * as PendingRunStatements from "./internal/PendingRunStatements.ts"
 import type { OnParentExit } from "./RunState.ts"
 
 /**
@@ -1784,27 +1785,7 @@ const pendingRows = (
   descending = false,
   eligibleBeforeMs?: number
 ): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
-  db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
-      SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
-        ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_listing_3`}
-      WHERE status = 'pending'
-        AND ${eligibleBeforeMs === undefined ? db.sql`TRUE` : db.sql`created_at_ms < ${eligibleBeforeMs}`}
-        AND execution_flow = ${flowName}
-        AND ${
-    after === undefined ? db.sql`TRUE` : db.sql`(
-          created_at_ms > ${after.createdAtMs}
-          OR (created_at_ms = ${after.createdAtMs} AND run_id > ${after.runId})
-        )`
-  }
-        AND ${
-    through === undefined ? db.sql`TRUE` : db.sql`(
-          created_at_ms < ${through.createdAtMs}
-          OR (created_at_ms = ${through.createdAtMs} AND run_id <= ${through.runId})
-        )`
-  }
-      ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
-      LIMIT ${limit ?? (Dialect.isPostgres(db.sql) ? null : -1)}
-    `.pipe(
+  PendingRunStatements.pending(db.sql, flowName, limit, after, through, descending, eligibleBeforeMs).pipe(
     Effect.orDie,
     Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
   )
@@ -1834,24 +1815,12 @@ const pendingCancellationRows = (
   descending = false
 ): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
   pendingCancellationLimit(limit).pipe(
-    Effect.andThen(db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
-      SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
-        ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_pending_cancel_idx`}
-      WHERE status = 'pending' AND cancel_requested_at_ms IS NOT NULL
-        AND ${
-      after === undefined ? db.sql`TRUE` : db.sql`(created_at_ms, run_id) > (${after.createdAtMs}, ${after.runId})`
-    }
-        AND ${
-      through === undefined
-        ? db.sql`TRUE`
-        : db.sql`(created_at_ms, run_id) <= (${through.createdAtMs}, ${through.runId})`
-    }
-      ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
-      LIMIT ${limit}
-    `.pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
-    ))
+    Effect.andThen(
+      PendingRunStatements.cancellations(db.sql, limit, after, through, descending).pipe(
+        Effect.orDie,
+        Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
+      )
+    )
   )
 const pendingCancellationRuns = (db: Database): Service["pendingCancellationRuns"] =>
   Effect.fn(

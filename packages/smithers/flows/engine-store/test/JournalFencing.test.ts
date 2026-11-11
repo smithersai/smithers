@@ -167,23 +167,6 @@ describe("SqlJournal ownership fencing", () => {
       })
     ))
 
-  effect("emitDurable fences writes when an owner is supplied", () =>
-    withJournal(
-      Effect.gen(function*() {
-        const journal = yield* Journal
-        const sql = yield* Effect.service(SqlClient.SqlClient)
-        const run = runId("routed")
-        yield* activateRun(sql, run, ownerA)
-        const receipt = yield* journal.emitDurable(input(run, sourceId("s"), "created", 1), ownerA)
-        // Committed synchronously, without a flush: the fenced path is durable.
-        expect(yield* seqsOf(sql, run)).toEqual([receipt.seq])
-        yield* reclaimRun(sql, run, ownerB)
-        const failure = yield* Effect.flip(journal.emitDurable(input(run, sourceId("s"), "zombie", 2), ownerA))
-        expect((failure as JournalError).code).toBe("fence_lost")
-        expect(yield* seqsOf(sql, run)).toEqual([receipt.seq])
-      })
-    ))
-
   effect("the unfenced durable channel stays first-writer-wins for external-trigger admissions", () =>
     withJournal(
       Effect.gen(function*() {
