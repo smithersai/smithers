@@ -92,12 +92,12 @@ for (const [name, make] of [["hosted", worker], ["self-hosted", service]]) {
         const manifest = await Tree.captureOutDir(f.a, ".flows", "out")
         const result = { ...f.result, output: { kind: "build", manifests: [manifest], files: [] } }
         const batches = []
-        f.setFault(async req => {
+        f.setFault(async (req) => {
           if (!new URL(req.url).pathname.endsWith("/findMissing")) return f.handler(req)
           const { digests } = await req.clone().json()
           batches.push(digests.length)
           // Backend latency proportional to the requested object count.
-          await new Promise(resolve => setTimeout(resolve, digests.length * 8))
+          await new Promise((resolve) => setTimeout(resolve, digests.length * 8))
           return f.handler(req)
         })
         await (await f.open(f.a)).put(result.key, result)
