@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Effect } from "effect"
 import { readFileSync } from "node:fs"
+import * as ShareSigner from "../src/internal/ShareSigner.ts"
 
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")
 
@@ -66,16 +68,23 @@ describe("keyring failure codes", () => {
   const guide = read("docs/guides/authorize-a-connection.md")
   const keyringParagraphs = paragraphs(guide).filter((paragraph) => /keyring|Web Crypto/.test(paragraph))
 
-  it("names the code importHmacKey uses for a rejected secret", () => {
-    const signer = read("src/internal/ShareSigner.ts")
-    const importer = signer.slice(signer.indexOf("export const importHmacKey"))
-    const importCode = /catch: \(cause\) =>\s+new SyncError\(\{\s+code: "(\w+)"/.exec(importer)![1]!
-    expect(importCode).toBe("unknown")
-    const cryptoFailure = keyringParagraphs.find((paragraph) =>
-      /Web Crypto/.test(paragraph) && /fails? with/.test(paragraph)
-    )
-    expect(cryptoFailure).toContain(`\`${importCode}\``)
-  })
+  it.effect("names the code importHmacKey uses for a rejected secret", () =>
+    Effect.gen(function*() {
+      const crypto = yield* ShareSigner.Crypto
+      const failure = yield* Effect.flip(
+        ShareSigner.importHmacKey("a".repeat(32)).pipe(
+          Effect.provideService(ShareSigner.Crypto, {
+            ...crypto,
+            importKey: () => Effect.fail(new Error("key import refused"))
+          })
+        )
+      )
+      expect(failure.code).toBe("unknown")
+      const cryptoFailure = keyringParagraphs.find((paragraph) =>
+        /Web Crypto/.test(paragraph) && /fails? with/.test(paragraph)
+      )
+      expect(cryptoFailure).toContain(`\`${failure.code}\``)
+    }))
 
   it("does not claim every keyring failure is invalid_request", () => {
     for (const paragraph of keyringParagraphs) expect(paragraph).not.toMatch(/Each fails with `invalid_request`/)

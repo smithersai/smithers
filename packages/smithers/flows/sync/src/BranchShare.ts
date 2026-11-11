@@ -12,8 +12,8 @@
  * ending in the separator could be re-cut into a different, still-validly-
  * signed claim set. The label matters for the same reason across schemes: a
  * branch capability can never verify as a workspace capability even if one
- * secret is misconfigured into both authorities. Web Crypto is used directly
- * so the same module runs in the browser and on node.
+ * secret is misconfigured into both authorities. The shared signer uses Web
+ * Crypto through an injected service in the browser and on node.
  *
  * A `kid` inside the claims names the key that signed them, so a branch secret
  * rotates the way the workspace secret already did: the new key signs, the

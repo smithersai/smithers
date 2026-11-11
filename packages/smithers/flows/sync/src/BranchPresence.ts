@@ -74,6 +74,20 @@ export interface Service {
 }
 
 /**
+ * The in-memory registry with a diagnostic count of retained branch rosters.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface MemoryService extends Service {
+  /**
+   * Stored branch rosters, including expired leases awaiting activity.
+   * Reading this count does not expire leases or advance the sweep.
+   */
+  readonly retainedBranchCount: Effect.Effect<number>
+}
+
+/**
  * The branch presence registry.
  *
  * @category services
@@ -242,7 +256,7 @@ const defaults: Resolved = {
  */
 export const makeMemory = (
   options: PresenceOptions = {}
-): Effect.Effect<Service, SyncError, BranchShare.BranchShare> =>
+): Effect.Effect<MemoryService, SyncError, BranchShare.BranchShare> =>
   Effect.flatMap(
     Effect.all({
       leaseMs: positiveInt("BranchPresence.PresenceOptions.leaseMs", options.leaseMs, defaults.leaseMs),
@@ -263,7 +277,7 @@ export const makeMemory = (
 /** The registry over an already-validated policy. */
 const makeResolved = (
   { changesCapacity, leaseMs, maxParticipants, sourcesReady }: Resolved
-): Effect.Effect<Service, never, BranchShare.BranchShare> =>
+): Effect.Effect<MemoryService, never, BranchShare.BranchShare> =>
   Effect.gen(function*() {
     const startedAtMs = yield* Clock.currentTimeMillis
     const share = yield* BranchShare.BranchShare
@@ -484,7 +498,10 @@ const makeResolved = (
       return live(request.branchId, nowMs).length === 0 ? "empty" as const : "present" as const
     })
 
-    return BranchPresence.of({ announce, leave, list, presenceOn, changes: Stream.fromPubSub(changes), leaseMs })
+    return {
+      ...BranchPresence.of({ announce, leave, list, presenceOn, changes: Stream.fromPubSub(changes), leaseMs }),
+      retainedBranchCount: Effect.sync(() => roster.size)
+    }
   })
 
 /**

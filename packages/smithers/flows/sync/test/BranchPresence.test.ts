@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Fiber, Layer, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import { vi } from "vitest"
 import * as BranchPresence from "../src/BranchPresence.ts"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
@@ -282,7 +281,7 @@ describe("BranchPresence", () => {
 
   it.effect("sweeps an abandoned branch when only another branch is listed", () =>
     run(Effect.gen(function*() {
-      const presence = yield* BranchPresence.BranchPresence
+      const presence = yield* BranchPresence.makeMemory({ leaseMs })
       const capability = yield* capabilityFor(branchId, "write")
       const otherCapability = yield* capabilityFor(otherBranchId, "write")
       for (const [target, token] of [[branchId, capability], [otherBranchId, otherCapability]] as const) {
@@ -295,23 +294,15 @@ describe("BranchPresence", () => {
         })
       }
       yield* TestClock.adjust(Duration.millis(leaseMs))
-      // Observe storage removal directly, without listing the abandoned branch
-      // (which would hide the leak) or relying on nondeterministic collection.
-      const deleted = vi.spyOn(Map.prototype, "delete")
-      try {
-        expect(yield* presence.list({ capability, branchId })).toEqual([])
-        expect(deleted).toHaveBeenCalledWith(otherBranchId)
-        const index = deleted.mock.calls.findIndex(([key]) => key === otherBranchId)
-        const roster = deleted.mock.contexts[index] as Map<BranchProtocol.BranchId, unknown>
-        expect(roster.has(otherBranchId)).toBe(false)
-      } finally {
-        deleted.mockRestore()
-      }
+      expect(yield* presence.retainedBranchCount).toBe(2)
+      expect(yield* presence.list({ capability, branchId })).toEqual([])
+      // Reading the count must not itself expire either branch.
+      expect(yield* presence.retainedBranchCount).toBe(0)
     })))
 
   it.effect("makes bounded sweep progress across abandoned branches on announcements", () =>
     run(Effect.gen(function*() {
-      const presence = yield* BranchPresence.BranchPresence
+      const presence = yield* BranchPresence.makeMemory({ leaseMs })
       const capability = yield* capabilityFor(branchId, "write")
       const abandoned = Array.from({ length: 40 }, (_, index) => `abandoned-${index}` as BranchProtocol.BranchId)
       for (const target of abandoned) {
@@ -324,22 +315,24 @@ describe("BranchPresence", () => {
         })
       }
       yield* TestClock.adjust(Duration.millis(leaseMs))
-      const deleted = vi.spyOn(Map.prototype, "delete")
-      try {
-        for (let index = 0; index < 4; index++) {
-          yield* presence.announce({
-            capability,
-            branchId,
-            participantId: participant("active"),
-            displayName: "Active",
-            cursor: null
-          })
-        }
-        for (const target of abandoned) expect(deleted).toHaveBeenCalledWith(target)
-        expect(yield* presence.list({ capability, branchId })).toHaveLength(1)
-      } finally {
-        deleted.mockRestore()
+      let previous = yield* presence.retainedBranchCount
+      expect(previous).toBe(abandoned.length)
+      for (let index = 0; index < 4; index++) {
+        yield* presence.announce({
+          capability,
+          branchId,
+          participantId: participant("active"),
+          displayName: "Active",
+          cursor: null
+        })
+        const retained = yield* presence.retainedBranchCount
+        const added = index === 0 ? 1 : 0
+        expect(previous + added - retained).toBeGreaterThanOrEqual(0)
+        expect(previous + added - retained).toBeLessThanOrEqual(16)
+        previous = retained
       }
+      expect(previous).toBe(1)
+      expect(yield* presence.list({ capability, branchId })).toHaveLength(1)
     })))
 
   for (const result of ["list", "announce"] as const) {

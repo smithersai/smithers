@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Redacted, Tracer } from "effect"
 import { TestClock } from "effect/testing"
-import { vi } from "vitest"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
+import * as ShareSigner from "../src/internal/ShareSigner.ts"
 import { SyncError } from "../src/SyncError.ts"
 import * as WorkspaceShare from "../src/WorkspaceShare.ts"
 import { died, refusalOf } from "./refusal.ts"
@@ -26,22 +26,28 @@ const mintWrite = Effect.flatMap(
 describe("BranchShare", () => {
   it.effect("refuses a signing secret shorter than 32 bytes and accepts one of exactly 32", () =>
     Effect.gen(function*() {
-      const importKey = vi.spyOn(crypto.subtle, "importKey")
+      const crypto = yield* ShareSigner.Crypto
+      const refusedImport = {
+        ...crypto,
+        importKey: () => Effect.fail(new Error("import must not run for an invalid secret"))
+      }
       const [empty, short, workspaceShort, exactClaims] = yield* run(
         Effect.gen(function*() {
           const empty = yield* Effect.exit(
             BranchShare.makeHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("") }] })
+              .pipe(Effect.provideService(ShareSigner.Crypto, refusedImport))
           )
           // One observed capability is an offline oracle for its secret, so a
           // one-byte secret let anyone brute-force the key and forge links.
           const short = yield* Effect.exit(
             BranchShare.makeHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("a") }] })
+              .pipe(Effect.provideService(ShareSigner.Crypto, refusedImport))
           )
           const workspaceShort = yield* Effect.exit(
             WorkspaceShare.makeHmac({
               activeKid: "primary",
               keys: [{ kid: "primary", secret: Redacted.make("a".repeat(31)) }]
-            })
+            }).pipe(Effect.provideService(ShareSigner.Crypto, refusedImport))
           )
           const exact = yield* BranchShare.makeHmac({
             activeKid: "primary",
@@ -51,17 +57,12 @@ describe("BranchShare", () => {
           return [empty, short, workspaceShort, yield* exact.verify(capability, { branchId, access: "read" })] as const
         })
       )
-      const imports = importKey.mock.calls.length
-      importKey.mockRestore()
-
       const refusals = [refusalOf(empty), refusalOf(short), refusalOf(workspaceShort)]
       expect([died(empty), died(short), died(workspaceShort)]).toEqual([false, false, false])
       for (const refusal of refusals) {
         expect(refusal?.code).toBe("invalid_request")
         expect(refusal?.message).toBe("The HMAC signing secret must be at least 32 bytes of UTF-8")
       }
-      // Refused before Web Crypto sees the bytes: only the 32-byte key imports.
-      expect(imports).toBe(1)
       expect(exactClaims.capabilityId).toBe("exact-key")
     }))
 
@@ -303,19 +304,33 @@ describe("BranchShare", () => {
       ).toBe("overridden")
     }))
 
+  it.effect("preserves real Web Crypto failures for invalid keys", () =>
+    Effect.gen(function*() {
+      const native = yield* ShareSigner.Crypto
+      const emptyKey = yield* Effect.flip(native.importKey(new Uint8Array(0)))
+      const encryptionKey = yield* Effect.promise(() =>
+        crypto.subtle.importKey("raw", new Uint8Array(16), "AES-GCM", false, ["encrypt"])
+      )
+      const wrongUsage = yield* Effect.flip(native.sign(encryptionKey, new Uint8Array([1])))
+      expect(emptyKey).toMatchObject({ name: "DataError" })
+      expect(wrongUsage).toMatchObject({ name: "InvalidAccessError" })
+    }))
+
   it.effect("maps a Web Crypto rejection into a typed SyncError carrying the cause", () =>
     Effect.gen(function*() {
       const importFailure = new Error("import refused")
-      const importKeySpy = vi.spyOn(crypto.subtle, "importKey").mockRejectedValueOnce(importFailure)
-      const importError = yield* run(
-        Effect.flip(
+      const crypto = yield* ShareSigner.Crypto
+      const importExit = yield* run(
+        Effect.exit(
           BranchShare.makeHmac({
             activeKid: "primary",
             keys: [{ kid: "primary", secret: Redacted.make("broken-0123456789abcdefghijklmnopqrstuv") }]
-          })
+          }).pipe(Effect.provideService(ShareSigner.Crypto, {
+            ...crypto,
+            importKey: () => Effect.fail(importFailure)
+          }))
         )
       )
-      importKeySpy.mockRestore()
 
       const [share, capability] = yield* run(
         Effect.gen(function*() {
@@ -327,19 +342,35 @@ describe("BranchShare", () => {
         })
       )
       const signFailure = new Error("sign refused")
-      const signSpy = vi.spyOn(crypto.subtle, "sign").mockRejectedValueOnce(signFailure)
-      const verifyError = yield* run(Effect.flip(share.verify(capability, { branchId, access: "write" })))
-      signSpy.mockRestore()
+      const refusedSign = { ...crypto, sign: () => Effect.fail(signFailure) }
+      const mintExit = yield* run(
+        Effect.exit(
+          share.mint({ branchId, capabilityId: "cap-failed", access: "write", ttlMs: 60_000 }).pipe(Effect.asVoid)
+        )
+          .pipe(Effect.provideService(ShareSigner.Crypto, refusedSign))
+      )
+      const verifyExit = yield* run(
+        Effect.exit(share.verify(capability, { branchId, access: "write" }).pipe(Effect.asVoid))
+          .pipe(Effect.provideService(ShareSigner.Crypto, refusedSign))
+      )
 
       // The cause is a bounded RENDERING, not the host object: `SyncError` is
       // the declared error schema of every RPC in both groups, so an
       // arbitrary `unknown` here had no defined wire form and no ceiling.
+      const importError = refusalOf(importExit)
+      expect(died(importExit)).toBe(false)
       expect(importError).toBeInstanceOf(SyncError)
-      expect(importError.code).toBe("unknown")
-      expect(importError.cause).toBe(`Error: ${importFailure.message}`)
-      expect(verifyError).toBeInstanceOf(SyncError)
-      expect(verifyError.code).toBe("unknown")
-      expect(verifyError.cause).toBe(`Error: ${signFailure.message}`)
+      expect(importError?.code).toBe("unknown")
+      expect(importError?.cause).toBe(`Error: ${importFailure.message}`)
+      expect(importError?.message).toBe("Web Crypto could not import the HMAC signing key")
+      for (const exit of [mintExit, verifyExit]) {
+        const error = refusalOf(exit)
+        expect(died(exit)).toBe(false)
+        expect(error).toBeInstanceOf(SyncError)
+        expect(error?.code).toBe("unknown")
+        expect(error?.message).toBe("Web Crypto could not sign the share claims")
+        expect(error?.cause).toBe(`Error: ${signFailure.message}`)
+      }
     }))
 
   it.effect("annotates mint and verify spans with the branch identity, never the capability material", () =>

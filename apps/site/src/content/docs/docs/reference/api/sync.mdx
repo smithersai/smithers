@@ -254,6 +254,12 @@ boundary that rebuilds it.
 
 ## Branch collaboration
 
+`BranchPresence.makeMemory(options)` returns a `MemoryService` whose
+`retainedBranchCount` effect reads the number of stored branch rosters,
+including expired leases awaiting activity. Reading this diagnostic does not
+expire leases or advance the sweep. Announcing or listing reclaims abandoned
+rosters in bounded batches.
+
 `BranchPresence.Service.presenceOn(request)` (since 1.0.0) returns
 `"unknown" | "present" | "empty"`, authorizing read access first. It stays
 `unknown` for one configured `leaseMs` after startup so live participants can

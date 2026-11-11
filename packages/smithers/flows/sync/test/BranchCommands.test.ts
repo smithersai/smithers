@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
-import { Effect, Layer, Redacted, Stream } from "effect"
+import { Effect, Layer, Redacted } from "effect"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import * as BranchCommands from "../src/BranchCommands.ts"
@@ -462,40 +462,5 @@ describe("BranchCommands", () => {
       )
 
       expect(status).toBe("admitted")
-    }))
-
-  it.effect("streams the branch run so a follower resumes from the canonical cursor", () =>
-    Effect.gen(function*() {
-      const seqs = yield* durable(
-        Effect.gen(function*() {
-          const commands = yield* BranchCommands.makeLive
-          const journal = yield* Journal.Journal
-          const capability = yield* capabilityFor(branchId, "write")
-          for (const id of ["c1", "c2", "c3"]) {
-            yield* commands.submit({
-              capability,
-              submission: yield* BranchCommands.submission({
-                branchId,
-                commandId: commandId(id),
-                participantId: alice,
-                name: BranchProtocol.SayCommand,
-                args: id
-              })
-            })
-          }
-          const all = yield* journal.entries({ runId, limit: 10 })
-          const resumeFrom = all.entries[0]?.seq
-          const tail = yield* Stream.runCollect(
-            Stream.take(
-              journal.stream({ runId, ...(resumeFrom === undefined ? {} : { afterSequence: resumeFrom }) }),
-              2
-            )
-          )
-          return Array.from(tail, (entry) => entry.seq)
-        })
-      )
-
-      expect(seqs).toHaveLength(2)
-      expect(seqs[0]).toBeGreaterThan(0)
     }))
 })

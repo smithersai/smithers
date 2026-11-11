@@ -4,19 +4,56 @@
  *
  * Both authorities sign a length-prefixed encoding of their claims: without
  * length prefixes a field ending in the separator could be re-cut into a
- * different, still-validly-signed claim set. Web Crypto is used directly so
- * the same module runs in the browser and on node, and signature comparison
+ * different, still-validly-signed claim set. Web Crypto is the default injected
+ * crypto service, so the same module runs in the browser and on node. Signature comparison
  * is length-independent so a check leaks no prefix length.
  *
  * @since 0.1.0
  */
 
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import type { Access } from "../BranchProtocol.ts"
 import { SyncError } from "../SyncError.ts"
 import { causeText } from "./CauseText.ts"
+
+/**
+ * The HMAC operations used by both share authorities. Failures stay in the
+ * error channel until the signer maps them to bounded, typed sync errors.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface CryptoService {
+  readonly importKey: (bytes: Uint8Array<ArrayBuffer>) => Effect.Effect<CryptoKey, unknown>
+  readonly sign: (key: CryptoKey, bytes: Uint8Array<ArrayBuffer>) => Effect.Effect<ArrayBuffer, unknown>
+}
+
+/**
+ * Injectable HMAC operations, defaulting to the host's real Web Crypto.
+ *
+ * @category references
+ * @since 1.0.0
+ */
+export const Crypto: Context.Reference<CryptoService> = Context.Reference<CryptoService>(
+  "@smthrs/sync/internal/ShareCrypto",
+  {
+    defaultValue: () => ({
+      importKey: (bytes) =>
+        Effect.tryPromise({
+          try: () => crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]),
+          catch: (cause) => cause
+        }),
+      sign: (key, bytes) =>
+        Effect.tryPromise({
+          try: () => crypto.subtle.sign("HMAC", key, bytes),
+          catch: (cause) => cause
+        })
+    })
+  }
+)
 
 const encoder = new TextEncoder()
 
@@ -124,18 +161,16 @@ export const importHmacKey = (secret: string): Effect.Effect<CryptoKey, SyncErro
       })
     )
   }
-  return Effect.tryPromise({
-    try: () =>
-      crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, [
-        "sign"
-      ]),
-    catch: (cause) =>
-      new SyncError({
-        code: "unknown",
-        message: "Web Crypto could not import the HMAC signing key",
-        cause: causeText(cause)
-      })
-  })
+  return Effect.flatMap(Crypto, (crypto) =>
+    crypto.importKey(bytes).pipe(
+      Effect.mapError((cause) =>
+        new SyncError({
+          code: "unknown",
+          message: "Web Crypto could not import the HMAC signing key",
+          cause: causeText(cause)
+        })
+      )
+    ))
 }
 
 /**
@@ -155,15 +190,16 @@ export const signHmac = (key: CryptoKey, canonical: string): Effect.Effect<strin
     )
   }
   return Effect.map(
-    Effect.tryPromise({
-      try: () => crypto.subtle.sign("HMAC", key, bytes),
-      catch: (cause) =>
-        new SyncError({
-          code: "unknown",
-          message: "Web Crypto could not sign the share claims",
-          cause: causeText(cause)
-        })
-    }),
+    Effect.flatMap(Crypto, (crypto) =>
+      crypto.sign(key, bytes).pipe(
+        Effect.mapError((cause) =>
+          new SyncError({
+            code: "unknown",
+            message: "Web Crypto could not sign the share claims",
+            cause: causeText(cause)
+          })
+        )
+      )),
     (signature) => hex(new Uint8Array(signature))
   )
 }

@@ -16,7 +16,7 @@ The `next` tag carries the 1.0 release candidates.
 ## Requirements
 
 - Node.js 22.19.0 or later, or a browser with Web Crypto. The signing paths
-  call `crypto.subtle` directly so one module serves both.
+  use Web Crypto through an internal injected service so one module serves both.
 - `effect` exactly at the version the package declares. It is a peer dependency
   so the follower and Smithers use one runtime.
 - [`@smthrs/journal`](/api/journal), also a direct dependency. The entry
