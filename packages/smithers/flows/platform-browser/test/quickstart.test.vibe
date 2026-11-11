@@ -1,0 +1,13 @@
+import { expect, it } from "@effect/vitest"
+import { sameBytesBothWays, services } from "../examples/quickstart.vibe"
+import { makeVolume } from "./fixtures/volume.ts"
+
+it.effect("a spawned cat and a FileSystem read see the same bytes", effect () => {
+  const { root, bash, fs } = try Effect.try(() => makeVolume())
+  provide services(bash, fs) {
+    expect(try sameBytesBothWays(`${root}/workspace`)).toEqual({
+      fromBash: "hello from the tab\n",
+      fromFileSystem: "hello from the tab\n"
+    })
+  }
+})

@@ -8,7 +8,9 @@ sidebar:
 This quickstart puts both adapters in a real page and proves the one property
 the whole design turns on: a command spawned through the interpreter and a read
 through Effect's `FileSystem` see the same bytes, because they share one mounted
-volume.
+volume. Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same program as
+Effect code.
 
 ## Prerequisites
 
@@ -110,6 +112,46 @@ The output is buffered, not streamed: the interpreter runs to completion and
 the handle then replays what it captured. That, and every other place a tab
 diverges from a process table, is in
 [Run a command in a tab](./guides/run-a-command.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the program is an
+`effect` function that takes the workspace directory, and `try` runs each
+service call where the TypeScript wrote `yield*`. The mount stays in the
+page's own bundle: `services` takes the interpreter and the promises API that
+`configureSingle` and `new Bash({ fs })` built, so the example names neither
+ZenFS nor just-bash.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { BrowserChildProcessSpawner, BrowserFileSystem, BrowserServices } from "@smthrs/platform-browser"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/**
+ * `ChildProcessSpawner`, `FileSystem`, and `Path` from two views of one mounted volume:
+ * a just-bash interpreter built over the mount, and the mount's promises API.
+ */
+export const services = (bash: BrowserChildProcessSpawner.JustBashLike, fs: BrowserFileSystem.ZenFsPromisesLike) =>
+  BrowserServices.layer({ bash, fs })
+
+/** Writes through `FileSystem`, then reads the same file back through the interpreter and the filesystem. */
+export effect function sameBytesBothWays(workspace: string) {
+  const fileSystem = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+
+  try fileSystem.makeDirectory(workspace, { recursive: true })
+  try fileSystem.writeFileString(`${workspace}/notes.txt`, "hello from the tab\n")
+
+  // `cwd` is an absolute path inside the volume: a tab has no `process.cwd()`.
+  const fromBash = try spawner.string(ChildProcess.make("cat", ["notes.txt"], { cwd: workspace }))
+  const fromFileSystem = try fileSystem.readFileString(`${workspace}/notes.txt`)
+
+  return { fromBash, fromFileSystem }
+}
+```
 
 ## Next steps
 

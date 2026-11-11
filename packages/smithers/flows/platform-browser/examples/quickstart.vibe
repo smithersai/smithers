@@ -1,0 +1,25 @@
+import { BrowserChildProcessSpawner, BrowserFileSystem, BrowserServices } from "@smthrs/platform-browser"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/**
+ * `ChildProcessSpawner`, `FileSystem`, and `Path` from two views of one mounted volume:
+ * a just-bash interpreter built over the mount, and the mount's promises API.
+ */
+export const services = (bash: BrowserChildProcessSpawner.JustBashLike, fs: BrowserFileSystem.ZenFsPromisesLike) =>
+  BrowserServices.layer({ bash, fs })
+
+/** Writes through `FileSystem`, then reads the same file back through the interpreter and the filesystem. */
+export effect function sameBytesBothWays(workspace: string) {
+  const fileSystem = try FileSystem.FileSystem
+  const spawner = try ChildProcessSpawner
+
+  try fileSystem.makeDirectory(workspace, { recursive: true })
+  try fileSystem.writeFileString(`${workspace}/notes.txt`, "hello from the tab\n")
+
+  // `cwd` is an absolute path inside the volume: a tab has no `process.cwd()`.
+  const fromBash = try spawner.string(ChildProcess.make("cat", ["notes.txt"], { cwd: workspace }))
+  const fromFileSystem = try fileSystem.readFileString(`${workspace}/notes.txt`)
+
+  return { fromBash, fromFileSystem }
+}
