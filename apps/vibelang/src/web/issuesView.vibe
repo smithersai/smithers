@@ -77,8 +77,12 @@ function header(h: H, send: Send, name: string, back = "‹ Chat", actions: Read
   ])])
 }
 /** A copy GitHub refused to refresh (decision 0031): one word, and when GitHub last confirmed it. */
+/** The stale mark; a confirmation time past the last valid Date (a safe cursor can be) shows the mark without a time. */
 export function staleMark<M>(h: HtmlBuilder<M>, stale: number | undefined): ReadonlyArray<Html> {
-  return stale === undefined ? [] : [h.span([h.Class("sui-badge sui-badge-outline vl-stale"), h.Title(`As of ${new Date(stale).toISOString().slice(0, 16).replace("T", " ")} UTC`)], ["Stale"])]
+  if (stale === undefined) return []
+  const at = new Date(stale)
+  const title = Number.isNaN(at.getTime()) ? [] : [h.Title(`As of ${at.toISOString().slice(0, 16).replace("T", " ")} UTC`)]
+  return [h.span([h.Class("sui-badge sui-badge-outline vl-stale"), ...title], ["Stale"])]
 }
 function titleOf(ui: IssuesUi): string { return ui.kind === "All" || ui.kind === "Issues" ? "Issues" : ui.kind }
 export function issuesView(ui: IssuesUi, h: H, send: Send): Html {

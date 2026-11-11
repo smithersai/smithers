@@ -918,3 +918,17 @@ and all 8 files reach 100% on every metric.
 Every execution of `scripts/agent-context` also checks a missing file, and of `scripts/fuzz-preflight` installs exactly
 the packages it named and checks again, so no arm depends on what a short run happens to draw. Both declare
 `REPLAY_FLOOR`: under coverage on a loaded host they ran 2 executions in 5 s.
+
+## Status, 2026-11-11 (fourteenth session)
+
+### Failing targets seen by vl-fuzz3
+
+vl-fuzz3's two whole-suite runs at `90f526f0` failed `screens/issues-view-names-controls` and `reply/answers`.
+
+| Target | Failure | Cause | Kind | Fix | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| `screens/issues-view-names-controls`, seed 20261107, 22 executions | `RangeError: Invalid time value` | `staleMark` formatted `new Date(stale).toISOString()`; a `Date` holds at most 8.64e15 ms, and `stale` is `Seq`, a safe cursor up to 2^53 - 1, so the issues list, an issue and the wiki editor threw for a decoded value | product | the mark shows without a time when the confirmation time is no valid `Date` | `test/issuesView.coverage.test.vibe` "past the last valid date": red (RangeError at `issuesView.vibe:81`), green after; target passes at 20261107 and 20261129 |
+| `reply/answers`, seed 20261107, 2 executions | returned false | the stale oracle wanted `budget` where `c5bbf81b` answers `unconfigured`; fixed in `8d835fa6` (twelfth session), which landed after `90f526f0` | stale oracle | none needed | passes at 20261107, 20261122 and 20261129 on `6536883f` |
+
+Neither target is flaky: each failure reproduces from its seed on its tree and is gone on current `main`.
+
