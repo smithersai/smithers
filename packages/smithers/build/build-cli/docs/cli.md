@@ -555,19 +555,19 @@ it wrote.
 These commands inspect the workspace or operate on explicitly bounded local
 state.
 
-| Command          | Arguments              | Own options                                             |
-| ---------------- | ---------------------- | ------------------------------------------------------- |
-| `cache status`   |                        |                                                         |
-| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--dry-run`, `--yes` |
-| `cache clear`    |                        | `--dry-run`, `--yes`                                    |
-| `show target`    | `<label>`              | `--verb`                                                |
-| `show workspace` |                        |                                                         |
-| `targets`        | `[pattern]`            |                                                         |
-| `info`           |                        |                                                         |
-| `explain`        | `<label>`              | `--verb`                                                |
-| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`                 |
-| `clean`          | `[patterns...]`        |                                                         |
-| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`                               |
+| Command          | Arguments              | Own options                                                                    |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------ |
+| `cache status`   |                        |                                                                                |
+| `cache prune`    |                        | `--older-than-days`, `--max-size`, `--keep-used-minutes`, `--dry-run`, `--yes` |
+| `cache clear`    |                        | `--dry-run`, `--yes`                                                           |
+| `show target`    | `<label>`              | `--verb`                                                                       |
+| `show workspace` |                        |                                                                                |
+| `targets`        | `[pattern]`            |                                                                                |
+| `info`           |                        |                                                                                |
+| `explain`        | `<label>`              | `--verb`                                                                       |
+| `affected`       | `<verb> [patterns...]` | `--base`, `--head`, `--files`, `--list`                                        |
+| `clean`          | `[patterns...]`        |                                                                                |
+| `watch`          | `<verb> [patterns...]` | `--debounce-ms`, `--once`                                                      |
 
 `cache status` reports the local action-result count and size plus the remote
 endpoint without exposing credentials. Its `goBuild` field reports the
@@ -586,6 +586,12 @@ running tool may be reading is never removed, so the result can stay above
 the cap; the report's `goBuild.inUse` and `goBuild.inUseBytes` say how much
 was kept for that reason, and `size` gives the limit and the total before and
 after. Without `--max-size`, the compile cache is left alone.
+
+`--keep-used-minutes <n>` (default and minimum 60) also keeps every compile
+cache entry used within the last `n` minutes. Targets hold a lease while they
+run and need no window. Raise it when a `go` that `smthrs` did not start uses
+the same directory: such a process is safe while it runs for less than `n`
+minus 60 minutes.
 
 `show target` reports the rule, kinds, dependencies, owners, inputs, outputs,
 planned key, and local cache state for one target. `explain` returns the same

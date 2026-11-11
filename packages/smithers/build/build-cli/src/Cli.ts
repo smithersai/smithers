@@ -1407,6 +1407,9 @@ const cacheCli = (config: RuntimeConfig) => {
         maxSize: z.string().optional().describe(
           "Cap action results plus the Go compile cache, such as 40GiB; least recently used entries go first"
         ),
+        keepUsedMinutes: z.number().min(60).default(60).describe(
+          "With --max-size, keep Go compile cache entries used within this many minutes even when no running target holds them"
+        ),
         dryRun: z.boolean().default(false),
         yes: z.boolean().default(false)
       }),
@@ -1417,6 +1420,7 @@ const cacheCli = (config: RuntimeConfig) => {
             root: index.root,
             cacheDirectory: cacheDirectoryOf(index, context.options),
             olderThanDays: context.options.olderThanDays,
+            keepUsedWithinMs: context.options.keepUsedMinutes * 60_000,
             maxSizeBytes: context.options.maxSize === undefined
               ? undefined
               : CacheAdmin.parseSize(context.options.maxSize),

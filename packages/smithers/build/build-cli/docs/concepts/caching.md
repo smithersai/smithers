@@ -49,6 +49,10 @@ entry it checks that `go` has not used or replaced it since it was listed.
 This is the protocol `go`'s own trim relies on. A lease whose process has
 exited, or that is more than a day old, is ignored and removed.
 
+A `go` that `smthrs` did not start holds no lease. If one shares the
+directory, pass `--keep-used-minutes` with its longest run time plus 60: every
+entry used within that window is kept as well.
+
 Keep the directory out of version control. Nothing in it is an input to
 anything: discovery never lists a path inside it, so its contents cannot feed
 input discovery or a digest, and the directory's name never enters a key.

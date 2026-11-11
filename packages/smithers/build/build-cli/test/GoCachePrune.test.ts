@@ -181,6 +181,24 @@ describe("cache prune under a size cap", () => {
     expect(await Promise.all([planned, idle].map(present))).toEqual([true, false])
   })
 
+  it("keeps a longer idle window for a go that holds no lease, and never a shorter one than go's hour", async () => {
+    const root = await temporary()
+    const recent = await compiled(root, "a", 100, 2 * hour)
+    const idle = await compiled(root, "b", 100, 4 * hour)
+    expect(await GoCache.usage(root, ".flows", host, {}, 3 * hour)).toEqual({ floor: now - 3 * hour, stale: [] })
+    expect(await GoCache.usage(root, ".flows", host, {}, 60_000)).toEqual({ floor: now - hour, stale: [] })
+    // A lease that began before the idle window still reaches further back.
+    const lease = await GoCache.acquireLease(root, ".flows", { ...host, now: now - 5 * hour })
+    expect(await GoCache.usage(root, ".flows", host, {}, 3 * hour)).toEqual({ floor: now - 6 * hour, stale: [] })
+    await GoCache.releaseLease(lease)
+    expect(await prune(root, 0, { keepUsedWithinMs: 3 * hour })).toMatchObject({
+      goBuild: { removed: 1, inUse: 1, inUseBytes: 100 }
+    })
+    expect(await Promise.all([recent, idle].map(present))).toEqual([true, false])
+    expect(await prune(root, 0)).toMatchObject({ goBuild: { removed: 1, inUse: 0 } })
+    expect(await present(recent)).toBe(false)
+  })
+
   it("does not believe a lease whose owner is gone, and removes it", async () => {
     const root = await temporary()
     const exited = NodeChildProcess.spawnSync(process.execPath, ["-e", ""])
@@ -363,6 +381,26 @@ describe("cache prune --max-size", () => {
       goBuild: { removed: 0, inUse: 1, inUseBytes: 10 },
       size: { after: 10 }
     })
+    // Five hours of idle window keep the three day old entry's successor too.
+    await write(root, NodePath.relative(root, stale), "x".repeat(2048))
+    const fourHours = new Date(Date.now() - 4 * hour)
+    await Fs.utimes(stale, fourHours, fourHours)
+    const windowed = await serve(root, [
+      "cache",
+      "prune",
+      "--max-size",
+      "0",
+      "--keep-used-minutes",
+      "300",
+      "--yes",
+      "--format",
+      "json"
+    ])
+    expect(JSON.parse(windowed.output)).toMatchObject({ goBuild: { removed: 0, inUse: 2, inUseBytes: 2058 } })
+    expect(await present(stale)).toBe(true)
+    const tooShort = await serve(root, ["cache", "prune", "--max-size", "0", "--keep-used-minutes", "5", "--yes"])
+    expect(tooShort.exitCode).toBe(1)
+    expect(await present(stale)).toBe(true)
     const refused = await serve(root, ["cache", "prune", "--max-size", "plenty", "--yes", "--format", "json"])
     expect(refused.exitCode).toBe(1)
     expect(refused.output).toContain("cache_prune_failed")

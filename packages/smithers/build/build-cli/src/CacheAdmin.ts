@@ -145,6 +145,11 @@ export const remove = async (options: {
   readonly now?: number | undefined
   /** What Go compile cache leases are judged against; the running process's own clock and host when omitted. */
   readonly leaseHost?: GoCache.LeaseHost | undefined
+  /**
+   * Keep compile cache entries used this recently even when no lease covers them; one hour when omitted, and never
+   * less. Raise it when a `go` this build system did not start uses the same directory for longer than that.
+   */
+  readonly keepUsedWithinMs?: number | undefined
   /** The host environment, whose `SMITHERS_GO_CACHE` names a compile cache shared between workspaces. */
   readonly environment?: GoCache.Environment | undefined
 }) => {
@@ -167,7 +172,8 @@ export const remove = async (options: {
       options.root,
       options.cacheDirectory,
       options.leaseHost ?? GoCache.leaseHost(now),
-      options.environment
+      options.environment,
+      options.keepUsedWithinMs
     )
     if (!options.dryRun) { for (const lease of usage.stale) await GoCache.releaseLease(lease) }
     const aged = new Set(candidates)

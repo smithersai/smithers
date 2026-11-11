@@ -332,11 +332,13 @@ export interface Usage {
   /**
    * Entries used after this time may be in use and are never evicted.
    *
-   * It is one use-time granularity before the earliest live lease, or before
-   * now when no run holds a lease. The second case covers a `go` the planner
-   * started, and every run that starts after this moment: such a run began
-   * later than `now`, so everything it can touch is already above the floor
-   * or has its use time refreshed, which {@link evict} checks again.
+   * It is one use-time granularity before the earliest live lease, and never
+   * later than the idle time before now. The idle time covers what holds no
+   * lease: a `go` the planner started, a `go` something other than this
+   * build system started in the same directory, and every run that starts
+   * after this moment. Such a run began later than `now`, so everything it
+   * can touch is already above the floor or has its use time refreshed, which
+   * {@link evict} checks again.
    */
   readonly floor: number
   /** Leases whose owner is gone. */
@@ -353,10 +355,17 @@ export const usage = async (
   root: string,
   cacheDirectory: string,
   host: LeaseHost = leaseHost(),
-  environment: Environment = {}
+  environment: Environment = {},
+  /**
+   * How recently an entry must have been used to be kept when no lease
+   * covers it. A `go` that holds no lease is safe only while it runs for less
+   * than this minus one use-time granularity, so it is never taken below that
+   * granularity.
+   */
+  idleMs: number = useGranularityMs
 ): Promise<Usage> => {
   const leases = NodePath.join(directory(root, cacheDirectory, environment), leaseDirectoryName)
-  let earliest = host.now
+  let earliest = Infinity
   const stale: Array<string> = []
   for (const name of (await Fs.readdir(leases).catch(() => [])).sort()) {
     const path = NodePath.join(leases, name)
@@ -370,7 +379,7 @@ export const usage = async (
     ) stale.push(path)
     else earliest = Math.min(earliest, record.startedAt)
   }
-  return { floor: earliest - useGranularityMs, stale }
+  return { floor: Math.min(host.now - Math.max(idleMs, useGranularityMs), earliest - useGranularityMs), stale }
 }
 
 const parseLease = (text: string): LeaseRecord | undefined => {
