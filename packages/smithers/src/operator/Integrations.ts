@@ -30,6 +30,7 @@ const execute = <A>(context: Presentation.Failing, body: () => Promise<A>) =>
 
 const provider = z.enum(["github"])
 const endpoint = z.string().url().refine((text) => {
+  if (!URL.canParse(text)) return false
   const url = new URL(text)
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
   return (url.protocol === "https:" || (url.protocol === "http:" && loopback)) && url.username === "" &&
@@ -214,16 +215,24 @@ const secret = async (options: LocalOptions, entry: Integration): Promise<string
 
 /** Probes a provider through its real client, returning no credential or provider response body.
  *
- * Re-checks host authorization at the point the credential leaves the process,
- * so a caller holding a hand-built entry cannot reach an unauthorized origin.
+ * An entry that names no endpoint probes the one the host names in
+ * `SMITHERS_GITHUB_API_BASE_URL`, or the provider's public API: the same
+ * resolution the client applies, made explicit here so the endpoint is
+ * validated and authorized before the credential leaves the process. A caller
+ * holding a hand-built entry therefore cannot reach an unauthorized origin.
  *
  * @category diagnostics
  * @since 1.0.0
  */
 export const probe = async (entry: Integration, token: string, timeoutMs = 10_000) => {
-  authorize(entry, Environment.ambientEnvironment())
+  const env = Environment.ambientEnvironment()
+  const resolved = GitHub.Config.resolve({ token, apiBaseUrl: entry.apiBaseUrl }, env)
+  if (!endpoint.safeParse(resolved.apiBaseUrl).success) {
+    throw refused("user", `Integration ${entry.id} resolves an invalid ${entry.provider} API endpoint`)
+  }
+  authorize({ ...entry, apiBaseUrl: resolved.apiBaseUrl }, env)
   const operation = Effect.flatMap(
-    GitHub.GitHubClient.make({ token, apiBaseUrl: entry.apiBaseUrl }, {}),
+    GitHub.GitHubClient.make(resolved, {}),
     (client) => client.request("GET", "/rate_limit")
   )
   await Effect.runPromise(operation.pipe(Effect.timeout(timeoutMs), Effect.provide(FetchHttpClient.layer)))

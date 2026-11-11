@@ -366,8 +366,10 @@ name only its provider's own credential variables plus any listed in
 `SMITHERS_INTEGRATION_TOKEN_ENV`. A stored `credentialId` must be listed in the
 host's comma-separated `SMITHERS_GITHUB_CREDENTIAL_IDS`; none are authorized by
 default. Destinations are restricted to GitHub's public API origin and the one
-named by `SMITHERS_GITHUB_API_BASE_URL`. These host settings stay outside the
-repository configuration.
+named by `SMITHERS_GITHUB_API_BASE_URL`; an entry without `apiBaseUrl`, and a
+discovered one, probes the endpoint that variable names, or GitHub's public API
+when it is unset. These host settings stay outside the repository
+configuration.
 
 `serve` (also available as `gateway`) hosts the trigger scheduler; `triggers serve` runs it separately.
 Scheduled and manual occurrences preserve approval requirements: each

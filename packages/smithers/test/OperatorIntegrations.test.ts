@@ -108,6 +108,14 @@ describe("integration CLI", () => {
     expect(result.output).not.toContain("private-fixture")
   })
 
+  it("refuses a configuration whose root is not an object", async () => {
+    const directory = await root()
+    await Fs.writeFile(Path.join(directory, ".smithers/integrations.json"), "null")
+    const result = await serve(directory, ["list"])
+    expect(result.code).toBe(1)
+    expect(result.output).toContain("Invalid integrations configuration: (root) is invalid")
+  })
+
   it("refuses duplicate IDs and contradictory credential sources", async () => {
     const directory = await root()
     const config = Path.join(directory, ".smithers/integrations.json")
@@ -335,6 +343,98 @@ describe("integration CLI", () => {
         .toMatchObject({ healthy: true })
     }
     expect(upstream.requests).toEqual([{ path: "/rate_limit", authorization: "Bearer test-token" }])
+  })
+
+  it.each(["GITHUB_TOKEN", "SMITHERS_GITHUB_TOKEN", "TEAM_GITHUB_TOKEN"])(
+    "uses the host Enterprise endpoint with %s when no entry endpoint is declared",
+    async (tokenEnv) => {
+      const directory = await root()
+      const enterprise = await github()
+      vi.stubEnv("GITHUB_TOKEN", "fallback-fixture-secret")
+      vi.stubEnv("SMITHERS_GITHUB_TOKEN", tokenEnv === "SMITHERS_GITHUB_TOKEN" ? "enterprise-fixture-secret" : "")
+      vi.stubEnv(tokenEnv, "enterprise-fixture-secret")
+      vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", `${enterprise.origin}/api/v3`)
+      if (tokenEnv === "TEAM_GITHUB_TOKEN") {
+        vi.stubEnv("SMITHERS_INTEGRATION_TOKEN_ENV", tokenEnv)
+        await Fs.writeFile(
+          Path.join(directory, ".smithers/integrations.json"),
+          JSON.stringify({ version: 1, integrations: [{ id: "github", provider: "github", tokenEnv }] })
+        )
+      }
+      const result = await serve(directory, ["doctor", "--timeout-ms", "1000"])
+      expect(result.code, result.output).toBe(0)
+      expect(result.data).toEqual({
+        healthy: true,
+        integrations: [{ id: "github", provider: "github", healthy: true, check: "provider-authentication" }]
+      })
+      expect(enterprise.requests).toEqual([{
+        path: "/api/v3/rate_limit",
+        authorization: "Bearer enterprise-fixture-secret"
+      }])
+      expect(result.output).not.toContain("enterprise-fixture-secret")
+      expect(result.output).not.toContain("fallback-fixture-secret")
+    }
+  )
+
+  it("keeps the explicit endpoint and probe token ahead of host defaults", async () => {
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_TOKEN", "ambient-fixture-secret")
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", `${upstream.origin}/host/api/v3`)
+    expect(
+      await probe(
+        { id: "explicit", provider: "github", apiBaseUrl: `${upstream.origin}/entry/api/v3` },
+        "explicit-fixture-secret"
+      )
+    )
+      .toEqual({ id: "explicit", provider: "github", healthy: true })
+    expect(upstream.requests).toEqual([{
+      path: "/entry/api/v3/rate_limit",
+      authorization: "Bearer explicit-fixture-secret"
+    }])
+  })
+
+  it.each([
+    "not-a-url",
+    "ftp://example.invalid",
+    "http://example.invalid",
+    "https://user:private-fixture@example.invalid",
+    "https://example.invalid?token=private-fixture",
+    "https://example.invalid#private-fixture"
+  ])("validates the inherited endpoint before sending a probe: %s", async (apiBaseUrl) => {
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", apiBaseUrl)
+    await expect(probe({ id: "github", provider: "github" }, "probe-fixture-secret", 200)).rejects.toMatchObject({
+      fault: "user",
+      code: "operator_failed",
+      message: "Integration github resolves an invalid github API endpoint"
+    })
+  })
+
+  it("authorizes no extra origin when the host endpoint variable is malformed", async () => {
+    const directory = await root()
+    const upstream = await github()
+    await Fs.writeFile(
+      Path.join(directory, ".smithers/integrations.json"),
+      JSON.stringify({
+        version: 1,
+        integrations: [{ id: "github", provider: "github", apiBaseUrl: upstream.origin }]
+      })
+    )
+    expect(() => readIntegrations(directory, undefined, { SMITHERS_GITHUB_API_BASE_URL: "not-a-url" }))
+      .toThrow(`unauthorized github endpoint ${upstream.origin}`)
+    expect(upstream.requests).toEqual([])
+  })
+
+  it("validates a hand-built entry endpoint even when its origin is authorized", async () => {
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
+    await expect(
+      probe(
+        { id: "github", provider: "github", apiBaseUrl: `${upstream.origin}?token=private-fixture` },
+        "probe-fixture-secret"
+      )
+    )
+      .rejects.toMatchObject({ fault: "user", message: "Integration github resolves an invalid github API endpoint" })
+    expect(upstream.requests).toEqual([])
   })
 
   it("refuses credentials and destinations the host never authorized, and accepts the ones it did", async () => {
