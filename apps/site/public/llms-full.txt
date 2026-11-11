@@ -9848,6 +9848,9 @@ Labels, key material, and the inert plan. From `@smthrs/build-cli` or
 | `KeyMaterialError`          | class, carries `path`                                                                                    | A value in key material could not be encoded injectively.                                      |
 | `UnsupportedVerbError`      | class, carries `pattern` and `verb`                                                                      | An exact target exists but does not participate in the requested verb.                         |
 
+The optional `fingerprintSources` `io` adapter is invocation-local and defaults
+to `SafeFs.defaultIo`. Source admission still precedes every digest read.
+
 `PlannedTarget` is the row `--plan` prints:
 
 ```ts
@@ -10015,6 +10018,10 @@ cached. Module text is limited to 8 MiB and each tsconfig to 1 MiB before
 allocation. Text must be valid UTF-8. Non-module leaves are hashed through a
 bounded buffer without a file-size limit. Digests cover the original bytes,
 including any UTF-8 byte-order mark.
+
+`loadResolverConfig` and `computeClosure` accept an optional `io` adapter
+for confined reads. It defaults to `SafeFs.defaultIo`; size limits are checked
+before opening an oversized configuration or module.
 
 | Export                      | Signature                                                                          | What it is                                                                             |
 | --------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -10496,6 +10503,21 @@ The exec boundary creates its broker outside the workspace and shared cache,
 then mounts only that run's socket. A concurrent confined target cannot borrow
 another run's network grant. The planner fingerprints the platform host sources
 as well as the Node executable, so broker or relay changes invalidate results.
+
+### Snapshot and child-process adapters
+
+`PackageTree.TreeIo` is the filesystem adapter accepted by snapshot acquisition,
+scratch copying, rollback, output capture and publication. The final optional
+argument defaults to the real host filesystem. Each invocation owns its adapter,
+so fault tests leave other operations untouched.
+
+`RepoResolution.Resolver.make` accepts an optional third argument supplying
+Effect-based `spawn` and `killGroup` operations and an `output` sink.
+The default uses real child processes and the parent terminal. Tests use real
+pipes, exits and signals; spawn and signal faults are injected per resolver.
+
+Exclusive scheduler targets run alone after ready ordinary work drains. Their
+dependencies and scoped finalizers complete before a dependent can start.
 
 ---
 

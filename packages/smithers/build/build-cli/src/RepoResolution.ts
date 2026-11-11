@@ -12,11 +12,12 @@ import * as Redaction from "@smthrs/journal/Redaction"
 import type * as LocalRepository from "@smthrs/targets/LocalRepository"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import * as Target from "@smthrs/targets/Target"
+import { Cause, Effect, Exit } from "effect"
 import * as Data from "effect/Data"
-import { spawn } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as NodePath from "node:path"
 import { StringDecoder } from "node:string_decoder"
+import * as RepositoryProcess from "./internal/RepositoryProcess.ts"
 import type * as PackageIndex from "./PackageIndex.ts"
 import * as Workspace from "./Workspace.ts"
 
@@ -95,22 +96,26 @@ export class ExecutionError extends Data.TaggedError("smithers-build/ExecutionEr
 export class Resolver {
   readonly index: PackageIndex.PackageIndex
   readonly environment: Readonly<Record<string, string | undefined>>
+  readonly processes: RepositoryProcess.Services
   readonly cache = new Map<Target.AnyTarget, Promise<Resolution>>()
 
   private constructor(
     index: PackageIndex.PackageIndex,
-    environment: Readonly<Record<string, string | undefined>>
+    environment: Readonly<Record<string, string | undefined>>,
+    processes: RepositoryProcess.Services
   ) {
     this.index = index
     this.environment = environment
+    this.processes = processes
   }
 
   /** @internal */
   static make(
     index: PackageIndex.PackageIndex,
-    environment: Readonly<Record<string, string | undefined>>
+    environment: Readonly<Record<string, string | undefined>>,
+    processes: RepositoryProcess.Services = RepositoryProcess.live
   ): Resolver {
-    return new Resolver(index, environment)
+    return new Resolver(index, environment, processes)
   }
 }
 
@@ -137,6 +142,13 @@ interface ProcessResult {
   readonly stderr: string
 }
 
+/** Preserve native failures at this module's existing Promise boundary. */
+const hostValue = <A>(operation: Effect.Effect<A, unknown>): A => {
+  const result = Effect.runSyncExit(operation)
+  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  return result.value
+}
+
 const maximumOutputBytes = 1024 * 1024
 const diagnosticTail = 8 * 1024
 
@@ -145,11 +157,12 @@ const runProcess = (
   cwd: string,
   argv: readonly [string, ...Array<string>],
   env: Readonly<Record<string, string | undefined>>,
-  signal?: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  processes: RepositoryProcess.Services
 ): Promise<ProcessResult> =>
   new Promise((resolve, reject) => {
     const [command, ...args] = argv
-    const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] })
+    const child = hostValue(processes.spawn(command, args, { cwd, env }))
     const stdout: Array<Buffer> = []
     const stderr: Array<Buffer> = []
     let bytes = 0
@@ -253,7 +266,8 @@ const query = async (
       absolutePath,
       [process.execPath, buildCliPath, "query", attrs.label, "--workspace", absolutePath, "--format", "json"],
       resolver.environment,
-      signal
+      signal,
+      resolver.processes
     )
     if (result.exitCode !== 0) {
       const detail = tail((result.stderr.trim() || result.stdout.trim()) || `exit ${result.exitCode}`)
@@ -331,10 +345,6 @@ export const effectiveKinds = async (
 /**
  * Reads the commit and dirty status used by one child execution key.
  *
- * Only a child's own `.git` answers. Without one, Git would walk up to an
- * enclosing checkout and report that commit and an empty status for files it
- * ignores, so a child without local Git is reported dirty: never cacheable.
- *
  * @category resolution
  * @since 0.1.0
  */
@@ -349,14 +359,16 @@ export const gitState = async (
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "rev-parse", "HEAD"],
     environment,
-    signal
+    signal,
+    resolver.processes
   )
   if (head.exitCode !== 0) throw new Error(`could not read child repository HEAD: ${tail(head.stderr || head.stdout)}`)
   const status = await runProcess(
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "status", "--porcelain"],
     environment,
-    signal
+    signal,
+    resolver.processes
   )
   if (status.exitCode !== 0) {
     throw new Error(`could not read child repository status: ${tail(status.stderr || status.stdout)}`)
@@ -396,12 +408,12 @@ export const execute = (
       ...(options.plan === true ? ["--plan"] : []),
       ...resolution.args
     ]
-    const child = spawn(process.execPath, args, {
+    const child = hostValue(resolver.processes.spawn(process.execPath, args, {
       cwd: resolution.absolutePath,
       detached: true,
       env: { ...resolver.environment, ...options.environment, SMTHRS_REPO_CHILD: "1" },
       stdio: ["ignore", "pipe", "pipe"]
-    })
+    }))
     let stderrTail = ""
     let settled = false
     const finish = (operation: () => void): void => {
@@ -413,7 +425,7 @@ export const execute = (
     const kill = (): void => {
       if (child.pid !== undefined) {
         try {
-          process.kill(-child.pid, "SIGKILL")
+          hostValue(resolver.processes.killGroup(child.pid))
           return
         } catch {
           // Fall through on hosts without process-group signals.
@@ -425,9 +437,7 @@ export const execute = (
       kill()
       finish(() => reject(options.signal?.reason ?? new Error("child target aborted")))
     }
-    const output = options.output ??
-      ((stream: "stdout" | "stderr", chunk: string) =>
-        void (stream === "stdout" ? process.stdout : process.stderr).write(chunk))
+    const output = options.output ?? resolver.processes.output
     // Child output is redacted a complete line at a time with the diagnostic
     // rules, holding a value that spans lines until it closes; the failure's
     // stderr tail is cut from the redacted text, never from the raw bytes.

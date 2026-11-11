@@ -24,6 +24,16 @@ import * as Environment from "./Environment.ts"
 import * as Path from "./internal/Path.ts"
 import { byCodeUnit, posix } from "./internal/Text.ts"
 
+/** Filesystem adapter for snapshot and publication operations.
+ * Defaults to the host filesystem; callers may supply scoped faults without replacing modules.
+ * @category models
+ * @since 1.0.0
+ */
+export type TreeIo = Omit<typeof Fs, "lstat" | "mkdtemp"> & {
+  readonly lstat: (path: NodeFs.PathLike) => Promise<NodeFs.Stats>
+  readonly mkdtemp: (prefix: string) => Promise<string>
+}
+
 const errno = (cause: unknown): string | undefined =>
   typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
     ? cause.code
@@ -445,7 +455,7 @@ const skipStatusPath = (cacheDirectory: string, path: string, hostTrees: Readonl
  * @category write sets
  * @since 0.1.0
  */
-export const snapshotTree = async (root: string, cacheDirectory: string): Promise<TreeSnapshot> => {
+export const snapshotTree = async (root: string, cacheDirectory: string, io: TreeIo = Fs): Promise<TreeSnapshot> => {
   // Gitignored paths are handled by the separate ignored guard
   // ({@link snapshotIgnored}), which carries its own ceilings: hashing the
   // whole ignored tree here, with the build artifacts among it, would be a
@@ -453,12 +463,12 @@ export const snapshotTree = async (root: string, cacheDirectory: string): Promis
   const raw = await statusZ(root)
   const states = new Map<string, PathState>()
   const trackedModes = new Map<string, number>()
-  const stashDirectory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-writeset-"))
+  const stashDirectory = await io.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-writeset-"))
   try {
     const trackedPaths = censusedByGit(root) ? await runGit(root, ["ls-files", "-z"]) : ""
     for (const path of trackedPaths.split("\0")) {
       if (path === "" || skipStatusPath(cacheDirectory, path)) continue
-      const stats = await Fs.lstat(NodePath.join(root, path)).catch((cause: unknown) => {
+      const stats = await io.lstat(NodePath.join(root, path)).catch((cause: unknown) => {
         if (errno(cause) === "ENOENT" || errno(cause) === "ENOTDIR") return undefined
         throw cause
       })
@@ -471,7 +481,7 @@ export const snapshotTree = async (root: string, cacheDirectory: string): Promis
       states.set(entry.path, state)
       if (state.kind === "file") {
         const stashFile = NodePath.join(stashDirectory, digestBytes(Buffer.from(entry.path, "utf8")))
-        await Fs.copyFile(absolute, stashFile)
+        await io.copyFile(absolute, stashFile)
       } else if (state.kind === "link") {
         // Link state is fully described by its target text; nothing to stash.
       }
@@ -479,7 +489,7 @@ export const snapshotTree = async (root: string, cacheDirectory: string): Promis
     return { root, states, trackedModes, stashDirectory }
   } catch (cause) {
     // The caller never received a snapshot to release; retain the acquisition error.
-    await Fs.rm(stashDirectory, { recursive: true, force: true }).catch(() => {})
+    await io.rm(stashDirectory, { recursive: true, force: true }).catch(() => {})
     throw cause
   }
 }
@@ -637,7 +647,12 @@ const quarantinePath = async (
  * @category write sets
  * @since 0.1.0
  */
-export const revertPath = async (snapshot: TreeSnapshot, path: string, quarantine?: Quarantine): Promise<void> => {
+export const revertPath = async (
+  snapshot: TreeSnapshot,
+  path: string,
+  quarantine?: Quarantine,
+  io: TreeIo = Fs
+): Promise<void> => {
   const absolute = NodePath.join(snapshot.root, path)
   await quarantinePath(quarantine, path)
   const before = snapshot.states.get(path)
@@ -656,8 +671,8 @@ export const revertPath = async (snapshot: TreeSnapshot, path: string, quarantin
       // checkout must not expose bytes under Git's broader default mode or
       // mutate a hard-link alias. Keep the destination until staging succeeds.
       const parent = NodePath.dirname(absolute)
-      await Fs.mkdir(parent, { recursive: true })
-      const directory = await Fs.mkdtemp(NodePath.join(parent, ".smthrs-rollback-"))
+      await io.mkdir(parent, { recursive: true })
+      const directory = await io.mkdtemp(NodePath.join(parent, ".smthrs-rollback-"))
       try {
         const checkoutArguments = [
           "--force",
@@ -677,42 +692,42 @@ export const revertPath = async (snapshot: TreeSnapshot, path: string, quarantin
           await runGit(snapshot.root, ["checkout-index", ...checkoutArguments])
         }
         const staged = NodePath.join(directory, path)
-        const stagedState = await Fs.lstat(staged)
+        const stagedState = await io.lstat(staged)
         if (!stagedState.isFile() && !stagedState.isSymbolicLink()) {
           throw new Error(`cannot restore non-file index entry ${JSON.stringify(path)}`)
         }
         const mode = snapshot.trackedModes.get(path)
-        if (mode !== undefined && stagedState.isFile()) await Fs.chmod(staged, mode)
-        const current = await Fs.lstat(absolute).catch((cause: unknown) => {
+        if (mode !== undefined && stagedState.isFile()) await io.chmod(staged, mode)
+        const current = await io.lstat(absolute).catch((cause: unknown) => {
           if (errno(cause) === "ENOENT") return undefined
           throw cause
         })
         // Files and symlinks publish atomically. A replacement directory must
         // first be removed, but only after checkout and permissions succeed.
-        if (current?.isDirectory()) await Fs.rm(absolute, { recursive: true, force: true })
-        await Fs.rename(staged, absolute)
+        if (current?.isDirectory()) await io.rm(absolute, { recursive: true, force: true })
+        await io.rename(staged, absolute)
       } finally {
-        await Fs.rm(directory, { recursive: true, force: true })
+        await io.rm(directory, { recursive: true, force: true })
       }
     } else {
-      await Fs.rm(absolute, { recursive: true, force: true })
+      await io.rm(absolute, { recursive: true, force: true })
     }
     return
   }
   if (before.kind === "missing") {
-    await Fs.rm(absolute, { recursive: true, force: true })
+    await io.rm(absolute, { recursive: true, force: true })
     return
   }
   if (before.kind === "link") {
-    await Fs.rm(absolute, { recursive: true, force: true })
-    await Fs.symlink(before.target, absolute)
+    await io.rm(absolute, { recursive: true, force: true })
+    await io.symlink(before.target, absolute)
     return
   }
   const stashFile = NodePath.join(snapshot.stashDirectory, digestBytes(Buffer.from(path, "utf8")))
-  await Fs.rm(absolute, { recursive: true, force: true })
-  await Fs.mkdir(NodePath.dirname(absolute), { recursive: true })
-  await Fs.copyFile(stashFile, absolute)
-  await Fs.chmod(absolute, before.mode)
+  await io.rm(absolute, { recursive: true, force: true })
+  await io.mkdir(NodePath.dirname(absolute), { recursive: true })
+  await io.copyFile(stashFile, absolute)
+  await io.chmod(absolute, before.mode)
 }
 
 /**
@@ -1398,9 +1413,10 @@ export const snapshotPortals = async (
   root: string,
   cacheDirectory: string,
   ignored?: IgnoredSnapshot,
-  hostTrees: ReadonlyArray<string> = []
+  hostTrees: ReadonlyArray<string> = [],
+  io: TreeIo = Fs
 ): Promise<PortalSnapshot> => {
-  const realRoot = await Fs.realpath(root)
+  const realRoot = await io.realpath(root)
   const candidates = new Set<string>(await listTrackedSymlinks(root))
   const statusRaw = await statusZ(root)
   for (const entry of parseStatusZ(statusRaw)) {
@@ -1411,7 +1427,7 @@ export const snapshotPortals = async (
   for (const [path, entry] of ignoredEntries) {
     if (entry.kind === "link") candidates.add(path)
   }
-  const stashDirectory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-portal-"))
+  const stashDirectory = await io.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-portal-"))
   try {
     const portals: Array<Portal> = []
     let index = 0
@@ -1420,7 +1436,7 @@ export const snapshotPortals = async (
       const absolute = NodePath.join(root, link)
       let stats: NodeFs.Stats
       try {
-        stats = await Fs.lstat(absolute)
+        stats = await io.lstat(absolute)
       } catch {
         continue
       }
@@ -1428,10 +1444,10 @@ export const snapshotPortals = async (
       let realTarget: string
       let states: Map<string, PathState> | undefined
       try {
-        realTarget = await Fs.realpath(absolute)
+        realTarget = await io.realpath(absolute)
       } catch (realpathCause) {
         try {
-          const target = await Fs.readlink(absolute)
+          const target = await io.readlink(absolute)
           const intended = NodePath.resolve(NodePath.dirname(absolute), target)
           realTarget = await resolveFromExistingAncestor(intended)
         } catch (cause) {
@@ -1458,7 +1474,7 @@ export const snapshotPortals = async (
       for (const [relativePath, state] of states) {
         if (state.kind === "file") {
           const source = relativePath === "" ? realTarget : NodePath.join(realTarget, ...relativePath.split("/"))
-          await Fs.copyFile(source, NodePath.join(stashDirectory, portalStashKey(index, relativePath)))
+          await io.copyFile(source, NodePath.join(stashDirectory, portalStashKey(index, relativePath)))
         }
       }
       portals.push({ link, realTarget, states })
@@ -1467,7 +1483,7 @@ export const snapshotPortals = async (
     return { root, portals, stashDirectory }
   } catch (cause) {
     // The caller never received a snapshot to release; retain the acquisition error.
-    await Fs.rm(stashDirectory, { recursive: true, force: true }).catch(() => {})
+    await io.rm(stashDirectory, { recursive: true, force: true }).catch(() => {})
     throw cause
   }
 }
@@ -1628,9 +1644,10 @@ export const scratchCopy = async (
   root: string,
   cacheDirectory: string,
   skip: ReadonlyArray<string> = [],
-  hostTrees: ReadonlyArray<string> = []
+  hostTrees: ReadonlyArray<string> = [],
+  io: TreeIo = Fs
 ): Promise<string> => {
-  const destination = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-scratch-"))
+  const destination = await io.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-scratch-"))
   const cacheAbsolute = NodePath.join(root, ...cacheDirectory.split("/"))
   const nodeModulesAbsolute = NodePath.join(root, "node_modules")
   const skipped = new Set(skip.map((path) => NodePath.join(root, ...path.split("/"))))
@@ -1639,7 +1656,7 @@ export const scratchCopy = async (
   const nestedCheckout = (source: string): boolean =>
     source !== root && NodeFs.existsSync(NodePath.join(source, ".git"))
   try {
-    await Fs.cp(root, destination, {
+    await io.cp(root, destination, {
       recursive: true,
       verbatimSymlinks: true,
       filter: (source) =>
@@ -1647,10 +1664,10 @@ export const scratchCopy = async (
         !versionControl.has(NodePath.basename(source)) && !nestedCheckout(source)
     })
     for (const source of linked) {
-      if (!(await Fs.lstat(source).then(() => true, () => false))) continue
+      if (!(await io.lstat(source).then(() => true, () => false))) continue
       const target = NodePath.join(destination, NodePath.relative(root, source))
-      await Fs.mkdir(NodePath.dirname(target), { recursive: true })
-      await Fs.symlink(await Fs.realpath(source), target, "dir")
+      await io.mkdir(NodePath.dirname(target), { recursive: true })
+      await io.symlink(await io.realpath(source), target, "dir")
     }
     // Cache contents stay out of scratch. The empty result-cache directory
     // must exist so confinement can re-close it beneath the writable cache.
@@ -1659,7 +1676,7 @@ export const scratchCopy = async (
   } catch (error) {
     // Neither copying nor linking dependencies can leave a half-built tree
     // in the temporary directory for the next run to find.
-    await Fs.rm(destination, { recursive: true, force: true })
+    await io.rm(destination, { recursive: true, force: true })
     throw error
   }
 }
@@ -1929,12 +1946,13 @@ export const captureOutDir = async (
   cacheDirectory: string,
   outDir: string,
   storeRoot: string = root,
-  limits: Readonly<OutDirLimits> = outDirLimits
+  limits: Readonly<OutDirLimits> = outDirLimits,
+  io: TreeIo = Fs
 ): Promise<OutDirManifest> => {
   const absolute = NodePath.join(root, ...outDir.split("/"))
   let stats: NodeFs.Stats
   try {
-    stats = await Fs.lstat(absolute)
+    stats = await io.lstat(absolute)
   } catch {
     throw new Error(`declared outDir was not created: ${outDir}`)
   }
@@ -1955,7 +1973,7 @@ export const captureOutDir = async (
   // trade a readable traversal for an explicit stack that proves nothing more.
   const walk = async (directory: string, relative: string, depth: number): Promise<void> => {
     if (depth > limits.depth) throw new OutDirLimitError("depth", `${outDir}/${relative}`, limits.depth)
-    const names = (await Fs.readdir(directory, { withFileTypes: true }))
+    const names = (await io.readdir(directory, { withFileTypes: true }))
       .sort((left, right) => byCodeUnit(left.name, right.name))
     for (const entry of names) {
       const childAbsolute = NodePath.join(directory, entry.name)
@@ -1968,7 +1986,7 @@ export const captureOutDir = async (
         throw new OutDirLimitError("pathBytes", `${outDir}/${childRelative}`, limits.pathBytes)
       }
       if (entry.isSymbolicLink()) {
-        const target = await Fs.readlink(childAbsolute)
+        const target = await io.readlink(childAbsolute)
         // A link whose target leaves the outDir can never be restored:
         // `decodeManifest` refuses it, so the entry would publish and then miss
         // on every run with nothing naming the cause. Refuse it here instead.
@@ -1980,7 +1998,7 @@ export const captureOutDir = async (
         // The cheap `lstat` size rejects an oversized file before it is read;
         // the streamed count below rejects one that grew after the stat, which
         // is the only way past the first check.
-        if ((await Fs.lstat(childAbsolute)).size > limits.fileBytes) {
+        if ((await io.lstat(childAbsolute)).size > limits.fileBytes) {
           throw new OutDirLimitError("fileBytes", `${outDir}/${childRelative}`, limits.fileBytes)
         }
         const observed = await digestFile(childAbsolute)
@@ -1991,7 +2009,7 @@ export const captureOutDir = async (
         if (totalBytes > limits.totalBytes) {
           throw new OutDirLimitError("totalBytes", `${outDir}/${childRelative}`, limits.totalBytes)
         }
-        const mode = (await Fs.stat(childAbsolute)).mode
+        const mode = (await io.stat(childAbsolute)).mode
         const executable = (mode & 0o111) !== 0
         files.push({
           absolute: childAbsolute,
@@ -2018,7 +2036,7 @@ export const captureOutDir = async (
   // Validation and hashing finish before the store is created or changed. A
   // later path or aggregate limit therefore cannot leave a partial CAS write.
   const cas = casDirectory(storeRoot, cacheDirectory)
-  await Fs.mkdir(cas, { recursive: true })
+  await io.mkdir(cas, { recursive: true })
   for (const file of files) {
     await putBlob(cas, file.absolute, file.digest)
   }
@@ -2088,22 +2106,23 @@ export const verifyFileManifest = async (
 export const materializeFile = async (
   root: string,
   cacheDirectory: string,
-  manifest: FileManifest
+  manifest: FileManifest,
+  io: TreeIo = Fs
 ): Promise<void> => {
   if (!isConfinedRelative(manifest.path)) throw new Error(`materialize refused path: ${manifest.path}`)
   const destination = NodePath.join(root, ...manifest.path.split("/"))
   const blob = NodePath.join(casDirectory(root, cacheDirectory), manifest.digest)
   await confinedAncestor(root, destination, manifest.path)
-  await Fs.mkdir(NodePath.dirname(destination), { recursive: true })
+  await io.mkdir(NodePath.dirname(destination), { recursive: true })
   await confinedParent(root, destination, manifest.path)
   const temporary = `${destination}.smthrs-${tempToken()}`
   try {
-    await Fs.copyFile(blob, temporary)
-    await Fs.chmod(temporary, manifest.executable ? 0o755 : 0o644)
-    await Fs.rename(temporary, destination)
+    await io.copyFile(blob, temporary)
+    await io.chmod(temporary, manifest.executable ? 0o755 : 0o644)
+    await io.rename(temporary, destination)
   } finally {
     // Cleanup must not replace the copy, chmod, or publication error.
-    await Fs.rm(temporary, { force: true }).catch(() => {})
+    await io.rm(temporary, { force: true }).catch(() => {})
   }
 }
 
@@ -2242,60 +2261,61 @@ const recoverStrandedTree = async (parent: string, absolute: string, owner: stri
 export const materializeManifest = async (
   root: string,
   cacheDirectory: string,
-  manifest: OutDirManifest
+  manifest: OutDirManifest,
+  io: TreeIo = Fs
 ): Promise<void> => {
   const cas = casDirectory(root, cacheDirectory)
   const absolute = NodePath.join(root, ...manifest.outDir.split("/"))
   const parent = NodePath.dirname(absolute)
   await confinedAncestor(root, absolute, manifest.outDir)
-  await Fs.mkdir(parent, { recursive: true })
+  await io.mkdir(parent, { recursive: true })
   await confinedParent(root, absolute, manifest.outDir)
   // Canonicalize the parent so alternate workspace paths share one lock and
   // backup namespace, without following an existing output-root symlink.
   const owner = createHash("sha256")
-    .update(NodePath.join(await Fs.realpath(parent), NodePath.basename(absolute)))
+    .update(NodePath.join(await io.realpath(parent), NodePath.basename(absolute)))
     .digest("hex")
   const stamp = tempToken()
   const temp = NodePath.join(parent, `.smthrs-mat-${owner}-${stamp}`)
   const lock = NodePath.join(parent, `.smthrs-lock-${owner}`)
   try {
-    await Fs.mkdir(lock)
+    await io.mkdir(lock)
   } catch (cause) {
     if (errno(cause) !== "EEXIST") throw cause
     throw new Error(`materialize publication lock exists for ${manifest.outDir}: ${lock}`, { cause })
   }
   try {
     await recoverStrandedTree(parent, absolute, owner)
-    await Fs.mkdir(temp, { recursive: true })
+    await io.mkdir(temp, { recursive: true })
     // The temp tree is a sibling of the destination, so proving every entry
     // stays under `tempReal` proves nothing if `tempReal` itself already left
     // the workspace through a symlinked output parent.
     await confinedParent(root, temp, manifest.outDir)
-    const tempReal = await Fs.realpath(temp)
+    const tempReal = await io.realpath(temp)
     for (const entry of manifest.entries) {
       const destination = NodePath.join(temp, ...entry.path.split("/"))
       const parentDirectory = NodePath.dirname(destination)
-      await Fs.mkdir(parentDirectory, { recursive: true })
+      await io.mkdir(parentDirectory, { recursive: true })
       // Confine every write to the temp tree. `decodeManifest` already refuses
       // `..` and absolute paths and link targets, but a poisoned manifest that
       // slipped a symlink entry ahead of a file entry beneath it would have the
       // file written through the link; resolving the real parent and checking
       // it stays under the temp root closes that write-through path regardless.
-      const realParent = await Fs.realpath(parentDirectory)
+      const realParent = await io.realpath(parentDirectory)
       if (!Path.contains(tempReal, realParent)) {
         throw new Error(`materialize refused a path that leaves the outDir: ${entry.path}`)
       }
       if (entry.kind === "link") {
-        await Fs.symlink(entry.target, destination)
+        await io.symlink(entry.target, destination)
       } else {
-        await Fs.copyFile(NodePath.join(cas, entry.digest), destination)
-        await Fs.chmod(destination, entry.executable ? 0o755 : 0o644)
+        await io.copyFile(NodePath.join(cas, entry.digest), destination)
+        await io.chmod(destination, entry.executable ? 0o755 : 0o644)
       }
     }
     const old = NodePath.join(parent, `.smthrs-old-${owner}-${stamp}`)
     let hadOld = false
     try {
-      await Fs.rename(absolute, old)
+      await io.rename(absolute, old)
       hadOld = true
     } catch (cause) {
       // Only "it was not there" is tolerated. Treating every failure as absence
@@ -2306,7 +2326,7 @@ export const materializeManifest = async (
       if (code !== "ENOENT") throw cause
     }
     try {
-      await Fs.rename(temp, absolute)
+      await io.rename(temp, absolute)
     } catch (cause) {
       // The swap is the publication point. Without this, a failure here left
       // the declared output absent and the previous tree stranded beside it as
@@ -2314,7 +2334,7 @@ export const materializeManifest = async (
       // state or the new one.
       if (hadOld) {
         try {
-          await Fs.rename(old, absolute)
+          await io.rename(old, absolute)
         } catch (restoreCause) {
           throw new Error(
             `materialize could not publish ${manifest.outDir} and could not restore the previous tree from ${old}`,
@@ -2325,12 +2345,12 @@ export const materializeManifest = async (
       throw cause
     }
     await syncForPublish(parent)
-    if (hadOld) await Fs.rm(old, { recursive: true, force: true })
+    if (hadOld) await io.rm(old, { recursive: true, force: true })
   } catch (cause) {
-    await Fs.rm(temp, { recursive: true, force: true }).catch(() => {})
+    await io.rm(temp, { recursive: true, force: true }).catch(() => {})
     throw cause
   } finally {
-    await Fs.rmdir(lock).catch(() => {})
+    await io.rmdir(lock).catch(() => {})
   }
 }
 

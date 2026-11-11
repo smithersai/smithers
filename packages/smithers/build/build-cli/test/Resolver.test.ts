@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { openCache } from "../src/Cache.ts"
 import {
   ClosureError,
@@ -724,13 +724,16 @@ describe("edges and bounds", () => {
 
   it("refuses an oversized tsconfig before parsing", async () => {
     await write("tsconfig.json", " ".repeat(SafeFs.defaultTextBytes + 1))
-    const open = vi.spyOn(SafeFs.defaultIo, "open")
-    try {
-      await expect(loadResolverConfig({ workspaceRoot: root })).rejects.toThrow(/larger than/)
-      expect(open).not.toHaveBeenCalled()
-    } finally {
-      open.mockRestore()
+    let opened = 0
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        opened++
+        return SafeFs.defaultIo.open(path)
+      }
     }
+    await expect(loadResolverConfig({ workspaceRoot: root, io })).rejects.toThrow(/larger than/)
+    expect(opened).toBe(0)
   })
 
   it("drops or refuses missing declared entry files by requireFiles", async () => {
@@ -809,13 +812,16 @@ describe("edges and bounds", () => {
     const oversized = Buffer.alloc(maximumModuleBytes + 1, 0x20)
     await Fs.writeFile(NodePath.join(root, "entry.ts"), oversized)
     const config = await loadResolverConfig({ workspaceRoot: root })
-    const open = vi.spyOn(SafeFs.defaultIo, "open")
-    try {
-      await expect(computeClosure({ config, entries: ["entry.ts"] })).rejects.toThrow(/parse bound/)
-      expect(open).not.toHaveBeenCalled()
-    } finally {
-      open.mockRestore()
+    let opened = 0
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        opened++
+        return SafeFs.defaultIo.open(path)
+      }
     }
+    await expect(computeClosure({ config, entries: ["entry.ts"], io })).rejects.toThrow(/parse bound/)
+    expect(opened).toBe(0)
   })
 
   it("strips query suffixes and a byte-order mark before resolving", async () => {

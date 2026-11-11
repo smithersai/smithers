@@ -17,7 +17,7 @@ const importRules = ImportRules({
   cwd: "packages/smithers/build/build-cli",
   rules: [{
     kind: "forbidCalls",
-    files: ["test/**/*.test.ts"],
+    files: ["test/**"],
     callees: [
       "vi.mock",
       "vi.doMock",
@@ -97,6 +97,7 @@ const test = Smithers.Vitest({
     prose,
     readme,
     sweep,
+    Smithers.file("TestPolicy.ts"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//packages/smithers/flows/jj-wasm/PACKAGE.ts"),
     Smithers.file("//packages/smithers/flows/jj-wasm/src/abi.rs")

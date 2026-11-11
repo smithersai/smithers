@@ -213,7 +213,7 @@ const workspaceRelative = (workspaceRoot: string, absolute: string, what: string
 /** Reads bounded text and hashes its exact bytes against the same admitted file identity. */
 const readWorkspaceText = async (
   path: string,
-  options: { readonly root: string; readonly limit: number; readonly what: string }
+  options: { readonly root: string; readonly limit: number; readonly what: string; readonly io?: SafeFs.Io | undefined }
 ): Promise<{ readonly text: string; readonly digest: string }> => {
   const entry = await SafeFs.resolveFile(path, options)
   if (entry === undefined) throw new Error(`${options.what} does not exist: ${path}`)
@@ -231,7 +231,8 @@ const readTsconfigChain = async (
   relativePath: string,
   layers: Array<TsconfigLayer>,
   sources: Array<{ path: string; digest: string }>,
-  depth: number
+  depth: number,
+  io: SafeFs.Io = SafeFs.defaultIo
 ): Promise<void> => {
   if (depth > 8) {
     throw new ResolverConfigError("extends_too_deep", `tsconfig extends chain exceeds 8 files at ${relativePath}`)
@@ -241,7 +242,8 @@ const readTsconfigChain = async (
   let digest: string
   try {
     const content = await readWorkspaceText(absolute, {
-      root: await SafeFs.canonicalRoot(workspaceRoot),
+      root: await SafeFs.canonicalRoot(workspaceRoot, io),
+      io,
       limit: SafeFs.defaultTextBytes,
       what: "tsconfig"
     })
@@ -278,7 +280,8 @@ const readTsconfigChain = async (
       workspaceRelative(workspaceRoot, withExtension, "tsconfig extends target"),
       layers,
       sources,
-      depth + 1
+      depth + 1,
+      io
     )
   }
   const compilerOptions = config["compilerOptions"]
@@ -303,6 +306,7 @@ const readTsconfigChain = async (
  * @since 0.1.0
  */
 export const loadResolverConfig = async (options: {
+  readonly io?: SafeFs.Io | undefined
   readonly workspaceRoot: string
   readonly tsconfig?: string | undefined
 }): Promise<ResolverConfig> => {
@@ -319,7 +323,7 @@ export const loadResolverConfig = async (options: {
   const layers: Array<TsconfigLayer> = []
   const sources: Array<{ path: string; digest: string }> = []
   if (tsconfigPath !== undefined) {
-    await readTsconfigChain(workspaceRoot, tsconfigPath, layers, sources, 0)
+    await readTsconfigChain(workspaceRoot, tsconfigPath, layers, sources, 0, options.io)
   }
   let baseUrl: string | undefined
   let pathsMap: { readonly directory: string; readonly map: Record<string, unknown> } | undefined
@@ -987,6 +991,7 @@ const compareIssues = (left: Compose.ClosureIssue, right: Compose.ClosureIssue):
  * @since 0.1.0
  */
 export const computeClosure = async (options: {
+  readonly io?: SafeFs.Io | undefined
   readonly config: ResolverConfig
   readonly entries: ReadonlyArray<string>
   readonly cache?: CacheStore | undefined
@@ -1026,13 +1031,14 @@ export const computeClosure = async (options: {
       if (scannable) {
         const content = await readWorkspaceText(absolute, {
           root,
+          io: options.io,
           limit: maximumModuleBytes,
           what: "module (parse bound)"
         })
         text = content.text
         digest = content.digest
       } else {
-        digest = await SafeFs.digestFile(absolute, { root, what: "closure file" })
+        digest = await SafeFs.digestFile(absolute, { root, io: options.io, what: "closure file" })
       }
       if (digest === undefined) throw new Error(`file does not exist: ${path}`)
     } catch (cause) {

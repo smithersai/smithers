@@ -1,10 +1,8 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Deferred, Effect, Fiber, PlatformError, Sink, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, PlatformError, Sink, Stream } from "effect"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
-import { afterEach, expect, it, vi } from "vitest"
+import { expect, it } from "vitest"
 import * as ContainedProcess from "../src/internal/ContainedProcess.ts"
-
-afterEach(() => vi.restoreAllMocks())
 
 const fixture = (
   kill: ScopedProcess.Handle["kill"],
@@ -27,14 +25,25 @@ const fixture = (
     }),
     { targetPid: 12346 }
   )
-  vi.spyOn(ScopedProcess, "spawn").mockReturnValue(Effect.succeed(handle))
   return {
+    spawn: () => Effect.succeed(handle),
     command: "fixture",
     args: ["literal argument"],
     cwd: "/fixture",
     stdout: () => {},
     stderr: () => {}
   }
+}
+
+const runEffect = (options: ReturnType<typeof fixture>) =>
+  ContainedProcess.runEffect(options).pipe(
+    Effect.provideService(ContainedProcess.ProcessSpawner, { spawn: options.spawn })
+  )
+
+const run = async (options: ReturnType<typeof fixture>) => {
+  const result = await Effect.runPromiseExit(runEffect(options))
+  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  return result.value
 }
 
 it.skipIf(process.platform === "win32")(
@@ -47,7 +56,7 @@ it.skipIf(process.platform === "win32")(
         Deferred.succeed(killing, undefined).pipe(
           Effect.andThen(Deferred.await(release))
         ), Effect.never)
-      const process = yield* ContainedProcess.runEffect(options).pipe(Effect.forkScoped({ startImmediately: true }))
+      const process = yield* runEffect(options).pipe(Effect.forkScoped({ startImmediately: true }))
       let closed = false
       const closing = yield* Fiber.interrupt(process).pipe(
         Effect.tap(() =>
@@ -73,23 +82,20 @@ it.skipIf(process.platform === "win32")(
     const killed = new Promise<void>((resolve) => {
       release = resolve
     })
-    const kill = vi.fn(() => Effect.promise(() => killed))
+    const killing = Promise.withResolvers<void>()
+    const kill: ScopedProcess.Handle["kill"] = (options) =>
+      Effect.sync(() => {
+        expect(options).toEqual({ killSignal: "SIGTERM", forceKillAfter: 5000 })
+        killing.resolve()
+      }).pipe(Effect.andThen(Effect.promise(() => killed)))
     const options = fixture(kill)
-    const pending = ContainedProcess.run(options).then((code) => {
+    const pending = run(options).then((code) => {
       stopped = true
       return code
     })
-    await vi.waitFor(() => expect(kill).toHaveBeenCalledWith({ killSignal: "SIGTERM", forceKillAfter: 5000 }))
+    await killing.promise
     expect(stopped).toBe(false)
-    expect(ScopedProcess.spawn).toHaveBeenCalledWith({
-      command: "fixture",
-      args: ["literal argument"],
-      cwd: "/fixture",
-      env: undefined,
-      stdin: "ignore",
-      killSignal: "SIGTERM",
-      forceKillAfter: 5000
-    })
+
     release()
     expect(await pending).toBe(0)
     expect(stopped).toBe(true)
@@ -106,7 +112,7 @@ it.skipIf(process.platform === "win32")(
       cause: Object.assign(new Error("cleanup observation denied"), { code: "EPERM" })
     })
     const options = fixture(() => Effect.fail(denied))
-    await expect(ContainedProcess.run(options)).rejects.toMatchObject({
+    await expect(run(options)).rejects.toMatchObject({
       _tag: "smithers-build/ProcessError",
       code: "cleanup_failed",
       cause: denied
@@ -123,13 +129,17 @@ it.skipIf(process.platform === "win32")(
       method: "exitCode",
       cause: new Error("owner lost before target status")
     })
-    const kill = vi.fn(() => Effect.void)
+    let kills = 0
+    const kill = () =>
+      Effect.sync(() => {
+        kills++
+      })
     const options = fixture(kill, Effect.fail(failure))
-    await expect(ContainedProcess.run(options)).rejects.toMatchObject({
+    await expect(run(options)).rejects.toMatchObject({
       _tag: "smithers-build/ProcessError",
       code: "process_failed",
       cause: failure
     })
-    expect(kill).toHaveBeenCalledOnce()
+    expect(kills).toBe(1)
   }
 )

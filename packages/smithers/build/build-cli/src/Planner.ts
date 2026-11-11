@@ -503,11 +503,13 @@ const inspectSource = async (
 const digestSource = async (
   source: AdmittedSource,
   root: string,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  io: SafeFs.Io = SafeFs.defaultIo
 ): Promise<Extract<SourceMeasurement, { _tag: "measured" }>> => {
   signal?.throwIfAborted()
   const digest = await SafeFs.digestEntry(source.entry, {
     root,
+    io,
     signal,
     maximumBytes: maximumSourceFileBytes,
     symlinks: "reject",
@@ -532,7 +534,8 @@ const measureSources = (
   candidates: ReadonlyArray<SourceCandidate> | ReadonlyArray<AdmittedSource>,
   root: string,
   signal: AbortSignal | undefined,
-  phase: "inspect" | "digest"
+  phase: "inspect" | "digest",
+  io: SafeFs.Io = SafeFs.defaultIo
 ): Promise<ReadonlyArray<SourceMeasurement>> =>
   Effect.runPromise(Effect.forEach(
     candidates,
@@ -541,7 +544,7 @@ const measureSources = (
         try: async () =>
           phase === "inspect"
             ? { ...(await inspectSource(candidate as SourceCandidate, root, signal)), digest: undefined }
-            : await digestSource(candidate as AdmittedSource, root, signal),
+            : await digestSource(candidate as AdmittedSource, root, signal, io),
         catch: (cause) => cause
       }).pipe(Effect.match({
         onFailure: (cause): SourceMeasurement => ({ _tag: "failed", cause }),
@@ -669,9 +672,10 @@ const listSources = async (
 /** Hashes a source listing only after every root has passed byte admission. */
 const digestSources = async (
   listing: SourceListing,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  io: SafeFs.Io = SafeFs.defaultIo
 ): Promise<ReadonlyArray<SourceDigest>> => {
-  const measured = await measureSources(listing.sources, listing.root, signal, "digest")
+  const measured = await measureSources(listing.sources, listing.root, signal, "digest", io)
   const found: Array<SourceDigest> = []
   let digestedBytesSeen = 0
   for (const [index, source] of listing.sources.entries()) {
@@ -713,7 +717,7 @@ const updateSourceField = (hash: ReturnType<typeof createHash>, value: string): 
  */
 export const fingerprintSources = async (
   roots: ReadonlyArray<SourceRoot>,
-  options: { readonly signal?: AbortSignal | undefined } = {}
+  options: { readonly signal?: AbortSignal | undefined; readonly io?: SafeFs.Io | undefined } = {}
 ): Promise<string> => {
   const listings: Array<{ readonly sourceRoot: SourceRoot; readonly listing: SourceListing | undefined }> = []
   let admittedBytes = 0
@@ -740,7 +744,7 @@ export const fingerprintSources = async (
       hash.update("absent\u0000")
       continue
     }
-    const files = await digestSources(listing, options.signal)
+    const files = await digestSources(listing, options.signal, options.io)
     hash.update(`present\u0000${files.length}\u0000`)
     for (const file of files) {
       hash.update("file\u0000")

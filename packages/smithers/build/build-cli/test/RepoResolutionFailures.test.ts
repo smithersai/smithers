@@ -1,233 +1,29 @@
-/**
- * Every failure a child repository can produce reduces to data the parent
- * reports: refusals for queries, rejections for git state and execution.
- *
- * `node:child_process.spawn` is replaced by a scripted child so each exit
- * code, pipe payload, spawn error and abort is driven deterministically; the
- * real child CLI boundary is exercised end to end in MultiRepo.test.ts.
- */
+/** Child-repository failures and cancellation against real processes. */
+import { Smithers } from "@smthrs/targets"
 import * as LocalRepository from "@smthrs/targets/LocalRepository"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
-import { EventEmitter } from "node:events"
+import * as Shell from "@smthrs/targets/Shell"
+import { Effect } from "effect"
 import * as NodeFs from "node:fs"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { PassThrough } from "node:stream"
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, describe, expect, it } from "vitest"
+import * as RepositoryProcess from "../src/internal/RepositoryProcess.ts"
+import * as RepoResolution from "../src/RepoResolution.ts"
+import { fixture } from "./helpers/RepositoryProcess.ts"
 
-interface Spawned {
-  readonly command: string
-  readonly args: ReadonlyArray<string>
-  readonly options: { readonly cwd?: string; readonly env?: Record<string, string | undefined> }
-  readonly child: FakeChild
-}
-
-const spawned: Array<Spawned> = []
-let nextPid: number | undefined
-
-class FakeChild extends EventEmitter {
-  readonly stdout = new PassThrough()
-  readonly stderr = new PassThrough()
-  readonly pid = nextPid
-  readonly signals: Array<string> = []
-  kill(signal: string) {
-    this.signals.push(signal)
-  }
-}
-
-vi.mock("node:child_process", async (original) => ({
-  ...(await original<typeof import("node:child_process")>()),
-  spawn: (command: string, args: ReadonlyArray<string>, options: Spawned["options"]) => {
-    const child = new FakeChild()
-    spawned.push({ command, args, options, child })
-    return child
-  }
-}))
-
-const RepoResolution = await import("../src/RepoResolution.ts")
-type Resolution = import("../src/RepoResolution.ts").Resolution
-
-afterEach(() => {
-  spawned.length = 0
-  nextPid = undefined
-  vi.restoreAllMocks()
+let host = fixture()
+afterEach(async () => {
+  await host.cleanup()
+  host = fixture()
 })
 
 const index = {
   root: "/parent",
   workspace: { repos: { child: LocalRepository.make("repos/child") } }
-} as unknown as import("../src/PackageIndex.ts").PackageIndex
-
-const makeResolver = () => RepoResolution.Resolver.make(index, { KEEP: "1" })
-
-/** Waits until the resolver has started child number `count`. */
-const started = async (count: number): Promise<FakeChild> => {
-  await vi.waitFor(() => expect(spawned.length).toBeGreaterThanOrEqual(count))
-  return spawned[count - 1]!.child
-}
-
-/** Finishes one scripted child with the given pipes and exit code. */
-const finish = (child: FakeChild, exitCode: number | null, output: { stdout?: string; stderr?: string } = {}) => {
-  if (output.stdout !== undefined) child.stdout.emit("data", Buffer.from(output.stdout))
-  if (output.stderr !== undefined) child.stderr.emit("data", Buffer.from(output.stderr))
-  child.emit("close", exitCode)
-}
-
-const queried = async (
-  output: { stdout?: string; stderr?: string },
-  exitCode: number | null = 0,
-  label = "//:test"
-): Promise<Resolution> => {
-  const count = spawned.length + 1
-  const resolution = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", label))
-  finish(await started(count), exitCode, output)
-  return resolution
-}
-
-describe("child repository queries", () => {
-  it("resolves a declared repository by name or declaration and runs the child query with the scrubbed environment", async () => {
-    const resolver = makeResolver()
-    const target = RepoTarget.Target(LocalRepository.make("repos/child"), "//:test", { args: ["--x"] })
-    const pending = RepoResolution.resolve(resolver, target)
-    expect(RepoResolution.resolve(resolver, target)).toBe(pending)
-    finish(await started(1), 0, {
-      stdout: JSON.stringify({
-        targets: [{ label: "//:other", kinds: ["build"] }, { label: "//:test", kinds: ["test"] }]
-      })
-    })
-    expect(await pending).toEqual({
-      repoName: "child",
-      repoPath: "repos/child",
-      absolutePath: NodePath.join("/parent", "repos", "child"),
-      label: "//:test",
-      args: ["--x"],
-      kinds: ["test"],
-      refusal: undefined,
-      externalLabel: "@child//:test"
-    })
-    expect(spawned).toHaveLength(1)
-    expect(spawned[0]!.command).toBe(process.execPath)
-    expect(spawned[0]!.args).toEqual([
-      RepoResolution.buildCliPath,
-      "query",
-      "//:test",
-      "--workspace",
-      NodePath.join("/parent", "repos", "child"),
-      "--format",
-      "json"
-    ])
-    expect(spawned[0]!.options).toMatchObject({ cwd: NodePath.join("/parent", "repos", "child"), env: { KEEP: "1" } })
-  })
-
-  it("refuses an undeclared repository declaration by path without starting a child", async () => {
-    const resolution = await RepoResolution.resolve(
-      makeResolver(),
-      RepoTarget.Target(LocalRepository.make("repos/elsewhere"), "//:test")
-    )
-    expect(resolution).toMatchObject({
-      repoName: "unknown",
-      repoPath: "repos/elsewhere",
-      absolutePath: "/parent",
-      kinds: [],
-      refusal: "Repo.Target repository \"repos/elsewhere\" is not declared in Workspace repos",
-      externalLabel: "@unknown//:test"
-    })
-    const bare = RepoResolution.Resolver.make(
-      { root: "/parent", workspace: {} } as unknown as import("../src/PackageIndex.ts").PackageIndex,
-      {}
-    )
-    for (const repo of ["child", LocalRepository.make("repos/child")]) {
-      expect((await RepoResolution.resolve(bare, RepoTarget.Target(repo, "//:test"))).refusal)
-        .toMatch(/is not declared in Workspace repos$/)
-    }
-    expect(spawned).toHaveLength(0)
-  })
-
-  it.each([
-    ["stderr", { stderr: "  no such target\n", stdout: "ignored" }, "no such target"],
-    ["stdout when stderr is blank", { stderr: "  \n", stdout: "from stdout\n" }, "from stdout"],
-    ["the exit code when both pipes are empty", {}, "exit 3"]
-  ])("refuses a failing child query with %s", async (_name, output, detail) => {
-    const resolution = await queried(output, 3)
-    expect(resolution.kinds).toEqual([])
-    expect(resolution.refusal).toBe(`child repository @child refused //:test: ${detail}`)
-  })
-
-  it("reports a signalled child query as exit -1 and keeps only the diagnostic tail", async () => {
-    const resolution = await queried({ stderr: `${"a".repeat(9000)}END` }, null)
-    expect(resolution.refusal!.startsWith("child repository @child refused //:test: ")).toBe(true)
-    expect(resolution.refusal!.endsWith("END")).toBe(true)
-    expect(resolution.refusal!.length).toBe("child repository @child refused //:test: ".length + 8 * 1024)
-    expect((await queried({}, null)).refusal).toBe("child repository @child refused //:test: exit -1")
-  })
-
-  it.each([
-    ["a non-object answer", "[]"],
-    ["an answer without targets", "{}"],
-    ["non-array targets", JSON.stringify({ targets: {} })],
-    ["no row for the label", JSON.stringify({ targets: [null, 1, { label: "//:other", kinds: ["test"] }] })],
-    ["a row without kinds", JSON.stringify({ targets: [{ label: "//:test" }] })],
-    ["an unknown kind", JSON.stringify({ targets: [{ label: "//:test", kinds: ["test", "deploy"] }] })],
-    ["a non-string kind", JSON.stringify({ targets: [{ label: "//:test", kinds: [1] }] })]
-  ])("refuses %s from the child query", async (_name, stdout) => {
-    const resolution = await queried({ stdout })
-    expect(resolution.kinds).toEqual([])
-    expect(resolution.refusal).toBe("child repository @child query returned no valid target row for //:test")
-  })
-
-  it("refuses unparseable query output with the parser's reason", async () => {
-    const resolution = await queried({ stdout: "not json" })
-    expect(resolution.refusal).toMatch(/^child repository @child could not query \/\/:test: .*JSON/)
-  })
-
-  it("refuses a query whose child cannot be spawned", async () => {
-    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"))
-    const child = await started(1)
-    child.emit("error", Object.assign(new Error("spawn node ENOENT"), { code: "ENOENT" }))
-    child.emit("close", 0)
-    expect((await pending).refusal).toBe("child repository @child could not query //:test: spawn node ENOENT")
-  })
-
-  it("kills and refuses a child query whose output exceeds 1 MiB", async () => {
-    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"))
-    const child = await started(1)
-    child.stdout.emit("data", Buffer.alloc(1024 * 1024, 0x61))
-    child.stderr.emit("data", Buffer.from("x"))
-    child.stdout.emit("data", Buffer.from("ignored after settling"))
-    child.emit("close", 0)
-    expect((await pending).refusal).toBe(
-      "child repository @child could not query //:test: child CLI output exceeds 1048576 bytes"
-    )
-    expect(child.signals).toEqual(["SIGKILL"])
-  })
-
-  it("kills a child query when its signal aborts mid-run, and uses a default reason", async () => {
-    const controller = new AbortController()
-    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"), controller.signal)
-    const child = await started(1)
-    controller.abort("stop")
-    child.emit("close", 0)
-    expect((await pending).refusal).toBe("child repository @child could not query //:test: stop")
-    expect(child.signals).toEqual(["SIGKILL"])
-    const undefinedReason = { aborted: true, reason: undefined, addEventListener() {}, removeEventListener() {} }
-    const second = RepoResolution.resolve(
-      makeResolver(),
-      RepoTarget.Target("child", "//:test"),
-      undefinedReason as unknown as AbortSignal
-    )
-    expect((await second).refusal).toBe("child repository @child could not query //:test: child process aborted")
-  })
-
-  it("reads effective kinds through a Repo.Target and returns an ordinary target's own kinds", async () => {
-    const resolver = makeResolver()
-    const target = RepoTarget.Target("child", "//:test")
-    const pending = RepoResolution.effectiveKinds(resolver, target)
-    finish(await started(1), 0, { stdout: JSON.stringify({ targets: [{ label: "//:test", kinds: ["test"] }] }) })
-    expect(await pending).toEqual(["test"])
-  })
-})
-
-const resolution: Resolution = {
+} as unknown as RepoResolution.Resolver["index"]
+const makeResolver = () => RepoResolution.Resolver.make(index, { KEEP: "1" }, host.services)
+const resolution: RepoResolution.Resolution = {
   repoName: "child",
   repoPath: "repos/child",
   absolutePath: NodePath.join("/parent", "repos", "child"),
@@ -238,151 +34,354 @@ const resolution: Resolution = {
   externalLabel: "@child//:test"
 }
 
+const queried = async (output: { stdout?: string; stderr?: string }, exit: number | null = 0) => {
+  const childIndex = host.requests.length
+  const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"))
+  if (output.stdout !== undefined) await host.write("stdout", output.stdout, childIndex)
+  if (output.stderr !== undefined) await host.write("stderr", output.stderr, childIndex)
+  await host.finish(exit, childIndex)
+  return pending
+}
+
+describe("child repository queries", () => {
+  it("memoizes a declaration and passes query arguments and the scrubbed environment", async () => {
+    const resolver = makeResolver()
+    const target = RepoTarget.Target(LocalRepository.make("repos/child"), "//:test", { args: ["--x"] })
+    const pending = RepoResolution.resolve(resolver, target)
+    expect(RepoResolution.resolve(resolver, target)).toBe(pending)
+    await host.write(
+      "stdout",
+      JSON.stringify({ targets: [{ label: "//:other" }, { label: "//:test", kinds: ["test"] }] })
+    )
+    await host.finish()
+    expect(await pending).toEqual({ ...resolution, args: ["--x"] })
+    expect(host.requests).toHaveLength(1)
+    expect(host.requests[0]).toEqual({
+      command: process.execPath,
+      args: [
+        RepoResolution.buildCliPath,
+        "query",
+        "//:test",
+        "--workspace",
+        resolution.absolutePath,
+        "--format",
+        "json"
+      ],
+      options: { cwd: resolution.absolutePath, env: { KEEP: "1" } }
+    })
+  })
+
+  it("refuses undeclared names and declarations without starting a child", async () => {
+    expect(
+      await RepoResolution.resolve(
+        makeResolver(),
+        RepoTarget.Target(LocalRepository.make("repos/elsewhere"), "//:test")
+      )
+    )
+      .toMatchObject({
+        repoName: "unknown",
+        repoPath: "repos/elsewhere",
+        kinds: [],
+        refusal: "Repo.Target repository \"repos/elsewhere\" is not declared in Workspace repos",
+        externalLabel: "@unknown//:test"
+      })
+    const bare = RepoResolution.Resolver.make(
+      { root: "/parent", workspace: {} } as RepoResolution.Resolver["index"],
+      {},
+      host.services
+    )
+    for (const repo of ["child", LocalRepository.make("repos/child")]) {
+      expect((await RepoResolution.resolve(bare, RepoTarget.Target(repo, "//:test"))).refusal)
+        .toMatch(/is not declared in Workspace repos$/)
+    }
+    expect(host.requests).toHaveLength(0)
+  })
+
+  it.each([
+    ["stderr", { stderr: "  no such target\n", stdout: "ignored" }, "no such target"],
+    ["stdout", { stderr: "  \n", stdout: "from stdout\n" }, "from stdout"],
+    ["empty pipes", {}, "exit 3"]
+  ])("reports a nonzero query with %s", async (_name, output, detail) => {
+    expect(await queried(output, 3)).toMatchObject({
+      kinds: [],
+      refusal: "child repository @child refused //:test: " + detail
+    })
+  })
+
+  it("reports signal termination and bounds diagnostics to their tail", async () => {
+    expect((await queried({ stderr: "a".repeat(9000) + "END" }, null)).refusal)
+      .toBe("child repository @child refused //:test: " + "a".repeat(8189) + "END")
+    expect((await queried({}, null)).refusal).toBe("child repository @child refused //:test: exit -1")
+  })
+
+  it.each([
+    ["null", "null"],
+    ["array", "[]"],
+    ["no targets", "{}"],
+    ["non-array targets", JSON.stringify({ targets: {} })],
+    ["missing row", JSON.stringify({ targets: [null, 1, { label: "//:other" }] })],
+    ["no kinds", JSON.stringify({ targets: [{ label: "//:test" }] })],
+    ["unknown kind", JSON.stringify({ targets: [{ label: "//:test", kinds: ["test", "deploy"] }] })],
+    ["non-string kind", JSON.stringify({ targets: [{ label: "//:test", kinds: [1] }] })]
+  ])("refuses a query with %s", async (_name, stdout) => {
+    expect(await queried({ stdout })).toMatchObject({
+      kinds: [],
+      refusal: "child repository @child query returned no valid target row for //:test"
+    })
+  })
+
+  it("reports invalid JSON", async () => {
+    expect((await queried({ stdout: "not json" })).refusal).toMatch(/could not query.*JSON/)
+  })
+
+  it("retains a spawn failure and a non-Error fault", async () => {
+    for (const cause of [new Error("spawn node ENOENT"), "spawn refused"]) {
+      const resolver = RepoResolution.Resolver.make(index, {}, { ...host.services, spawn: () => Effect.fail(cause) })
+      expect((await RepoResolution.resolve(resolver, RepoTarget.Target("child", "//:test"))).refusal)
+        .toBe(
+          "child repository @child could not query //:test: " + String(cause instanceof Error ? cause.message : cause)
+        )
+    }
+  })
+
+  it("accepts a query exactly at the 1 MiB output boundary", async () => {
+    const json = JSON.stringify({ targets: [{ label: "//:test", kinds: ["test"] }] })
+    expect((await queried({ stdout: json + " ".repeat(1024 * 1024 - Buffer.byteLength(json)) })).kinds).toEqual([
+      "test"
+    ])
+  })
+
+  it("kills a real child whose combined output exceeds 1 MiB", async () => {
+    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"))
+    const child = await host.ready()
+    await host.write("stdout", "a".repeat(1024 * 1024))
+    child.send!({ stream: "stderr", text: "x" })
+    expect((await pending).refusal).toBe(
+      "child repository @child could not query //:test: child CLI output exceeds 1048576 bytes"
+    )
+    await host.closes[0]
+    expect(child.signalCode).toBe("SIGKILL")
+  })
+
+  it("ignores remaining buffered output after killing an over-limit query", async () => {
+    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"))
+    const child = await host.ready()
+    child.send!({ stream: "stdout", text: "a".repeat(3 * 1024 * 1024) })
+    expect((await pending).refusal).toContain("output exceeds 1048576 bytes")
+    await host.closes[0]
+    expect(child.signalCode).toBe("SIGKILL")
+  })
+
+  it("reports the real host's asynchronous query spawn failure", async () => {
+    const resolver = RepoResolution.Resolver.make(index, {}, RepositoryProcess.live)
+    expect((await RepoResolution.resolve(resolver, RepoTarget.Target("child", "//:test"))).refusal)
+      .toMatch(/could not query.*ENOENT/)
+  })
+
+  it("kills a real query on abort", async () => {
+    const controller = new AbortController()
+    const pending = RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"), controller.signal)
+    const child = await host.ready()
+    controller.abort("stop")
+    expect((await pending).refusal).toBe("child repository @child could not query //:test: stop")
+    await host.closes[0]
+    expect(child.signalCode).toBe("SIGKILL")
+  })
+
+  it("uses the default reason for an already-aborted query", async () => {
+    const signal = {
+      aborted: true,
+      reason: undefined,
+      addEventListener() {},
+      removeEventListener() {}
+    } as unknown as AbortSignal
+    expect((await RepoResolution.resolve(makeResolver(), RepoTarget.Target("child", "//:test"), signal)).refusal)
+      .toBe("child repository @child could not query //:test: child process aborted")
+    await host.closes[0]
+    expect(host.children[0]!.signalCode).toBe("SIGKILL")
+  })
+
+  it("reads effective kinds through repository aliases and ordinary targets", async () => {
+    const target = RepoTarget.Target("child", "//:test")
+    const pending = RepoResolution.effectiveKinds(makeResolver(), Smithers.Alias(target))
+    await host.write("stdout", JSON.stringify({ targets: [{ label: "//:test", kinds: ["test"] }] }))
+    await host.finish()
+    expect(await pending).toEqual(["test"])
+    expect(await RepoResolution.effectiveKinds(makeResolver(), Shell.Test({ shell: "true" }))).toEqual(["test"])
+  })
+})
+
 describe("child repository git state", () => {
-  // gitState asks Git only when the child has its own `.git` marker.
-  const checkout = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(Os.tmpdir(), "smthrs-repo-git-")))
+  const checkout = NodeFs.realpathSync(NodeFs.mkdtempSync(NodePath.join(Os.tmpdir(), "smithers-repository-git-")))
   const child = NodePath.join(checkout, "child")
   NodeFs.mkdirSync(NodePath.join(child, ".git"), { recursive: true })
-  const local: Resolution = { ...resolution, absolutePath: child }
+  const local: RepoResolution.Resolution = { ...resolution, absolutePath: child }
   afterAll(() => NodeFs.rmSync(checkout, { recursive: true, force: true }))
 
-  it("reads HEAD and porcelain status as the execution key without leaving the child", async () => {
+  it.each([" M file\n", ""])("uses the real pipes for HEAD and status %j", async (status) => {
     const pending = RepoResolution.gitState(makeResolver(), local)
-    finish(await started(1), 0, { stdout: "abc123\n" })
-    finish(await started(2), 0, { stdout: " M file\n" })
-    expect(await pending).toEqual({ head: "abc123", dirty: true, status: " M file\n" })
-    expect(spawned.map((row) => row.args)).toEqual([
-      ["-C", child, "rev-parse", "HEAD"],
-      ["-C", child, "status", "--porcelain"]
+    await host.write("stdout", "abc123\n")
+    await host.finish()
+    await host.write("stdout", status, 1)
+    await host.finish(0, 1)
+    expect(await pending).toEqual({ head: "abc123", dirty: status !== "", status })
+    expect(host.requests.map((row) => row.args)).toEqual([
+      ["-C", local.absolutePath, "rev-parse", "HEAD"],
+      ["-C", local.absolutePath, "status", "--porcelain"]
     ])
-    for (const row of spawned) expect(row.options.env).toEqual({ KEEP: "1", GIT_CEILING_DIRECTORIES: checkout })
+    for (const row of host.requests) expect(row.options.env).toEqual({ KEEP: "1", GIT_CEILING_DIRECTORIES: checkout })
   })
 
-  it("reads a clean status as not dirty", async () => {
-    const pending = RepoResolution.gitState(makeResolver(), local)
-    finish(await started(1), 0, { stdout: "abc123\n" })
-    finish(await started(2), 0, {})
-    expect(await pending).toEqual({ head: "abc123", dirty: false, status: "" })
+  it.each(["HEAD", "status"] as const)("reports a failed %s read", async (phase) => {
+    for (const stream of ["stdout", "stderr"] as const) {
+      const offset = host.requests.length
+      const pending = RepoResolution.gitState(makeResolver(), local)
+      const rejected = expect(pending).rejects.toThrow("could not read child repository " + phase + ": refused")
+      if (phase === "status") {
+        await host.write("stdout", "abc\n", offset)
+        await host.finish(0, offset)
+      }
+      const failedIndex = offset + (phase === "status" ? 1 : 0)
+      await host.write(stream, "refused", failedIndex)
+      await host.finish(1, failedIndex)
+      await rejected
+    }
   })
-
-  it.each([
-    ["stderr", { stderr: "fatal: not a git repository" }, "fatal: not a git repository"],
-    ["stdout", { stdout: "odd" }, "odd"]
-  ])("rejects a failed HEAD read with its %s", async (_name, output, detail) => {
-    const pending = RepoResolution.gitState(makeResolver(), local)
-    finish(await started(1), 128, output)
-    await expect(pending).rejects.toThrow(`could not read child repository HEAD: ${detail}`)
-    expect(spawned).toHaveLength(1)
-  })
-
-  it.each([
-    ["stderr", { stderr: "fatal: index locked" }, "fatal: index locked"],
-    ["stdout", { stdout: "odd" }, "odd"]
-  ])("rejects a failed status read with its %s", async (_name, output, detail) => {
-    const pending = RepoResolution.gitState(makeResolver(), local)
-    finish(await started(1), 0, { stdout: "abc\n" })
-    finish(await started(2), 1, output)
-    await expect(pending).rejects.toThrow(`could not read child repository status: ${detail}`)
-  })
-
-  it("reports a child without its own .git as dirty and never runs Git", async () => {
+  it("does not inspect the parent checkout when the child has no marker", async () => {
     expect(await RepoResolution.gitState(makeResolver(), resolution)).toEqual({ head: "", dirty: true, status: "" })
-    expect(spawned).toEqual([])
+    expect(host.requests).toEqual([])
   })
 })
 
 describe("child repository execution", () => {
-  it("passes write, plan and target arguments to a detached child and resolves on exit 0", async () => {
+  it("passes write, plan, target arguments and the child environment", async () => {
     const seen: Array<string> = []
     const pending = RepoResolution.execute(makeResolver(), resolution, {
       write: true,
       plan: true,
-      output: (stream, text) => seen.push(`${stream}:${text}`)
+      environment: { BRIDGE: "1" },
+      output: (stream, text) => seen.push(stream + ":" + text)
     })
-    const child = await started(1)
-    child.stdout.emit("data", Buffer.from("ok\n"))
-    child.emit("close", 0)
+    await host.write("stdout", "ok\n")
+    await host.finish()
     await pending
     expect(seen).toEqual(["stdout:ok\n"])
-    expect(spawned[0]!.args).toEqual([
-      RepoResolution.buildCliPath,
-      "//:test",
-      "--workspace",
-      NodePath.join("/parent", "repos", "child"),
-      "--write",
-      "--plan",
-      "--flag"
-    ])
-    expect(spawned[0]!.options).toMatchObject({ detached: true, env: { KEEP: "1", SMTHRS_REPO_CHILD: "1" } })
+    expect(host.requests[0]).toEqual({
+      command: process.execPath,
+      args: [
+        RepoResolution.buildCliPath,
+        "//:test",
+        "--workspace",
+        resolution.absolutePath,
+        "--write",
+        "--plan",
+        "--flag"
+      ],
+      options: {
+        cwd: resolution.absolutePath,
+        detached: true,
+        env: { KEEP: "1", BRIDGE: "1", SMTHRS_REPO_CHILD: "1" },
+        stdio: ["ignore", "pipe", "pipe"]
+      }
+    })
   })
 
-  it("streams to the parent process by default and fails with the exit code and stderr tail", async () => {
-    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+  it("streams through the host output service and preserves a failure tail", async () => {
     const pending = RepoResolution.execute(makeResolver(), resolution)
-    const child = await started(1)
-    child.stdout.emit("data", Buffer.from("out\n"))
-    child.stderr.emit("data", Buffer.from("boom\npartial"))
-    child.emit("close", 2)
-    const failure = await pending.then(() => undefined, (cause: unknown) => cause)
-    expect(failure).toBeInstanceOf(RepoResolution.ExecutionError)
-    expect(failure).toMatchObject({
+    const rejected = expect(pending).rejects.toMatchObject({
       code: "repo_target_failed",
       exitCode: 2,
       stderrTail: "boom\npartial",
       message: "child target @child//:test failed with exit 2\nboom\npartial"
     })
-    expect(stdout).toHaveBeenCalledWith("out\n")
-    expect(stderr).toHaveBeenCalledWith("boom\n")
+    await host.write("stdout", "out\n")
+    await host.write("stderr", "boom\npartial")
+    await host.finish(2)
+    await rejected
+    expect(host.output).toContain("stdout:out\n")
+    expect(host.output).toContain("stderr:boom\n")
   })
 
-  it("fails a signalled child as exit -1 without a stderr tail", async () => {
-    const pending = RepoResolution.execute(makeResolver(), resolution, { output: () => {} })
-    ;(await started(1)).emit("close", null)
-    await expect(pending).rejects.toMatchObject({
+  it("reports real signal termination as exit -1 without inventing a tail", async () => {
+    const pending = RepoResolution.execute(makeResolver(), resolution)
+    const rejected = expect(pending).rejects.toMatchObject({
       exitCode: -1,
       stderrTail: "",
       message: "child target @child//:test failed with exit -1"
     })
+    await host.finish(null)
+    await rejected
   })
 
-  it("rejects a child that cannot be spawned", async () => {
-    const pending = RepoResolution.execute(makeResolver(), resolution, { output: () => {} })
+  it("retains a refused spawn", async () => {
     const cause = new Error("spawn EACCES")
-    ;(await started(1)).emit("error", cause)
-    await expect(pending).rejects.toBe(cause)
+    const resolver = RepoResolution.Resolver.make(index, {}, { ...host.services, spawn: () => Effect.fail(cause) })
+    await expect(RepoResolution.execute(resolver, resolution)).rejects.toBe(cause)
   })
 
-  it("kills the child's process group on abort and falls back to the child when the group is gone", async () => {
-    nextPid = 424242
-    const kill = vi.spyOn(process, "kill").mockImplementationOnce(() => true)
+  it.skipIf(process.platform === "win32")(
+    "kills descendants that keep the output pipes open on cancellation",
+    async () => {
+      const controller = new AbortController()
+      const pending = RepoResolution.execute(makeResolver(), resolution, { signal: controller.signal })
+      const rejected = expect(pending).rejects.toThrow("cancel tree")
+      const child = await host.ready()
+      await host.tree()
+      controller.abort(new Error("cancel tree"))
+      await rejected
+      // close cannot fire while the descendant keeps its inherited stdout/stderr open.
+      await host.closes[0]
+      expect(child.signalCode).toBe("SIGKILL")
+    }
+  )
+
+  it.each([false, true])("kills a real child on abort, with group signal refusal %s", async (refused) => {
+    const resolver = RepoResolution.Resolver.make(
+      index,
+      {},
+      refused
+        ? { ...host.services, killGroup: () => Effect.fail(new Error("group unavailable")) }
+        : host.services
+    )
     const controller = new AbortController()
-    const pending = RepoResolution.execute(makeResolver(), resolution, { signal: controller.signal, output: () => {} })
-    const child = await started(1)
-    controller.abort(new Error("cancelled"))
-    await expect(pending).rejects.toThrow("cancelled")
-    expect(kill).toHaveBeenCalledWith(-424242, "SIGKILL")
-    expect(child.signals).toEqual([])
-    child.emit("close", 0)
-
-    kill.mockImplementationOnce(() => {
-      throw Object.assign(new Error("no such process"), { code: "ESRCH" })
-    })
-    const second = new AbortController()
-    const next = RepoResolution.execute(makeResolver(), resolution, { signal: second.signal, output: () => {} })
-    const other = await started(2)
-    second.abort()
-    await expect(next).rejects.toMatchObject({ name: "AbortError" })
-    expect(other.signals).toEqual(["SIGKILL"])
+    const pending = RepoResolution.execute(resolver, resolution, { signal: controller.signal })
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" })
+    const child = await host.ready()
+    controller.abort()
+    await rejected
+    await host.closes[0]
+    expect(child.signalCode).toBe("SIGKILL")
   })
 
-  it("rejects a pre-aborted execution with a default reason and signals a child without a pid", async () => {
-    const signal = { aborted: true, reason: undefined, addEventListener() {}, removeEventListener() {} }
-    const pending = RepoResolution.execute(makeResolver(), resolution, {
-      signal: signal as unknown as AbortSignal,
-      output: () => {}
-    })
-    await expect(pending).rejects.toThrow("child target aborted")
-    expect(spawned[0]!.child.signals).toEqual(["SIGKILL"])
+  it("aborts a native spawn with no pid and ignores its later error and close", async () => {
+    const signal = {
+      aborted: true,
+      reason: undefined,
+      addEventListener() {},
+      removeEventListener() {}
+    } as unknown as AbortSignal
+    const resolver = RepoResolution.Resolver.make(index, {}, RepositoryProcess.live)
+    await expect(
+      RepoResolution.execute(resolver, { ...resolution, absolutePath: "missing-child-directory" }, { signal })
+    )
+      .rejects.toThrow("child target aborted")
+  })
+
+  it("reports native spawn errors through the execution boundary", async () => {
+    const resolver = RepoResolution.Resolver.make(index, {}, RepositoryProcess.live)
+    await expect(RepoResolution.execute(resolver, { ...resolution, absolutePath: "missing-child-directory" }))
+      .rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("rejects a pre-aborted execution with the default reason", async () => {
+    const signal = {
+      aborted: true,
+      reason: undefined,
+      addEventListener() {},
+      removeEventListener() {}
+    } as unknown as AbortSignal
+    await expect(RepoResolution.execute(makeResolver(), resolution, { signal })).rejects.toThrow("child target aborted")
+    await host.closes[0]
+    expect(host.children[0]!.signalCode).toBe("SIGKILL")
   })
 })

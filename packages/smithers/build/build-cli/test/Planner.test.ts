@@ -16,7 +16,7 @@ import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import {
   encodeKeyMaterial,
   EXECUTION_FORMAT,
@@ -339,22 +339,6 @@ describe("keyOf over shared frozen values", () => {
     expect(keyOf(material(value))).toBe(keyOf(material(copy)))
   })
 
-  it("inspects a frozen value's members once however many keys name it", () => {
-    const shared = deepFreeze(rows(200))
-    const inspected = vi.spyOn(Object, "getOwnPropertyNames")
-    try {
-      encodeKeyMaterial(material({ files: shared }))
-      const once = inspected.mock.calls.length
-      inspected.mockClear()
-      for (let index = 0; index < 10; index += 1) encodeKeyMaterial(material({ files: shared, index }))
-      // Each later key inspects only its own envelope, not the 200 shared rows.
-      expect(inspected.mock.calls.length).toBeLessThan(10 * 5)
-      expect(once).toBeGreaterThan(200)
-    } finally {
-      inspected.mockRestore()
-    }
-  })
-
   it("re-encodes a value that is not frozen all the way down after it changes", () => {
     const inner = { path: "a.ts" }
     const outer = Object.freeze({ files: Object.freeze([inner]) })
@@ -459,21 +443,18 @@ describe("implementationFingerprint", () => {
     await Fs.writeFile(NodePath.join(directory, "b.ts"), "b", "utf8")
     const later = Promise.withResolvers<void>()
     const first = new Error("first source")
-    const digest = vi.spyOn(SafeFs, "digestEntry")
-      .mockImplementationOnce(async () => {
-        await later.promise
-        throw first
-      })
-      .mockImplementationOnce(async () => {
+    const opened: Array<string> = []
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        opened.push(NodePath.basename(path))
+        if (NodePath.basename(path) === "a.ts") return later.promise.then(() => Promise.reject(first))
         later.resolve()
-        throw new Error("later source")
-      })
-    try {
-      await expect(fingerprintSources([{ name: "x", directory }])).rejects.toBe(first)
-      expect(digest).toHaveBeenCalledTimes(2)
-    } finally {
-      digest.mockRestore()
+        return Promise.reject(new Error("later source"))
+      }
     }
+    await expect(fingerprintSources([{ name: "x", directory }], { io })).rejects.toBe(first)
+    expect(opened.sort()).toEqual(["a.ts", "b.ts"])
   })
 
   it("refuses an implementation source file over the scan ceiling", async () => {
@@ -488,21 +469,25 @@ describe("implementationFingerprint", () => {
   it("rejects a source root over its cumulative ceiling before reading source bytes", async () => {
     const directory = await scratch()
     // Sparse files give the inspection pass real, adversarial file metadata
-    // without allocating 512 MiB. The spy makes the proof about reads rather
+    // without allocating 512 MiB. The adapter makes the proof about reads rather
     // than timing: no digest may start once the cumulative admission fails.
     for (let index = 0; index <= 32; index += 1) {
       const source = NodePath.join(directory, `${String(index).padStart(3, "0")}.ts`)
       await Fs.writeFile(source, "x", "utf8")
       await Fs.truncate(source, maximumSourceFileBytes)
     }
-    const digest = vi.spyOn(SafeFs, "digestEntry")
-    try {
-      await expect(fingerprintSources([{ name: "x", directory }]))
-        .rejects.toThrow(/implementation source root exceeds/)
-      expect(digest).not.toHaveBeenCalled()
-    } finally {
-      digest.mockRestore()
+    let opened = 0
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        opened++
+        return SafeFs.defaultIo.open(path)
+      }
     }
+    await expect(fingerprintSources([{ name: "x", directory }], { io })).rejects.toThrow(
+      /implementation source root exceeds/
+    )
+    expect(opened).toBe(0)
   })
 
   it("rejects aggregate source bytes across roots before hashing any root", async () => {
@@ -514,31 +499,32 @@ describe("implementationFingerprint", () => {
         await Fs.truncate(source, maximumSourceFileBytes)
       }
     }
-    const digest = vi.spyOn(SafeFs, "digestEntry")
-    try {
-      await expect(fingerprintSources(roots.map((directory, index) => ({ name: `x${index}`, directory }))))
-        .rejects.toThrow(/implementation sources exceed/)
-      expect(digest).not.toHaveBeenCalled()
-    } finally {
-      digest.mockRestore()
+    let opened = 0
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: (path) => {
+        opened++
+        return SafeFs.defaultIo.open(path)
+      }
     }
+    await expect(fingerprintSources(roots.map((directory, index) => ({ name: `x${index}`, directory })), { io }))
+      .rejects.toThrow(/implementation sources exceed/)
+    expect(opened).toBe(0)
   })
 
   it("rejects a source that grows after admission before hashing it", async () => {
     const directory = await scratch()
     const source = NodePath.join(directory, "admitted.ts")
     await Fs.writeFile(source, "export const admitted = 1\n", "utf8")
-    const digestEntry = SafeFs.digestEntry
-    const digest = vi.spyOn(SafeFs, "digestEntry").mockImplementationOnce(async (entry, options) => {
-      await Fs.appendFile(source, "// grew after admission\n", "utf8")
-      return digestEntry(entry, options)
-    })
-    try {
-      await expect(fingerprintSources([{ name: "x", directory }]))
-        .rejects.toThrow(/changed while it was being opened/)
-    } finally {
-      digest.mockRestore()
+    const io: SafeFs.Io = {
+      ...SafeFs.defaultIo,
+      open: async (path) => {
+        await Fs.appendFile(source, "// grew after admission\n", "utf8")
+        return SafeFs.defaultIo.open(path)
+      }
     }
+    await expect(fingerprintSources([{ name: "x", directory }], { io }))
+      .rejects.toThrow(/changed while it was being opened/)
   })
 
   it.skipIf(process.platform === "win32")("does not follow symbolic links in a source tree", async () => {

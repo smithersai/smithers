@@ -13,33 +13,10 @@ import { DatabaseSync } from "node:sqlite"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as PackageTree from "../src/PackageTree.ts"
 
-/** Makes one pre-digest lstat report a stale size for the growth-race test. */
-const lstatSizeOverride: { path: string | undefined; size: number } = { path: undefined, size: 0 }
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs/promises")>()
-  return {
-    ...original,
-    default: original,
-    copyFile: vi.fn(original.copyFile),
-    chmod: vi.fn(original.chmod),
-    rename: vi.fn(original.rename),
-    rm: vi.fn(original.rm),
-    lstat: async (path: NodeFs.PathLike): Promise<NodeFs.Stats> => {
-      const stats = await original.lstat(path)
-      if (lstatSizeOverride.path === String(path)) {
-        Object.defineProperty(stats, "size", { configurable: true, value: lstatSizeOverride.size })
-      }
-      return stats
-    }
-  }
-})
-
 let root: string
 let outside: string
 
 beforeEach(async () => {
-  lstatSizeOverride.path = undefined
   const base = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-tree-")))
   root = NodePath.join(base, "workspace")
   outside = NodePath.join(base, "outside")
@@ -48,7 +25,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  lstatSizeOverride.path = undefined
   await Fs.rm(NodePath.dirname(root), { recursive: true, force: true }).catch(() => {})
 })
 
@@ -317,12 +293,11 @@ describe("scratchCopy keeps installed dependencies as host state", () => {
     await Fs.writeFile(NodePath.join(root, "source.txt"), "copied")
     vi.stubEnv("TMPDIR", temporary)
     const failure = new Error("symlink failed")
-    const link = vi.spyOn(Fs, "symlink").mockRejectedValueOnce(failure)
+    const io: PackageTree.TreeIo = { ...Fs, symlink: () => Promise.reject(failure) }
     try {
-      await expect(PackageTree.scratchCopy(root, ".flows")).rejects.toBe(failure)
+      await expect(PackageTree.scratchCopy(root, ".flows", [], [], io)).rejects.toBe(failure)
       expect(await Fs.readdir(temporary)).toEqual([])
     } finally {
-      link.mockRestore()
       vi.unstubAllEnvs()
     }
   })
@@ -798,45 +773,45 @@ exec "$SMTHRS_TEST_REAL_GIT" "$@"
 
   it("sets staged permissions before publishing the restored file", async () => {
     const snapshot = await cleanSnapshot(0o600)
-    const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+
     await Fs.writeFile(trackedFile(), "current work\n")
     let sawPublish = false
-    const rename = vi.mocked(Fs.rename)
-    rename.mockImplementationOnce(async (from, to) => {
-      expect(String(to)).toBe(trackedFile())
-      expect((await Fs.lstat(NodePath.dirname(String(from)))).mode & 0o7777).toBe(0o700)
-      expect(await permissions(String(from))).toBe(0o600)
-      expect(await Fs.readFile(trackedFile(), "utf8")).toBe("current work\n")
-      sawPublish = true
-      await original.rename(from, to)
-    })
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      rename: async (from, to) => {
+        expect(String(to)).toBe(trackedFile())
+        expect((await Fs.lstat(NodePath.dirname(String(from)))).mode & 0o7777).toBe(0o700)
+        expect(await permissions(String(from))).toBe(0o600)
+        expect(await Fs.readFile(trackedFile(), "utf8")).toBe("current work\n")
+        sawPublish = true
+        await Fs.rename(from, to)
+      }
+    }
     try {
-      await PackageTree.revertPath(snapshot, tracked)
+      await PackageTree.revertPath(snapshot, tracked, undefined, io)
       expect(sawPublish).toBe(true)
       expect(await Fs.readFile(trackedFile(), "utf8")).toBe("original\n")
       expect(await permissions(trackedFile())).toBe(0o600)
       expect(await rollbackDirectories()).toEqual([])
     } finally {
-      rename.mockReset().mockImplementation(original.rename)
       await PackageTree.releaseSnapshot(snapshot)
     }
   })
 
   it("keeps a replacement directory intact and removes staging after chmod fails", async () => {
     const snapshot = await cleanSnapshot(0o600)
-    const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+
     await Fs.rm(trackedFile())
     await Fs.mkdir(trackedFile())
     await Fs.writeFile(NodePath.join(trackedFile(), "current.txt"), "current work\n")
     const failure = new Error("staged chmod failed")
-    vi.mocked(Fs.chmod).mockRejectedValueOnce(failure)
+    const io: PackageTree.TreeIo = { ...Fs, chmod: () => Promise.reject(failure) }
     try {
-      await expect(PackageTree.revertPath(snapshot, tracked)).rejects.toBe(failure)
+      await expect(PackageTree.revertPath(snapshot, tracked, undefined, io)).rejects.toBe(failure)
       expect((await Fs.lstat(trackedFile())).isDirectory()).toBe(true)
       expect(await Fs.readFile(NodePath.join(trackedFile(), "current.txt"), "utf8")).toBe("current work\n")
       expect(await rollbackDirectories()).toEqual([])
     } finally {
-      vi.mocked(Fs.chmod).mockReset().mockImplementation(original.chmod)
       await PackageTree.releaseSnapshot(snapshot)
     }
   })
@@ -905,21 +880,22 @@ describe.skipIf(process.platform === "win32")("snapshotTree tracks regular file 
     await Fs.writeFile(NodePath.join(root, "regular.txt"), "regular")
     git("add", "regular.txt")
     git("-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "initial")
-    const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+
     const failure = new Error("mode read failed")
     let stash: string | undefined
-    const mkdtemp = vi.spyOn(Fs, "mkdtemp").mockImplementationOnce(async (prefix) => {
-      stash = await original.mkdtemp(prefix)
-      return stash
-    })
-    const lstat = vi.spyOn(Fs, "lstat").mockRejectedValueOnce(failure)
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      mkdtemp: async (prefix) => {
+        stash = await Fs.mkdtemp(prefix)
+        return stash
+      },
+      lstat: () => Promise.reject(failure)
+    }
     try {
-      await expect(PackageTree.snapshotTree(root, ".flows")).rejects.toBe(failure)
+      await expect(PackageTree.snapshotTree(root, ".flows", io)).rejects.toBe(failure)
       expect(stash).toBeDefined()
       await expect(Fs.lstat(stash!)).rejects.toMatchObject({ code: "ENOENT" })
     } finally {
-      lstat.mockRestore()
-      mkdtemp.mockRestore()
       if (stash !== undefined) await Fs.rm(stash, { recursive: true, force: true })
     }
   })
@@ -930,23 +906,28 @@ describe("failed snapshot acquisition removes its partial stash", () => {
     ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })
     await Fs.writeFile(NodePath.join(kind === "tree" ? root : outside, "source.txt"), "source")
     if (kind === "portals") await Fs.symlink(NodePath.join(outside, "source.txt"), NodePath.join(root, "portal"))
-    const original = await vi.importActual<typeof Fs>("node:fs/promises")
+
     const failure = new Error("snapshot acquisition failed")
     let stash: string | undefined
-    vi.mocked(Fs.copyFile).mockImplementationOnce(async (_source, destination) => {
-      stash = NodePath.dirname(String(destination))
-      throw failure
-    })
-    vi.mocked(Fs.rm).mockRejectedValueOnce(new Error("snapshot cleanup failed"))
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      copyFile: (_source, destination) => {
+        stash = NodePath.dirname(String(destination))
+        return Promise.reject(failure)
+      },
+      rm: () => Promise.reject(new Error("snapshot cleanup failed"))
+    }
     try {
-      await expect((kind === "tree" ? PackageTree.snapshotTree : PackageTree.snapshotPortals)(root, ".flows")).rejects
+      await expect(
+        kind === "tree"
+          ? PackageTree.snapshotTree(root, ".flows", io)
+          : PackageTree.snapshotPortals(root, ".flows", undefined, [], io)
+      ).rejects
         .toBe(failure)
       expect(stash).toBeDefined()
-      expect((await original.stat(stash!)).isDirectory()).toBe(true)
+      expect((await Fs.stat(stash!)).isDirectory()).toBe(true)
     } finally {
-      vi.mocked(Fs.copyFile).mockReset().mockImplementation(original.copyFile)
-      vi.mocked(Fs.rm).mockReset().mockImplementation(original.rm)
-      if (stash !== undefined) await original.rm(stash, { recursive: true, force: true })
+      if (stash !== undefined) await Fs.rm(stash, { recursive: true, force: true })
     }
   })
 
@@ -960,24 +941,29 @@ describe("failed snapshot acquisition removes its partial stash", () => {
         await Fs.symlink(NodePath.join(outside, "a.txt"), NodePath.join(root, "a-portal"))
         await Fs.symlink(NodePath.join(outside, "b.txt"), NodePath.join(root, "b-portal"))
       }
-      const original = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+
       const failure = new Error("second snapshot copy failed")
       let stashDirectory: string | undefined
       let copiedFiles: Array<string> = []
-      const copy = vi.mocked(Fs.copyFile)
-      copy.mockImplementationOnce(original.copyFile).mockImplementationOnce(async (_source, destination) => {
-        stashDirectory = NodePath.dirname(String(destination))
-        copiedFiles = await original.readdir(stashDirectory)
-        throw failure
-      })
+      const io: PackageTree.TreeIo = {
+        ...Fs,
+        copyFile: async (source, destination, mode) => {
+          if (NodePath.basename(String(source)) !== "b.txt") return Fs.copyFile(source, destination, mode)
+          stashDirectory = NodePath.dirname(String(destination))
+          copiedFiles = await Fs.readdir(stashDirectory)
+          return Promise.reject(failure)
+        }
+      }
       try {
-        const acquire = kind === "tree" ? PackageTree.snapshotTree : PackageTree.snapshotPortals
-        await expect(acquire(root, ".flows")).rejects.toBe(failure)
+        await expect(
+          kind === "tree"
+            ? PackageTree.snapshotTree(root, ".flows", io)
+            : PackageTree.snapshotPortals(root, ".flows", undefined, [], io)
+        ).rejects.toBe(failure)
         expect(copiedFiles).toHaveLength(1)
         expect(stashDirectory).toBeDefined()
         await expect(Fs.lstat(stashDirectory!)).rejects.toMatchObject({ code: "ENOENT" })
       } finally {
-        copy.mockReset().mockImplementation(original.copyFile)
         if (stashDirectory !== undefined) await Fs.rm(stashDirectory, { recursive: true, force: true })
       }
     })
@@ -1241,21 +1227,23 @@ describe("captureOutDir bounds the tree it walks", () => {
     const file = NodePath.join(root, "dist", "growing.txt")
     await Fs.mkdir(NodePath.dirname(file), { recursive: true })
     await Fs.writeFile(file, "12")
-    lstatSizeOverride.path = file
-    lstatSizeOverride.size = 0
-    try {
-      await expect(PackageTree.captureOutDir(root, ".flows", "dist", root, {
-        ...PackageTree.outDirLimits,
-        fileBytes: 1
-      })).rejects.toMatchObject({ limit: "fileBytes" })
-      await expect(PackageTree.captureOutDir(root, ".flows", "dist", root, {
-        ...PackageTree.outDirLimits,
-        fileBytes: 2,
-        totalBytes: 1
-      })).rejects.toMatchObject({ limit: "totalBytes" })
-    } finally {
-      lstatSizeOverride.path = undefined
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      lstat: (async (path: NodeFs.PathLike) => {
+        const stats = await Fs.lstat(path)
+        if (String(path) === file) Object.defineProperty(stats, "size", { value: 0 })
+        return stats
+      }) as typeof Fs.lstat
     }
+    await expect(PackageTree.captureOutDir(root, ".flows", "dist", root, {
+      ...PackageTree.outDirLimits,
+      fileBytes: 1
+    }, io)).rejects.toMatchObject({ limit: "fileBytes" })
+    await expect(PackageTree.captureOutDir(root, ".flows", "dist", root, {
+      ...PackageTree.outDirLimits,
+      fileBytes: 2,
+      totalBytes: 1
+    }, io)).rejects.toMatchObject({ limit: "totalBytes" })
   })
 })
 
@@ -1879,32 +1867,30 @@ describe("materialization publication ownership and cleanup", () => {
     const digest = await seed()
     await Fs.mkdir(NodePath.join(root, "alpha"))
     await Fs.writeFile(NodePath.join(root, "alpha/previous.txt"), "previous")
-    const original = await vi.importActual<typeof Fs>("node:fs/promises")
-    const rename = vi.mocked(Fs.rename)
+
     let observed = false
-    rename.mockImplementation(async (from, to) => {
-      await original.rename(from, to)
-      if (observed || String(from) !== NodePath.join(root, "alpha")) return
-      observed = true
-      await expect(Fs.lstat(NodePath.join(root, "alpha"))).rejects.toMatchObject({ code: "ENOENT" })
-      // A sibling may publish, but the same output (including an alias) must
-      // fail before it can recover the first publisher's set-aside tree.
-      await PackageTree.materializeManifest(root, ".flows", manifest("beta", digest))
-      await expect(PackageTree.materializeManifest(root, ".flows", manifest("./alpha", digest)))
-        .rejects.toThrow(/publication lock/)
-      expect(
-        (await Fs.lstat(NodePath.join(root, `.smthrs-lock-${sha256(NodePath.join(root, "alpha"))}`))).isDirectory()
-      )
-        .toBe(true)
-    })
-    try {
-      await PackageTree.materializeManifest(root, ".flows", manifest("alpha", digest))
-      expect(observed).toBe(true)
-      expect(await Fs.readFile(NodePath.join(root, "alpha/next.txt"), "utf8")).toBe("next")
-      expect((await Fs.readdir(root)).filter((name) => name.startsWith(".smthrs-"))).toEqual([])
-    } finally {
-      rename.mockReset().mockImplementation(original.rename)
+    const io: PackageTree.TreeIo = {
+      ...Fs,
+      rename: async (from, to) => {
+        await Fs.rename(from, to)
+        if (observed || String(from) !== NodePath.join(root, "alpha")) return
+        observed = true
+        await expect(Fs.lstat(NodePath.join(root, "alpha"))).rejects.toMatchObject({ code: "ENOENT" })
+        // A sibling may publish, but the same output (including an alias) must
+        // fail before it can recover the first publisher's set-aside tree.
+        await PackageTree.materializeManifest(root, ".flows", manifest("beta", digest))
+        await expect(PackageTree.materializeManifest(root, ".flows", manifest("./alpha", digest)))
+          .rejects.toThrow(/publication lock/)
+        expect(
+          (await Fs.lstat(NodePath.join(root, `.smthrs-lock-${sha256(NodePath.join(root, "alpha"))}`))).isDirectory()
+        )
+          .toBe(true)
+      }
     }
+    await PackageTree.materializeManifest(root, ".flows", manifest("alpha", digest), io)
+    expect(observed).toBe(true)
+    expect(await Fs.readFile(NodePath.join(root, "alpha/next.txt"), "utf8")).toBe("next")
+    expect((await Fs.readdir(root)).filter((name) => name.startsWith(".smthrs-"))).toEqual([])
   })
 
   it("documents staged publication without promising atomic visibility", async () => {
@@ -1927,20 +1913,36 @@ describe("materialization publication ownership and cleanup", () => {
     }
   })
 
+  it("keeps an injected publication fault isolated from a simultaneous real publication", async () => {
+    const digest = await seed()
+    const failure = new Error("copy refused")
+    const io: PackageTree.TreeIo = { ...Fs, copyFile: () => Promise.reject(failure) }
+    await Promise.all([
+      expect(PackageTree.materializeFile(root, ".flows", { path: "refused", digest, executable: false }, io))
+        .rejects.toBe(failure),
+      PackageTree.materializeFile(root, ".flows", { path: "real", digest, executable: false })
+    ])
+    expect(await Fs.readFile(NodePath.join(root, "real"), "utf8")).toBe("next")
+    await expect(Fs.lstat(NodePath.join(root, "refused"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect((await Fs.readdir(root)).filter((name) => name.includes(".smthrs-"))).toEqual([])
+  })
+
   for (const operation of ["copyFile", "chmod"] as const) {
     it(`removes a partial file after failed ${operation} and preserves the error`, async () => {
       const digest = await seed()
-      const original = await vi.importActual<typeof Fs>("node:fs/promises")
+
       const failure = new Error(`injected ${operation} failure`)
-      if (operation === "copyFile") {
-        vi.mocked(Fs.copyFile).mockImplementationOnce(async (_from, to) => {
-          await original.writeFile(to, "partial")
-          throw failure
-        })
-      } else {
-        vi.mocked(Fs.chmod).mockRejectedValueOnce(failure)
-      }
-      await expect(PackageTree.materializeFile(root, ".flows", { path: "output", digest, executable: false })).rejects
+      const io: PackageTree.TreeIo = operation === "copyFile"
+        ? {
+          ...Fs,
+          copyFile: async (_from, to) => {
+            await Fs.writeFile(to, "partial")
+            return Promise.reject(failure)
+          }
+        }
+        : { ...Fs, chmod: () => Promise.reject(failure) }
+      await expect(PackageTree.materializeFile(root, ".flows", { path: "output", digest, executable: false }, io))
+        .rejects
         .toBe(failure)
       expect((await Fs.readdir(root)).filter((name) => name.startsWith("output.smthrs-"))).toEqual([])
     })

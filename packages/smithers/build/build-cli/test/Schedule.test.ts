@@ -10,11 +10,17 @@ import { describe, expect, it } from "vitest"
 import { resolveJobs, schedule, scheduleEffect } from "../src/Executor.ts"
 import type * as Planner from "../src/Planner.ts"
 
-/** A planned target reduced to the two fields the scheduler reads. */
+/** A planned target reduced to the fields the scheduler reads. */
 const target = (
   label: string,
   ...dependencies: ReadonlyArray<string>
-): Planner.PlannedTarget => ({ label, dependencies } as unknown as Planner.PlannedTarget)
+): Planner.PlannedTarget => ({ label, dependencies, attrs: {} } as unknown as Planner.PlannedTarget)
+
+/** An exclusive target still carries the same dependency edges. */
+const exclusive = (
+  label: string,
+  ...dependencies: ReadonlyArray<string>
+): Planner.PlannedTarget => ({ label, dependencies, attrs: { exclusive: true } } as unknown as Planner.PlannedTarget)
 
 interface Controlled {
   readonly started: Array<string>
@@ -110,6 +116,108 @@ describe("schedule", () => {
     released.resolve()
     await done
     expect(finalized).toBe(2)
+  })
+
+  it("drains ready ordinary work before an exclusive target, including a free slot", async () => {
+    const work = controlled()
+    const done = schedule([exclusive("//:exclusive"), target("//:a"), target("//:b"), target("//:c")], 2, work.runOne)
+    await tick()
+    expect(work.running()).toEqual(["//:a", "//:b"])
+    work.settle("//:a")
+    await work.waitForStart("//:c")
+    expect(work.running()).toEqual(["//:b", "//:c"])
+    work.settle("//:b")
+    await tick()
+    // A free slot cannot admit the exclusive target while c is in flight.
+    expect(work.running()).toEqual(["//:c"])
+    work.settle("//:c")
+    await work.waitForStart("//:exclusive")
+    expect(work.running()).toEqual(["//:exclusive"])
+    work.settle("//:exclusive")
+    await done
+  })
+
+  it("dispatches nothing else while an exclusive target runs", async () => {
+    const work = controlled()
+    const done = schedule([exclusive("//:exclusive"), target("//:after", "//:exclusive")], 4, work.runOne)
+    await work.waitForStart("//:exclusive")
+    await tick()
+    expect(work.running()).toEqual(["//:exclusive"])
+    expect(work.started).toEqual(["//:exclusive"])
+    work.settle("//:exclusive")
+    await work.waitForStart("//:after")
+    expect(work.running()).toEqual(["//:after"])
+    work.settle("//:after")
+    await done
+  })
+
+  it("runs two ready exclusive targets one at a time", async () => {
+    const work = controlled()
+    const done = schedule([exclusive("//:first"), exclusive("//:second")], 4, work.runOne)
+    await work.waitForStart("//:first")
+    await tick()
+    expect(work.running()).toEqual(["//:first"])
+    work.settle("//:first")
+    await work.waitForStart("//:second")
+    expect(work.running()).toEqual(["//:second"])
+    work.settle("//:second")
+    await done
+  })
+
+  it("honors an ordinary prerequisite and an exclusive prerequisite of an ordinary dependent", async () => {
+    const work = controlled()
+    const done = schedule(
+      [
+        target("//:after", "//:exclusive"),
+        exclusive("//:exclusive", "//:before"),
+        target("//:before")
+      ],
+      4,
+      work.runOne
+    )
+    await work.waitForStart("//:before")
+    expect(work.running()).toEqual(["//:before"])
+    work.settle("//:before")
+    await work.waitForStart("//:exclusive")
+    expect(work.running()).toEqual(["//:exclusive"])
+    work.settle("//:exclusive")
+    await work.waitForStart("//:after")
+    expect(work.started).toEqual(["//:before", "//:exclusive", "//:after"])
+    work.settle("//:after")
+    await done
+  })
+
+  it("drains an exclusive target's finalizer before admitting ordinary work", async () => {
+    const entered = Promise.withResolvers<void>()
+    const released = Promise.withResolvers<void>()
+    let completed = false
+    const started: Array<string> = []
+    const done = Effect.runPromise(scheduleEffect(
+      [exclusive("//:exclusive"), target("//:after", "//:exclusive")],
+      4,
+      (label) =>
+        Effect.sync(() => {
+          started.push(label)
+        }).pipe(Effect.ensuring(
+          label === "//:exclusive"
+            ? Effect.sync(() => entered.resolve()).pipe(
+              Effect.andThen(Effect.promise(() => released.promise)),
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  completed = true
+                })
+              )
+            )
+            : Effect.void
+        ))
+    ))
+    await entered.promise
+    await tick()
+    expect(started).toEqual(["//:exclusive"])
+    released.resolve()
+    await done
+    expect(completed).toBe(true)
+    expect(started).toEqual(["//:exclusive", "//:after"])
   })
 
   it("resolves immediately for an empty work list", async () => {

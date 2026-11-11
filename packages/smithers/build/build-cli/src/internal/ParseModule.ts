@@ -12,7 +12,17 @@
 
 import { resolve } from "node:path"
 import type { SourceFile } from "typescript/unstable/ast"
-import { API } from "typescript/unstable/sync"
+import { API, type APIOptions } from "typescript/unstable/sync"
+
+/** The syntax operations a parsing invocation owns. */
+interface SyntaxSession {
+  updateSnapshot(options: { openProjects: Array<string> }): {
+    getProject(config: string): {
+      readonly program: { getSourceFile(file: string): SourceFile | undefined }
+    } | undefined
+  }
+  close(): void
+}
 
 /**
  * Parses one module without granting the compiler a real filesystem view.
@@ -20,7 +30,11 @@ import { API } from "typescript/unstable/sync"
  * @since 1.0.0-rc.0
  * @private
  */
-export const parseModule = (path: string, text: string): SourceFile => {
+export const parseModule = (
+  path: string,
+  text: string,
+  open: (options: APIOptions) => SyntaxSession = (options) => new API(options)
+): SourceFile => {
   const directory = resolve(".__smithers_syntax__").replace(/\\/g, "/")
   const extension = /\.(tsx|jsx|mts|cts|mjs|cjs|js)$/i.exec(path)?.[1]?.toLowerCase() ?? "ts"
   const file = `${directory}/input.${extension}`
@@ -35,7 +49,7 @@ export const parseModule = (path: string, text: string): SourceFile => {
       })
     ]
   ])
-  const api = new API({
+  const api = open({
     cwd: directory,
     fs: {
       readFile: (name) => files.get(name) ?? null,
