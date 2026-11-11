@@ -2,7 +2,7 @@
 // and Cloudflare runs a route before the app's custom domain, so every other path stays the app's
 // (docs/infrastructure.md#domain).
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { docsRoutes } from "./Domain.vibe"
+import { docsRoutes } from "./Domain.ts"
 
 /**
  * The docs site at `domain`: `pnpm build` in apps/site, which Alchemy runs again only when that folder's files change,

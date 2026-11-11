@@ -4,7 +4,7 @@ import { Stack } from "alchemy/Stack"
 import { ConfigProvider, Effect, Option } from "effect"
 import { expect, test } from "vitest"
 import { BrowserAnalytics } from "./BrowserAnalytics.ts"
-import type { AppHost } from "./Domain.vibe"
+import type { AppHost } from "./Domain.ts"
 
 const discover = async (domain: Option.Option<AppHost>, env: Record<string, string> = {}) => {
   const stack = Stack.of({ name: "browser-analytics", stage: "test", resources: {}, bindings: {}, actions: {} })

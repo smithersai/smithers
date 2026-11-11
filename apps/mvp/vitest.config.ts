@@ -55,7 +55,7 @@ export default defineConfig({
         "src/**/*.{ts,vibe}",
         "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).
-        "infra/Domain.vibe",
+        "infra/Domain.ts",
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
