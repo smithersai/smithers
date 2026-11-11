@@ -132,10 +132,22 @@ const finish = (
   })
 
 /** Models draft and review; durable actions own evidence, artifacts and side effects. */
+export { layer } from "./layer.ts"
+
 export default Flow.make("smithers/ReleaseContent", {
   description:
     "Analyze a release, draft changelog/blog/thread content, revise against quality gates, render previews and wait for approval before publication.",
-  capabilities: ["*"],
+  // Concrete: `smthrs flow start` refuses an envelope that grants every capability.
+  capabilities: [
+    "fs:read:**",
+    "fs:write:**",
+    "proc:spawn:*",
+    "net:get:registry.npmjs.org/**",
+    "net:get:localhost/**",
+    "net:get:127.0.0.1/**",
+    "net:post:api.x.com/**",
+    "model:call:*"
+  ],
   effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   payload: ContentInput,
   success: ContentResult,

@@ -30,9 +30,18 @@ export const Recording = Schema.Struct({
 })
 export const RecordingAsset = Schema.Struct({ path: Schema.String, digest: Schema.String })
 
-/** An input key the caller may omit; it then decodes to `value`. */
-const defaultKey = <S extends Schema.Constraint>(schema: S, value: S["Encoded"]): Schema.withDecodingDefaultKey<S> =>
-  Schema.withDecodingDefaultKey<S>(Effect.succeed(value))(schema)
+/**
+ * An input key the caller may omit; it then holds `value`. A host builds flow
+ * input with the payload schema's `make`, and a journal decodes it, so the
+ * default is both a constructor and a decoding default.
+ */
+const defaultKey = <S extends Schema.Constraint & Schema.WithoutConstructorDefault>(
+  schema: S,
+  value: S["~type.make.in"] & S["Encoded"]
+): Schema.withDecodingDefaultKey<Schema.withConstructorDefault<S>> =>
+  Schema.withDecodingDefaultKey<Schema.withConstructorDefault<S>>(Effect.succeed(value))(
+    Schema.withConstructorDefault<S>(Effect.succeed(value))(schema)
+  )
 
 const localOrigins = ["localhost", "127.0.0.1", "[::1]"]
 const isLocalOrigin = (value: string) => {
@@ -60,7 +69,7 @@ export const ContentInput = Schema.Struct({
       thread: defaultKey(Schema.Boolean, true),
       media: defaultKey(Schema.Boolean, true)
     }),
-    {}
+    { changelog: true, blog: true, thread: true, media: true }
   ),
   title: defaultKey(Schema.String, ""),
   notes: defaultKey(Schema.String, ""),

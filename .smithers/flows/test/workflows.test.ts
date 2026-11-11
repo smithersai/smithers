@@ -10,7 +10,8 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { promisify } from "node:util"
 import { vibeLangLoader } from "../automation/run-module.ts"
-import ReleaseContent from "../release-content/flow.ts"
+import ReleaseContent, { layer as contentLayer } from "../release-content/flow.ts"
+import { layerAt as contentLayerAt } from "../release-content/layer.ts"
 import * as Content from "../release-content/workflow.ts"
 import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
@@ -51,7 +52,7 @@ const waiting = (id: string) =>
   })
 
 test("a flow started with only a version decodes every other input key to its preview default", () => {
-  assert.deepEqual(Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({ version: "1.0.0" }), {
+  const preview = {
     version: "1.0.0",
     from: "auto",
     phase: "prepare",
@@ -59,7 +60,15 @@ test("a flow started with only a version decodes every other input key to its pr
     contentArtifact: "",
     requireContentApproval: true,
     provenance: true
-  })
+  }
+  // A Smithers host builds the input with the payload schema's constructor; a journal decodes it.
+  assert.deepEqual(ReleaseFlow.payloadSchema.make({ version: "1.0.0" }), preview)
+  assert.deepEqual(Schema.decodeUnknownSync(ReleaseFlow.payloadSchema)({ version: "1.0.0" }), preview)
+  assert.deepEqual(
+    ReleaseContent.payloadSchema.make({ version: "1.0.0" }),
+    Schema.decodeUnknownSync(ReleaseContent.payloadSchema)({ version: "1.0.0" })
+  )
+  assert.throws(() => ReleaseContent.payloadSchema.make({ version: "1.0.0", postX: true }))
   const content = Schema.decodeUnknownSync(ReleaseContent.payloadSchema)({
     version: "1.0.0",
     channels: { blog: false }
@@ -159,6 +168,45 @@ test(
     assert.equal(result.status, "approved")
     assert.deepEqual(counts, before)
     assert.equal(collections, 1)
+  }
+)
+
+test(
+  "the layer release-content/flow.ts exports previews release content on a host's seats",
+  { timeout: 90_000 },
+  async (test) => {
+    const fixture = await repository(test)
+    const counts: Record<string, number> = {}
+    assert.ok(Layer.isLayer(contentLayer), "the flow module exports the layer a host loads")
+    // What a Smithers host supplies: the engine, the agent services and the seats.
+    // Every content step is the exported layer's own, against the scratch checkout.
+    const engine = NodeRuntime.layerHost(
+      {
+        filename: join(fixture.root, ".flows", "engine.db"),
+        workspaceRoot: fixture.root,
+        owner: { hostId: "release-content-layer-test" },
+        signals: []
+      },
+      Layer.mergeAll(
+        contentLayerAt({ root: fixture.root, evaluator: scriptedTemplate }),
+        HumanTask.layer,
+        Interpreter.layer(ReleaseContent)
+      ).pipe(
+        Layer.provideMerge(agentHost(scriptedSeats(counts), 250_000, scriptedTemplate)),
+        Layer.provideMerge(Action.layerImplementations)
+      )
+    )
+    const input = Schema.decodeUnknownSync(ReleaseContent.payloadSchema)({
+      version: fixture.evidence.version,
+      from: "v0.35.0",
+      channels: { blog: false, thread: false }
+    })
+    const result = await Effect.runPromise(
+      Effect.scoped(ReleaseContent.execute(input, { executionId: "content-layer" }).pipe(Effect.provide(engine)))
+    )
+    assert.equal(result.status, "preview")
+    assert.match(result.artifact.directory, new RegExp(`^\\.flows/releases/content/${fixture.evidence.version}/`))
+    assert.equal(counts.score, 1)
   }
 )
 

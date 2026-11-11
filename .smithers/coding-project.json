@@ -11,7 +11,10 @@
     "coding/review": "auto",
     "wiki/reviewer": "auto",
     "repository/research": "auto",
-    "flow/author": "auto"
+    "flow/author": "auto",
+    "release/analyst": "auto",
+    "release/writer": "auto",
+    "release/reviewer": "auto"
   },
   "pages": [
     {
