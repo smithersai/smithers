@@ -1375,6 +1375,13 @@ function localTypeText(type: Type, hint: string, loc: Node): string {
   return adoptAnonymous({ name: fresh, kind: "record", fields: fieldsOf(fresh, type, loc, _synthArrayUnions) }, type, _synthArrayUnions);
 }
 
+/** A written type the checker computes rather than names: an indexed access (`Model["edit"]`), a `typeof`, or the
+ *  standard library's `NonNullable<T>`. Its text is no backend type; the checker's resolved type is. */
+function computedTypeNode(tn: Node): boolean {
+  return [tn, ...tn.getDescendants()].some(n => Node.isIndexedAccessTypeNode(n) || Node.isTypeQuery(n)
+    || (Node.isTypeReference(n) && n.getTypeName().getText() === "NonNullable"));
+}
+
 /** A tagged union of anonymous object types (an Effect Schema `Union` of `TaggedStruct`s) as a discriminated-union
  *  datatype named from `hint`; undefined when the members share no literal discriminant. */
 function taggedUnionName(type: Type, members: Type[], hint: string, loc: Node, extraDecls: TypeDeclInfo[]): string | undefined {
@@ -2010,7 +2017,12 @@ function extractStmts(stmts: Node[]): RawStmt[] {
         // case leave null so resolve infers from the initializer's IR type
         // (which sees the declare-type stubs).
         const annotatedText = d.getTypeNode()?.getText();
-        const inferred = annotatedText ? null : _eraseGenerics(typeToString(declType));
+        // An unannotated object literal has an anonymous type: a record named after the local (as destructuring does),
+        // or it lowers to a tuple that its field reads cannot resolve against.
+        const literal = d.getInitializer();
+        const anonymousLiteral = !annotatedText && !isHavoc && literal !== undefined && Node.isObjectLiteralExpression(literal)
+          && literal.getProperties().every(p => Node.isPropertyAssignment(p) || Node.isShorthandPropertyAssignment(p));
+        const inferred = annotatedText ? null : _eraseGenerics(anonymousLiteral ? localTypeText(declType, d.getName(), d) : typeToString(declType));
         const tsType: string | null = havocType
           ?? (annotatedText ? _eraseGenerics(annotatedText) : (inferred === "any" ? null : inferred));
         result.push({
@@ -2459,8 +2471,9 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       let tsType: string;
       if (tn && Node.isUnionTypeNode(tn)) {
         tsType = _eraseGenerics(_tsTypeFromUnionNode(tn));
-      } else if (tn && Node.isTypeLiteral(tn)) {
-        // An inline record type (`model: { readonly k: number }`) has no name for a datatype: synthesize one.
+      } else if (tn && (Node.isTypeLiteral(tn) || computedTypeNode(tn))) {
+        // An inline record type (`model: { readonly k: number }`) has no name for a datatype: synthesize one. A computed
+        // type (`edit: NonNullable<Model["edit"]>`) is the type it resolves to, the record the field holds.
         tsType = localTypeText(p.getType(), typeName(fn.getName() ?? "anonymous", p.getName()), p);
       } else if (tn) {
         tsType = _eraseGenerics(tn.getText());
@@ -2493,6 +2506,7 @@ function extractFunctionInner(fn: FunctionDeclaration, parentAnnotations?: Annot
       // and the type mapper reads the subject name as an opaque type.
       if (node && node.getKind() === SyntaxKind.TypePredicate) return "boolean";
       if (node && Node.isUnionTypeNode(node)) return _eraseGenerics(_tsTypeFromUnionNode(node));
+      if (node && computedTypeNode(node)) return _eraseGenerics(localTypeText(fn.getReturnType(), typeName(fn.getName() ?? "anonymous", "result"), node));
       if (node) return _eraseGenerics(node.getText());
       const inferred = fn.getReturnType();
       if (inferred.isAny()) return "unknown";
