@@ -1,7 +1,9 @@
 import { Effect, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { expect, test } from "vitest"
+import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as TestDatabase from "../db/TestDatabase.ts"
+import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import * as Actor from "./Actor.ts"
 import * as Page from "./GitHubConnectionsPage.vibe"
 import * as SessionStore from "./SessionStore.ts"
@@ -43,6 +45,17 @@ const seeded = Effect.gen(function*() {
 })
 const form = { origin, "content-type": "application/x-www-form-urlencoded" }
 
+// ChatApi's dispatch runs only in a deployed Worker (worker/DatabaseRoutes.test.ts), so the order is read from its source.
+test("ChatApi dispatches the page before it forwards the rest of /api/auth/ to sign-in", () => {
+  expect(Page.ROUTE.startsWith(`${AUTH_ROUTE}/`)).toBe(true)
+  const program = sourceText(new URL("./ChatApiProgram.ts", import.meta.url))
+  const dispatch = "if (GitHubConnectionsPage.handles(path))"
+  const page = program.indexOf(dispatch)
+  const signIn = program.indexOf("if (request.url.startsWith(`${AUTH_ROUTE}/`))")
+  expect([page, signIn].every((at) => at >= 0)).toBe(true)
+  expect(page).toBeLessThan(signIn)
+  expect(program.indexOf("GitHubConnectionsPage.handles(", page + dispatch.length)).toBe(-1)
+})
 test("escapes the sites it shows and says when there are none", () => {
   expect(Page.pageHtml(["https://a.test"])).toContain("a.test")
   expect(Page.pageHtml(['https://x.test/"><script>'])).not.toContain("<script>")

@@ -501,6 +501,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.ignore
                 )
               )
+              const path = request.url.split("?")[0]!
+              // Before sign-in, which answers every other `/api/auth/` path: the person's connected sites and their
+              // Disconnect (docs/features/sign-in.md).
+              if (GitHubConnectionsPage.handles(path)) {
+                return yield* GitHubConnectionsPage.serve(connectionObjects).pipe(
+                  Effect.provide(database),
+                  Effect.provideService(RuntimeContext, runtime),
+                  Effect.provide(signedIn),
+                  Effect.provide(FetchHttpClient.layer),
+                  Effect.catchCause(() => Effect.succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS })))
+                )
+              }
               if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
                 // Signing out starts `auth/RevokeGitHubToken` through `starter` and answers once the start is recorded.
                 return yield* signIn.fetch.pipe(
@@ -508,7 +520,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provide(signedIn)
                 )
               }
-              const path = request.url.split("?")[0]!
               if (BranchApi.handles(path)) {
                 const sockets = Layer.effect(TerminalSockets, BranchSandboxes.terminalSocketsOver(sandboxObjects))
                 const rooms = BranchRooms.roomsLayer(roomObjects)
@@ -547,15 +558,6 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
                   Effect.provide(personalModels),
                   Effect.provide(signedIn),
                   Effect.provide(FetchHttpClient.layer)
-                )
-              }
-              if (GitHubConnectionsPage.handles(path)) {
-                return yield* GitHubConnectionsPage.serve(connectionObjects).pipe(
-                  Effect.provide(database),
-                  Effect.provideService(RuntimeContext, runtime),
-                  Effect.provide(signedIn),
-                  Effect.provide(FetchHttpClient.layer),
-                  Effect.catchCause(() => Effect.succeed(HttpServerResponse.empty({ status: 503, headers: GitHub.Auth.Broker.HEADERS })))
                 )
               }
               if (BugsApi.handles(path)) {
