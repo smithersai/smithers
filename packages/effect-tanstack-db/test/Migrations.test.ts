@@ -221,18 +221,28 @@ describe("declarations", () => {
     ).toBe("p: no payload version 0 for unstamped writes")
   })
 
-  test("the epoch sums every version, plus one for each retired store, so it grows with each change", () => {
-    const stores = [notesAt("a", 2), Migrations.synced({ id: "s", version: 3, schema: Note })]
+  test("the epoch identifies the declarations, so dropping a retired store never repeats an earlier build's", () => {
+    const old = Migrations.synced({ id: "old", version: 1, schema: Note })
+    const retiredOld = Migrations.retired({ id: "old", kind: "synced", version: 1 })
     const outbox = { payloads: [Migrations.payload({ key: "p", versions: [NoteV1] })], mutations: ["save"] }
-    const before = Migrations.registry({ stores, outbox })
-    const retiring = Migrations.registry({
-      stores: [stores[1]!],
-      retired: [Migrations.retired({ id: "a", kind: "local", version: 2 })],
-      outbox
-    })
-    expect(before.epoch).toBe(6)
-    expect(retiring.epoch).toBe(7)
-    expect(Migrations.registry({ stores: [] }).epoch).toBe(0)
+    const builds = [
+      Migrations.registry({ stores: [notesAt("drafts", 1), old], outbox }),
+      Migrations.registry({ stores: [notesAt("drafts", 1)], retired: [retiredOld], outbox }),
+      // Drops the retired declaration and bumps drafts: a sum of versions repeats the first build's epoch here.
+      Migrations.registry({ stores: [notesAt("drafts", 2)], outbox }),
+      Migrations.registry({ stores: [notesAt("drafts", 2)], retired: [retiredOld], outbox }),
+      Migrations.registry({
+        stores: [notesAt("drafts", 2), Migrations.synced({ id: "old", version: 1, schema: Note, family: true })],
+        outbox
+      }),
+      Migrations.registry({ stores: [notesAt("drafts", 2)], outbox: { payloads: [], mutations: ["save"] } }),
+      Migrations.registry({ stores: [] })
+    ]
+    const epochs = builds.map((build) => build.epoch)
+    expect(new Set(epochs).size).toBe(builds.length)
+    for (const epoch of epochs) expect(Number.isSafeInteger(epoch) && epoch >= 0).toBe(true)
+    // The same declarations, in any order, are the same epoch.
+    expect(Migrations.registry({ stores: [old, notesAt("drafts", 1)], outbox }).epoch).toBe(epochs[0])
   })
 
   test("a family names its members, and a declaration is found by id, by family or among the retired", () => {
@@ -311,8 +321,9 @@ describe("a registry given to the persistence", () => {
 
 describe("apply", () => {
   test("finds nothing to bring forward in a database the persistence never wrote", async () => {
-    const report = await applyOn(databaseFile(), Migrations.registry({ stores: [notesAt("notes", 2)] }))
-    expect(report).toEqual({ epoch: 2, collections: [] })
+    const registry = Migrations.registry({ stores: [notesAt("notes", 2)] })
+    const report = await applyOn(databaseFile(), registry)
+    expect(report).toEqual({ epoch: registry.epoch, collections: [] })
   })
 
   test("migrates a local collection's rows in place, and the next build opens them at its version", async () => {
@@ -789,8 +800,9 @@ describe("apply", () => {
     const path = databaseFile()
     const collection = id("notes")
     await writeLocal(path, notesAt(collection, 1), [v1("a", 1)])
-    const prepared = Migrations.prepare(Migrations.registry({ stores: [notesAt(collection, 2)] }))
-    expect(prepared.epoch).toBe(2)
+    const registry = Migrations.registry({ stores: [notesAt(collection, 2)] })
+    const prepared = Migrations.prepare(registry)
+    expect(prepared.epoch).toBe(registry.epoch)
     expect(prepared.success).toBe(Migrations.Report)
     const database = sqlite(path)
     const report = await Effect.runPromise(
