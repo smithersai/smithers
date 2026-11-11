@@ -157,6 +157,12 @@ expect_proof_failure \
 expect_proof_failure \
   "Dafny treated a present zero as a nullish fallback" \
   "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-nullish-falsy-wrong.ts"
+# `x ?? null` and `x ?? undefined` keep the optional type; claiming another field is a proof failure.
+cp tools/fixtures/nullish-null-default.ts tools/fixtures/nullish-null-default-wrong.ts "$fixture_dir/"
+"$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/nullish-null-default.ts"
+expect_proof_failure \
+  "Dafny accepted a ?? null result equal to a field it does not read" \
+  "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/nullish-null-default-wrong.ts"
 "$tsx" tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/imported-nullish/use.ts"
 expect_proof_failure \
   "Dafny accepted more than an imported ?? contract says" \
