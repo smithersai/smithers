@@ -1717,6 +1717,9 @@ importers:
       '@smthrs/observability':
         specifier: 1.0.0-rc.17
         version: link:flows/observability
+      '@smthrs/patterns':
+        specifier: 1.0.0-rc.17
+        version: link:flows/patterns
       '@smthrs/plan':
         specifier: 1.0.0-rc.17
         version: link:flows/plan

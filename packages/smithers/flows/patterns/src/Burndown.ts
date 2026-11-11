@@ -1319,10 +1319,39 @@ export const round = <I, It extends Item, W, E = never, R = never, L = unknown>(
  * execution id the round hands it, so a rerun reattaches instead of
  * duplicating.
  *
+ * For a declared flow the work output is the flow's success, so `land` and
+ * `detail` read it at that type. Bind the member to a constant before the
+ * round options when `land` or `detail` leave their arguments unannotated;
+ * written inline, TypeScript reads those arguments as `unknown`.
+ *
  * @category constructors
  * @since 1.0.0
  */
-export const child = <I, It extends Item, P, A, E, R>(
+export const child: {
+  <
+    I,
+    It extends Item,
+    Tag extends string,
+    Payload extends Flow.AnyStructSchema,
+    Success extends Schema.Top,
+    Error extends Schema.Top,
+    Requires
+  >(
+    flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+    payload: (args: ItemArgs<I, It>) => Payload["~type.make.in"]
+  ): (
+    args: ItemArgs<I, It> & { readonly executionId: string }
+  ) => ReturnType<typeof flow.execute<false>>
+  <I, It extends Item, P, A, E, R>(
+    flow: {
+      readonly execute: (
+        payload: P,
+        options: { readonly executionId: string }
+      ) => Effect.Effect<A, E, R>
+    },
+    payload: (args: ItemArgs<I, It>) => P
+  ): (args: ItemArgs<I, It> & { readonly executionId: string }) => Effect.Effect<A, E, R>
+} = <I, It extends Item, P, A, E, R>(
   flow: {
     readonly execute: (
       payload: P,
@@ -1340,17 +1369,22 @@ export const child = <I, It extends Item, P, A, E, R>(
  * The dispatch payload's `items` is read as the round's backlog, so `round`'s
  * input checks are what refuse a malformed discovery.
  *
+ * The members name the input's type, as they name the item's: annotate one
+ * member's argument with {@link ItemArgs} and the rest infer it. The lineage
+ * decoded that input with the payload schema of its discovery member before
+ * the first round, so the members read what discovery read.
+ *
  * @category layers
  * @since 1.0.0
  */
-export const layer = <Tag extends string, It extends Item, W, E = never, R = never, L = unknown>(
+export const layer = <Tag extends string, It extends Item, W, E = never, R = never, L = unknown, I = unknown>(
   action: Dispatch<Tag>,
-  options: RoundOptions<unknown, It, W, E, R, L>
+  options: RoundOptions<I, It, W, E, R, L>
 ) =>
   action.toLayer((payload) =>
     round(
       {
-        input: payload.input,
+        input: payload.input as I,
         round: payload.round,
         items: payload.items as ReadonlyArray<It>,
         settled: payload.settled,

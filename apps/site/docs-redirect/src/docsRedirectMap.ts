@@ -147,6 +147,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/concepts/output-and-exit-codes/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/output-and-exit-codes.md"],
     ["/concepts/project-and-state/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/project-and-state.md"],
     ["/concepts/repository-intake/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/repository-intake.md"],
+    ["/guides/burn-down-issues/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/burn-down-issues.md"],
     ["/guides/catalog/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/catalog.md"],
     ["/guides/change-code/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md"],
     ["/guides/cloud-sandbox/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/cloud-sandbox.md"],

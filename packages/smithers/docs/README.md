@@ -154,6 +154,7 @@ line.
   [output and exit codes](./concepts/output-and-exit-codes.md).
 - Guides: [script the CLI](./guides/script-the-cli.md),
   [launch a detached run](./guides/launch-a-detached-run.md),
+  [burn down a repository's issues](./guides/burn-down-issues.md),
   [diagnose a run](./guides/diagnose-a-run.md),
   [serve the workspace gateway](./guides/serve-the-workspace-gateway.md),
   [schedule a build target](./guides/schedule-a-target.md),

@@ -120,6 +120,12 @@ declare const mergePatch: (repo: string, patch: string) => Effect.Effect<string,
 declare const releaseIssue: (repo: string, issue: number, note: string) => Effect.Effect<void, GhFailed>
 declare const readAccounts: (repo: string) => Effect.Effect<Burndown.Capacity, GhFailed>
 
+// Bound before the options, so land and detail read the child's report at its type.
+const work = Burndown.child(
+  Work,
+  ({ input, item }: Burndown.ItemArgs<{ repo: string }, Issue>) => ({ repo: input.repo, issue: item.number })
+)
+
 export const dispatchLayer = Burndown.layer(Dispatch, {
   key: "issues/smithersai-smithers",
   concurrency: 12,
@@ -134,7 +140,7 @@ export const dispatchLayer = Burndown.layer(Dispatch, {
       (answer) =>
         answer === "held" ? Effect.fail(new Burndown.Held({ message: "claimed by another worker" })) : Effect.void
     ),
-  work: Burndown.child(Work, ({ input, item }) => ({ repo: input.repo, issue: item.number })),
+  work,
   // land answers the merged revision; detail and release both see it.
   land: ({ input, output }) => mergePatch(input.repo, output.patch),
   release: ({ input, item, status, detail }) => releaseIssue(input.repo, item.number, `${status}: ${detail}`),
@@ -146,6 +152,13 @@ export const dispatchLayer = Burndown.layer(Dispatch, {
 
 Provide `dispatchLayer`, the `ListIssues` and `Accounts` implementations,
 `Sleep.layer`, and `WaitFor.layer` to the host that executes the burndown.
+
+`smthrs flow start` is that host. Put the declarations in
+`.smithers/flows/<name>/flow.ts`, export the merged layers as `layer`, and
+start the flow by name. The installed CLI supplies `@smthrs/patterns`, so the
+project installs nothing.
+[Burn down a repository's issues](../../../docs/guides/burn-down-issues.md)
+is one complete flow file.
 
 What each member decides:
 

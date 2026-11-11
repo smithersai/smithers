@@ -33,7 +33,11 @@ install both packages globally: npm refuses the second `smthrs` link.
 `smithers-jj-export` helper that confined flow commands require, so there is
 nothing to build.
 
-A global CLI initializes a project and operates its flows. Target commands load
+A global CLI initializes a project and operates its flows. A flow file imports
+`effect`, `@smthrs/flow`, `@smthrs/plan`, `@smthrs/core`, `@smthrs/agent`,
+`@smthrs/patterns` and `@smthrs/integrations` from the CLI's own installation,
+so a project that only uses those installs nothing; see
+[Burn down a repository's issues](./guides/burn-down-issues.md). Target commands load
 `WORKSPACE.ts` and `PACKAGE.ts`, whose declarations and the CLI must resolve the
 same physical Effect and Smithers packages, so install the CLI in that
 workspace and run its local copy, as
