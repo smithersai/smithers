@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 // @ts-expect-error: a plain .mjs script, untyped.
-import { clientOf, comment, findMatch, laneFor, link, linkOf, normalizeTitle, labelOf, open, parentRefOf, relate, repoOf, retryWrite, scopedWriteId, tokenFor, update } from "./track.mjs"
+import { clientOf, comment, findMatch, laneFor, link, linkOf, normalizeTitle, labelOf, open, parentRefOf, relate, repoOf, retryWrite, scopedWriteId, shapeReaderOf, tokenFor, update } from "./track.mjs"
 
 type Sent = { url: string; init: RequestInit }
 const recorder = (answer: (url: string, init: RequestInit) => [number, unknown]) => {
@@ -213,5 +213,93 @@ describe("the lane helper", () => {
     expect(sent[0]!.url).toBe("https://smithers.test/api/repos/acme/widgets/issues/12/links")
     expect((sent[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer smm_secret")
     expect(String(sent[0]!.init.body)).not.toContain("secret")
+  })
+})
+
+describe("exhaustive issue searches", () => {
+  test.each([undefined, null, {}, "not an array"])("malformed body %j refuses creation", async (answer) => {
+    const { sent, fetch } = recorder((_url, init) => init.method === "POST" ? [202, {}] : [200, answer])
+    await expect(open(client(fetch), { repo: "acme/widgets", title: "Search", body: "Details", sleep }))
+      .rejects.toMatchObject({ code: "unavailable", exit: 4 })
+    expect(sent).toHaveLength(1)
+    expect(sent.every(({ init }) => init.method === "GET")).toBe(true)
+  })
+
+  test.each([200, 409])("500 pages without completion (HTTP %s) refuses creation", async (status) => {
+    const { sent, fetch } = recorder((_url, init) => {
+      if (init.method === "POST") return [202, {}]
+      return status === 409 ? [409, {}] : [200, [{ headers: { operation: "insert" }, key: "partial", value: { number: "1", title: "Other" } }]]
+    })
+    await expect(open(client(fetch), { repo: "acme/widgets", title: "Search", body: "Details", key: "k:missing", sleep }))
+      .rejects.toMatchObject({ code: "unavailable", exit: 4 })
+    expect(sent).toHaveLength(500)
+    expect(sent.every(({ init }) => init.method === "GET")).toBe(true)
+  })
+
+  test("a failed body leaves its cursor unread, so retry recovers its matching issue", async () => {
+    const paths: Array<string> = []
+    let calls = 0
+    const fetch = async (url: string) => {
+      paths.push(url)
+      calls++
+      return new Response(JSON.stringify(calls === 1 ? {} : shape([{ number: "9", body: "key: k:1" }])),
+        { headers: { "electric-offset": "5_0", "electric-handle": "h" } })
+    }
+    const reader = shapeReaderOf(client(fetch), { owner: "acme", name: "widgets" })
+    await expect(reader.rows()).rejects.toMatchObject({ code: "unavailable" })
+    expect(await reader.rows()).toEqual([{ number: "9", body: "key: k:1" }])
+    expect(paths[1]).toBe(paths[0])
+  })
+})
+
+describe("shape cursor recovery", () => {
+  test("valid pages accumulate updates and deletes; a reset discards the previous shape", async () => {
+    const paths: Array<string> = []
+    const pages = [
+      { status: 200, answer: [{ headers: { operation: "insert" }, key: "old", value: { number: "1" } }] },
+      { status: 409, answer: {} },
+      { status: 200, answer: [
+        { headers: { operation: "insert" }, key: "keep", value: { number: "2", title: "Before" } },
+        { headers: { operation: "insert" }, key: "gone", value: { number: "3" } },
+      ] },
+      { status: 200, answer: [
+        { headers: { operation: "update" }, key: "keep", value: { title: "After" } },
+        { headers: { operation: "delete" }, key: "gone" },
+        { headers: { control: "up-to-date" } },
+      ] },
+      { status: 200, answer: shape() },
+    ]
+    const fetch = async (url: string) => {
+      paths.push(url)
+      const page = pages[paths.length - 1]!
+      return new Response(JSON.stringify(page.answer), {
+        status: page.status, headers: { "electric-offset": `${paths.length}_0`, "electric-handle": "h" },
+      })
+    }
+    const reader = shapeReaderOf(client(fetch), { owner: "acme", name: "widgets" })
+    expect(await reader.rows()).toEqual([{ number: "2", title: "After" }])
+    expect(new URL(paths[1]!).searchParams.get("offset")).toBe("1_0")
+    expect(new URL(paths[1]!).searchParams.get("handle")).toBe("h")
+    expect(new URL(paths[2]!).searchParams.get("offset")).toBe("-1")
+    expect(new URL(paths[2]!).searchParams.has("handle")).toBe(false)
+    expect(await reader.rows()).toEqual([{ number: "2", title: "After" }])
+    expect(new URL(paths[4]!).searchParams.get("offset")).toBe("4_0")
+  })
+
+  test("an up-to-date receipt on the final allowed page still reuses a match", async () => {
+    let pages = 0
+    const { sent, fetch } = recorder(() => [200, ++pages < 500 ? [] : shape([{ number: "9", body: "key: k:1" }])])
+    expect(await open(client(fetch), { repo: "acme/widgets", title: "Search", body: "Details", key: "k:1", sleep }))
+      .toMatchObject({ number: 9, reused: true })
+    expect(sent).toHaveLength(500)
+    expect(sent.every(({ init }) => init.method === "GET")).toBe(true)
+  })
+
+  test("a refused search never submits a write", async () => {
+    const { sent, fetch } = recorder(() => [503, {}])
+    await expect(open(client(fetch), { repo: "acme/widgets", title: "Search", body: "Details", sleep }))
+      .rejects.toMatchObject({ code: "search" })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.init.method).toBe("GET")
   })
 })

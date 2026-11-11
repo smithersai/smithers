@@ -104,11 +104,18 @@ export const reviewRoundRecords = (files, { unformatted = false } = {}) => {
   const records = new Map()
   const seen = new Map()
   const add = (ids, make) => {
-    const known = ids.map((id) => seen.get(id)).find((key) => key !== undefined)
-    if (known !== undefined) {
-      const record = records.get(known)
-      record.body = body([record.body, "", `Also reported as ${ids.join(", ")}.`])
-      for (const id of ids) seen.set(id, known)
+    const known = new Set(ids.map((id) => seen.get(id)).filter((key) => key !== undefined))
+    if (known.size > 0) {
+      // Keep the earliest record's key, including when a later row reverses its aliases.
+      const keys = [...records.keys()].filter((key) => known.has(key))
+      const record = records.get(keys[0])
+      const merged = [...keys.map((key) => records.get(key)), make()]
+      record.body = body([...merged.map((part) => part.body), "", `Also reported as ${ids.join(", ")}.`])
+      record.labels = [...new Set(merged.flatMap((part) => part.labels))]
+      record.links = [...new Map(merged.flatMap((part) => part.links).map((link) => [`${link.kind}:${link.ref}`, link])).values()]
+      for (const key of keys.slice(1)) records.delete(key)
+      for (const [alias, key] of seen) if (known.has(key)) seen.set(alias, record.key)
+      for (const id of ids) seen.set(id, record.key)
       return
     }
     const record = make()

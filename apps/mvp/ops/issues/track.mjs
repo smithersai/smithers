@@ -245,8 +245,9 @@ export const shapeReaderOf = (client, { owner, name }) => {
           continue
         }
         if (status !== 0 && status !== 200) throw new Refused("search", `the issue search failed: HTTP ${status}`, 1)
+        if (!Array.isArray(answer)) throw new Refused("unavailable", "the issue search returned an invalid page; run the search again", 4)
         let upToDate = false
-        for (const message of Array.isArray(answer) ? answer : []) {
+        for (const message of answer) {
           if (message?.headers?.control === "up-to-date") upToDate = true
           const op = message?.headers?.operation
           if (op === "delete") rows.delete(message.key)
@@ -254,9 +255,9 @@ export const shapeReaderOf = (client, { owner, name }) => {
         }
         offset = headers.get("electric-offset") ?? offset
         handle = headers.get("electric-handle") ?? handle
-        if (upToDate || status === 0) break
+        if (upToDate) return [...rows.values()]
       }
-      return [...rows.values()]
+      throw new Refused("unavailable", "the issue search did not finish within 500 pages; run the search again", 4)
     },
   }
 }

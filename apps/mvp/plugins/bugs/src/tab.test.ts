@@ -2,7 +2,7 @@
 // The tab runs over the real host and a real device in src/features/bugs/device.test.ts; here over an injected host
 // whose runs end as a test says (TEST-7), for the endings a real device reaches rarely: refused for good, retried.
 import { Host } from "@smthrs/plugin"
-import { Effect, Layer, Stream } from "effect"
+import { Deferred, Effect, Layer, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { idFor, MAX_WHAT, reasonOf, type Report, type Sending, settle, tab, whatOf } from "./tab"
 
@@ -65,7 +65,7 @@ describe("the form", () => {
  * service. `arrive` brings a report's row, as sync does.
  */
 const hostWith = (
-  outcomes: ReadonlyArray<Host.Settled | "refused">,
+  outcomes: ReadonlyArray<Host.Settled | "refused" | Effect.Effect<Host.Settled>>,
   rows: Array<Report> = [],
   sent: Array<unknown> = [],
 ) => {
@@ -93,7 +93,7 @@ const hostWith = (
         sent.push(fields)
         return outcome === "refused"
           ? Effect.fail(new Host.PluginRefused({ plugin: "bugs", reason: "undeclared_event", detail: "send" }))
-          : Effect.succeed({ runId: `run-${index}`, settled: Effect.succeed(outcome) })
+          : Effect.succeed({ runId: `run-${index}`, settled: Effect.isEffect(outcome) ? outcome : Effect.succeed(outcome) })
       },
       open: () => Effect.void,
       events: () => Stream.empty,
@@ -197,4 +197,52 @@ describe("a report that isn't sent", () => {
     expect(idFor({ status: "failed", id: "old", what: "a", code: "x" }, "b", fresh)).toBe("new")
     expect(idFor({ status: "idle" }, "a", fresh)).toBe("new")
   })
+})
+
+describe("completion ordering", () => {
+  test.each([
+    { next: false, outcome: { _tag: "Failed", code: "BugUnsent" } },
+    { next: true, outcome: { _tag: "Failed", code: "BugUnsent" } },
+    { next: true, outcome: { _tag: "Done" } },
+  ] satisfies Array<{ next: boolean; outcome: Host.Settled }>)("a stored report survives late completion: %j", async ({ next, outcome }) => {
+    await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* Deferred.make<Host.Settled>()
+      const second = yield* Deferred.make<Host.Settled>()
+      const sent: Array<{ readonly id: string; readonly what: string }> = []
+      const host = hostWith([Deferred.await(first), Deferred.await(second)], [], sent as never)
+      yield* Effect.promise(() => withTab(host, (built) => Effect.gen(function* () {
+        built.actions.send("first report")
+        host.arrive(report(sent[0]!.id))
+        expect(built.queries.sending.current()).toEqual({ status: "sent", report: report(sent[0]!.id) })
+        if (next) built.actions.send("second report")
+        const current = built.queries.sending.current()
+        const changes: Array<Sending> = []
+        built.queries.sending.subscribe(() => changes.push(built.queries.sending.current()))
+        yield* Deferred.succeed(first, outcome)
+        yield* Effect.yieldNow
+        expect(built.queries.sending.current()).toEqual(current)
+        expect(changes).toEqual([])
+        if (next) {
+          expect(current).toEqual({ status: "sending", id: sent[1]!.id, what: "second report" })
+          yield* Deferred.succeed(second, { _tag: "Done" })
+          yield* Effect.yieldNow
+          host.arrive(report(sent[1]!.id))
+          expect(built.queries.sending.current()).toEqual({ status: "sent", report: report(sent[1]!.id) })
+        }
+      })))
+    }))
+  })
+})
+
+test("completion observes an already stored row before reporting a failure", async () => {
+  const ending = Effect.runSync(Deferred.make<Host.Settled>())
+  const rows: Array<Report> = []
+  const sent: Array<{ readonly id: string }> = []
+  await withTab(hostWith([Deferred.await(ending)], rows, sent as never), (built) => Effect.gen(function* () {
+    built.actions.send("stored report")
+    rows.push(report(sent[0]!.id))
+    yield* Deferred.succeed(ending, { _tag: "Failed", code: "BugUnsent" })
+    yield* Effect.yieldNow
+    expect(built.queries.sending.current()).toEqual({ status: "sent", report: rows[0] })
+  }))
 })

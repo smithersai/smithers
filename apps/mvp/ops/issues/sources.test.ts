@@ -196,3 +196,25 @@ describe("the issue tree", () => {
     expect(parentsOf(moved)).toEqual(new Map([["impl:5", "tree:spec"], ["impl:100", "tree:impl"]]))
   })
 })
+
+describe("review alias groups", () => {
+  test("a bridge merges every known group and retains evidence, links, labels and transitive aliases", () => {
+    const file = (reviewer: string, ...lines: Array<string>) => ({
+      reviewer, round: 3, text: ["## Still open from earlier rounds", ...lines].join("\n"),
+    })
+    const rows = reviewRoundRecords([
+      file("opus", "| 1 | r1 OPUS-1 / FABLE-1 [minor]: first finding | first evidence | open |"),
+      file("astra", "| 1 | r1 ASTRA-1 / SOL-1 [major]: second finding | second evidence | open |"),
+      file("sol", "| 1 | r1 OPUS-1 / ASTRA-1: same finding | bridge evidence | open |"),
+      file("fable", "| 1 | r1 SOL-1 / FABLE-1: same finding again | final evidence | open |"),
+    ])
+    expect(keys(rows)).toEqual(["review:spec:r1-OPUS-1"])
+    for (const evidence of ["first evidence", "second evidence", "bridge evidence", "final evidence"]) {
+      expect(rows[0].body).toContain(evidence)
+    }
+    expect(rows[0].labels).toEqual(expect.arrayContaining(["severity:minor", "severity:major"]))
+    expect(rows[0].links.map((link: { ref: string }) => link.ref)).toEqual([
+      "spec-review:r3:opus", "spec-review:r3:astra", "spec-review:r3:sol", "spec-review:r3:fable",
+    ])
+  })
+})

@@ -145,18 +145,23 @@ export const tab = Effect.gen(function* () {
     }
     const id = idFor(sending, what, () => crypto.randomUUID())
     set({ status: "sending", id, what })
-    const failed = (code: string) => Effect.sync(() => set({ status: "failed", id, what, code }))
+    const complete = (code?: string) => Effect.sync(() => {
+      if (sending.status !== "sending" || sending.id !== id) return
+      const next = settle(sending, reports.current())
+      if (next !== sending) set(next)
+      else if (code !== undefined) set({ status: "failed", id, what, code })
+    })
     run(
       host.dispatch({ view: FORM, name: "send" }, { id, what }).pipe(
         Effect.flatMap((dispatched) => dispatched.settled),
         Effect.matchEffect({
           // The host refused the event before anything ran: nothing was filed.
-          onFailure: (refused) => failed(refused.reason),
+          onFailure: (refused) => complete(refused.reason),
           onSuccess: (settled) =>
             settled._tag === "Failed"
-              ? failed(settled.code)
+              ? complete(settled.code)
               // Filed: Sent once its row is here, which it may be already.
-              : Effect.sync(() => set(settle(sending, reports.current()))),
+              : complete(),
         }),
       ),
     )
