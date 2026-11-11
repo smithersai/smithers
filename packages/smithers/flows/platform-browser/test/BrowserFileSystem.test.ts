@@ -172,6 +172,7 @@ describe("BrowserFileSystem error mapping", () => {
         ["makeDirectory", fileSystem.makeDirectory("/p")],
         ["readDirectory", fileSystem.readDirectory("/p")],
         ["stat", fileSystem.stat("/p")],
+        ["lstat", fileSystem.lstat("/p")],
         ["realPath", fileSystem.realPath("/p")],
         ["remove", fileSystem.remove("/p")],
         ["access", fileSystem.access("/p")],
@@ -920,6 +921,23 @@ describe("BrowserFileSystem operations over node:fs/promises", () => {
       expect(Number(file.size)).toBe(5)
       expect(Option.getOrThrow(file.mtime)).toBeInstanceOf(Date)
       expect(directory.type).toBe("Directory")
+    }))
+
+  it.effect("lstats a symlink without opening its target, including a dangling link", () =>
+    Effect.gen(function*() {
+      yield* Effect.promise(async () => {
+        await NodeFsPromises.symlink(path("a.txt"), path("metadata-link"))
+        await NodeFsPromises.symlink(path("absent-target"), path("metadata-dangling"))
+      })
+      expect((yield* fileSystem.stat(path("metadata-link"))).type).toBe("File")
+      expect((yield* fileSystem.lstat(path("metadata-link"))).type).toBe("SymbolicLink")
+      expect((yield* fileSystem.lstat(path("metadata-dangling"))).type).toBe("SymbolicLink")
+      expect((yield* fileSystem.lstat(path("a.txt"))).type).toBe("File")
+      const absent = yield* Effect.flip(fileSystem.lstat(path("metadata-absent")))
+      expect(absent.reason).toMatchObject({ _tag: "NotFound", method: "lstat" })
+      const { lstat: _lstat, ...withoutLinks } = NodeFsPromises
+      const minimal = BrowserFileSystem.make(withoutLinks)
+      expect((yield* minimal.lstat(path("a.txt"))).type).toBe("File")
     }))
 
   it.effect("creates directories recursively and lists their entries", () =>

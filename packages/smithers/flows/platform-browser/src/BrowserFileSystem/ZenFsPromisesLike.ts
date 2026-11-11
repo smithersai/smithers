@@ -36,8 +36,9 @@ export interface ZenFsPromisesLike {
   /**
    * Stats a path without following a final symlink. Optional because a volume
    * with no links cannot tell the two apart: when it is absent, a recursive
-   * `readDirectory` classifies entries with {@link ZenFsPromisesLike.stat}
-   * instead. `@zenfs/core` and `node:fs/promises` both provide it.
+   * `readDirectory` and the Effect `lstat` method use
+   * {@link ZenFsPromisesLike.stat} instead. A backend with links must provide
+   * it. `@zenfs/core` and `node:fs/promises` both provide it.
    */
   readonly lstat?: ((path: string) => Promise<ZenFsStatsLike>) | undefined
   /**

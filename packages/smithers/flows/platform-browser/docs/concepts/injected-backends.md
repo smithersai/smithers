@@ -58,6 +58,8 @@ so minimal adapters can still provide supported operations.
   and therefore follows a directory link. The walk refuses to revisit a
   directory it has already canonicalized, and a backend supplying neither member
   is capped at 128 levels, which is the only case that cap applies to.
+- Without `lstat`, `FileSystem.lstat` answers with `stat`. A backend that has
+  links must supply `lstat`, or a link reads as its target.
 
 Both `@zenfs/core` and `node:fs/promises` provide both members.
 

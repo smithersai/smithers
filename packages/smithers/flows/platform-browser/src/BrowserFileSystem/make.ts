@@ -260,6 +260,20 @@ export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>
         Effect.tryPromise({ try: () => fs.stat(path), catch: platformError("stat", path) }),
         (stats) => fileInfo(stats, path)
       ),
+    /**
+     * Reads a link's own metadata, including a dangling link's. A backend
+     * without `lstat` has no links, so `stat` answers the same question.
+     */
+    lstat: (path) => {
+      const lstat = fs.lstat
+      return Effect.flatMap(
+        Effect.tryPromise({
+          try: () => lstat === undefined ? fs.stat(path) : lstat.call(fs, path),
+          catch: platformError("lstat", path)
+        }),
+        (stats) => fileInfo(stats, path)
+      )
+    },
     realPath: (path) => realPath(fs, path),
     remove: (path, options) => {
       const recursive = options?.recursive ?? false
