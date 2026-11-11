@@ -42,7 +42,7 @@ const decode = <S extends Schema.Struct<Schema.Struct.Fields>>(
   const { bump: _bump, ...fields } = input
   const channels = input.channels === undefined ? undefined : record(input.channels)
   if (channels) keys(channels, ["changelog", "blog", "thread", "media"])
-  return Schema.decodeUnknownSync(schema as Schema.Codec<S["Type"]>)({
+  return Schema.decodeUnknownSync(schema as unknown as Schema.Codec<S["Type"]>)({
     ...fields,
     version: requestedVersion(input, currentVersion)
   })

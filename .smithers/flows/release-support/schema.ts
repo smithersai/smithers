@@ -32,7 +32,8 @@ export const RecordingAsset = Schema.Struct({ path: Schema.String, digest: Schem
 
 /** An optional input key that decodes to `value` when the caller omits it. */
 const withDefault = <S extends Schema.Top>(schema: S, value: S["Type"]) =>
-  Schema.optionalKey(schema).pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))
+  // Typed as `S`, the schema TypeScript already inferred here: the optional key changes only decoding.
+  (Schema.optionalKey(schema) as unknown as S).pipe(Schema.withDecodingDefaultKey(Effect.succeed(value)))
 
 const localOrigins = ["localhost", "127.0.0.1", "[::1]"]
 const isLocalOrigin = (value: string) => {
