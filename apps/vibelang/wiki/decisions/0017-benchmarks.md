@@ -662,9 +662,10 @@ handles a native revoked Proxy and other malformed inputs without propagating it
 unwarmed complete corpora; initialization/serving/assertions included, no inference/WAN latency claim.
 
 `fault-coverage-draft-spend` is separately named and **counts only**. BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables
-one wiki draft whose real Budget admits but whose injected Spend settlement remains unreachable. The shipped
-approximately two-minute retry policy must exhaust within the four-minute test deadline. Check one model request,
-one admission, multiple settlement attempts, the exact budget refusal, one fixed wiki/unreachable warning, zero
+one wiki draft whose real Budget admits but whose injected Spend cannot record its model call's charge
+(`model/<id>`; the run's own release reaches the real budget). The call meter's ledger retries must exhaust within
+the four-minute test deadline. Check one model request, two admissions (the run's and the call's), multiple
+settlement attempts, the exact budget refusal, one fixed wiki/unreachable warning, zero
 charges and the original retained ceiling. It records no duration; none is quoted. The runtime is Node with local
 HTTP model and memory/KV storage, not the browser e2e fault build. New hits join only against unchanged source bytes.
 

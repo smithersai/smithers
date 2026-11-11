@@ -97,7 +97,7 @@ it("browser action and sandbox commands keep run identities and retained termina
         expect(catalog).toMatchObject({ _tag: "LoadedActions", epoch: 3 })
         expect(read).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id } })
         expect(cancelled).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id, state: "cancelled" } })
-        expect(invalid).toEqual({ _tag: "FailedActions", code: "input", epoch: 4 })
+        expect(invalid).toEqual({ _tag: "FailedActions", code: "input", op: "run", epoch: 4 })
         expect(command).toMatchObject({ _tag: "LoadedSandbox", request: 2 })
         expect(stop).toMatchObject({ _tag: "LoadedSandbox", snapshot: { status: "stopped" }, request: 3 })
         expect(again).toMatchObject({ _tag: "LoadedSandbox", snapshot: { generation: generation + 1 }, request: 4 })
@@ -111,7 +111,7 @@ it("browser action and sandbox commands keep run identities and retained termina
         const cancel = try execute(() => CancelAction({ id: "missing" }))
         try Effect.try(() => {
           expect(load).toEqual({ _tag: "FailedActions", code: "unavailable", epoch: 9 })
-          expect([read, cancel]).toEqual(Array(2).fill({ _tag: "FailedActions", code: "unavailable" }))
+          expect([read, cancel]).toEqual([{ _tag: "FailedActions", code: "unavailable" }, { _tag: "FailedActions", code: "unavailable", op: "cancel" }])
         })
       }
     }

@@ -3889,7 +3889,7 @@ The full coverage percentages remain the c5bbf81b source receipt, separate from 
 | action-refused-id-conflict | 3 | 79.28 | 76.62–84.05 |
 | worker-corrupt-conversation-reopen | 3 | 3.11 | 0.95–7.28 |
 | worker-chunked-history-overflow | 3 | 31.66 | 10.91–67.55 |
-| wiki-draft-budget-deadline | 1 | 120036.62 | 120036.62–120036.62 |
+| wiki-draft-budget-deadline | 1 | 918.76 | 918.76–918.76 |
 | budget-concurrent-reservation-reopen | 3 | 11.73 | 8.20–17.15 |
 | workerd-agent-action-lifecycle | 3 | 1190.05 | 1046.58–1439.32 |
 | reply-stream-restart | 3 | 651.86 | 488.65–968.38 |
@@ -4054,8 +4054,14 @@ The additive reply recovery corpus checks streamed preview replacement through t
 pipeline, exact requests/token settlement and safe failure tags, including a revoked native Proxy. Node KV/memory
 engine and deterministic HTTP/SSE model; three unwarmed full corpora include setup/assertions and exclude actual
 inference/WAN. `fault-coverage-draft-spend` is an opt-in **counts-only** set (BENCH_FAULTS=1, or coverage mode): one
-real draft charging policy exhausts against an unreachable Effect settlement service, bounded at four minutes.
-It checks requests, admissions, attempts, refusal, warning and ledger state. It retains and publishes no duration.
+real draft whose model-call charge (`model/<id>`) stays unreachable exhausts the call meter's ledger retries,
+bounded at four minutes. It checks requests, the run's and the call's admissions, attempts, the `budget` refusal,
+warning and ledger state. It retains and publishes no duration.
+
+`wiki-draft-budget-deadline` (nyc-01, 2026-11-11 13:57 UTC, at `e678785d` plus the writer fix): 918.76 ms, one sample.
+It was 120,036.62 ms while the writer's own two-minute settlement policy did the retrying. Since `a2de30ee` each
+model call is charged by the call meter (worker/CallBudget.vibe: three retries from 50 ms), so the same outage
+ends the draft in under a second. Not a speed-up of any work: a different, shorter retry window.
 
 
 The mock specification journey requests all four named reviewers through the shipped agent, poster-bound issue

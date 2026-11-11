@@ -29,7 +29,13 @@ it.skipIf(!enabled)("fault coverage: exhausted draft charging reports one failur
     })], { mergeWithExisting: true })
     const faulty: Spend.Shape = {
       admit: effect (_day, reply, ceiling) => { try Ref.update(admissions, value => value + 1); return try budget.admit(reply, ceiling) },
-      spend: effect (_day, _reply, _used, _reported, _ceiling) => { try Ref.update(attempts, value => value + 1); throw new Unreachable({ what: "budget" }) },
+      // Only a physical model call's charge (`model/<id>`) is unreachable; the run's release before the call reaches
+      // the real budget (worker/CallBudget.vibe).
+      spend: effect (_day, reply, used, reported, ceiling) => {
+        if (!reply.startsWith("model/")) return try budget.spend(reply, used, reported, ceiling)
+        try Ref.update(attempts, value => value + 1)
+        throw new Unreachable({ what: "budget" })
+      },
     }
     const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ page: "roadmap", text: "# Shorter\n" }))], prompt: 3, completion: 4 }])
     const layer = wikiWriter.pipe(Layer.provide(wikiAgentLayer), Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })), Layer.provide(Layer.succeed(Spend, faulty)))
@@ -48,7 +54,8 @@ it.skipIf(!enabled)("fault coverage: exhausted draft charging reports one failur
       try Effect.try(() => {
         expect(result).toBe("budget")
         expect(charged).toBeGreaterThan(1)
-        expect(admitted).toBe(1)
+        // The run's admission and its one model call's.
+        expect(admitted).toBe(2)
         expect(calls).toBe(1)
         expect(logs).toEqual([["wiki", "unreachable"]])
         expect([spent, reserved]).toEqual([0, WIKI_CEILING])
@@ -56,5 +63,5 @@ it.skipIf(!enabled)("fault coverage: exhausted draft charging reports one failur
       return { failed: 1, attempts: charged, admissions: admitted, modelCalls: calls, warnings: logs.length, spent, reserved }
     }
   }))
-  await runPromise(artifact("fault-coverage-draft-spend", "Counts-only Node fault coverage. One real wiki draft runs on the durable memory engine with the deterministic local HTTP/SSE model, actual Budget admission and a faulty Spend settlement service that remains unreachable. Let the shipped approximately two-minute retry policy exhaust. Require one model request, one admission, multiple failed settlement attempts, exact terminal budget refusal, one fixed wiki/unreachable warning, zero charged tokens and the original reservation retained. Setup and all assertions execute; no timing measurement is recorded.", ["BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables this separately named fault set. Real policy waits, bounded by a four-minute test deadline. Node KV/memory engine, deterministic local model, no actual provider spending, request interception, real eviction or billing. Counts only; durations are never quoted."], counts))
+  await runPromise(artifact("fault-coverage-draft-spend", "Counts-only Node fault coverage. One real wiki draft runs on the durable memory engine with the deterministic local HTTP/SSE model, actual Budget admission and a faulty Spend service whose model-call settlement (`model/<id>`) remains unreachable. Let the call meter's ledger retries exhaust. Require one model request, two admissions (the run's and the call's), multiple failed settlement attempts, exact terminal budget refusal, one fixed wiki/unreachable warning, zero charged tokens and the original reservation retained. Setup and all assertions execute; no timing measurement is recorded.", ["BENCH_COVERAGE=1 or BENCH_FAULTS=1 enables this separately named fault set. Real policy waits, bounded by a four-minute test deadline. Node KV/memory engine, deterministic local model, no actual provider spending, request interception, real eviction or billing. Counts only; durations are never quoted."], counts))
 })

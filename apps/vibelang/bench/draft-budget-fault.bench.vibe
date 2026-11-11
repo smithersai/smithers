@@ -19,7 +19,9 @@ it("an unreachable budget ends a completed wiki draft visibly without generating
     let charges = 0
     const faulty: Spend.Shape = {
       admit: (_day, reply, ceiling) => budget.admit(reply, ceiling),
-      spend: () => Effect.suspend(() => { charges += 1; return fail(new Unreachable({ what: "budget" })) }),
+      // Only a physical model call's charge (`model/<id>`) is unreachable: the run's own release before the call
+      // (worker/CallBudget.vibe) reaches the real budget, so the draft is generated before its charge fails.
+      spend: (_day, reply, used, reported, ceiling) => reply.startsWith("model/") ? Effect.suspend(() => { charges += 1; return fail(new Unreachable({ what: "budget" })) }) : budget.spend(reply, used, reported, ceiling),
     }
     const counter = Metric.withAttributes(Metric.counter("vibelang_draft_spend_failures", { incremental: true }), { draft: "wiki" })
     const before = (try Metric.value(counter)).count
@@ -40,7 +42,7 @@ it("an unreachable budget ends a completed wiki draft visibly without generating
       expect(ledger[Budget.RESERVED]).toBe(WIKI_CEILING)
     })
   }))).run({ ...slow, iterations: 1 })
-  await runPromise(artifact("wiki-draft-budget-deadline", "One complete real wiki draft whose admitted token charge repeatedly meets an injected faulty Spend service. Actual agent/QuickJS and scripted HTTP model, production writer and memory flow engine, real wall clock and the unmodified two-minute retry policy. Require final budget refusal within a three-minute caller deadline, multiple failed charge attempts, one failure counter, one model request, zero charged tokens and the retained reservation. Setup, policy waits and assertions included.", ["One observation, no tail percentile or throughput claim. The intentional retry wait dominates the duration. Scripted local model has no inference latency; memory journal/ledger, not workerd/SQLite or real Budget RPC/network failure. No GitHub credential or write."], result))
+  await runPromise(artifact("wiki-draft-budget-deadline", "One complete real wiki draft whose model call's charge (`model/<id>`) repeatedly meets an injected faulty Spend service; the run's own release reaches the real budget. Actual agent/QuickJS and scripted HTTP model, production writer and memory flow engine, real wall clock and the call meter's unmodified ledger retries (worker/CallBudget.vibe). Require final budget refusal within a three-minute caller deadline, multiple failed charge attempts, one failure counter, one model request, zero charged tokens and the retained reservation. Setup, policy waits and assertions included.", ["One observation, no tail percentile or throughput claim. The ledger retries dominate the duration. Scripted local model has no inference latency; memory journal/ledger, not workerd/SQLite or real Budget RPC/network failure. No GitHub credential or write."], result))
 })
 
 
