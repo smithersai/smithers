@@ -25,8 +25,8 @@ possible. With that check, adding a code without a matching case is a type
 error. `summary` is the message without the documentation URL the constructor
 appends, which is what you put in a chat reply or a form field. `details` is the
 context the raise site attached, copied and frozen at construction so it cannot
-change under you. Only those fields
-serialize: `name` and `stack` stay out of `JSON.stringify`.
+change under you. `code`, `summary`, `docsUrl`, optional `details`, and `_tag`
+serialize; `name` and `stack` stay out of `JSON.stringify`.
 
 The class never redacts. It stores `details` and `cause` exactly as it received
 them, so the code that constructs the error removes bot tokens, API keys, and
@@ -52,8 +52,9 @@ npm install @smthrs/errors@next effect
 is on this site, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
 [Installation](./installation.md) has the root entry point, the two module
-subpaths, and the paths the exports map refuses. The package has no runtime
-dependencies, peers `effect` `4.1.1`, and needs Node.js 22.19.0 or later.
+subpaths, and the paths the exports map refuses. The package depends on
+`vibelang-runtime` `0.0.12`, peers `effect` `4.1.1`, and needs Node.js 22.19.0
+or later.
 
 ## A small example
 
@@ -83,7 +84,7 @@ try {
   error.code // "INVALID_INPUT"
   error.summary // "Chunk maxLength must be an integer between 1 and 4096."
   error.details // { maxLength: 0 }
-  Object.keys(error) // ["code", "summary", "docsUrl", "details"]
+  Object.keys(error) // ["code", "summary", "docsUrl", "details", "_tag"]
 }
 ```
 
@@ -105,13 +106,14 @@ nothing widens it at runtime:
 - `UNSUPPORTED`: the runtime lacks a primitive the call needs, such as Web
   Crypto.
 
-[Error code reference](./reference/error-codes.md) names every raise site, the
-`details` each one attaches, and the caller's move.
+[Error code reference](./reference/error-codes.md) names current construction sites,
+the `details` they attach, and the caller's move.
 
 ## Where this sits in Smithers
 
-`@smthrs/errors` is the bottom of its own dependency tree. It imports nothing
-from Smithers and nothing from npm, so it is a root you can read on its own.
+`@smthrs/errors` imports no other Smithers package. Its tagged-error base and
+schema matcher come from the npm package `vibelang-runtime`, which uses the
+`effect` peer dependency.
 The packages built on top of it are how you get from here into the rest of the
 system:
 

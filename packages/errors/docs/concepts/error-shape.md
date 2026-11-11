@@ -83,20 +83,16 @@ property at all. That is why `util.inspect` and `JSON.stringify` never print
 ## cause is stored verbatim, and absent when undefined
 
 A `cause` of `undefined` is treated as no cause, so the instance has no own
-`cause` property and inspection prints no `[cause]` line. A subclass can
-therefore always spell the key and let the caller decide:
+`cause` property and inspection prints no `[cause]` line. A helper can always
+spell the key and let its caller supply the cause:
 
-```vibe
-class IntegrationError extends SmithersError {
-  declare readonly _tag: "IntegrationError"
-
-  constructor(options?: { readonly cause?: unknown }) {
-    super("INTEGRATION_ERROR", "poll failed", undefined, { cause: options?.cause })
-    this._tag = "IntegrationError"
-  }
-}
-IntegrationError.prototype.name = "IntegrationError"
+```ts
+const makeError = (options?: { readonly cause?: unknown }) =>
+  new SmithersError("INTEGRATION_ERROR", "poll failed", undefined, { cause: options?.cause })
 ```
+
+The [subclass example](../guides/raise-an-error.md#attach-a-cause-without-an-undefined-key)
+uses the same optional cause forwarding in `IntegrationError`.
 
 A supplied cause is stored as given. Non-`Error` causes are kept as-is, and a
 cause chain is preserved unchanged.
@@ -123,27 +119,27 @@ The consequence for a caller: `details` from a Smithers integration adapter is
 already provider-safe and can go straight into a log. `details` on an error you
 constructed yourself is only as safe as you made it.
 
-## Subclasses tag themselves
+## Subclasses in TypeScript
 
-A subclass is a class that extends `SmithersError`. An `error` declaration
-cannot extend a class (VibeLang VIP-13), so the subclass sets its own tag after
-`super(...)` and its own name on its prototype. `instanceof` holds for both
-classes, and the subclass reports its own name, which its stack starts with:
+A TypeScript subclass sets its own tag after `super(...)` and its prototype
+name after the class. A plain `class AdapterError extends SmithersError {}`
+inherits `"SmithersError"` for both. To preserve the base constructor signature:
 
-```vibe
+```ts
 class AdapterError extends SmithersError {
   declare readonly _tag: "AdapterError"
 
-  constructor(code: SmithersErrorCode, summary: string) {
-    super(code, summary)
+  constructor(...args: ConstructorParameters<typeof SmithersError>) {
+    super(...args)
     this._tag = "AdapterError"
   }
 }
 AdapterError.prototype.name = "AdapterError"
 
-const error = new AdapterError("TELEGRAM_API_ERROR", "bad request")
+const error = new AdapterError("INTEGRATION_ERROR", "bad request")
 error instanceof AdapterError // true
-error is SmithersError // true
+error instanceof SmithersError // true
+error._tag // "AdapterError"
 error.name // "AdapterError"
 ```
 
@@ -165,8 +161,8 @@ subclass's is its own name. Catching `"IntegrationError"` therefore removes
 handles base instances and leaves `SmithersError` in it. To handle the whole
 family, match by class: `x catch (e) => match (e) { when SmithersError: … }`.
 
-[Raise a SmithersError from an adapter](../guides/raise-an-error.md) shows the
-two real subclasses and what they add.
+[Raise a SmithersError from an adapter](../guides/raise-an-error.md) shows
+`IntegrationError`, the integration package's subclass, and what it adds.
 
 Construction options are readonly: `SmithersErrorOptions.cause` and
 `SmithersErrorOptions.includeDocsUrl` cannot be reassigned through the typed

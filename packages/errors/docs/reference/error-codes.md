@@ -26,9 +26,19 @@ provider remains supported.
 
 ## INVALID_INPUT
 
-The call is invalid. A helper may attach the offending field to `details`.
+The call is invalid. The integration package constructs this code in the two
+checks in `requireSegment` in
+[`core/SignalName.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/src/core/SignalName.ts).
+`Core.SignalName.eventName(service, event)` validates both segments;
+`Core.SignalName.receivedBy(service)` validates the service segment.
+
+| Check                                                    | `details`                                                            | Caller action                          |
+| -------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------- |
+| The segment is empty after trimming, or is not a string. | `{ service: value }` or `{ event: value }`, with the original value. | Supply a non-empty string.             |
+| The trimmed segment contains `:`.                        | `{ service: value }` or `{ event: value }`, with the original value. | Remove the separator from the segment. |
+
 Correct the argument; retrying the same input cannot fix it. Custom adapters
-can raise this code without importing a provider implementation.
+can raise this code with their own safe details.
 
 ## INTEGRATION_ERROR
 
@@ -36,6 +46,16 @@ can raise this code without importing a provider implementation.
 record. Current reasons are `invalid-config`, `invalid-signature`,
 `decode-failed`, `poll-failed`, `delivery-failed`, `credentials-missing`,
 `permission-denied`, `listener-conflict`, and `rate-limited`.
+
+The construction site is the `IntegrationError` constructor in
+[`core/IntegrationError.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/src/core/IntegrationError.ts),
+with signature `(reason, message, details?, options?)`. It sets
+`code` to `"INTEGRATION_ERROR"`, stores `reason` as a typed field, and passes
+`{ reason, ...details }` to the base constructor for a frozen shallow copy.
+Additional details are supplied by the adapter; common classification fields
+are `retryable` and `outcomeUnknown`. A supplied `details.reason` overrides the
+copy in `details`, so the typed `reason` field is the constructor's classification.
+`options.cause` is forwarded without becoming an enumerable field.
 
 Use `Core.IntegrationError.isIntegrationError` to refine a failure across module
 copies. `isRetryable` reads the adapter's retry classification; a retryable

@@ -72,13 +72,20 @@ Pass `cause` straight through from your options. A `cause` of `undefined` is
 treated as no cause, so the instance gets no own `cause` property and
 `util.inspect` prints no `[cause]` line:
 
-```vibe
+```ts
+import { SmithersError } from "@smthrs/errors"
+
 class IntegrationError extends SmithersError {
   declare readonly _tag: "IntegrationError"
   readonly reason: Reason
 
-  constructor(reason: Reason, message: string, options?: { readonly cause?: unknown }) {
-    super("INTEGRATION_ERROR", message, { reason }, { cause: options?.cause })
+  constructor(
+    reason: Reason,
+    message: string,
+    details?: Record<string, unknown>,
+    options?: { readonly cause?: unknown }
+  ) {
+    super("INTEGRATION_ERROR", message, { reason, ...details }, { cause: options?.cause })
     this._tag = "IntegrationError"
     this.reason = reason
   }
@@ -93,18 +100,20 @@ conditional spread at every call site.
 
 Subclass `SmithersError` when your adapter has fields a caller reads by name.
 `Core.IntegrationError` in [`@smthrs/integrations`](/api/integrations) adds
-`reason` and merges it into `details` so the schema form and the class agree.
+`reason` and includes it in `details` by default.
 
-Two rules make a subclass behave:
+The TypeScript form above follows the real `Core.IntegrationError`
+constructor: `(reason, message, details?, options?)`. `Reason` is the adapter's
+closed reason union. Two explicit steps give it its own identity:
 
-1. Declare it `class YourError extends SmithersError`, with
-   `declare readonly _tag: "YourError"`, set `this._tag = "YourError"` after
-   `super(...)`, and set `YourError.prototype.name = "YourError"` after the
-   class. It is then tagged with its own name, which it reports and its stack
-   starts with, so `Effect.catchTag("YourError")` routes to your handler. An
-   `error` declaration cannot extend a class (VibeLang VIP-13, `EK2117`).
-2. Declare your fields in its body and set them after `super(...)` in its
-   constructor.
+1. Declare a literal `_tag` type and assign `this._tag = "IntegrationError"`
+   after `super(...)`, so `Effect.catchTag("IntegrationError")` routes to it.
+2. Set `IntegrationError.prototype.name = "IntegrationError"` after the class,
+   so the reported name and stack heading agree with the tag.
+
+A plain `class YourError extends SmithersError {}` inherits both `"SmithersError"`
+values. Declare additional fields in the body and set them after `super(...)`
+in the constructor.
 
 ## Ship a refinement with the subclass
 

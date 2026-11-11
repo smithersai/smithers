@@ -111,7 +111,7 @@ of them:
 ```ts
 const error = new SmithersError("INTEGRATION_ERROR", "poll failed", { reason: "poll-failed" })
 
-Object.keys(error) // ["code", "summary", "docsUrl", "details"]
+Object.keys(error) // ["code", "summary", "docsUrl", "details", "_tag"]
 console.log(JSON.stringify(error))
 ```
 
@@ -120,13 +120,13 @@ console.log(JSON.stringify(error))
   "code": "INTEGRATION_ERROR",
   "summary": "poll failed",
   "docsUrl": "https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md",
-  "details": { "reason": "poll-failed" }
+  "details": { "reason": "poll-failed" },
+  "_tag": "SmithersError"
 }
 ```
 
 `message`, `stack`, and `name` stay out of that object: the first two are
-non-enumerable on `Error`, and the constructor installs `name` as a
-non-enumerable own property for the same reason.
+non-enumerable on `Error`, and `name` comes from the prototype.
 
 `details` appears only when the constructor received one, so a log line never
 carries `details: undefined`.
@@ -156,4 +156,4 @@ codes, including inherited property names such as `toString`.
 
 - [Handle a failed integration call](./guides/handle-a-failure.md) covers
   retries, the `IntegrationError` subclass, and the durable action boundary.
-- [Error code reference](./reference/error-codes.md) lists every raise site.
+- [Error code reference](./reference/error-codes.md) lists current construction sites and their details.

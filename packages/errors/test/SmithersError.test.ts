@@ -381,8 +381,8 @@ describe("SmithersError", () => {
 })
 
 describe("error refinements", () => {
-  // TaggedFailures.test.vibe holds the subclass rows: a subclass is an error
-  // declaration, which a .ts file cannot write.
+  // TaggedFailures.test.vibe covers VibeLang subclass tagging. TypeScript
+  // subclasses set their tag and prototype name explicitly.
   it("accepts a real instance", () => {
     const error = new SmithersError("INVALID_INPUT", "x")
     expect(isSmithersError(error)).toBe(true)
@@ -592,6 +592,36 @@ describe("error codes", () => {
 })
 
 describe("API reference", () => {
+  it("documents TypeScript subclass tagging", () => {
+    const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
+    expect(api).toContain("this._tag = \"AdapterError\"")
+    expect(api).toContain("AdapterError.prototype.name = \"AdapterError\"")
+    const snippet = api.match(/```ts\n(class AdapterError[\s\S]*?)\n```/)?.[1]
+    expect(snippet).toBeDefined()
+    execFileSync(process.execPath, [
+      "--import=vibelang/register",
+      "--input-type=module-typescript",
+      "--eval",
+      `
+        import assert from "node:assert/strict"
+        import { Effect } from "effect"
+        import { SmithersError } from "./src/SmithersError.vibe"
+        ${snippet}
+        const error = new AdapterError("INTEGRATION_ERROR", "adapter failed", { retryable: true })
+        assert.equal(error._tag, "AdapterError")
+        assert.equal(error.name, "AdapterError")
+        assert.equal(Object.hasOwn(error, "name"), false)
+        assert.ok(error instanceof SmithersError)
+        assert.equal(JSON.parse(JSON.stringify(error))._tag, "AdapterError")
+        assert.equal(Effect.runSync(
+          Effect.fail(error).pipe(
+            Effect.catchTag("AdapterError", (caught) => Effect.succeed(caught.summary))
+          )
+        ), "adapter failed")
+      `
+    ], { cwd: fileURLToPath(new URL("..", import.meta.url)), timeout: 20_000 })
+  })
+
   it("limits the enumerable-fields guarantee to Object.keys and JSON.stringify", () => {
     const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8").replaceAll(/\s+/g, " ")
     expect(api).not.toContain("`JSON.stringify` and `util.inspect` therefore show")
@@ -601,6 +631,15 @@ describe("API reference", () => {
 })
 
 describe("published module formats", () => {
+  it("documents the shipped runtime dependency", () => {
+    const installation = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
+    const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+    expect(installation).not.toContain("no runtime dependencies")
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      expect(installation).toContain(`\`${name}\` \`${version}\``)
+    }
+  })
+
   it("documents distinct ESM and CommonJS constructor identities", () => {
     const installation = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
     expect(installation).not.toContain("both resolve to the same class")

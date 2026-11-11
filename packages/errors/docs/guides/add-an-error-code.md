@@ -68,7 +68,7 @@ The code list is hand-maintained in three places, and none of them derives from
 the runtime table:
 
 - [Error code reference](../reference/error-codes.md): add a summary row and a
-  section with the meaning, every raise site, the `details` each attaches, and
+  section with the meaning, current construction sites, the `details` each attaches, and
   what the caller should do.
 - [Overview](../README.md): add the code to its list of five.
 - The [package README](../../README.md), which is what npm renders: add a row

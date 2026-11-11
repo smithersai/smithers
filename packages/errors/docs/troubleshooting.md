@@ -67,9 +67,9 @@ again.
 so it cannot regress.
 
 **Fix.** Pass the details at construction. For a name and a tag of its own,
-declare a subclass: `class MyError extends SmithersError`, as
-[Subclass when you have typed fields](guides/raise-an-error.md#subclass-when-you-have-typed-fields)
-shows.
+a TypeScript subclass must assign `_tag` after `super(...)` and set
+`MyError.prototype.name = "MyError"`; a plain subclass inherits the base values.
+See [the subclass example](./guides/raise-an-error.md#subclass-when-you-have-typed-fields).
 
 ## The message has no documentation URL
 

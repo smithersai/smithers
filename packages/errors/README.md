@@ -61,13 +61,13 @@ engine that no longer exists; 1.0 keeps the five the integration trees raise.
 | `TELEGRAM_INIT_DATA_INVALID` | Telegram Mini App `initData` is empty, expired, missing its hash or signature, or fails HMAC or Ed25519 verification.                                                                               | `{ authDate }` on the freshness failures, otherwise none                         |
 | `UNSUPPORTED`                | The runtime lacks a primitive an integration needs, such as Web Crypto or Ed25519 verification.                                                                                                     | none                                                                             |
 
-Every raise site, the `details` it attaches, and the caller's move are at
+Current construction sites, the `details` they attach, and the caller's move are at
 https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md.
 
 ## Documentation
 
 https://github.com/smithersai/smithers/tree/main/packages/errors/docs covers the error shape and its redaction contract,
 handling a failure from the caller's side, raising one from an adapter,
-detecting one across module copies, every code with every raise site, and the
+detecting one across module copies, every code with its current construction sites, and the
 API. The procedure for adding a sixth code is at
 https://github.com/smithersai/smithers/blob/main/packages/errors/docs/guides/add-an-error-code.md.

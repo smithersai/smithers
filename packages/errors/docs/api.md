@@ -94,9 +94,27 @@ cause before attaching it.
 
 `SmithersError` is an Effect tagged error: yielding an instance inside
 `Effect.gen` fails the effect with it, and `Effect.catchTag` routes by `_tag`.
-A subclass is an error declaration, `error IntegrationError extends
-SmithersError`, tagged with its own name. Since a `SmithersError` may be any
-subclass, its `_tag` is typed `string`: `catchTag("SmithersError")` handles
+In TypeScript, a subclass must set its own `_tag` after `super(...)` and set
+its prototype's `name`:
+
+```ts
+class AdapterError extends SmithersError {
+  declare readonly _tag: "AdapterError"
+
+  constructor(...args: ConstructorParameters<typeof SmithersError>) {
+    super(...args)
+    this._tag = "AdapterError"
+  }
+}
+AdapterError.prototype.name = "AdapterError"
+```
+
+A plain `class AdapterError extends SmithersError {}` inherits the base tag
+and name. See [Raise a SmithersError from an adapter](./guides/raise-an-error.md#subclass-when-you-have-typed-fields)
+for the `IntegrationError` constructor with typed fields.
+
+Since a `SmithersError` may be any subclass, its `_tag` is typed `string`:
+`catchTag("SmithersError")` handles
 base instances and leaves `SmithersError` in the failure type, and a match by
 class, `when SmithersError:`, handles the whole family.
 
@@ -240,7 +258,7 @@ Returns the frozen table entry itself, not a copy.
 
 ## Related
 
-- [Error code reference](./reference/error-codes.md): every code with its raise
+- [Error code reference](./reference/error-codes.md): every code with its current construction
   sites and the caller's move.
 - [The shape of a SmithersError](./concepts/error-shape.md): the guarantee
   behind each field.
