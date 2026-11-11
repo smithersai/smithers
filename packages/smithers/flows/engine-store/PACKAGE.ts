@@ -1,5 +1,6 @@
 import {
   BuildAndCheckTypeScriptPackage,
+  ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
   ReviewTagsMigrationsAndKeys
@@ -22,6 +23,23 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
     test: Input.file("test/quickstart.test.vibe")
   }],
   cwd: "packages/smithers/flows/engine-store"
+})
+
+/**
+ * Tests run our own modules as they ship: a fault comes from an injected
+ * Effect service, never from replacing a module.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const importRules = ImportRules({
+  cwd: "packages/smithers/flows/engine-store",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/**"],
+    callees: ["vi.mock", "vi.doMock"],
+    because: "No mocks: unhappy paths inject a faulty Effect service, never a replaced module."
+  }]
 })
 
 // Declared env appears in plans, so an external connection must carry no
@@ -333,6 +351,7 @@ export const Package = Smithers.Package({
     reviewJsdocAgainstCode,
     reviewTagsMigrationsAndKeys,
     fmt,
+    importRules,
     lib,
     lint,
     test,

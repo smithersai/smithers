@@ -8,8 +8,6 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-// The mocks API has to come straight from vitest; re-exported it does not
-// resolve against vitest's hoisting plugin.
 import { DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
@@ -19,45 +17,12 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
-import { vi } from "vitest"
-import * as TestStores from "../src/test/TestStores.ts"
-import { withCrypto } from "./Sha256.ts"
-
-/**
- * Arms the coordinator-wake failure injection for issue #70: while positive,
- * every `RunCoordinator.wake` dies with a defect (decrementing the budget).
- * Zero (the default) leaves the real coordinator untouched, so the existing
- * `waitingRuns`-defect test is unaffected.
- */
-const wakeFailures = vi.hoisted(() => ({ budget: 0 }))
-
-vi.mock("../src/internal/RunCoordinator.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/internal/RunCoordinator.ts")>()
-  return {
-    ...actual,
-    make: (options: never) =>
-      (actual.make(options) as unknown as Effect.Effect<
-        { wake: (key: unknown) => Effect.Effect<void> },
-        never,
-        Scope.Scope
-      >).pipe(
-        Effect.map((coordinator) => ({
-          ...coordinator,
-          wake: (key: unknown) =>
-            Effect.suspend(() =>
-              wakeFailures.budget-- > 0
-                ? Effect.die(new Error("injected coordinator.wake defect"))
-                : coordinator.wake(key)
-            )
-        }))
-      )
-  }
-})
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
+import * as TestStores from "../src/test/TestStores.ts"
+import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
   snapshot: () =>
@@ -156,12 +121,15 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
       expect(result.row.owner).toBeNull()
     }))
 
-  it.effect("delivers a parked cancel after coordinator.wake dies once with a defect (issue #70)", () =>
+  it.effect("delivers a parked cancel after the sweep dies once past waitingRuns (issue #70)", () =>
     Effect.gen(function*() {
-      // The other defect source the #44 sandbox exists to absorb: `wake` is
-      // typed `E = never`, so any failure inside it surfaces as a defect. A
-      // sandbox narrowed to only the `waitingRuns` poll would let this kill
-      // the sweeper for the process lifetime with the suite green.
+      // The other defect source the #44 sandbox exists to absorb: a defect
+      // raised after the `waitingRuns` poll, while the sweep handles a row.
+      // The sweep reads each candidate with `store.get` under `Effect.catch`,
+      // which does not catch defects, so a dying `get` escapes where a `wake`
+      // defect would. A sandbox narrowed to only the `waitingRuns` poll would
+      // let this kill the sweeper for the process lifetime with the suite
+      // green.
       const EventFlow = Flow.make("SweeperResilience/WakeDefect", {
         payload: {},
         success: Schema.String,
@@ -173,11 +141,23 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
         Effect.scoped(
           Effect.gen(function*() {
             const store = yield* RunStore.RunStore
+            // While positive, the engine's reads of the parked run die with a
+            // defect. The test itself reads through the unwrapped `store`.
+            let getDefects = 0
+            const flakyStore: RunStore.RunStore["Service"] = {
+              ...store,
+              get: (runId) =>
+                Effect.suspend(() => {
+                  if (runId !== "sweeper-wake-defect-cancel" || getDefects <= 0) return store.get(runId)
+                  getDefects--
+                  return Effect.die(new Error("injected RunStore.get defect"))
+                })
+            }
             const engine = (yield* EngineStore.make({
               owner: { hostId: "sweeper-wake-defect-host" },
               journalSource: "sweeper-wake-defect-test",
               isAlive: () => Effect.succeed(false)
-            })) as FlowRuntime.FlowRuntime["Service"]
+            }).pipe(Effect.provideService(RunStore.RunStore, flakyStore))) as FlowRuntime.FlowRuntime["Service"]
 
             yield* engine.register(
               EventFlow,
@@ -201,9 +181,9 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
             const nowMs = yield* Clock.currentTimeMillis
             yield* store.requestCancel("sweeper-wake-defect-cancel", nowMs)
 
-            // The first sweep wake dies with a defect and must not kill the
-            // sweeper.
-            wakeFailures.budget = 1
+            // The first sweep read of the cancel-requested run dies with a
+            // defect and must not kill the sweeper.
+            getDefects = 1
             yield* TestClock.adjust(Duration.toMillis(Ownership.heartbeatInterval))
             const afterDefect = yield* store.get("sweeper-wake-defect-cancel")
 
@@ -213,7 +193,7 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
               yield* TestClock.adjust(Duration.toMillis(Ownership.heartbeatInterval))
               row = yield* store.get("sweeper-wake-defect-cancel")
             }
-            return { afterDefect, row, remainingWakeFailures: wakeFailures.budget }
+            return { afterDefect, row, remainingGetDefects: getDefects }
           }).pipe(
             Effect.provide(DurableEngineState.layerMemory),
             Effect.provideService(Jj.Jj, jj)
@@ -225,8 +205,8 @@ describe("the cancel sweeper survives transient defects (issue #44)", () => {
         )
       )
 
-      // The wake defect was actually exercised…
-      expect(result.remainingWakeFailures).toBeLessThanOrEqual(0)
+      // The defect was actually exercised…
+      expect(result.remainingGetDefects).toBe(0)
       expect(result.afterDefect.status).toBe("suspended")
       // …and the sweeper survived it to deliver the cancel on a later tick.
       expect(result.row.status).toBe("cancelled")
