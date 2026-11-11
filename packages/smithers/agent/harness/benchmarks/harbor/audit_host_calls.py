@@ -59,6 +59,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    from . import calls as journal
+except ImportError:  # run as a script, or imported by file path (fixtures)
+    import calls as journal  # type: ignore[no-redef]
+
 # The adapter's note, in a running attempt's scratch workspace, of the
 # container its CLI is sealed to (`smithers_agent.SEAL_FILE`).
 SEAL_FILE = "smithers-bench.json"
@@ -136,17 +141,21 @@ def calls(db: Path) -> list[dict]:
     try:
         rows = connection.execute(
             "select seq, event_type, payload_json from flows_journal_events "
-            "where event_type in ('control.agent.cell-call-started','control.agent.cell-call-settled') order by seq"
+            "where event_type in ('control.agent.cell-call-started','control.agent.cell-call-settled',"
+            "'control.child.cell-call-started','control.child.cell-call-settled') order by seq"
         ).fetchall()
     finally:
         connection.close()
-    started: dict[str, dict] = {}
-    order: list[str] = []
+    # The run's own calls and its markdown children's, each keyed by its scope.
+    started: dict[tuple[str | None, str], dict] = {}
+    order: list[tuple[str | None, str]] = []
     for seq, kind, raw in rows:
         payload = json.loads(raw)
-        call_id = str(payload.get("callId"))
+        _, scope = journal.scoped({"type": kind, "payload": payload})
+        call_id = (scope, str(payload.get("callId")))
         if kind.endswith("started"):
-            started[call_id] = {"seq": seq, "flow": payload.get("flowName"), "input": payload.get("input") or {}}
+            started[call_id] = {"seq": seq, "flow": payload.get("flowName"), "input": payload.get("input") or {},
+                                "scope": scope}
             order.append(call_id)
         elif call_id in started:
             value = payload.get("value")
@@ -226,6 +235,8 @@ def audit_trial(trial: Path, live: dict[str, Path]) -> dict:
             "cwd": given.get("cwd"), "exitCode": call.get("exitCode"), "outcome": call.get("outcome"),
             "flags": hits,
             "target": "host",
+            # A markdown child's session; None for the run's own call.
+            "scope": call["scope"],
             **{name: call[name] for name in ("code", "reason") if call.get(name) is not None},
         }
         cut = truncation(given)
@@ -252,7 +263,8 @@ def describe(call: dict) -> str:
     command."""
     flags = f" FLAGS={','.join(call['flags'])}" if call["flags"] else ""
     why = "".join(f" {name}={call[name]}" for name in ("code", "reason") if call.get(name) is not None)
-    head = f"seq {call['seq']} {call['flow']} exit={call['exitCode']}{why}"
+    child = f" child={call['scope']}" if call.get("scope") is not None else ""
+    head = f"seq {call['seq']} {call['flow']}{child} exit={call['exitCode']}{why}"
     cut = call.get("truncated")
     if cut is None:
         command = str(call["command"]).replace("\n", "\\n")

@@ -12,10 +12,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -67,11 +70,37 @@ def check_parse() -> None:
 
 
 def check_command_line() -> None:
-    assert harbor_exec.command_line(["bash", "-lc", "echo 'a b'"], None) == "exec bash -lc 'echo '\"'\"'a b'\"'\"'' < /dev/null"
-    inline = harbor_exec.command_line(["cat"], b"hi\x00there")
-    assert inline == "printf %s aGkAdGhlcmU= | base64 -d | cat", inline
-    remote = harbor_exec.command_line(["cat"], b"x", "/tmp/in put")
-    assert remote == "cat < '/tmp/in put'; code=$?; rm -f '/tmp/in put'; exit $code", remote
+    # Every command records its process id in the call's file and removes it when it ends.
+    record = f"sh -c {shlex.quote(harbor_exec.RECORD)} '/tmp/p id'"
+    closed = harbor_exec.command_line(["bash", "-lc", "echo 'a b'"], None, "/tmp/p id")
+    assert closed == (f"{record} bash -lc 'echo '\"'\"'a b'\"'\"'' < /dev/null; "
+                      "code=$?; rm -f '/tmp/p id'; exit $code"), closed
+    inline = harbor_exec.command_line(["cat"], b"hi\x00there", "/tmp/p id")
+    assert inline == (f"printf %s aGkAdGhlcmU= | base64 -d | {record} cat; "
+                      "code=$?; rm -f '/tmp/p id'; exit $code"), inline
+    remote = harbor_exec.command_line(["cat"], b"x", "/tmp/p id", "/tmp/in put")
+    assert remote == (f"{record} cat < '/tmp/in put'; "
+                      "code=$?; rm -f '/tmp/in put' '/tmp/p id'; exit $code"), remote
+    stop = harbor_exec.stop_line("/tmp/p id")
+    assert stop == f"sh -c {shlex.quote(harbor_exec.STOP)} sh '/tmp/p id' {harbor_exec.STOP_GRACE_SEC}", stop
+
+
+def eventually(check, within: float) -> bool:
+    """Whether `check()` comes true within `within` seconds."""
+    deadline = time.monotonic() + within
+    while not check():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
 
 
 async def docker(bridge: harbor_exec.Bridge, *argv: str, stdin: bytes | None = None, env: dict | None = None):
@@ -140,16 +169,36 @@ async def check_bridge() -> None:
             environment.fail = False
             assert bridge.failures == 1 and bridge.calls >= 7
 
-            # The harness kills the shim at its own ceiling; the bridge drops the call and keeps serving.
+            # The harness kills the shim at its own ceiling; the bridge drops the call, stops the
+            # command it started in the task, and keeps serving.
+            sleeper = root / "sleep.pid"
             child = await asyncio.create_subprocess_exec(
-                str(bridge.bin / "docker"), "exec", "--", "task-1", "bash", "-lc", "sleep 30",
+                str(bridge.bin / "docker"), "exec", "--", "task-1", "bash", "-lc",
+                f"echo $$ > {shlex.quote(str(sleeper))}; exec sleep 30",
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env={"PATH": os.environ["PATH"]})
-            await asyncio.sleep(0.5)
+            for _ in range(50):
+                if sleeper.exists() and sleeper.read_text().strip():
+                    break
+                await asyncio.sleep(0.1)
+            pid = int(sleeper.read_text())
             child.kill()
             await child.wait()
             code, out, _ = await asyncio.wait_for(docker(bridge, "exec", "--", "task-1", "bash", "-lc", "echo alive"), 10)
             assert (code, out) == (0, "alive\n")
+            stopped = await asyncio.to_thread(eventually, lambda: not running(pid), harbor_exec.STOP_GRACE_SEC + 5)
+            assert stopped, "the cancelled command is stopped"
+            # Every call's process-id file is removed, whether its command ended or was stopped.
+            recorded = {path for command in environment.commands
+                        for path in re.findall(r"/tmp/\.smithers-exec-[0-9a-f]{32}\.pid", command)}
+            # One per call the environment ran: all but the one it refused.
+            assert len(recorded) == bridge.calls - 1, (len(recorded), bridge.calls)
+            removed = await asyncio.to_thread(eventually, lambda: not any(Path(path).exists() for path in recorded), 5)
+            assert removed, "every process-id file is removed"
+            # The stop is one follow-up for the one cancelled call, and neither a request nor a log line.
+            stops = [command for command in environment.commands
+                     if command.startswith(f"sh -c {shlex.quote(harbor_exec.STOP)}")]
+            assert len(stops) == 1, stops
             home = bridge.bin.parent
         assert not home.exists(), "the shim directory is removed with the bridge"
         # One line per request, without standard input or environment values.
@@ -189,7 +238,7 @@ def main() -> None:
     asyncio.run(check_bridge())
     check_transport_choice()
     print("check_harbor_exec.py: the exec bridge carries argv, stdin, cwd, env and exit status to environment.exec, "
-          "serves one container, survives a killed shim, and the adapter picks it off this host's daemon.")
+          "serves one container, stops the command of a killed shim, and the adapter picks it off this host's daemon.")
 
 
 if __name__ == "__main__":

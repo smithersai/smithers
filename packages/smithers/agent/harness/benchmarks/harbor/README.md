@@ -11,7 +11,9 @@ container by `docker exec`, the same seam the SWE-bench rig uses
 environment that is the real `docker`. On any other Harbor environment, such
 as Runta, the adapter puts a `docker` shim on the CLI's `PATH` that answers
 `docker exec` with Harbor's own `environment.exec` (`harbor_exec.py`), so the
-same harness runs wherever Harbor can run a command. `--ak transport=docker`
+same harness runs wherever Harbor can run a command. A call the harness gives
+up on is followed by one more `environment.exec` that stops the command it
+started in the task. `--ak transport=docker`
 or `--ak transport=harbor` overrides the choice.
 The model is called from the host, so the container keeps the task's
 `no-network` seal.
@@ -36,7 +38,7 @@ adapter's own logic and is the only thing here CI runs.
 | `prompt.md`               | The flow file every task runs; the instruction is pasted verbatim                                                 |
 | `worker.md`               | The `worker` flow beside it: the task's agent hands a sub-task to a copy of itself with `ctx.call("worker", ...)` |
 | `trace.py`                | One trial as frames: tokens, the cell the model wrote, each call with its time and result, what was printed back  |
-| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container: clean / host-calls-benign / host-calls-unread / TAINTED |
+| `audit_host_calls.py`     | Per-trial audit of calls that ran on the host, not the task container, a markdown child's listed with its `scope`: clean / host-calls-benign / host-calls-unread / TAINTED |
 | `report.py`               | The publishable paired report of two finished jobs; refuses an unsealed, unfinished or under-50-task run          |
 | `calls.py`                | Every model call of a trial as one row, for either arm: totals by purpose, the time split and the fit             |
 | `verify.sh`               | Offline checks for the adapter, containment, ownership, resources and health                                      |
@@ -224,7 +226,8 @@ beside NodeSource's nodejs (SWE-bench Pro V2 openlibrary), and apt-get's exit
   exception and no reward.
 - A trial in which no command reached the task container with exit 0
   raises `ContainerUnreachable`: for this adapter, no journalled `bash` call
-  naming the container settled with `exitCode` 0; for the stock arm, no
+  naming the container settled with `exitCode` 0, the run's own
+  (`control.agent.*`) or a markdown child's (`control.child.*`); for the stock arm, no
   `command_execution` item in `codex.txt` exited 0. The count is
   `containerCommands` in `smithers-run.json` / `codex-account.json`.
 - A trial is healthy only when it was graded, or graded after a whitelisted
@@ -474,7 +477,8 @@ What each total includes:
 
 | Total                                                                                       | Includes                                                                                             |
 | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `n_input_tokens`, `n_cache_tokens`, `n_output_tokens`; `final_metrics.total_*`; `run.usage` | The agent's own calls (`frame`) only, as before, so they compare with earlier reports                |
+| `n_input_tokens`, `n_cache_tokens`, `n_output_tokens`; `run.usage`                          | The agent's own calls (`frame`), its markdown children's included; `run.childRuns` and `run.childFrames` count the children |
+| `final_metrics.total_*`                                                                     | The agent's own calls (`frame`) only, as before, so they compare with earlier reports                |
 | Weighted tokens                                                                             | Uncached input + 0.1 x cached input + 8 x output of those same calls                                 |
 | `byPurpose`                                                                                 | Calls, tokens and milliseconds for each purpose                                                      |
 | `allPurposes`                                                                               | Every purpose summed: the run's total                                                                |

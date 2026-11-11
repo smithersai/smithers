@@ -404,9 +404,26 @@ def check_durable_exec_and_workdir() -> None:
     env = types.SimpleNamespace(task_env_config=types.SimpleNamespace(workdir=None), _plue_workdir="/task")
     agent = object.__new__(smithers_agent.SmithersAgent)
     agent._cwd_override = None
-    assert agent.container_cwd(env) == "/task", "the arm-A prompt names the image WORKDIR"
+    cwd = lambda: asyncio.run(agent.container_cwd(env))
+    assert cwd() == "/task", "the arm-A prompt names the image WORKDIR"
     env._plue_workdir = None
-    assert agent.container_cwd(env) == "/app"
+
+    # An environment that declares no directory is asked where it starts a command.
+    async def answers(command, timeout_sec=None):
+        assert command == "pwd"
+        return types.SimpleNamespace(return_code=0, stdout="/workspace/repo\n", stderr="")
+    env.exec = answers
+    assert cwd() == "/workspace/repo"
+
+    async def unreachable(command, timeout_sec=None):
+        raise RuntimeError("runtime gone")
+    env.exec = unreachable
+    assert cwd() == "/app", "an environment that cannot say leaves the conventional directory"
+
+    async def relative(command, timeout_sec=None):
+        return types.SimpleNamespace(return_code=0, stdout="not-a-path\n", stderr="")
+    env.exec = relative
+    assert cwd() == "/app", "an answer that is not an absolute path is not a directory"
 
 
 def check_shim_durable_exec() -> None:

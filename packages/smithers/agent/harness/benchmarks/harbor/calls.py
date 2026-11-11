@@ -93,6 +93,26 @@ UNLABELLED = "unlabelled"
 STAGE_FIT_MINIMUM = 3
 
 
+AGENT = "control.agent."
+CHILD = "control.child."
+
+
+def scoped(event: dict[str, Any]) -> tuple[str, str | None]:
+    """An event's type as the agent's own, and whose run it is.
+
+    A markdown child's records are `control.child.*`, each payload carrying
+    `child: {callId, flow, scope}` (`AgentSession.childTracer`). They read as
+    the `control.agent.*` record of the same name, scoped to the child's
+    session; the run's own records, and every other record, have scope None.
+    Call ids are unique within one scope only."""
+    kind = event["type"]
+    if not kind.startswith(CHILD):
+        return kind, None
+    payload = event["payload"] if isinstance(event["payload"], dict) else {}
+    child = payload.get("child") if isinstance(payload.get("child"), dict) else {}
+    return AGENT + kind[len(CHILD):], str(child.get("scope"))
+
+
 def _count(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None

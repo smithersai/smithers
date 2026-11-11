@@ -30,6 +30,16 @@ bytes travel in the command as base64 and are decoded in the task by
 `base64 -d`; anything larger is uploaded to a temporary file with
 `environment.upload_file`, redirected in and removed. One Linux argument holds
 131,072 bytes, so the inline limit keeps the whole command under that.
+
+A shim the harness kills (its own ceiling, a frame's clock, a stopped run)
+gives up on the call, and cancelling the coroutine awaiting `environment.exec`
+does not stop the command in the task. So each command records its process id
+in a per-call file in the task's `/tmp`, removed when it ends, and a cancelled
+call is followed by one more `environment.exec` that sends that process `TERM`,
+gives it `STOP_GRACE_SEC` to go, then sends `KILL`. The harness's `bash`
+wrapper (`TreeFingerprint.around`) answers `TERM` by stopping its command's
+whole process group. That follow-up is best effort: bounded by
+`STOP_TIMEOUT_SEC`, and its failure is never the bridge's.
 """
 
 from __future__ import annotations
@@ -64,6 +74,19 @@ INLINE_STDIN = 48_000
 DEFAULT_TIMEOUT_SEC = 3_600
 # How much of each argument a logged request keeps.
 ARGUMENT_HEAD = 400
+# How long a cancelled command has between TERM and KILL. The harness's `bash`
+# wrapper spends two seconds stopping its own command's process group first.
+STOP_GRACE_SEC = 4
+# The most the follow-up that stops a cancelled command may take.
+STOP_TIMEOUT_SEC = 30
+# Run in the task in front of a command: write this shell's process id to the
+# file named by $0, then become the command, so the id is the command's.
+RECORD = '{ printf %s "$$" > "$0"; } 2>/dev/null; exec "$@"'
+# Run in the task after a cancelled call: TERM the process the file names, wait
+# for it, KILL it if it is still there, and remove the file.
+STOP = ('p=$(cat "$1" 2>/dev/null) || exit 0; kill -TERM "$p" 2>/dev/null; i=0; '
+        'while [ "$i" -lt "$2" ] && kill -0 "$p" 2>/dev/null; do sleep 1; i=$((i + 1)); done; '
+        'kill -KILL "$p" 2>/dev/null; rm -f "$1"')
 _HEADER = struct.Struct(">I")
 
 
@@ -182,18 +205,27 @@ def main(argv: list[str]) -> int:
     return int(answer.get("code", 126))
 
 
-def command_line(argv: list[str], stdin: bytes | None, remote_stdin: str | None = None) -> str:
-    """The one Bash line that runs `argv` in the task: `exec` so the program's
-    status is the line's, with standard input decoded inline, redirected from
-    an uploaded file (removed afterwards), or closed."""
-    program = shlex.join(argv)
+def command_line(argv: list[str], stdin: bytes | None, pidfile: str, remote_stdin: str | None = None) -> str:
+    """The one Bash line that runs `argv` in the task, with standard input
+    decoded inline, redirected from an uploaded file (removed afterwards), or
+    closed. The program's process id is in `pidfile` while it runs (see
+    `stop_line`), and the program's status is the line's."""
+    recorded = f"sh -c {shlex.quote(RECORD)} {shlex.quote(pidfile)} {shlex.join(argv)}"
+    removed = [shlex.quote(pidfile)]
     if remote_stdin is not None:
-        quoted = shlex.quote(remote_stdin)
-        return f"{program} < {quoted}; code=$?; rm -f {quoted}; exit $code"
-    if stdin is None:
-        return f"exec {program} < /dev/null"
-    encoded = base64.b64encode(stdin).decode("ascii")
-    return f"printf %s {shlex.quote(encoded)} | base64 -d | {program}"
+        removed.insert(0, shlex.quote(remote_stdin))
+        run = f"{recorded} < {removed[0]}"
+    elif stdin is None:
+        run = f"{recorded} < /dev/null"
+    else:
+        encoded = base64.b64encode(stdin).decode("ascii")
+        run = f"printf %s {shlex.quote(encoded)} | base64 -d | {recorded}"
+    return f"{run}; code=$?; rm -f {' '.join(removed)}; exit $code"
+
+
+def stop_line(pidfile: str) -> str:
+    """The Bash line that stops the command `command_line` recorded in `pidfile`."""
+    return f"sh -c {shlex.quote(STOP)} sh {shlex.quote(pidfile)} {STOP_GRACE_SEC}"
 
 
 class Bridge:
@@ -247,14 +279,16 @@ class Bridge:
             (size,) = _HEADER.unpack(await reader.readexactly(_HEADER.size))
             request = json.loads(await reader.readexactly(size))
             # The shim sends nothing more: a read that returns is the harness
-            # killing it at its own ceiling, and the remote call is dropped.
-            work = asyncio.ensure_future(self.run(request))
+            # killing it, and the remote call is dropped and its command stopped.
+            pidfile = f"/tmp/.smithers-exec-{uuid.uuid4().hex}.pid"
+            work = asyncio.ensure_future(self.run(request, pidfile))
             gone = asyncio.ensure_future(reader.read(1))
             await asyncio.wait({work, gone}, return_when=asyncio.FIRST_COMPLETED)
             if not work.done():
                 work.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await work
+                await self.stop(pidfile)
                 return
             gone.cancel()
             writer.write(_pack(work.result()))
@@ -266,7 +300,14 @@ class Bridge:
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 
-    async def run(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def stop(self, pidfile: str) -> None:
+        """Stops the command a cancelled call recorded in `pidfile`. Best
+        effort: a stop that fails or outlasts `STOP_TIMEOUT_SEC` is dropped."""
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(
+                self.environment.exec(stop_line(pidfile), timeout_sec=STOP_TIMEOUT_SEC), STOP_TIMEOUT_SEC)
+
+    async def run(self, request: dict[str, Any], pidfile: str) -> dict[str, Any]:
         """One request to one `environment.exec`, as the shim's answer."""
         self.calls += 1
         loop = asyncio.get_running_loop()
@@ -287,7 +328,7 @@ class Bridge:
                 finally:
                     os.unlink(handle.name)
             result = await self.environment.exec(
-                command_line(argv, stdin, remote),
+                command_line(argv, stdin, pidfile, remote),
                 cwd=request.get("cwd") or None,
                 env=request.get("env") or None,
                 timeout_sec=self.timeout_sec,

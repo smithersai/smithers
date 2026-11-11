@@ -47,6 +47,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 import accounts  # noqa: E402
+import audit_host_calls  # noqa: E402
 import plue_docker  # noqa: E402
 import smithers_agent as agent  # noqa: E402
 
@@ -385,6 +386,73 @@ def check_container_gate() -> None:
     ])
     assert codex_pool.container_commands(lines) == {"attempted": 2, "succeeded": 1}
     assert codex_pool.container_commands(lines.splitlines()[0]) == {"attempted": 1, "succeeded": 0}
+
+
+def delegated_journal(container: str) -> list[dict]:
+    """A parent that hands the whole task to the `worker` markdown flow. The
+    child's records are `control.child.*`, each payload carrying
+    `child: {callId, flow, scope}` (`AgentSession.childTracer`); the child
+    reaches the container and spends tokens, and the parent does neither."""
+    child = {"callId": "w1", "flow": "worker", "scope": "s1/child/w1"}
+    rows = [
+        ("control.agent.turn-opened", {"seat": "openai:gpt-6-sol"}),
+        ("control.agent.model-requested", {"seat": "openai:gpt-6-sol", **ROUTE}),
+        ("control.agent.model-settled", {"usage": {"inputTokens": 100, "cachedInputTokens": 0, "outputTokens": 10,
+                                                   "reasoningTokens": 1}}),
+        ("control.agent.cell-call-started", {"callId": "w1", "flowName": "worker", "input": {"args": "fix it"}}),
+        ("control.child.turn-opened", {"seat": "openai:gpt-6-luna", "child": child}),
+        ("control.child.model-requested", {"seat": "openai:gpt-6-luna", **ROUTE, "child": child}),
+        ("control.child.model-settled", {"usage": {"inputTokens": 500, "cachedInputTokens": 100, "outputTokens": 40,
+                                                   "reasoningTokens": 4}, "child": child}),
+        # The same call id as the parent's own call: a child's ids are its own.
+        ("control.child.cell-call-started", {"callId": "w1", "flowName": "bash", "child": child,
+                                             "input": {"container": container, "command": "cat /app/tests/run.sh"}}),
+        ("control.child.cell-call-settled", {"callId": "w1", "flowName": "bash", "outcome": "success",
+                                             "value": {"exitCode": 0}, "child": child}),
+        ("control.child.transition-applied", {"transition": {"_tag": "complete", "output": "child answer"},
+                                              "child": child}),
+        ("control.child.turn-closed", {"outcome": "resolved", "child": child}),
+        ("control.agent.cell-call-settled", {"callId": "w1", "flowName": "worker", "outcome": "success",
+                                             "value": "child answer"}),
+        ("control.agent.transition-applied", {"transition": {"_tag": "complete", "output": "parent done"}}),
+        ("control.agent.turn-closed", {"outcome": "resolved"}),
+        ("control.run.completed", {}),
+    ]
+    return [{"seq": index, "at": index, "type": kind, "payload": payload} for index, (kind, payload) in enumerate(rows)]
+
+
+def check_child_work() -> None:
+    """A parent that delegates everything to a markdown child: the child's
+    container commands keep the trial healthy, its tokens are the run's, and
+    its host calls are audited like the parent's."""
+    events = delegated_journal("ws-1")
+    assert agent.container_commands(events, "ws-1") == {"attempted": 1, "succeeded": 1}
+    summary = agent.summarize(events)
+    assert summary["usage"] == {"inputTokens": 600, "cachedInputTokens": 100, "outputTokens": 50,
+                                "reasoningTokens": 5}, summary["usage"]
+    assert (summary["modelCalls"], summary["calls"], summary["frames"]) == (2, 2, 1), summary
+    assert (summary["childRuns"], summary["childFrames"]) == (1, 1), summary
+    # The run's answer and seat are the parent's, never the child's.
+    assert (summary["output"], summary["seat"]) == ("parent done", "openai:gpt-6-sol"), summary
+
+    with tempfile.TemporaryDirectory() as directory:
+        trial = Path(directory) / "task__t1"
+        flows = trial / "agent" / "workspace" / ".flows"
+        flows.mkdir(parents=True)
+        connection = sqlite3.connect(flows / "control.db")
+        connection.execute(DDL)
+        for event in delegated_journal(""):
+            connection.execute(
+                "insert into flows_journal_events values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ("run-1", event["seq"], f"run-1-{event['seq']}", "fixture", event["seq"], event["at"],
+                 event["type"], json.dumps(event["payload"]), "{}"))
+        connection.commit()
+        connection.close()
+        audit = audit_host_calls.audit_trial(trial, {})
+    # Unsealed, the child's unnamed `bash` ran on the host and read the tests.
+    assert audit["verdict"] == "TAINTED", audit
+    assert [(call["flow"], call["scope"], call["flags"]) for call in audit["hostCalls"]] == [
+        ("bash", "s1/child/w1", ["tests_dir"])], audit["hostCalls"]
 
 
 CODEX_SESSION = [
@@ -1116,6 +1184,7 @@ if __name__ == "__main__":
     check_plue_shim()
     check_plue_env()
     check_container_gate()
+    check_child_work()
     check_codex_usage()
     image_user = check_codex_runs_as_image_user()
     install = check_codex_installs_only_what_is_missing()

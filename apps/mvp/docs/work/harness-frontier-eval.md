@@ -40,8 +40,19 @@ overfitting to the benchmark.
     way at the same frame (`smithers-vulnsecret-2`), so on this seat the task
     fails at the provider, whichever harness asks. The stock Codex arm on the
     same login will show whether that holds for it.
-- The 19 tasks with limits from 20 minutes to 2 hours are running
-  (`smithers-mid-batch-1`). The 17 eight-hour tasks have not run.
+- **Second batch, 2026-11-11 04:15 PST:** the 19 tasks with limits from 20
+  minutes to 2 hours: **17 of 19 passed** in 1h 35m (`smithers-mid-batch-1`).
+  223 frames, 6.58M input tokens (91% cached), 322K output. No frame wrote a
+  second `cell` block. So far 41 of 45.
+  - `filter-js-from-html`: the filter imports `html5lib`, which the verifier's
+    Python does not have. 14 of 226 trials on the public board pass this task.
+  - `schemelike-metacircular-eval`: 60 of 63 interpreter tests. Two `bash`
+    calls hit their ten-minute limit and returned none of the progress lines
+    the script had printed, so 20 of the run's 38 minutes taught the model
+    nothing. Most harnesses on the board pass this task (141 of 183).
+- The 17 eight-hour tasks are running on the landed build
+  (`smithers-long-batch-1`, started 04:32 PST). The two batches above ran on
+  the build before the batched file flows and the `worker` flow.
 - The Codex CLI and Claude Code arms have not run. They run inside the
   sandbox, so they upload a subscription login to Runta; that waits on Will.
 
@@ -88,6 +99,10 @@ needs Smithers on one of the five models; Kimi-K3 is first.
   bookkeeping fields and escaped newlines.
 - Rule 5's `git status` guard fails in a directory that is not a repository,
   and in a container with no `git`.
+- A `bash` call that exceeds its time limit returns none of its output, and
+  on a container the command keeps running after the host gives up. In
+  progress: the failure carries the output, and the container enforces the
+  deadline itself.
 - A provider content refusal ends the run.
 - The harness runs on the host and pays Runta's 2.3 s for each exec; an
   agent installed in the sandbox does not.

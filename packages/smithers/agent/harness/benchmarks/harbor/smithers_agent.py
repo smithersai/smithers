@@ -251,21 +251,25 @@ shim_directory = plue_docker.shim_directory
 def container_commands(events: list[dict[str, Any]], container: str) -> dict[str, int]:
     """Commands the agent sent to the task container, and how many exited 0.
 
-    A `bash` `cell-call-started` joined by call id to its `cell-call-settled`.
+    A `bash` `cell-call-started` joined by call id to its `cell-call-settled`,
+    the run's own and its markdown children's (`calls.scoped`), so a parent
+    that delegates every command to a child still reached the task.
     The CLI is sealed to `container`, so a call that names no container ran
     there; one that names another was refused and is not counted. Zero
     successes means the agent never reached the task: the trial measured the
     transport, not the model."""
-    targeted: set[str] = set()
+    targeted: set[tuple[str | None, str]] = set()
     attempted = succeeded = 0
     for event in events:
         payload = event["payload"]
-        if event["type"] == "control.agent.cell-call-started":
+        kind, scope = calls.scoped(event)
+        call = (scope, str(payload.get("callId")))
+        if kind == "control.agent.cell-call-started":
             given = payload.get("input")
             if (isinstance(given, dict) and payload.get("flowName") == "bash"
                     and given.get("container") in (None, container)):
-                targeted.add(str(payload.get("callId")))
-        elif event["type"] == "control.agent.cell-call-settled" and str(payload.get("callId")) in targeted:
+                targeted.add(call)
+        elif kind == "control.agent.cell-call-settled" and call in targeted:
             attempted += 1
             value = payload.get("value")
             if payload.get("outcome") == "success" and isinstance(value, dict) and value.get("exitCode") == 0:
@@ -363,7 +367,10 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Tokens, calls, route bindings and the run's own verdict, off the journal.
 
     `usage` and `modelCalls` are the agent's own calls, the figures Harbor
-    reads and every earlier report printed. `byPurpose` and `allPurposes`
+    reads and every earlier report printed. They, `calls` and `asksRefused`
+    include the run's markdown children (`calls.scoped`), which spend the
+    run's budget; `frames`, `seat` and `output` are the run's own, and
+    `childRuns` and `childFrames` count the children. `byPurpose` and `allPurposes`
     add the compaction calls and the judge's readings (`calls.totals`);
     `ledgerTokens`, `ledgerEntries` and `ledgerByPurpose` are the run's own
     count of all of them, `time` is where the wall clock went, and
@@ -372,20 +379,28 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     usage = {"inputTokens": None, "cachedInputTokens": None, "outputTokens": None, "reasoningTokens": None}
     missing_usage = {name: False for name in usage}
     seat = None
-    frames = model_calls = cell_calls = asks_refused = 0
+    frames = child_frames = model_calls = cell_calls = asks_refused = 0
+    children: set[str] = set()
     bindings: list[Any] = []
     efforts: list[str] = []
     status = None
     output = None
     cause = None
-    requested = None
+    # The purpose of each run's last request, the parent's under None.
+    requested: dict[str | None, Any] = {}
     for event in events:
-        kind, payload = event["type"], event["payload"]
+        payload = event["payload"]
+        kind, scope = calls.scoped(event)
+        if scope is not None:
+            children.add(scope)
         if kind == "control.agent.turn-opened":
+            if scope is not None:
+                child_frames += 1
+                continue
             frames += 1
             seat = payload.get("seat", seat)
         elif kind == "control.agent.model-requested":
-            requested = payload.get("purpose")
+            requested[scope] = payload.get("purpose")
             # rc.1 journals the resolved route as `routeId`/`protocolId`/
             # `modelId`; an older host names it `binding`. Either is the proof
             # of which backend served the call, so both are kept.
@@ -401,7 +416,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
             if isinstance(effort, str) and effort not in efforts:
                 efforts.append(effort)
         elif kind == "control.agent.model-settled":
-            if not _own_call(payload, requested):
+            if not _own_call(payload, requested.get(scope)):
                 continue
             model_calls += 1
             counters = payload.get("usage") or {}
@@ -416,7 +431,7 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif kind == "control.agent.cell-call-settled":
             if payload.get("flowName") == "ask" and payload.get("outcome") != "success":
                 asks_refused += 1
-        elif kind == "control.agent.transition-applied":
+        elif kind == "control.agent.transition-applied" and scope is None:
             transition = payload.get("transition") or {}
             if transition.get("_tag") == "complete":
                 output = transition.get("output")
@@ -432,6 +447,8 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
         "cause": (cause.split("\n", 1)[0][:500] if isinstance(cause, str) else None),
         "seat": seat,
         "frames": frames,
+        "childRuns": len(children),
+        "childFrames": child_frames,
         "modelCalls": model_calls,
         "calls": cell_calls,
         "asksRefused": asks_refused,

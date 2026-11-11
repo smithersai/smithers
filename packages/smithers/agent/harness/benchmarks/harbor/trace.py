@@ -36,7 +36,7 @@ RESULT_HEAD = 600
 BIG_PRINT = 6000
 
 
-CHILD = "control.child."
+CHILD = calls.CHILD
 
 
 def flows_dir(target: Path) -> Path | None:
