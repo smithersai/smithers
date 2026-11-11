@@ -353,6 +353,12 @@ effect function compose(post: string, reply: string) {
   const disposition = completion(Exit.isFailure(answered), progress.usageValid, text.trim() !== "")
   if (disposition === "answered") return Outcome.Answered({ text })
   if (disposition === "empty") return Outcome.Failed({ reason: REASONS.empty })
+  // The ledger could not record a model call's charge: the budget's failure, not the model's.
+  if (meter.ledgerUnavailable()) {
+    try Effect.logWarning("vibelang.reply.spend").pipe(Effect.annotateLogs({ outcome: "unreachable" }))
+    try Metric.update(Metric.counter("vibelang_reply_spend_failures", { incremental: true }), 1)
+    return Outcome.Failed({ reason: REASONS.budget })
+  }
   return Outcome.Failed({ reason: failure instanceof HarnessError.HarnessError && typeof failure.cause === "object" && failure.cause !== null && "_tag" in failure.cause && failure.cause._tag === "vibelang/DailyBudgetExceeded" ? REASONS.budget : Exit.isFailure(answered) ? failureReason(tag, progress) : REASONS.failed })
 }
 

@@ -9,6 +9,8 @@ import { agentOf, REASONS, REPLY_CEILING, tagOf } from "../worker/Reply.vibe"
 import { cell, scriptedModel, type Scripted } from "../fuzz/model-server.vibe"
 import { within } from "./support/durableWriters.vibe"
 import { replyWorld } from "./support/replyWorld.vibe"
+import type { Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
 
 /** The reply flow answered by `scripts`; `busy` start answers come first, an `interrupting` history interrupts, and the day holds `limit` tokens. */
 effect function world(scripts: ReadonlyArray<Scripted>, busy = 0, interrupting = false, limit = 1_000_000) {
@@ -29,6 +31,23 @@ describe("a reply the agent answers", () => {
     expect(calls).toBe(1)
     expect(ledger[Budget.SPENT]).toBe(15)
     expect(ledger[Budget.RESERVED]).toBe(0)
+  }))
+
+  it.live("fails as budget, counted once, when the day's ledger cannot record a model call's charge", () => scoped(effect {
+    const failures = effect () => (try Metric.value(Metric.counter("vibelang_reply_spend_failures", { incremental: true }))).count
+    const before = try failures()
+    // Every model call's charge is lost; the reply's own admission and settlement still reach the ledger.
+    const unrecordable = (spend: Spend.Shape): Spend.Shape => ({
+      admit: spend.admit,
+      spend: (day, key, tokens, reported, ceiling) => key.startsWith("model/") ? Effect.fail(new Unreachable({ what: "budget" })) : spend.spend(day, key, tokens, reported, ceiling),
+    })
+    const scripted = try scriptedModel([stream(cell("\"Hi\""))])
+    const w = try replyWorld(scripted.model, scripted.calls, 0, false, 1_000_000, unrecordable)
+    const { entry, calls, ledger } = try w.answer("Hello?")
+    expect(entry).toMatchObject({ done: true, error: REASONS.budget })
+    // The answer is sealed before accounting: the model is asked once. The unrecorded call keeps its ceiling held,
+    // so the day can never spend past its limit.
+    expect([calls, ledger[Budget.RESERVED], (try failures()) - before]).toEqual([1, REPLY_CEILING, 1])
   }))
 
   it.live("adds a later unreported call's ceiling to earlier known usage", () => scoped(effect {
