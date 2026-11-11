@@ -116,3 +116,41 @@ it.effect("rechecks a duplicate committed while its cold floor result is pending
       }).pipe(Effect.provide(SqlJournal.layer({ capacity: 8, overflow: "reject" }).pipe(Layer.provide(observedSql))))
     }).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
   ))
+
+it.effect("an explicit replay does not hide the producer's durable sequence from a cold identity index", () =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const runId = "replayed-producer" as RunId
+      const sourceId = "producer" as SourceId
+      const event = (value: number, sourceSeq?: number) =>
+        new Input({
+          runId,
+          sourceId,
+          ...(sourceSeq === undefined ? {} : { sourceSeq: sourceSeq as SourceSeq }),
+          eventType: "event",
+          payload: { value }
+        })
+      yield* Effect.gen(function*() {
+        const journal = yield* Journal
+        for (let value = 0; value < 10; value++) yield* journal.emitLossy(event(value))
+        yield* journal.flush
+      }).pipe(Effect.provide(SqlJournal.layer({ capacity: 16, overflow: "reject" })), Effect.scoped)
+
+      yield* Effect.gen(function*() {
+        // Only the newest identity is retained, so the replay of producer
+        // sequence 2 misses the index and is settled as a duplicate on insert.
+        const journal = yield* Journal
+        yield* journal.emitLossy(event(2, 2))
+        const fresh = yield* journal.emitLossy(event(10))
+        expect(fresh.sourceSeq).toBe(10)
+        yield* journal.flush
+        const page = yield* journal.entries({ runId, limit: 16 })
+        expect(page.entries.map((entry) => [entry.sourceSeq, entry.payload])).toEqual(
+          Array.from({ length: 11 }, (_, value) => [value, { value }])
+        )
+      }).pipe(
+        Effect.provide(SqlJournal.layer({ capacity: 16, overflow: "reject", sourceEventCache: 1 })),
+        Effect.scoped
+      )
+    }).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
+  ))

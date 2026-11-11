@@ -615,6 +615,51 @@ describe("Journal.compact", () => {
       expect(yield* eventCount).toBe(3)
     }))
 
+  effect(
+    "a fresh process queues lossy entries above the tail after its first durable write",
+    () =>
+      Effect.gen(function*() {
+        yield* Effect.gen(function*() {
+          const service = yield* Journal
+          yield* claim(owner)
+          yield* emitMany(service, 0, 6)
+          yield* service.checkpoint({ runId: run, seq: seqOf(5), state: null }, owner)
+          expect((yield* service.compact({ runId: run }, owner)).deleted).toBe(5)
+        }).pipe(Effect.provide(journal()), Effect.scoped)
+
+        // The first durable write reserves from a cold floor and commits only
+        // with the enclosing transaction, so a lossy entry queued inside it must
+        // read the durable tail rather than trust that reservation.
+        yield* Effect.gen(function*() {
+          const service = yield* Journal
+          const lossy = yield* service.transact(
+            Effect.gen(function*() {
+              expect((yield* service.emitDurable(input(6), owner)).seq).toBe(6)
+              return yield* service.emitLossy(input(7))
+            })
+          )
+          expect(lossy.seq).toBeGreaterThan(5)
+          yield* service.flush
+        }).pipe(Effect.provide(journal()), Effect.scoped)
+
+        // A first durable write that fails commits nothing, so the next lossy
+        // entry still has to read the durable tail.
+        yield* Effect.gen(function*() {
+          const service = yield* Journal
+          const stale = yield* service.emitDurable(input(8), { ...owner, nonce: "stale" }).pipe(Effect.flip)
+          expect(stale.code).toBe("fence_lost")
+          expect((yield* service.emitLossy(input(8))).seq).toBe(8)
+          yield* service.flush
+        }).pipe(Effect.provide(journal()), Effect.scoped)
+
+        const sql = yield* SqlClient.SqlClient
+        const rows = yield* sql<{ readonly seq: number; readonly source_seq: number }>`
+        SELECT seq, source_seq FROM flows_journal_events WHERE run_id = ${run} ORDER BY seq
+      `
+        expect(rows.map((row) => [Number(row.seq), Number(row.source_seq)])).toEqual([[5, 5], [6, 6], [7, 7], [8, 8]])
+      })
+  )
+
   effect("waits for an admitted lossy entry before advancing the compaction floor", () =>
     Effect.gen(function*() {
       const reached = yield* Deferred.make<void>()

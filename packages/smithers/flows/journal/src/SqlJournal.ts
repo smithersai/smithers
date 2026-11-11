@@ -333,6 +333,21 @@ interface State {
   readonly pendingByRun: Map<RunId, Set<QueuedEntry>>
   readonly sequences: Map<RunId, number>
   readonly sourceSequences: Map<string, number>
+  /**
+   * The runs whose `sequences` floor is at or above the durable tail: read by
+   * `ensureFloors`, or observed by an INSERT that allocated above `MAX(seq)`
+   * (`insertOne`).
+   * A reservation raises `sequences` without reading the tail, so a cached
+   * floor alone does not prove it.
+   */
+  readonly knownSequences: Set<RunId>
+  /**
+   * The producers whose `sourceSequences` floor is at or above the durable
+   * `MAX(source_seq)`: read by `ensureFloors` or by implicit durable
+   * allocation. An explicit producer sequence raises the floor without
+   * reading it, so it never marks the floor known.
+   */
+  readonly knownSourceSequences: Set<string>
   readonly sourceEvents: Map<string, SourceEvent>
   readonly flushWaiters: Set<Deferred.Deferred<void, JournalError>>
 }
@@ -724,6 +739,8 @@ export const make = (
       pendingByRun: new Map(),
       sequences: initialized.sequences,
       sourceSequences: initialized.sourceSequences,
+      knownSequences: new Set(),
+      knownSourceSequences: new Set(),
       sourceEvents: initialized.sourceEvents,
       flushWaiters: new Set()
     }
@@ -1284,6 +1301,11 @@ export const make = (
                   const seq = nextSeq as Seq
                   raiseSequenceFloor(validated.runId, seq)
                   state.sourceSequences.set(key, Math.max(nextSourceSeq, sourceSeq + 1))
+                  // `ensureFloors` read or trusted a known floor for every
+                  // number allocated here, so both are now known. A supplied
+                  // producer sequence allocated nothing and proves nothing.
+                  state.knownSequences.add(validated.runId)
+                  if (validated.sourceSeq === undefined) state.knownSourceSequences.add(key)
 
                   const queued: QueuedEntry = {
                     runId: validated.runId,
@@ -1788,10 +1810,15 @@ export const make = (
             `
         const inserted = yield* insert
         if (inserted.length > 0) {
-          return {
-            entry: yield* decodeRow(inserted[0]!),
-            inserted: true
-          }
+          const entry = yield* decodeRow(inserted[0]!)
+          // The INSERT took its seq above the `MAX(seq)` it read under the
+          // run's writer lock, so the floor now covers the durable tail. Mark
+          // it before COMMIT: a lossy entry queued while an enclosing
+          // `transact` is open must neither trust a durable reservation nor
+          // read SQL that this transaction holds. A rollback leaves a gap.
+          raiseSequenceFloor(entry.runId, entry.seq)
+          state.knownSequences.add(entry.runId)
+          return { entry, inserted: true }
         }
         // The INSERT produced no row, so a unique constraint fired: the
         // guard above already confirmed a fenced owner, so this collision
@@ -1966,11 +1993,17 @@ export const make = (
      * dedup rows for cold reads. Reading under the permit is what deadlocked
      * against the batch writer; see `admitFromIndex`.
      *
+     * A cached value is trusted only once `knownSequences` or
+     * `knownSourceSequences` holds it. A durable reservation raises the run's
+     * `seq` floor without reading the tail, and a supplied producer sequence
+     * raises the producer floor without reading `MAX(source_seq)`, so either
+     * can leave a cached value below the durable one.
+     *
      * A producer that supplies its own `sourceSeq` allocates nothing from
      * the producer floor, so that floor is not read for it. This is what
      * makes the explicit path readless end to end once the run's own `seq`
-     * floor is known, which it is from the first entry any producer writes
-     * for the run.
+     * floor is known, which it is from the first lossy admission or the
+     * first insert for the run in this process.
      */
     const ensureFloors = (
       input: Input
@@ -1978,8 +2011,12 @@ export const make = (
       Effect.suspend(() => {
         const runId = input.runId
         const key = sourceKey(runId, input.sourceId)
-        const seq = state.sequences.get(runId)
-        const sourceSeq = input.sourceSeq === undefined ? state.sourceSequences.get(key) : 0
+        const seq = state.knownSequences.has(runId) ? state.sequences.get(runId) : undefined
+        const sourceSeq = input.sourceSeq !== undefined
+          ? 0
+          : state.knownSourceSequences.has(key)
+          ? state.sourceSequences.get(key)
+          : undefined
         if (seq !== undefined && sourceSeq !== undefined) {
           return Effect.succeed({ seq, sourceSeq })
         }
@@ -2103,6 +2140,9 @@ export const make = (
         // the pre-transaction source floor and reuse this identity
         // while an enclosing `transact` is still open.
         raiseSourceSequenceFloor(validated.runId, validated.sourceId, sourceSeq)
+        // Every caller read `durableSourceSeq` in this transaction when it
+        // allocates the producer sequence, so that floor is now known.
+        if (validated.sourceSeq === undefined) state.knownSourceSequences.add(key)
         return { seq, sourceSeq }
       })))
 
@@ -2944,9 +2984,13 @@ export const make = (
     yield* JournalGeneration.onTruncate((runIds) => {
       for (const runId of runIds) {
         state.sequences.delete(runId as RunId)
+        state.knownSequences.delete(runId as RunId)
         const prefix = `${runId.length}:${runId}`
         for (const key of state.sourceSequences.keys()) {
           if (key.startsWith(prefix)) state.sourceSequences.delete(key)
+        }
+        for (const key of state.knownSourceSequences) {
+          if (key.startsWith(prefix)) state.knownSourceSequences.delete(key)
         }
         for (const key of state.sourceEvents.keys()) {
           if (key.startsWith(prefix)) state.sourceEvents.delete(key)

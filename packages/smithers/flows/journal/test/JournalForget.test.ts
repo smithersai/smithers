@@ -27,8 +27,9 @@ it.effect("forgets lossy identities and allocation floors after truncation witho
         })
       const event = input("rewound", 0)
       yield* journal.emitLossy(event)
-      yield* journal.emitLossy(input("rewound", 1))
-      yield* journal.emitLossy(input("other", 0))
+      // Implicit producer sequences mark both runs' floors read from the database.
+      yield* journal.emitLossy(input("rewound"))
+      yield* journal.emitLossy(input("other"))
       yield* journal.flush
       yield* sql`DELETE FROM flows_journal_events WHERE run_id = 'rewound'`
       yield* JournalGeneration.forget([event.runId])
