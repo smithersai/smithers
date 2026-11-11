@@ -50,9 +50,18 @@ overfitting to the benchmark.
     calls hit their ten-minute limit and returned none of the progress lines
     the script had printed, so 20 of the run's 38 minutes taught the model
     nothing. Most harnesses on the board pass this task (141 of 183).
-- The 17 eight-hour tasks are running on the landed build
-  (`smithers-long-batch-1`, started 04:32 PST). The two batches above ran on
-  the build before the batched file flows and the `worker` flow.
+- **Third batch, 2026-11-11 06:13 PST:** the 17 tasks with an eight-hour
+  limit, on the build landed that morning: **4 of 17 passed** in 1h 51m
+  (`smithers-long-batch-1`). One of the 13 is a verifier timeout
+  (`mvcc-lsm-compaction`: the tests did not finish in 900 s). Every harness
+  on the public board that has run nine or more of these tasks passes 25% to
+  33% of them.
+- **All 62 tasks, one attempt each: 45 passed (72.6%)**: 24 of 26, 17 of 19,
+  4 of 17. The first two batches ran on the build before the batched file
+  flows and the `worker` flow.
+- The long tasks ended in 5 to 27 minutes of an eight-hour limit. The model
+  declared each done; no run was cut off. Whether more of the limit would
+  have been used well is not known.
 - The Codex CLI and Claude Code arms have not run. They run inside the
   sandbox, so they upload a subscription login to Runta; that waits on Will.
 
@@ -89,6 +98,8 @@ needs Smithers on one of the five models; Kimi-K3 is first.
 | Every run was told "no branch, tag, stash or reflog here holds a later fix" | Stated only where the host declares it (`SMITHERS_CHECKOUT_NO_LATER_COMMITS=1`, set by the SWE-bench rig) |
 | A script could not call the agent itself | Markdown children on the native host; the adapter ships a `worker` flow |
 | File flows made one remote exec per filesystem method: 523 execs, about 1,260 s of the batch's 9,896 s | A host that batches (`Read.Batched`) answers a whole snapshot or commit in one exec: `read` 6.4 s to 2.9, `edit` 32.9 to 5.5, `apply_patch` 24.8 to 5.6, `write` 30.5 to 5.2, `ls` 9.8 to 2.6 on Runta (`diag-tools-2`) |
+| A `bash` call that hit its time limit returned none of its output, and in a container the command kept running | The failure carries the output (`error.output`); the container enforces the deadline in the same exec and stops the command's process group |
+| A patch of several files failed on a BusyBox guest: its `head -c` reads past the bytes it keeps | Several writes are cut from standard input spooled once; pinned against real Alpine |
 
 ## Open
 
@@ -99,15 +110,24 @@ needs Smithers on one of the five models; Kimi-K3 is first.
   bookkeeping fields and escaped newlines.
 - Rule 5's `git status` guard fails in a directory that is not a repository,
   and in a container with no `git`.
-- A `bash` call that exceeds its time limit returns none of its output, and
-  on a container the command keeps running after the host gives up. In
-  progress: the failure carries the output, and the container enforces the
-  deadline itself.
 - A provider content refusal ends the run.
 - The harness runs on the host and pays Runta's 2.3 s for each exec; an
   agent installed in the sandbox does not.
-- The scores above are from the build before the batched file flows and the
-  `worker` flow. Rerun the failures on the landed build.
+- Rerun the 17 failures on the build with the timeout fix; rerun the first
+  two batches on it for a one-build score.
+- A like-for-like place on the board needs Smithers on one of its models
+  (Kimi-K3 first). Which key to use is Will's call.
+- `shell_command` and the `test` flow still answer a timeout with no output.
+
+## Review
+
+Codex Astra reviewed the first three commits and found 11 defects; all are
+fixed with tests in `ac6ece15`, `4c15c04c` and `3291d6bd`: a child flow could
+widen its caller's authority three ways (pattern admission, the `authorize`
+hook, and services it was meant to lose), two concurrent batched commits
+could lose an edit, a path ending in a newline was redirected, a foreign-owned
+file could not be written, the adapter ignored child runs, and the compact
+catalog type could drop a constraint. Not yet rerun on the benchmark.
 
 ## Reds on `main` this work did not cause (2026-11-11, base `7df5839aef01`)
 
