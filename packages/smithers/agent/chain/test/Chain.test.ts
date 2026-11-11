@@ -455,6 +455,44 @@ describe("Chain", () => {
     expect(resumed.events).toEqual(first.events)
   })
 
+  it("journals nothing when a resumed script fails before its settled prefix", async () => {
+    const three = flow(
+      `await ctx.call("a", {})`,
+      `await ctx.call("b", {})`,
+      `await ctx.call("c", {})`,
+      `return done("three")`
+    )
+    const entries = () => ["a", "b", "c"].map((name) => countingEntry(name, name))
+    const first = await runChain({ author: Author.layerMock([three]), entries: entries().map((e) => e.entry) })
+    const settledB = first.events.findIndex((event) =>
+      event._tag === "CallSettled" && event.link === 1 && event.key.ordinal === 1
+    )
+    const crashed = first.events.slice(0, settledB + 1)
+
+    const unavailable = await failChain({
+      author: Author.layerMock([]),
+      entries: entries().map((e) => e.entry),
+      initial: crashed,
+      runner: ScriptRunner.layerNoop()
+    })
+    expect(unavailable).toMatchObject({
+      _tag: "/chain/ChainError",
+      code: "replay_divergence",
+      message:
+        "link 1 script failed before replaying call 0, which the journal holds (runner_unavailable: run is unavailable); nothing was journaled"
+    })
+
+    const resumedEntries = entries()
+    const resumed = await runChain({
+      author: Author.layerMock([]),
+      entries: resumedEntries.map((e) => e.entry),
+      initial: crashed
+    })
+    expect(resumed.outcome).toEqual({ _tag: "Done", value: "three" })
+    expect(resumed.events).toEqual(first.events)
+    expect(resumedEntries.map((e) => e.count())).toEqual([0, 0, 1])
+  })
+
   it("replays a recorded rejection without re-running its gate", async () => {
     const bad = flow(`await ctx.call("missing", {})`, `return done(null)`)
     const first = await runChain({ author: Author.layerMock([bad, doneScript]) })

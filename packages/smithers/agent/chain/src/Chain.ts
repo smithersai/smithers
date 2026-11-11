@@ -619,6 +619,19 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                   const observation = Observation.make("script_failed", `${failure.code}: ${failure.message}`)
                   lastRejection = observation
                   if (!hasRejection(link, ordinal)) {
+                    // A failure that stops short of the settled prefix (a
+                    // realm that cannot be created on resume, say) owns no
+                    // ordinal: journaling it would overwrite a settled slot
+                    // and wedge every later replay. Nothing is written, so a
+                    // rerun under a working runner resumes the link.
+                    const journaled = [...settledPrior.keys(), ...rejectedPrior.keys()]
+                    if (journaled.some((prior) => prior >= ordinal)) {
+                      return yield* new ChainError({
+                        code: "replay_divergence",
+                        message:
+                          `link ${link} script failed before replaying call ${ordinal}, which the journal holds (${observation.message}); nothing was journaled`
+                      })
+                    }
                     yield* append({ _tag: "GateRejected", link, observation, ordinal })
                   }
                   return undefined
