@@ -1,24 +1,30 @@
-// An Actions fault over the product's real MockActions: the first list() fails with ActionFailure, later calls are real.
+// An Actions fault over the product's real MockActions: the first call at the named point fails with ActionFailure
+// ("unavailable"); later calls are real. `list` fails a load, `start` a run's start, `read` a run read, `follow` ends a
+// run's first follow subscription, `cancel` a cancel.
 import { ActionFailure, Actions } from "../../src/actions/Actions.vibe"
 
-export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>) {
+export type ActionFault = "list" | "start" | "read" | "follow" | "cancel"
+
+export function faultyActions<E, R>(base: Layer.Layer<Actions, E, R>, point: ActionFault = "list") {
   return Layer.effect(Actions, effect {
     const actions = try Actions
     let failed = false
+    const first = (at: ActionFault) => {
+      if (failed || at !== point) return false
+      failed = true
+      return true
+    }
+    const unavailable = () => new ActionFailure({ code: "unavailable" })
     const shape: Actions.Shape = {
-      list: () => {
-        if (failed) return actions.list()
-        failed = true
-        return Effect.fail(new ActionFailure({ code: "unavailable" }))
-      },
+      list: () => first("list") ? Effect.fail(unavailable()) : actions.list(),
       commands: () => actions.commands(),
       runs: (flow) => actions.runs(flow),
-      read: (id) => actions.read(id),
-      follow: (id) => actions.follow(id),
-      start: (flow, input, door) => actions.start(flow, input, door),
+      read: (id) => first("read") ? Effect.fail(unavailable()) : actions.read(id),
+      follow: (id) => first("follow") ? Stream.fail(unavailable()) : actions.follow(id),
+      start: (flow, input, door) => first("start") ? Effect.fail(unavailable()) : actions.start(flow, input, door),
       command: (text, door) => actions.command(text, door),
       rerun: (id) => actions.rerun(id),
-      cancel: (id) => actions.cancel(id),
+      cancel: (id) => first("cancel") ? Effect.fail(unavailable()) : actions.cancel(id),
     }
     return shape
   }).pipe(Layer.provide(base))

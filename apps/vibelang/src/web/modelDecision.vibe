@@ -370,12 +370,12 @@ export function selectedAction(state: ActionScreen, name: string, epoch: number 
   return { state: { ...state, selected: name, run: "", loading: true, error: "" }, commands: [{ type: "LoadActions", flow: name, epoch }] }
 }
 
-/** Typing changes only the input. */
+/** Typing changes the input and clears a failure the last run left. */
 //@ verify
-//@ ensures \result.state == { ...state, input: value }
+//@ ensures \result.state == { ...state, input: value, error: "" }
 //@ ensures \result.commands == []
 export function updatedActionInput(state: ActionScreen, value: string): ActionStep {
-  return { state: { ...state, input: value }, commands: [] }
+  return { state: { ...state, input: value, error: "" }, commands: [] }
 }
 
 /** Retry clears the failure and reloads the selected flow. */
@@ -386,12 +386,30 @@ export function retriedActions(state: ActionScreen, epoch: number | null): Actio
   return { state: { ...state, loading: true, error: "" }, commands: [{ type: "LoadActions", flow: state.selected, epoch }] }
 }
 
-/** A failure stops both waits and shows its code. */
+/**
+ * What a failed Actions call shows: input the flow can't take, a refusal, or the operation that failed. A load or a run
+ * read failing is "Couldn't load runs", the pane's only failure that replaces its body (with Retry).
+ */
 //@ verify
-//@ ensures \result.state == { ...state, loading: false, starting: false, error: code }
+//@ ensures code == "input" ==> \result == "Input isn't valid."
+//@ ensures code != "input" && code == "forbidden" ==> \result == "Not allowed."
+//@ ensures code != "input" && code != "forbidden" && op == "run" ==> \result == "Couldn't start the run."
+//@ ensures code != "input" && code != "forbidden" && op == "cancel" ==> \result == "Couldn't cancel the run."
+//@ ensures code != "input" && code != "forbidden" && op != "run" && op != "cancel" ==> \result == "Couldn't load runs"
+export function actionFailureText(code: string, op: string): string {
+  if (code === "input") return "Input isn't valid."
+  if (code === "forbidden") return "Not allowed."
+  if (op === "run") return "Couldn't start the run."
+  if (op === "cancel") return "Couldn't cancel the run."
+  return "Couldn't load runs"
+}
+
+/** A failure stops both waits and shows what failed. */
+//@ verify
+//@ ensures \result.state == { ...state, loading: false, starting: false, error: actionFailureText(code, op) }
 //@ ensures \result.commands == []
-export function failedActions(state: ActionScreen, code: string): ActionStep {
-  return { state: { ...state, loading: false, starting: false, error: code }, commands: [] }
+export function failedActions(state: ActionScreen, code: string, op: string): ActionStep {
+  return { state: { ...state, loading: false, starting: false, error: actionFailureText(code, op) }, commands: [] }
 }
 
 // ACCOUNT EVENTS

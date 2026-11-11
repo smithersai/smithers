@@ -249,7 +249,7 @@ export const Message = defineMessageUnion({
   SelectedActionStep: { key: Schema.String },
   SelectedRun: { id: Schema.String },
   LoadedActions: { epoch: Schema.optionalKey(Schema.Number), entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
-  FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number) },
+  FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number), op: Schema.optionalKey(Schema.Literals(["load", "run", "cancel"])) },
   UpdatedActionInput: { value: Schema.String },
   ClickedRunAction: {},
   StartedAction: { run: Run, epoch: Schema.optionalKey(Schema.Number) },
@@ -508,13 +508,13 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
       return { model: { ...model, actions: { ...actionsOf(model), ...ModelDecision.selectedRun(runSelection(model), id, flow !== undefined, flow ?? "") } } }
     },
     LoadedActions: ({ entries, commands, runs, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
-    FailedActions: ({ code, epoch }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code)),
+    FailedActions: ({ code, epoch, op }) => !ModelDecision.actionsFailureApplies(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : runActions(model, ModelDecision.failedActions(actionScreen(model), code, op ?? "load")),
     UpdatedActionInput: ({ value }) => runActions(model, ModelDecision.updatedActionInput(actionScreen(model), value)),
     ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
     StartedAction: ({ run, epoch }) => !ModelDecision.actionsEpochCurrent(epoch ?? null, actionsOf(model).epoch ?? null) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...ModelDecision.followedRun(runSelection(model), run.id, run.flow), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
     ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
     TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: ModelDecision.actionsClock(actionsOf(model).now ?? 0, at) } } }),
-    ClickedCancelAction: () => ({ model, commands: [CancelAction({ id: actionsOf(model).run })] }),
+    ClickedCancelAction: () => ({ model: { ...model, actions: { ...actionsOf(model), error: "" } }, commands: [CancelAction({ id: actionsOf(model).run })] }),
     RetriedActions: () => runActions(model, ModelDecision.retriedActions(actionScreen(model), actionsOf(model).epoch ?? null)),
     MovedSlash: ({ delta }) => {
       const menu = completions(model)
@@ -1014,7 +1014,7 @@ export const RunAction = Command.define("RunAction", {
       const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
       const run = try actions.read(id)
       return try message(() => Message.StartedAction({ run, ...(epoch === undefined ? {} : { epoch }) }))
-    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, op: "run", ...(epoch === undefined ? {} : { epoch }) }))
   },
 })
 export const ReadAction = Command.define("ReadAction", {
@@ -1032,7 +1032,7 @@ export const CancelAction = Command.define("CancelAction", {
       try actions.cancel(id)
       const run = try actions.read(id)
       return try message(() => Message.ChangedAction({ run }))
-    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, op: "cancel" }))
   },
 })
 
@@ -1113,7 +1113,12 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       modelToDependencies: (model: Model) => ({ ids: actionsOf(model).runs.filter((run) => run.state === "queued" || run.state === "running").map((run) => run.id) }),
       dependenciesToStream: ({ ids }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
         const actions = try Actions
-        return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(Stream.map((run) => Message.ChangedAction({ run })), Stream.catch(() => Stream.empty))), { concurrency: "unbounded" })
+        // A lost follow follows again 2 seconds later; the run's current state comes first, so nothing is missed.
+        const follow = (id: string): Stream.Stream<Run> => actions.follow(id).pipe(Stream.catch(() => Stream.concat(
+          Stream.fromEffect(Effect.andThen(Effect.logWarning("action run follow lost; following again"), Effect.sleep("2 seconds"))).pipe(Stream.drain),
+          Stream.suspend(() => follow(id)),
+        )))
+        return Stream.mergeAll(ids.map((id) => follow(id).pipe(Stream.map((run) => Message.ChangedAction({ run })))), { concurrency: "unbounded" })
       }),
     }),
     wikiLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({

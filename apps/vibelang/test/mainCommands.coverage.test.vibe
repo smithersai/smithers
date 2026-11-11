@@ -193,13 +193,13 @@ it.effect("RunAction starts, re-runs, parses JSON input and refuses malformed JS
       expect(again._tag === "StartedAction" && again.run.id).not.toBe(started.run.id)
       expect(blankJson._tag).toBe("StartedAction")
       expect(objectJson._tag).toBe("StartedAction")
-      expect(bad).toEqual({ _tag: "FailedActions", code: "input", epoch: 8 })
-      expect(badPlain).toEqual({ _tag: "FailedActions", code: "input" })
+      expect(bad).toEqual({ _tag: "FailedActions", code: "input", op: "run", epoch: 8 })
+      expect(badPlain).toEqual({ _tag: "FailedActions", code: "input", op: "run" })
     })
   }
 })
 
-it.effect("ReadAction and CancelAction return the run, or the failure code", () => effect {
+it.effect("ReadAction and CancelAction return the run, or the failure code and, for a cancel, its operation", () => effect {
   provide withActions {
     try (try Factory).accounts!.choose("maintainer")
     const started = try run(() => RunAction({ name: "vibelang/Tour", text: "", door: "button" }))
@@ -212,7 +212,7 @@ it.effect("ReadAction and CancelAction return the run, or the failure code", () 
       expect(read).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id } })
       expect(cancelled._tag).toBe("ChangedAction")
       expect(readDown).toEqual({ _tag: "FailedActions", code: "unavailable" })
-      expect(cancelDown).toEqual({ _tag: "FailedActions", code: "forbidden" })
+      expect(cancelDown).toEqual({ _tag: "FailedActions", code: "forbidden", op: "cancel" })
     })
   }
 })

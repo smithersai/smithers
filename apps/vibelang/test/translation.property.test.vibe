@@ -109,7 +109,9 @@ describe("update's translation of proved steps", () => {
         [Message.SelectedAction({ name }), ModelDecision.selectedAction(screen, name, epoch ?? null)],
         [Message.UpdatedActionInput({ value: name }), ModelDecision.updatedActionInput(screen, name)],
         [Message.RetriedActions(), ModelDecision.retriedActions(screen, epoch ?? null)],
-        [Message.FailedActions({ code, ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code)],
+        [Message.FailedActions({ code, ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "load")],
+        [Message.FailedActions({ code, op: "run", ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "run")],
+        [Message.FailedActions({ code, op: "cancel", ...(epoch === undefined ? {} : { epoch }) }), ModelDecision.failedActions(screen, code, "cancel")],
       ]
       for (const [message, step] of arms) {
         const after = update(model, message)

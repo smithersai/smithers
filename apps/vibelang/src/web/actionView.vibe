@@ -67,15 +67,15 @@ export function actionsPane(model: Model, h: H): Html {
         h.button([h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel("Collapse Actions"), h.OnClick(Message.ClickedActions())], ["×"]),
       ]),
     ]),
-    h.div([h.Class("vl-act-body")], state.loading ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : state.error !== "" ? [
+    h.div([h.Class("vl-act-body")], state.loading ? [h.div([h.Class("sui-skeleton"), h.AriaLabel("Loading actions"), h.Style({ height: "32px" })], [])] : state.error === "Couldn't load runs" ? [
       h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], ["Couldn't load runs", h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.RetriedActions())], ["Retry"])]),
-    ] : run ? [trace(h, run, state.now, state.step)] : [
+    ] : [...(state.error === "" ? [] : [h.div([h.Class("sui-alert sui-alert-destructive"), h.Role("alert")], [state.error])]), ...(run ? [trace(h, run, state.now, state.step)] : [
       ...(selected && permitted && (selected.input === "text" || selected.input === "json") ? [h.textarea([h.Class("sui-input"), h.AriaLabel("Action input"), h.Placeholder(selected.input === "json" ? "{}" : "Message"), h.Value(state.input), h.OnInput((value) => Message.UpdatedActionInput({ value }))])]: []),
       state.maximized ? h.div([h.Class("vl-act-grid")], [
         h.div([h.Class("vl-act-side")], state.entries.map((entry) => actionRow(h, entry, model))),
         selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], []),
       ]) : selected ? runRows(h, state.runs.filter((run) => run.flow === selected.name), state.now) : h.div([h.Class("vl-act-main")], state.entries.map((entry) => actionRow(h, entry, model))),
-    ]),
+    ])]),
   ])
 }
 export function actionCards(model: Model, h: H): ReadonlyArray<Html> {

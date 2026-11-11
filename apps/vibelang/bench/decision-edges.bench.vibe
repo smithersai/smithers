@@ -41,9 +41,9 @@ function check() {
   expect(slashHighlight(2, 1, 3)).toBe(0)
   expect(slashHighlight(1, 1, 0)).toBe(0)
   expect(maximizedActions(actions)).toEqual({ state: { ...actions, maximized: true }, commands: [] })
-  expect(updatedActionInput(actions, "{\"text\":\"hi\"}")).toEqual({ state: { ...actions, input: "{\"text\":\"hi\"}" }, commands: [] })
+  expect(updatedActionInput({ ...actions, error: "Input isn't valid." }, "{\"text\":\"hi\"}")).toEqual({ state: { ...actions, input: "{\"text\":\"hi\"}", error: "" }, commands: [] })
   expect(retriedActions({ ...actions, error: "unavailable" }, 6)).toEqual({ state: { ...actions, loading: true, error: "" }, commands: [{ type: "LoadActions", flow: "vibelang/Post", epoch: 6 }] })
-  expect(failedActions({ ...actions, loading: true }, "forbidden")).toEqual({ state: { ...actions, loading: false, starting: false, error: "forbidden" }, commands: [] })
+  expect(failedActions({ ...actions, loading: true }, "forbidden", "run")).toEqual({ state: { ...actions, loading: false, starting: false, error: "Not allowed." }, commands: [] })
 
   // A specification review: fresh, the saved retry, a different saved retry, busy, and not allowed.
   expect(issueAction(screen, "spec-review", "astra", facts)).toEqual({ state: { ...screen, busy: true, serial: 5, error: "" }, request: "fresh", focusCommit: false })

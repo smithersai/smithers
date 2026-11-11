@@ -36,7 +36,9 @@ const program = await runPromise(effect {
       return product
     }) : base
     const actions = MockActions({ role, actor: "person" })
-    return application(root, factory, () => {}, undefined, fault === "actions" ? faultyActions(actions) : actions)
+    // `actions` fails the first list; `actions-<point>` the first call at that point (FaultyActions.vibe).
+    const point = fault === "actions" ? "list" : fault === "actions-start" ? "start" : fault === "actions-read" ? "read" : fault === "actions-follow" ? "follow" : fault === "actions-cancel" ? "cancel" : undefined
+    return application(root, factory, () => {}, undefined, point === undefined ? actions : faultyActions(actions, point))
   }
 })
 Runtime.run(program, { flags: succeed({ session: "actions-e2e", mode: "mock" as const, name: "Guest" }) })

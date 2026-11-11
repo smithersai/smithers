@@ -5,7 +5,7 @@ import { it } from "@effect/vitest"
 import type { Run } from "../src/actions/Actions.vibe"
 import { registration } from "../src/actions/catalog.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
-import { init, type Model, update } from "../src/web/main.vibe"
+import { init, Message, type Model, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 
 const home = init({ session: "pane", mode: "mock", name: "Guest" }).model
@@ -43,7 +43,7 @@ it("a maximized pane with no flow chosen lists the flows and no runs", () => {
 })
 
 it("a failed load says so and offers a retry", () => {
-  scene({ update, view }, given(pane({ error: "unavailable", entries: [tour] })),
+  scene({ update, view }, given(pane({ error: "Couldn't load runs", entries: [tour] })),
     expect(role("alert")).toContainText("Couldn't load runs"),
     expect(role("button", { name: "Retry" })).toExist(),
     expect(role("button", { name: "Tour" })).toBeAbsent(),
@@ -58,6 +58,15 @@ it.each([
     expect(role("textbox", { name: "Action input" })).toHaveAttr("placeholder", placeholder),
     type(role("textbox", { name: "Action input" }), "hi"),
     expect(role("textbox", { name: "Action input" })).toHaveValue("hi"),
+    expect(role("button", { name: "Run" })).toExist(),
+  )
+})
+
+it("a run that failed to start says so above the input it keeps", () => {
+  scene({ update, view }, given(update(pane({ selected: post.name, entries: [post], commands: [post], input: "hi", starting: true }), Message.FailedActions({ code: "unavailable", op: "run" })).model),
+    expect(role("alert")).toHaveText("Couldn't start the run."),
+    expect(role("textbox", { name: "Action input" })).toHaveValue("hi"),
+    expect(role("button", { name: "Retry" })).toBeAbsent(),
     expect(role("button", { name: "Run" })).toExist(),
   )
 })

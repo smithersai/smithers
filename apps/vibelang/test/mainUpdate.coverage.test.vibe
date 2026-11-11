@@ -429,11 +429,24 @@ describe("actions", () => {
     expect(update(known, Message.SelectedRun({ id: "a1" })).model.actions).toMatchObject({ run: "a1", selected: tour.name, open: true, maximized: true, step: "" })
     expect(update(known, Message.SelectedRun({ id: "gone" })).model.actions?.selected).toBe(tour.name)
   })
+  it("a failure names what failed: the input, a refusal, a start, a cancel, else the load", () => {
+    const failed = (code: string, op?: "load" | "run" | "cancel") => update(open, Message.FailedActions({ code, epoch: 1, ...(op === undefined ? {} : { op }) })).model.actions?.error
+    expect(failed("input", "run")).toBe("Input isn't valid.")
+    expect(failed("forbidden", "cancel")).toBe("Not allowed.")
+    expect(failed("unavailable", "run")).toBe("Couldn't start the run.")
+    expect(failed("unavailable", "cancel")).toBe("Couldn't cancel the run.")
+    expect(failed("unavailable")).toBe("Couldn't load runs")
+    const typed = update({ ...open, actions: { ...open.actions!, error: "Input isn't valid." } }, Message.UpdatedActionInput({ value: "{}" }))
+    expect(typed.model.actions).toMatchObject({ input: "{}", error: "" })
+    const cancelled = update({ ...open, actions: { ...open.actions!, run: "a1", error: "Couldn't cancel the run." } }, Message.ClickedCancelAction())
+    expect(cancelled.model.actions?.error).toBe("")
+    expect(cancelled.commands?.[0]).toMatchObject({ args: { id: "a1" } })
+  })
   it("responses from a previous epoch are ignored", () => {
     expect(update(open, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 0 })).model).toBe(open)
     expect(update(open, Message.StartedAction({ run: run("running"), epoch: 0 })).model).toBe(open)
     expect(update(open, Message.FailedActions({ code: "x", epoch: 0 })).model).toBe(open)
-    expect(update(open, Message.FailedActions({ code: "x", epoch: 1 })).model.actions).toMatchObject({ error: "x", loading: false, starting: false })
+    expect(update(open, Message.FailedActions({ code: "x", epoch: 1 })).model.actions).toMatchObject({ error: "Couldn't load runs", loading: false, starting: false })
   })
   it("a started run joins the list, re-focuses a shown run, and docks the composer", () => {
     const started = update(open, Message.StartedAction({ run: run("running"), epoch: 1 }))
