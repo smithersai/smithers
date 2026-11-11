@@ -16,7 +16,7 @@ no `origin` makes the runner its own host, for [local lanes](#local-lanes).
 | `smthrs runner token [--state <dir>] [--rotate]` | Make the runner's token and print its SHA-256 |
 | `smthrs runner serve --config <runner.json>` | Claim and run jobs until stopped; with no `origin`, also host the lanes |
 | `smthrs runner start <brief> --config <runner.json> --profile <p> --repository <id> [--base <rev>] [--standing] [--max-hours <n>] [--restarts <n>] [--workstream <w> --task <t> [--title <text>]]` | Queue a lane for a runner that is its own host, and print the request's id |
-| `smthrs runner status --config <runner.json>` | Show each [workstream](#workstreams)'s tasks, the lanes on them and its progress, read from the lanes' runs |
+| `smthrs runner status --config <runner.json> [--port <n>]` | Show each [workstream](#workstreams)'s tasks, the lanes on them and its progress, read from the lanes' runs; with `--port`, serve it as a page |
 
 ## Register a runner
 
@@ -377,6 +377,15 @@ when the lanes root no longer holds the run).
 | `doing` | One of its lanes' runs is `accepted`, `running` or `parked`. |
 | `blocked` | One waits for an approval, or its last lane failed. |
 | `todo` | Otherwise: no lane, a lane still queued, or the last one cancelled. |
+
+`runner status --port <n>` serves the same as one page on `127.0.0.1:<n>`
+until it is stopped: `GET /` is a self-contained HTML page that reads
+`GET /workstreams.json` (the `--format json` document) and reads it again
+every 15 seconds. Every request folds the lanes again, so a plan edited in
+`runner.json` shows on the next read, with no restart. A read that fails
+answers 500 and logs `runner.status`. The page has no login and binds to
+loopback only; from another machine, reach it through a tunnel such as
+`ssh -L 4850:127.0.0.1:4850 <runner host>`.
 
 A workstream is `done` when it has tasks and every one is done, `active` while
 any task is `doing`, `blocked` when tasks are blocked and none is `doing`, and

@@ -14,7 +14,8 @@ import type * as Workstreams from "../../../src/runner/Workstreams.ts"
 import * as Host from "./host.ts"
 
 const AGENT = fileURLToPath(new URL("../../../agent/test/fixtures/acp-test-agent.mjs", import.meta.url))
-const BIN = fileURLToPath(new URL("../../../bin/smithers.mjs", import.meta.url))
+/** The `smthrs` executable the tests run. */
+export const BIN = fileURLToPath(new URL("../../../bin/smithers.mjs", import.meta.url))
 
 /** The repository id `runner.json` names. */
 export const REPOSITORY = "github/acme/app"

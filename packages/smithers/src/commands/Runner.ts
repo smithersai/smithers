@@ -13,13 +13,17 @@
  * @since 1.0.0
  */
 
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { Control } from "@smthrs/control"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Cause, Context, Deferred, Effect, FileSystem, Layer, Logger, Option, Schema, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as HttpRouter from "effect/http/HttpRouter"
+import * as HttpServer from "effect/http/HttpServer"
 import { Cli, z } from "incur"
+import { createServer } from "node:http"
 import { dirname, join } from "node:path"
 import type * as Bridge from "../cli/ControlBridge.ts"
 import * as Presentation from "../cli/Presentation.ts"
@@ -33,6 +37,7 @@ import * as LocalJobs from "../runner/LocalJobs.ts"
 import type * as Machine from "../runner/Machine.ts"
 import * as Serve from "../runner/Serve.ts"
 import type * as Session from "../runner/Session.ts"
+import * as StatusPage from "../runner/StatusPage.ts"
 import * as Workstreams from "../runner/Workstreams.ts"
 
 /**
@@ -286,6 +291,40 @@ export const status = (path: string) =>
   }).pipe(Effect.provide(NodeServices.layer))
 
 /**
+ * `runner status --port`: the status page and `workstreams.json` on
+ * `127.0.0.1:<port>` (0 picks one), each request read again from the
+ * runner the configuration at `path` names. Loopback only: the page has no
+ * login, so reach it from another machine through a tunnel.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const statusServer = (path: string, port: number) =>
+  HttpRouter.serve(StatusPage.routes(status(path)), { disableListenLog: true, disableLogger: true }).pipe(
+    Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port }))
+  )
+
+/**
+ * Serves {@link statusServer} until the process is stopped, and logs the
+ * page's URL once it is bound.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const serveStatus = (path: string, port: number) =>
+  Effect.gen(function*() {
+    const { address } = yield* HttpServer.HttpServer
+    yield* Effect.logInfo("runner.status").pipe(
+      Effect.annotateLogs({ outcome: "serving", url: HttpServer.formatAddress(address) })
+    )
+    return yield* Effect.never
+  }).pipe(
+    Effect.provide(statusServer(path, port)),
+    // The control plane's own logs go to stderr too.
+    Effect.provideService(Logger.LogToStderr, true)
+  )
+
+/**
  * The text `runner status` prints for people: one block per workstream, one
  * line per task with the lanes on it.
  *
@@ -376,19 +415,24 @@ export const createRunnerCli = (_config: Bridge.Runtime = {}) =>
       description: "Show each workstream's tasks, the lanes on them and its progress, read from the lanes' runs",
       mcp: false,
       options: z.object({
-        config: z.string().describe("Path to runner.json")
+        config: z.string().describe("Path to runner.json"),
+        port: z.number().int().min(0).max(65_535).optional().describe(
+          "Serve the status page on 127.0.0.1 at this port, read again on every request, until stopped"
+        )
       }),
       run: (context) =>
         Presentation.guard(
           context,
           () =>
-            Effect.runPromise(
-              status(context.options.config).pipe(
-                Effect.map((workstreams) => ({ workstreams })),
-                // The control plane's own logs go to stderr: stdout is the document.
-                Effect.provideService(Logger.LogToStderr, true)
-              )
-            ),
+            context.options.port !== undefined
+              ? Effect.runPromise(serveStatus(context.options.config, context.options.port))
+              : Effect.runPromise(
+                status(context.options.config).pipe(
+                  Effect.map((workstreams) => ({ workstreams })),
+                  // The control plane's own logs go to stderr: stdout is the document.
+                  Effect.provideService(Logger.LogToStderr, true)
+                )
+              ),
           { render: (read) => ({ human: renderStatus(read.workstreams) }) }
         )
     })
