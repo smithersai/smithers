@@ -664,12 +664,8 @@ function withCommands(result: Update.Return<Model, Message, Factory | Actions>):
 /** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
 function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
   const account = accountOf(model)
-  const visit = UpdateDecision.visitedWiki({ stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined })
-  const request = visit.request
-  return { model: { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: request, sandboxPane: visit.sandboxPane, ...(visit.people === account.people ? {} : { account: { ...account, people: visit.people } }), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
-    stream: "open", epoch: visit.epoch, from: visit.from,
-  }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
-
+  const visit = UpdateDecision.visitedWiki(ScreenRead.wikiVisitScreen(model, account))
+  return { model: ModelWrite.wikiVisitWrite(model, account, visit, page), commands: [OpenWikiCommand({ conversation: model.conversation, page, request: visit.request })] }
 }
 
 /**

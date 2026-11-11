@@ -3,7 +3,7 @@
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen } from "./modelDecision.vibe"
-import type { EscapeRoute, EscapeStep } from "./updateDecision.vibe"
+import type { EscapeRoute, EscapeStep, WikiVisit } from "./updateDecision.vibe"
 import type { TourEnd, TourStarted } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import { pressedEscape } from "./updateDecision.vibe"
@@ -111,4 +111,15 @@ export function sandboxResultWrite(model: Model, result: SandboxResult): Model {
 //@ ensures \result == { ...model, sandboxBusy: result.busy, sandboxError: result.error }
 export function sandboxFailureWrite(model: Model, result: SandboxResult): Model {
   return { ...model, sandboxBusy: result.busy, sandboxError: result.error }
+}
+
+/** The Model after a wiki page opens: the chat with the palette closed and the page loading, the visit's request number,
+ *  docked panes and stream, an editor kept only while it saves, following paused, the search cleared; the account
+ *  changes only when its People pane docks. */
+//@ verify
+//@ ensures visit.people == account.people ==> \result == { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: visit.request, sandboxPane: visit.sandboxPane, surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false, stream: "open", epoch: visit.epoch, from: visit.from }
+//@ ensures visit.people != account.people ==> \result == { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: visit.request, sandboxPane: visit.sandboxPane, surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false, stream: "open", epoch: visit.epoch, from: visit.from, account: { ...account, people: visit.people } }
+export function wikiVisitWrite(model: Model, account: AccountState, visit: WikiVisit, page: string): Model {
+  const visited: Model = { ...model, wikiEdit: visit.keepEdit ? model.wikiEdit : undefined, wikiRequest: visit.request, sandboxPane: visit.sandboxPane, surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false, stream: "open", epoch: visit.epoch, from: visit.from }
+  return visit.people === account.people ? visited : { ...visited, account: { ...account, people: visit.people } }
 }

@@ -3,7 +3,7 @@
 import type { AccountState, Model } from "./main.vibe"
 import type { ActionView } from "./actionModel.vibe"
 import type { AccountScreen, ActionScreen, RunSelection } from "./modelDecision.vibe"
-import type { EscapeScreen } from "./updateDecision.vibe"
+import type { EscapeScreen, WikiVisitScreen } from "./updateDecision.vibe"
 import type { StreamScreen, TourEnd, TourStart } from "./tourDecision.vibe"
 import type { SandboxResult, SandboxScreen } from "./paneDecision.vibe"
 import type { WikiDraft } from "./wikiEditorDecision.vibe"
@@ -102,4 +102,15 @@ export function tourEndScreen(model: Model, issues: NonNullable<Model["issues"]>
 //@ ensures \result == { tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }
 export function tourStartScreen(model: Model): TourStart {
   return { tour: model.tour, toured: model.toured === true, tourDismissed: model.tourDismissed === true, autoTour: model.autoTour === true, surface: model.surface, palette: model.palette, docs: model.docs, tourError: model.tourError, conversation: model.conversation, wikiAfter: model.wikiAfter ?? "", wikiStatus: model.wikiStatus ?? "ready", step: model.theatre.step, paused: model.theatre.paused, target: model.theatre.target, epoch: model.epoch, from: model.from, stream: model.stream }
+}
+
+/** What opening a wiki page reads: the stream, the conversation's last number, the last wiki request (none is 0), the
+ *  sandbox pane (none is closed), the People pane, and whether an editor's submission is saving. */
+//@ verify
+//@ ensures \result.stream == model.stream && \result.epoch == model.epoch && \result.from == model.from && \result.seq == model.client.conversation.seq
+//@ ensures \result.request == (model.wikiRequest ?? 0) && \result.sandboxPane == (model.sandboxPane ?? "closed") && \result.people == account.people
+//@ ensures model.wikiEdit === undefined ==> !\result.saving
+//@ ensures model.wikiEdit !== undefined ==> \result.saving == (model.wikiEdit.submission !== undefined)
+export function wikiVisitScreen(model: Model, account: AccountState): WikiVisitScreen {
+  return { stream: model.stream, epoch: model.epoch, from: model.from, seq: model.client.conversation.seq, request: model.wikiRequest ?? 0, sandboxPane: model.sandboxPane ?? "closed", people: account.people, saving: model.wikiEdit?.submission !== undefined }
 }
