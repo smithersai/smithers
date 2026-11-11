@@ -13,6 +13,12 @@ From the repository root, run `pnpm --dir packages/smithers/flows/kernel exec vi
 The same command runs in the independent Windows kernel job, with the package's
 coverage thresholds enforced.
 
+For Node filesystem fixtures, glob results use `/` separators even on Windows;
+native path results still use the host's path service. Build an explicit
+`cwd` grant from `FileSystem.realPath` in the same host layer as the guarded
+spawner. Node uses native real paths on Windows, where short and long spellings
+of a directory can differ.
+
 ## Pick a grant-store double
 
 `@smthrs/kernel/test/TestGrantStore` gives you three layers, and none of them

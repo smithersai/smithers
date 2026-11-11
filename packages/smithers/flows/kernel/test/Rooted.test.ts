@@ -79,7 +79,7 @@ describe("Rooted", () => {
       resolved: join(root, "src"),
       relative: join("src", "a.ts"),
       read: "a\n",
-      glob: [join("src", "a.ts")],
+      glob: ["src/a.ts"],
       pwd: canonical(root),
       nested: canonical(join(root, "src")),
       piped: "src"
