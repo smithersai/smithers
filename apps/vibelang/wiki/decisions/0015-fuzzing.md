@@ -818,3 +818,25 @@ With it, under coverage: `wiki/steered-host` 1 execution in 31.8 s, `actions/ste
 `src/web/main.vibe` 795 and 796 (31 hits at seed 20261124). The web targets now leave 3 of 667 lines of `main.vibe`
 unreached at seed 20261122 (795, 796 and the roles stream's end, 1258, which the `closing` backend reaches at other
 seeds) and 70 of 823 branch arms.
+
+## Status, 2026-11-10 (thirteenth session)
+
+### Build scripts and the deploy stack
+
+`fuzz/scripts.node.fuzz.vibe` drives every file under `scripts/` and `infra/` through its public entry. Each script runs
+as its compiler-emitted CLI in a child process, as `pnpm` runs it; Vitest credits a child process's emitted JavaScript
+through its source map, never native `.vibe` (decision 0016, `~/vl/vibelang-bugs/coverage-native-loader/`). The fuzz
+config's `include` now lists `dist-scripts/**/*.js` and `dist-script-tests/**/*.js`, as the unit config does; without
+them V8 drops the child profiles before remapping and the CLIs read 0.
+
+| Target | Generated input | Oracle |
+| --- | --- | --- |
+| `scripts/fuzz-preflight` | a set of missing flow packages; bare directories | exit 0 exactly when none is missing; else exit 1 naming exactly the missing ones, in order, and the install command; the log counts them |
+| `scripts/agent-context` | the generated file's prior state: absent, current, one changed byte, cut, longer | `--check` passes exactly on the current text, never writes, names the file without its content; the write leaves the current text, which `--check` then passes |
+| `scripts/wiki` | wiki trees of up to 8 pages (headings, status and ruling lines, dates, links, tables, raw HTML, an unpaired surrogate) and each suite receipt's presence and status | a missing receipt fails and keeps the previous output; otherwise every page keeps its source and gets its title, label, decision flag, status, date and rulings, top-level links resolve, raw `<script>` never survives, suites read their status, and a rebuild from the tree written in reverse order gives the same bytes |
+| `scripts/mythical-seed` | a real jj `main@github` of 1 to 4 commits, queue entries (state, lane, carried commits, receipt, known revision, gate, reason, junk lines), a fault, CLI or program | the program twice and the CLI write the same bytes; each main commit appears once, in order, under its title, folded into one of at most as many mythical commits; a missing repository (`JjFailed`), a missing queue, or two commits reported under one short id (`Refused`, through a faulty `ChildProcessSpawner`) fail and keep the previous seed |
+| `infra/stack` | stage (`prod`, `coverage`, `vl-test`, other), dev, domain, image, probe token | `vl-test` declares only the probe Worker, its two objects and the image; every other stage the API Worker and the site (its domain only outside dev), with the sandbox image and machine exactly when an image is set; the only failure is the probe stage without its image or token, which the failure names |
+
+`scripts/wiki` and `scripts/mythical-seed` declare `REPLAY_FLOOR`: one execution runs two CLIs or creates jj
+repositories. Fuzz-only coverage of this file alone, 5 s per target: all 8 files 100% statements, branches, functions
+and lines. A mutant that drops the stack's `vl-test` branch is falsified in 2 executions.

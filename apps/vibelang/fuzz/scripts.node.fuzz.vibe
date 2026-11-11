@@ -1,0 +1,373 @@
+// The build scripts and the deploy stack through their public entries (decision 0015). Each script runs as its
+// compiler-emitted CLI, as `pnpm` runs it: Vitest counts a child process's emitted JavaScript, never native .vibe
+// (decision 0016). The seed program also runs in process, beside its CLI; the Alchemy stack is compiled for generated
+// stages and deploy settings, with no plan, deploy or provider lifecycle method. No process, file or host is mocked.
+import { it } from "@effect/vitest"
+import * as Alchemy from "alchemy"
+import { CredentialsStoreLive } from "alchemy/Auth/Credentials"
+import { ProfileStoreLive } from "alchemy/Auth/Profile"
+import { State } from "alchemy/State"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { FetchHttpClient } from "effect/http"
+import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { WebCrypto } from "@smthrs/crypto"
+import stack from "../infra/Stack.vibe"
+import { main as seedMain } from "../scripts/mythical-seed-program.vibe"
+import type { History } from "../src/history/mythical.vibe"
+import { PROBE_STAGE } from "../worker/sandboxProbeFetch.vibe"
+import { node, run as exec } from "../test/support/processes.vibe"
+import { REPLAY_FLOOR, run } from "./run.vibe"
+
+/** The compiler-emitted scripts (`pnpm build:scripts`); each writes only under this ignored tree. */
+const EMITTED = new URL("../dist-script-tests/", import.meta.url)
+
+// What the fuzz flow imports, in the order scripts/fuzz-preflight.vibe names them; importing that CLI would run it.
+const FLOW = ["vibelang-runtime", "vibelang", "effect", "@effect/platform-node", "@smthrs/flow", "@smthrs/plan", "@smthrs/engine-store", "@smthrs/platform-node", "@smthrs/kernel", "@smthrs/run-store"]
+
+/**
+ * The preflight passes exactly when every flow package has its package.json, and otherwise names exactly the missing
+ * ones, in order, with the one install command. A package directory without package.json is missing.
+ */
+it.live("scripts/fuzz-preflight", () => run("scripts/fuzz-preflight", Schema.Struct({ missing: Schema.Array(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9 }))).check(Schema.isMaxLength(10)), bare: Schema.Boolean }), (input) => effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try fs.makeTempDirectoryScoped({ prefix: "vibelang-preflight-" })
+    const absent = new Set(input.missing)
+    for (const [at, name] of FLOW.entries()) {
+      const directory = path.join(root, ".smithers/flows/node_modules", name)
+      if (!absent.has(at) || input.bare) try fs.makeDirectory(directory, { recursive: true })
+      if (!absent.has(at)) try fs.writeFileString(path.join(directory, "package.json"), "{}\n")
+    }
+    const missing = FLOW.filter((_, at) => absent.has(at))
+    const done = try exec(try node(), [path.join(try path.fromFileUrl(EMITTED), "scripts/fuzz-preflight.js")], { FUZZ_REPOSITORY_ROOT: root })
+    const output = done.stdout + done.stderr
+    if (!output.includes(`missing: ${missing.length}`)) return false
+    if (missing.length === 0) return done.status === 0 && !output.includes("not installed")
+    return done.status === 1 && output.includes(`(${missing.join(", ")})`) && output.includes(`pnpm install --frozen-lockfile --filter "@smthrs/vibelang-site..." --filter "@smithers/release-workflows..."`)
+  }
+}))
+
+const Before = Schema.Literals(["absent", "current", "changed", "short", "longer"])
+
+/**
+ * From any prior state of the generated file, `--check` passes exactly when it equals the installed skill's text (the
+ * checked-in worker/agentContext.vibe, which test/agentContext.test.vibe holds current), never writes, and names the
+ * stale file without its content; the write that follows always leaves that text, which `--check` then passes.
+ */
+it.live("scripts/agent-context", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const canonical = try fs.readFileString(try path.fromFileUrl(new URL("../worker/agentContext.vibe", import.meta.url)))
+    const root = try path.fromFileUrl(EMITTED)
+    const script = path.join(root, "scripts/agent-context.js")
+    const target = path.join(root, "worker/agentContext.vibe")
+    try fs.makeDirectory(path.join(root, "worker"), { recursive: true })
+    try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    try run("scripts/agent-context", Schema.Struct({ before: Before, at: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })) }), ({ before, at }) => effect {
+      provide NodeServices.layer, ExperimentalNodeServices.layer {
+        const position = at % canonical.length
+        const prior = before === "current" ? canonical
+          : before === "changed" ? canonical.slice(0, position) + (canonical[position] === "x" ? "y" : "x") + canonical.slice(position + 1)
+          : before === "short" ? canonical.slice(0, position)
+          : before === "longer" ? canonical + "\n"
+          : undefined
+        if (prior === undefined) try fs.remove(target, { force: true })
+        else try fs.writeFileString(target, prior)
+        const checked = try exec(try node(), [script, "--check"])
+        if ((fs.readFileString(target) catch () => undefined) !== prior) return false
+        const stale = checked.status === 1 && checked.stderr.includes("worker/agentContext.vibe is stale") && !(checked.stdout + checked.stderr).includes("You are the VibeLang agent")
+        if (prior === canonical ? checked.status !== 0 : !stale) return false
+        const written = try exec(try node(), [script])
+        if (written.status !== 0 || (fs.readFileString(target) catch () => undefined) !== canonical) return false
+        return (try exec(try node(), [script, "--check"])).status === 0
+      }
+    })
+  }
+}))
+
+const PageName = Schema.Literals(["index", "rulings", "roadmap", "designs/index", "designs/detail", "notes/deep/page", "decisions/0001-alpha", "decisions/0020-beta", "decisions/draft"])
+const WikiPage = Schema.Struct({
+  name: PageName,
+  heading: Schema.Literals(["", "# Title", "# Title with `code`", "## Not a title"]),
+  status: Schema.Literals(["", "**Status:** accepted", "Status: superseded by 0021", "**Status:** Replaced", "**Status:** in progress"]),
+  rulings: Schema.Literals(["", "**Rulings:** VL-1, VL-2.", "Ruling: VL-7 VL-7", "Rulings: none yet"]),
+  body: Schema.Literals(["", "Follows VL-5.", "Dated 2026-11-07.", "[Roadmap](roadmap.md#next)", "[Out](../AGENTS.md#rules)", "[Web](https://example.test/x)", "[Gone](missing.md)", "[Designs](designs/)", "| a | b |\n| - | - |\n| 1 | 2 |", "```vibe\nconst x = 1\n```", "<script>x</script>", "\ud800"]),
+})
+const Receipt = Schema.Literals(["absent", "", "**Status:** package landed", "**Status:** in progress", "Status: superseded"])
+const Tree = Schema.Struct({ pages: Schema.Array(WikiPage).check(Schema.isMaxLength(8)), fuzz: Receipt, coverage: Receipt, proofs: Receipt, stray: Schema.Boolean })
+const RECEIPTS = [["Fuzz", "decisions/0015-fuzzing"], ["Coverage", "decisions/0016-coverage"], ["Proofs", "decisions/0018-proofs"]] as const
+
+interface Page { readonly id: string; readonly title: string; readonly label: string; readonly decision: boolean; readonly status: string; readonly date: string; readonly rulings: ReadonlyArray<string>; readonly source: string; readonly html: string }
+interface Suite { readonly label: string; readonly state: string; readonly href: string }
+
+/**
+ * The wiki build is total and deterministic: it fails, writing nothing, only when a suite's receipt is missing;
+ * otherwise each page keeps its source and gets its title, label, decision flag, status, date and rulings, each top-level
+ * page's links resolve, and a second build over the same tree written in reverse order gives the same bytes.
+ */
+it.live("scripts/wiki", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try path.fromFileUrl(EMITTED)
+    const wiki = path.join(root, "wiki")
+    const target = path.join(root, "src/assets/wiki.generated.vibe")
+    try fs.makeDirectory(path.dirname(target), { recursive: true })
+    try Effect.addFinalizer(() => fs.remove(wiki, { recursive: true, force: true }).pipe(Effect.orDie))
+    try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    let builds = 0
+    try run("scripts/wiki", Tree, (tree) => effect {
+      provide NodeServices.layer, ExperimentalNodeServices.layer {
+        const chosen = new Map<string, { status: string; rulings: string; body: string; text: string }>()
+        for (const page of tree.pages) chosen.set(`${page.name}.md`, { status: page.status, rulings: page.rulings, body: page.body, text: [page.heading, page.status, page.rulings, page.body].filter((part) => part !== "").join("\n\n") + "\n" })
+        RECEIPTS.forEach(([, id], at) => {
+          const status = [tree.fuzz, tree.coverage, tree.proofs][at]!
+          if (status !== "absent") chosen.set(`${id}.md`, { status, rulings: "", body: "", text: `# ${id.slice(15)}\n\n${status}\n` })
+        })
+        const files = [...chosen.keys()]
+        effect function write(order: ReadonlyArray<string>) {
+          try fs.remove(wiki, { recursive: true, force: true })
+          try fs.makeDirectory(wiki, { recursive: true })
+          for (const file of order) {
+            try fs.makeDirectory(path.dirname(path.join(wiki, file)), { recursive: true })
+            try fs.writeFileString(path.join(wiki, file), chosen.get(file)!.text)
+          }
+          if (tree.stray) try fs.writeFileString(path.join(wiki, "ignored.html"), "<h1>Not Markdown</h1>")
+        }
+        const previous = `// previous build ${builds++}\n`
+        try fs.writeFileString(target, previous)
+        try write(files)
+        const script = path.join(root, "scripts/wiki.js")
+        const built = try exec(try node(), [script])
+        const source = try fs.readFileString(target)
+        if (tree.fuzz === "absent" || tree.coverage === "absent" || tree.proofs === "absent") return built.status === 1 && source === previous && !built.stdout.includes("wiki:")
+        if (built.status !== 0 || !built.stdout.includes(`wiki: ${files.length + 1} pages`)) return false
+        // The file as written: an unpaired surrogate is written as U+FFFD.
+        const written = new Map<string, string>()
+        for (const file of files) written.set(file, try fs.readFileString(path.join(wiki, file)))
+        const pages = try Effect.try(() => JSON.parse(/^export const pages = (.+)$/m.exec(source)![1]!) as ReadonlyArray<Page>)
+        const suites = try Effect.try(() => JSON.parse(/^export const verificationSuites = (.+)$/m.exec(source)![1]!) as ReadonlyArray<Suite>)
+        const ids = [...files, "decisions.md"].sort().map((file) => file.slice(0, -3))
+        if (JSON.stringify(pages.map((page) => page.id)) !== JSON.stringify(ids)) return false
+        const decisions = files.filter((file) => /^decisions\/[0-9]/.test(file))
+        for (const page of pages) {
+          const isDecision = /^decisions\/[0-9]{4}-/.test(page.id)
+          if (page.decision !== isDecision || new Set(page.rulings).size !== page.rulings.length || page.rulings.some((ruling) => !page.source.includes(ruling))) return false
+          if (page.id === "decisions") {
+            if (page.title !== "Decisions" || page.label !== "Decisions" || decisions.some((file) => !page.source.includes(`](${file})`))) return false
+            continue
+          }
+          const input = chosen.get(`${page.id}.md`)!
+          if (page.source !== written.get(`${page.id}.md`)) return false
+          const heading = /^# (.+)$/m.exec(input.text)?.[1]
+          const title = heading ?? page.id
+          if (page.title !== title) return false
+          const named = ({ index: "Home", rulings: "Rulings", roadmap: "Roadmap", "designs/index": "Designs" } as Record<string, string>)[page.id]
+          if (page.label !== (isDecision ? page.id.slice(10).replace(/^(\d{4})-/, "$1 ") : named ?? title)) return false
+          if (page.status !== (/replaced|superseded/i.test(input.status) ? "Replaced" : "Accepted")) return false
+          if (page.date !== (input.body === "Dated 2026-11-07." ? "2026-11-07" : "")) return false
+          const expected = !isDecision ? [] : input.rulings === "**Rulings:** VL-1, VL-2." ? ["VL-1", "VL-2"] : input.rulings === "Ruling: VL-7 VL-7" ? ["VL-7"] : input.rulings === "Rulings: none yet" ? [] : input.body === "Follows VL-5." ? ["VL-5"] : []
+          if (JSON.stringify(page.rulings) !== JSON.stringify(expected)) return false
+          if (!page.id.includes("/")) {
+            if (input.body === "[Roadmap](roadmap.md#next)" && chosen.has("roadmap.md") && !page.html.includes('href="/wiki/roadmap#next"')) return false
+            if (input.body === "[Out](../AGENTS.md#rules)" && !page.html.includes('href="https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/../AGENTS.md#rules"')) return false
+            if (input.body === "[Web](https://example.test/x)" && !page.html.includes('href="https://example.test/x"')) return false
+          }
+          if (input.body === "<script>x</script>" && page.html.includes("<script>")) return false
+        }
+        const states = [tree.fuzz, tree.coverage, tree.proofs].map((status) => {
+          const marked = /\*\*Status:\*\*([^\n]*)/.exec(status)?.[1] ?? ""
+          return /in progress/i.test(marked) ? "In progress" : marked.trim()
+        })
+        if (JSON.stringify(suites) !== JSON.stringify(RECEIPTS.map(([label, id], at) => ({ label, state: states[at], href: `/wiki/${id}` })))) return false
+        try write([...files].reverse())
+        const again = try exec(try node(), [script])
+        return again.status === 0 && (try fs.readFileString(target)) === source
+      }
+    }, undefined, { minimum: REPLAY_FLOOR })
+  }
+}))
+
+const TITLES = ["fix(compiler): keep a return", "docs: explain the return", "feat(fuzz): a seed target"]
+const Pick = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 }))
+const SeedInput = Schema.Struct({
+  commits: Schema.Array(Schema.Struct({ title: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 })), body: Schema.Boolean })).check(Schema.isMinLength(1), Schema.isMaxLength(4)),
+  entries: Schema.Array(Schema.Struct({
+    state: Schema.Literals(["landed", "rejected", "running"]),
+    lane: Schema.Literals(["compiler", "fuzz"]),
+    carries: Schema.Array(Pick).check(Schema.isMaxLength(3)),
+    receipt: Schema.Boolean,
+    known: Schema.Boolean,
+    gate: Schema.Boolean,
+    reason: Schema.Boolean,
+  })).check(Schema.isMaxLength(4)),
+  noise: Schema.Boolean,
+  fault: Schema.Literals(["none", "repository", "queue", "collide"]),
+  cli: Schema.Boolean,
+})
+
+/** A jj command setting up a fixture repository failed. */
+error FixtureFailed { message: string }
+
+/** A colocated jj repository whose `main@github` holds these commits, oldest first, with their full ids. */
+effect function repositoryOf(directory: string, messages: ReadonlyArray<string>) {
+  const path = try Path.Path
+  effect function jj(args: ReadonlyArray<string>) {
+    const done = try exec("jj", args)
+    if (done.status !== 0) throw new FixtureFailed({ message: `jj ${args[0]} ${args[1] ?? ""} exited ${done.status}: ${done.stderr}` })
+    return done.stdout.trim()
+  }
+  const remote = path.join(directory, "remote")
+  const repository = path.join(directory, "repository")
+  try (try FileSystem.FileSystem).makeDirectory(directory, { recursive: true })
+  try jj(["git", "init", "--colocate", remote])
+  try jj(["-R", remote, "config", "set", "--repo", "user.name", "Fuzz fixture"])
+  try jj(["-R", remote, "config", "set", "--repo", "user.email", "fuzz@example.invalid"])
+  for (const message of messages) try jj(["-R", remote, "commit", "-m", message])
+  const ids = (try jj(["-R", remote, "log", "--no-graph", "--reversed", "-r", "::@- ~ root()", "-T", 'commit_id ++ "\\n"'])).split("\n")
+  try jj(["-R", remote, "bookmark", "set", "main", "-r", "@-"])
+  try jj(["git", "init", "--colocate", repository])
+  try jj(["-R", repository, "git", "remote", "add", "github", remote])
+  try jj(["-R", repository, "git", "fetch", "--remote", "github"])
+  return { remote, repository, ids }
+}
+
+/**
+ * The seed replays to the same history: from a generated main and queue, the program and its CLI write identical
+ * bytes, twice; every main commit appears once, in order, under its title, folded into one of at most as many
+ * mythical commits. An unreadable repository or queue, or two commits reported under one short id, fail and keep the
+ * previous seed.
+ */
+it.live("scripts/mythical-seed", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const scratch = try fs.makeTempDirectoryScoped({ prefix: "vibelang-seed-fuzz-" })
+    const root = try path.fromFileUrl(EMITTED)
+    const cliTarget = path.join(root, "src/history/seed/vibelang.vibe")
+    try fs.makeDirectory(path.dirname(cliTarget), { recursive: true })
+    try Effect.addFinalizer(() => fs.remove(cliTarget, { force: true }).pipe(Effect.orDie))
+    // jj repositories are the slow part; one per generated main.
+    const repositories = new Map<string, { remote: string; repository: string; ids: ReadonlyArray<string> }>()
+    let runs = 0
+    try run("scripts/mythical-seed", SeedInput, (input) => effect {
+      provide NodeServices.layer, ExperimentalNodeServices.layer {
+        const messages = input.commits.map((commit, at) => TITLES[commit.title]! + (commit.body ? `\n\nValidation: case ${at}.` : ""))
+        const key = JSON.stringify(messages)
+        let made = repositories.get(key)
+        if (made === undefined) {
+          made = try repositoryOf(path.join(scratch, `r${repositories.size}`), messages)
+          repositories.set(key, made)
+        }
+        const { remote, repository, ids } = made
+        const short = ids.map((id) => id.slice(0, 12))
+        const at = runs++
+        const queue = path.join(scratch, `queue-${at}.jsonl`)
+        const lines = input.entries.map((entry, index) => JSON.stringify({
+          id: `q${index}`, lane: entry.lane, state: entry.state,
+          rev: entry.known ? ids[(entry.carries[0] ?? 0) % ids.length] : "f".repeat(40),
+          ...(entry.gate ? { gate: "unit" } : {}), ...(entry.reason ? { reason: "tests failed" } : {}),
+          ...(entry.receipt ? { stack_receipt: { commits: entry.carries.map((pick) => ({ commit: ids[pick % ids.length] })) } } : {}),
+        }))
+        try fs.writeFileString(queue, (input.noise ? "\nnot json\n{}\n" : "") + lines.join("\n") + "\n")
+        const env = {
+          VIBELANG_REPO: input.fault === "repository" ? path.join(scratch, "missing") : repository,
+          VIBELANG_QUEUE: input.fault === "queue" ? path.join(scratch, "missing.jsonl") : queue,
+          VIBELANG_LANES: remote,
+        }
+        const destination = path.join(scratch, `seed-${at}.vibe`)
+        const previous = `// previous seed ${at}\n`
+        try fs.writeFileString(destination, previous)
+        const spawner = try ChildProcessSpawner
+        const collide = input.fault === "collide" && ids.length >= 2
+        const colliding = makeSpawner(effect (command) => {
+          const child = try spawner.spawn(command)
+          return { ...child, stdout: Stream.fromEffect(effect {
+            const output = try Stream.mkString(Stream.decodeText(child.stdout))
+            return new TextEncoder().encode(output.replaceAll(short[0]!, "0123456789ab").replaceAll(short[1] ?? short[0]!, "0123456789ab"))
+          }) }
+        })
+        const program = Effect.provide(seedMain(try path.toFileUrl(destination)), ConfigProvider.layer(ConfigProvider.fromUnknown(env)))
+        const result = try (collide ? program.pipe(Effect.provideService(ChildProcessSpawner, colliding)) : program).pipe(Effect.result)
+        const source = try fs.readFileString(destination)
+        const failing = input.fault === "repository" || input.fault === "queue" || collide
+        if (failing) {
+          if (result._tag !== "Failure" || source !== previous) return false
+          if (input.fault === "repository" && result.failure._tag !== "JjFailed") return false
+          if (collide && result.failure._tag !== "Refused") return false
+        } else {
+          if (result._tag !== "Success") return false
+          if (!source.startsWith("// Generated by scripts/mythical-seed.vibe from VibeLang's main (") || !source.includes(short.at(-1)!)) return false
+          const history = try Effect.try(() => JSON.parse(JSON.parse(/^export const HISTORY_JSON = (.+)$/m.exec(source)![1]!)) as History)
+          const titles = input.commits.map((commit) => TITLES[commit.title]!)
+          const folded = new Set(history.commits.map((commit) => commit.id))
+          if (JSON.stringify(history.real.map((real) => real.sha)) !== JSON.stringify(short) || history.main !== short.at(-1)) return false
+          if (history.real.some((real, index) => real.title !== titles[index] || !folded.has(real.mythical))) return false
+          if (history.commits.length < 1 || history.commits.length > ids.length || history.commits.some((commit) => commit.title === "")) return false
+          try seedMain(try path.toFileUrl(destination)).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
+          if ((try fs.readFileString(destination)) !== source) return false
+        }
+        // The CLI takes the real host's jj, so a reported collision has no CLI counterpart.
+        if (!input.cli || collide) return true
+        try fs.writeFileString(cliTarget, previous)
+        const done = try exec(try node(), [path.join(root, "scripts/mythical-seed.js")], env)
+        const written = try fs.readFileString(cliTarget)
+        if (input.fault === "repository" || input.fault === "queue") return done.status === 1 && written === previous && !done.stdout.includes("real commits")
+        return done.status === 0 && written === source && done.stdout.includes(`${ids.length} real commits`)
+      }
+    }, undefined, { minimum: REPLAY_FLOOR })
+  }
+}))
+
+const IMAGE = "registry.example.test/vibelang@sha256:" + "0".repeat(64)
+const Deploy = Schema.Struct({
+  stage: Schema.Literals(["prod", "coverage", PROBE_STAGE, "staging"]),
+  dev: Schema.Boolean,
+  domain: Schema.Literals(["", "factory.example.test"]),
+  image: Schema.Boolean,
+  token: Schema.Boolean,
+})
+
+/**
+ * The stack declares exactly what its stage allows: `vl-test` only the sandbox probe, its two objects and the image;
+ * every other stage the API Worker and the site (on the domain only outside dev), with the sandbox image and machine
+ * exactly when an image is configured. The only failure is a probe stage missing its image or token, named.
+ */
+it.live("infra/stack", () => run("infra/stack", Deploy, ({ stage, dev, domain, image, token }) => effect {
+  provide NodeServices.layer, FetchHttpClient.layer, WebCrypto.layer, Layer.provide(CredentialsStoreLive, NodeServices.layer), Layer.provide(ProfileStoreLive, NodeServices.layer) {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const config = { ALCHEMY_DEV: dev, ...(domain === "" ? {} : { VIBELANG_DOMAIN: domain }), ...(image ? { VIBELANG_SANDBOX_IMAGE: IMAGE } : {}), ...(token ? { VIBELANG_SANDBOX_PROBE_TOKEN: "probe-token" } : {}) }
+    const compiled = try exit(effect {
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown(config)), Alchemy.AlchemyContext = { dev, adopt: false, dotAlchemy: directory }, Alchemy.Stage = stage {
+        const compiled = try stack
+        // The selected state store resolves without initializing or running a provider lifecycle method.
+        const state = try Effect.provideContext(Layer.buildWithScope(stack.state, try Effect.scope), compiled.services)
+        return { compiled, store: Context.get(state, State) }
+      }
+    })
+    const probe = stage === PROBE_STAGE
+    if (compiled._tag === "Failure") {
+      const text = Cause.pretty(compiled.cause)
+      return probe && ((!image && text.includes("VIBELANG_SANDBOX_IMAGE")) || (!token && text.includes("VIBELANG_SANDBOX_PROBE_TOKEN")))
+    }
+    const { resources, bindings } = compiled.value.compiled
+    if (!Effect.isEffect(compiled.value.store)) return false
+    const keys = Object.keys(resources).sort()
+    const classes = (worker: string) => (bindings[worker] ?? []).flatMap((binding: { data: { bindings?: ReadonlyArray<{ type: string; className?: string }> } }) => binding.data.bindings ?? []).filter((binding) => binding.type === "durable_object_namespace").map((binding) => binding.className).sort()
+    if (probe) {
+      return image && token
+        && JSON.stringify(keys) === JSON.stringify(["VibelangSandboxImage", "VibelangSandboxProbe", "VibelangSandboxProbe/VibelangSandboxMachine-Containers"])
+        && JSON.stringify(classes("VibelangSandboxProbe")) === JSON.stringify(["VibelangSandboxAccount", "VibelangSandboxMachine"])
+        && resources.VibelangSandboxImage!.Props.image === IMAGE
+    }
+    const sandbox = image ? ["VibelangSandboxImage", "VibelangApi/VibelangSandboxMachine-Containers"] : []
+    return JSON.stringify(keys) === JSON.stringify(["VibelangApi", "vibelang-site", ...sandbox].sort())
+      && JSON.stringify(classes("VibelangApi")) === JSON.stringify(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts", ...(image ? ["VibelangSandboxAccount", "VibelangSandboxMachine"] : [])].sort())
+      && resources["vibelang-site"]!.Props.domain === (dev || domain === "" ? undefined : domain)
+      && resources["vibelang-site"]!.Props.env.API !== undefined
+      && (!image || resources.VibelangSandboxImage!.Props.image === IMAGE)
+  }
+}))
