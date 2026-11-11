@@ -3,15 +3,18 @@
 Never saved generated artifacts: insertion only, so every generated declaration, precondition, postcondition and
 body stays byte-identical. A lemma lsc fills only with `reveal f();` lines (`//@ opaque`, `//@ reveal`) and its own
 contract statements (each callee's `f_ensures(...)` call with the body's lets and branches around it, 0018 third-lane
-batch 25) counts as empty; its steps go after those lines. Recursive helpers lower as spec-callable Dafny functions whose postconditions live on
+batch 25) counts as empty; its steps go after the reveals and replace the contract statements, so a hand-stepped lemma
+keeps the body its steps were proved with (stacking both timed out `issueAncestorJoin_ensures`, batch 31), and
+lsc's `decreases` line is dropped (with it that lemma timed out at 300 s; without it, as before, it proves in 7 s). Recursive helpers lower as spec-callable Dafny functions whose postconditions live on
 fresh empty `_ensures` lemmas; the inductive steps below are how the backend discharges them (pendingCount
 precedent). Sandbox runtime traversals stay iterative; exact guard clauses use quantified source positions rather than
 calling loop-backed methods inside expressions (the documented method-spec tool boundary).
 """
 import re
 
+REVEAL_LINES = re.compile(r'(?:  reveal [A-Za-z_][A-Za-z0-9_]*\(\);\n)*')
 REVEALS_ONLY = re.compile(r'(?:  reveal [A-Za-z_][A-Za-z0-9_]*\(\);\n)*'
-                          r"(?:[ \t]+(?:[A-Za-z_][A-Za-z0-9_']*_ensures\([^\n]*\);|var [^\n]* := [^\n]*;|if [^\n]* \{|\} else \{|\})\n)*")
+                          r"(?:[ \t]+(?:[A-Za-z_][A-Za-z0-9_']*_ensures\([^\n]*\);|if [^\n]* \{ [A-Za-z_][A-Za-z0-9_']*_ensures\([^\n]*\); \}|var [^\n]* := [^\n]*;|if [^\n]* \{|\} else \{|\})\n)*")
 
 PENDING_COUNT_STEPS = '  if end > 0 {\n    pendingCount_ensures(pending, clientId, end - 1);\n  }\n'
 
@@ -383,6 +386,8 @@ def add_proof_steps(generated, source):
         # lsc writes only `reveal f();` lines for `//@ opaque` and `//@ reveal`; steps go after them.
         if len(matches) != 1 or not REVEALS_ONLY.fullmatch(matches[0].group('body')):
             raise ValueError('Expected one fresh empty lemma: ' + signature)
-        at = matches[0].end('body')
-        generated = generated[:at] + steps + generated[at:]
+        start, end = matches[0].start('body'), matches[0].end('body')
+        at = REVEAL_LINES.match(generated, start).end()
+        header = re.sub(r'^[ \t]+decreases[^\n]*\n', '', generated[matches[0].start():start], flags=re.MULTILINE)
+        generated = generated[:matches[0].start()] + header + generated[start:at] + steps + generated[end:]
     return generated

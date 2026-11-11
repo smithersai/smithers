@@ -388,14 +388,18 @@ class CheckedProofAdditions(unittest.TestCase):
         for invalid in [source.replace('reveal replayStep();', 'assert valid;'), source.replace('reveal replayStep();', 'reveal replayStep();\n  assert valid;')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/history/replayDecision.vibe')
 
-    def test_a_lemma_lsc_fills_with_contract_calls_takes_steps_after_them(self):
+    def test_hand_steps_replace_the_contract_calls_lsc_fills_a_lemma_with(self):
+        # Hand steps are a whole proof written without lsc's contract calls; stacking both timed out
+        # issueAncestorJoin_ensures (0018 third-lane batch 31).
         from proof_additions import add_proof_steps, LEMMA_STEPS
         signature, steps = LEMMA_STEPS['src/core/sandboxDecision.vibe'][0]
-        body = '  if end == 0 {\n  } else {\n    var x := f(end);\n    g_ensures(end - 1);\n  }\n'
-        source = signature + '\n  requires 0 <= end\n  ensures valid\n  decreases end\n{\n' + body + '}\n'
-        result = add_proof_steps(source, 'src/core/sandboxDecision.vibe')
-        self.assertEqual(result.replace(steps, '', 1), source)
-        self.assertLess(result.index('g_ensures(end - 1);'), result.index(steps))
+        head = signature + '\n  requires 0 <= end\n  ensures valid\n  decreases end\n{\n'
+        reveals = '  reveal f();\n'
+        body = '  if end == 0 {\n  } else {\n    var x := f(end);\n    g_ensures(end - 1);\n    if (0 <= (end - 1)) { h_ensures(end - 1); }\n  }\n'
+        result = add_proof_steps(head + reveals + body + '}\n', 'src/core/sandboxDecision.vibe')
+        # lsc's `decreases` goes too: with it the lemma timed out at 300 s; without it, as on main, it proves in 7 s.
+        self.assertEqual(result, head.replace('  decreases end\n', '') + reveals + steps + '}\n')
+        source = head + body + '}\n'
         for invalid in [source.replace('g_ensures(end - 1);', 'assert valid;'), source.replace('    var x := f(end);\n', '    var x := f(end);\n    assume false;\n')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/sandboxDecision.vibe')
 

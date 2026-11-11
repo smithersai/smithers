@@ -156,7 +156,9 @@ def verify(item):
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
    # Every assertion in Markdown composition, the full conversation and decide relations, and the replay importing their
    # contracts, is checked, without a symbol/position filter.
-   isolate = not is_mutation and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe',APP/'src/web/markdownDecision.vibe'}
+   # mockDecision's chunksOf proves unsplit only on some solver seeds (main's emission fails seeds 1 and 3); split it proves
+   # on every seed tried (0018 third-lane batch 31).
+   isolate = not is_mutation and origin in {APP/'src/core/conversation.vibe',APP/'src/core/decide.vibe',APP/'src/core/replayDecision.vibe',APP/'src/web/markdownDecision.vibe',APP/'src/core/mockDecision.vibe'}
    if isolate: flags.append('--isolate-assertions')
    # The isolated relations' wall limit only stops a hung solver; each obligation keeps its own solver limit.
    limit=time_limit(ts.stem,is_mutation,proof_source)
