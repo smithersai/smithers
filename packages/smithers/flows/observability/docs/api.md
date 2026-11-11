@@ -636,8 +636,11 @@ interface Options {
   96 letters, digits, spaces and `_ . : ' / @ -` is kept, up to `maxRecords`
   (200) distinct ones.
 - `codes`: the annotations read for a line's code, first present first.
-  Defaults to `defaultCodeFields`: `errorCode`, `code`, `reason`, `outcome`,
-  `error.type`, `error`, `name`, `status`. A value counts when it is an identifier of up
+  Defaults to `defaultCodeFields`: `errorCode`, `code`, `outcome`,
+  `error.type`, `status`. Each value read becomes a metric attribute, so name
+  only annotations whose values the program chooses from a fixed set; `name`,
+  `error` and `reason` often hold a person's name, a path or prose and are read
+  only when listed. A value counts when it is an identifier of up
   to 64 characters (letters, digits, `_ . : / @ -`) or a finite number. With
   none, the code is the `code`, `_tag` or name (not plain `Error`) of the first
   failure or defect in the line's cause, else `none`.
@@ -988,7 +991,8 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 Bridges Effect's tracer, logger, and metrics onto the supplied providers and
 the readers the `metricReader` factory returns, over the validated resource.
 Spans and log records carry the instrumentation scope `effect` with the Effect
-version.
+version. Nothing is redacted: spans, logs and metrics reach the supplied
+providers and readers as the program wrote them; only `Otlp.layer` redacts.
 Each bridge is installed only when its provider or factory is supplied, and a
 factory that returns an empty array registers no reader at all.
 
@@ -1041,7 +1045,9 @@ The OpenTelemetry exporters still read the standard transport variables
 process environment; the explicit `endpoint` always wins over
 `OTEL_EXPORTER_OTLP_ENDPOINT`. Headers set there reach this `endpoint`, so do
 not set them for a different collector. `Otlp.layer` reads none of these.
-Closing the scope
+Nothing is redacted: failure text, span and log attributes and metric
+attributes reach the collector as the program wrote them; use `Otlp.layer` for
+credential redaction. Closing the scope
 force-flushes both batch processors and collects the metric reader once, so
 release rather than the interval is the deterministic flush.
 
@@ -1076,6 +1082,8 @@ const layerOtel: (options: Options) => Layer.Layer<never, Resource.InvalidResour
 
 Builds a scoped browser OpenTelemetry layer over the validated resource. A
 layer with no processor factories at all still builds; it provides the resource
-and bridges nothing.
+and bridges nothing. Nothing is redacted: the factories' processors and
+readers receive spans, logs and metrics as the program wrote them; use
+`Otlp.layer` for credential redaction.
 
 `transform` applies the application privacy policy to OTLP JSON before credential redaction, size checks, splitting and transport. It runs for logs, metrics and traces, including exception events and span status messages. Keep the transformation synchronous and total.

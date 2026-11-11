@@ -34,6 +34,9 @@ export interface Options {
 /**
  * Builds a scoped browser OpenTelemetry layer. The web SDK owns every
  * processor and reader the factories return and shuts them down on release.
+ * Nothing is redacted: the processors and readers receive spans, logs and
+ * metrics as the program wrote them. Use `Otlp.layer` for credential
+ * redaction.
  *
  * @category layers
  * @since 0.1.0

@@ -57,6 +57,22 @@ export interface Telemetry {
  */
 export const TELEMETRY_LIMITS = { maxRequestBytes: 128 * 1024, maxRecords: 200 } as const
 
+/**
+ * The annotations `LogFailures` reads a failure line's code from, first present first (docs/observability.md#errors):
+ * its defaults plus `reason`, `error` and `name`, which the app sets only to codes and error types, never to what someone
+ * wrote.
+ */
+export const FAILURE_CODES: ReadonlyArray<string> = [
+  "errorCode",
+  "code",
+  "reason",
+  "outcome",
+  "error.type",
+  "error",
+  "name",
+  "status",
+]
+
 /** The tab's `service.name` on every record it exports. */
 export const WEB_SERVICE = "smithers-mvp-web"
 

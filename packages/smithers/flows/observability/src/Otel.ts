@@ -65,6 +65,9 @@ export interface Options {
  * Ownership splits: callers own provider flushing and shutdown, including
  * factory-built providers, while the layer scope shuts down every reader the
  * `metricReader` factory returned. No exporter is allocated by this module.
+ * Nothing is redacted: the providers and readers receive spans, logs and
+ * metrics as the program wrote them. Use `Otlp.layer` for credential
+ * redaction.
  *
  * @category layers
  * @since 0.1.0

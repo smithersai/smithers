@@ -142,10 +142,17 @@ You can still pass existing providers directly. The layer cannot change the
 resource they captured at construction. In that form, the resource option
 controls only the metric resource, not log or span resource attributes.
 Whichever form you use, spans and log records carry the instrumentation scope
-`effect` with the Effect version, and the span status and log attributes
-described in
-[What the collector receives](./export-to-a-collector.md#what-the-collector-receives). Construct both providers with the intended resource before injection,
-or use the factories above to receive the validated resource.
+`effect` with the Effect version. Construct both providers with the intended
+resource before injection, or use the factories above to receive the validated
+resource.
+
+`Otel.layerOtel`, `NodeOtel.layerOtel` and `BrowserOtel.layerOtel` do not
+redact. A failed span's error text, span and log attributes, log annotations
+and metric attributes reach your processors and exporters as the program wrote
+them, credentials included. Only `Otlp.layer` and `Otlp.layerFetch` apply the
+[credential redaction](./export-to-a-collector.md#credential-redaction). Use
+them, or redact in your own processors and exporters, when a span or log
+attribute can carry a credential.
 
 Each of the three is optional and each is bridged only when supplied, so a
 composition with a tracer and no meter installs only the tracer bridge. A

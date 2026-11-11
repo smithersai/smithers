@@ -30,9 +30,9 @@ describe("LogFailures", () => {
     counting(
       Effect.gen(function*() {
         yield* Effect.logInfo("chat ready")
-        yield* Effect.logWarning("outbox write sealed").pipe(Effect.annotateLogs({ reason: "owner", feature: "chat" }))
-        yield* Effect.logError("page error").pipe(Effect.annotateLogs({ name: "TypeError", feature: "app" }))
-        yield* Effect.logError("page error").pipe(Effect.annotateLogs({ name: "TypeError", feature: "app" }))
+        yield* Effect.logWarning("outbox write sealed").pipe(Effect.annotateLogs({ code: "owner", feature: "chat" }))
+        yield* Effect.logError("page error").pipe(Effect.annotateLogs({ "error.type": "TypeError", feature: "app" }))
+        yield* Effect.logError("page error").pipe(Effect.annotateLogs({ "error.type": "TypeError", feature: "app" }))
         yield* Effect.logFatal("engine gone")
         return {
           sealed: yield* count({ level: "warn", record: "outbox write sealed", code: "owner", area: "chat" }),
@@ -51,7 +51,7 @@ describe("LogFailures", () => {
       Effect.gen(function*() {
         yield* Effect.logWarning("a").pipe(Effect.annotateLogs({ outcome: "failed", errorCode: "sql:Connection" }))
         yield* Effect.logWarning("b").pipe(Effect.annotateLogs({ status: 503, errorCode: 503 }))
-        yield* Effect.logWarning("c").pipe(Effect.annotateLogs({ errorCode: "has a message in it", reason: "kept" }))
+        yield* Effect.logWarning("c").pipe(Effect.annotateLogs({ errorCode: "has a message in it", outcome: "kept" }))
         yield* Effect.logWarning("d", Cause.fail(new Refused()))
         yield* Effect.logWarning("e", Cause.die(new RangeError("quoted text")))
         yield* Effect.logWarning("f", Cause.die(new Error("quoted text")))
@@ -73,6 +73,27 @@ describe("LogFailures", () => {
         ["i", "none"]
       ])
     })))
+
+  it.effect("never takes a code from an annotation that may hold what someone wrote, unless told to", () =>
+    Effect.gen(function*() {
+      const lines = Effect.gen(function*() {
+        yield* Effect.logWarning("save failed").pipe(Effect.annotateLogs({ name: "alice@example.com" }))
+        yield* Effect.logWarning("save failed").pipe(Effect.annotateLogs({ error: "acme/private-repo" }))
+        yield* Effect.logWarning("save failed").pipe(Effect.annotateLogs({ reason: "bob.smith" }))
+        yield* Effect.logWarning("save failed", Cause.fail(new Refused())).pipe(
+          Effect.annotateLogs({ name: "alice@example.com" })
+        )
+      })
+      const byDefault = yield* counting(lines, { records: ["save failed"] })
+      expect(byDefault.recent.map(({ code }) => code)).toEqual(["none", "none", "none", "Refused"])
+      const optedIn = yield* counting(lines, { records: ["save failed"], codes: ["name", "error", "reason"] })
+      expect(optedIn.recent.map(({ code }) => code)).toEqual([
+        "alice@example.com",
+        "acme/private-repo",
+        "bob.smith",
+        "alice@example.com"
+      ])
+    }))
 
   it.effect("takes a line's code and area from the fields it is told to read", () =>
     counting(

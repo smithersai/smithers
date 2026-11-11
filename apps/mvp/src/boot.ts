@@ -126,7 +126,7 @@ import { recordUnhandled } from "./boundary"
 import { markStage, recordStages, type Timeline } from "./bootStages"
 import { codeOf } from "./errorCode"
 import type { HostRecord, HostRecords } from "./hostRecords"
-import { BROWSER_TELEMETRY, EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
+import { BROWSER_TELEMETRY, EXPORTED_SPANS, FAILURE_CODES, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
 /** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
 export const bootTime = Metric.histogram("smithers_web_boot_ms", {
@@ -462,7 +462,7 @@ export const appLayer = <S = never>(
             // retry (docs/observability.md#failed-requests). Above the exporter, which sends through the fetch below it.
             FetchFailures.layer({ route: apiRoute(origin) }),
             // Every line at Warn or above counted by record, code and feature, and the latest kept for a bug report.
-            LogFailures.layer({ records: BROWSER_TELEMETRY.records }),
+            LogFailures.layer({ records: BROWSER_TELEMETRY.records, codes: FAILURE_CODES }),
           ).pipe(
             // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab.
             Layer.provideMerge(

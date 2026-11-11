@@ -10,9 +10,11 @@
  *
  * Nothing it keeps can carry what someone wrote: a record is the line's
  * message only when the program names it (`records`), a code is an
- * annotation's identifier or a failure's tag or name, never a message, and
- * every value set is capped, so a careless line costs `other`, never a new
- * series.
+ * identifier from an annotation the program reserves for codes or a
+ * failure's tag or name, never a message, and every value set is capped, so a
+ * careless line costs `other`, never a new series. Annotations such as
+ * `name`, `error` and `reason` often hold a person's name, a path or prose, so
+ * they become codes only when the program names them in {@link Options.codes}.
  *
  * @since 1.0.0-rc.17
  */
@@ -43,8 +45,10 @@ export interface Options {
   readonly records?: Iterable<string> | undefined
   /**
    * The annotations read for a line's code, first present first. Defaults to
-   * {@link defaultCodeFields}. Without one, the code is the tag or name of
-   * the first failure or defect in the line's cause, else `none`.
+   * {@link defaultCodeFields}. Name only annotations whose values the program
+   * chooses from a fixed set: each value read becomes a metric attribute.
+   * Without one, the code is the tag or name of the first failure or defect in
+   * the line's cause, else `none`.
    */
   readonly codes?: ReadonlyArray<string> | undefined
   /** The annotation naming a line's area. Defaults to `feature`; absent, `none`. */
@@ -96,7 +100,9 @@ export const failures = Metric.counter("flows_observability_log_failures", {
 
 /**
  * The annotations read for a line's code when {@link Options.codes} is
- * omitted, first present first.
+ * omitted, first present first. Each names a code by convention. `name`,
+ * `error` and `reason` are not here: their values are as often a person's
+ * name, a repository or prose as a code.
  *
  * @category constants
  * @since 1.0.0-rc.17
@@ -104,11 +110,8 @@ export const failures = Metric.counter("flows_observability_log_failures", {
 export const defaultCodeFields: ReadonlyArray<string> = [
   "errorCode",
   "code",
-  "reason",
   "outcome",
   "error.type",
-  "error",
-  "name",
   "status"
 ]
 

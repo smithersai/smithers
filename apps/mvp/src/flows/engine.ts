@@ -6,7 +6,7 @@ import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { TELEMETRY_ROUTE } from "../features/chat/contract"
 import { tabHandlers } from "../features/theme/store"
 import { apiRoute } from "../apiRoutes"
-import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, TELEMETRY_LIMITS } from "../telemetry"
+import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, FAILURE_CODES, TELEMETRY_LIMITS } from "../telemetry"
 import { ENGINE_NAME } from "./contract"
 import { ClientEngine } from "./dispatch"
 import { answer, type Endpoint } from "./tabPort"
@@ -23,7 +23,7 @@ import { answer, type Endpoint } from "./tabPort"
  * Warn or above is counted (`LogFailures`).
  */
 export const engineTelemetry = (origin: string) =>
-  LogFailures.layer({ records: BROWSER_TELEMETRY.records }).pipe(
+  LogFailures.layer({ records: BROWSER_TELEMETRY.records, codes: FAILURE_CODES }).pipe(
     Layer.provideMerge(
       Otlp.layerFetch({
         baseUrl: `${origin}${TELEMETRY_ROUTE}`,

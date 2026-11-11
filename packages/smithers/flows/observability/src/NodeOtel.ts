@@ -46,6 +46,9 @@ export interface Options {
  * standard `OTEL_EXPORTER_OTLP_*` transport variables (headers, timeout,
  * compression, TLS files) from the process environment and send them to the
  * explicit endpoint, which always wins over `OTEL_EXPORTER_OTLP_ENDPOINT`.
+ * Nothing is redacted: failure text, span and log attributes and metric
+ * attributes reach the collector as the program wrote them. Use `Otlp.layer`
+ * for credential redaction.
  *
  * @category layers
  * @since 0.1.0
