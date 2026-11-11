@@ -5,6 +5,7 @@
  * No mutation — each let extends the chain, lookup walks it.
  */
 
+import { isRegexTestName } from "./regex.js";
 import type { RawExpr, RawStmt, RawFunction, RawModule } from "./rawir.js";
 import type { Ty, TExpr, TStmt, TFunction, TModule, TParam, CallKind } from "./typedir.js";
 import { isBigInt, tyEqual, isTerminatorKind } from "./typedir.js";
@@ -905,6 +906,11 @@ function resolveExpr(e: RawExpr, ctx: Ctx): TExpr {
     }
 
     case "call": {
+      // A RegExp test (extract.ts): a pure boolean of its string, decided by the proved matcher (regex.ts).
+      if (e.fn.kind === "var" && isRegexTestName(e.fn.name) && e.args.length === 1) {
+        const subject = resolveExpr(e.args[0], ctx);
+        return { kind: "call", fn: { kind: "var", name: e.fn.name, ty: { kind: "unknown" } }, args: [subject], ty: { kind: "bool" }, callKind: "pure" };
+      }
       // perm(a, b): spec-only permutation predicate — true iff `a` and `b` are
       // reorderings of each other (equal as multisets). Lowers to the `Perm`
       // preamble (Dafny `multiset(a) == multiset(b)`; Lean `a.toList ~ b.toList`).

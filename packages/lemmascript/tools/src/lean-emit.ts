@@ -6,6 +6,7 @@
  */
 
 import type { Expr, Stmt, Decl, Module, MatchPattern } from "./ir.js";
+import { isRegexTestName } from "./regex.js";
 import { anyExpr, usesNameInDecl, patternBinders } from "./ir.js";
 import type { Ty } from "./typedir.js";
 import { freshName, freshNameWhere } from "./names.js";
@@ -463,6 +464,7 @@ function emitExpr(e: Expr, parentPrec?: number): string {
       // `multiset(a) == multiset(b)`; the Lean image is `a.toList ~ b.toList`,
       // which mathlib's `List.Perm` provides (reflexivity, symmetry,
       // `perm_append_comm`, and `Perm.count_eq` for the count-invariance payoff).
+      if (isRegexTestName(e.fn)) throw new Error("a regular expression test is supported on the Dafny backend only");
       if (e.fn === "Perm" && args.length === 2) return `(${args[0]}.toList).Perm (${args[1]}.toList)`;
       return `${e.fn} ${args.join(" ")}`;
     }

@@ -49,6 +49,7 @@ A guarded optional record, or an already non-nullable record/primitive, may use 
 contract (`spec-nullish-narrowed.ts`). Narrowing keeps the present value, including zero, false and the empty string.
 Array indexes retain their bounds-dependent fallback. The wrong guarded-result and falsy-value twins must fail a
 Dafny postcondition. Unknown, opaque and nullable types do not acquire a presence assumption.
+| `pattern.test(s)` on a literal pattern, or a module `const` holding one, is decided by a Dafny matcher (Brzozowski derivatives) proved equal to the pattern's language, and `test` to "some substring with the anchored ends is in it" (`JsTestCorrect`). A contract names a test with `\\matches("pattern", s)`. The subset: code units, `.`, classes and `\\d \\w \\s` with their negations, groups, alternation, `* + ? {m} {m,} {m,n}` (lazy too), `^` first and `$` last, no flags. Everything else (flags, `\\b`, lookaround, backreferences, `exec`, `match`, `replace`) is refused by name. Dafny backend only (`tools/src/regex.ts`, `regex.ts`, `regex-wrong.ts`, `tests/regex.test.ts`, which also compares the subset's semantics with the native RegExp) | Offered upstream later |
 
 Each patch is offered back upstream later. Will decides any GitHub contribution.
 

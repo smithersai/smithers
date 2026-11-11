@@ -5,6 +5,7 @@
 
 import type { RawExpr } from "./rawir.js";
 import { normalizeBigIntLiteral } from "./rawir.js";
+import { regexTestName } from "./regex.js";
 
 export type Expr = RawExpr;
 
@@ -17,7 +18,8 @@ type Token =
   | { type: "ident"; value: string }
   | { type: "op"; value: string }
   | { type: "punc"; value: string }
-  | { type: "result"; value: undefined };
+  | { type: "result"; value: undefined }
+  | { type: "matches"; value: undefined };
 
 const MULTI_OPS = ["<==>", "==>", "===", "!==", "==", "!=", ">=", "<=", "&&", "||", "??"];
 
@@ -34,6 +36,12 @@ function tokenize(input: string): Token[] {
   let i = 0;
   while (i < input.length) {
     if (/\s/.test(input[i])) { i++; continue; }
+
+    if (input[i] === "\\" && input.slice(i + 1, i + 8) === "matches") {
+      tokens.push({ type: "matches", value: undefined });
+      i += 8;
+      continue;
+    }
 
     if (input[i] === "\\" && input.slice(i + 1, i + 7) === "result") {
       tokens.push({ type: "result", value: undefined });
@@ -259,6 +267,16 @@ class Parser {
     const t = this.peek();
     if (!t) throw new Error("Unexpected end of expression");
     if (t.type === "result") { this.advance(); return { kind: "result" }; }
+    // \matches("pattern", s): `/pattern/.test(s)` in a contract, decided by the proved matcher (regex.ts).
+    if (t.type === "matches") {
+      this.advance();
+      this.expect("punc", "(");
+      const pattern = this.expect("str").value as string;
+      this.expect("punc", ",");
+      const subject = this.parseIff();
+      this.expect("punc", ")");
+      return { kind: "call", fn: { kind: "var", name: regexTestName(pattern, "") }, args: [subject] };
+    }
     if (t.type === "num") { this.advance(); return { kind: "num", value: t.value }; }
     if (t.type === "bigint") { this.advance(); return { kind: "bigint", value: t.value }; }
     if (t.type === "str") { this.advance(); return { kind: "str", value: t.value }; }

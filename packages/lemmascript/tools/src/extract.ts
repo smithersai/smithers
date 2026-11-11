@@ -6,6 +6,7 @@
  */
 
 import { desugarMessageUnions } from "./message-union.js";
+import { RegexRefused, regexTestName } from "./regex.js";
 import { Project, Node, FunctionDeclaration, InterfaceDeclaration, SourceFile, TypeAliasDeclaration, Type, SyntaxKind, Expression, ElementAccessExpression, ScriptTarget, VariableDeclaration, ts } from "ts-morph";
 import type { FieldInfo, TypeDeclInfo, VariantInfo } from "./types.js";
 import { initTypeParser } from "./types.js";
@@ -543,6 +544,20 @@ function _eraseGenerics(tsType: string): string {
   });
 }
 
+/** The literal pattern `node` is, or the one a module `const` it names was initialized with. */
+function regexLiteralOf(node: Node): { source: string; flags: string } | null {
+  let literal: Node | undefined = node;
+  if (Node.isIdentifier(node)) {
+    const declaration = node.getSymbol()?.getDeclarations()[0];
+    literal = declaration && Node.isVariableDeclaration(declaration) && declaration.getVariableStatement()?.getDeclarationKind() === "const"
+      ? declaration.getInitializer() : undefined;
+  }
+  if (!literal || !Node.isRegularExpressionLiteral(literal)) return null;
+  const text = literal.getText();
+  const end = text.lastIndexOf("/");
+  return { source: text.slice(1, end), flags: text.slice(end + 1) };
+}
+
 function extractExpr(node: Expression): RawExpr {
   // Havoc key matching: replace matching calls or new expressions with havoc expression
   if (_havocKey && (Node.isCallExpression(node) || Node.isNewExpression(node))) {
@@ -662,6 +677,18 @@ function extractExpr(node: Expression): RawExpr {
         const combined = buildSpreadConcat(argNodes);
         const fnName = callee.getName() === "max" ? "MaxOfSeq" : "MinOfSeq";
         return { kind: "call", fn: { kind: "var", name: fnName }, args: [combined] };
+      }
+    }
+    // `pattern.test(s)` on a literal pattern, or a module constant holding one: the proved matcher of regex.ts. Every
+    // other use of a regular expression is refused by name.
+    if (Node.isPropertyAccessExpression(callee)) {
+      const method = callee.getName();
+      const receiver = regexLiteralOf(callee.getExpression());
+      if (receiver && method === "test" && node.getArguments().length === 1) {
+        return { kind: "call", fn: { kind: "var", name: regexTestName(receiver.source, receiver.flags) }, args: [extractExpr(node.getArguments()[0] as Expression)] };
+      }
+      if (receiver || node.getArguments().some(a => regexLiteralOf(a as Expression))) {
+        throw new RegexRefused(`a regular expression's ${method}(...) is outside the supported subset: only test(s) on a literal pattern`);
       }
     }
     // Auto-extern: if the callee resolves (via ts-morph) to a symbol declared
@@ -2583,7 +2610,8 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
           // extracted via the function path if marked `//@ verify`.
           const declTsType = typeToString(decl.getType());
           const isAnonObject = declTsType.startsWith("__");
-          if (init && !isHugeString && !isAnonObject && !Node.isArrowFunction(init)) {
+          // A regular-expression constant is read where it is tested (regexLiteralOf), never as a value.
+          if (init && !isHugeString && !isAnonObject && !Node.isArrowFunction(init) && !Node.isRegularExpressionLiteral(init)) {
             try {
               constants.push({
                 name: decl.getName(),

@@ -8,6 +8,7 @@ import type { Ty } from "./typedir.js";
 import { freshName, freshNameWhere, userNames } from "./names.js";
 import { renameFreeVar } from "./transform.js";
 import { DEFAULT_OPTIONS, resolveOptions, type LscOptions } from "./config.js";
+import { isRegexTestName, regexPreamble } from "./regex.js";
 
 /** `reveal f();` for each opaque function a proof body may unfold (`//@ opaque`, `//@ reveal`). */
 function revealLines(names: string[]): string[] {
@@ -657,6 +658,7 @@ function emitExpr(e: Expr): string {
       if (e.fn === "MaxOfSeq") { needPreamble("MathMax"); needPreamble("MaxOfSeq"); }
       if (e.fn === "MinOfSeq") { needPreamble("MathMin"); needPreamble("MinOfSeq"); }
       if (e.fn === "Perm") needPreamble("Perm");
+      if (isRegexTestName(e.fn)) needPreamble("JsRegex");
       if (e.fn === "SetFromSeq") needPreamble("SetFromSeq");
       // A constructor application must spell the name the same way the
       // datatype declaration does — `dafnyCtorName`, not `escapeName`, since
@@ -1619,6 +1621,7 @@ const PREAMBLE_CODE: [string, string | (() => string)][] = [
   ["MaxOfSeq", MAX_OF_SEQ],
   ["MinOfSeq", MIN_OF_SEQ],
   ["Perm", PERM],
+  ["JsRegex", () => regexPreamble()],
   ["SetFromSeq", SET_FROM_SEQ],
 ];
 
