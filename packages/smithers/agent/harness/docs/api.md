@@ -1710,11 +1710,13 @@ completion's text, and "no change is needed" is a legitimate answer.
 The completion its own cell wrote before a call in it failed. A cell is
 written whole before any call in it settles, and a failed call resolves
 `{ ok: false }` rather than throwing, so a `ctx.done` after a failed request
-still runs. When a completing frame settled a failed call and the cell never
-reads a call envelope's `ok` or `error` (`inspects`), `find` names the
-failures, and the controller hands the frame back once (`cap`) with `demand`,
-journaled as `FailedCallDemanded`. A completion that already quotes the
-flow's failure reason is spared. With no frame left or the demand spent, the
+still runs. When a completing frame settled a failed call and the cell's
+code never reads the `ok` or `error` of the envelope that call returned
+(`inspects`), `find` names the failures, and the controller hands the frame
+back once (`cap`) with `demand`, journaled as `FailedCallDemanded`. The test
+is per failed call: a branch on another call's envelope, or `ok` in a string
+or a comment, spares nothing. A completion that already quotes the flow's
+failure reason is spared. With no frame left or the demand spent, the
 answer stands with the failures appended by `state` under `stated`. Nothing
 here asks a model or reads what the claim means.
 

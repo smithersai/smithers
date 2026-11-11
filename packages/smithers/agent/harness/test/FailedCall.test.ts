@@ -19,6 +19,7 @@ import { descriptor, emits, of, pattern, run, window } from "./fixtures/cellTurn
 import type * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 
 const delegate = descriptor("agent.delegate", { tier: "irreversible" })
+const read = descriptor("read")
 
 const seatsFull: ScriptedEngine.CallStep = {
   _tag: "Failure",
@@ -53,7 +54,7 @@ const requesting = (
       unresolvedCap: 0,
       claimCap: 0
     }),
-    flows: [delegate],
+    flows: [delegate, read],
     script: cells.map(emits),
     calls
   })
@@ -132,6 +133,30 @@ describe("CellTurn completion over a failed call", () => {
     expect(JSON.stringify(answer(events))).not.toContain(FailedCall.stated)
   })
 
+  it("states a failure whose own envelope the cell never reads, whatever else in the cell says ok or error", async () => {
+    const delegating = `await ctx.call("agent.delegate", { id: "design", title: "Design", prompt: "design it" })`
+    const readOk: ScriptedEngine.CallStep = { _tag: "Success", value: { text: "a" } }
+    const cells: ReadonlyArray<readonly [string, ReadonlyArray<ScriptedEngine.CallStep>]> = [
+      // Another call's envelope is branched on; the failed one is not.
+      [
+        `const f = await ctx.call("read", { path: "a" })
+         if (f.ok) console.log(f.value)
+         ${delegating}
+         ctx.done("Delegated the design.")`,
+        [readOk, seatsFull]
+      ],
+      [`${delegating}\nctx.done("Delegated the design. ok")`, [seatsFull]],
+      [`${delegating}\n// r.ok\nctx.done("Delegated the design.")`, [seatsFull]],
+      [`const log = console\n${delegating}\nlog.error("x")\nctx.done("Delegated the design.")`, [seatsFull]]
+    ]
+    for (const [cell, calls] of cells) {
+      const { events } = await requesting([cell], calls)
+      const text = JSON.stringify(answer(events))
+      expect(text, cell).toContain(FailedCall.stated)
+      expect(text, cell).toContain("Three workers are active")
+    }
+  })
+
   it("says nothing about a failure an earlier frame already showed the model", async () => {
     const { events } = await requesting(
       [
@@ -159,6 +184,37 @@ describe("FailedCall", () => {
     }
   })
 
+  it("reads only the envelope of a call to the named flow, through the program's own bindings", () => {
+    const bound = `const r = await ctx.call("a", {})`
+    const reading = [
+      `${bound}\nif (!r.ok) {}`,
+      `(await ctx.call("a", {})).ok`,
+      `${bound}\nconst all = [r]\nall[0].error`,
+      `const { ok } = await ctx.call("a", {})`,
+      `${bound}\nlet ok\n;({ ok } = r)`,
+      `const all = [await ctx.call("a", {})]\nfor (const { error } of all) {}`,
+      `${bound}\nr["ok"]`,
+      `${bound}\n;(r as { ok: boolean }).ok`,
+      `${bound}\nr!.error.message`,
+      // A flow computed at run time may be the one that failed.
+      `const r = await ctx.call(name, {})\nr.ok`
+    ]
+    for (const source of reading) expect(FailedCall.inspects(source, "a"), source).toBe(true)
+    const blind = [
+      `const f = await ctx.call("b", {})\nf.ok\nawait ctx.call("a", {})`,
+      `await ctx.call("a", {})\nctx.done("r.ok")`,
+      `await ctx.call("a", {})\n// r.ok`,
+      `await ctx.call("a", {})\nconst log = console\nlog.error("x")`,
+      `const { value, ...rest } = await ctx.call("a", {})\nrest[0]`,
+      `const f = await ctx.call("b", {})\nconst { ok } = f\nawait ctx.call("a", {})`,
+      `let x\nx = await ctx.call("a", {})\nfor (const y of [x]) {}`,
+      // A call made outside the cell is never another call's envelope.
+      `const f = await ctx.call("b", {})\nf.ok`,
+      "r.ok("
+    ]
+    for (const source of blind) expect(FailedCall.inspects(source, "a"), source).toBe(false)
+  })
+
   it("names every failed call a blind claim was written before, and none that succeeded", () => {
     const ok = { flow: "ui.publish", ok: true, message: undefined }
     expect(FailedCall.find([ok, failed], "Delegated.", "")).toEqual([
@@ -166,6 +222,11 @@ describe("FailedCall", () => {
     ])
     expect(FailedCall.find([failed], "Delegated.", "if (r.ok === false) {}")).toEqual([])
     expect(FailedCall.find([failed], "Not delegated: seats full", "")).toEqual([])
+    // A branch on one call's envelope spares only that call.
+    const other = { flow: "tab.read", ok: false, message: undefined }
+    expect(
+      FailedCall.find([other, failed], "Delegated.", `const r = await ctx.call("agent.delegate", {})\nif (r.ok) {}`)
+    ).toEqual([{ flow: "tab.read", message: "" }])
   })
 
   it("reports a failure the flow gave no reason for, whatever the claim says", () => {

@@ -22,11 +22,13 @@
  * the model. The harness cannot decide from the sentence whether it states
  * the failure, and it does not try: it hands the frame back once with the
  * failure, as a demand, so the next completion is written by a model that has
- * read the result. Two exact tests spare a cell that was written to handle the
- * failure: one whose source reads a call envelope's `ok` or `error`, the
- * branch the cell prompt teaches, and one whose completion already quotes the
- * flow's own failure reason. Neither reads what the claim means; each reads
- * whether the claim could have depended on the result at all.
+ * read the result. Two exact tests spare a failed call the cell was written to
+ * handle: a cell whose code reads the `ok` or `error` of the envelope that
+ * call returned, the branch the cell prompt teaches, and a completion that
+ * already quotes the flow's own failure reason. Each is decided per failed
+ * call: a branch on another call's envelope, or `ok` in a string or a comment,
+ * spares nothing. Neither reads what the claim means; each reads whether the
+ * claim could have depended on the result at all.
  *
  * Where no frame is left to hand back, or the demand was already spent, the
  * completion stands with the failure appended to it by {@link state}. The
@@ -36,6 +38,11 @@
  *
  * @since 1.0.0-rc.1
  */
+
+import type * as Syntax from "@babel/types"
+import * as Source from "./internal/unobservedCall.ts"
+
+type Node = Source.Node
 
 /**
  * How many completions one run may have handed back for a failed call.
@@ -95,35 +102,142 @@ const reasonPrefix = /^Flow \S+ failed: /
  */
 export const reason = (failure: Failure): string => failure.message.replace(reasonPrefix, "").trim()
 
+/** Whether a member or pattern key spells an envelope's `ok` or `error`. */
+const envelopeKey = (key: Node, computed: boolean): boolean => {
+  const name = !computed && key.type === "Identifier" ? key.name : key.type === "StringLiteral" ? key.value : ""
+  return name === "ok" || name === "error"
+}
+
 /**
- * Whether a cell's source reads a call envelope's `ok` or `error`.
+ * Whether a `ctx.call` site could have made a call to `flow`: it names that
+ * flow, or names one only the run computes.
+ */
+const makes = (site: Node, flow: string | undefined): boolean => {
+  const [named] = (site as Syntax.CallExpression).arguments
+  return flow === undefined || named?.type !== "StringLiteral" || named.value === flow
+}
+
+/** Strips what only retypes or awaits a value: `(await r)!` is `r`. */
+const unwrap = (node: Node): Node => {
+  switch (node.type) {
+    case "AwaitExpression":
+      return unwrap(node.argument)
+    case "TSNonNullExpression":
+    case "TSAsExpression":
+    case "TSSatisfiesExpression":
+    case "TSTypeAssertion":
+      return unwrap(node.expression)
+    default:
+      return node
+  }
+}
+
+/** The names holding an envelope one of `sites` returned, directly or through the program's own copies. */
+const holders = (moves: ReturnType<typeof Source.flows>, sites: ReadonlySet<Node>): ReadonlySet<string> => {
+  const held = new Set<string>()
+  const holds = (node: Node): boolean =>
+    sites.has(node) ||
+    (node.type === "Identifier" ? held.has(node.name) : Source.referencing(node).some(holds))
+  for (let grew = true; grew;) {
+    grew = false
+    for (const [names, from] of moves) {
+      if (names.every((name) => held.has(name)) || !holds(from)) continue
+      for (const name of names) held.add(name)
+      grew = true
+    }
+  }
+  return held
+}
+
+/**
+ * Whether a cell's code reads the `ok` or `error` of an envelope a call to
+ * `flow` returned; of any call's envelope when `flow` is omitted.
  *
- * `r.ok`, `r?.error`, `r["ok"]` and `const { ok, error } = r` all count;
- * `console.error` does not. A cell that reads either wrote a branch for a
- * failed call, so its completion is not one written blind.
+ * `r.ok`, `r?.error`, `r["ok"]`, `(await ctx.call(…)).ok` and
+ * `const { ok, error } = r` all count when `r` holds that call's envelope,
+ * directly or through the program's own bindings. Text in a string or a
+ * comment never counts, nor does a method call such as `log.error(…)`, nor
+ * the envelope of a call to another flow. A call made through code outside
+ * the cell, such as a helper an earlier cell defined, cannot be traced to a
+ * binding, so for a cell with no `ctx.call` that could have made it a read
+ * of any name not holding another call's envelope counts. A cell that reads
+ * the envelope wrote a branch for its failure, so its completion is not one
+ * written blind.
  *
  * @category predicates
  * @since 1.0.0-rc.1
  */
-export const inspects = (source: string): boolean =>
-  /(?<!\bconsole)\??\.\s*(?:ok|error)\b|\[\s*["'`](?:ok|error)["'`]\s*\]|\{[^{}]*\b(?:ok|error)\b[^{}]*\}\s*=[^=>]/
-    .test(source)
+export const inspects = (source: string, flow?: string): boolean => {
+  const program = Source.parseCell(source)
+  if (program === undefined) return false
+  const all = new Set<Node>()
+  const collect = (node: Node): void => {
+    if (Source.ctxCall(node, "call")) all.add(node)
+    for (const child of Source.children(node)) collect(child)
+  }
+  collect(program.program)
+  const sites = new Set([...all].filter((site) => makes(site, flow)))
+  const moves = Source.flows(program.program)
+  // Untraceable: the call was made outside the cell, so any name but one
+  // holding another call's envelope may hold it.
+  const traced = sites.size > 0
+  const held = holders(moves, traced ? sites : all)
+  const envelope = (node: Node): boolean => {
+    const inner = unwrap(node)
+    if (inner.type === "MemberExpression" || inner.type === "OptionalMemberExpression") return envelope(inner.object)
+    if (inner.type === "Identifier") return traced === held.has(inner.name)
+    return sites.has(inner)
+  }
+  const destructures = (pattern: Node, from: Node | null | undefined): boolean =>
+    pattern.type === "ObjectPattern" && from != null && envelope(from) &&
+    pattern.properties.some((property) =>
+      property.type === "ObjectProperty" && envelopeKey(property.key, property.computed)
+    )
+  const reads = (node: Node, callee: boolean): boolean => {
+    switch (node.type) {
+      case "MemberExpression":
+      case "OptionalMemberExpression":
+        if (!callee && envelopeKey(node.property, node.computed) && envelope(node.object)) {
+          return true
+        }
+        break
+      case "VariableDeclarator":
+        if (destructures(node.id, node.init)) return true
+        break
+      case "AssignmentExpression":
+        if (destructures(node.left, node.right)) return true
+        break
+      case "ForOfStatement":
+        if (
+          node.left.type === "VariableDeclaration" && destructures(node.left.declarations[0]!.id, node.right)
+        ) return true
+        break
+      case "CallExpression":
+      case "OptionalCallExpression":
+        // `log.error(…)` calls a method; an envelope's `error` is not one.
+        return reads(node.callee, true) || node.arguments.some((argument) => reads(argument, false))
+    }
+    return Source.children(node).some((child) => reads(child, false))
+  }
+  return reads(program.program, false)
+}
 
 /**
  * The failed calls a completion was written before, oldest first.
  *
- * Every call this frame settled with `ok: false`, unless the cell's source
- * inspects call envelopes (see {@link inspects}), and except one whose reason
- * the claim already quotes: that cell read the result and wrote from it. A
- * failure with no message is named by its flow alone and is never quoted, so
- * it is always reported.
+ * Every call this frame settled with `ok: false`, except one whose envelope
+ * the cell's source reads (see {@link inspects}) and one whose reason the
+ * claim already quotes: that cell read the result and wrote from it. A branch
+ * on one call's envelope spares no other call. A failure with no message is
+ * named by its flow alone and is never quoted, so it is reported unless its
+ * envelope is read.
  *
  * @category constructors
  * @since 1.0.0-rc.1
  */
 export const find = (calls: ReadonlyArray<Settled>, claim: string, source: string): ReadonlyArray<Failure> =>
-  inspects(source) ? [] : calls.flatMap((call): ReadonlyArray<Failure> => {
-    if (call.ok) return []
+  calls.flatMap((call): ReadonlyArray<Failure> => {
+    if (call.ok || inspects(source, call.flow)) return []
     const failure = { flow: call.flow, message: call.message ?? "" }
     const said = reason(failure)
     return said !== "" && claim.includes(said) ? [] : [failure]

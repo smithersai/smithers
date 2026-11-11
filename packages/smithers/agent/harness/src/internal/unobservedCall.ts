@@ -90,7 +90,13 @@ export interface Unobserved {
   readonly summary: string
 }
 
-type Node = Syntax.Node
+/**
+ * A node of a parsed cell.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export type Node = Syntax.Node
 
 const isNode = (value: unknown): value is Node =>
   value !== null && typeof value === "object" && typeof (value as { type?: unknown }).type === "string"
@@ -98,7 +104,13 @@ const isNode = (value: unknown): value is Node =>
 /** Keys that hold positions, comments and parser detail rather than children. */
 const skipped = new Set(["loc", "start", "end", "extra", "leadingComments", "trailingComments", "innerComments"])
 
-const children = (node: Node): ReadonlyArray<Node> => {
+/**
+ * A node's syntactic children, positions and comments aside.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export const children = (node: Node): ReadonlyArray<Node> => {
   const found: Array<Node> = []
   for (const [key, value] of Object.entries(node)) {
     if (skipped.has(key)) continue
@@ -113,14 +125,23 @@ const ctxMember = (node: Node, name: string): boolean =>
   node.object.type === "Identifier" && node.object.name === "ctx" &&
   node.property.type === "Identifier" && node.property.name === name
 
-const ctxCall = (node: Node, name: string): boolean =>
+/**
+ * Whether a node calls `ctx.<name>`.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export const ctxCall = (node: Node, name: string): boolean =>
   (node.type === "CallExpression" || node.type === "OptionalCallExpression") && ctxMember(node.callee, name)
 
 /**
  * The nodes a reference can hide in: a non-computed property or key names
  * nothing, so `x.seen` does not read `seen`.
+ *
+ * @since 1.0.0-rc.1
+ * @private
  */
-const referencing = (node: Node): ReadonlyArray<Node> => {
+export const referencing = (node: Node): ReadonlyArray<Node> => {
   switch (node.type) {
     case "MemberExpression":
     case "OptionalMemberExpression":
@@ -167,8 +188,13 @@ const targets = (node: Node): ReadonlyArray<string> => {
 /** The names `ctx` and `console` are the realm's, never a result's. */
 const realm = new Set(["ctx", "console"])
 
-/** Every way the program moves a value into a name: `[targets, source]`. */
-const flows = (root: Node): ReadonlyArray<readonly [ReadonlyArray<string>, Node]> => {
+/**
+ * Every way the program moves a value into a name: `[targets, source]`.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export const flows = (root: Node): ReadonlyArray<readonly [ReadonlyArray<string>, Node]> => {
   const found: Array<readonly [ReadonlyArray<string>, Node]> = []
   const visit = (node: Node): void => {
     switch (node.type) {
@@ -496,6 +522,27 @@ const keepsResult = (root: Node): boolean => {
 }
 
 /**
+ * A cell's source parsed as the realm runs it, or nothing when it does not
+ * parse.
+ *
+ * @since 1.0.0-rc.1
+ * @private
+ */
+export const parseCell = (source: string): Syntax.File | undefined => {
+  try {
+    return parse(source, {
+      sourceType: "script",
+      plugins: ["typescript"],
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+      errorRecovery: true
+    })
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Whether a completing cell's source wrote its completion blind: it kept a
  * call's result for the model alone and completed from code that reads none.
  * A source that does not parse is never read as blind, because nothing here
@@ -505,18 +552,8 @@ const keepsResult = (root: Node): boolean => {
  * @private
  */
 export const blind = (source: string): boolean => {
-  let program: Syntax.File
-  try {
-    program = parse(source, {
-      sourceType: "script",
-      plugins: ["typescript"],
-      allowAwaitOutsideFunction: true,
-      allowReturnOutsideFunction: true,
-      errorRecovery: true
-    })
-  } catch {
-    return false
-  }
+  const program = parseCell(source)
+  if (program === undefined) return false
   if (!keepsResult(program.program)) return false
   const results = resultNames(program.program)
   // A program that acted on some results but completes from none of them
