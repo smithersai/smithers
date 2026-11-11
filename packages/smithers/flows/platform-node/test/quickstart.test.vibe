@@ -1,0 +1,6 @@
+import { expect, it } from "@effect/vitest"
+import { quickstart } from "../examples/quickstart.vibe"
+
+it.live("runs a command raw, reads inside the workspace, and refuses the symlink escape", effect () => {
+  expect(try quickstart()).toEqual({ printed: "hello from node", inside: "confined", refusedWith: "PermissionDenied" })
+})

@@ -9,6 +9,9 @@ This quickstart runs one program against the Node host twice: once raw, and
 once behind the capability kernel with a workspace root. By the end you will
 have seen the bundle do real work and refuse a real escape, and you will know
 which layer is responsible for each.
+Each step below is TypeScript; the
+[VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same program as
+`effect` functions.
 
 ## Prerequisites
 
@@ -126,6 +129,75 @@ path-based open leaves a window in which the path can be swapped; performing
 the operation relative to a pinned descriptor closes it. See
 [The descriptor-relative filesystem](./concepts/descriptor-relative-filesystem.md)
 for how the helper does it and what else it refuses.
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) each step is an `effect`
+function and `try` runs each host call. The workspace is built through Effect's
+`FileSystem` from the raw host instead of `node:fs`, inside a temporary
+directory that `scoped` removes, and a nested `provide` swaps the raw host for
+the guarded one around the two reads.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as HostServices from "@smthrs/kernel/HostServices"
+import * as Workspace from "@smthrs/kernel/Workspace"
+import { NodeHost } from "@smthrs/platform-node"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+
+/** Runs a command through Effect's own spawner tag; this package supplies only the implementation. */
+export effect function runCommand() {
+  const spawner = try ChildProcessSpawner
+  return try spawner.string(ChildProcess.make("printf", ["hello from node"]))
+}
+
+/** Builds a workspace holding one ordinary file and a symlink to a file outside it. */
+export effect function buildWorkspace(container: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const workspace = path.join(container, "workspace")
+  const secret = path.join(container, "secret.txt")
+  try fs.makeDirectory(workspace)
+  try fs.writeFileString(path.join(workspace, "inside.txt"), "confined\n")
+  try fs.writeFileString(secret, "outside\n")
+  try fs.symlink(secret, path.join(workspace, "escape.txt"))
+  return workspace
+}
+
+/** The five host tags behind capability checks, confined to `workspace`, with every grant allowed. */
+export const guarded = (workspace: string) =>
+  HostServices.layer.pipe(
+    Layer.provide(NodeHost.layer),
+    Layer.provide(Workspace.layer(workspace)),
+    Layer.provide(GrantStore.layerNoop)
+  )
+
+/** Reads the ordinary file, then keeps the failure of the read through the symlink. */
+export effect function readBoth(workspace: string) {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const inside = try fs.readFileString(path.join(workspace, "inside.txt"))
+  const refusal = try flip(fs.readFileString(path.join(workspace, "escape.txt")))
+  return { inside: inside.trim(), refusedWith: refusal.reason._tag }
+}
+
+/** The raw host runs the command and builds the workspace; the guarded host reads it. */
+export effect function quickstart() {
+  provide NodeHost.layer {
+    const printed = try runCommand()
+    return try scoped(effect {
+      const workspace = try buildWorkspace(try (try FileSystem.FileSystem).makeTempDirectoryScoped())
+      provide guarded(workspace) {
+        return { printed, ...try readBoth(workspace) }
+      }
+    })
+  }
+}
+```
 
 ## Next steps
 
