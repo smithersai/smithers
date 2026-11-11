@@ -24,8 +24,9 @@ byte-identical annotations, then asks Dafny to check the intended
 function in each full source copy (`--filter-symbol` also selects its generated `_ensures` lemma). Other functions
 and contracts remain present and are unchanged from the production module. Their full proofs run in `pnpm verify`;
 a direct check of a broken copy checks all functions. This avoids repeating unrelated proofs for every mutation.
-The selftest requires exit 4, an actual failed precondition/postcondition/invariant/assertion, and a diagnostic in the intended
-function; a backend error or timeout fails the selftest. It uses two workers by default; set `CHECK_JOBS=1` to limit
+The selftest requires exit `4` and a primary error for the intended function's own postcondition, invariant or assertion
+in the generated target file. Callee preconditions and related-location references never qualify; a backend error or
+timeout fails the selftest. It uses two workers by default; set `CHECK_JOBS=1` to limit
 it further. Negative solvers use one core and the whole pipeline runs under `nice`.
 
 Artifacts, source hashes, command/exit transcripts, CSV proof timings and summaries stay in `.checks/run-*`. A module's
@@ -42,8 +43,12 @@ the Linux lane. Versions are LemmaScript 0.6.6-smthrs.1 (the workspace package `
 
 `verify/fetch.sh` gets the Dafny archive: a copy in the host's shared cache (`VIBELANG_VERIFY_CACHE`, default
 `~/.cache/vibelang-verify`, keyed by SHA-256) is reused when its checksum matches; otherwise it downloads with 6
-attempts and backoff from 2 seconds, doubling, and caches only a verified archive. `verify/fetch_test.py` runs it
-against a local server that answers 504.
+attempts and backoff from 2 seconds, doubling, and caches only a verified archive. Each attempt allows 15 seconds to
+connect and 300 seconds overall, including redirects and the response body. Override these positive deadlines in seconds
+with `VIBELANG_VERIFY_FETCH_CONNECT_TIMEOUT` and `VIBELANG_VERIFY_FETCH_TIMEOUT` (at most three decimal places).
+Zero and sub-millisecond values are rejected so curl cannot truncate a deadline to zero and disable it.
+`verify/fetch_test.py` runs against a local server that answers `504`, stalls before headers or during the body,
+and recovers on a later attempt. Exhaustion leaves an existing destination unchanged and removes partial downloads.
 
 
 Expensive negatives select exact production postconditions using `mutation_targets.py`; source changes that remove

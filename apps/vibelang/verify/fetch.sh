@@ -4,6 +4,8 @@
 # Usage: fetch.sh URL SHA256 DEST
 #   VIBELANG_VERIFY_CACHE           shared cache directory (default: ${XDG_CACHE_HOME:-$HOME/.cache}/vibelang-verify)
 #   VIBELANG_VERIFY_FETCH_ATTEMPTS  downloads to try (default 6)
+#   VIBELANG_VERIFY_FETCH_CONNECT_TIMEOUT  connection deadline in positive seconds (default 15)
+#   VIBELANG_VERIFY_FETCH_TIMEOUT  total deadline per attempt in positive seconds (default 300)
 #   VIBELANG_VERIFY_FETCH_BACKOFF   seconds before the second try, doubled after each failure (default 2)
 set -euo pipefail
 URL=$1
@@ -12,6 +14,15 @@ DEST=$3
 CACHE=${VIBELANG_VERIFY_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/vibelang-verify}
 ATTEMPTS=${VIBELANG_VERIFY_FETCH_ATTEMPTS:-6}
 BACKOFF=${VIBELANG_VERIFY_FETCH_BACKOFF:-2}
+CONNECT_TIMEOUT=${VIBELANG_VERIFY_FETCH_CONNECT_TIMEOUT:-15}
+TIMEOUT=${VIBELANG_VERIFY_FETCH_TIMEOUT:-300}
+# curl truncates to milliseconds and treats zero as unlimited; reject sub-millisecond and malformed settings.
+for deadline in "$CONNECT_TIMEOUT" "$TIMEOUT"; do
+  if [[ ! $deadline =~ ^[0-9]+([.][0-9]{1,3})?$ || ! $deadline =~ [1-9] ]]; then
+    echo "Fetch timeouts must be positive seconds with at most three decimal places" >&2
+    exit 2
+  fi
+done
 CACHED="$CACHE/$SHA256-$(basename -- "$DEST")"
 
 sha256() {
@@ -47,7 +58,7 @@ PARTIAL=$(mktemp "$CACHE/.download.XXXXXX")
 trap 'rm -f "$PARTIAL"' EXIT
 delay=$BACKOFF
 for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
-  if curl --fail --location --silent --show-error "$URL" -o "$PARTIAL"; then
+  if curl --fail --location --silent --show-error --connect-timeout "$CONNECT_TIMEOUT" --max-time "$TIMEOUT" "$URL" -o "$PARTIAL"; then
     actual=$(sha256 "$PARTIAL")
     if [[ $actual == "$SHA256" ]]; then
       chmod 0644 "$PARTIAL"

@@ -13,3 +13,12 @@ Designer handoffs for the features without UI (VL-29), each an `index.html` prot
 | [Desktop app](desktop/NOTES.md) | [HTML](desktop/index.html) | [0025](../decisions/0025-desktop.md) |
 | [Marketing media](media/NOTES.md) | [HTML](media/index.html) | [0026](../decisions/0026-marketing-media.md) |
 | [Onboarding theatre walkthrough](onboarding/design.md) | [prototype](onboarding/prototype.html) | [0014](../decisions/0014-agent-tour.md) (VL-31) |
+
+## Rebuilding the media and desktop designs
+
+The shared stylesheet is the checked-in `refs/live-app.css` snapshot captured in both archived pages.
+It stays frozen so rebuilding a design reproduces that design, independent of changes to the live app.
+From this directory, run `sh media/build.sh` or `node desktop/build.mjs`.
+The media builder writes a temporary file beside `index.html` and replaces the page only after every input succeeds;
+missing CSS or markup leaves the last good page intact. The desktop builder reads its inputs before writing.
+`pnpm test:designs` from the app directory checks both rebuilds byte for byte and checks missing inputs.

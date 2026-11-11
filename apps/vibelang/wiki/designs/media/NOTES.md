@@ -6,7 +6,7 @@ instead of words, never beside an explanatory sentence (MINIMAL TEXT) — and sa
 panes get none.
 
 `index.html` is one self-contained dark page (VL-27): the live stylesheet inlined verbatim, this design's additions in
-`extra.css`, markup in `body.html`; `./build.sh` reassembles. The top bar (design chrome, not the app) switches Screen
+`extra.css`, markup in `body.html`; `./build.sh` reassembles from the checked-in `../refs/live-app.css` snapshot and replaces the page only after all inputs succeed. The top bar (design chrome, not the app) switches Screen
 and media State (Default / Loading / Reduced motion / Media failed). `shots/` has every screen at 1280×800 and
 390×844; `shots.mjs` re-renders them. No horizontal scroll at either width. `desktop.png`/`phone.png` are the
 placement map.
