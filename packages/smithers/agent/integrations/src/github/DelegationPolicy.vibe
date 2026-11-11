@@ -14,7 +14,7 @@ export type Operation =
   | { readonly kind: "comment.create"; readonly repository: string; readonly number: number; readonly body: string }
   | { readonly kind: "issue.assign"; readonly repository: string; readonly number: number; readonly assignees: ReadonlyArray<string> }
   | { readonly kind: "issue.close"; readonly repository: string; readonly number: number }
-  | { readonly kind: "issue.link"; readonly repository: string; readonly parent: number; readonly child: number }
+  | { readonly kind: "issue.link"; readonly repository: string; readonly parent: number; readonly childNumber: number }
   | { readonly kind: "label.create"; readonly repository: string; readonly name: string; readonly color: string }
   | { readonly kind: "label.add"; readonly repository: string; readonly number: number; readonly labels: ReadonlyArray<string> }
   | { readonly kind: "label.remove"; readonly repository: string; readonly number: number; readonly label: string }

@@ -46,7 +46,7 @@ const Op = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("comment.create"), repository: Identifier, number: Schema.Number, body: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("issue.assign"), repository: Identifier, number: Schema.Number, assignees: Schema.Array(Schema.String) }),
   Schema.Struct({ kind: Schema.Literal("issue.close"), repository: Identifier, number: Schema.Number }),
-  Schema.Struct({ kind: Schema.Literal("issue.link"), repository: Identifier, parent: Schema.Number, child: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("issue.link"), repository: Identifier, parent: Schema.Number, childNumber: Schema.Number }),
   Schema.Struct({ kind: Schema.Literal("label.create"), repository: Identifier, name: Schema.String, color: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("label.add"), repository: Identifier, number: Schema.Number, labels: Schema.Array(Schema.String) }),
   Schema.Struct({ kind: Schema.Literal("label.remove"), repository: Identifier, number: Schema.Number, label: Schema.String }),
@@ -407,7 +407,14 @@ export effect function make(options: {
     switch (operation.kind) {
       case "issue.assign": return IssueChanges.update(owner, name, operation.number, { assignees: operation.assignees })
       case "issue.close": return IssueChanges.update(owner, name, operation.number, { state: "closed" })
-      case "issue.link": return IssueChanges.link(owner, name, operation.parent, operation.child)
+      case "issue.link": {
+        // The child is read by its number in the grant's repository, so a site cannot link another repository's issue.
+        const { parent, childNumber } = operation
+        return effect {
+          const child = try IssueChanges.get(owner, name, childNumber)
+          return try IssueChanges.link(owner, name, parent, child.id)
+        }
+      }
       case "label.create": return Issues.createLabel(owner, name, { name: operation.name, color: operation.color })
       case "label.add": return Issues.addLabels(owner, name, operation.number, operation.labels as readonly [string, ...Array<string>])
       case "label.remove": return Issues.removeLabel(owner, name, operation.number, operation.label)

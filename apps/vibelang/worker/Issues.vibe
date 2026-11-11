@@ -191,7 +191,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           const made = try Action.once("issue", permitted({ kind: "issue.create", repository, title: request.title.trim(), body: request.text, since: try admitted() }), { key: try key("issue") })
           if (request.op === "split") {
             const current = try GitHub.IssueChanges.get(repo.owner, repo.name, made.number!)
-            if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, child: made.id! })
+            if (current.parent_issue_url !== `${repo.api}/repos/${repo.owner}/${repo.name}/issues/${request.number}`) try written("link", { kind: "issue.link", repository, parent: request.number, childNumber: made.number! })
           }
           return { ...(try read(made.number!)), selected: made.number! }
         }
@@ -222,7 +222,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           try Action.once("comment", permitted({ kind: "comment.create", repository, number: issue.number, body: request.text.trim() }), { key: try key("comment") })
         } else if (request.op === "link") {
           if (!canLinkIssues(before.items, issue.number, request.parent)) throw new IssueFailure({ reason: "tree" })
-          if (issue.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, child: issue.githubId })
+          if (issue.parent !== request.parent) try written("link", { kind: "issue.link", repository, parent: request.parent, childNumber: issue.number })
         } else if (request.op === "commit" || request.op === "uncommit") {
           const committing = request.op === "commit"
           if (committing && issue.state !== "open") throw new IssueFailure({ reason: "closed" })

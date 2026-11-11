@@ -19,7 +19,7 @@ describe("DelegationPolicy.permits", () => {
       { kind: "comment.create", repository: issues, number: 1, body: "b" },
       { kind: "issue.assign", repository: issues, number: 1, assignees: ["ada"] },
       { kind: "issue.close", repository: issues, number: 1 },
-      { kind: "issue.link", repository: issues, parent: 1, child: 2 },
+      { kind: "issue.link", repository: issues, parent: 1, childNumber: 2 },
       { kind: "label.create", repository: issues, name: "vibelang:task", color: "36b3aa" },
       { kind: "label.add", repository: issues, number: 1, labels: ["vibelang:task"] },
       { kind: "label.remove", repository: issues, number: 1, label: "vibelang:running" },

@@ -18,10 +18,11 @@ const keyring = { active: "k1", keys: { k1: Redacted.make("AAAAAAAAAAAAAAAAAAAAA
 const key = "f".repeat(64)
 const create: Policy.Operation = { kind: "issue.create", repository: "smithersai/vibelang", title: "t", body: "private-body", since: "1970-01-01T00:00:00.000Z" }
 
-interface World { calls: Array<string>; revoked: Array<string>; refreshes: number; status?: number; forkStatus?: number; refresh?: "rejected" | "unavailable"; details?: Record<string, unknown>; upstreamId?: number; fork?: unknown; found?: boolean; revokeFails?: boolean; login?: string; refreshNull?: boolean }
+interface World { calls: Array<string>; revoked: Array<string>; refreshes: number; status?: number; forkStatus?: number; refresh?: "rejected" | "unavailable"; details?: Record<string, unknown>; upstreamId?: number; fork?: unknown; found?: boolean; revokeFails?: boolean; login?: string; refreshNull?: boolean; sent?: Array<{ readonly path: string; readonly body: unknown }> }
 function client(world: World): GitHubClient {
-  const request = (method: string, path: string): Effect.Effect<any, IntegrationError> => {
+  const request = (method: string, path: string, body?: unknown): Effect.Effect<any, IntegrationError> => {
     world.calls.push(`${method} ${path}`)
+    world.sent?.push({ path, body })
     if ((world.status !== undefined || world.details !== undefined) && method !== "GET") return Effect.fail(new IntegrationError("delivery-failed", "no", { ...(world.status === undefined ? {} : { status: world.status }), ...world.details }))
     if (path.includes("/git/ref/")) return Effect.fail(new IntegrationError("delivery-failed", "none", { status: 404 }))
     if (path === "/graphql") return Effect.succeed({ data: { createCommitOnBranch: { commit: { oid: "c".repeat(40) } } } })
@@ -30,6 +31,8 @@ function client(world: World): GitHubClient {
     if (path.endsWith("/comments") && method === "POST") return Effect.succeed({ id: 77, body: "", user: null, created_at: "", updated_at: "", html_url: "" })
     if (path === "/repos/smithersai/vibelang") return Effect.succeed({ id: world.upstreamId ?? 11, name: "vibelang", owner: { login: "smithersai" }, default_branch: "main" })
     if (path === "/repos/ada/vibelang") return world.forkStatus !== undefined ? Effect.fail(new IntegrationError("delivery-failed", "no", { status: world.forkStatus })) : world.fork !== undefined ? Effect.succeed(world.fork) : Effect.succeed({ id: 12, name: "vibelang", owner: { login: "ada" }, default_branch: "main", fork: true, parent: { id: 11, full_name: "smithersai/vibelang" } })
+    const numbered = /^\/repos\/smithersai\/vibelang\/issues\/(\d+)$/.exec(path)
+    if (method === "GET" && numbered !== null) return Effect.succeed({ id: 2000 + Number(numbered[1]), number: Number(numbered[1]) })
     if (method === "POST" && path.endsWith("/issues")) return Effect.succeed({ id: 5, number: 9, title: "t", state: "open", created_at: "", updated_at: "", body: "", user: null, labels: [], comments: 0 })
     return Effect.succeed({})
   }
@@ -187,7 +190,7 @@ const commitOp: Policy.Operation = { kind: "commit.create", repository: repo, br
 const pullOp: Policy.Operation = { kind: "pull.create", repository: repo, head: "ada:vibelang/vip-x", base: "main", title: "t", body: "b" }
 const commentOp: Policy.Operation = { kind: "comment.create", repository: repo, number: 1, body: "b" }
 const unkeyedOps: ReadonlyArray<Policy.Operation> = [
-  { kind: "issue.assign", repository: repo, number: 1, assignees: ["ada"] }, { kind: "issue.close", repository: repo, number: 1 }, { kind: "issue.link", repository: repo, parent: 1, child: 2 },
+  { kind: "issue.assign", repository: repo, number: 1, assignees: ["ada"] }, { kind: "issue.close", repository: repo, number: 1 }, { kind: "issue.link", repository: repo, parent: 1, childNumber: 2 },
   { kind: "label.create", repository: repo, name: "vibelang:task", color: "36b3aa" }, { kind: "label.add", repository: repo, number: 1, labels: ["vibelang:task"] }, { kind: "label.remove", repository: repo, number: 1, label: "vibelang:running" },
 ]
 it.effect("a 5xx reading the fork answers unavailable, never fork", () => effect {
@@ -206,6 +209,17 @@ it.effect("performs every operation kind and answers receipts with no text", () 
     expect(outcomes[2]).toMatchObject({ number: 10, id: 6 })
     expect(outcomes[3]).toEqual({ id: 77 })
     expect(outcomes.slice(4)).toEqual(unkeyedOps.map(() => ({})))
+  })
+})
+it.effect("issue.link reads the child by its number in the granted repository and links that issue's id", () => effect {
+  const f = try fixture(blank({ sent: [] }))
+  const outcome = try f.call("perform", { kind: "issue.link", repository: repo, parent: 1, childNumber: 2 })
+  const legacy = try f.call("perform", { kind: "issue.link", repository: repo, parent: 1, child: 6319616514 }, "f".repeat(64))
+  try Effect.try(() => {
+    expect(outcome).toEqual({})
+    expect(f.world.calls.filter((call) => call !== "GET /repos/smithersai/vibelang")).toEqual(["GET /repos/smithersai/vibelang/issues/2", "POST /repos/smithersai/vibelang/issues/1/sub_issues"])
+    expect(f.world.sent?.at(-1)?.body).toEqual({ sub_issue_id: 2002, replace_parent: false })
+    expect(legacy).toBe("forbidden")
   })
 })
 it.effect("find answers none, or the existing object's receipt; unkeyed operations report none", () => effect {
