@@ -73,7 +73,7 @@ node ops/work-links/link.mjs --repo acme/widgets --issue 12 --kind pr --ref 41 -
 node ops/work-links/link.mjs --repo acme/widgets --issue 12 --kind merge --ref 5e0fdb74 --state merged --url https://github.com/acme/widgets/commit/5e0fdb74
 ```
 
-The token comes from `--token-file`, `$SMITHERS_WORK_TOKEN_FILE` or `~/.smithers/runner/runner-token`, never argv. With curl: `curl -H "authorization: Bearer $(cat <file>)" -H 'content-type: application/json' -d '{"links":[...]}' https://smithers.sh/api/repos/<o>/<n>/issues/<n>/links`.
+The token comes from `--token-file`, `$SMITHERS_WORK_TOKEN_FILE` or `~/.smithers/runner/runner-token`, never argv. After trimming the file, it must hold one nonempty token containing only printable ASCII characters without spaces. An invalid token exits `1` with `invalid runner token` before constructing a header; a transport or header failure exits `1` with `work link request failed`. Neither diagnostic includes the token or the underlying error. With curl: `curl -H "authorization: Bearer $(cat <file>)" -H 'content-type: application/json' -d '{"links":[...]}' https://smithers.sh/api/repos/<o>/<n>/issues/<n>/links`.
 
 ## The proof
 

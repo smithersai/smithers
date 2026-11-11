@@ -1,5 +1,10 @@
 // The work-links client (ops/work-links/link.mjs): what it sends and how it waits, against a recorded fetch.
 import { describe, expect, test } from "vitest"
+import { execFile } from "node:child_process"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { promisify } from "node:util"
 // @ts-expect-error: a plain .mjs script, untyped.
 import { bodyOf, post } from "./link.mjs"
 
@@ -38,5 +43,49 @@ describe("the work-links client", () => {
     const given: Array<number> = []
     expect((await post({ origin: "o", repo: "a/b", issue: 1, token: "t", body: {}, fetch: always, sleep: async (ms: number) => void given.push(ms) })).status).toBe(503)
     expect(given).toEqual([5000, 10000, 20000, 40000])
+  })
+})
+
+describe("work-link credential diagnostics", () => {
+  const token = "synthetic-runner-credential"
+  const invalid = "invalid runner token"
+  const unavailable = "work link request failed"
+  const request = { origin: "http://127.0.0.1:1", repo: "acme/widgets", issue: 12, body: {} }
+
+  test("rejects empty tokens and every ASCII control or whitespace inside the credential before fetch", async () => {
+    const separators = [...Array.from({ length: 33 }, (_, i) => String.fromCharCode(i)), "\x7f", "\u0080", "\u0100", "\u2028"]
+    for (const malformed of [undefined, null, 12, "", ...separators.flatMap((separator) => [separator + token, token + separator, token + separator + "stray"])]) {
+      await expect(post({ ...request, token: malformed })).rejects.toThrow(invalid)
+    }
+  })
+
+  test("native fetch errors cannot expose credentials in their diagnostics or cause", async () => {
+    // Native fetch includes this URL in its error because URLs containing credentials are refused.
+    const result = await post({ ...request, origin: `http://user:${token}@127.0.0.1:1`, token }).catch((error: Error) => error)
+    expect(result).toBeInstanceOf(Error)
+    expect(result.message).toBe(unavailable)
+    expect(result.cause).toBeUndefined()
+    expect(String(result)).not.toContain(token)
+  })
+
+  test.each([
+    ["a token with a stray second line", `${token}\nstray`, "http://127.0.0.1:1", invalid],
+    ["an empty token file", "\n", "http://127.0.0.1:1", invalid],
+    ["a valid token with the usual trailing newline", `${token}\n`, `http://user:${token}@127.0.0.1:1`, unavailable],
+  ])("CLI reports %s without printing the credential", async (_name, contents, origin, diagnostic) => {
+    const dir = mkdtempSync(join(tmpdir(), "work-link-token-"))
+    try {
+      const file = join(dir, "token")
+      writeFileSync(file, contents, { mode: 0o600 })
+      const result = await promisify(execFile)(process.execPath, [
+        new URL("./link.mjs", import.meta.url).pathname,
+        "--repo", "acme/widgets", "--issue", "12", "--kind", "session", "--ref", "synthetic",
+        "--origin", origin, "--token-file", file,
+      ], { env: { PATH: process.env.PATH } }).catch((error: { code: number; stdout: string; stderr: string }) => error)
+      expect(result).toMatchObject({ code: 1, stdout: "", stderr: `${diagnostic}\n` })
+      expect(result.stderr).not.toContain(token)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

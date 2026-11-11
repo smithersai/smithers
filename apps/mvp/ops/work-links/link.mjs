@@ -34,15 +34,23 @@ export const bodyOf = (values, read = (path) => readFileSync(path, "utf8"), now 
 /** Posts `body` to issue `issue` of `repo` at `origin` with `token`; resolves `{ status, answer }`. */
 export const post = async ({ origin, repo, issue, token, body, fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) => {
   refuseUncheckedTls(process.env)
+  // Validate the whole opaque credential before any header validator can quote it in an error.
+  if (typeof token !== "string" || token.length === 0 || /[^\x21-\x7e]/.test(token)) throw new Error("invalid runner token")
   const [owner, name] = repo.split("/")
   const url = `${origin}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/${Number(issue)}/links`
   let wait = 5000
   for (let attempt = 1; ; attempt++) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    let response
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    } catch {
+      // Transport errors may quote headers or URLs: never retain their message or cause.
+      throw new Error("work link request failed")
+    }
     const answer = await response.json().catch(() => ({}))
     if ((response.status !== 429 && response.status !== 503) || attempt >= 5) return { status: response.status, answer }
     const retryAfter = Number(response.headers.get("retry-after"))
