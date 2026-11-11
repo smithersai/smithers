@@ -712,9 +712,12 @@ authentication belongs to the supplied platform Socket layer.
 
 Declared control failures cross the wire as themselves; everything else
 becomes a `TransportError` whose `retryable` flag classifies the transport
-phase. Locally agent-attributed approval decisions and signals fail
-`Unauthorized` before RPC, so an agent cannot borrow the client’s operator
-credential.
+phase. None of the local-only fields crosses the wire, and the server stamps
+its own authenticated principal and reader, so the client refuses a call that
+names one before RPC: a `principal`, `reader` or `answers` fails
+`Unauthorized`, and a `reservedRunId` fails `InvalidInput`. An agent, a channel
+or a restricted reader composed over the client cannot borrow its operator
+credential; such a caller uses an in-process `Control`.
 
 ## Lineage
 

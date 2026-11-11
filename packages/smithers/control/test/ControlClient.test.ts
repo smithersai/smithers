@@ -14,7 +14,14 @@ import ts from "typescript"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import * as ControlClient from "../src/ControlClient.ts"
-import { type ControlError, PersistenceError, RunNotFound, TransportError, Unauthorized } from "../src/ControlError.ts"
+import {
+  type ControlError,
+  InvalidInput,
+  PersistenceError,
+  RunNotFound,
+  TransportError,
+  Unauthorized
+} from "../src/ControlError.ts"
 import * as ControlRpcs from "../src/ControlRpcs.ts"
 import * as ControlServer from "../src/ControlServer.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
@@ -353,16 +360,143 @@ describe("ControlClient", () => {
             }))
             expect(error).toBeInstanceOf(Unauthorized)
             expect(error.code).toBe("unauthorized")
-            const receipt = yield* control[decision]({
-              ...card.approval,
-              principal: { id: "operator", kind: "operator", stampedAt: 0 }
-            })
+            const receipt = yield* control[decision](card.approval)
             expect(receipt._tag).toBe("Accepted")
             expect((yield* control.list({ _tag: "flows" }))._tag).toBe("flows")
           }))
       }))
     }
   )
+
+  // #4842: the wire carries none of these fields, so forwarding them would run
+  // the call as the bearer. A closed port proves the refusal happens before RPC.
+  const channel = { id: "webhook", kind: "channel", stampedAt: 0 }
+  const localOnly: ReadonlyArray<
+    readonly [string, (control: Control["Service"]) => Effect.Effect<unknown, ControlError>, string]
+  > = [
+    [
+      "run principal",
+      (control) => control.run({ _tag: "Resume", runId: "r", idempotencyKey: "k", principal: channel }),
+      "unauthorized"
+    ],
+    [
+      "run reader",
+      (control) => control.run({ _tag: "Resume", runId: "r", idempotencyKey: "k", reader: channel }),
+      "unauthorized"
+    ],
+    ["run reservedRunId", (control) =>
+      control.run({
+        _tag: "Plan",
+        planId: "p",
+        digest: "d",
+        envelope: { capabilities: [], flows: [], budget: {} },
+        idempotencyKey: "k",
+        reservedRunId: "reserved"
+      }), "invalid_input"],
+    ...(["approve", "deny"] as const).map((decision) =>
+      [
+        `${decision} principal`,
+        (control: Control["Service"]) =>
+          control[decision]({
+            target: { _tag: "Plan", planId: "p", digest: "d", envelope: { capabilities: [], flows: [], budget: {} } },
+            scope: "once",
+            idempotencyKey: "k",
+            principal: channel
+          }),
+        "unauthorized"
+      ] as const
+    ),
+    ["steer reader", (control) =>
+      control.steer({
+        runId: "r",
+        idempotencyKey: "k",
+        message: { messageId: "m", runId: "r", principal: channel, createdAt: 0, body: "b" },
+        reader: channel
+      }), "unauthorized"],
+    [
+      "signal principal",
+      (control) =>
+        control.signal({ runId: "r", signal: { name: "s", payload: null }, idempotencyKey: "k", principal: channel }),
+      "unauthorized"
+    ],
+    [
+      "signal reader",
+      (control) =>
+        control.signal({ runId: "r", signal: { name: "s", payload: null }, idempotencyKey: "k", reader: channel }),
+      "unauthorized"
+    ],
+    ["signal answers", (control) =>
+      control.signal({
+        runId: "r",
+        signal: { name: "s", payload: null },
+        idempotencyKey: "k",
+        answers: { _tag: "Plan", planId: "p", digest: "d", envelope: { capabilities: [], flows: [], budget: {} } }
+      }), "unauthorized"],
+    [
+      "cancel principal",
+      (control) => control.cancel({ runId: "r", idempotencyKey: "k", principal: channel }),
+      "unauthorized"
+    ],
+    [
+      "cancel reader",
+      (control) => control.cancel({ runId: "r", idempotencyKey: "k", reader: channel }),
+      "unauthorized"
+    ],
+    [
+      "resume principal",
+      (control) => control.resume({ runId: "r", idempotencyKey: "k", principal: channel }),
+      "unauthorized"
+    ],
+    [
+      "resume reader",
+      (control) => control.resume({ runId: "r", idempotencyKey: "k", reader: channel }),
+      "unauthorized"
+    ],
+    ["list reader", (control) => control.list({ _tag: "runs", reader: channel }), "unauthorized"],
+    ["watch reader", (control) => Stream.runDrain(control.watch({ follow: false, reader: channel })), "unauthorized"]
+  ]
+
+  it.each(localOnly)("refuses a %s before RPC", async (_name, call, code) => {
+    const port = await closedPort()
+    const error = await Effect.runPromise(
+      withClient(`http://127.0.0.1:${port}`, token, (control) => Effect.flip(call(control)))
+    )
+    expect(error).toBeInstanceOf(code === "invalid_input" ? InvalidInput : Unauthorized)
+    expect(error.code).toBe(code)
+  })
+
+  it("does not let a channel signal any run as the bearer operator", async () => {
+    await run(Effect.gen(function*() {
+      const url = yield* baseUrl
+      yield* withClient(url, token, (control) =>
+        Effect.gen(function*() {
+          const card = yield* control.plan({ flowId: "system/test", input: {} })
+          yield* control.approve(card.approval)
+          const started = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "channel-signal-start"
+          })
+          if (started._tag !== "Accepted" || started.runId === undefined) return yield* Effect.die("expected run")
+          const refused = yield* Effect.flip(control.signal({
+            runId: started.runId,
+            signal: { name: "sign-off", payload: true },
+            idempotencyKey: "channel-signal",
+            principal: channel,
+            reader: channel
+          }))
+          expect(refused).toBeInstanceOf(Unauthorized)
+          const operator = yield* control.signal({
+            runId: started.runId,
+            signal: { name: "sign-off", payload: true },
+            idempotencyKey: "operator-signal"
+          })
+          expect(operator._tag).toBe("Accepted")
+        }))
+    }))
+  })
 
   it("does not elevate an agent signal through operator RPC credentials", async () => {
     await run(Effect.gen(function*() {

@@ -9,7 +9,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { RpcClient, RpcClientError, type RpcSerialization } from "effect/rpc"
 import type { Socket } from "effect/socket"
 import { Control, make } from "./Control.ts"
-import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.ts"
+import { type ControlError, ControlErrorSchema, InvalidInput, TransportError, Unauthorized } from "./ControlError.ts"
 import { ControlRpcs } from "./ControlRpcs.ts"
 import {
   ApprovalInputSchema,
@@ -227,6 +227,46 @@ const normalizeStreamRequest = <A, E, R>(
   )
 
 /**
+ * The local-only fields a `Control` input may name. None is on the wire: the
+ * server stamps its own authenticated principal and reader over them.
+ */
+interface LocalOnly {
+  readonly principal?: unknown
+  readonly reader?: unknown
+  readonly answers?: unknown
+  readonly reservedRunId?: unknown
+}
+
+// Forwarding a call that names a local-only field would drop it and run the
+// call as this client's credential: a channel, an agent or a restricted reader
+// composed over the client would act as the bearer operator on every run
+// (#4842). The client cannot verify any identity but its credential's, so it
+// refuses such a call before RPC instead.
+const unforwardable = (input: LocalOnly): Effect.Effect<void, Unauthorized | InvalidInput> => {
+  if (input.reservedRunId !== undefined) {
+    return Effect.fail(new InvalidInput({ issue: "A reserved run id cannot cross the control client" }))
+  }
+  if (input.principal !== undefined || input.answers !== undefined) {
+    return Effect.fail(
+      new Unauthorized({
+        message: "The control client acts only as its credential; another principal must call in process"
+      })
+    )
+  }
+  if (input.reader !== undefined) {
+    return Effect.fail(
+      new Unauthorized({
+        message: "The control client reads only as its credential; a restricted reader must call in process"
+      })
+    )
+  }
+  return Effect.void
+}
+
+const forwarded = <A, E, R>(input: LocalOnly, request: () => Effect.Effect<A, E, R>) =>
+  Effect.andThen(unforwardable(input), Effect.suspend(request))
+
+/**
  * Client transport configuration. Unary procedures use HTTP at this URL;
  * `watch` uses HTTP when a credential is supplied, so the same bearer protects
  * unary calls and streams without requiring a WebSocket service. Without a
@@ -289,36 +329,36 @@ export function layer(config: ClientConfig) {
       })
       return make({
         plan: Effect.fn("Control.plan")((input) => normalizeRequest(planEncoder, input, () => unary.Plan(input))),
-        run: Effect.fn("Control.run")((input) => normalizeRequest(runEncoder, input, () => unary.Run(input))),
-        // RPC authenticates with this client's credential and does not carry
-        // local attribution. Refuse here before an agent becomes that operator.
+        run: Effect.fn("Control.run")((input) =>
+          normalizeRequest(runEncoder, input, () => forwarded(input, () => unary.Run(input)))
+        ),
         approve: Effect.fn("Control.approve")((input) =>
-          normalizeRequest(approvalEncoder, input, () =>
-            input.principal?.kind === "agent"
-              ? Effect.fail(new Unauthorized({ message: "Approval decisions are operator-only" }))
-              : unary.Approve(input))
+          normalizeRequest(approvalEncoder, input, () => forwarded(input, () => unary.Approve(input)))
         ),
         deny: Effect.fn("Control.deny")((input) =>
-          normalizeRequest(approvalEncoder, input, () =>
-            input.principal?.kind === "agent"
-              ? Effect.fail(new Unauthorized({ message: "Approval decisions are operator-only" }))
-              : unary.Deny(input))
+          normalizeRequest(approvalEncoder, input, () => forwarded(input, () => unary.Deny(input)))
         ),
-        steer: Effect.fn("Control.steer")((input) => normalizeRequest(steerEncoder, input, () => unary.Steer(input))),
+        steer: Effect.fn("Control.steer")((input) =>
+          normalizeRequest(steerEncoder, input, () => forwarded(input, () => unary.Steer(input)))
+        ),
         signal: Effect.fn("Control.signal")((input) =>
-          normalizeRequest(signalEncoder, input, () =>
-            input.principal?.kind === "agent"
-              ? Effect.fail(new Unauthorized({ message: "Agent signals require an agent credential" }))
-              : unary.Signal(input))
+          normalizeRequest(signalEncoder, input, () => forwarded(input, () => unary.Signal(input)))
         ),
         cancel: Effect.fn("Control.cancel")((input) =>
-          normalizeRequest(cancelEncoder, input, () => unary.Cancel(input))
+          normalizeRequest(cancelEncoder, input, () => forwarded(input, () => unary.Cancel(input)))
         ),
         resume: Effect.fn("Control.resume")((input) =>
-          normalizeRequest(resumeEncoder, input, () => unary.Resume(input))
+          normalizeRequest(resumeEncoder, input, () => forwarded(input, () => unary.Resume(input)))
         ),
-        list: Effect.fn("Control.list")((input) => normalizeRequest(listEncoder, input, () => unary.List(input))),
-        watch: (input) => normalizeStreamRequest(watchEncoder, input, () => streaming.Watch(input))
+        list: Effect.fn("Control.list")((input) =>
+          normalizeRequest(listEncoder, input, () => forwarded(input, () => unary.List(input)))
+        ),
+        watch: (input) =>
+          normalizeStreamRequest(
+            watchEncoder,
+            input,
+            () => Stream.unwrap(Effect.as(unforwardable(input), streaming.Watch(input)))
+          )
       })
     })
   )
