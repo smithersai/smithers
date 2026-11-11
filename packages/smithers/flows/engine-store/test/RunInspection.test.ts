@@ -376,17 +376,44 @@ describe("RunInspection.inspect", () => {
       )
     })))
 
-  it("without the run's flow, reads its values as stored, behind the redactor's rules alone", () =>
+  it("without the run's flow, withholds its payload, result, step outputs and journal state", () =>
     run(Effect.gen(function*() {
       yield* executeRoot("stored-1")
       yield* flushed
-      const reads = yield* RunInspection.make()
-      const inspection = yield* reads.inspect("stored-1")
-      expect(JSON.parse(inspection.run.input.text)).toEqual({ token: "[REDACTED]", opaque: HIDDEN })
-      expect(inspection.run.result).toEqual({ text: "7", bytes: 1, clipped: false })
+      const withheld = JSON.stringify(RunInspection.withheldMarker)
+      for (const reads of [yield* RunInspection.make(), yield* RunInspection.make({ flows: [Child] })]) {
+        const inspection = yield* reads.inspect("stored-1")
+        expect(JSON.stringify(inspection)).not.toContain(HIDDEN)
+        expect(inspection.run.input.text).toBe(withheld)
+        expect(inspection.run.result!.text).toBe(withheld)
+        const settled = inspection.steps.filter((step) => step.status === "completed")
+        expect(settled.length).toBeGreaterThan(0)
+        for (const step of settled) {
+          expect(step.output!.text).toBe(withheld)
+          for (const attempt of step.attempts) expect(attempt.outcome!.text).toBe(withheld)
+        }
+        const states = inspection.journal.events.flatMap((event) => {
+          const state = JSON.parse(event.payload.text).state
+          return state?.flowName === Root._tag ? [state] : []
+        })
+        expect(states.length).toBeGreaterThan(0)
+        for (const state of states) expect(state.payload).toBe(RunInspection.withheldMarker)
+      }
     })))
 
-  it("withholds a stored value its flow no longer decodes, and reads a run of an unknown flow as stored", () =>
+  it("with unknownFlows asStored, reads an unknown flow's values as stored, behind the redactor's rules alone", () =>
+    run(Effect.gen(function*() {
+      yield* executeRoot("stored-2")
+      yield* flushed
+      const reads = yield* RunInspection.make({ unknownFlows: "asStored" })
+      const inspection = yield* reads.inspect("stored-2")
+      expect(JSON.parse(inspection.run.input.text)).toEqual({ token: "[REDACTED]", opaque: HIDDEN })
+      expect(inspection.run.result).toEqual({ text: "7", bytes: 1, clipped: false })
+      const echo = inspection.steps.find((step) => step.action === Echo.name)!
+      expect(JSON.parse(echo.output!.text)).toEqual({ token: "[REDACTED]", length: CREDENTIAL.length })
+    })))
+
+  it("withholds a stored value its flow no longer decodes, and the values of a run of an unknown flow", () =>
     run(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       const drifted = JSON.stringify({ version: 1, flowName: Root._tag, payload: { count: 7 } })
@@ -402,7 +429,7 @@ describe("RunInspection.inspect", () => {
       expect((yield* reads.inspect("drifted")).run.input.text).toBe(JSON.stringify(RunInspection.withheldMarker))
       const unknown = yield* reads.inspect("stranger")
       expect(unknown.run).toMatchObject({
-        input: { text: "{\"value\":\"x\"}" },
+        input: { text: JSON.stringify(RunInspection.withheldMarker) },
         result: { text: "{\"_tag\":\"Suspended\"}" }
       })
       expect(unknown.run.lastSeq).toBe(-1)
@@ -412,7 +439,7 @@ describe("RunInspection.inspect", () => {
   it("folds a journal another writer kept: settlements without scheduling, every outcome, and what it can't read", () =>
     run(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
-      const state = JSON.stringify({ version: 1, flowName: "inspection/Stranger", payload: {} })
+      const state = JSON.stringify({ version: 1, flowName: Root._tag, payload: {} })
       yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json, waiting_reason, waiting_wake_at_ms)
         VALUES ('kept', 'suspended', 1, ${state}, 'event', 99)`
       const events: ReadonlyArray<readonly [string, unknown]> = [

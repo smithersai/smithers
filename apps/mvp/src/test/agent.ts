@@ -166,8 +166,8 @@ export const openAgent = async (
       Layer.provide(FileTabsTabs.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(BugTabs.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
-      // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).
-      Layer.provideMerge(EngineStore.RunInspection.layer),
+      // The run reads the acts on runs need, which the browser's engine provides over its flows (decision 0014 §3).
+      Layer.provideMerge(EngineStore.RunInspection.layerWith({ flows: clientFlows })),
       Layer.provideMerge(device),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, engineOptions.fetch ?? fetch)),

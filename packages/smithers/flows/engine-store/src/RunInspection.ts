@@ -17,10 +17,14 @@
  * success schema. Every value with a known schema is decoded with it and
  * encoded again for display, so a `Schema.Redacted` value at any depth reads
  * as {@link redactedMarker}; one its schema no longer decodes reads as
- * {@link withheldMarker}, never as the stored text. A value whose flow or
- * action is not reachable from those flows, such as an action a body reaches
- * only with its real input, has the redactor's rules alone between it and the
- * reader: return a secret from such a step only inside a field the rules name.
+ * {@link withheldMarker}, never as the stored text. A run whose flow is not
+ * among those flows reads its payload, its result and every step's output as
+ * {@link withheldMarker}, so `layer`, which knows no flows, releases none of
+ * them; an operator tool that must see them asks for `unknownFlows:
+ * "asStored"`. An action of a known flow that is not reachable from its plan,
+ * such as one a body reaches only with its real input, has the redactor's
+ * rules alone between its output and the reader: return a secret from such a
+ * step only inside a field the rules name.
  *
  * {@link Service.payload} is the one read that is not for display: it hands
  * back the run's encoded payload as the engine stored it, so a host can run
@@ -450,6 +454,17 @@ interface Schemas {
 const noSchemas: Schemas = { payloadOf: () => undefined, successOf: () => undefined }
 
 /**
+ * The schemas a run of a flow shows its values through, or `undefined` when
+ * the reader does not know that flow and withholds them.
+ */
+type SchemasFor = (flowName: string) => Schemas | undefined
+
+/** A value `schemas` shows through the schema `pick` names, or withheld without `schemas`. */
+const shownThrough =
+  (schemas: Schemas | undefined, pick: (schemas: Schemas) => Schema.Top | undefined) => (encoded: unknown): unknown =>
+    schemas === undefined ? withheldMarker : displayed(pick(schemas), encoded)
+
+/**
  * The schemas reachable from `flows`: each flow's own, and each action's
  * success schema, read off the flow's plan the way `Graph.inspect` builds it,
  * against a placeholder input. A child boundary's flow is walked as well. A
@@ -524,17 +539,19 @@ const parseJson = (text: string): unknown => {
  * failure, so only the code. A node with no action passes on a value one of
  * its steps made, so it is withheld. A known action's or flow's preview is
  * parsed and shown through its schema; one that was cut, or no longer parses,
- * is withheld when that schema holds a `Redacted` value. An unknown one passes
- * the redactor's rules again and keeps the writer's size and flag.
+ * is withheld when that schema holds a `Redacted` value. Any other step of a
+ * run whose flow the reader does not know (no `schemas`) is withheld. An
+ * unknown action of a known flow passes the redactor's rules again and keeps
+ * the writer's size and flag.
  */
 const previewOf = (
-  schemas: Schemas,
+  schemas: Schemas | undefined,
   action: string | null,
   outcome: typeof NodeSettled.Type["outcome"],
   result: typeof NodeResult.Type
 ): Value => {
   if (outcome === "failed") return valueOf({ failure: codeOf(parseOr(result.preview)) })
-  if (action === null) return withheld
+  if (action === null || schemas === undefined) return withheld
   const schema = schemas.successOf(action)
   const parsed = result.truncated ? unparsed : parseJson(result.preview)
   if (schema !== undefined && parsed !== unparsed) return valueOf(displayed(schema, parsed))
@@ -544,17 +561,18 @@ const previewOf = (
 }
 
 /**
- * A run's stored result as it is released: a success's value, a failure's
- * code, a suspension or handoff by its tag, `null` before it has one.
+ * A run's stored result as it is released: a success's value as `show` shows
+ * it, a failure's code, a suspension or handoff by its tag, `null` before it
+ * has one.
  */
-const resultOf = (result: unknown, success: Schema.Top | undefined): Value | null => {
+const resultOf = (result: unknown, show: (value: unknown) => unknown): Value | null => {
   if (result === undefined || result === null) return null
   const envelope = result as {
     readonly _tag?: unknown
     readonly exit?: { readonly _tag?: unknown } & Record<string, unknown>
   }
   if (envelope._tag === "Complete" && envelope.exit?._tag === "Success") {
-    return valueOf(displayed(success, envelope.exit.value))
+    return valueOf(show(envelope.exit.value))
   }
   if (envelope._tag === "Complete") return valueOf({ failure: codeOf(envelope.exit?.cause) })
   return valueOf({ _tag: envelope._tag })
@@ -563,24 +581,34 @@ const resultOf = (result: unknown, success: Schema.Top | undefined): Value | nul
 /**
  * A journal event's payload as it is released. A run decision's `state`
  * carries the run's payload and result as stored, so they show through the
- * run's flow; a settled node's result preview shows as {@link previewOf} says.
+ * state's flow, withheld when the reader does not know it; a settled node's
+ * result preview shows as {@link previewOf} says for the run's `schemas`.
  */
-const eventPayloadOf = (eventType: string, text: string, schemas: Schemas): Value => {
+const eventPayloadOf = (
+  eventType: string,
+  text: string,
+  schemas: Schemas | undefined,
+  schemasFor: SchemasFor
+): Value => {
   const parsed = parseOr(text)
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return valueOf(parsed)
   const record = parsed as Record<string, unknown>
   const state = record.state as Record<string, unknown> | undefined
   if (typeof state === "object" && state !== null && typeof state.flowName === "string") {
     const flowName = state.flowName
+    const shown = schemasFor(flowName)
     const result = state.result as { readonly exit?: Record<string, unknown> } | undefined
     record.state = {
       ...state,
-      payload: displayed(schemas.payloadOf(flowName), state.payload),
+      payload: shownThrough(shown, (known) => known.payloadOf(flowName))(state.payload),
       ...(result?.exit?._tag === "Success"
         ? {
           result: {
             ...result,
-            exit: { ...result.exit, value: displayed(schemas.successOf(flowName), result.exit.value) }
+            exit: {
+              ...result.exit,
+              value: shownThrough(shown, (known) => known.successOf(flowName))(result.exit.value)
+            }
           }
         }
         : {})
@@ -681,13 +709,17 @@ const summaryOf = (row: RunRow): RunSummary => ({
     : { door: row.state_json.origin.door, actor: row.state_json.origin.actor }
 })
 
-/** A run row with what it was given and what it answered, shown through its flow. */
-const detailOf = (row: RunRow, schemas: Schemas) => {
+/**
+ * A run row with what it was given and what it answered, shown through its
+ * flow, or withheld when the reader does not know it.
+ */
+const detailOf = (row: RunRow, schemasFor: SchemasFor) => {
   const { flowName, payload, result } = row.state_json
+  const schemas = schemasFor(flowName)
   return {
     ...summaryOf(row),
-    input: valueOf(displayed(schemas.payloadOf(flowName), payload)),
-    result: resultOf(result, schemas.successOf(flowName)),
+    input: valueOf(shownThrough(schemas, (known) => known.payloadOf(flowName))(payload)),
+    result: resultOf(result, shownThrough(schemas, (known) => known.successOf(flowName))),
     ...(row.state_json.failure === undefined ? {} : { failure: FailureDiagnostic.bound(row.state_json.failure) })
   }
 }
@@ -724,7 +756,7 @@ interface StepDraft {
  * scheduled again after it settled is a new step; one scheduled again while
  * open is the same step. A settlement with no scheduling opens its own step.
  */
-const foldSteps = (events: ReadonlyArray<typeof EventRow.Type>, schemas: Schemas): Array<StepDraft> => {
+const foldSteps = (events: ReadonlyArray<typeof EventRow.Type>, schemas: Schemas | undefined): Array<StepDraft> => {
   const steps: Array<StepDraft> = []
   const open = new Map<string, StepDraft>()
   for (const event of events) {
@@ -790,14 +822,18 @@ const pageSize = (limit: number | undefined, maximum: number, fallback: number) 
  * payload, its result and each step's output show through their schemas (the
  * flow's, and each action's read off the flow's plan), so a `Schema.Redacted`
  * value reads as `<redacted>` at any depth and a value its schema no longer
- * decodes as `<withheld>`; without, every value is read as stored and only the
- * redactor's rules stand between it and the reader.
+ * decodes as `<withheld>`. A run whose flow is not in `flows`, every run
+ * without `flows`, reads its payload, its result and each step's output as
+ * `<withheld>`; with `unknownFlows: "asStored"` it reads them as stored, with
+ * only the redactor's rules between them and the reader, which only an
+ * operator tool that must see them asks for.
  *
  * @category models
  * @since 1.0.0
  */
 export interface Options {
   readonly flows?: ReadonlyArray<Flow.Any> | undefined
+  readonly unknownFlows?: "withhold" | "asStored" | undefined
 }
 
 /**
@@ -810,7 +846,9 @@ export interface Options {
 export const make = (options: Options = {}): Effect.Effect<Service, never, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const schemas = options.flows === undefined ? noSchemas : schemasOf(options.flows)
+    const known = options.flows === undefined ? noSchemas : schemasOf(options.flows)
+    const asStored = options.unknownFlows === "asStored"
+    const schemasFor: SchemasFor = (flowName) => asStored || known.payloadOf(flowName) !== undefined ? known : undefined
     const decode = <S extends Schema.Top>(schema: S, rows: ReadonlyArray<unknown>) =>
       Effect.forEach(rows, (row) => Read.decode(schema, row))
 
@@ -859,9 +897,10 @@ export const make = (options: Options = {}): Effect.Effect<Service, never, SqlCl
             for (const attempt of attempts) {
               attemptsOf.set(attempt.step_key_digest, [...(attemptsOf.get(attempt.step_key_digest) ?? []), attempt])
             }
+            const schemas = schemasFor(row.state_json.flowName)
             const steps = foldSteps(nodes, schemas).map(({ digests, preview, ...step }): Step => {
               // An attempt's outcome is its step's success value, shown through that action's schema.
-              const schema = step.action === null ? undefined : schemas.successOf(step.action)
+              const schema = step.action === null ? undefined : schemas?.successOf(step.action)
               const owned = digests.flatMap((digest) => attemptsOf.get(digest) ?? []).map((attempt): Attempt => ({
                 attempt: attempt.attempt,
                 state: attempt.state,
@@ -869,6 +908,8 @@ export const make = (options: Options = {}): Effect.Effect<Service, never, SqlCl
                 finishedAtMs: attempt.finished_at_ms,
                 outcome: attempt.outcome_json === null
                   ? null
+                  : schemas === undefined
+                  ? withheld
                   : valueOf(displayed(schema, parseOr(attempt.outcome_json))),
                 error: attempt.error_json === null ? null : codeOf(parseOr(attempt.error_json))
               }))
@@ -879,12 +920,12 @@ export const make = (options: Options = {}): Effect.Effect<Service, never, SqlCl
               seq: event.seq,
               eventType: event.event_type,
               emittedAtMs: event.emitted_at_ms,
-              payload: eventPayloadOf(event.event_type, event.payload_json, schemas)
+              payload: eventPayloadOf(event.event_type, event.payload_json, schemas, schemasFor)
             }))
             return {
-              run: detailOf(row, schemas),
+              run: detailOf(row, schemasFor),
               steps,
-              children: children.map((child) => detailOf(child, schemas)),
+              children: children.map((child) => detailOf(child, schemasFor)),
               journal: {
                 events,
                 afterSeq,
@@ -990,7 +1031,8 @@ const rethrowNotFound = <A, R>(
   Effect.catch(effect, (error) => Effect.fail(error.cause instanceof RunNotFound ? error.cause : error))
 
 /**
- * Provides the run reads over `SqlClient`.
+ * Provides the run reads over `SqlClient`, knowing no flow: every run's
+ * payload, result and step outputs read as {@link withheldMarker}.
  *
  * @category layers
  * @since 1.0.0
