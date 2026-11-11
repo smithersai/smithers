@@ -177,8 +177,10 @@ cases share a step key and scorer, without invoking scorer callbacks.
 - The encoder is bounded in total, not only per branch. A value referenced
   twice is expanded twice, which a shared acyclic graph turns into exponential
   work well below the depth ceiling, so traversal stops after 2000000 values or
-  33554432 output code units and every remaining value becomes
-  `[budget exceeded]`. The budget is spent in traversal order, which the key
+  33554432 output code units, and one `[budget exceeded]` replaces the rest of
+  each array, set, map, or object being walked. A typed array or `DataView`
+  becomes a marker naming its type and byte length, as in
+  `[Uint8Array 16777216 bytes]`. The budget is spent in traversal order, which the key
   sort fixes, so one value always truncates at the same place.
 - `Report.markdown` neutralizes inline GFM and raw HTML in every cell and the
   suite heading value. It caps each value at 240 escaped UTF-16 code units,
@@ -366,7 +368,8 @@ Committed baselines: what a suite used to score.
 - `Baseline`: `{ version, suite, records }`. `suite` records artifact
   ownership even when `records` is empty.
 - `limits`: `{ length: 16777216 }`, the longest baseline JSON text `load`
-  parses, in UTF-16 code units.
+  parses, in UTF-16 code units. A baseline that would write longer fails
+  validation, so every written baseline loads again.
 
 ```ts
 const fromRun = (run: RunResult): Effect.Effect<Baseline, EvalError>
@@ -387,7 +390,8 @@ rebuilt from the validated values, and the array is frozen. Fails with
 `invalid_baseline` carrying the record index and field name in `path` for a
 wrong version, a non-array `records`, a record that is not an object, an
 identity field that is not a string or holds a control character, or a score
-that is not finite in [0, 1]. A control character is any of the C0 controls (U+0000 through U+001F), DEL (U+007F), C1 controls (U+0080
+that is not finite in [0, 1]. A baseline that would write more than
+`limits.length` characters fails at `path: "records"`. A control character is any of the C0 controls (U+0000 through U+001F), DEL (U+007F), C1 controls (U+0080
 through U+009F), and the bidirectional controls U+061C, U+200E, U+200F,
 U+202A through U+202E, and U+2066 through U+2069.
 A top-level `suite` holding a control character fails at `path: "suite"`.

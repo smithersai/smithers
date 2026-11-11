@@ -60,7 +60,9 @@ export interface Baseline {
  * The declared ceilings a committed baseline is validated against.
  *
  * `length` bounds the JSON text `load` will parse, so an oversized committed
- * file fails with a sentence instead of exhausting a CI runner's memory.
+ * file fails with a sentence instead of exhausting a CI runner's memory. The
+ * same limit bounds what `write` produces: a baseline that would write longer
+ * fails validation, so every written baseline loads again.
  *
  * @category models
  * @since 0.1.0
@@ -79,6 +81,8 @@ const diagnosticValue = (value: unknown): string =>
     : value === null
     ? "null"
     : typeof value
+
+const serialize = (baseline: Baseline): string => CanonicalJson.stringify(baseline)
 
 const fail = (message: string, path?: string): Effect.Effect<never, EvalError> =>
   Effect.fail(
@@ -172,6 +176,15 @@ const validate = (value: unknown): Effect.Effect<Baseline, EvalError> =>
       }
       suite = first.suite
     }
+    // `load` refuses text over `limits.length`, so a baseline that would write
+    // longer could be committed but never read back. Rejecting it here also
+    // keeps `write` inside the canonical encoder's budgets: a record writes at
+    // least 56 code units for 6 values, so this limit is reached well before
+    // either budget and `write` never leaves a `[budget exceeded]` marker.
+    const length = serialize({ version, suite, records }).length
+    if (length > limits.length) {
+      return yield* fail(`Baseline must write at most ${limits.length} characters, got ${length}`, "records")
+    }
     return { version, suite, records: Object.freeze(records) }
   })
 
@@ -211,7 +224,8 @@ export const fromRun = (run: RunResult): Effect.Effect<Baseline, EvalError> => {
  * Fails with `invalid_baseline` carrying the record index and field name in
  * `path` for a wrong version, a non-array `records`, a record that is not an
  * object, an identity field that is not a string or holds a control
- * character, or a score that is not finite in `[0, 1]`.
+ * character, a score that is not finite in `[0, 1]`, or, at `records`, a
+ * baseline that would write more than `limits.length` characters.
  *
  * @category constructors
  * @since 0.1.0
@@ -248,11 +262,7 @@ export const write = (baseline: Baseline): string => {
       Number(left.scorerName !== undefined) - Number(right.scorerName !== undefined)
     )
     .map(([, record]) => record)
-  return CanonicalJson.stringify({
-    version: baseline.version,
-    suite: baseline.suite,
-    records
-  })
+  return serialize({ version: baseline.version, suite: baseline.suite, records })
 }
 
 /**

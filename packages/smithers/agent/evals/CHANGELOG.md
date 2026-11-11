@@ -60,6 +60,24 @@
   artifact in 16 seconds. The budget is spent in traversal order, which the key
   sort fixes, so one value always truncates at the same place.
 
+- The canonical encoder's budgets now bound its output. Once a budget ran
+  out, every remaining element still got its own `[budget exceeded]` marker,
+  so a 30000000-element output threw `RangeError: Invalid string length`
+  from `Report.json`. One marker now replaces the rest of a collection. A
+  typed array or `DataView` encodes as a marker such as
+  `[Uint8Array 16777216 bytes]` instead of one key per element: a 16 MiB
+  `Uint8Array` took 18 seconds and wrote 477 million characters.
+
+- `Baseline.make`, `Baseline.fromRun`, and `Baseline.load` reject, at
+  `records`, a baseline that would write more than `Baseline.limits.length`
+  characters. `Baseline.write` used to emit such a file, which `load` then
+  refused, so a committed baseline could never be read again.
+
+- **Breaking:** `Runner.run` fails a case whose executor returns a step key
+  holding a control character, with `executor` at `cases['<name>'].stepKey`.
+  The run used to keep the key, and `Baseline.fromRun` then refused the whole
+  run, naming a baseline record instead of the executor.
+
 - Load version-1 baselines without a top-level `suite` when every record names
   the same suite. Reject empty or ambiguous legacy artifacts with an explicit
   `invalid_baseline` reason at `suite`.

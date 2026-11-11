@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { CaseExecutor, type Execution, type Service as CaseExecutorService } from "./CaseExecutor.ts"
 import { EvalError } from "./EvalError.ts"
-import { flattenControlCharacters } from "./internal/controlCharacters.ts"
+import { controlCharacter, flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { scorerLabel } from "./internal/scorerLabel.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
 import type { Binding, Case, Suite } from "./Suite.ts"
@@ -266,12 +266,11 @@ const caseError = (suiteCase: Case, cause: Cause.Cause<unknown>): EvalError => {
     })
 }
 
-// A step key is a runtime value the target returns, so unlike a suite name it
-// is flattened rather than rejected: it reaches baselines, reports and the
-// gate summary, and a control character in any of them corrupts a CI log line.
 // An executor written in plain JavaScript can return any shape, so the two
 // fields every scorer and baseline reads are checked here, where the failure
-// can still name the case and the field.
+// can still name the case and the field. A step key follows the rule for a
+// baseline record, which stores it verbatim: a control character is rejected
+// here, because a run that kept it could never be recorded as a baseline.
 const malformedExecution = (suiteCase: Case, execution: Execution): EvalError | undefined => {
   const shape: { readonly stepKey?: unknown; readonly latencyMs?: unknown } =
     typeof execution === "object" && execution !== null ? execution : {}
@@ -279,6 +278,14 @@ const malformedExecution = (suiteCase: Case, execution: Execution): EvalError | 
     return new EvalError({
       code: "executor",
       message: `executor returned a stepKey that is not a string (${typeof shape.stepKey})`,
+      path: `${casePath(suiteCase.name)}.stepKey`
+    })
+  }
+  const control = controlCharacter(shape.stepKey)
+  if (control !== undefined) {
+    return new EvalError({
+      code: "executor",
+      message: `executor returned a stepKey containing the control character ${control}`,
       path: `${casePath(suiteCase.name)}.stepKey`
     })
   }

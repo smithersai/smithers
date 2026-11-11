@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
+import * as Baseline from "../src/Baseline.ts"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
 import { EvalError } from "../src/EvalError.ts"
 import * as Report from "../src/Report.ts"
@@ -261,24 +262,39 @@ describe("Runner", () => {
       .toBe(true)
   })
 
-  it("preserves step key identity and flattens a wrapped target failure", async () => {
-    const suite = await suiteOf("s", [], [{ name: "one", input: 1 }, { name: "two", input: 2 }])
+  // A step key is stored verbatim in a baseline, which rejects a control
+  // character. Keeping such a key in the run made a run that scored normally
+  // fail later in Baseline.fromRun, naming a record instead of the executor.
+  it("preserves step key identity, rejects a control character in it, and flattens a wrapped target failure", async () => {
+    const hostile = "step\n::warning::forged from stepKey\u001b[2K\u009b2K\u202e"
+    const suite = await suiteOf("s", [binding], [{ name: "one", input: 1 }, { name: "two", input: 2 }, {
+      name: "three",
+      input: 3
+    }])
     const executor = executorFor((suiteCase) =>
-      suiteCase.name === "one"
-        ? Effect.succeed({
+      suiteCase.name === "two"
+        ? Effect.fail(new EvalError({ code: "executor", message: "boom\n::error::forged from target\u007f" }))
+        : Effect.succeed({
           output: suiteCase.input,
-          stepKey: "step\n::warning::forged from stepKey\u001b[2K\u009b2K\u202e",
+          stepKey: suiteCase.name === "one" ? "step ::warning:: kept" : hostile,
           latencyMs: 0,
           target
         })
-        : Effect.fail(new EvalError({ code: "executor", message: "boom\n::error::forged from target\u007f" }))
     )
     const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
 
-    expect(result.cases[0]?.execution?.stepKey).toBe("step\n::warning::forged from stepKey\u001b[2K\u009b2K\u202e")
+    expect(result.cases[0]?.execution?.stepKey).toBe("step ::warning:: kept")
     expect(result.cases[1]?.error?.message).toBe("Target failed for case 'two': boom ::error::forged from target ")
     // The original message stays on the cause for anyone debugging the target.
     expect((result.cases[1]?.error?.cause as EvalError).message).toBe("boom\n::error::forged from target\u007f")
+    expect(result.cases[2]?.execution).toBeUndefined()
+    expect(result.cases[2]?.error?.code).toBe("executor")
+    expect(result.cases[2]?.error?.path).toBe("cases['three'].stepKey")
+    expect(result.cases[2]?.error?.message).toBe(
+      "Target failed for case 'three': executor returned a stepKey containing the control character U+000A"
+    )
+    const baseline = await Effect.runPromise(Baseline.fromRun(result))
+    expect(baseline.records.map((record) => [record.case, record.stepKey])).toEqual([["one", "step ::warning:: kept"]])
   })
 
   // An executor written in plain JavaScript can hand back any shape. A step key
@@ -1629,10 +1645,10 @@ describe("Runner", () => {
 it("preserves distinct execution keys for scoring", async () => {
   const suite = await suiteOf("keys", [binding], [{ name: "a", input: 1 }, { name: "b", input: 1 }])
   const executor = executorFor((c) =>
-    Effect.succeed({ output: c.input, stepKey: c.name === "a" ? "x\ny" : "x y", latencyMs: 0, target })
+    Effect.succeed({ output: c.input, stepKey: c.name === "a" ? "x\u00a0y" : "x y", latencyMs: 0, target })
   )
   const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
-  expect(result.observations.map((o) => o.stepKey)).toEqual(["x\ny", "x y"])
+  expect(result.observations.map((o) => o.stepKey)).toEqual(["x\u00a0y", "x y"])
 })
 
 it("isolates scorer mutations from sibling inputs and retained output", async () => {

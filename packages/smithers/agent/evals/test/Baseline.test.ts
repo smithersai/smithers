@@ -127,6 +127,24 @@ describe("Baseline", () => {
     }
   })
 
+  // write used to emit text load then refused: a baseline over the length
+  // limit was accepted, written, committed, and could never be read again.
+  it("rejects a baseline that would write more than the length limit", async () => {
+    const overhead = Baseline.write(await Effect.runPromise(Baseline.make({ suite: "s", records: [record] }))).length -
+      record.case.length
+    const atLimit = { ...record, case: "c".repeat(Baseline.limits.length - overhead) }
+    const written = Baseline.write(await Effect.runPromise(Baseline.make({ suite: "s", records: [atLimit] })))
+    expect(written).toHaveLength(Baseline.limits.length)
+    expect((await Effect.runPromise(Baseline.load(written))).records).toEqual([atLimit])
+
+    const error = await failure(Baseline.make({ suite: "s", records: [{ ...atLimit, case: `${atLimit.case}c` }] }))
+    expect(error.code).toBe("invalid_baseline")
+    expect(error.path).toBe("records")
+    expect(error.message).toBe(
+      `Baseline must write at most ${Baseline.limits.length} characters, got ${Baseline.limits.length + 1}`
+    )
+  })
+
   it("rejects an empty suite-less legacy artifact", async () => {
     const error = await failure(Baseline.load("{\"version\":1,\"records\":[]}"))
 

@@ -115,7 +115,7 @@ describe("CanonicalJson", () => {
 
   it("stops at the declared node budget", () => {
     // The array itself is the first node, so two entries survive a budget of 3.
-    expect(encode([1, 2, 3, 4], { maxNodes: 3 })).toEqual([1, 2, budgetExceeded, budgetExceeded])
+    expect(encode([1, 2, 3, 4], { maxNodes: 3 })).toEqual([1, 2, budgetExceeded])
   })
 
   it("stops at the declared output byte budget", () => {
@@ -139,6 +139,34 @@ describe("CanonicalJson", () => {
   it("bounds a wide collection of long keys", () => {
     const wide = Object.fromEntries(Array.from({ length: 4096 }, (_, index) => [`${"k".repeat(64)}${index}`, index]))
     expect(stringify(wide, { maxBytes: 4096 })).toContain(budgetExceeded)
+  })
+
+  // A marker per remaining element made the output grow with the input after
+  // the budget ran out, so an array past the node budget encoded past the byte
+  // cap, and 30 million entries threw RangeError: Invalid string length.
+  it("leaves one marker for the rest of a collection once the budget is spent", () => {
+    expect(encode({ a: 1, b: 2, c: 3, d: 4 }, { maxNodes: 3 })).toEqual({ a: 1, b: 2, c: budgetExceeded })
+    expect(encode(new Set([1, 2, 3, 4]), { maxNodes: 3 })).toEqual([1, 2, budgetExceeded])
+    expect(encode(new Map([[1, 2], [3, 4], [5, 6]]), { maxNodes: 4 })).toEqual([
+      [1, 2],
+      [3, budgetExceeded],
+      budgetExceeded
+    ])
+    expect(encode([[1, 2, 3], 4, 5], { maxNodes: 3 })).toEqual([[1, budgetExceeded], budgetExceeded])
+    const encoded = stringify({ output: new Array(4_000_000).fill(0) })
+    expect(encoded.length).toBeLessThan(maxBytes)
+    expect(encoded.endsWith(`,${JSON.stringify(budgetExceeded)}]}\n`)).toBe(true)
+  })
+
+  // A typed array has one key per byte: a 16 MB image used to take 18 s and
+  // write 477 million characters against the 33.5 million cap.
+  it("encodes a typed array or DataView as a marker naming its length", () => {
+    const image = new Uint8Array(16 * 1024 * 1024)
+    expect(encode({ image, view: new DataView(new ArrayBuffer(3)), floats: new Float64Array(2) })).toEqual({
+      floats: "[Float64Array 16 bytes]",
+      image: "[Uint8Array 16777216 bytes]",
+      view: "[DataView 3 bytes]"
+    })
   })
 
   it("passes null and booleans through untouched", () => {

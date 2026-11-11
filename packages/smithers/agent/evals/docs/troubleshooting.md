@@ -65,6 +65,9 @@ artifact and its ownership before regenerating it from a green run.
   `suite`: records disagree on ownership. Recover a baseline for the intended
   suite; do not choose the first record's suite for a mixed artifact.
 - `Baseline records must be an array`, at `records`.
+- `Baseline must write at most 16777216 characters`, at `records`: the
+  records would write a file longer than `Baseline.limits.length`, which
+  `Baseline.load` could not read back.
 - A record that is not an object, an identity field that is not a string or
   holds a control character, or a score outside [0, 1]: the record index and
   field are in `path`, as in `records[3].score`.
@@ -98,10 +101,12 @@ The target flow failed for a case, or no executor was available.
   `cases['<name>']`, and produces no observations for the case. The rest of
   the suite still ran. Read the retained `cause`.
 - `Target failed for case '<name>': executor returned a stepKey that is not a
-  string` or `... a latencyMs that is not a finite non-negative number`: the
-  executor succeeded but returned a malformed execution. `path` is
+  string`, `... a stepKey containing the control character U+XXXX`, or
+  `... a latencyMs that is not a finite non-negative number`: the executor
+  succeeded but returned a malformed execution. `path` is
   `cases['<name>'].stepKey` or `cases['<name>'].latencyMs`. Return the step
-  key as a string and the latency in milliseconds as a number of 0 or more.
+  key as a string without control characters, since a baseline stores it
+  verbatim, and the latency in milliseconds as a number of 0 or more.
 - `Target failed for case '<name>': executor returned an output that is not
   structured-cloneable`: the output holds a function, a symbol, a stream, or
   anything else `structuredClone` rejects. `path` is `cases['<name>'].output`,

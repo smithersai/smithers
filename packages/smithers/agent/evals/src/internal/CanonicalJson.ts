@@ -123,27 +123,54 @@ const entriesOf = (value: object): ReadonlyArray<readonly [string, unknown]> =>
     }
   })
 
+const spent = (budget: Budget): boolean => budget.nodes <= 0 || budget.bytes <= 0
+
+// Walks values in order until the budget runs out, then leaves one marker for
+// the whole remainder. A marker per remaining value would make the output grow
+// with the input after the budget is spent.
+const walkEach = <A>(
+  values: Iterable<A>,
+  visit: (value: A) => unknown,
+  budget: Budget
+): Array<unknown> => {
+  const encoded: Array<unknown> = []
+  for (const value of values) {
+    if (spent(budget)) {
+      encoded.push(budgetExceeded)
+      break
+    }
+    encoded.push(visit(value))
+  }
+  return encoded
+}
+
 const objectOf = (
   entries: ReadonlyArray<readonly [string, unknown]>,
   depth: number,
   seen: Set<object>,
   options: Options,
   budget: Budget
-): object =>
-  Object.fromEntries(
-    entries
+): object => {
+  const encoded: { [key: string]: unknown } = {}
+  for (
+    const [key, entry] of entries
       .filter(([, entry]) => entry !== undefined)
       .sort(([left], [right]) => compareText(left, right))
-      .map(([key, entry]) => {
-        // The key is rendered too, so a wide object of long keys spends the
-        // byte budget even when every value is a marker.
-        budget.bytes -= key.length + 3
-        return [key, walk(entry, depth + 1, seen, options, budget)]
-      })
-  )
+  ) {
+    if (spent(budget)) {
+      encoded[key] = budgetExceeded
+      break
+    }
+    // The key is rendered too, so a wide object of long keys spends the
+    // byte budget even when every value is a marker.
+    budget.bytes -= key.length + 3
+    encoded[key] = walk(entry, depth + 1, seen, options, budget)
+  }
+  return encoded
+}
 
 const walk = (value: unknown, depth: number, seen: Set<object>, options: Options, budget: Budget): unknown => {
-  if (budget.nodes <= 0 || budget.bytes <= 0) return budgetExceeded
+  if (spent(budget)) return budgetExceeded
   budget.nodes -= 1
   if (value === null || typeof value !== "object") {
     const encoded = primitive(value, options)
@@ -155,6 +182,11 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
   budget.bytes -= 2
   try {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? "[invalid Date]" : value.toISOString()
+    // A typed array has one key per element, so walking it would materialize
+    // every element before the budget is first charged.
+    if (ArrayBuffer.isView(value)) {
+      return `[${Object.prototype.toString.call(value).slice(8, -1)} ${value.byteLength} bytes]`
+    }
     seen.add(value)
     try {
       if (value instanceof Error) {
@@ -163,14 +195,12 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
         properties.set("message", String(value.message))
         return objectOf([...properties], depth, seen, options, budget)
       }
-      if (Array.isArray(value)) return value.map((entry) => walk(entry, depth + 1, seen, options, budget))
-      if (value instanceof Set) return [...value].map((entry) => walk(entry, depth + 1, seen, options, budget))
-      if (value instanceof Map) {
-        return [...value.entries()]
-          .map((
-            [key, entry]
-          ) => [walk(key, depth + 1, seen, options, budget), walk(entry, depth + 1, seen, options, budget)])
+      const visit = (entry: unknown): unknown => walk(entry, depth + 1, seen, options, budget)
+      if (Array.isArray(value)) {
+        return walkEach(Array.prototype.keys.call(value), (index) => visit(value[index]), budget)
       }
+      if (value instanceof Set) return walkEach(value, visit, budget)
+      if (value instanceof Map) return walkEach(value, ([key, entry]) => [visit(key), visit(entry)], budget)
       return objectOf(entriesOf(value), depth, seen, options, budget)
     } finally {
       seen.delete(value)
@@ -191,13 +221,15 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
  * throws. An `Error` becomes an object containing its own enumerable fields
  * plus `name` and `message`, so typed error fields survive serialization. A
  * `Date` becomes its ISO string, a `Set` an array, and a `Map` an array of
- * key/value pairs.
+ * key/value pairs. A typed array or `DataView` becomes a marker naming its
+ * type and byte length, as in `[Uint8Array 16 bytes]`.
  *
  * Traversal is bounded in total, not only per branch: once {@link maxNodes}
- * values or {@link maxBytes} output code units are spent, every remaining
- * value becomes `[budget exceeded]`. The budget is spent in traversal order,
- * and traversal order is fixed by the key sort, so one value always truncates
- * at the same place.
+ * values or {@link maxBytes} output code units are spent, one
+ * `[budget exceeded]` replaces the rest of each array, set, map, or object
+ * being walked, under the first key left out of an object. The budget is
+ * spent in traversal order, and traversal order is fixed by the key sort, so
+ * one value always truncates at the same place.
  *
  * @since 0.1.0
  * @private

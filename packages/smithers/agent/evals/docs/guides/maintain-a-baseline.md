@@ -81,7 +81,7 @@ artifact, and the returned array is frozen. Validation fails with
 wrong version, a non-array `records`, a record that is not an object, a
 top-level `suite` or identity field that holds a control character, a record
 identity field that is not a string, a file longer than
-`Baseline.limits.length`, or a score that is not finite in [0, 1]. A negative zero score is normalized to 0.
+`Baseline.limits.length` or records that would write one, or a score that is not finite in [0, 1]. A negative zero score is normalized to 0.
 
 Ownership is checked at comparison time: `Regression.compare` refuses a
 baseline whose artifact or any record names a suite other than the run's,

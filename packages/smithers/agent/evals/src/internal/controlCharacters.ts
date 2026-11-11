@@ -5,11 +5,11 @@
  * a newline lets the value print its own line, which on GitHub Actions is a
  * workflow command the runner executes, an ESC or a C1 CSI (U+009B) sequence
  * rewrites the visible log, and a Unicode bidirectional control reorders what
- * a reader sees. Values an author declares (suite and case names, baseline
- * suites and records) are rejected where they enter the system; values a
- * target returns at runtime (step keys, failure messages) are flattened
- * instead, so a broken target stays a readable failure rather than a rejected
- * run.
+ * a reader sees. Values stored verbatim (suite and case names, step keys,
+ * baseline suites and records) are rejected where they enter the system; a
+ * step key with a control character fails its own case. Failure messages a
+ * target returns are flattened instead, so a broken target stays a readable
+ * failure rather than a rejected run.
  *
  * The rule covers C0 controls (U+0000 through U+001F), DEL (U+007F), C1
  * controls (U+0080 through U+009F), and the bidirectional controls U+061C,
