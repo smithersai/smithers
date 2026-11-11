@@ -57,7 +57,9 @@ const raw = Layer.mergeAll(
 
 `GrantStore.layer({ attended: false })` builds a store with no rules and
 nobody to ask. `HostServices.layer` composed over the raw bundle replaces all
-five tags with their guarded implementations:
+five tags with their guarded implementations. The store goes beneath the
+decorators with `Layer.provide`, so the program gets the five host tags and
+never the store that decides for them:
 
 ```ts
 const unattended = Effect.gen(function*() {
@@ -67,8 +69,11 @@ const unattended = Effect.gen(function*() {
     Permission.fromPlatformError(failure as PlatformError.PlatformError)
   )
 }).pipe(
-  Effect.provide(HostServices.layer),
-  Effect.provide(Layer.orDie(GrantStore.layer({ attended: false }))),
+  Effect.provide(
+    HostServices.layer.pipe(
+      Layer.provide(Layer.orDie(GrantStore.layer({ attended: false })))
+    )
+  ),
   Effect.provide(raw),
   Effect.scoped
 )
@@ -100,12 +105,16 @@ costs nothing; see [effect tiers](/pkg/capability/concepts/effect-tiers).
 ## Answer the request instead
 
 An attended store parks the asking fiber on a request and waits. Build the
-store with `GrantStore.make` so you hold the service directly, fork the read,
-read the pending request, and reply:
+store with `GrantStore.make` so you hold the service directly, fork the
+guarded read, read the pending request, and reply:
 
 ```ts
 const attended = Effect.gen(function*() {
   const store = yield* GrantStore.make({ runId: "quickstart" })
+  // Only the decorators see the store. The guarded read cannot reach it.
+  const guarded = HostServices.layer.pipe(
+    Layer.provide(Layer.succeed(GrantStore.GrantStore)(store))
+  )
 
   /** Polls until the forked read has parked. A real host waits on its own UI. */
   const pending = (): Effect.Effect<GrantStore.PendingRequest> =>
@@ -114,23 +123,26 @@ const attended = Effect.gen(function*() {
         ? Effect.andThen(Effect.yieldNow, pending())
         : Effect.succeed(requests[0]))
 
-  return yield* Effect.gen(function*() {
+  const read = Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const reading = yield* Effect.forkChild(fs.readFileString("/workspace/README.md"), {
-      startImmediately: true
-    })
+    return yield* fs.readFileString("/workspace/README.md")
+  }).pipe(Effect.provide(guarded))
 
-    const request = yield* pending()
-    // request.capability is { action: "fs:read", resource: "/workspace/README.md" }
-    yield* store.reply(request.requestId, "once")
+  const reading = yield* Effect.forkChild(read, { startImmediately: true })
 
-    return yield* Fiber.join(reading)
-  }).pipe(
-    Effect.provide(HostServices.layer),
-    Effect.provideService(GrantStore.GrantStore, store)
-  )
+  const request = yield* pending()
+  // request.capability is { action: "fs:read", resource: "/workspace/README.md" }
+  yield* store.reply(request.requestId, "once")
+
+  return yield* Fiber.join(reading)
 }).pipe(Effect.scoped, Effect.provide(raw))
 ```
+
+The operator side holds `store`; the guarded side holds only the five host
+tags. Provide the store to the guarded program itself, with
+`Effect.provideService` or `Effect.provide`, and that program can
+`yield* GrantStore.GrantStore`, list its own parked requests, and reply to
+them.
 
 `Fiber.join(reading)` answers `"# hello"`. The read did not fail and retry: it
 suspended inside the decorator, and the reply woke it up to finish the

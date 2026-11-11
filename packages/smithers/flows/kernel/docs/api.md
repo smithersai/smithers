@@ -31,8 +31,7 @@ const read = Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString("/w
 // Refused with permission_required: no rule authorizes fs:read.
 Effect.runPromise(
   read.pipe(
-    Effect.provide(HostServices.layer),
-    Effect.provide(Layer.orDie(GrantStore.layer({ attended: false }))),
+    Effect.provide(HostServices.layer.pipe(Layer.provide(Layer.orDie(GrantStore.layer({ attended: false }))))),
     Effect.provide(raw),
     Effect.scoped
   )

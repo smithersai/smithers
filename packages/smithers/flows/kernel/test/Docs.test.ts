@@ -86,6 +86,20 @@ describe("documentation contracts", () => {
     }
   )
 
+  it("never provides the GrantStore to the guarded program itself", () => {
+    // `Effect.provide(...)` and `Effect.provideService(...)` put the store in
+    // the program's own context, where it can reply to its own requests. The
+    // docs put it beneath HostServices.layer with `Layer.provide` instead.
+    const exposed = /Effect\.provide(Service)?\(\s*(Layer\.orDie\(\s*)?(Layer\.succeed\(\s*)?GrantStore\./
+    const files = globSync("**/*.md", { cwd: docsDir })
+    // Controls: the attended guides are scanned, and the probe catches the old composition.
+    expect(files).toEqual(expect.arrayContaining(["quickstart.md", "guides/answer-permission-requests.md"]))
+    expect(exposed.test("Effect.provideService(GrantStore.GrantStore, store)")).toBe(true)
+    expect(exposed.test("Effect.provide(Layer.orDie(GrantStore.layer({ attended: false })))")).toBe(true)
+    expect(exposed.test("Layer.provide(Layer.succeed(GrantStore.GrantStore)(store))")).toBe(false)
+    expect(files.filter((file) => exposed.test(readFileSync(join(docsDir, file), "utf8")))).toEqual([])
+  })
+
   it("runs the same quickstart file it tells the reader to create", async () => {
     const quickstart = await readDoc("quickstart.md")
     const created = /Create `([^`]+)`/.exec(quickstart)?.[1]

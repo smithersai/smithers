@@ -302,4 +302,38 @@ describe("HostServices", () => {
 
       yield* program
     }))
+
+  it.effect("answers an attended read while the guarded program cannot reach the store", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const store = yield* GrantStore.make({ runId: "operator-only" })
+        // The composition the attended guides document: the store sits beneath
+        // the decorators, so only they consult it.
+        const guarded = HostServices.layer.pipe(Layer.provide(Layer.succeed(GrantStore.GrantStore)(store)))
+        const awaitPending: Effect.Effect<GrantStore.PendingRequest> = Effect.suspend(() =>
+          Effect.flatMap(store.list, (pending) =>
+            pending[0] === undefined
+              ? Effect.yieldNow.pipe(Effect.andThen(awaitPending))
+              : Effect.succeed(pending[0]))
+        )
+        const guest = Effect.gen(function*() {
+          const reachable = Option.isSome(yield* Effect.serviceOption(GrantStore.GrantStore))
+          const fs = yield* EffectFileSystem.FileSystem
+          return { reachable, bytes: (yield* fs.readFile("/workspace/README.md")).length }
+        }).pipe(Effect.provide(guarded))
+
+        const running = yield* Effect.forkChild(guest, { startImmediately: true })
+        const request = yield* awaitPending
+        expect(request.capability).toMatchObject({ action: "fs:read", resource: "/workspace/README.md" })
+        yield* store.reply(request.requestId, "once")
+
+        expect(yield* Fiber.join(running)).toEqual({ reachable: false, bytes: 0 })
+      }).pipe(
+        Effect.provide(ProcessConfinement.layerNoop),
+        Effect.provideService(EffectFileSystem.FileSystem, fileSystem),
+        Effect.provideService(EffectHttpClient.HttpClient, EffectHttpClient.make(() => Effect.die("no HTTP here"))),
+        Effect.provide(testHost),
+        Effect.provide(Workspace.layer("/workspace"))
+      )
+    ))
 })

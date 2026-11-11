@@ -12,22 +12,29 @@ prompt, or the test that answers.
 ## Hold the store, not just the layer
 
 To reply you need the service itself, so build it with `GrantStore.make` and
-provide it to the guarded host:
+provide it beneath the guarded host:
 
 ```ts
 import { GrantStore, HostServices } from "@smthrs/kernel"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 
 const withAttendedHost = Effect.gen(function*() {
   // `attended` defaults to true. `runId` and `planDigest` scope the grants.
   const store = yield* GrantStore.make({ runId: "run-1", planDigest: "plan-abc" })
-
-  return yield* work.pipe(
-    Effect.provide(HostServices.layer),
-    Effect.provideService(GrantStore.GrantStore, store)
+  const guarded = HostServices.layer.pipe(
+    Layer.provide(Layer.succeed(GrantStore.GrantStore)(store))
   )
+
+  return yield* work.pipe(Effect.provide(guarded))
 }).pipe(Effect.scoped)
 ```
+
+`Layer.provide` hands the store to the decorators that consult it and to
+nothing else: `work` gets the five host tags, not `GrantStore`. Keep `store`
+on the operator side. Never give it to `work` with `Effect.provideService` or
+`Effect.provide`: `reply`, `list`, and `grantEnvelope` take no proof of who
+calls them, so guarded code that can `yield* GrantStore.GrantStore` can read
+its own parked requests and approve them.
 
 The store is scoped. Closing its scope rejects every waiter with
 `permission_denied` and the reason `"grant store closed"`, and every later call
