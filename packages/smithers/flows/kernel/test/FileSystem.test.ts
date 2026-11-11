@@ -662,6 +662,7 @@ describe("FileSystem", () => {
     const allowed = new Set([
       "fs:read:/workspace/from",
       "fs:write:/workspace/to",
+      "fs:read:/workspace/old",
       "fs:write:/workspace/old",
       "fs:write:/workspace/new"
     ])
@@ -674,6 +675,7 @@ describe("FileSystem", () => {
         expect(checks).toEqual([
           { action: "fs:read", resource: "/workspace/from" },
           { action: "fs:write", resource: "/workspace/to" },
+          { action: "fs:read", resource: "/workspace/old" },
           { action: "fs:write", resource: "/workspace/old" },
           { action: "fs:write", resource: "/workspace/new" }
         ])

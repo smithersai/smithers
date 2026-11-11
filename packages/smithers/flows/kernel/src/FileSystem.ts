@@ -34,6 +34,7 @@ import { Base64 } from "effect/encoding"
 import * as Batch from "./FileSystemBatch.ts"
 import { GrantStore } from "./GrantStore.ts"
 import { makeCapability } from "./internal/makeCapability.ts"
+import { restrictsContent } from "./internal/restrictsContent.ts"
 import { Workspace } from "./Workspace.ts"
 
 export * from "./FileSystemBatch.ts"
@@ -1062,7 +1063,7 @@ export const layer: Layer.Layer<
       action: "fs:read" | "fs:write",
       value: string,
       glob = false
-    ): Effect.Effect<void, PlatformError.PlatformError> => {
+    ): Effect.Effect<string, PlatformError.PlatformError> => {
       const method = action === "fs:read" ? "read" : "write"
       return resolvedResource(action, method, value, glob).pipe(
         Effect.flatMap((resource) =>
@@ -1077,13 +1078,52 @@ export const layer: Layer.Layer<
             Effect.andThen(resolvedResource(action, method, value, glob)),
             Effect.flatMap((settled) =>
               settled === resource
-                ? Effect.void
+                ? Effect.succeed(resource)
                 : deny(action, method, resource, "path no longer names the resource that was authorized")
             )
           )
         )
       )
     }
+    /**
+     * `rename`, recursive `remove` and `copy` act on everything under a
+     * directory while the grant check names the directory alone, and a rule
+     * such as `deny fs:read /workspace/secrets/**` does not select
+     * `/workspace/secrets`. So when `value` is a directory, the operation is
+     * refused if a deny or ask rule may select anything under one of the
+     * authorized `operands`. A path that names nothing has no content; one
+     * that cannot be inspected is treated as a directory.
+     */
+    const directoryContent = (
+      host: AtomicFileSystem,
+      method: string,
+      value: string,
+      operands: ReadonlyArray<readonly ["fs:read" | "fs:write", string]>
+    ): Effect.Effect<void, PlatformError.PlatformError> =>
+      pinned(host, root)({ operation: "stat", path: normalize(value) }).pipe(
+        Effect.match({
+          onFailure: (error) => error.reason._tag !== "NotFound",
+          onSuccess: (info) => info.type === "Directory"
+        }),
+        Effect.flatMap((directory) =>
+          directory
+            ? grants.policy.pipe(
+              Effect.mapError(refuse(method, normalize(value))),
+              Effect.flatMap((policy) => {
+                const restricted = operands.find(([action, resource]) => restrictsContent(policy, action, resource))
+                return restricted === undefined
+                  ? Effect.void
+                  : deny(
+                    restricted[0],
+                    method,
+                    restricted[1],
+                    "a deny or ask rule may select content under this directory"
+                  )
+              })
+            )
+            : Effect.void
+        )
+      )
     const read = (value: string) => guard("fs:read", value)
     const write = (value: string) => guard("fs:write", value)
     const atomicUnavailable = (
@@ -1097,48 +1137,55 @@ export const layer: Layer.Layer<
         normalize(value),
         unconfinedDescription
       )
+    /** Everything an operation must pass before the host is asked to act. */
+    type Checks = (host: AtomicFileSystem) => Effect.Effect<unknown, PlatformError.PlatformError>
+    const atomicChecked = <R extends AtomicRequest>(
+      action: "fs:read" | "fs:write",
+      value: string,
+      method: string,
+      checks: Checks,
+      request: R
+    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
+      atomic === undefined
+        ? atomicUnavailable(action, value, method)
+        : checks(atomic).pipe(Effect.andThen(pinned(atomic, root)(request)))
     const atomicOne = <R extends AtomicRequest>(
       action: "fs:read" | "fs:write",
       value: string,
       method: string,
       request: R
     ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
-      atomic === undefined
-        ? atomicUnavailable(action, value, method)
-        : guard(action, value, request.operation === "glob").pipe(Effect.andThen(pinned(atomic, root)(request)))
-    const atomicTwo = <R extends AtomicRequest>(
-      first: readonly ["fs:read" | "fs:write", string],
-      second: readonly ["fs:read" | "fs:write", string],
+      atomicChecked(action, value, method, () => guard(action, value, request.operation === "glob"), request)
+    const isolatedChecked = <A>(
+      action: "fs:read" | "fs:write",
+      value: string,
       method: string,
-      request: R
-    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
-      atomic === undefined
-        ? atomicUnavailable(first[0], first[1], method)
-        : guard(first[0], first[1]).pipe(
-          Effect.andThen(guard(second[0], second[1])),
-          Effect.andThen(pinned(atomic, root)(request))
-        )
+      checks: Checks,
+      use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
+    ): Effect.Effect<A, PlatformError.PlatformError> =>
+      atomic?.isolated === undefined
+        ? atomicUnavailable(action, value, method)
+        : checks(atomic).pipe(Effect.andThen(use(atomic.isolated)))
     const isolatedOne = <A>(
       action: "fs:read" | "fs:write",
       value: string,
       method: string,
       use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
     ): Effect.Effect<A, PlatformError.PlatformError> =>
-      atomic?.isolated === undefined
-        ? atomicUnavailable(action, value, method)
-        : guard(action, value).pipe(Effect.andThen(use(atomic.isolated)))
+      isolatedChecked(action, value, method, () => guard(action, value), use)
     const isolatedTwo = <A>(
       first: readonly ["fs:read" | "fs:write", string],
       second: readonly ["fs:read" | "fs:write", string],
       method: string,
       use: (isolated: EffectFileSystem.FileSystem) => Effect.Effect<A, PlatformError.PlatformError>
     ): Effect.Effect<A, PlatformError.PlatformError> =>
-      atomic?.isolated === undefined
-        ? atomicUnavailable(first[0], first[1], method)
-        : guard(first[0], first[1]).pipe(
-          Effect.andThen(guard(second[0], second[1])),
-          Effect.andThen(use(atomic.isolated))
-        )
+      isolatedChecked(
+        first[0],
+        first[1],
+        method,
+        () => guard(first[0], first[1]).pipe(Effect.andThen(guard(second[0], second[1]))),
+        use
+      )
     const temp = (directory: string | undefined) =>
       directory === undefined
         ? write(path.resolve(workspace.root, "..", systemTemporaryDirectoryName))
@@ -1244,13 +1291,17 @@ export const layer: Layer.Layer<
         }),
         copy: Effect.fn("FileSystem.copy")((from, to, options) => {
           const captured = snapshotOptions(options)
-          return (
-            isolatedTwo(
-              ["fs:read", from],
-              ["fs:write", to],
-              "copy",
-              (host) => host.copy(normalize(from), normalize(to), captured)
-            )
+          return isolatedChecked(
+            "fs:read",
+            from,
+            "copy",
+            (host) =>
+              Effect.gen(function*() {
+                const source = yield* read(from)
+                const target = yield* write(to)
+                yield* directoryContent(host, "copy", from, [["fs:read", source], ["fs:write", target]])
+              }),
+            (host) => host.copy(normalize(from), normalize(to), captured)
           )
         }),
         copyFile: Effect.fn("FileSystem.copyFile")((from, to) =>
@@ -1385,18 +1436,41 @@ export const layer: Layer.Layer<
         ),
         remove: Effect.fn("FileSystem.remove")((value, options) => {
           const captured = snapshotOptions(options)
-          return atomicOne("fs:write", value, "remove", {
-            operation: "remove",
-            path: normalize(value),
-            options: captured
-          })
+          return atomicChecked(
+            "fs:write",
+            value,
+            "remove",
+            (host) =>
+              write(value).pipe(
+                Effect.flatMap((resource) =>
+                  captured?.recursive === true
+                    ? directoryContent(host, "remove", value, [["fs:write", resource]])
+                    : Effect.void
+                )
+              ),
+            { operation: "remove", path: normalize(value), options: captured }
+          )
         }),
+        // A rename makes the source readable under its new name, so it needs
+        // `fs:read` on the source as well as `fs:write` on both names.
         rename: Effect.fn("FileSystem.rename")((from, to) =>
-          atomicTwo(["fs:write", from], ["fs:write", to], "rename", {
-            operation: "rename",
-            from: normalize(from),
-            to: normalize(to)
-          })
+          atomicChecked(
+            "fs:write",
+            from,
+            "rename",
+            (host) =>
+              Effect.gen(function*() {
+                const source = yield* read(from)
+                yield* write(from)
+                const target = yield* write(to)
+                yield* directoryContent(host, "rename", from, [
+                  ["fs:read", source],
+                  ["fs:write", source],
+                  ["fs:write", target]
+                ])
+              }),
+            { operation: "rename", from: normalize(from), to: normalize(to) }
+          )
         ),
         stat: Effect.fn("FileSystem.stat")((value) =>
           atomicOne("fs:read", value, "stat", {

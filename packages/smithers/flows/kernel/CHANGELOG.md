@@ -25,6 +25,14 @@
 
 ### Fixed
 
+- `FileSystem.layer` no longer lets `rename`, a recursive `remove` or `copy`
+  reach content a rule restricts. `rename` now also requires `fs:read` on its
+  source, so a read deny cannot be renamed away. When the operand is a
+  directory, the three operations are refused with `permission_denied` if a
+  `deny` or `ask` rule may select anything under it, unless a later `allow`
+  covers the whole directory. Before, only the directory's own name was
+  checked, so `deny fs:read /workspace/secrets/**` did not stop
+  `rename("/workspace/secrets", "/workspace/pub")`.
 - `HttpClient.layer` honors a caller's explicit `RequestInit { redirect: "manual" }`
   by returning one authorized hop. Callers can own their redirect loop and hop
   limit without a second loop following redirects underneath them. Default

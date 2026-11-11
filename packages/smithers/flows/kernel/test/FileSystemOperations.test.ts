@@ -328,7 +328,7 @@ const cases: ReadonlyArray<Case> = [
   },
   {
     name: "rename",
-    capabilities: [write("/workspace/a"), write("/workspace/b")],
+    capabilities: [read("/workspace/a"), write("/workspace/a"), write("/workspace/b")],
     hostCall: "rename",
     run: (fs) => fs.rename("a", "b")
   },
