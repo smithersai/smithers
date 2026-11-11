@@ -195,6 +195,20 @@ describe("native ProcessConfinement", () => {
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 
+  it("preserves own prototype-named environment values in the private launcher", async () => {
+    const f = fixture()
+    const env = Object.fromEntries([["__proto__", "synthetic-prototype-value"]])
+    await run(Effect.gen(function*() {
+      const wrapped = yield* ProcessConfinement.make(f).confine(
+        ChildProcess.make("fixture", [], { cwd: f.workspaceRoot, env, extendEnv: false }),
+        f.profile
+      )
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
+      expect(NodeFs.readFileSync(script, "utf8")).toContain("export __proto__='synthetic-prototype-value'")
+    }))
+    expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
+  })
+
   it("inherits the host environment only inside the sandbox", async () => {
     const f = fixture()
     vi.stubEnv("SMITHERS_ENV_TEST", "inherited fixture")

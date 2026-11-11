@@ -251,7 +251,8 @@ export const make = (options: Options = {}): KernelProcessConfinement.Service =>
     })
     // Only the target receives its requested environment. Dynamic-loader and
     // other startup variables must never configure the host sandbox launcher.
-    const targetEnvironment: Record<string, string> = {}
+    // A null prototype keeps an own `__proto__` entry instead of running the setter.
+    const targetEnvironment: Record<string, string> = Object.create(null)
     const inherited = command.options.env === undefined || command.options.extendEnv === true
     for (const [name, value] of Object.entries(inherited ? process.env : {})) {
       // Bash exports functions as names such as BASH_FUNC_which%%. These
