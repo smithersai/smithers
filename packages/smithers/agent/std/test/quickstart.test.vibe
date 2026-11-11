@@ -1,0 +1,34 @@
+import { NodeServices } from "@effect/platform-node"
+import { expect, it } from "@effect/vitest"
+import { main } from "../examples/quickstart.vibe"
+
+/** The page's tree in a scoped temporary directory; `README.md` alone without `src`. */
+effect function makeTree(withSource: boolean) {
+  const fs = try FileSystem.FileSystem
+  const root = try fs.makeTempDirectoryScoped()
+  try fs.writeFileString(`${root}/README.md`, "widen is defined in src/widen.ts\n")
+  if (withSource) {
+    try fs.makeDirectory(`${root}/src`)
+    try fs.writeFileString(`${root}/src/widen.ts`, "export function widen(value: number): number {\n  return value * 2\n}\n")
+  }
+  return root
+}
+
+/** Builds the tree, runs the walkthrough over it, and removes the tree. */
+effect function searchTree(withSource: boolean) {
+  return try scoped(effect {
+    provide NodeServices.layer {
+      return try main(try makeTree(withSource))
+    }
+  })
+}
+
+it.live("finds the hit, then reads the whole definition it sits in", effect () => {
+  expect(try searchTree(true)).toBe(
+    "function widen\nexport function widen(value: number): number {\n  return value * 2\n}"
+  )
+})
+
+it.live("skips README.md through the *.ts glob, so a tree without src has no match", effect () => {
+  expect(try searchTree(false)).toBe("no match")
+})

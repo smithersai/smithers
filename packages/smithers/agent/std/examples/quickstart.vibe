@@ -1,0 +1,30 @@
+import { NodeServices } from "@effect/platform-node"
+import { Grep, PortableSearch, Read } from "@smthrs/std"
+
+/** FileSystem, Path, and ChildProcessSpawner, plus the in-process Search peer. */
+export const host = Layer.provideMerge(PortableSearch.layer, NodeServices.layer)
+
+/** Finds `widen` under `root`, then reads the whole definition the hit sits in. */
+export effect function searchThenRead(root: string) {
+  const found = try Grep.run({ pattern: "widen", root, globs: ["*.ts"] })
+  const hit = found.matches[0]
+  if (hit === undefined) return "no match"
+  try Console.log(`${hit.file}:${hit.line}  ${hit.text}`)
+  try Console.log(`searched ${found.filesSearched} file(s)`)
+
+  const symbol = hit.symbol
+  if (symbol === undefined) return "no enclosing definition"
+  const page = try Read.run({
+    path: hit.file,
+    offset: symbol.startLine,
+    limit: symbol.endLine - symbol.startLine + 1
+  })
+  return `${symbol.kind} ${symbol.name}\n${page.content}`
+}
+
+/** Runs the search over the Node platform with the portable search peer. */
+export effect function main(root: string) {
+  provide host {
+    return try searchThenRead(root)
+  }
+}

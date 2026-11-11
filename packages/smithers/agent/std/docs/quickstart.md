@@ -9,7 +9,9 @@ This quickstart runs two standard flows end to end against a real directory.
 `grep` finds a line and reports the definition that encloses it; `read` turns
 that definition's line range into a page. By the end you will have taken the two
 steps an agent takes hundreds of times a run, and you will have taken them
-without an external binary and without an API key.
+without an external binary and without an API key. Each step below is
+TypeScript; the [VibeLang tab](#the-same-walkthrough-in-vibelang) runs the same
+steps as Effect code.
 
 ## Prerequisites
 
@@ -113,6 +115,50 @@ without a `/` matches a basename at any depth, so `*.ts` reaches
   most 200 matches and `read` at most 2,000 lines. Whenever a limit bites, the
   result says so in `truncated` and `notice`. See
   [Limits are disclosed, never silent](./concepts/limits-and-disclosure.md).
+
+## The same walkthrough in VibeLang
+
+In [VibeLang](https://github.com/smithersai/vibelang) the walkthrough is an
+`effect` function that takes the root to search: `try` runs `Grep.run` and
+`Read.run`, and a `provide` block supplies the same two-layer host. Build the
+tree from the shell step above and call `main` with its path; the printed lines
+and the returned definition are the ones above.
+
+This is `examples/quickstart.vibe`. `test/quickstart.test.vibe` runs it, and
+the package's docs check fails if this block and the file differ.
+
+```vibe
+import { NodeServices } from "@effect/platform-node"
+import { Grep, PortableSearch, Read } from "@smthrs/std"
+
+/** FileSystem, Path, and ChildProcessSpawner, plus the in-process Search peer. */
+export const host = Layer.provideMerge(PortableSearch.layer, NodeServices.layer)
+
+/** Finds `widen` under `root`, then reads the whole definition the hit sits in. */
+export effect function searchThenRead(root: string) {
+  const found = try Grep.run({ pattern: "widen", root, globs: ["*.ts"] })
+  const hit = found.matches[0]
+  if (hit === undefined) return "no match"
+  try Console.log(`${hit.file}:${hit.line}  ${hit.text}`)
+  try Console.log(`searched ${found.filesSearched} file(s)`)
+
+  const symbol = hit.symbol
+  if (symbol === undefined) return "no enclosing definition"
+  const page = try Read.run({
+    path: hit.file,
+    offset: symbol.startLine,
+    limit: symbol.endLine - symbol.startLine + 1
+  })
+  return `${symbol.kind} ${symbol.name}\n${page.content}`
+}
+
+/** Runs the search over the Node platform with the portable search peer. */
+export effect function main(root: string) {
+  provide host {
+    return try searchThenRead(root)
+  }
+}
+```
 
 ## Next steps
 
