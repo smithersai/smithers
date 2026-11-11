@@ -85,6 +85,17 @@ const encoder = new TextEncoder()
 const fatalDecoder = new TextDecoder("utf-8", { fatal: true })
 
 /**
+ * The UTF-8 byte order mark that leads `bytes`, as text, or "" when there is
+ * none. `TextDecoder` drops the mark, so an editor that rewrites a file
+ * prefixes this to the text it encodes to keep the file's first bytes.
+ *
+ * @category encoding
+ * @since 1.0.0
+ */
+export const byteOrderMark = (bytes: Uint8Array): string =>
+  bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? "\uFEFF" : ""
+
+/**
  * Trims a string to a UTF-8 byte budget without splitting a code point.
  *
  * `keep: "head"` retains the beginning of the value; `keep: "tail"` retains

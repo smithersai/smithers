@@ -20,6 +20,7 @@ import * as Diagnostics from "./internal/Diagnostics.ts"
 import * as FileMutation from "./internal/FileMutation.ts"
 import * as FsFailure from "./internal/FsFailure.ts"
 import * as Preserve from "./internal/Preserve.ts"
+import { byteOrderMark } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 
 /**
@@ -342,7 +343,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
       })
       let contents: string
       try {
-        contents = ApplyPatchText.deriveNewContents(original, hunk.path, hunk.chunks)
+        contents = byteOrderMark(bytes) + ApplyPatchText.deriveNewContents(original, hunk.path, hunk.chunks)
       } catch (error) {
         if (error instanceof ApplyPatchText.ComputeReplacementsError) {
           return yield* Effect.fail(
@@ -413,7 +414,12 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
             case "update": {
               const contents = prepared.get(hunk)!
               const destination = hunk.movePath ?? hunk.path
-              yield* Preserve.writeFile(fileSystem, destination, encoder.encode(contents)).pipe(
+              yield* Preserve.writeFile(
+                fileSystem,
+                destination,
+                encoder.encode(contents),
+                moves.has(hunk) ? { metadataFrom: hunk.path } : undefined
+              ).pipe(
                 Effect.mapError((error) =>
                   error.reason.method === "chmod"
                     ? mutationError(

@@ -29,15 +29,25 @@ export const writeFileString = (
 /**
  * Replaces a file's bytes with the same atomic boundary used for text writes.
  *
+ * `metadataFrom` names the file a move takes its place from: when `path` does
+ * not exist yet, the new file gets that file's permission bits and, where this
+ * process may assign it, its owner.
+ *
  * @category filesystem
  * @since 1.0.0
  */
 export const writeFile = (
   fileSystem: FileSystem.FileSystem,
   path: string,
-  content: Uint8Array
+  content: Uint8Array,
+  options?: { readonly metadataFrom: string }
 ): Effect.Effect<void, PlatformError.PlatformError> =>
-  replace(fileSystem, path, (target, flag, mode) => fileSystem.writeFile(target, content, { flag, mode }))
+  replace(
+    fileSystem,
+    path,
+    (target, flag, mode) => fileSystem.writeFile(target, content, { flag, mode }),
+    options?.metadataFrom
+  )
 
 const replace = (
   fileSystem: FileSystem.FileSystem,
@@ -46,14 +56,16 @@ const replace = (
     target: string,
     flag: "wx" | "w",
     mode: number | undefined
-  ) => Effect.Effect<void, PlatformError.PlatformError>
+  ) => Effect.Effect<void, PlatformError.PlatformError>,
+  metadataFrom?: string
 ): Effect.Effect<void, PlatformError.PlatformError> =>
   Effect.gen(function*() {
-    const before = yield* fileSystem.stat(path).pipe(
+    const existing = yield* fileSystem.stat(path).pipe(
       Effect.catch((error) => error.reason._tag === "NotFound" ? Effect.succeed(undefined) : Effect.fail(error))
     )
+    const before = existing ?? (metadataFrom === undefined ? undefined : yield* fileSystem.stat(metadataFrom))
     // Keep following an existing symlink, as an in-place write did.
-    const destination = before === undefined ? path : yield* fileSystem.realPath(path)
+    const destination = existing === undefined ? path : yield* fileSystem.realPath(path)
     const temporary = destination.replace(/[^/\\]+$/, `.smithers-${globalThis.crypto.randomUUID()}.tmp`)
     let owned = true
     // Set when the sibling cannot take the file's owner; see the chown below.
@@ -87,7 +99,9 @@ const replace = (
                 error.reason._tag === "PermissionDenied" ? Effect.succeed(false) : Effect.fail(error)
               )
             )
-            if (!chowned) {
+            // A moved file this process cannot give away stays its own; only
+            // the permission bits carry over.
+            if (!chowned && existing !== undefined) {
               inPlace = true
               return
             }

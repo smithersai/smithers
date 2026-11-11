@@ -20,6 +20,14 @@
   edits a host copy instead of the file itself, and links the edit back in
   place, so host git never writes through a link (#4902).
 
+- `apply_patch` changes only the lines its chunks change. A written line takes
+  the ending of the lines it replaces, so a CRLF file no longer comes back with
+  LF lines; context lines keep the file's own bytes; and a file keeps its
+  trailing blank line and its final newline, or its lack of one. A
+  `*** Move to:` update keeps the moved file's permission bits, and its owner
+  where the process may assign it. `edit` and `apply_patch` keep a leading
+  UTF-8 byte order mark.
+
 - A command whose arguments exceed the operating system's limit fails with
   `arguments_too_long` under Effect's raw Node spawner too, where Node's
   synchronous `E2BIG` throw used to end the whole run.

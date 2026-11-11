@@ -183,9 +183,10 @@ describe("V4A streaming boundaries and fuzzy replacement", () => {
 
   // The legacy Codex representation places an insertion before its final empty
   // element: https://github.com/openai/codex/blob/main/codex-rs/apply-patch/src/file_update.rs
+  // Unlike Codex, the trailing blank line itself survives.
   it.each([
-    { original: "\n", expected: "appended\n" },
-    { original: "before\n\n", expected: "before\nappended\n" }
+    { original: "\n", expected: "appended\n\n" },
+    { original: "before\n\n", expected: "before\nappended\n\n" }
   ])("retains legacy trailing-empty insertion placement for source $original", ({ original, expected }) => {
     const chunks = updateChunks("*** Begin Patch\n*** Update File: file.txt\n@@\n+appended\n*** End Patch")
     expect(deriveNewContents(original, "file.txt", chunks)).toBe(expected)
@@ -212,7 +213,7 @@ describe("V4A streaming boundaries and fuzzy replacement", () => {
 
   it.each([
     { original: "", expected: "appended\n" },
-    { original: "before", expected: "before\nappended\n" },
+    { original: "before", expected: "before\nappended" },
     { original: "before\n", expected: "before\nappended\n" }
   ])("applies a parsed pure insertion to source $original without losing its bytes", ({ original, expected }) => {
     const chunks = updateChunks("*** Begin Patch\n*** Update File: file.txt\n@@\n+appended\n*** End Patch")

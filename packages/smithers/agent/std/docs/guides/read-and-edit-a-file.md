@@ -234,6 +234,14 @@ is on disk, so the second section would start from an original the first has
 already replaced. A file needing several changes carries several `@@` chunks
 inside one section.
 
+An update changes only the lines its chunks change. Patch text carries no line
+endings: a written line takes the ending of the lines it replaces, so a CRLF
+file stays CRLF, and context lines keep the file's own bytes even when they
+matched with different trailing whitespace. The file keeps its final newline,
+or its lack of one. `edit` and `apply_patch` both keep a leading UTF-8 byte
+order mark. A `*** Move to:` update gives the new file the moved file's
+permission bits, and its owner where the process may assign it.
+
 Because a patch names its files inside its own text, `apply_patch` cannot narrow
 its effect envelope for one call, and declares the workspace-wide worst case.
 `edit` narrows to the one path it was given, so prefer `edit` where a scheduler

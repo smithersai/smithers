@@ -330,3 +330,85 @@ describe("atomic replacement", () => {
     )
   })
 })
+
+describe("bytes outside the edit", () => {
+  const bom = [0xef, 0xbb, 0xbf]
+  const editors = [
+    { name: "edit", run: (path: string) => Edit.run({ path, oldString: "a", newString: "b" }) },
+    {
+      name: "apply_patch",
+      run: (path: string) =>
+        ApplyPatch.run({ input: `*** Begin Patch\n*** Update File: ${path}\n@@\n-a\n+b\n*** End Patch` })
+    }
+  ]
+
+  for (const editor of editors) {
+    it(`${editor.name} keeps a UTF-8 byte order mark`, async () => {
+      await Effect.runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const dir = yield* fs.makeTempDirectoryScoped()
+          const path = `${dir}/bom.txt`
+          yield* fs.writeFile(path, new Uint8Array([...bom, 0x61, 0x0a]))
+          yield* editor.run(path)
+          expect([...yield* fs.readFile(path)]).toEqual([...bom, 0x62, 0x0a])
+        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+      )
+    })
+  }
+
+  it("apply_patch move keeps the moved file's permission bits", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const dir = yield* fs.makeTempDirectoryScoped()
+        yield* fs.writeFileString(`${dir}/build.sh`, "a\n")
+        yield* fs.chmod(`${dir}/build.sh`, 0o755)
+        yield* ApplyPatch.run({
+          input:
+            `*** Begin Patch\n*** Update File: ${dir}/build.sh\n*** Move to: ${dir}/run.sh\n@@\n-a\n+b\n*** End Patch`
+        })
+        expect(yield* fs.readDirectory(dir)).toEqual(["run.sh"])
+        expect(yield* fs.readFileString(`${dir}/run.sh`)).toBe("b\n")
+        expect((yield* fs.stat(`${dir}/run.sh`)).mode & 0o7777).toBe(0o755)
+      })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+    )
+  })
+
+  it("keeps the moved file's mode when its owner cannot be given to the new file", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const dir = yield* fs.makeTempDirectoryScoped()
+        const source = `${dir}/source.sh`
+        const destination = `${dir}/destination.sh`
+        yield* fs.writeFileString(source, original)
+        yield* fs.chmod(source, 0o750)
+        const mine = (yield* fs.stat(source)).uid
+        // The source belongs to another user; only root could hand the new file to them.
+        const faulty = {
+          ...fs,
+          stat: (target: string) =>
+            target === source
+              ? fs.stat(target).pipe(Effect.map((info) => ({ ...info, uid: Option.map(info.uid, (uid) => uid + 1) })))
+              : fs.stat(target),
+          chown: (target: string) =>
+            Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "chown",
+              pathOrDescriptor: target
+            }))
+        }
+        yield* Preserve.writeFile(faulty, destination, new TextEncoder().encode(replacement), {
+          metadataFrom: source
+        })
+        const after = yield* fs.stat(destination)
+        expect(yield* fs.readFileString(destination)).toBe(replacement)
+        expect(after.mode & 0o7777).toBe(0o750)
+        expect(after.uid).toEqual(mine)
+        expect((yield* fs.readDirectory(dir)).sort()).toEqual(["destination.sh", "source.sh"])
+      })).pipe(Effect.provide(NodeFileSystem.layer))
+    )
+  })
+})

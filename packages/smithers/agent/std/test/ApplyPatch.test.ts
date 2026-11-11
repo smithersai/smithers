@@ -12,7 +12,6 @@ import {
   seekSequence,
   StreamingPatchParser
 } from "../src/internal/ApplyPatch.ts"
-import { sourceLines } from "../src/internal/Text.ts"
 import { fileInfo, layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
@@ -345,14 +344,51 @@ describe("seekSequence", () => {
 })
 
 describe("deriveNewContents", () => {
-  it("splices CRLF source lines without changing their bytes", () => {
-    const oldLines = sourceLines("two\r\nthree\r\n")
-    expect(deriveNewContents("one\r\ntwo\r\nthree\r\nfour\r\n", "f.txt", [{
-      changeContext: undefined,
-      oldLines: [...oldLines],
-      newLines: oldLines.map((line) => line.replace("two", "TWO")),
-      isEndOfFile: false
-    }])).toBe("one\r\nTWO\r\nthree\r\nfour\r\n")
+  const update = (original: string, body: string) => {
+    const hunk = parsePatch(wrap(`*** Update File: f.txt\n${body}`)).hunks[0]!
+    if (hunk.kind !== "update") return expect.unreachable()
+    return deriveNewContents(original, "f.txt", hunk.chunks)
+  }
+
+  it("keeps CRLF on written and context lines, whatever endings the patch carried", () => {
+    const patch = "@@\n a\n-b\n+B\n c"
+    expect(update("a\r\nb\r\nc\r\n", patch)).toBe("a\r\nB\r\nc\r\n")
+    expect(update("a\r\nb\r\nc\r\n", patch.replaceAll("\n", "\r\n"))).toBe("a\r\nB\r\nc\r\n")
+  })
+
+  it("ends lines added to a CRLF file with CRLF and keeps a missing final newline missing", () => {
+    expect(update("a\r\nb\r\n", "@@\n+c")).toBe("a\r\nb\r\nc\r\n")
+    expect(update("a\r\nb", "@@\n+c")).toBe("a\r\nb\r\nc")
+    expect(update("a\r\nb\r", "@@\n b\n+c")).toBe("a\r\nb\r\nc")
+  })
+
+  it("keeps a mixed file's other endings and gives a written line the ending of the line it replaces", () => {
+    expect(update("a\nb\r\nc\n", "@@\n-b\n+B")).toBe("a\nB\r\nc\n")
+  })
+
+  it("leaves the end of the file alone when no chunk touches it", () => {
+    expect(update("a\nb\n\n", "@@\n-a\n+A")).toBe("A\nb\n\n")
+    expect(update("a\nb", "@@\n-a\n+A")).toBe("A\nb")
+  })
+
+  it("keeps the file's own bytes for a context line matched leniently", () => {
+    // p/r and q/s differ, so the context line pairs inside the longest common subsequence.
+    expect(update("p\na  \nq\n", "@@\n-p\n+r\n a\n-q\n+s")).toBe("r\na  \ns\n")
+    expect(update("x\t\ny\n", "@@\n x\n-y\n+Y")).toBe("x\t\nY\n")
+  })
+
+  it("writes a huge chunk's interior context lines from the patch rather than build a quadratic table", () => {
+    const size = 2100
+    const old = Array.from({ length: size }, (_, index) => `old ${index}`)
+    const file = `${["p", ...old.slice(0, 1000), "a  ", ...old.slice(1000), "q"].join("\n")}\n`
+    const removed = ["p", ...old.slice(0, 1000), "a", ...old.slice(1000), "q"]
+    const upper = old.map((line) => line.toUpperCase())
+    const added = ["r", ...upper.slice(0, 1000), "a", ...upper.slice(1000), "s"]
+    const patch = ["@@", ...removed.map((line) => `-${line}`), ...added.map((line) => `+${line}`)]
+    // Removed then re-added, the interior "a" is context the table would have paired.
+    const chunk = parsePatch(wrap(`*** Update File: f.txt\n${patch.join("\n")}`)).hunks[0]!
+    if (chunk.kind !== "update") return expect.unreachable()
+    expect(deriveNewContents(file, "f.txt", chunk.chunks)).toBe(`${added.join("\n")}\n`)
   })
 
   it("applies a simple replacement", () => {
@@ -405,10 +441,15 @@ describe("deriveNewContents", () => {
     ).toBe("a\nEND\n")
   })
 
-  it("ensures a trailing newline on the result", () => {
+  it("keeps a missing final newline missing and ends lines added to an empty file", () => {
     expect(
       deriveNewContents("only", "f.txt", [
         { changeContext: undefined, oldLines: ["only"], newLines: ["one"], isEndOfFile: false }
+      ])
+    ).toBe("one")
+    expect(
+      deriveNewContents("", "f.txt", [
+        { changeContext: undefined, oldLines: [], newLines: ["one"], isEndOfFile: false }
       ])
     ).toBe("one\n")
   })

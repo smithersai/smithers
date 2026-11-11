@@ -503,8 +503,8 @@ const computeReplacements = (
   originalLines: ReadonlyArray<string>,
   path: string,
   chunks: ReadonlyArray<UpdateFileChunk>
-): Array<Replacement> => {
-  const replacements: Array<Replacement> = []
+): Array<readonly [...Replacement, pattern: ReadonlyArray<string>]> => {
+  const replacements: Array<readonly [...Replacement, pattern: ReadonlyArray<string>]> = []
   let lineIndex = 0
 
   for (const chunk of chunks) {
@@ -524,7 +524,7 @@ const computeReplacements = (
       const insertionIdx = originalLines.length > 0 && originalLines[originalLines.length - 1] === ""
         ? originalLines.length - 1
         : originalLines.length
-      replacements.push([insertionIdx, 0, [...chunk.newLines]])
+      replacements.push([insertionIdx, 0, [...chunk.newLines], []])
       continue
     }
 
@@ -539,7 +539,7 @@ const computeReplacements = (
     }
 
     if (found !== undefined) {
-      replacements.push([found, pattern.length, [...newSlice]])
+      replacements.push([found, pattern.length, [...newSlice], pattern])
       lineIndex = found + pattern.length
     } else {
       throw new ComputeReplacementsError({
@@ -554,17 +554,90 @@ const computeReplacements = (
   return replacements
 }
 
-const applyReplacements = (lines: Array<string>, replacements: ReadonlyArray<Replacement>): Array<string> => {
-  for (let r = replacements.length - 1; r >= 0; r--) {
-    const [startIdx, oldLength, newSegment] = replacements[r]!
-    lines.splice(startIdx, Math.min(oldLength, Math.max(lines.length - startIdx, 0)), ...newSegment)
+/** One file line split from the bytes that end it; the last line of a file with no final newline ends in "". */
+interface SourceLine {
+  readonly body: string
+  readonly ending: string
+}
+
+const splitSource = (text: string): Array<SourceLine> =>
+  sourceLines(text).map((line, index, all) =>
+    index === all.length - 1 && !text.endsWith("\n")
+      ? { body: line, ending: "" }
+      : line.endsWith("\r")
+      ? { body: line.slice(0, -1), ending: "\r\n" }
+      : { body: line, ending: "\n" }
+  )
+
+/** CRLF when every ended line uses it, LF when some ended line does not, else the fallback. */
+const endingOf = (lines: ReadonlyArray<SourceLine>, fallback: string): string => {
+  const ended = lines.filter((line) => line.ending !== "")
+  if (ended.length === 0) return fallback
+  return ended.every((line) => line.ending === "\r\n") ? "\r\n" : "\n"
+}
+
+/**
+ * Pairs each patch context line (a line the chunk both expects and keeps) with
+ * its expected-line index, so the file's own bytes survive for it. Common
+ * leading and trailing lines pair directly; the middle uses a longest common
+ * subsequence unless its table would pass `contextTableLimit` cells, which
+ * keeps a whole-file rewrite linear at the cost of writing its interior
+ * context lines from the patch.
+ */
+const contextTableLimit = 1 << 22
+
+const contextPairs = (old: ReadonlyArray<string>, next: ReadonlyArray<string>): Map<number, number> => {
+  const pairs = new Map<number, number>()
+  let head = 0
+  while (head < old.length && head < next.length && old[head] === next[head]) {
+    pairs.set(head, head)
+    head++
   }
-  return lines
+  let tail = 0
+  while (
+    tail < old.length - head && tail < next.length - head &&
+    old[old.length - 1 - tail] === next[next.length - 1 - tail]
+  ) {
+    pairs.set(next.length - 1 - tail, old.length - 1 - tail)
+    tail++
+  }
+  const rows = old.length - head - tail
+  const columns = next.length - head - tail
+  if ((rows + 1) * (columns + 1) > contextTableLimit) return pairs
+  const lengths = new Uint32Array((rows + 1) * (columns + 1))
+  const at = (i: number, j: number) => lengths[i * (columns + 1) + j]!
+  for (let i = rows - 1; i >= 0; i--) {
+    for (let j = columns - 1; j >= 0; j--) {
+      lengths[i * (columns + 1) + j] = old[head + i] === next[head + j]
+        ? at(i + 1, j + 1) + 1
+        : Math.max(at(i + 1, j), at(i, j + 1))
+    }
+  }
+  let i = 0
+  let j = 0
+  while (i < rows && j < columns) {
+    if (old[head + i] === next[head + j]) {
+      pairs.set(head + j, head + i)
+      i++
+      j++
+    } else if (at(i + 1, j) >= at(i, j + 1)) {
+      i++
+    } else {
+      j++
+    }
+  }
+  return pairs
 }
 
 /**
  * Derive the new file contents for an update hunk from the original
- * contents, matching Codex `derive_new_contents_from_chunks`.
+ * contents, matching Codex `derive_new_contents_from_chunks` in where each
+ * chunk lands.
+ *
+ * Unlike Codex, no byte outside the lines a chunk changes moves: context lines
+ * keep the file's own bytes, a written line takes the line ending of the
+ * lines it replaces (so a CRLF file stays CRLF), and the file keeps its final
+ * newline, or its lack of one.
  *
  * @since 1.0.0
  * @private
@@ -574,11 +647,27 @@ export const deriveNewContents = (
   path: string,
   chunks: ReadonlyArray<UpdateFileChunk>
 ): string => {
-  const originalLines = sourceLines(originalContents)
-  const replacements = computeReplacements(originalLines, path, chunks)
-  const newLines = applyReplacements([...originalLines], replacements)
-  if (newLines[newLines.length - 1] !== "") newLines.push("")
-  return newLines.join("\n")
+  const original = splitSource(originalContents)
+  const fileEnding = endingOf(original, "\n")
+  const replacements = computeReplacements(original.map((line) => line.body), path, chunks)
+  const lines = [...original]
+  for (let r = replacements.length - 1; r >= 0; r--) {
+    const [startIdx, oldLength, newSlice, pattern] = replacements[r]!
+    const replaced = original.slice(startIdx, startIdx + oldLength)
+    const ending = endingOf(replaced, fileEnding)
+    const kept = contextPairs(pattern, newSlice)
+    const segment = newSlice.map((body, index) => {
+      const source = kept.get(index)
+      return source === undefined ? { body, ending } : replaced[source]!
+    })
+    lines.splice(startIdx, oldLength, ...segment)
+  }
+  const terminated = originalContents.length === 0 || originalContents.endsWith("\n")
+  // A once-unterminated last line that already ends in "\r" needs only the "\n" of a CRLF ending.
+  const ended = (line: SourceLine) =>
+    line.ending !== "" ? line.ending : fileEnding === "\r\n" && line.body.endsWith("\r") ? "\n" : fileEnding
+  return lines.map((line, index) => index < lines.length - 1 || terminated ? line.body + ended(line) : line.body)
+    .join("")
 }
 
 /**

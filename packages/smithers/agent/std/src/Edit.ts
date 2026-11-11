@@ -29,7 +29,7 @@ import * as FileMutation from "./internal/FileMutation.ts"
 import * as FsFailure from "./internal/FsFailure.ts"
 import * as Match from "./internal/Match.ts"
 import * as Preserve from "./internal/Preserve.ts"
-import { sourceLines } from "./internal/Text.ts"
+import { byteOrderMark, sourceLines } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 
 /**
@@ -322,12 +322,13 @@ export const run = Effect.fn("Edit.run")(function*(
       cursor = span.end
     }
     replaced += content.slice(cursor)
+    const written = byteOrderMark(bytes) + replaced
     yield* mutation.commit(
       [{
         path: input.path,
-        content: new TextEncoder().encode(replaced)
+        content: new TextEncoder().encode(written)
       }],
-      Preserve.writeFileString(fileSystem, input.path, replaced).pipe(
+      Preserve.writeFileString(fileSystem, input.path, written).pipe(
         Effect.mapError((error) =>
           error.reason.method === "chmod"
             ? new StdError.StdError({
