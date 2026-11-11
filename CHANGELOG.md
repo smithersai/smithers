@@ -9,10 +9,12 @@ the release notes at
 
 <!-- commits:1.0.0-rc.17 -->
 
-3271 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
+3277 commits since [v1.0.0-rc.16](https://github.com/smithersai/smithers/commit/b794d2b096).
 
 ### ✨ Features
 
+- **vibelang:** prove API object bodies, main's commit order and the mock merge queue ([e1f1d8c038](https://github.com/smithersai/smithers/commit/e1f1d8c0381205044c31c46fae4e9c777f1934ba))
+- **lemmascript:** Map keys, in-narrowing and presence narrowing in contracts ([915b25f77e](https://github.com/smithersai/smithers/commit/915b25f77ec958fdae5e8cb51027ebe75ecc8e60))
 - **vibelang:** Export in /history, designed first; decision 0020 records the export ([718b8c3174](https://github.com/smithersai/smithers/commit/718b8c3174206abaf395f1ba8020e724dd3e1523))
 - **vibelang:** export the mythical history as a linear bookmark, notes and a manifest (VL-29, VL-22) ([9380a9e633](https://github.com/smithersai/smithers/commit/9380a9e633317cffe0c84dca2398b3a215734934))
 - **jj, integrations:** Repository service for git objects and atomic multi-ref compare-and-swap ([4833b8c0d8](https://github.com/smithersai/smithers/commit/4833b8c0d8bd633deb2e9babe9b3f0ccaaf1369b))
@@ -416,7 +418,10 @@ the release notes at
 
 ### 🐛 Bug fixes
 
-- **flows:** drop the deleted run-record test from the fixtures target ([b0f4e5847c](https://github.com/smithersai/smithers/commit/b0f4e5847cb6985d500a5848d5536148a0f442c4))
+- **flows:** drop the deleted run-record test from the fixtures target ([64e3691157](https://github.com/smithersai/smithers/commit/64e36911577177864e87d2560b0716c3761587ad))
+- **vibelang:** a replayed settlement keeps a charged reply's receipt ([1cdb6da0ed](https://github.com/smithersai/smithers/commit/1cdb6da0edb217f8ac76f1e338b5f8410f39190d))
+- **harness-detect:** honor credential profiles and host path rules ([1e604d2498](https://github.com/smithersai/smithers/commit/1e604d2498d2d971df0a10c93137703abfe667a0))
+- **control:** a refused proof rules out only its own delegation ([172e9cc0d2](https://github.com/smithersai/smithers/commit/172e9cc0d227a34be003c8448ca19804d133e487))
 - **harness:** judge every passage of a completion longer than the claim head ([82d012f1df](https://github.com/smithersai/smithers/commit/82d012f1df3fb90dd8c427d28dd61edc6f6bf188))
 - **harness-detect:** isolate failed probes and bound account text ([28f84eb058](https://github.com/smithersai/smithers/commit/28f84eb0583b267937379c38a6a01ec963a9f78f))
 - **control:** refuse local-only fields in ControlClient before RPC ([b241864a94](https://github.com/smithersai/smithers/commit/b241864a94756fbfdf3006b4ccadd5a0df345e3e))
@@ -2203,6 +2208,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **vibelang:** record the per-mutant wall budget ruling and its measurements (0018) ([d87535bb4e](https://github.com/smithersai/smithers/commit/d87535bb4e42533162ef4feabe8889e0e9df4f18))
 - **vibelang:** record the coverage merge fix and the sandbox and storage workloads ([845f7950ad](https://github.com/smithersai/smithers/commit/845f7950ad286018baa4c6576eca2a50ba1b399f))
 - **fuzz:** API reference and API index row for @smthrs/fuzz ([728b86d301](https://github.com/smithersai/smithers/commit/728b86d301705a4dd7e63a075143e4830ecde06d))
 - **vibelang:** record session 18 browser measurement, journeys and the tour control fix ([074e971f63](https://github.com/smithersai/smithers/commit/074e971f63074851e345bcbd3f7bf13e5fc44bbc))
