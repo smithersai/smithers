@@ -11,8 +11,8 @@
 
 import * as Sampling from "@smthrs/scorers/Sampling"
 import * as Scorer from "@smthrs/scorers/Scorer"
-import type * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import { ScorerError } from "@smthrs/scorers/ScorerError"
+import type * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"

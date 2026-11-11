@@ -840,7 +840,11 @@ const diff = (session: Session, call: typeof Diff.Type) =>
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const execute = <C extends Call>(session: Session, call: C, options: ExecuteOptions): Effect.Effect<ResultOf<C>, ToolFailure> => {
+export const execute = <C extends Call>(
+  session: Session,
+  call: C,
+  options: ExecuteOptions
+): Effect.Effect<ResultOf<C>, ToolFailure> => {
   const effect: Effect.Effect<Result, ToolFailure> = call.tool === "run"
     ? run(session, call, options)
     : call.tool === "read"

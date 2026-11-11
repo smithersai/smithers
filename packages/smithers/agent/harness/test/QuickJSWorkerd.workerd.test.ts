@@ -44,9 +44,13 @@ beforeAll(async () => {
     "worker.js": { type: "esm", contents: result.outputFiles[0]!.text }
   }
   for (const path of wasm) modules["quickjs.wasm"] = { type: "wasm", contents: await readFile(path) }
-  worker = new Miniflare({
-    workers: [{ config: { name: "smoke", compatibilityDate: "2026-10-01", manifest: { mainModule: "worker.js", modules } } }]
-  } as unknown as ConstructorParameters<typeof Miniflare>[0])
+  worker = new Miniflare(
+    {
+      workers: [{
+        config: { name: "smoke", compatibilityDate: "2026-10-01", manifest: { mainModule: "worker.js", modules } }
+      }]
+    } as unknown as ConstructorParameters<typeof Miniflare>[0]
+  )
   await worker.ready
 }, 120_000)
 

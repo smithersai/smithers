@@ -94,8 +94,10 @@ const retry = (runId: RunId, step?: string, idempotencyKey = "retry:1") =>
 
 /** The typed failure a refused retry ended with. */
 const refused = (runId: RunId, step?: string) =>
-  Effect.map(Effect.exit(retry(runId, step)), (exit) =>
-    Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail" ? exit.cause.reasons[0].error : exit)
+  Effect.map(
+    Effect.exit(retry(runId, step)),
+    (exit) => Exit.isFailure(exit) && exit.cause.reasons[0]?._tag === "Fail" ? exit.cause.reasons[0].error : exit
+  )
 
 const resolved: ControlExecutor.RetryStep = { _tag: "Step", nodeId: "root.work" }
 
@@ -146,16 +148,19 @@ describe("a retry", () => {
 })
 
 describe("a refused retry admits nothing", () => {
-  it.each(["running", "parked", "waiting-approval"] as const)("refuses a %s source", (status) =>
-    scenario(resolved, (seen) =>
-      Effect.gen(function*() {
-        const { runId } = yield* source(status)
-        expect(yield* refused(runId)).toEqual(
-          new InvalidInput({ issue: `retry: run ${runId} is ${status}; only a settled run can be retried` })
-        )
-        expect(seen.retries).toEqual([])
-        expect(yield* runIds).toEqual([runId])
-      })))
+  it.each(["running", "parked", "waiting-approval"] as const)(
+    "refuses a %s source",
+    (status) =>
+      scenario(resolved, (seen) =>
+        Effect.gen(function*() {
+          const { runId } = yield* source(status)
+          expect(yield* refused(runId)).toEqual(
+            new InvalidInput({ issue: `retry: run ${runId} is ${status}; only a settled run can be retried` })
+          )
+          expect(seen.retries).toEqual([])
+          expect(yield* runIds).toEqual([runId])
+        }))
+  )
 
   it("refuses a run it does not hold", () =>
     scenario(resolved, () =>
@@ -186,14 +191,17 @@ describe("a refused retry admits nothing", () => {
       })))
 
   it("refuses with the executor's reason", () =>
-    scenario({ _tag: "Refused", reason: "run x ran no step app/Nope; its steps are app/Work" }, () =>
-      Effect.gen(function*() {
-        const { runId } = yield* source("failed")
-        expect(yield* refused(runId, "app/Nope")).toEqual(
-          new InvalidInput({ issue: "retry: run x ran no step app/Nope; its steps are app/Work" })
-        )
-        expect(yield* runIds).toEqual([runId])
-      })))
+    scenario(
+      { _tag: "Refused", reason: "run x ran no step app/Nope; its steps are app/Work" },
+      () =>
+        Effect.gen(function*() {
+          const { runId } = yield* source("failed")
+          expect(yield* refused(runId, "app/Nope")).toEqual(
+            new InvalidInput({ issue: "retry: run x ran no step app/Nope; its steps are app/Work" })
+          )
+          expect(yield* runIds).toEqual([runId])
+        })
+    ))
 })
 
 describe("an observing host", () => {

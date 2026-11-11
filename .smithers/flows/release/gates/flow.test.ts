@@ -47,7 +47,8 @@ process.exit(red ? 1 : 0)
 `
   )
   const runner = commandRunner(root)
-  const run: RunCommand = (command, args, options) => runner(process.execPath, ["verify.mjs", command, ...args], options)
+  const run: RunCommand = (command, args, options) =>
+    runner(process.execPath, ["verify.mjs", command, ...args], options)
   const attempted = async () => JSON.parse(await readFile(join(root, "attempted.json"), "utf8")) as string[][]
   return { run, attempted }
 }

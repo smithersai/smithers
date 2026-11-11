@@ -52,7 +52,11 @@ export interface CallReceipt {
 // The new optional field is backward compatible, but schemas are key material.
 const LegacyRecordedModelStep = Schema.Union([
   Schema.Array(ModelEvent.ModelEvent),
-  Schema.Struct({ events: Schema.Array(ModelEvent.ModelEvent), error: Schema.optional(ModelError.ModelError), correction: Schema.optional(Schema.Int) })
+  Schema.Struct({
+    events: Schema.Array(ModelEvent.ModelEvent),
+    error: Schema.optional(ModelError.ModelError),
+    correction: Schema.optional(Schema.Int)
+  })
 ])
 
 export const RecordedModelStep = Schema.Union([
@@ -310,10 +314,12 @@ export const withOverrunTeaching = (
  */
 export interface RecordOptions {
   /** Host billing guard around every physical invocation, before its provider stream opens. */
-  readonly reserveCall?: ((request: ModelRequest.ModelRequest) => Effect.Effect<
-    string,
-    HarnessError.HarnessError
-  >) | undefined
+  readonly reserveCall?:
+    | ((request: ModelRequest.ModelRequest) => Effect.Effect<
+      string,
+      HarnessError.HarnessError
+    >)
+    | undefined
   readonly onCall?: ((call: CallReceipt) => void) | undefined
   /** Observes that a provider invocation was actually issued, not merely considered. */
   readonly onStart?: (() => void) | undefined
@@ -429,24 +435,33 @@ export const recordModelStep = (
           Stream.provideService(Model.Liveness, Action.heartbeat),
           Stream.provideService(RequestExecutor.Retries, 0)
         )
-        return yield* Action.heartbeat.pipe(Effect.andThen(Stream.runCollect(
-          silent(streamed).pipe(Stream.tap((event) =>
+        return yield* Action.heartbeat.pipe(
+          Effect.andThen(Stream.runCollect(
+            silent(streamed).pipe(Stream.tap((event) =>
+              Effect.sync(() => {
+                if (event.type !== "usage") return
+                const { type: _type, ...usage } = event
+                attemptUsage = {
+                  ...attemptUsage,
+                  ...Object.fromEntries(Object.entries(usage).filter(([, value]) => value !== undefined))
+                }
+                onUsage?.(combineUsage([...failedUsage, attemptUsage]))
+              }).pipe(Effect.andThen(Action.heartbeat), Effect.andThen(onEvent?.(event) ?? Effect.void))
+            ))
+          )),
+          Effect.onExit((exit) =>
             Effect.sync(() => {
-              if (event.type !== "usage") return
-              const { type: _type, ...usage } = event
-              attemptUsage = {
-                ...attemptUsage,
-                ...Object.fromEntries(Object.entries(usage).filter(([, value]) => value !== undefined))
+              if (receipt === undefined) return
+              const call = {
+                receipt,
+                usage: attemptUsage,
+                settled: Exit.isSuccess(exit) && exit.value.some((event) => event.type === "settle")
               }
-              onUsage?.(combineUsage([...failedUsage, attemptUsage]))
-            }).pipe(Effect.andThen(Action.heartbeat), Effect.andThen(onEvent?.(event) ?? Effect.void))
-          ))
-        )), Effect.onExit((exit) => Effect.sync(() => {
-          if (receipt === undefined) return
-          const call = { receipt, usage: attemptUsage, settled: Exit.isSuccess(exit) && exit.value.some((event) => event.type === "settle") }
-          receipts.push(call)
-          options.onCall?.(call)
-        })))
+              receipts.push(call)
+              options.onCall?.(call)
+            })
+          )
+        )
       }))
     // Suspended so each call reads the overruns the call before it left: that
     // is what puts the teaching on a re-issue and never on the first call.
@@ -508,24 +523,25 @@ export const recordModelStep = (
       reissue && error instanceof ModelError.ModelError &&
       ((overruns.has(error) && overruns.size <= defaultModelOverruns) ||
         (stalls.has(error) && stalls.size <= defaultModelOverruns))
-    const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure | HarnessError.HarnessError> = callOnce.pipe(
-      Effect.catchIf(reissuable, (error) =>
-        Effect.gen(function*() {
-          const failedAt = yield* Clock.currentTimeMillis
-          // Both cut-off errors are this attempt's own, so neither carries a
-          // status, and the re-issue follows at once.
-          const retry = ModelEvent.ModelEvent.Retry({
-            type: "retry",
-            attempt: reissues.length + 1,
-            code: error.code,
-            delayMillis: 0,
-            elapsedMs: Math.max(0, Math.round(failedAt - callStartedAt))
-          })
-          reissues.push(retry)
-          if (onEvent !== undefined) yield* onEvent(retry)
-          return yield* call
-        }))
-    )
+    const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure | HarnessError.HarnessError> =
+      callOnce.pipe(
+        Effect.catchIf(reissuable, (error) =>
+          Effect.gen(function*() {
+            const failedAt = yield* Clock.currentTimeMillis
+            // Both cut-off errors are this attempt's own, so neither carries a
+            // status, and the re-issue follows at once.
+            const retry = ModelEvent.ModelEvent.Retry({
+              type: "retry",
+              attempt: reissues.length + 1,
+              code: error.code,
+              delayMillis: 0,
+              elapsedMs: Math.max(0, Math.round(failedAt - callStartedAt))
+            })
+            reissues.push(retry)
+            if (onEvent !== undefined) yield* onEvent(retry)
+            return yield* call
+          }))
+      )
 
     // Partial text from a re-issued call is unsafe to replay, but its usage is
     // actual spend. Keep each call's final counters, then fold them into one
@@ -546,14 +562,23 @@ export const recordModelStep = (
     // claim to be correction zero of a ladder that never ran.
     const ladder = options.correction === undefined ? {} : { correction: options.correction }
     return call.pipe(
-      Effect.map((events) => ({ ...ladder, events: [...reissues, ...accountReissued(events)], ...(receipts.length === 0 ? {} : { calls: receipts }) })),
+      Effect.map((events) => ({
+        ...ladder,
+        events: [...reissues, ...accountReissued(events)],
+        ...(receipts.length === 0 ? {} : { calls: receipts })
+      })),
       Effect.catchIf(
         (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
         (error) =>
           (isCapacityRefusal(error) && !(options.sealTerminal === true && ModelError.isTerminalRefusal(error))) ||
             (!options.final && error.code === "transport" && !stalls.has(error))
             ? Effect.fail(error)
-            : Effect.succeed({ ...ladder, events: [...reissues, ...accountReissued([])], error, ...(receipts.length === 0 ? {} : { calls: receipts }) })
+            : Effect.succeed({
+              ...ladder,
+              events: [...reissues, ...accountReissued([])],
+              error,
+              ...(receipts.length === 0 ? {} : { calls: receipts })
+            })
       )
     )
   })
@@ -785,7 +810,10 @@ export interface Dispatch {
    */
   readonly unsealedUsage?:
     | Effect.Effect<
-      (usage: ModelEvent.Usage, quality?: { readonly unreported?: true }) => Effect.Effect<void, HarnessError.HarnessError>,
+      (
+        usage: ModelEvent.Usage,
+        quality?: { readonly unreported?: true }
+      ) => Effect.Effect<void, HarnessError.HarnessError>,
       HarnessError.HarnessError
     >
     | undefined
@@ -899,9 +927,13 @@ export const dispatch = (
             if (event.type === "retry") reissued = true
             return options.onEvent?.(event) ?? Effect.void
           },
-          onStart: () => { issued = true },
+          onStart: () => {
+            issued = true
+          },
           reserveCall: options.reserveCall,
-          onCall: (call) => { receipts.push(call) },
+          onCall: (call) => {
+            receipts.push(call)
+          },
           reissue: options.reissue === true,
           final: last !== undefined && attempt >= last,
           sealTerminal: options.sealTerminal === true
@@ -910,10 +942,15 @@ export const dispatch = (
           // A sealed value is accounted by the caller, on replay too. This
           // covers only exits that cannot seal, and runs uninterruptibly.
           Effect.onExit((exit) =>
-            Exit.isFailure(exit) && issued && unsealed !== undefined ? unsealed(reported ?? {}, reissued ? { unreported: true } : undefined) : Effect.void
+            Exit.isFailure(exit) && issued && unsealed !== undefined
+              ? unsealed(reported ?? {}, reissued ? { unreported: true } : undefined)
+              : Effect.void
           ),
-          Effect.onExit((exit) => Exit.isFailure(exit) && options.recordCall !== undefined
-            ? Effect.forEach(receipts, options.recordCall, { discard: true }) : Effect.void),
+          Effect.onExit((exit) =>
+            Exit.isFailure(exit) && options.recordCall !== undefined
+              ? Effect.forEach(receipts, options.recordCall, { discard: true }) :
+              Effect.void
+          ),
           Effect.onExit((exit) =>
             Effect.gen(function*() {
               const at = yield* Clock.currentTimeMillis
@@ -944,7 +981,9 @@ export const dispatch = (
     const settled = normalizeRecordedModelStep(recorded)
     // The answer is durable before accounting may fail. A retry replays these
     // idempotent receipts instead of spending another provider call.
-    if (options.recordCall !== undefined) yield* Effect.forEach(settled.calls ?? [], options.recordCall, { discard: true })
+    if (options.recordCall !== undefined) {
+      yield* Effect.forEach(settled.calls ?? [], options.recordCall, { discard: true })
+    }
     const outcome = !executed ? "replayed" : settled.error === undefined ? "sealed" : "sealed_error"
     if (!executed) {
       yield* Metric.update(Metric.withAttributes(replays, { step: options.name }), 1)

@@ -861,10 +861,14 @@ export const make = (
             callTimeoutMs: step.modelCallMs,
             correction,
             onEvent: onLive,
-            reserveCall: budget.reserveCall === undefined ? undefined : (request) => budget.reserveCall!(request).pipe(
-              Effect.mapError((error) => error instanceof HarnessError.HarnessError ? error : accountingFailed(error))
-            ),
-            recordCall: budget.recordCall === undefined ? undefined : (call) => budget.recordCall!(call.receipt, call.usage, call.settled).pipe(Effect.mapError(accountingFailed)),
+            reserveCall: budget.reserveCall === undefined ? undefined : (request) =>
+              budget.reserveCall!(request).pipe(
+                Effect.mapError((error) => error instanceof HarnessError.HarnessError ? error : accountingFailed(error))
+              ),
+            recordCall: budget.recordCall === undefined
+              ? undefined
+              : (call) =>
+                budget.recordCall!(call.receipt, call.usage, call.settled).pipe(Effect.mapError(accountingFailed)),
             // This names an actual, unsealed invocation, not the logical
             // sealed key. A retry after capacity refusal is fresh provider
             // work; charging it under `key` would mark every later retry paid
@@ -902,7 +906,14 @@ export const make = (
           // step key, so a step whose body really did re-run counts once, and
           // a resumed run folds back what it recorded before the restart from
           // the budget's own durable usage records.
-          yield* budget.record(key, ModelEvent.ModelEvent.settledMessage(normalized.events).usage, step.request.modelId, normalized.events.some((event) => event.type === "retry") ? { unreported: true } : undefined)
+          yield* budget.record(
+            key,
+            ModelEvent.ModelEvent.settledMessage(normalized.events).usage,
+            step.request.modelId,
+            normalized.events.some((event) => event.type === "retry")
+              ? { unreported: true }
+              : undefined
+          )
             .pipe(
               Effect.mapError(accountingFailed)
             )

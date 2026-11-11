@@ -512,12 +512,16 @@ export interface Service {
    * The receipt contains no credentials and is saved with the sealed answer.
    * A replay reconciles that receipt without reserving or calling the provider.
    */
-  readonly reserveCall?: ((request: ModelRequest.ModelRequest) => Effect.Effect<
-    string,
-    AccountingUnavailable | HarnessError.HarnessError
-  >) | undefined
+  readonly reserveCall?:
+    | ((request: ModelRequest.ModelRequest) => Effect.Effect<
+      string,
+      AccountingUnavailable | HarnessError.HarnessError
+    >)
+    | undefined
   /** Idempotently reconciles a physical call's receipt, after its answer is sealed. */
-  readonly recordCall?: ((receipt: string, usage: ModelEvent.Usage, settled: boolean) => Effect.Effect<void, AccountingUnavailable>) | undefined
+  readonly recordCall?:
+    | ((receipt: string, usage: ModelEvent.Usage, settled: boolean) => Effect.Effect<void, AccountingUnavailable>)
+    | undefined
   /**
    * Decides whether the model call keyed by `stepKey` may be made.
    *

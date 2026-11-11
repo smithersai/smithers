@@ -23,10 +23,12 @@ import type { CacheEnvironment } from "./CacheEnvironment.ts"
  * @category idempotency
  * @since 1.0.0
  */
-export const CacheDeclaration = Context.Reference<{
-  readonly success: Schema.Top
-  readonly error: Schema.Top
-} | undefined>("@smthrs/flow/Action/CacheDeclaration", { defaultValue: () => undefined })
+export const CacheDeclaration = Context.Reference<
+  {
+    readonly success: Schema.Top
+    readonly error: Schema.Top
+  } | undefined
+>("@smthrs/flow/Action/CacheDeclaration", { defaultValue: () => undefined })
 
 /**
  * Context reference carrying the complete environment folded into reusable
