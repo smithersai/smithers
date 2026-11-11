@@ -1,0 +1,162 @@
+// The issues pane rendered over the mock Factory's real records (parents, children, notes, VIPs, tasks) under every
+// screen, role, filter, failure and connection state. screens/issues-view-names-controls generates whole records, which
+// rarely link to each other, so the detail screen, its tree, notes and actions stayed unrendered.
+import { it } from "@effect/vitest"
+import { getAllByRole, findAll, given, scene, textContent, type SceneSimulation } from "foldkit/scene"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { issuePermission, specificationAccepted } from "../src/core/conversation.vibe"
+import { IssuesUi, initialIssues } from "../src/web/issues.vibe"
+import { Specification, SpecificationEvent } from "../src/core/issueSchemas.vibe"
+import { emptySpecification } from "../src/core/specification.vibe"
+import { accountOf, Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const ROLES = ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]
+const ROLE = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const OP = Schema.Literals(["new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "read"])
+const NoteText = Schema.Union([Text, Schema.Literals(["added the language label", "removed the  label", "accepted the proposal", "proposed #1", "See #1 and #2, not #0", "```vibe\nconst x = 1\n```", "a `code` #3 part", ""])])
+const Note = Schema.Struct({ author: Schema.Literals(["VibeLang agent", "ada", "Will", ""]), text: NoteText, event: Schema.Boolean, age: Schema.Literals(["", "2d", "1d", "3w", "1w", "just now", "yesterday"]) })
+
+const Input = Schema.Struct({
+  flags: Flags,
+  /** Screen, status and dialog are weighted toward a ready list or issue with no dialog, where most of the pane is. */
+  screen: Int,
+  kind: Schema.Literals(["All", "Issues", "Tasks", "VIPs"]),
+  state: Schema.Literals(["open", "closed"]),
+  /** 0 to 15 no query; 16 to 23 a cased slice of the selected record's title; 24 to 27 its number; else the text. */
+  queryKind: Int,
+  queryText: Schema.Union([Text, Schema.Literals(["zzzz", "#1", "vip", "LANGUAGE"])]),
+  role: ROLE,
+  /** An index into the records, wrapping; one slot past the last selects a number no record has. */
+  pick: Int,
+  dialog: Int,
+  status: Int,
+  busy: Schema.Boolean,
+  step: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })),
+  error: Schema.Literals(["", "Connect GitHub.", "Fork on GitHub.", "Install Smithers on your fork.", "Couldn't load comments. Retry.", "That issue changed."]),
+  retry: Schema.optionalKey(OP),
+  connected: Schema.optionalKey(Schema.Boolean),
+  absoluteDates: Schema.optionalKey(Schema.Boolean),
+  stale: Schema.optionalKey(Schema.Literals([0, 1_762_782_000_000, 8_640_000_000_000_001])),
+  reviewers: Schema.optionalKey(Schema.Array(Schema.Literals(["Will", "Maya", ""])).check(Schema.isMaxLength(3))),
+  assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.Literals(["will", "maya", "a"]), label: Schema.Literals(["", " ", "Maya", "Will"]) })).check(Schema.isMaxLength(3))),
+  /** Overrides on the selected record, so its tree, proposal gate, notes and aside take every form. */
+  vip: Schema.optionalKey(Schema.Literals(["", "In review", "Accepted", "Declined"])),
+  task: Schema.optionalKey(Schema.Literals(["", "Queued", "Running", "Done"])),
+  recordState: Schema.optionalKey(Schema.Literals(["open", "closed"])),
+  approved: Schema.Boolean,
+  assignee: Schema.Literals(["", "VibeLang agent", "maya"]),
+  notes: Schema.optionalKey(Schema.Array(Note).check(Schema.isMaxLength(6))),
+  specification: Schema.optionalKey(Specification),
+  /** Every reviewer's LGTM on the specification's own revision: the accepted gate, which random reviews rarely reach. */
+  accepted: Schema.Boolean,
+  history: Schema.optionalKey(Schema.Array(SpecificationEvent).check(Schema.isMaxLength(4))),
+  body: Schema.optionalKey(NoteText),
+  age: Schema.Literals(["", "2d", "1d", "3w", "1w", "just now"]),
+})
+type Input = typeof Input.Type
+type Item = IssuesUi["data"]["items"][number]
+
+/** The mock Factory's issue records, as a maintainer sees them. */
+effect function mockItems() {
+  provide mockFactoryFor("maintainer") {
+    return (try (try Factory).issues!.read()).items
+  }
+}
+
+const SCREENS = ["list", "detail", "new", "vip", "roles", "specification"] as const
+function screenOf(n: number): IssuesUi["screen"] { return n < 12 ? "list" : n < 22 ? "detail" : SCREENS[n % SCREENS.length]! }
+function statusOf(n: number): IssuesUi["status"] { return n < 24 ? "ready" : n < 28 ? "loading" : "error" }
+function dialogOf(n: number): IssuesUi["dialog"] { return n < 24 ? "" : n < 27 ? "commit" : n < 30 ? "split" : "link" }
+
+function uiOf(input: Input, records: ReadonlyArray<Item>): IssuesUi {
+  const chosen = records[input.pick % (records.length + 1)]
+  const selected = chosen?.number ?? 9_999
+  const items = records.map(item => item.number !== selected ? item : {
+    ...item,
+    ...(input.vip === undefined ? {} : { vip: input.vip }),
+    ...(input.task === undefined ? {} : { task: input.task }),
+    ...(input.recordState === undefined ? {} : { state: input.recordState }),
+    ...(input.approved ? { approvedBy: "Will", approvedAt: "2026-11-10" } : {}),
+    ...(input.notes === undefined ? {} : { notes: input.notes }),
+    ...(input.body === undefined ? {} : { body: input.body }),
+    assignee: input.assignee, age: input.age,
+  })
+  const title = chosen?.title ?? ""
+  const query = input.queryKind < 16 ? "" : input.queryKind < 24 ? title.slice(input.queryKind % 3, input.queryKind % 3 + 6).toUpperCase() : input.queryKind < 28 ? `#${selected}` : input.queryText
+  const base = input.specification
+  const lgtm = (review: typeof Specification.Type["astra"]) => ({ ...review, verdict: "LGTM" as const, revision: base?.revision ?? 0 })
+  const specification = base === undefined ? {} : { specification: input.accepted ? { ...base, astra: lgtm(base.astra), sol: lgtm(base.sol), fable: lgtm(base.fable), opus: lgtm(base.opus) } : base }
+  const retry = input.retry === undefined ? {} : { retry: { op: input.retry, number: selected, parent: 0, title: "T", text: "S", assignee: "", example: "", prior: "", key: "k-1" } }
+  return {
+    ...initialIssues, open: true, screen: screenOf(input.screen), kind: input.kind, state: input.state, query, role: input.role, selected,
+    dialog: dialogOf(input.dialog), status: statusOf(input.status), busy: input.busy, step: input.step, error: input.error, title: "T", summary: "S", ...retry,
+    data: {
+      seq: 1, items, ...specification,
+      ...(input.history === undefined ? {} : { specificationHistory: input.history }),
+      ...(input.connected === undefined ? {} : { connected: input.connected }),
+      ...(input.absoluteDates === undefined ? {} : { absoluteDates: input.absoluteDates }),
+      ...(input.stale === undefined ? {} : { stale: input.stale }),
+      ...(input.reviewers === undefined ? {} : { reviewers: input.reviewers }),
+      ...(input.assignees === undefined ? {} : { assignees: input.assignees }),
+    },
+  }
+}
+
+function count(html: SceneSimulation<Model, Message>["html"], role: string, name: string | RegExp): number {
+  return getAllByRole(role, { name })(html).length
+}
+
+/**
+ * Every control keeps a name and no script is emitted. On an issue: its title heads the page, or "Issue unavailable"
+ * shows for a number no record has; the comment box shows exactly when the role may comment on a connected tracker;
+ * Commit or Uncommit exactly when the role may commit a non-VIP that is open or a task; Accept and Decline exactly when
+ * the role may accept a VIP in review. An open dialog names its action and issue. On the specification, the four review requests and the editor follow the role, and the suites show exactly when the
+ * gate accepts. On the list, the New issue or Propose a VIP control shows only when the role may.
+ */
+it.live("screens/issues-records", () => scoped(effect {
+  const records = try mockItems()
+  try run("screens/issues-records", Input, (input) => {
+    const ui = uiOf(input, records)
+    const base = init(input.flags).model
+    // The pane reads the role from the account (issueStateOf), so both carry the generated role.
+    const model: Model = { ...base, surface: "chat", issues: ui, account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } } }
+    const issue = ui.data.items.find(item => item.number === ui.selected)
+    const connected = ui.data.connected !== false
+    let holds = true
+    scene({ update, view }, given(model), (simulation: SceneSimulation<Model, Message>) => {
+      const html = simulation.html
+      for (const role of ROLES) if (getAllByRole(role)(html).length !== getAllByRole(role, { name: /\S/ })(html).length) holds = false
+      if (findAll(html, "script").length !== 0) holds = false
+      // An open dialog names the action and the issue it acts on; no other dialog does.
+      if (count(html, "dialog", new RegExp(`^(Commit|Split|Link) #${ui.selected}`)) !== (ui.dialog === "" ? 0 : 1)) holds = false
+      if (ui.screen === "detail") {
+        if (issue === undefined) {
+          if (count(html, "heading", "Issue") !== 1 || count(html, "textbox", "Comment") !== 0) holds = false
+          return simulation
+        }
+        if (count(html, "heading", new RegExp(`#${issue.number}$`)) < 1) holds = false
+        if (count(html, "textbox", "Comment") !== (connected && issuePermission(ui.role, "comment") ? 1 : 0)) holds = false
+        const commit = connected && issuePermission(ui.role, "commit") && issue.vip === "" && (issue.state === "open" || issue.task !== "")
+        // The commit dialog's own submit button is also named Commit.
+        if (ui.dialog === "" && count(html, "button", /^(Commit|Uncommit)$/) !== (commit ? 1 : 0)) holds = false
+        const accept = connected && issuePermission(ui.role, "accept") && issue.vip === "In review"
+        if (count(html, "button", /^(Accept|Decline)$/) !== (accept ? 2 : 0)) holds = false
+      }
+      if (ui.screen === "specification") {
+        if (count(html, "button", "Request review") !== (issuePermission(ui.role, "spec-review") ? 4 : 0)) holds = false
+        if (count(html, "textbox", "Specification text") !== (issuePermission(ui.role, "spec-revise") ? 1 : 0)) holds = false
+        // The suites' self-consistency shows exactly when the specification gate reads Accepted.
+        if (count(html, "status", "Specification gate") !== 1) holds = false
+        if (findAll(html, ".sui-card-title").some(node => textContent(node) === "Self-consistency") !== specificationAccepted(ui.data.specification ?? emptySpecification)) holds = false
+      }
+      if (ui.screen === "list" && !(connected && issuePermission(ui.role, ui.kind === "VIPs" ? "propose" : "new"))) {
+        if (count(html, "button", /^(New issue|Propose a VIP)$/) !== 0) holds = false
+      }
+      return simulation
+    })
+    return holds
+  })
+}))

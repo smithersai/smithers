@@ -932,6 +932,34 @@ vl-fuzz3's two whole-suite runs at `90f526f0` failed `screens/issues-view-names-
 
 Neither target is flaky: each failure reproduces from its seed on its tree and is gone on current `main`.
 
+### `src/web/issuesView.vibe`: the issues pane over real records
+
+The full run at seed 20261128 (`6536883f`, box) read `issuesView.vibe` at 273/437 branch arms and 48/79 functions:
+`screens/issues-view-names-controls` generates whole records, which rarely link to each other, so an issue's page, its
+tree, notes, proposal gate and aside stayed unrendered. `screens/issues-records` (`fuzz/issues-view.fuzz.vibe`) renders
+the pane through the real update and view over the mock Factory's records, with generated screen, role, filters,
+query (none, a slice of the selected title, its number, or text), failure, retry, connection, dates, stale time,
+reviewers, assignees, specification, its history and the accepted gate, plus overrides on the selected record (VIP and
+task state, approval, notes with references, labels and code, body). Screen, status and dialog are weighted toward a
+ready list or issue with no dialog.
+
+| Oracle | Holds when |
+| --- | --- |
+| names | every control has an accessible name and no `script` is emitted |
+| dialog | an open dialog is named for its action and the selected issue; with none open, no such dialog |
+| issue | the page heading ends in the issue's number, or "Issue unavailable" shows for a number no record has |
+| comment | the comment box shows exactly when the role may comment and the tracker is connected |
+| commit | Commit or Uncommit shows exactly when the role may commit a non-VIP that is open or a task (no dialog open) |
+| accept | Accept and Decline show exactly when the role may accept a VIP in review |
+| specification | four review requests exactly when the role may request review; the editor exactly when it may revise; the suites exactly when `specificationAccepted` |
+| list | New issue and Propose a VIP never show to a role that may not |
+
+The view reads the role from the account (`issueStateOf`), so the target sets both. Alone, 10 s: 190 to 233
+executions, `issuesView.vibe` 364/439 arms and 65/79 functions. Still open there: the keyboard handlers (kind arrows,
+Enter on the comment box, title and assignee), which only a scene interaction fires and whose Commands a scene must
+resolve, and `issueChatCard`, which the chat renders. Mutation: showing the comment box without the connection check
+is falsified in 218 executions.
+
 ## Lane vl-fuzz2: the rest of the server, 2026-11-10
 
 Scope: every `worker/` file and every `src/core/` file outside vl-fuzzpkg's (`src/web/main.vibe`,
