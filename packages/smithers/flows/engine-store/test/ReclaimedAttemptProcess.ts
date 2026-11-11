@@ -13,25 +13,26 @@ export const processBudget = 180_000
 /** The execution the child owns when it is killed. */
 export const orphan = "orphan"
 
-/** Kills the child once its `Test` body is running. */
-export const killDuringTest = async (filename: string): Promise<void> => {
+/**
+ * Runs the child entrypoint `script` with `args`, waits for the first JSON
+ * line it prints, SIGKILLs it, and returns that line.
+ */
+export const killAtMarker = async (script: string, args: ReadonlyArray<string>): Promise<unknown> => {
   const child: ChildProcessWithoutNullStreams = ChildProcesses.spawn(process.execPath, [
     ChildProcesses.vibeImport,
-    fixture,
-    filename,
-    orphan,
-    "#42"
+    script,
+    ...args
   ], {
     cwd: repositoryRoot,
     // The fixture reads only argv; never hand it the parent's credentials.
     env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
   })
   try {
-    const marker = await new Promise<{ readonly status: string }>((resolve, reject) => {
+    return await new Promise<unknown>((resolve, reject) => {
       let stdout = ""
       let stderr = ""
       const timeout = setTimeout(
-        () => reject(new Error(`child never reached Test\n${stderr}\n${stdout}`)),
+        () => reject(new Error(`child never printed its marker\n${stderr}\n${stdout}`)),
         processBudget
       )
       child.stdout.setEncoding("utf8")
@@ -49,11 +50,16 @@ export const killDuringTest = async (filename: string): Promise<void> => {
       })
       child.once("exit", (code, signal) => {
         clearTimeout(timeout)
-        reject(new Error(`child exited before Test with ${code ?? signal}\n${stderr}\n${stdout}`))
+        reject(new Error(`child exited before its marker with ${code ?? signal}\n${stderr}\n${stdout}`))
       })
     })
-    expect(marker.status).toBe("testing")
   } finally {
     await ChildProcesses.kill(child)
   }
+}
+
+/** Kills the child once its `Test` body is running. */
+export const killDuringTest = async (filename: string): Promise<void> => {
+  const marker = await killAtMarker(fixture, [filename, orphan, "#42"])
+  expect(marker).toMatchObject({ status: "testing" })
 }

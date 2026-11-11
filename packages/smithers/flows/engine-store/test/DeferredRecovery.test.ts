@@ -106,7 +106,7 @@ const statusOf = (executionId: string) =>
 const pendingClocks = (executionId: string) =>
   Effect.flatMap(DurableEngineState.DurableEngineState, (state) => state.pendingClocks({ executionId }))
 
-/** Parks `executionId` on its ten-minute clock under an engine that then goes away. */
+/** Parks `executionId` on its ten-minute clock under an engine that then shuts down, releasing the run. */
 const parkUnderFirstEngine = (executionId: string) =>
   Effect.scoped(
     Effect.gen(function*() {

@@ -35,12 +35,16 @@ const jj = Jj.make({
 })
 
 /**
- * Runs `body` against two independently constructed engines that share one
- * durable state and journal: the first suspends the flow, the second is the
- * post-restart engine.
+ * Runs `body` against independently constructed engines over one database:
+ * the first suspends the flow, the next is the post-restart engine. Each
+ * engine builds its own SQL engine state, so the restarted one reads its
+ * waiting and deferred rows from the database. Making the next engine shuts
+ * the previous one down: closing its scope releases its runs, which is a
+ * clean shutdown, not a crash. Hard-kill reclaim has its own suites
+ * (`HardKillReclaim`, `ReclaimedAttemptCache`, `CompensableSnapshotRestart`).
  */
 type Services =
-  | Layer.Success<ReturnType<typeof TestStores.layer>>
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
   | DurableEngineState.DurableEngineState
   | Jj.Jj
@@ -68,21 +72,15 @@ const withRestart = <A, E>(
               owner: { hostId: "deferred-restart-host" },
               journalSource: "deferred-restart-test",
               isAlive: () => Effect.succeed(false)
-            }),
+            }).pipe(Effect.provideServiceEffect(DurableEngineState.DurableEngineState, DurableEngineState.make)),
             previous
           )
         })
         return yield* body(makeEngine, store)
-      }).pipe(
-        Effect.provideService(
-          DurableEngineState.DurableEngineState,
-          DurableEngineState.makeMemory()
-        ),
-        Effect.provideService(Jj.Jj, jj)
-      )
+      }).pipe(Effect.provideService(Jj.Jj, jj))
     ).pipe(
       Effect.provide(StepBoundary.layerTest()),
-      Effect.provide(TestStores.layer())
+      Effect.provide(TestStores.layerAt(":memory:"))
     )
   )
 
