@@ -117,6 +117,24 @@ describe("shell executable contract", () => {
       .toThrow(/at least one outDirs or outFiles/)
   })
 
+  it("rejects an inherited name env also sets, and a name a shell cannot export", () => {
+    for (const schema of [Shell.BuildAttrs, Shell.TestAttrs, Shell.RunAttrs, Shell.ServeAttrs, Shell.DiffAttrs]) {
+      expect(() =>
+        Schema.decodeUnknownSync(schema)({
+          shell: "true",
+          outDirs: ["dist"],
+          changes: [],
+          env: { DOCKER_HOST: "unix:///a.sock" },
+          inheritEnv: ["DOCKER_HOST"]
+        })
+      ).toThrow(/env sets DOCKER_HOST, which inheritEnv also names/)
+      expect(() =>
+        Schema.decodeUnknownSync(schema)({ shell: "true", outDirs: ["dist"], changes: [], inheritEnv: ["DOCKER-HOST"] })
+      ).toThrow()
+    }
+    expect(() => Shell.execPayload({ shell: "true", env: { A: "1" }, inheritEnv: ["A"] })).toThrow(/declare each/)
+  })
+
   it("exports each rule with its attrs schema as the only validator", () => {
     expect([Shell.Build, Shell.Test, Shell.Run, Shell.Serve, Shell.Diff].map((rule) => [rule.id, rule.attrs])).toEqual([
       ["Shell.Build", Shell.BuildAttrs],

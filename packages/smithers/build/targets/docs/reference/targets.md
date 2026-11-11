@@ -249,6 +249,16 @@ output has been produced.
 `env`, for a tool whose callers read that variable; PATH is used only when it
 is unset.
 
+A shell target sees only the host bootstrap environment (`PATH`, `HOME`, `CI`,
+the temporary directories and the platform's toolchain variables) plus its
+`env`. `inheritEnv` names host variables the tool needs that change per host,
+such as the `DOCKER_HOST` of a rootless Docker or the database URLs a CI box
+provides: `S.Shell.Test({ shell: "pnpm test", inheritEnv: ["DOCKER_HOST"] })`.
+Each named variable reaches the tool with its host value, and that value, or its
+absence, enters the key, so a host with a different value runs the target again.
+Name each variable in `env` or `inheritEnv`, not both. Credentials belong in
+`secrets`, which keep the value out of the tool and the key.
+
 `Shell.Build` command forms key the shell and the leading literal executable.
 List executables a shell target spawns by itself in `tools`: their bytes join
 the key the same way, and an absent one refuses the target. Executable

@@ -150,6 +150,16 @@ export const Approval = Schema.Literal("required")
 export const Env = Schema.Record(Schema.String, Schema.String)
 
 /**
+ * Schema for the host environment names a target inherits. Each named
+ * variable reaches the child with its host value, and that value, or its
+ * absence, enters the target's key.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const InheritEnv = Schema.Array(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)))
+
+/**
  * Schema for declared secrets.
  *
  * @category schemas

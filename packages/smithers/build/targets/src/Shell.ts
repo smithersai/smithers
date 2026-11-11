@@ -63,6 +63,7 @@ const sharedFields = {
   args: Schema.optional(Attr.Args),
   runtimeArgs: Schema.optional(Schema.Array(Schema.String)),
   env: Schema.optional(Attr.Env),
+  inheritEnv: Schema.optional(Attr.InheritEnv),
   data: Schema.optional(Attr.Data),
   secrets: Schema.optional(Attr.Secrets),
   sandbox: Schema.optional(Attr.Sandbox),
@@ -91,6 +92,8 @@ const executableIssue = (attrs: ExecAttrs): string | undefined => {
   }
   if (attrs.using !== undefined && attrs.bun === undefined) return "using is only supported by bun templates"
   if (attrs.script !== undefined && attrs.runtimeArgs !== undefined) return "script cannot take runtimeArgs"
+  const twice = (attrs.inheritEnv ?? []).filter((name) => attrs.env !== undefined && Object.hasOwn(attrs.env, name))
+  if (twice.length > 0) return `env sets ${twice.join(", ")}, which inheritEnv also names; declare each variable once`
   return undefined
 }
 const executableCheck = Schema.makeFilter(executableIssue)
@@ -290,6 +293,7 @@ export interface ExecAttrs {
   readonly args?: ReadonlyArray<string | Reference.FlagRef> | undefined
   readonly runtimeArgs?: ReadonlyArray<string> | undefined
   readonly env?: Readonly<Record<string, string>> | undefined
+  readonly inheritEnv?: ReadonlyArray<string> | undefined
   readonly timeout?: string | undefined
   readonly secrets?: ReadonlyArray<Secret.HttpCredential> | undefined
 }

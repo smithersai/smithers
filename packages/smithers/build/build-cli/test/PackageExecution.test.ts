@@ -1478,6 +1478,40 @@ export const Package = S.Package({ targets: { dist } })
     }
   })
 
+  it("passes an inherited host variable to the tool and keys its value and its absence", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const shell = 'mkdir -p dist && printf "%s:%s" "$SMITHERS_PROBE_SOCKET" "$SMITHERS_PROBE_OTHER" > dist/a.txt'
+const dist = S.Shell.Build({ shell, outDirs: ["dist"], sandbox: "none", inheritEnv: ["SMITHERS_PROBE_SOCKET"] })
+export const Package = S.Package({ targets: { dist } })
+`
+    )
+    commitAll(root)
+    try {
+      vi.stubEnv("SMITHERS_PROBE_OTHER", "withheld")
+      vi.stubEnv("SMITHERS_PROBE_SOCKET", "unix:///one.sock")
+      const one = await serve(root, ["//:dist"])
+      expect(one.exitCode, one.logs).toBe(0)
+      expect(await Fs.readFile(NodePath.join(root, "dist/a.txt"), "utf8")).toBe("unix:///one.sock:")
+      const onePlan = await serve(root, ["//:dist", "--plan"])
+      vi.stubEnv("SMITHERS_PROBE_OTHER", "changed")
+      const otherPlan = await serve(root, ["//:dist", "--plan"])
+      vi.stubEnv("SMITHERS_PROBE_SOCKET", "unix:///two.sock")
+      const twoPlan = await serve(root, ["//:dist", "--plan"])
+      vi.stubEnv("SMITHERS_PROBE_SOCKET", undefined)
+      const unsetPlan = await serve(root, ["//:dist", "--plan"])
+      const keys = [onePlan, twoPlan, unsetPlan].map((plan) => keyOf(plan.output, "//:dist"))
+      expect(keyOf(otherPlan.output, "//:dist")).toBe(keys[0])
+      expect(new Set(keys).size).toBe(3)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("re-keys a target when the resolved node_modules package version changes", async () => {
     const root = await temporaryWorkspace()
     const bin = process.platform === "win32" ? "mytool.exe" : "mytool"

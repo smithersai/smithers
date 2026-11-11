@@ -677,6 +677,23 @@ const hostValue = (name: string): string | undefined => {
 }
 
 /**
+ * Reads the host values of the environment names a target inherits
+ * (`inheritEnv`). An unset name is left out, so its absence keys apart from
+ * every value.
+ *
+ * @category environment
+ * @since 1.0.0
+ */
+export const inheritedValues = (names: ReadonlyArray<string>): Record<string, string> => {
+  const values = Object.create(null) as Record<string, string>
+  for (const name of names) {
+    const value = hostValue(name)
+    if (value !== undefined) values[name] = value
+  }
+  return values
+}
+
+/**
  * The executable lookup environment a resolved Nix closure supplies.
  *
  * `path` replaces the host `PATH`; `variables` are the closure's other

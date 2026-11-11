@@ -1883,7 +1883,9 @@ const visit = async (
   if (isShellExec && refusal === undefined) {
     const shellAttrs = attrs as Shell.ExecAttrs
     const payload = Shell.execPayload(shellAttrs)
-    env = { ...(payload.env as Record<string, string>) }
+    // Inherited host values join the declared environment, so the key below
+    // carries each value, and an unset name keys apart from every value.
+    env = { ...(payload.env as Record<string, string>), ...Exec.inheritedValues(shellAttrs.inheritEnv ?? []) }
     const resolved = await resolveCommand(
       payload.argv as ReadonlyArray<string>,
       (shellAttrs.bin as { readonly _tag?: string } | undefined)?._tag === "RuntimeNpx"
