@@ -21,6 +21,7 @@ export {
   type RepoViewTree,
 } from "./RepoView";
 export {
+  guardDocument,
   HTML_PREVIEW_CSP,
   HTML_PREVIEW_SANDBOX,
   HtmlPreview,

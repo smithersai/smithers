@@ -1,12 +1,14 @@
 /** @jsxImportSource react */
 // RepoView's repository page as GitHub lays it out, and an HTML file as CodePen shows it, under happy-dom: the about
 // panel beside the listing with no tree, folders known without their files, a file's badges, and Code, Preview and
-// Split for an HTML file, whose preview is a sandboxed frame that can't reach the app or the network.
+// Split for an HTML file, whose preview is a sandboxed guard frame around the page's own sandboxed frame. What the
+// browser does with a page that reaches for the network or navigates is browser/html-preview.browser.test.tsx's.
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   disposeCodeViewPool,
+  guardDocument,
   HTML_PREVIEW_CSP,
   HTML_PREVIEW_SANDBOX,
   HtmlPreview,
@@ -220,18 +222,29 @@ describe("HtmlPreview", () => {
     expect(previewDocument("<p>bare</p>").endsWith("<base target=\"_blank\"><p>bare</p>")).toBe(true);
   });
 
-  test("a frame that navigates itself is put back on the file: its second load remounts it", async () => {
+  test("the guard: the page's own sandboxed frame under the same policy, and a hidden note", () => {
+    const html = `<p title="a&amp;b">x</p>`;
+    const title = `Preview of "<x>".html`;
+    const guard = new DOMParser().parseFromString(guardDocument(html, title), "text/html");
+    // A srcdoc document inherits its parent's policy, and its navigations answer to the parent's frame-src.
+    expect(guard.querySelector('meta[http-equiv="Content-Security-Policy"]')!.getAttribute("content")).toBe(HTML_PREVIEW_CSP);
+    expect(HTML_PREVIEW_CSP).toContain("frame-src 'none'");
+    const frame = guard.querySelector("iframe")!;
+    expect(frame.getAttribute("sandbox")).toBe(HTML_PREVIEW_SANDBOX);
+    expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(frame.getAttribute("title")).toBe(title);
+    // The page reaches its frame unchanged, quotes, ampersands and angle brackets included.
+    expect(frame.getAttribute("srcdoc")).toBe(previewDocument(html));
+    expect(guard.querySelector("p")!.hidden).toBe(true);
+    expect(guard.querySelector("script")!.textContent).toContain("securitypolicyviolation");
+  });
+
+  test("HtmlPreview's frame holds the guard and reports its one load", async () => {
     const loads: Array<string> = [];
     await render(<HtmlPreview html="<p>x</p>" title="Preview" onLoad={() => loads.push("load")} />);
-    // The frame loads its document once, as a browser does.
+    const frame = q<HTMLIFrameElement>("iframe")!;
+    expect(frame.getAttribute("sandbox")).toBe(HTML_PREVIEW_SANDBOX);
+    expect(frame.getAttribute("srcdoc")).toBe(guardDocument("<p>x</p>", "Preview"));
     expect(loads).toEqual(["load"]);
-    const first = q<HTMLIFrameElement>("iframe")!;
-    // The page navigates: a second load.
-    await act(async () => first.dispatchEvent(new Event("load")));
-    const second = q<HTMLIFrameElement>("iframe")!;
-    expect(second).not.toBe(first);
-    expect(second.getAttribute("srcdoc")).toContain("<p>x</p>");
-    // The new frame's first load is its own, reported again.
-    expect(loads).toEqual(["load", "load"]);
   });
 });

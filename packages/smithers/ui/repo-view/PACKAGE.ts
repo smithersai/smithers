@@ -5,8 +5,9 @@
  * sources directly, types against `@types/bun` and tests with `bun test`, so
  * it declares the gates it can honor instead of taking the synthesized
  * `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory
- * holding a `PACKAGE.ts`): a `vibelang --noEmit` typecheck and the Bun suite, which
- * fails below 100% line and function coverage (`bunfig.toml`).
+ * holding a `PACKAGE.ts`): a `vibelang --noEmit` typecheck, the Bun suite, which
+ * fails below 100% line and function coverage (`bunfig.toml`), and browser
+ * probes in real Chromium.
  */
 import { SdkRules } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
@@ -56,7 +57,7 @@ const check = Smithers.Typecheck({
  */
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["test"], { isolate: true }),
+  runner: Smithers.testSuite(["./test"], { isolate: true }),
   srcs: [
     ...sources,
     Smithers.file("bunfig.toml"),
@@ -65,6 +66,26 @@ const unitTests = Smithers.NodeTest({
     Smithers.glob("//packages/smithers/ui/repo-view/test/**/*.snap"),
     // test/docs-contracts.test.ts holds the docs' examples and stated contracts to the code.
     Smithers.glob("//packages/smithers/ui/repo-view/docs/**/*.md")
+  ],
+  deps: [uiSources],
+  cwd
+})
+
+/**
+ * Browser probes: `HtmlPreview` in real Chromium, where a page that navigates
+ * itself must request nothing and a page that reloads itself must stop. Needs
+ * Playwright's Chromium (`pnpm exec playwright install chromium`).
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const browserProbes = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["browser"]),
+  srcs: [
+    ...sources,
+    Smithers.glob("//packages/smithers/ui/repo-view/browser/**/*.ts"),
+    Smithers.glob("//packages/smithers/ui/repo-view/browser/**/*.tsx")
   ],
   deps: [uiSources],
   cwd
@@ -129,6 +150,7 @@ const { importRules, jevRules } = SdkRules({ cwd, role: "components", tests: ["t
 
 export const Package = Smithers.Package({
   targets: {
+    browserProbes,
     check,
     docsFiles,
     importRules,

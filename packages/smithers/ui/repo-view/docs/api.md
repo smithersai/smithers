@@ -46,6 +46,7 @@ type RepoViewMarkdownMode = "preview" | "source"
 type RepoViewHtmlMode = "code" | "preview" | "split"
 
 function HtmlPreview(props: HtmlPreviewProps): JSX.Element
+function guardDocument(html: string, title: string): string
 function previewDocument(html: string): string
 const HTML_PREVIEW_CSP: string
 const HTML_PREVIEW_SANDBOX: "allow-scripts"
@@ -86,10 +87,18 @@ Markdown document.
   `onHtmlModeChange`, controlled or not. The page is `HtmlPreview`: a frame
   sandboxed to `allow-scripts` alone, so it is an opaque origin that can't
   reach the app, its storage or its cookies, and opens no popup, form,
-  download or top-level navigation. Its document (`previewDocument`) starts
-  with `HTML_PREVIEW_CSP`: inline script and style only, images and fonts only
-  from `data:` and `blob:`, and no network. A page that navigates itself anyway
-  is put back on the file: the frame's second load remounts it.
+  download or top-level navigation. The frame holds a guard
+  (`guardDocument`) around a second frame, sandboxed the same way, whose
+  document (`previewDocument`) is the page. Both run under `HTML_PREVIEW_CSP`:
+  inline script and style only, images and fonts only from `data:` and
+  `blob:`, and no fetch, form or frame. A policy can't stop a page navigating
+  itself, but the browser checks each navigation of the page's frame against
+  the guard's `frame-src 'none'` before it sends a request. A page that
+  navigates itself, by script, meta refresh or a `_self` link, loads nothing,
+  and the guard replaces it with a note. So does a page that reloads itself
+  once loaded, at its second load. A page that reloads itself before it
+  finishes loading keeps reloading inside its frame, with no request, as a
+  script that loops forever keeps running.
 - **The repository page:** `aside` draws a column on the right of a `full`
   view, such as an about panel, and moves under the content below 1,024 px of
   the view's width. `fileTree={false}` drops the tree on the left, as GitHub's

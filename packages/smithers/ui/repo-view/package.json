@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
-    "test": "bun test --isolate test"
+    "test": "bun test --isolate ./test"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.0",
@@ -54,6 +54,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "happy-dom": "20.13.2",
+    "playwright": "1.62.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "~5.9.3",
