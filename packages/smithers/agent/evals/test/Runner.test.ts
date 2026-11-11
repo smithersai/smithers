@@ -5,6 +5,7 @@ import { ScorerError } from "@smthrs/scorers/ScorerError"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
@@ -1003,6 +1004,56 @@ describe("Runner", () => {
         anonymous.scorerKey.slice(0, 8)
       }) returned a score outside [0, 1]: 7`
     )
+  })
+
+  it("fails only a hung target's case once the case timeout passes", async () => {
+    const suite = await suiteOf("hung-target", [binding], [{ name: "ok", input: 1 }, { name: "hung", input: 2 }])
+    const executor = executorFor((suiteCase) =>
+      suiteCase.name === "hung"
+        ? Effect.never
+        : Effect.succeed({ output: suiteCase.input, stepKey: "step", latencyMs: 0, target })
+    )
+    const result = await Effect.runPromise(
+      Runner.run(suite, { ...runOptions, caseTimeout: "20 millis" }).pipe(Effect.provide(executor))
+    )
+    expect(result.cases.map((caseResult) => caseResult.observations.map((observation) => observation.kind)))
+      .toEqual([["score"], []])
+    expect(result.cases[1]?.error).toMatchObject({
+      code: "executor",
+      message: "Target failed for case 'hung': timed out after 20ms",
+      path: "cases['hung']"
+    })
+    expect(result.cases[1]?.trials).toMatchObject({ passes: 0 })
+  })
+
+  it("records a hung scorer as inconclusive once the case timeout passes", async () => {
+    const hung = Scorer.make({
+      id: "packages/smithers/agent/evals/test/Runner/hung",
+      version: "1",
+      name: "hung",
+      score: () => Effect.never
+    })
+    const suite = await suiteOf("hung-scorer", [binding, Binding.make({ scorer: hung, appliesTo: target })])
+    const result = await Effect.runPromise(
+      Runner.run(suite, { ...runOptions, caseTimeout: "20 millis" }).pipe(Effect.provide(succeeding))
+    )
+    expect(result.observations.map((observation) => observation.kind)).toEqual(["score", "inconclusive"])
+    const observation = result.observations[1]
+    expect(observation?.kind === "inconclusive" && observation.reason).toContain(
+      `Scorer hung (${hung.scorerKey.slice(0, 8)}) timed out after 20ms`
+    )
+  })
+
+  it.each([0, -5, "Infinity", "soon"])("rejects the case timeout %s", async (caseTimeout) => {
+    const suite = await suiteOf("bad-timeout", [binding])
+    const error = await failureOf(
+      Runner.run(suite, { ...runOptions, caseTimeout: caseTimeout as Duration.Input }).pipe(Effect.provide(succeeding))
+    )
+    expect(error).toMatchObject({
+      code: "invalid_run_options",
+      message: "caseTimeout must be a finite positive duration such as '30 seconds'",
+      path: "options.caseTimeout"
+    })
   })
 
   it("propagates fiber interruption from the target and from the scorer", async () => {

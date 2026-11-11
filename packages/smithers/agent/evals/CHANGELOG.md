@@ -12,6 +12,12 @@
 - `Runner.run` executes under the `Eval.run` span and each case under
   `Eval.case`.
 
+- `RunOptions.caseTimeout` bounds each case's target and each score job with
+  an Effect `Duration.Input`. A target that outlives it fails its own case
+  with an `executor` error at `cases['<name>']`, and a scorer that outlives it
+  yields an inconclusive observation, so one hung case no longer keeps the run
+  and its report pending.
+
 - Added `Report.Data`, `Report.data`, and `Report.version`: the serialized
   report shape, the projection that builds it, and the format version stamped
   on it as `reportVersion`. It versions the wire independently of the nested

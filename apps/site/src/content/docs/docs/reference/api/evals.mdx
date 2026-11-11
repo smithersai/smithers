@@ -314,7 +314,10 @@ Deterministic suite execution and bound scorer evaluation.
   not a trial.
 - `RunResult`: `{ runId, suite, cases, observations }`, the stable result of a
   suite run.
-- `RunOptions`: `{ scorer?, runId, sampleId?, at }`.
+- `RunOptions`: `{ scorer?, runId, sampleId?, trials?, k?, at, caseTimeout? }`.
+  `caseTimeout` is an Effect `Duration.Input` that bounds each case's target
+  and, separately, each score job. Without it nothing is bounded, so a target
+  that never completes keeps the run pending.
 - `Runner`: the `Context.Service` tag, `flows/evals/Runner`, for an injectable
   batch runner. `run` does not require it: a run scores with `options.scorer`
   when one is passed, otherwise with this service when one is provided,
@@ -334,12 +337,16 @@ run through the provided `CaseExecutor` at the suite's concurrency. Every
 execution is graded by the bindings whose `appliesTo` is the flow the
 execution reports as its target, matched by reference identity. A case whose
 target failed keeps its typed error and produces no observations; a scorer
-that failed produces an inconclusive observation. A case with an attempt that
+that failed produces an inconclusive observation. With `caseTimeout`, a target
+that outlives it fails its own case with an `executor` error at
+`cases['<name>']` whose message says `timed out after <duration>`, and a
+scorer that outlives it produces an inconclusive observation; the other cases
+and the report are unaffected. A case with an attempt that
 executed but produced no observation carries `ungraded`. Trial statistics leave out
 sampled-out attempts, so a case whose every attempt was sampled out has no
 `trials` and is absent from the aggregate. The run itself fails only
-with `invalid_run_options` for a non-canonical run identity or timestamp,
-`invalid_suite` for an unusable sampling policy, `ambiguous_score_job` when an
+with `invalid_run_options` for a non-canonical run identity or timestamp or a
+`caseTimeout` that is not a finite positive duration, `invalid_suite` for an unusable sampling policy, `ambiguous_score_job` when an
 order-only runner cannot distinguish two jobs, or `scorer_protocol` for a
 batch runner that broke the `ScoreBatchRunner` contract.
 

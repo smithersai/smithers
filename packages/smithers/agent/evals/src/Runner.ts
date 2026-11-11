@@ -12,11 +12,14 @@
 import * as Sampling from "@smthrs/scorers/Sampling"
 import * as Scorer from "@smthrs/scorers/Scorer"
 import type * as ScoreStore from "@smthrs/scorers/ScoreStore"
+import { ScorerError } from "@smthrs/scorers/ScorerError"
 import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import { CaseExecutor, type Execution, type Service as CaseExecutorService } from "./CaseExecutor.ts"
 import { EvalError } from "./EvalError.ts"
 import { controlCharacter, flattenControlCharacters } from "./internal/controlCharacters.ts"
@@ -186,6 +189,13 @@ export interface RunResult {
 /**
  * Options for a deterministic suite run.
  *
+ * `caseTimeout` is the deadline for one case's target and, separately, for
+ * each score job. A target that outlives it fails its own case with an
+ * `executor` error at `cases['<name>']`; a scorer that outlives it yields an
+ * inconclusive observation. Its siblings and the report are unaffected.
+ * Without it nothing is bounded, so a target that never completes keeps the
+ * run pending.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -196,6 +206,7 @@ export interface RunOptions {
   readonly trials?: number | undefined
   readonly k?: number | undefined
   readonly at: string
+  readonly caseTimeout?: Duration.Input | undefined
 }
 
 /**
@@ -317,8 +328,30 @@ const cloneOutput = (suiteCase: Case, execution: Execution): Effect.Effect<Execu
       })
   })
 
-const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<CaseResult> =>
-  Effect.suspend(() => executor.run(structuredClone(suiteCase))).pipe(
+// A hung target or scorer is neither a failure nor an inconclusive result
+// until something ends it, and until then the whole run and its report wait.
+const withDeadline = <A, E>(
+  effect: Effect.Effect<A, E>,
+  deadline: Duration.Duration | undefined,
+  timedOut: (message: string) => E
+): Effect.Effect<A, E> =>
+  deadline === undefined ? effect : effect.pipe(
+    Effect.timeoutOrElse({
+      duration: deadline,
+      orElse: () => Effect.fail(timedOut(`timed out after ${Duration.format(deadline)}`))
+    })
+  )
+
+const runCase = (
+  executor: CaseExecutorService,
+  suiteCase: Case,
+  deadline: Duration.Duration | undefined
+): Effect.Effect<CaseResult> =>
+  withDeadline(
+    Effect.suspend(() => executor.run(structuredClone(suiteCase))),
+    deadline,
+    (message) => new EvalError({ code: "executor", message, path: casePath(suiteCase.name) })
+  ).pipe(
     Effect.flatMap((execution) => {
       const malformed = malformedExecution(suiteCase, execution)
       return malformed === undefined ? cloneOutput(suiteCase, execution) : Effect.fail(malformed)
@@ -471,12 +504,13 @@ interface ScoreContext {
   readonly runId: string
   readonly sampleId: string
   readonly concurrency: number
+  readonly deadline: Duration.Duration | undefined
 }
 
 const buildJobs = (
   cases: ReadonlyArray<CaseResult>,
   suite: Suite,
-  { at, runId, sampleId, concurrency }: ScoreContext
+  { at, runId, sampleId, concurrency, deadline }: ScoreContext
 ): Effect.Effect<
   { readonly requests: ReadonlyArray<ScoreRequest>; readonly jobs: ReadonlyArray<ScoreJob> },
   EvalError
@@ -527,7 +561,11 @@ const buildJobs = (
         `${index}`
       ),
       observation: { targetStepKey: request.stepKey, scorerKey: scorerKeyOf(request.binding) },
-      score: Effect.suspend(() => request.binding.scorer.score(structuredClone(request.input))),
+      score: withDeadline(
+        Effect.suspend(() => request.binding.scorer.score(structuredClone(request.input))),
+        deadline,
+        (message) => new ScorerError({ code: "inconclusive", message: `Scorer ${label(request.binding)} ${message}` })
+      ),
       at: Date.parse(at)
     }))
     return { requests, jobs }
@@ -768,13 +806,16 @@ const score = (
  * {@link Runner} service when one is provided, and {@link makeInline}
  * otherwise. A case whose target failed keeps its typed error, locates itself
  * with the executor's own `path` or with `cases['<name>']`, and produces no
- * observations; a scorer that failed produces an inconclusive observation. A
+ * observations; a scorer that failed produces an inconclusive observation.
+ * With `options.caseTimeout`, a target that outlives it is such a failed case
+ * and a scorer that outlives it such an inconclusive observation. A
  * case with an attempt that executed but produced no observation carries
  * `ungraded`. Trial
  * statistics leave out sampled-out attempts, so a case every attempt of which
  * was sampled out has no `trials` and is absent from the aggregate. The
  * run itself fails only with `invalid_run_options` for a non-canonical run
- * identity or timestamp, `invalid_suite` for an unusable sampling policy,
+ * identity or timestamp or a case timeout that is not a finite positive
+ * duration, `invalid_suite` for an unusable sampling policy,
  * `ambiguous_score_job` when an order-only runner cannot distinguish two jobs,
  * or `scorer_protocol` for a batch runner that broke the
  * {@link ScoreBatchRunner} contract.
@@ -815,6 +856,21 @@ export const run = (
         })
       )
     }
+    const deadline = options.caseTimeout === undefined
+      ? undefined
+      : Option.getOrUndefined(Duration.fromInput(options.caseTimeout))
+    if (
+      options.caseTimeout !== undefined &&
+      (deadline === undefined || !Duration.isFinite(deadline) || !Duration.isPositive(deadline))
+    ) {
+      return yield* Effect.fail(
+        new EvalError({
+          code: "invalid_run_options",
+          message: "caseTimeout must be a finite positive duration such as '30 seconds'",
+          path: "options.caseTimeout"
+        })
+      )
+    }
     const n = options.trials ?? suite.trials ?? 1
     const k = options.k ?? 1
     if (!Number.isSafeInteger(n) || n < 1 || n > 1000 || !Number.isSafeInteger(k) || k < 1 || k > n) {
@@ -834,12 +890,13 @@ export const run = (
     const batches = yield* Effect.forEach(Array.from({ length: n }, (_, index) => index), (index) =>
       Effect.gen(function*() {
         const cases = yield* Effect.forEach(suite.cases, (suiteCase) =>
-          runCase(executor, suiteCase), {
+          runCase(executor, suiteCase, deadline), {
           concurrency: suite.concurrency,
           discard: false
         })
         return yield* score(cases, suite, scorer, {
           concurrency: suite.concurrency,
+          deadline,
           at,
           runId,
           sampleId: n === 1 ? sampleId : tupleKey(sampleId, String(index))
